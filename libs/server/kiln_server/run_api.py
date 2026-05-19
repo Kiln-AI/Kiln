@@ -112,7 +112,10 @@ def _collect_cascade_delete_runs(
     # the loader for each ancestor. We need the full chain view here.
     all_runs = task.runs(include_intermediate_runs=True, readonly=True)
     children_by_parent: Dict[str, list[str]] = {}
+    runs_by_id: Dict[str, TaskRun] = {}
     for r in all_runs:
+        if r.id is not None:
+            runs_by_id[str(r.id)] = r
         if r.parent_task_run_id and r.id is not None:
             children_by_parent.setdefault(r.parent_task_run_id, []).append(str(r.id))
 
@@ -125,7 +128,7 @@ def _collect_cascade_delete_runs(
         if parent_id in visited:
             # Cycle: stop here, but everything queued so far is still valid.
             break
-        parent = TaskRun.from_id_and_parent_path(parent_id, task.path)
+        parent = runs_by_id.get(parent_id)
         if parent is None:
             # Chain broken: stop the cascade, don't 500.
             break
@@ -703,6 +706,11 @@ def connect_run_api(app: FastAPI):
                 raise HTTPException(
                     status_code=404,
                     detail=f"Parent run not found. ID: {request.parent_task_run_id}",
+                )
+            if not parent_task_run.trace:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Parent run cannot be continued because it has no trace.",
                 )
             prior_trace = parent_task_run.trace
 
