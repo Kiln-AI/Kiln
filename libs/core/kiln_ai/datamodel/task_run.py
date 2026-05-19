@@ -182,6 +182,30 @@ class TaskRun(
         return self
 
     @model_validator(mode="after")
+    def validate_parent_task_run_id_for_turn_mode(self, info: ValidationInfo) -> Self:
+        # Single-turn tasks must not have a parent_task_run_id - the leaf
+        # filter in Task.runs() would silently drop the parent from
+        # iteration, producing phantom runs in evals/finetunes/dataset
+        # splits. Skip on load so legacy files don't fail to deserialize.
+        if self.loading_from_file(info):
+            return self
+        if self.parent_task_run_id is None:
+            return self
+        task = self.parent_task()
+        if task is None:
+            # Not yet attached - defer; revalidates when attached/saved.
+            return self
+        # Avoid circular import at module load.
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        if task.turn_mode != TurnMode.multiturn:
+            raise ValueError(
+                "parent_task_run_id is only valid on multi-turn tasks. "
+                "This task's turn_mode is single_turn."
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_repaired_output(self) -> Self:
         if self.repaired_output is not None:
             if self.repaired_output.rating is not None:

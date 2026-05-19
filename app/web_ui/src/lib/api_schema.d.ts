@@ -271,15 +271,15 @@ export interface paths {
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/ancestors": {
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Run Ancestors */
-        get: operations["get_run_ancestors_api_projects__project_id__tasks__task_id__runs__run_id__ancestors_get"];
+        /** Get Run Chain */
+        get: operations["get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -297,7 +297,7 @@ export interface paths {
         };
         /**
          * List Runs
-         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
          */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
@@ -321,7 +321,7 @@ export interface paths {
         };
         /**
          * List Run Summaries
-         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized.
+         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
          */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
@@ -412,7 +412,7 @@ export interface paths {
         };
         /**
          * List Run Tags
-         * @description Counts only include tags from leaf TaskRuns. For multiturn tasks, tags attached to intermediate runs in a chain are not included.
+         * @description Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
          */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
@@ -8516,6 +8516,47 @@ export interface components {
             feedback: string;
         };
         /**
+         * RunChainEntry
+         * @description A single entry in a multi-turn run's conversation chain.
+         */
+        RunChainEntry: {
+            /**
+             * Run Id
+             * @description The TaskRun id at this turn position in the chain.
+             */
+            run_id: string | null;
+            /**
+             * Turn Index
+             * @description 1-based turn index in the leaf's conversation (turn 1 = root, turn N = leaf). Derived from the leaf trace's user-message count.
+             */
+            turn_index: number;
+        };
+        /**
+         * RunChainResponse
+         * @description Ordered conversation chain for a multi-turn TaskRun.
+         *
+         *     The chain is rooted at the conversation start and ends with the requested
+         *     run itself (the requested run is always the final entry, even if it is the
+         *     only entry).
+         */
+        RunChainResponse: {
+            /**
+             * Chain
+             * @description Ordered root-to-leaf, includes the requested run itself as the final entry. If chain_broken is true, the list contains only the intact suffix from the leaf back to (and excluding) the break point.
+             */
+            chain: components["schemas"]["RunChainEntry"][];
+            /**
+             * Chain Broken
+             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
+             */
+            chain_broken: boolean;
+            /**
+             * Has Children
+             * @description True if at least one other TaskRun in the task references the requested run via parent_task_run_id (i.e. the requested run is an intermediate node in the chain, not a leaf). Used by the UI to warn that sending a new message from this run will create a new branch rather than extending an existing one.
+             */
+            has_children: boolean;
+        };
+        /**
          * RunConfigEvalResult
          * @description Eval results for a specific run config.
          */
@@ -8639,7 +8680,7 @@ export interface components {
             tags?: string[] | null;
             /**
              * Parent Task Run Id
-             * @description When set, treat this as a continuation of the given parent run (multiturn tasks only). The parent run's trace is passed as prior_trace, and parent_task_run_id is set on the resulting TaskRun.
+             * @description Continue the conversation started by this parent run. Multi-turn tasks only.
              */
             parent_task_run_id?: string | null;
         };
@@ -9329,7 +9370,7 @@ export interface components {
              */
             default_run_config_id?: string | null;
             /**
-             * @description Whether this task is single-turn (each run independent) or multiturn (runs continue prior runs).
+             * @description Whether this task is single-turn (each run independent) or multi-turn (runs continue prior runs). Immutable after construction: changing it would invalidate existing TaskRuns. To change, clone the task.
              * @default single_turn
              */
             turn_mode: components["schemas"]["TurnMode"];
@@ -9787,43 +9828,6 @@ export interface components {
             parent_task_run_id?: string | null;
             /** Model Type */
             readonly model_type: string;
-        };
-        /**
-         * TaskRunAncestor
-         * @description A single entry in a multiturn run's parent chain.
-         */
-        TaskRunAncestor: {
-            /**
-             * Run Id
-             * @description The TaskRun id at this turn position in the chain.
-             */
-            run_id: string;
-            /**
-             * Turn Index
-             * @description 1-based turn index in the leaf's conversation (turn 1 = root, turn N = leaf). Derived from the leaf trace's user-message count.
-             */
-            turn_index: number;
-        };
-        /**
-         * TaskRunAncestorsResponse
-         * @description Ordered ancestor chain for a multiturn TaskRun.
-         */
-        TaskRunAncestorsResponse: {
-            /**
-             * Ancestors
-             * @description Ordered root-to-leaf, includes the requested run itself as the final entry. If chain_broken is true, the list contains only the intact suffix from the leaf back to (and excluding) the break point.
-             */
-            ancestors: components["schemas"]["TaskRunAncestor"][];
-            /**
-             * Chain Broken
-             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
-             */
-            chain_broken: boolean;
-            /**
-             * Has Children
-             * @description True if at least one other TaskRun in the task references the requested run via parent_task_run_id (i.e. the requested run is an intermediate node in the chain, not a leaf). Used by the UI to warn that sending a new message from this run will create a new branch rather than extending an existing one.
-             */
-            has_children: boolean;
         };
         /**
          * TaskRunConfig
@@ -11371,7 +11375,7 @@ export interface operations {
             };
         };
     };
-    get_run_ancestors_api_projects__project_id__tasks__task_id__runs__run_id__ancestors_get: {
+    get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -11380,7 +11384,7 @@ export interface operations {
                 project_id: string;
                 /** @description The unique identifier of the task within the project. */
                 task_id: string;
-                /** @description The unique identifier of the leaf task run. */
+                /** @description The unique identifier of the task run whose chain to return. */
                 run_id: string;
             };
             cookie?: never;
@@ -11393,7 +11397,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskRunAncestorsResponse"];
+                    "application/json": components["schemas"]["RunChainResponse"];
                 };
             };
             /** @description Validation Error */

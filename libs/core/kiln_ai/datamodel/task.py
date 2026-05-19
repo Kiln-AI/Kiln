@@ -180,7 +180,8 @@ class Task(
 
     turn_mode: TurnMode = Field(
         default=TurnMode.single_turn,
-        description="Whether this task is single-turn (each run independent) or multiturn (runs continue prior runs).",
+        frozen=True,
+        description="Whether this task is single-turn (each run independent) or multi-turn (runs continue prior runs). Immutable after construction: changing it would invalidate existing TaskRuns. To change, clone the task.",
     )
 
     @model_validator(mode="after")
@@ -188,12 +189,12 @@ class Task(
         if self.turn_mode == TurnMode.multiturn:
             if self.input_json_schema is not None:
                 raise ValueError(
-                    "Multiturn tasks cannot have a structured input schema. "
-                    "Use plaintext input for multiturn tasks."
+                    "Multi-turn tasks cannot have a structured input schema. "
+                    "Use plaintext input for multi-turn tasks."
                 )
             if self.output_json_schema is not None:
                 raise ValueError(
-                    "Multiturn tasks do not support structured output yet. "
+                    "Multi-turn tasks do not support structured output yet. "
                     "Use plaintext output, or set turn_mode to single_turn."
                 )
         return self

@@ -27,7 +27,7 @@
     Task,
     TaskRun,
     StructuredOutputMode,
-    TaskRunAncestor,
+    RunChainEntry,
   } from "$lib/types"
   import { isMcpRunConfig } from "$lib/types"
   import {
@@ -541,22 +541,22 @@
     return await multiturn_run_config_component.save_new_run_config()
   }
 
-  // ---- Ancestors / fork state ----
-  let ancestors: TaskRunAncestor[] = []
-  let ancestors_chain_broken = false
-  let ancestors_load_failed = false
+  // ---- Run chain / fork state ----
+  let run_chain: RunChainEntry[] = []
+  let chain_broken = false
+  let chain_load_failed = false
   let run_has_children = false
-  let ancestors_loaded_for_run_id: string | null = null
+  let chain_loaded_for_run_id: string | null = null
   let fork_target: ForkTarget | null = null
 
-  // Reset fork + ancestor state whenever the run id changes so we don't
-  // surface stale data (banners, suffix-aligned mappings) from the previous
-  // run before the new fetch resolves.
+  // Reset fork + chain state whenever the run id changes so we don't surface
+  // stale data (banners, suffix-aligned mappings) from the previous run
+  // before the new fetch resolves.
   $: if (run_id) {
     fork_target = null
-    ancestors = []
-    ancestors_chain_broken = false
-    ancestors_load_failed = false
+    run_chain = []
+    chain_broken = false
+    chain_load_failed = false
     run_has_children = false
   }
 
@@ -564,20 +564,20 @@
     task &&
     run &&
     task.turn_mode === "multiturn" &&
-    ancestors_loaded_for_run_id !== run_id
+    chain_loaded_for_run_id !== run_id
   ) {
-    load_ancestors(project_id, task_id, run_id)
+    load_run_chain(project_id, task_id, run_id)
   }
 
-  async function load_ancestors(
+  async function load_run_chain(
     req_project_id: string,
     req_task_id: string,
     req_run_id: string,
   ) {
-    ancestors_loaded_for_run_id = req_run_id
+    chain_loaded_for_run_id = req_run_id
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/ancestors",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
         {
           params: {
             path: {
@@ -597,10 +597,10 @@
       if (error) {
         throw error
       }
-      ancestors = data?.ancestors ?? []
-      ancestors_chain_broken = !!data?.chain_broken
+      run_chain = data?.chain ?? []
+      chain_broken = !!data?.chain_broken
       run_has_children = !!data?.has_children
-      ancestors_load_failed = false
+      chain_load_failed = false
     } catch (_) {
       if (
         req_project_id !== project_id ||
@@ -608,14 +608,14 @@
         req_run_id !== run_id
       )
         return
-      ancestors = []
-      ancestors_chain_broken = false
+      run_chain = []
+      chain_broken = false
       run_has_children = false
-      ancestors_load_failed = true
+      chain_load_failed = true
     }
   }
 
-  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], ancestors)
+  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], run_chain)
 
   // Bound to the fork-mode MultiturnComposer so we can consult is_dirty()
   // / request_swap() when the user clicks fork on a different turn while
@@ -627,7 +627,7 @@
       clicked_run_id,
       trace_index,
       run?.trace ?? [],
-      ancestors,
+      run_chain,
     )
     if (!target) return
     const apply = () => {
@@ -746,7 +746,7 @@
                   />
                 </div>
               {/if}
-              {#if ancestors_chain_broken}
+              {#if chain_broken}
                 <div role="alert" data-testid="fork-chain-broken-banner">
                   <Warning
                     warning_color="warning"
@@ -756,7 +756,7 @@
                   />
                 </div>
               {/if}
-              {#if ancestors_load_failed}
+              {#if chain_load_failed}
                 <div role="alert" data-testid="fork-load-failed-banner">
                   <Warning
                     warning_color="warning"
@@ -766,14 +766,17 @@
                   />
                 </div>
               {/if}
-              <TraceComponent
-                trace={run.trace ?? []}
-                {project_id}
-                markdown_content={true}
-                {forkable_run_ids}
-                truncate_at_trace_index={fork_target?.trace_index ?? null}
-                {on_fork}
-              />
+              {#key run.id}
+                <TraceComponent
+                  trace={run.trace ?? []}
+                  {project_id}
+                  markdown_content={true}
+                  {forkable_run_ids}
+                  truncate_at_trace_index={fork_target?.trace_index ?? null}
+                  {on_fork}
+                  show_per_message_usage={task?.turn_mode === "multiturn"}
+                />
+              {/key}
               {#if fork_target}
                 <MultiturnComposer
                   bind:this={fork_composer}

@@ -11,7 +11,7 @@ from kiln_ai.datamodel import (
     Task,
     Usage,
 )
-from kiln_ai.datamodel.datamodel_enums import InputType
+from kiln_ai.datamodel.datamodel_enums import InputType, TurnMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
@@ -34,6 +34,7 @@ def test_task(tmp_path):
         parent=project,
         name="test_task",
         instruction="Task instruction",
+        turn_mode=TurnMode.multiturn,
     )
     task.save_to_file()
     return task

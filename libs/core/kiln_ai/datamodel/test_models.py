@@ -16,7 +16,7 @@ from kiln_ai.datamodel import (
     TaskRun,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id, name_validator
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, TurnMode
 from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
 
@@ -813,7 +813,9 @@ def task(tmp_path):
     project_path = tmp_path / "project.kiln"
     project = Project(name="P", path=project_path)
     project.save_to_file()
-    task = Task(name="T", instruction="Do it", parent=project)
+    task = Task(
+        name="T", instruction="Do it", parent=project, turn_mode=TurnMode.multiturn
+    )
     task.save_to_file()
     return task
 
@@ -957,7 +959,12 @@ def test_comprehensive_flat_task_run_hierarchy(tmp_path):
     project_path = tmp_path / "project.kiln"
     project = Project(name="Test Project", path=project_path)
     project.save_to_file()
-    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
     task.save_to_file()
 
     output = TaskOutput(output="test output")
@@ -1060,7 +1067,7 @@ def test_task_run_wrong_parent_type_raises(tmp_path):
 def test_task_run_runs_on_disk(tmp_path):
     project = Project(name="proj", path=tmp_path / "project.kiln")
     project.save_to_file()
-    task = Task(name="t", instruction="i", parent=project)
+    task = Task(name="t", instruction="i", parent=project, turn_mode=TurnMode.multiturn)
     task.save_to_file()
 
     parent_run = TaskRun(
