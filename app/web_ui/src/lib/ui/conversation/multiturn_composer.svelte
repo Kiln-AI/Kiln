@@ -8,7 +8,7 @@
   import {
     send_multiturn,
     type RunConfigController,
-  } from "../../../routes/(app)/dataset/[project_id]/[task_id]/[run_id]/run/multiturn_send"
+  } from "$lib/services/multiturn_send"
 
   export let mode: "append" | "fork" = "append"
   export let project_id: string
