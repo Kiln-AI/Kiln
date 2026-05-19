@@ -439,6 +439,11 @@ def _validate_trace(trace_str: str, row_number: int) -> list[ValidatedMessage]:
             )
 
         reasoning: str | None = None
+        if role != "assistant" and "reasoning_content" in msg:
+            raise KilnInvalidImportFormat(
+                f"message {k}: 'reasoning_content' is only allowed on assistant messages.",
+                row_number=row_number,
+            )
         if role == "assistant":
             rc = msg.get("reasoning_content")
             if rc is not None:
