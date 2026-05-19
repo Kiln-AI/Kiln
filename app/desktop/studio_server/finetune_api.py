@@ -603,7 +603,7 @@ def connect_fine_tune_api(app: FastAPI):
         if task.turn_mode == TurnMode.multiturn:
             raise HTTPException(
                 status_code=400,
-                detail="Fine-tuning is not supported for multiturn tasks.",
+                detail="Fine-tuning is not supported for multi-turn tasks.",
             )
         if request.provider not in finetune_registry:
             raise HTTPException(
@@ -713,6 +713,11 @@ def connect_fine_tune_api(app: FastAPI):
         data_strategy_typed = ChatStrategy(data_strategy)
 
         task = task_from_id(project_id, task_id)
+        if task.turn_mode == TurnMode.multiturn:
+            raise HTTPException(
+                status_code=400,
+                detail="Fine-tuning is not supported for multi-turn tasks.",
+            )
         dataset = DatasetSplit.from_id_and_parent_path(dataset_id, task.path)
         if dataset is None:
             raise HTTPException(

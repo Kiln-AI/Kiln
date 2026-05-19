@@ -27,7 +27,7 @@
     Task,
     TaskRun,
     StructuredOutputMode,
-    TaskRunAncestor,
+    RunChainEntry,
   } from "$lib/types"
   import { isMcpRunConfig } from "$lib/types"
   import {
@@ -38,7 +38,7 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import { prompt_link } from "$lib/utils/link_builder"
+  import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
@@ -260,6 +260,19 @@
       properties.push({
         name: "ID",
         value: run.id,
+      })
+    }
+
+    if (run?.parent_task_run_id) {
+      const parent_link = dataset_item_link(
+        project_id,
+        task_id,
+        run.parent_task_run_id,
+      )
+      properties.push({
+        name: "Parent ID",
+        value: run.parent_task_run_id,
+        link: parent_link ?? undefined,
       })
     }
 
@@ -528,41 +541,43 @@
     return await multiturn_run_config_component.save_new_run_config()
   }
 
-  // ---- Ancestors / fork state ----
-  let ancestors: TaskRunAncestor[] = []
-  let ancestors_chain_broken = false
-  let ancestors_load_failed = false
-  let ancestors_loaded_for_run_id: string | null = null
+  // ---- Run chain / fork state ----
+  let run_chain: RunChainEntry[] = []
+  let chain_broken = false
+  let chain_load_failed = false
+  let run_has_children = false
+  let chain_loaded_for_run_id: string | null = null
   let fork_target: ForkTarget | null = null
 
-  // Reset fork + ancestor state whenever the run id changes so we don't
-  // surface stale data (banners, suffix-aligned mappings) from the previous
-  // run before the new fetch resolves.
+  // Reset fork + chain state whenever the run id changes so we don't surface
+  // stale data (banners, suffix-aligned mappings) from the previous run
+  // before the new fetch resolves.
   $: if (run_id) {
     fork_target = null
-    ancestors = []
-    ancestors_chain_broken = false
-    ancestors_load_failed = false
+    run_chain = []
+    chain_broken = false
+    chain_load_failed = false
+    run_has_children = false
   }
 
   $: if (
     task &&
     run &&
     task.turn_mode === "multiturn" &&
-    ancestors_loaded_for_run_id !== run_id
+    chain_loaded_for_run_id !== run_id
   ) {
-    load_ancestors(project_id, task_id, run_id)
+    load_run_chain(project_id, task_id, run_id)
   }
 
-  async function load_ancestors(
+  async function load_run_chain(
     req_project_id: string,
     req_task_id: string,
     req_run_id: string,
   ) {
-    ancestors_loaded_for_run_id = req_run_id
+    chain_loaded_for_run_id = req_run_id
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/ancestors",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
         {
           params: {
             path: {
@@ -582,9 +597,10 @@
       if (error) {
         throw error
       }
-      ancestors = data?.ancestors ?? []
-      ancestors_chain_broken = !!data?.chain_broken
-      ancestors_load_failed = false
+      run_chain = data?.chain ?? []
+      chain_broken = !!data?.chain_broken
+      run_has_children = !!data?.has_children
+      chain_load_failed = false
     } catch (_) {
       if (
         req_project_id !== project_id ||
@@ -592,13 +608,14 @@
         req_run_id !== run_id
       )
         return
-      ancestors = []
-      ancestors_chain_broken = false
-      ancestors_load_failed = true
+      run_chain = []
+      chain_broken = false
+      run_has_children = false
+      chain_load_failed = true
     }
   }
 
-  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], ancestors)
+  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], run_chain)
 
   // Bound to the fork-mode MultiturnComposer so we can consult is_dirty()
   // / request_swap() when the user clicks fork on a different turn while
@@ -610,7 +627,7 @@
       clicked_run_id,
       trace_index,
       run?.trace ?? [],
-      ancestors,
+      run_chain,
     )
     if (!target) return
     const apply = () => {
@@ -719,7 +736,17 @@
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
             <div class="grow flex flex-col gap-6">
-              {#if ancestors_chain_broken}
+              {#if run_has_children}
+                <div role="alert" data-testid="run-has-children-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="info"
+                    warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
+                    outline={true}
+                  />
+                </div>
+              {/if}
+              {#if chain_broken}
                 <div role="alert" data-testid="fork-chain-broken-banner">
                   <Warning
                     warning_color="warning"
@@ -729,7 +756,7 @@
                   />
                 </div>
               {/if}
-              {#if ancestors_load_failed}
+              {#if chain_load_failed}
                 <div role="alert" data-testid="fork-load-failed-banner">
                   <Warning
                     warning_color="warning"
@@ -739,14 +766,17 @@
                   />
                 </div>
               {/if}
-              <TraceComponent
-                trace={run.trace ?? []}
-                {project_id}
-                markdown_content={true}
-                {forkable_run_ids}
-                truncate_at_trace_index={fork_target?.trace_index ?? null}
-                {on_fork}
-              />
+              {#key run.id}
+                <TraceComponent
+                  trace={run.trace ?? []}
+                  {project_id}
+                  markdown_content={true}
+                  {forkable_run_ids}
+                  truncate_at_trace_index={fork_target?.trace_index ?? null}
+                  {on_fork}
+                  show_per_message_usage={task?.turn_mode === "multiturn"}
+                />
+              {/key}
               {#if fork_target}
                 <MultiturnComposer
                   bind:this={fork_composer}
@@ -792,25 +822,7 @@
               </div>
             </div>
             <div class="w-72 2xl:w-96 flex-none flex flex-col">
-              <PropertyList
-                properties={properties_for_list}
-                title="Properties"
-              />
-              <button
-                class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
-                on:click={() => (see_all_properties = !see_all_properties)}
-              >
-                {see_all_properties ? "See Less" : "See All"}
-              </button>
-              <div class="mt-8">
-                <RunSidebar
-                  {project_id}
-                  {task}
-                  {run}
-                  on_run_updated={(updated) => (run = updated)}
-                />
-              </div>
-              <div class="text-xl font-bold mt-8 mb-4">Options</div>
+              <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
                   <SavedRunConfigurationsDropdown
@@ -835,6 +847,26 @@
                     show_name_field={false}
                   />
                 {/key}
+              </div>
+              <div class="mt-8">
+                <PropertyList
+                  properties={properties_for_list}
+                  title="Properties"
+                />
+                <button
+                  class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                  on:click={() => (see_all_properties = !see_all_properties)}
+                >
+                  {see_all_properties ? "See Less" : "See All"}
+                </button>
+              </div>
+              <div class="mt-8">
+                <RunSidebar
+                  {project_id}
+                  {task}
+                  {run}
+                  on_run_updated={(updated) => (run = updated)}
+                />
               </div>
             </div>
           </div>

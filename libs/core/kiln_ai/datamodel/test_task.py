@@ -21,8 +21,6 @@ from kiln_ai.datamodel.spec_properties import (
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
     TaskOutput,
     normalize_rating,
 )
@@ -535,6 +533,7 @@ def test_taskrun_parent_task_run_id_persists_on_load(tmp_path):
         name="Test Task",
         instruction="Test instruction",
         path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
     )
     task.save_to_file()
 
@@ -597,6 +596,7 @@ def test_multiple_runs_flat_under_task_with_parent_task_run_chain(tmp_path):
         name="Test Task",
         instruction="Test instruction",
         path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
     )
     task.save_to_file()
 
@@ -814,36 +814,84 @@ def test_task_single_turn_allows_both_schemas():
     assert task.output_json_schema == json_joke_schema
 
 
-def _make_run_for_task(task: Task, parent_task_run_id: str | None = None) -> TaskRun:
-    run = TaskRun(
-        parent=task,
-        parent_task_run_id=parent_task_run_id,
-        input="in",
-        input_source=DataSource(
-            type=DataSourceType.human, properties={"created_by": "Test User"}
-        ),
-        output=TaskOutput(
-            output="out",
-            source=DataSource(
-                type=DataSourceType.synthetic,
-                properties={
-                    "model_name": "gpt_4o",
-                    "model_provider": "ollama",
-                    "adapter_name": "kiln_langchain_adapter",
-                    "prompt_id": "simple_prompt_builder",
-                },
-            ),
-        ),
+def test_task_turn_mode_is_frozen_after_construction(tmp_path):
+    """turn_mode is immutable at the SDK level. Assignment after construction
+    must raise — the field is the load-bearing invariant for
+    parent_task_run_id and dataset/eval iteration semantics."""
+    task = Task(
+        name="Test",
+        instruction="i",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.single_turn,
     )
-    run.save_to_file()
-    return run
+    with pytest.raises(ValidationError, match="frozen"):
+        task.turn_mode = TurnMode.multiturn  # type: ignore[misc]
 
 
-def _make_task_for_runs_tests(tmp_path) -> Task:
+def test_task_turn_mode_immutable_after_load(tmp_path):
+    """Loading a task from disk and trying to mutate turn_mode must raise."""
+    task = Task(
+        name="Test",
+        instruction="i",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+    loaded = Task.load_from_file(task.path)
+    assert loaded.turn_mode == TurnMode.multiturn
+    with pytest.raises(ValidationError, match="frozen"):
+        loaded.turn_mode = TurnMode.single_turn  # type: ignore[misc]
+
+
+def test_taskrun_parent_task_run_id_rejected_on_single_turn_task(tmp_path):
+    """A TaskRun pointing to a parent_task_run_id is invalid when the parent
+    Task is single-turn — Task.runs() would silently drop the parent."""
+    task = Task(
+        name="Single-turn",
+        instruction="i",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.single_turn,
+    )
+    task.save_to_file()
+    parent_run = TaskRun(input="p", output=TaskOutput(output="o"), parent=task)
+    parent_run.save_to_file()
+    with pytest.raises(ValidationError, match="multi-turn"):
+        TaskRun(
+            input="c",
+            output=TaskOutput(output="o"),
+            parent=task,
+            parent_task_run_id=parent_run.id,
+        )
+
+
+def test_taskrun_parent_task_run_id_allowed_on_multiturn_task(tmp_path):
+    """The same construction must succeed for a multi-turn parent task."""
+    task = Task(
+        name="Multi-turn",
+        instruction="i",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+    parent_run = TaskRun(input="p", output=TaskOutput(output="o"), parent=task)
+    parent_run.save_to_file()
+    child = TaskRun(
+        input="c",
+        output=TaskOutput(output="o"),
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
+    assert child.parent_task_run_id == parent_run.id
+
+
+def _make_task_for_runs_tests(
+    tmp_path, turn_mode: TurnMode = TurnMode.multiturn
+) -> Task:
     task = Task(
         name="Test Task",
         instruction="Test instruction",
         path=tmp_path / "task.kiln",
+        turn_mode=turn_mode,
     )
     task.save_to_file()
     return task

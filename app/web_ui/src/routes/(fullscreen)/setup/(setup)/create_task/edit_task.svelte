@@ -383,7 +383,7 @@
         <div class="flex flex-col gap-1" data-testid="turn-mode-readonly">
           <div class="text-sm">
             <span class="font-medium">Task type:</span>
-            <span>{is_multiturn ? "Multiturn" : "Single-turn"}</span>
+            <span>{is_multiturn ? "Multi-turn" : "Single-turn"}</span>
           </div>
           <div class="text-xs text-gray-500">
             This setting can't be changed after the task is created.
@@ -425,7 +425,7 @@
                 bind:group={turn_mode}
               />
               <div class="flex flex-col grow text-left">
-                <span class="label-text">Multiturn</span>
+                <span class="label-text">Multi-turn</span>
                 <span class="text-xs text-gray-500">
                   A back-and-forth conversation with multiple turns.
                 </span>
@@ -449,7 +449,7 @@
           class="text-sm text-gray-500"
           data-testid="multiturn-input-schema-note"
         >
-          Multiturn tasks use plain-text input.
+          Multi-turn tasks use plain-text input.
         </div>
       {:else if editing}
         <div>
@@ -493,7 +493,7 @@
           class="text-sm text-gray-500"
           data-testid="multiturn-output-schema-note"
         >
-          Structured output is not supported for multiturn tasks yet.
+          Structured output is not supported for multi-turn tasks yet.
         </div>
       {:else if editing}
         <div>

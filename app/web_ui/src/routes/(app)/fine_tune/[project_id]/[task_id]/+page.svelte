@@ -117,7 +117,7 @@
         href: `/optimize/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={is_multiturn || is_empty
+    action_buttons={task === null || is_multiturn || is_empty
       ? []
       : [
           {
@@ -127,14 +127,14 @@
           },
         ]}
   >
-    {#if finetunes_loading}
+    {#if finetunes_loading || task === null}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if is_multiturn}
       <div class="flex flex-col items-center justify-center min-h-[60vh]">
         <Warning
-          warning_message="Fine-tuning is not yet supported for multiturn tasks."
+          warning_message="Fine-tuning is not supported for multi-turn tasks."
           warning_color="warning"
           warning_icon="info"
         />

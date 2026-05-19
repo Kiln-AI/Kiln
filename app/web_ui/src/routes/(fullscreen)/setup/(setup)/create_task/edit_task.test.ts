@@ -129,10 +129,10 @@ describe("EditTask — turn_mode selector", () => {
     await tick()
 
     expect(getByTestId("multiturn-input-schema-note").textContent).toContain(
-      "Multiturn tasks use plain-text input.",
+      "Multi-turn tasks use plain-text input.",
     )
     expect(getByTestId("multiturn-output-schema-note").textContent).toContain(
-      "Structured output is not supported for multiturn tasks yet.",
+      "Structured output is not supported for multi-turn tasks yet.",
     )
 
     expect(multi.checked).toBe(true)
@@ -176,7 +176,7 @@ describe("EditTask — turn_mode selector", () => {
 
     const readonly = getByTestId("turn-mode-readonly")
     expect(readonly.textContent).toContain("Task type:")
-    expect(readonly.textContent).toContain("Multiturn")
+    expect(readonly.textContent).toContain("Multi-turn")
     expect(readonly.textContent).toContain(
       "This setting can't be changed after the task is created.",
     )

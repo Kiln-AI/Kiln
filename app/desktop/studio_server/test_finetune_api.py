@@ -735,11 +735,26 @@ async def test_create_finetune(
     )
 
 
-def test_create_finetune_multiturn_task_rejected(client, test_task, monkeypatch):
-    test_task.turn_mode = TurnMode.multiturn
+def _make_multiturn_task(tmp_path) -> Task:
+    project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
+    project.save_to_file()
+    task = Task(
+        name="Multi-turn Test Task",
+        instruction="Test instruction",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+    return task
+
+
+def test_create_finetune_multiturn_task_rejected(client, tmp_path, monkeypatch):
+    # Build a fresh multi-turn task locally rather than mutating the shared
+    # test_task fixture (turn_mode is frozen post-construction).
+    multiturn_task = _make_multiturn_task(tmp_path)
     monkeypatch.setattr(
         "app.desktop.studio_server.finetune_api.task_from_id",
-        Mock(return_value=test_task),
+        Mock(return_value=multiturn_task),
     )
 
     request_data = {
@@ -759,7 +774,33 @@ def test_create_finetune_multiturn_task_rejected(client, test_task, monkeypatch)
     assert response.status_code == 400
     assert (
         response.json()["message"]
-        == "Fine-tuning is not supported for multiturn tasks."
+        == "Fine-tuning is not supported for multi-turn tasks."
+    )
+
+
+def test_download_dataset_jsonl_multiturn_task_rejected(client, tmp_path, monkeypatch):
+    multiturn_task = _make_multiturn_task(tmp_path)
+    monkeypatch.setattr(
+        "app.desktop.studio_server.finetune_api.task_from_id",
+        Mock(return_value=multiturn_task),
+    )
+
+    response = client.get(
+        "/api/download_dataset_jsonl",
+        params={
+            "project_id": "project1",
+            "task_id": "task1",
+            "dataset_id": "split1",
+            "split_name": "train",
+            "format_type": "openai_chat_jsonl",
+            "data_strategy": "final_only",
+        },
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Fine-tuning is not supported for multi-turn tasks."
     )
 
 

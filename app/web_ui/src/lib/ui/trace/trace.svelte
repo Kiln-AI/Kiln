@@ -28,6 +28,11 @@
   export let on_fork:
     | ((run_id: string, trace_index: number) => void)
     | undefined = undefined
+  // Show the per-message usage/latency tooltip. Off by default because for
+  // single-turn runs the run-level usage panel already covers it; the
+  // per-message breakdown is only meaningful for multi-turn conversations
+  // where each turn has its own usage to compare.
+  export let show_per_message_usage: boolean = false
 
   function should_render_markdown(message: TraceMessage): boolean {
     return markdown_content && message.role !== "tool"
@@ -414,13 +419,14 @@
                     {/if}
                   </div>
                 {/if}
-                {#if (message.role === "user" && fork_run_id && on_fork) || has_usage_info(message)}
+                {#if (message.role === "user" && fork_run_id && on_fork) || (show_per_message_usage && has_usage_info(message))}
                   {@const show_fork = !!(
                     message.role === "user" &&
                     fork_run_id &&
                     on_fork
                   )}
-                  {@const show_info = has_usage_info(message)}
+                  {@const show_info =
+                    show_per_message_usage && has_usage_info(message)}
                   <div class="flex justify-end gap-1">
                     {#if show_info}
                       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -451,8 +457,15 @@
                             offset_px={6}
                             role="tooltip"
                           >
+                            <!-- svelte-ignore a11y-no-static-element-interactions -->
                             <div
                               class="px-3 py-2 text-xs text-base-content bg-stone-200 rounded-md shadow-lg whitespace-pre-line max-w-xs"
+                              on:mouseenter={() =>
+                                (usageTooltipVisibleIndex = index)}
+                              on:mouseleave={() => {
+                                if (usageTooltipVisibleIndex === index)
+                                  usageTooltipVisibleIndex = -1
+                              }}
                             >
                               {usage_tooltip(message)}
                             </div>
