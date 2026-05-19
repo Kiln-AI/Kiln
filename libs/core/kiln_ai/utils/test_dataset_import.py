@@ -968,7 +968,7 @@ def test_import_csv_multiturn_basic(multiturn_task: Task, tmp_path):
         tmp_path,
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     assert len(runs) == 2
     assert result.imported_run_count == 2
     assert result.imported_conversation_count == 1
@@ -989,7 +989,7 @@ def test_import_csv_multiturn_single_turn_conversation(multiturn_task: Task, tmp
         tmp_path,
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     assert len(runs) == 1
     assert runs[0].parent_task_run_id is None
     assert result.imported_run_count == 1
@@ -1006,7 +1006,7 @@ def test_import_csv_multiturn_multiple_conversations(multiturn_task: Task, tmp_p
     assert result.imported_conversation_count == 2
     assert result.imported_run_count == 3
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     # The root TaskRuns of each chain must have no parent.
     roots = [r for r in runs if r.parent_task_run_id is None]
     assert len(roots) == 2
@@ -1033,7 +1033,7 @@ def test_import_csv_multiturn_reasoning_content(multiturn_task: Task, tmp_path):
         tmp_path,
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     assert len(runs) == 1
     assert runs[0].intermediate_outputs == {"reasoning": "thinking about ping"}
 
@@ -1045,7 +1045,7 @@ def test_import_csv_multiturn_no_reasoning_content(multiturn_task: Task, tmp_pat
         tmp_path,
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     assert len(runs) == 1
     assert runs[0].intermediate_outputs is None
 
@@ -1057,7 +1057,7 @@ def test_import_csv_multiturn_tags_on_all_runs(multiturn_task: Task, tmp_path):
         tmp_path,
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     assert len(runs) == 2
     for run in runs:
         assert "alpha" in run.tags
@@ -1075,7 +1075,7 @@ def test_import_csv_multiturn_splits_apply_to_leaves_only(
         tag_splits={"train": 0.7, "test": 0.3},
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     # A leaf is any node that is not referenced as a parent by any other run.
     # This stays correct for chains of arbitrary depth (not just 2 turns).
     referenced_parent_ids = {
@@ -1114,7 +1114,7 @@ def test_import_csv_multiturn_input_output_derived(multiturn_task: Task, tmp_pat
         tmp_path,
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     inputs = {r.input for r in runs}
     outputs = {r.output.output for r in runs}
     assert inputs == {"Hi", "What is 2+2?"}
@@ -1131,7 +1131,7 @@ def test_import_csv_multiturn_data_source_is_file_import(
         file_name="my_upload.csv",
     )
 
-    runs = multiturn_task.filter_runs(include_intermediate_runs=True)
+    runs = multiturn_task.runs(include_intermediate_runs=True)
     for r in runs:
         assert r.input_source is not None
         assert r.input_source.type == DataSourceType.file_import
@@ -1363,7 +1363,7 @@ def test_import_csv_multiturn_preflight_no_partial_save(multiturn_task: Task, tm
     with pytest.raises(KilnInvalidImportFormat):
         _import_multiturn_csv(multiturn_task, rows, tmp_path)
 
-    assert multiturn_task.filter_runs(include_intermediate_runs=True) == []
+    assert multiturn_task.runs(include_intermediate_runs=True) == []
 
 
 def test_import_csv_single_turn_task_rejects_trace_csv(base_task: Task, tmp_path):
