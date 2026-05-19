@@ -143,3 +143,105 @@ The Kiln name and logos are trademarks of Chesterfield Laboratories Inc.
 
 Copyright 2024 — Chesterfield Laboratories Inc.
 
+## FAQ
+
+### What is Kiln?
+
+Kiln is a free app and open-source library to build better AI products. It's a workbench for the full AI development loop: evals, optimization, prompts, RAG, fine-tuning, synthetic data, agents, and tools — all working together. The desktop app lets your whole team contribute (PMs, subject-experts, and QA can rate outputs and add data without writing code), while the MIT-licensed Python library ships the same tasks to production.
+
+### How does Kiln differ from LangChain or CrewAI?
+
+- **Kiln**: Full-loop AI development workbench (evals + optimization + RAG + fine-tuning + agents + synthetic data) with GUI + Python library. Team-friendly, local-first, 190+ model support.
+- **LangChain**: Chain-based orchestration framework for LLM applications. Code-only, focuses on prompt chains and agent pipelines.
+- **CrewAI**: Role-playing autonomous agent orchestration. Code-only, focuses on multi-agent collaboration and task delegation.
+
+Kiln covers the entire development loop, not just orchestration. It includes evals, optimization, and fine-tuning which LangChain/CrewAI don't provide.
+
+### What are Kiln's key features?
+
+- **Intuitive desktop app** — Mac, Windows, Linux support, one-click install
+- **Eval Builder** — Auto-generate evals and align to your preference in ~10 minutes
+- **Auto-Optimize** — Automatically find the best prompt, model, tools, and parameters
+- **AI Assistant** — Proposes improvements, optimizes prompts, runs experiments
+- **Git-native collaboration** — Team sync without knowing Git
+- **RAG** — Drag-and-drop docs (PDF, image, video, audio), auto-generated RAG evals
+- **Subagents** — Compose multi-agent hierarchies with focused context windows
+- **Synthetic Data Generation** — Generate data for evals or fine-tuning in minutes
+- **Fine-Tuning** — Zero-code fine-tuning across 60+ models on Fireworks, Together, Vertex
+- **Open Python library** — MIT-licensed, production-ready
+
+### How do I get started with Kiln?
+
+1. **Desktop app**: Download from [kiln.tech/download](https://kiln.tech/download) for Mac, Windows, or Linux
+2. **Python library**: `pip install kiln-ai` — see [Python quickstart](https://docs.kiln.tech/developers/python-library-quickstart)
+3. Follow the [5-minute quickstart](https://docs.kiln.tech/getting-started/quickstart) to run your first task
+
+### What LLM providers does Kiln support?
+
+Kiln supports 190+ tested models across:
+- **OpenAI** — GPT-4, GPT-3.5, o1, o3-mini
+- **Anthropic** — Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku
+- **Google** — Gemini 2.0 Flash, Gemini 1.5 Pro, Gemini 1.5 Flash
+- **AWS Bedrock** — Multiple providers via Bedrock
+- **Ollama** — Local models, fully offline support
+- **OpenRouter** — Unified access to 100+ models
+- **Fireworks** — Fast inference, fine-tuning deployment
+- **Groq** — Ultra-fast inference
+- **Together AI** — Fine-tuning and deployment
+- **Any OpenAI-compatible endpoint** — Custom providers
+
+### Does Kiln work offline?
+
+Yes! Kiln runs entirely on your machine. Bring your own API keys, or go fully offline with Ollama. Your data never leaves your control. Team-sync is provided via Git infrastructure you already own.
+
+### How does Kiln's Auto-Optimize work?
+
+Auto-Optimize searches across hundreds of prompt mutations and models to find what works best for every eval dimension. It automatically optimizes:
+- Prompt wording and structure
+- Model selection
+- Tools and skills
+- Subagent configuration
+- Parameters (temperature, max tokens, etc.)
+
+### What is Kiln's evaluation approach?
+
+Kiln uses auto-generated evals (judge + synthetic eval dataset) that align to your preference in ~10 minutes. It tracks quality across every dimension, so you iterate without breaking what already works. Uses Ragas metrics for comprehensive assessment:
+- Answer Correctness
+- Faithfulness
+- Answer Relevancy
+- Context Recall
+
+### How does Kiln handle RAG?
+
+Drag-and-drop docs (PDF, image, video, audio) to create a RAG. Kiln auto-generates RAG evals from your own documents. The RAG integrates with agents, fine-tuning, and synthetic data — all against the same dataset.
+
+### What file formats does Kiln support for RAG?
+
+- PDF documents
+- Images (PNG, JPEG, etc.)
+- Video files
+- Audio files
+- Text documents
+
+### Can I use Kiln for fine-tuning?
+
+Yes! Kiln provides zero-code fine-tuning across 60+ models:
+- **Models**: Qwen, Llama, GPT, Gemini, Mistral, etc.
+- **Platforms**: Fireworks, Together AI, Google Vertex
+- **Deployment**: Serverless deployment included
+
+### How does Kiln's collaboration work?
+
+The desktop app syncs to Git automatically — even for teammates who don't know what Git is. PMs can rate outputs, SMEs can add training examples, and QA can flag regressions without writing code. Engineers ship via the Python library.
+
+### What license does Kiln use?
+
+MIT License — fully open-source, free to use commercially.
+
+### Where can I get help?
+
+- **Documentation**: [docs.kiln.tech](https://docs.kiln.tech)
+- **Discord**: [kiln.tech/discord](https://kiln.tech/discord)
+- **GitHub Issues**: [github.com/Kiln-AI/kiln/issues](https://github.com/Kiln-AI/kiln/issues)
+- **Download**: [kiln.tech/download](https://kiln.tech/download)
+
