@@ -1148,6 +1148,15 @@ def test_import_csv_multiturn_missing_trace_column(multiturn_task: Task, tmp_pat
     assert "trace" in str(e.value)
 
 
+def test_import_csv_multiturn_rejects_singleturn_columns_when_trace_present(
+    multiturn_task: Task, tmp_path
+):
+    rows = [{"trace": json.dumps(_single_pair_trace()), "input": "x", "output": "y"}]
+    with pytest.raises(KilnInvalidImportFormat) as e:
+        _import_multiturn_csv(multiturn_task, rows, tmp_path)
+    assert "Task is multiturn" in str(e.value)
+
+
 def test_import_csv_multiturn_invalid_json_trace(multiturn_task: Task, tmp_path):
     with pytest.raises(KilnInvalidImportFormat) as e:
         _import_multiturn_csv(multiturn_task, [{"trace": "not json"}], tmp_path)
@@ -1383,6 +1392,26 @@ def test_import_csv_single_turn_task_rejects_trace_csv(base_task: Task, tmp_path
 
     assert "Task is single-turn" in str(e.value)
     assert "input, output" in str(e.value)
+
+
+def test_import_csv_single_turn_rejects_trace_when_singleturn_columns_present(
+    base_task: Task, tmp_path
+):
+    rows = [{"input": "i", "output": "o", "trace": json.dumps(_single_pair_trace())}]
+    file_path = dicts_to_file_as_csv(rows, "mixed.csv", tmp_path)
+
+    importer = DatasetFileImporter(
+        base_task,
+        ImportConfig(
+            dataset_type=DatasetImportFormat.CSV,
+            dataset_path=file_path,
+            dataset_name="mixed.csv",
+        ),
+    )
+    with pytest.raises(KilnInvalidImportFormat) as e:
+        importer.create_runs_from_file()
+
+    assert "Task is single-turn" in str(e.value)
 
 
 def test_import_csv_single_turn_returns_imported_result(base_task: Task, tmp_path):

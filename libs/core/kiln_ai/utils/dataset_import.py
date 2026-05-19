@@ -297,16 +297,18 @@ def _import_csv_single_turn(
 
         # Check for required headers
         actual_headers = set(reader.fieldnames)
+        # Detect a multiturn-shaped CSV uploaded to a single-turn task and
+        # tell the user how to fix it. Fires unconditionally on `trace` so
+        # multiturn data isn't silently dropped when single-turn columns are
+        # also present.
+        if "trace" in actual_headers:
+            raise KilnInvalidImportFormat(
+                "Task is single-turn; expected columns: input, output "
+                "(and optional reasoning, chain_of_thought, tags). Got: "
+                f"{', '.join(sorted(actual_headers))}."
+            )
         missing_headers = required_headers - actual_headers
         if missing_headers:
-            # Detect a multiturn-shaped CSV uploaded to a single-turn task and
-            # tell the user how to fix it.
-            if "trace" in actual_headers:
-                raise KilnInvalidImportFormat(
-                    "Task is single-turn; expected columns: input, output "
-                    "(and optional reasoning, chain_of_thought, tags). Got: "
-                    f"{', '.join(sorted(actual_headers))}."
-                )
             raise KilnInvalidImportFormat(
                 f"Missing required headers: {', '.join(missing_headers)}. "
                 f"Required headers are: {', '.join(required_headers)}"
@@ -558,15 +560,16 @@ def _import_csv_multiturn(
             )
 
         actual_headers = set(reader.fieldnames)
+        # Detect a single-turn-shaped CSV uploaded to a multiturn task and
+        # tell the user how to fix it. Fires unconditionally on `input`/`output`
+        # so single-turn data isn't silently dropped when `trace` is also present.
+        if "input" in actual_headers or "output" in actual_headers:
+            raise KilnInvalidImportFormat(
+                "Task is multiturn; expected column: trace (and optional tags). "
+                f"Got: {', '.join(sorted(actual_headers))}."
+            )
         missing_headers = required_headers - actual_headers
         if missing_headers:
-            # Detect a single-turn-shaped CSV uploaded to a multiturn task and
-            # tell the user how to fix it.
-            if "input" in actual_headers or "output" in actual_headers:
-                raise KilnInvalidImportFormat(
-                    "Task is multiturn; expected column: trace (and optional tags). "
-                    f"Got: {', '.join(sorted(actual_headers))}."
-                )
             raise KilnInvalidImportFormat(
                 f"Missing required headers: {', '.join(missing_headers)}. "
                 f"Required headers are: {', '.join(required_headers)}"
