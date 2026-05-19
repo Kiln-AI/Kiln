@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
@@ -85,6 +86,57 @@ class Skill(KilnParentedModel):
     def read_asset(self, relative_path: str) -> str:
         """Read an asset file. Raises ValueError for path traversal, non-text, or if the path is a folder, FileNotFoundError if missing."""
         return self._read_resource(self.assets_dir(), relative_path)
+
+    def count_file_lines(self, resource_root: str, relative_path: str) -> int:
+        """Count lines in a resource file. resource_root is 'references' or 'assets'.
+        Reuses _read_resource for the traversal guard and decoding rules."""
+        if resource_root == "references":
+            base_dir = self.references_dir()
+        elif resource_root == "assets":
+            base_dir = self.assets_dir()
+        else:
+            raise ValueError(
+                f"Unknown resource root: {resource_root!r}. Expected 'references' or 'assets'."
+            )
+        text = self._read_resource(base_dir, relative_path)
+        if not text:
+            return 0
+        newlines = text.count("\n")
+        return newlines if text.endswith("\n") else newlines + 1
+
+    def iter_markdown_references(
+        self, prefix: str | None = None
+    ) -> Iterator[tuple[str, str]]:
+        """Yield (relative_path, text_content) for each .md file under references/,
+        optionally scoped by prefix (a subpath under references/). Files that fail
+        UTF-8 decode are skipped silently. Raises ValueError if prefix attempts path
+        traversal outside references/."""
+        base_dir = self.references_dir()
+        if not base_dir.exists():
+            return
+        base_resolved = base_dir.resolve()
+
+        if prefix:
+            target = (base_dir / prefix).resolve()
+            try:
+                target.relative_to(base_resolved)
+            except ValueError:
+                raise ValueError("Path traversal is not allowed") from None
+        else:
+            target = base_resolved
+
+        if not target.exists() or not target.is_dir():
+            return
+
+        for md_path in sorted(target.rglob("*.md")):
+            if not md_path.is_file():
+                continue
+            try:
+                content = md_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            rel = md_path.relative_to(base_resolved).as_posix()
+            yield (rel, content)
 
     def _read_resource(self, base_dir: Path, relative_path: str) -> str:
         """Read a resource file, validating it resolves within base_dir and is readable text."""

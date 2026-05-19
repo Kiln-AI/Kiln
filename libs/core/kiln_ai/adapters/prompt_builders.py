@@ -19,25 +19,37 @@ class PromptExample:
     output: str
 
 
-def build_skills_prompt_section(skills: list[Skill] | None) -> str | None:
+def build_skills_prompt_section(
+    skills: list[Skill] | None,
+    skill_search_enabled: bool = False,
+) -> str | None:
     """Build a system prompt section listing available skills.
 
     This is a standalone function so both the inference adapter and the
     fine-tune pipeline can include the same skills instructions in the
-    system prompt.
+    system prompt. When ``skill_search_enabled`` is True, the section also
+    points the agent at the ``skill_search`` tool for finding references
+    by content.
     """
     if not skills:
         return None
 
     skill_lines = "\n".join(f"- `{s.name}`\n  {s.description}" for s in skills)
 
-    return (
-        "# Skills\n\n"
-        "When a Skill is relevant, load it with `skill(name)` and follow its instructions.\n"
-        "Load additional Skill resources only if needed with `skill(name, resource)`.\n"
-        "## Available Skills\n\n"
-        f"{skill_lines}"
-    )
+    intro_lines = [
+        "When a Skill is relevant, load it with `skill(name)` and follow its instructions.",
+        "Load additional Skill resources with `skill(name, resource)`. "
+        "Pass a directory path (e.g. 'references/knowledge/') to see a listing with line counts.",
+    ]
+    if skill_search_enabled:
+        intro_lines.append(
+            "Use `skill_search(name, pattern)` to find references by content "
+            "when you don't know which file to read."
+        )
+
+    intro = "\n".join(intro_lines)
+
+    return "# Skills\n\n" + intro + "\n## Available Skills\n\n" + skill_lines
 
 
 class BasePromptBuilder(metaclass=ABCMeta):
@@ -66,6 +78,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
         self,
         include_json_instructions: bool,
         skills: list[Skill] | None = None,
+        skill_search_enabled: bool = False,
     ) -> str:
         """Build and return the complete prompt string.
 
@@ -74,6 +87,8 @@ class BasePromptBuilder(metaclass=ABCMeta):
             skills: Optional list of skills to include in the prompt. When provided,
                 a skills instruction section is appended so the model knows which
                 skills are available.
+            skill_search_enabled: When True, the skills section additionally points
+                the agent at the ``skill_search`` tool for finding references by content.
 
         Returns:
             str: The constructed prompt.
@@ -86,7 +101,9 @@ class BasePromptBuilder(metaclass=ABCMeta):
                 + f"\n\n# Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.task.output_schema()}\n```"
             )
 
-        skills_section = build_skills_prompt_section(skills)
+        skills_section = build_skills_prompt_section(
+            skills, skill_search_enabled=skill_search_enabled
+        )
         if skills_section:
             prompt = prompt + "\n\n" + skills_section
 
@@ -109,18 +126,28 @@ class BasePromptBuilder(metaclass=ABCMeta):
         """
         return None
 
-    def build_prompt_for_ui(self, skills: list[Skill] | None = None) -> str:
+    def build_prompt_for_ui(
+        self,
+        skills: list[Skill] | None = None,
+        skill_search_enabled: bool = False,
+    ) -> str:
         """Build a prompt for the UI. It includes additional instructions (like chain of thought), even if they are passed to the model in stages.
 
         Designed for end-user consumption, not for model consumption.
 
         Args:
             skills: Optional list of skills to include in the prompt display.
+            skill_search_enabled: When True, the skills section points the agent at
+                the ``skill_search`` tool alongside ``skill``.
 
         Returns:
             str: The constructed prompt string.
         """
-        base_prompt = self.build_prompt(include_json_instructions=False, skills=skills)
+        base_prompt = self.build_prompt(
+            include_json_instructions=False,
+            skills=skills,
+            skill_search_enabled=skill_search_enabled,
+        )
         cot_prompt = self.chain_of_thought_prompt()
         if cot_prompt:
             base_prompt += "\n\n# Thinking Instructions\n\n" + cot_prompt
