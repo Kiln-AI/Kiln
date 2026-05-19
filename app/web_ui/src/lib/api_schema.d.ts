@@ -9819,6 +9819,11 @@ export interface components {
              * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
              */
             chain_broken: boolean;
+            /**
+             * Has Children
+             * @description True if at least one other TaskRun in the task references the requested run via parent_task_run_id (i.e. the requested run is an intermediate node in the chain, not a leaf). Used by the UI to warn that sending a new message from this run will create a new branch rather than extending an existing one.
+             */
+            has_children: boolean;
         };
         /**
          * TaskRunConfig

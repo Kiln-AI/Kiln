@@ -426,9 +426,6 @@
     subtask_latency_ms,
   )
 
-  $: is_multiturn = task?.turn_mode === "multiturn"
-  $: usage_title = is_multiturn ? "Usage (last turn)" : "Usage"
-
   // ---- Feedback ----
   let feedbacks: Feedback[] = []
   let feedback_loading = false
@@ -719,7 +716,7 @@
   </div>
   <div>
     {#if usage_properties && usage_properties.length > 0}
-      <PropertyList properties={usage_properties} title={usage_title} />
+      <PropertyList properties={usage_properties} title="Usage" />
     {/if}
   </div>
 </div>

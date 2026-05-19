@@ -2493,6 +2493,49 @@ async def test_get_ancestors_chain_longer_than_trace_user_messages_is_broken(
 
 
 @pytest.mark.asyncio
+async def test_get_ancestors_has_children_true_for_intermediate_run(
+    client, multiturn_task_run_setup
+):
+    """An intermediate node (one with at least one child) reports has_children=true."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    root, mid, _leaf = _build_three_turn_chain(task)
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        root_response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{root.id}/ancestors"
+        )
+        mid_response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{mid.id}/ancestors"
+        )
+
+    assert root_response.status_code == 200
+    assert root_response.json()["has_children"] is True
+    assert mid_response.status_code == 200
+    assert mid_response.json()["has_children"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_has_children_false_for_leaf_run(
+    client, multiturn_task_run_setup
+):
+    """A leaf node (no other run points at it) reports has_children=false."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    _root, _mid, leaf = _build_three_turn_chain(task)
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/ancestors"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["has_children"] is False
+
+
+@pytest.mark.asyncio
 async def test_delete_leaf_cascades_full_three_turn_chain(
     client, multiturn_task_run_setup
 ):

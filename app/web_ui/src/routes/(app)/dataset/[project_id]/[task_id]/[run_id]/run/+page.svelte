@@ -38,7 +38,7 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import { prompt_link } from "$lib/utils/link_builder"
+  import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
@@ -260,6 +260,19 @@
       properties.push({
         name: "ID",
         value: run.id,
+      })
+    }
+
+    if (run?.parent_task_run_id) {
+      const parent_link = dataset_item_link(
+        project_id,
+        task_id,
+        run.parent_task_run_id,
+      )
+      properties.push({
+        name: "Parent ID",
+        value: run.parent_task_run_id,
+        link: parent_link ?? undefined,
       })
     }
 
@@ -532,6 +545,7 @@
   let ancestors: TaskRunAncestor[] = []
   let ancestors_chain_broken = false
   let ancestors_load_failed = false
+  let run_has_children = false
   let ancestors_loaded_for_run_id: string | null = null
   let fork_target: ForkTarget | null = null
 
@@ -543,6 +557,7 @@
     ancestors = []
     ancestors_chain_broken = false
     ancestors_load_failed = false
+    run_has_children = false
   }
 
   $: if (
@@ -584,6 +599,7 @@
       }
       ancestors = data?.ancestors ?? []
       ancestors_chain_broken = !!data?.chain_broken
+      run_has_children = !!data?.has_children
       ancestors_load_failed = false
     } catch (_) {
       if (
@@ -594,6 +610,7 @@
         return
       ancestors = []
       ancestors_chain_broken = false
+      run_has_children = false
       ancestors_load_failed = true
     }
   }
@@ -719,6 +736,16 @@
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
             <div class="grow flex flex-col gap-6">
+              {#if run_has_children}
+                <div role="alert" data-testid="run-has-children-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="info"
+                    warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
+                    outline={true}
+                  />
+                </div>
+              {/if}
               {#if ancestors_chain_broken}
                 <div role="alert" data-testid="fork-chain-broken-banner">
                   <Warning
@@ -792,25 +819,7 @@
               </div>
             </div>
             <div class="w-72 2xl:w-96 flex-none flex flex-col">
-              <PropertyList
-                properties={properties_for_list}
-                title="Properties"
-              />
-              <button
-                class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
-                on:click={() => (see_all_properties = !see_all_properties)}
-              >
-                {see_all_properties ? "See Less" : "See All"}
-              </button>
-              <div class="mt-8">
-                <RunSidebar
-                  {project_id}
-                  {task}
-                  {run}
-                  on_run_updated={(updated) => (run = updated)}
-                />
-              </div>
-              <div class="text-xl font-bold mt-8 mb-4">Options</div>
+              <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
                   <SavedRunConfigurationsDropdown
@@ -835,6 +844,26 @@
                     show_name_field={false}
                   />
                 {/key}
+              </div>
+              <div class="mt-8">
+                <PropertyList
+                  properties={properties_for_list}
+                  title="Properties"
+                />
+                <button
+                  class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                  on:click={() => (see_all_properties = !see_all_properties)}
+                >
+                  {see_all_properties ? "See Less" : "See All"}
+                </button>
+              </div>
+              <div class="mt-8">
+                <RunSidebar
+                  {project_id}
+                  {task}
+                  {run}
+                  on_run_updated={(updated) => (run = updated)}
+                />
               </div>
             </div>
           </div>

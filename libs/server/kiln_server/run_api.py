@@ -216,6 +216,15 @@ class TaskRunAncestorsResponse(BaseModel):
             "length exceeded the leaf trace's user-message count."
         )
     )
+    has_children: bool = Field(
+        description=(
+            "True if at least one other TaskRun in the task references the "
+            "requested run via parent_task_run_id (i.e. the requested run is "
+            "an intermediate node in the chain, not a leaf). Used by the UI "
+            "to warn that sending a new message from this run will create a "
+            "new branch rather than extending an existing one."
+        )
+    )
 
 
 class RunSummary(BaseModel):
@@ -398,12 +407,18 @@ def connect_run_api(app: FastAPI):
                 status_code=404,
                 detail=f"Run not found: {run_id}",
             )
+        has_children = any(
+            r.parent_task_run_id == run_id
+            for r in task.runs(include_intermediate_runs=True, readonly=True)
+        )
         chain, chain_broken = _walk_ancestors(leaf, task.path)
         turn_count = _count_user_messages(leaf.trace)
         # Degenerate leaf trace (no user messages at all): we can't position any
         # run on a turn, so surface as broken-chain with an empty list.
         if turn_count == 0:
-            return TaskRunAncestorsResponse(ancestors=[], chain_broken=True)
+            return TaskRunAncestorsResponse(
+                ancestors=[], chain_broken=True, has_children=has_children
+            )
         # Pathological: more resolved ancestors than the leaf trace can support.
         # Treat as broken and keep only the suffix that fits.
         if len(chain) > turn_count:
@@ -416,7 +431,11 @@ def connect_run_api(app: FastAPI):
             )
             for i, r in enumerate(chain)
         ]
-        return TaskRunAncestorsResponse(ancestors=ancestors, chain_broken=chain_broken)
+        return TaskRunAncestorsResponse(
+            ancestors=ancestors,
+            chain_broken=chain_broken,
+            has_children=has_children,
+        )
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
