@@ -271,6 +271,23 @@ export interface paths {
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Chain */
+        get: operations["get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs": {
         parameters: {
             query?: never;
@@ -280,7 +297,7 @@ export interface paths {
         };
         /**
          * List Runs
-         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
          */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
@@ -304,7 +321,7 @@ export interface paths {
         };
         /**
          * List Run Summaries
-         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized.
+         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
          */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
@@ -395,7 +412,7 @@ export interface paths {
         };
         /**
          * List Run Tags
-         * @description Counts only include tags from leaf TaskRuns. For multiturn tasks, tags attached to intermediate runs in a chain are not included.
+         * @description Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
          */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
@@ -8499,6 +8516,47 @@ export interface components {
             feedback: string;
         };
         /**
+         * RunChainEntry
+         * @description A single entry in a multi-turn run's conversation chain.
+         */
+        RunChainEntry: {
+            /**
+             * Run Id
+             * @description The TaskRun id at this turn position in the chain.
+             */
+            run_id: string | null;
+            /**
+             * Turn Index
+             * @description 1-based turn index in the leaf's conversation (turn 1 = root, turn N = leaf). Derived from the leaf trace's user-message count.
+             */
+            turn_index: number;
+        };
+        /**
+         * RunChainResponse
+         * @description Ordered conversation chain for a multi-turn TaskRun.
+         *
+         *     The chain is rooted at the conversation start and ends with the requested
+         *     run itself (the requested run is always the final entry, even if it is the
+         *     only entry).
+         */
+        RunChainResponse: {
+            /**
+             * Chain
+             * @description Ordered root-to-leaf, includes the requested run itself as the final entry. If chain_broken is true, the list contains only the intact suffix from the leaf back to (and excluding) the break point.
+             */
+            chain: components["schemas"]["RunChainEntry"][];
+            /**
+             * Chain Broken
+             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
+             */
+            chain_broken: boolean;
+            /**
+             * Has Children
+             * @description True if at least one other TaskRun in the task references the requested run via parent_task_run_id (i.e. the requested run is an intermediate node in the chain, not a leaf). Used by the UI to warn that sending a new message from this run will create a new branch rather than extending an existing one.
+             */
+            has_children: boolean;
+        };
+        /**
          * RunConfigEvalResult
          * @description Eval results for a specific run config.
          */
@@ -8620,6 +8678,11 @@ export interface components {
              * @description Tags to apply to the resulting task run.
              */
             tags?: string[] | null;
+            /**
+             * Parent Task Run Id
+             * @description Continue the conversation started by this parent run. Multi-turn tasks only.
+             */
+            parent_task_run_id?: string | null;
         };
         /**
          * SampleApi
@@ -9306,6 +9369,11 @@ export interface components {
              * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
              */
             default_run_config_id?: string | null;
+            /**
+             * @description Whether this task is single-turn (each run independent) or multi-turn (runs continue prior runs). Immutable after construction: changing it would invalidate existing TaskRuns. To change, clone the task.
+             * @default single_turn
+             */
+            turn_mode: components["schemas"]["TurnMode"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -10119,6 +10187,12 @@ export interface components {
             /** Arguments */
             arguments: string;
         };
+        /**
+         * TurnMode
+         * @description Whether a Task runs as a single turn or as a multiturn conversation.
+         * @enum {string}
+         */
+        TurnMode: "single_turn" | "multiturn";
         /**
          * UpdateConfigRequest
          * @description Request to partially update a git sync configuration.
@@ -11288,6 +11362,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run whose chain to return. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunChainResponse"];
                 };
             };
             /** @description Validation Error */

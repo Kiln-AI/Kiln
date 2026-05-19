@@ -5,6 +5,7 @@ import os
 import tempfile
 from asyncio import Lock
 from datetime import datetime
+from pathlib import Path as PathLibPath
 from typing import Annotated, Any, Dict
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
@@ -14,7 +15,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.datamodel_enums import StructuredInputType
+from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
@@ -36,6 +37,119 @@ logger = logging.getLogger(__name__)
 
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
+
+# Defensive cap on parent-chain depth. Real multiturn conversations are tiny
+# compared to this; the guard exists to terminate on disk corruption or cycles.
+_MAX_ANCESTOR_DEPTH = 1000
+
+
+def _walk_run_chain(
+    leaf: TaskRun, task_path: PathLibPath | None
+) -> tuple[list[TaskRun], bool]:
+    """
+    Walk parent_task_run_id from `leaf` upward, returning (chain_root_to_leaf, chain_broken).
+
+    chain_broken is True if any parent failed to load, a cycle was detected, or
+    the depth guard tripped. On break, the returned list is the intact suffix
+    from `leaf` back to (but not including) the missing/cyclic node, reversed
+    to root-to-leaf order.
+    """
+    chain: list[TaskRun] = [leaf]
+    visited: set[str] = set()
+    if leaf.id is not None:
+        visited.add(str(leaf.id))
+    current = leaf
+    for _ in range(_MAX_ANCESTOR_DEPTH):
+        if current.parent_task_run_id is None:
+            chain.reverse()
+            return chain, False
+        if current.parent_task_run_id in visited:
+            chain.reverse()
+            return chain, True
+        parent = TaskRun.from_id_and_parent_path(current.parent_task_run_id, task_path)
+        if parent is None:
+            chain.reverse()
+            return chain, True
+        chain.append(parent)
+        if parent.id is not None:
+            visited.add(str(parent.id))
+        current = parent
+    chain.reverse()
+    return chain, True
+
+
+def _collect_cascade_delete_runs(
+    task: Task,
+    target: TaskRun,
+    already_queued: set[str] | None = None,
+) -> list[TaskRun]:
+    """Compute the full set of TaskRuns to delete when `target` is deleted.
+
+    Walks `parent_task_run_id` upward from `target`. Each ancestor is included
+    iff every one of its children has already been marked for deletion in this
+    cascade (i.e. there's no sibling branch keeping it alive). Stops at the
+    first ancestor with a live sibling child.
+
+    Pass ``already_queued`` (set of run id strings) when running a sequence of
+    cascades within a single batch (e.g. bulk delete). Runs in that set are
+    treated as already-deleted for the live-children check, so an ancestor
+    whose only live children are themselves queued in a prior cascade will be
+    swept up here.
+    """
+    queued: set[str] = set(already_queued or ())
+    target_id = str(target.id) if target.id is not None else None
+
+    to_delete: list[TaskRun] = []
+    if target_id is None or target_id not in queued:
+        to_delete.append(target)
+        if target_id is not None:
+            queued.add(target_id)
+
+    if target.parent_task_run_id is None:
+        return to_delete
+
+    # Pull every run on disk once so we can do child counts without re-hitting
+    # the loader for each ancestor. We need the full chain view here.
+    all_runs = task.runs(include_intermediate_runs=True, readonly=True)
+    children_by_parent: Dict[str, list[str]] = {}
+    runs_by_id: Dict[str, TaskRun] = {}
+    for r in all_runs:
+        if r.id is not None:
+            runs_by_id[str(r.id)] = r
+        if r.parent_task_run_id and r.id is not None:
+            children_by_parent.setdefault(r.parent_task_run_id, []).append(str(r.id))
+
+    visited: set[str] = set(queued)
+    current = target
+    for _ in range(_MAX_ANCESTOR_DEPTH):
+        parent_id = current.parent_task_run_id
+        if parent_id is None:
+            break
+        if parent_id in visited:
+            # Cycle: stop here, but everything queued so far is still valid.
+            break
+        parent = runs_by_id.get(parent_id)
+        if parent is None:
+            # Chain broken: stop the cascade, don't 500.
+            break
+        live_children = [
+            cid for cid in children_by_parent.get(parent_id, []) if cid not in queued
+        ]
+        if live_children:
+            # A sibling branch survives — keep this parent.
+            break
+        if parent.id is not None and str(parent.id) not in queued:
+            to_delete.append(parent)
+            queued.add(str(parent.id))
+            visited.add(str(parent.id))
+        current = parent
+    return to_delete
+
+
+def _count_user_messages(trace: list[Any] | None) -> int:
+    if not trace:
+        return 0
+    return sum(1 for m in trace if isinstance(m, dict) and m.get("role") == "user")
 
 
 def deep_update(
@@ -72,9 +186,64 @@ class RunTaskRequest(BaseModel):
     tags: list[str] | None = Field(
         default=None, description="Tags to apply to the resulting task run."
     )
+    parent_task_run_id: str | None = Field(
+        default=None,
+        description=(
+            "Continue the conversation started by this parent run. "
+            "Multi-turn tasks only."
+        ),
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
+
+
+class RunChainEntry(BaseModel):
+    """A single entry in a multi-turn run's conversation chain."""
+
+    run_id: ID_TYPE = Field(
+        description="The TaskRun id at this turn position in the chain."
+    )
+    turn_index: int = Field(
+        description=(
+            "1-based turn index in the leaf's conversation (turn 1 = root, "
+            "turn N = leaf). Derived from the leaf trace's user-message count."
+        )
+    )
+
+
+class RunChainResponse(BaseModel):
+    """Ordered conversation chain for a multi-turn TaskRun.
+
+    The chain is rooted at the conversation start and ends with the requested
+    run itself (the requested run is always the final entry, even if it is the
+    only entry).
+    """
+
+    chain: list[RunChainEntry] = Field(
+        description=(
+            "Ordered root-to-leaf, includes the requested run itself as the "
+            "final entry. If chain_broken is true, the list contains only the "
+            "intact suffix from the leaf back to (and excluding) the break "
+            "point."
+        )
+    )
+    chain_broken: bool = Field(
+        description=(
+            "True if while walking parents we encountered a parent_task_run_id "
+            "that could not be loaded, a cycle, the depth guard, or the chain "
+            "length exceeded the leaf trace's user-message count."
+        )
+    )
+    has_children: bool = Field(
+        description=(
+            "True if at least one other TaskRun in the task references the "
+            "requested run via parent_task_run_id (i.e. the requested run is "
+            "an intermediate node in the chain, not a leaf). Used by the UI "
+            "to warn that sending a new message from this run will create a "
+            "new branch rather than extending an existing one."
+        )
+    )
 
 
 class RunSummary(BaseModel):
@@ -227,6 +396,69 @@ def connect_run_api(app: FastAPI):
     ) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
 
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
+        summary="Get Run Chain",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_chain(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str,
+            Path(
+                description="The unique identifier of the task run whose chain to return."
+            ),
+        ],
+    ) -> RunChainResponse:
+        task = task_from_id(project_id, task_id)
+        leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
+        if leaf is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Run not found. ID: {run_id}",
+            )
+        if task.turn_mode != TurnMode.multiturn:
+            raise HTTPException(
+                status_code=400,
+                detail="Run chain is only available for multi-turn tasks.",
+            )
+        has_children = any(
+            r.parent_task_run_id == run_id
+            for r in task.runs(include_intermediate_runs=True, readonly=True)
+        )
+        chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
+        turn_count = _count_user_messages(leaf.trace)
+        # Degenerate leaf trace (no user messages at all): we can't position any
+        # run on a turn, so surface as broken-chain with an empty list.
+        if turn_count == 0:
+            return RunChainResponse(
+                chain=[], chain_broken=True, has_children=has_children
+            )
+        # Pathological: more resolved ancestors than the leaf trace can support.
+        # Treat as broken and keep only the suffix that fits.
+        if len(chain_runs) > turn_count:
+            chain_runs = chain_runs[-turn_count:]
+            chain_broken = True
+        chain = [
+            RunChainEntry(
+                run_id=r.id,
+                turn_index=turn_count - (len(chain_runs) - 1 - i),
+            )
+            for i, r in enumerate(chain_runs)
+        ]
+        return RunChainResponse(
+            chain=chain,
+            chain_broken=chain_broken,
+            has_children=has_children,
+        )
+
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         summary="Delete Run",
@@ -245,14 +477,19 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ):
-        run = run_from_id(project_id, task_id, run_id)
-        run.delete()
+        task, run = task_and_run_from_id(project_id, task_id, run_id)
+        # For multiturn chains, also delete ancestors whose only remaining child
+        # is in our delete-set. Stop at the first ancestor that still has another
+        # live child (a sibling branch).
+        runs_to_delete = _collect_cascade_delete_runs(task, run)
+        for r in runs_to_delete:
+            r.delete()
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="List Runs",
         description=(
-            "For multiturn tasks, only leaf TaskRuns (those that are not the "
+            "For multi-turn tasks, only leaf TaskRuns (those that are not the "
             "parent of another run via parent_task_run_id) are returned. "
             "Intermediate runs in a chain are filtered out. For single-turn "
             "tasks this is equivalent to listing every run."
@@ -320,8 +557,9 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         summary="List Run Summaries",
         description=(
-            "For multiturn tasks, only leaf TaskRuns (those that are not the "
-            "parent of another run via parent_task_run_id) are summarized."
+            "For multi-turn tasks, only leaf TaskRuns (those that are not the "
+            "parent of another run via parent_task_run_id) are summarized. "
+            "For single-turn tasks this is equivalent to summarizing every run."
         ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
@@ -337,12 +575,9 @@ def connect_run_api(app: FastAPI):
     ) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
         # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
+        # Summaries only need leaves.
         runs = task.runs(readonly=True)
-        run_summaries: list[RunSummary] = []
-        for run in runs:
-            summary = RunSummary.from_run(run)
-            run_summaries.append(summary)
-        return run_summaries
+        return [RunSummary.from_run(run) for run in runs]
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
@@ -363,17 +598,36 @@ def connect_run_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
         last_error: Exception | None = None
+
+        # Cascade behavior matches single DELETE: sweep orphan ancestors. The
+        # cumulative queued_ids set means an ancestor whose remaining children
+        # are all in this batch also gets cascaded.
+        queued_ids: set[str] = set()
+        runs_to_delete: list[TaskRun] = []
         for run_id in run_ids:
             try:
                 run = TaskRun.from_id_and_parent_path(run_id, task.path)
-                if run:
-                    run.delete()
-                else:
+                if run is None:
                     failed_runs.append(run_id)
                     last_error = Exception("Run not found")
+                    continue
+                cascade = _collect_cascade_delete_runs(task, run, queued_ids)
+                for r in cascade:
+                    if r.id is not None:
+                        queued_ids.add(str(r.id))
+                    runs_to_delete.append(r)
             except Exception as e:
                 last_error = e
                 failed_runs.append(run_id)
+
+        for r in runs_to_delete:
+            try:
+                r.delete()
+            except Exception as e:
+                last_error = e
+                if r.id is not None:
+                    failed_runs.append(str(r.id))
+
         if failed_runs:
             raise HTTPException(
                 status_code=500,
@@ -429,7 +683,34 @@ def connect_run_api(app: FastAPI):
                 detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
             )
 
-        return await adapter.invoke(input)
+        prior_trace = None
+        parent_task_run = None
+        if request.parent_task_run_id is not None:
+            if task.turn_mode != TurnMode.multiturn:
+                raise HTTPException(
+                    status_code=400,
+                    detail="parent_task_run_id is only valid for multi-turn tasks.",
+                )
+            parent_task_run = TaskRun.from_id_and_parent_path(
+                request.parent_task_run_id, task.path
+            )
+            if parent_task_run is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Parent run not found. ID: {request.parent_task_run_id}",
+                )
+            if not parent_task_run.trace:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Parent run cannot be continued because it has no trace.",
+                )
+            prior_trace = parent_task_run.trace
+
+        return await adapter.invoke(
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=parent_task_run,
+        )
 
     @app.patch(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
@@ -591,7 +872,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/tags",
         summary="List Run Tags",
         description=(
-            "Counts only include tags from leaf TaskRuns. For multiturn tasks, "
+            "Counts only include tags from leaf TaskRuns. For multi-turn tasks, "
             "tags attached to intermediate runs in a chain are not included."
         ),
         tags=["Runs"],

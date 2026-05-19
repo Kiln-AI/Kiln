@@ -15,6 +15,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
   import ErrorWithTraceComponent from "$lib/ui/error_with_trace.svelte"
   import type { ErrorWithTrace } from "$lib/types"
   import { is_error_with_trace } from "./error_with_trace_detection"
@@ -132,6 +133,10 @@
         })
       }
       response = data
+      if ($current_task?.turn_mode === "multiturn" && data?.id) {
+        await goto(`/dataset/${project_id}/${task_id}/${data.id}/run`)
+        return
+      }
     } catch (e) {
       run_error = createKilnError(e)
     } finally {

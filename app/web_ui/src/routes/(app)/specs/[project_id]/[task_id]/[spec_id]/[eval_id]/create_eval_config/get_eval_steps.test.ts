@@ -14,6 +14,7 @@ function createMockTask(requirements: Task["requirements"] = []): Task {
     output_json_schema: null,
     input_json_schema: null,
     thinking_instruction: null,
+    turn_mode: "single_turn",
     model_type: "Task",
     path: "/test/task",
     created_at: "2024-01-01T00:00:00Z",

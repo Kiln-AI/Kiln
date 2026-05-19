@@ -23,7 +23,12 @@
   import { getContext } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { Task, TaskRun, StructuredOutputMode } from "$lib/types"
+  import type {
+    Task,
+    TaskRun,
+    StructuredOutputMode,
+    RunChainEntry,
+  } from "$lib/types"
   import { isMcpRunConfig } from "$lib/types"
   import {
     formatDate,
@@ -33,7 +38,7 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import { prompt_link } from "$lib/utils/link_builder"
+  import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
@@ -44,6 +49,18 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
+  import TraceComponent from "$lib/ui/trace/trace.svelte"
+  import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import { isKilnAgentRunConfig, type TaskRunConfig } from "$lib/types"
+  import Warning from "$lib/ui/warning.svelte"
+  import RunSidebar from "$lib/ui/run_sidebar.svelte"
+  import {
+    compute_forkable_run_ids,
+    fork_target_from_user_block,
+    type ForkTarget,
+  } from "./fork_helpers"
 
   $: run_id = $page.params.run_id!
   $: task_id = $page.params.task_id!
@@ -61,6 +78,7 @@
   let loading = true
   let load_error: KilnError | null = null
   let see_all_properties = false
+  let multiturn_show_raw_data = false
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined
   let skills_property_value: string | string[] = "None"
@@ -242,6 +260,19 @@
       properties.push({
         name: "ID",
         value: run.id,
+      })
+    }
+
+    if (run?.parent_task_run_id) {
+      const parent_link = dataset_item_link(
+        project_id,
+        task_id,
+        run.parent_task_run_id,
+      )
+      properties.push({
+        name: "Parent ID",
+        value: run.parent_task_run_id,
+        link: parent_link ?? undefined,
       })
     }
 
@@ -457,6 +488,173 @@
     })
   }
 
+  async function handle_send(new_run_id: string) {
+    load_error = null
+    run = null
+    loading = true
+    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
+      replaceState: true,
+    })
+  }
+
+  function multiturn_toggle_raw_data() {
+    multiturn_show_raw_data = !multiturn_show_raw_data
+    if (multiturn_show_raw_data) {
+      setTimeout(() => {
+        const rawDataElement = document.getElementById("multiturn_raw_data")
+        if (rawDataElement) {
+          rawDataElement.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          })
+        }
+      }, 100)
+    }
+  }
+
+  // ---- Multiturn composer state ----
+  let multiturn_run_config_component: RunConfigComponent
+  let multiturn_save_config_error: KilnError | null = null
+  let multiturn_set_default_error: KilnError | null = null
+  let multiturn_selected_run_config_id: string | null = null
+  let multiturn_selected_model_specific_run_config_id: string | null = null
+
+  function multiturn_initial_model(r: TaskRun | null): string {
+    const cfg = r?.output?.source?.run_config ?? null
+    if (cfg && isKilnAgentRunConfig(cfg)) {
+      return `${cfg.model_provider_name}/${cfg.model_name}`
+    }
+    return ""
+  }
+  function multiturn_initial_prompt(r: TaskRun | null): string {
+    const cfg = r?.output?.source?.run_config ?? null
+    if (cfg && isKilnAgentRunConfig(cfg)) {
+      return cfg.prompt_id
+    }
+    return "simple_prompt_builder"
+  }
+
+  async function handle_save_new_multiturn_run_config(): Promise<TaskRunConfig> {
+    if (!multiturn_run_config_component) {
+      throw new Error("Run configuration component is not loaded")
+    }
+    return await multiturn_run_config_component.save_new_run_config()
+  }
+
+  // ---- Run chain / fork state ----
+  let run_chain: RunChainEntry[] = []
+  let chain_broken = false
+  let chain_load_failed = false
+  let run_has_children = false
+  let chain_loaded_for_run_id: string | null = null
+  let fork_target: ForkTarget | null = null
+
+  // Reset fork + chain state whenever the run id changes so we don't surface
+  // stale data (banners, suffix-aligned mappings) from the previous run
+  // before the new fetch resolves.
+  $: if (run_id) {
+    fork_target = null
+    run_chain = []
+    chain_broken = false
+    chain_load_failed = false
+    run_has_children = false
+  }
+
+  $: if (
+    task &&
+    run &&
+    task.turn_mode === "multiturn" &&
+    chain_loaded_for_run_id !== run_id
+  ) {
+    load_run_chain(project_id, task_id, run_id)
+  }
+
+  async function load_run_chain(
+    req_project_id: string,
+    req_task_id: string,
+    req_run_id: string,
+  ) {
+    chain_loaded_for_run_id = req_run_id
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
+        {
+          params: {
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              run_id: req_run_id,
+            },
+          },
+        },
+      )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
+      if (error) {
+        throw error
+      }
+      run_chain = data?.chain ?? []
+      chain_broken = !!data?.chain_broken
+      run_has_children = !!data?.has_children
+      chain_load_failed = false
+    } catch (_) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
+      run_chain = []
+      chain_broken = false
+      run_has_children = false
+      chain_load_failed = true
+    }
+  }
+
+  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], run_chain)
+
+  // Bound to the fork-mode MultiturnComposer so we can consult is_dirty()
+  // / request_swap() when the user clicks fork on a different turn while
+  // a composer is already open.
+  let fork_composer: MultiturnComposer | null = null
+
+  function on_fork(clicked_run_id: string, trace_index: number) {
+    const target = fork_target_from_user_block(
+      clicked_run_id,
+      trace_index,
+      run?.trace ?? [],
+      run_chain,
+    )
+    if (!target) return
+    const apply = () => {
+      fork_target = target
+    }
+    // No active fork composer (or it's not the same turn we're already on):
+    // if one is open, route through it so it can prompt on dirty edits.
+    if (fork_target && fork_composer) {
+      if (fork_target.trace_index === target.trace_index) {
+        // Clicking fork on the already-active turn is a no-op.
+        return
+      }
+      fork_composer.request_swap(apply)
+      return
+    }
+    apply()
+  }
+
+  function cancel_fork() {
+    fork_target = null
+  }
+
+  async function handle_fork_success(new_run_id: string) {
+    fork_target = null
+    await handle_send(new_run_id)
+  }
+
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -533,22 +731,169 @@
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
     {:else if run && task}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
-        <div class="grow">
-          <div class="text-xl font-bold mb-4">Input</div>
-          <Output raw_output={run.input} />
+      {#if task.turn_mode === "multiturn" && task.id}
+        {@const multiturn_task_id = task.id}
+        <div data-testid="multiturn-layout">
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+            <div class="grow flex flex-col gap-6">
+              {#if run_has_children}
+                <div role="alert" data-testid="run-has-children-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="info"
+                    warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
+                    outline={true}
+                  />
+                </div>
+              {/if}
+              {#if chain_broken}
+                <div role="alert" data-testid="fork-chain-broken-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="exclaim"
+                    warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
+                    outline={true}
+                  />
+                </div>
+              {/if}
+              {#if chain_load_failed}
+                <div role="alert" data-testid="fork-load-failed-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="exclaim"
+                    warning_message="Couldn't load conversation history. Forking is unavailable."
+                    outline={true}
+                  />
+                </div>
+              {/if}
+              {#key run.id}
+                <TraceComponent
+                  trace={run.trace ?? []}
+                  {project_id}
+                  markdown_content={true}
+                  {forkable_run_ids}
+                  truncate_at_trace_index={fork_target?.trace_index ?? null}
+                  {on_fork}
+                  show_per_message_usage={task?.turn_mode === "multiturn"}
+                />
+              {/key}
+              {#if fork_target}
+                <MultiturnComposer
+                  bind:this={fork_composer}
+                  mode="fork"
+                  {project_id}
+                  task_id={multiturn_task_id}
+                  parent_task_run_id={fork_target.parent_run_id}
+                  run_config_component={multiturn_run_config_component}
+                  prefill_text={fork_target.prefill}
+                  forked_turn_index={fork_target.turn_index}
+                  on_success={handle_fork_success}
+                  on_cancel={cancel_fork}
+                />
+              {:else}
+                <MultiturnComposer
+                  mode="append"
+                  {project_id}
+                  task_id={multiturn_task_id}
+                  parent_task_run_id={run.id ?? null}
+                  run_config_component={multiturn_run_config_component}
+                  on_success={handle_send}
+                />
+              {/if}
+              <div>
+                <div class="mt-2">
+                  <button
+                    class="text-xs link"
+                    on:click={multiturn_toggle_raw_data}
+                    >{multiturn_show_raw_data ? "Hide" : "Show"} Raw Data</button
+                  >
+                </div>
+                <div class={multiturn_show_raw_data ? "" : "hidden"}>
+                  <h1
+                    class="text-xl font-bold mt-2 mb-2"
+                    id="multiturn_raw_data"
+                  >
+                    Raw Data
+                  </h1>
+                  <div class="text-sm">
+                    <Output raw_output={JSON.stringify(run, null, 2)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="w-72 2xl:w-96 flex-none flex flex-col">
+              <div class="text-xl font-bold mb-4">Options</div>
+              <div class="flex flex-col gap-4">
+                {#key run.id}
+                  <SavedRunConfigurationsDropdown
+                    {project_id}
+                    current_task={task}
+                    bind:selected_run_config_id={multiturn_selected_run_config_id}
+                    bind:save_config_error={multiturn_save_config_error}
+                    bind:set_default_error={multiturn_set_default_error}
+                    save_new_run_config={handle_save_new_multiturn_run_config}
+                    selected_model_specific_run_config_id={multiturn_selected_model_specific_run_config_id}
+                  />
+                  <RunConfigComponent
+                    model={multiturn_initial_model(run)}
+                    prompt_method={multiturn_initial_prompt(run)}
+                    bind:this={multiturn_run_config_component}
+                    {project_id}
+                    current_task={task}
+                    requires_structured_output={false}
+                    bind:selected_run_config_id={multiturn_selected_run_config_id}
+                    bind:set_default_error={multiturn_set_default_error}
+                    bind:selected_model_specific_run_config_id={multiturn_selected_model_specific_run_config_id}
+                    show_name_field={false}
+                  />
+                {/key}
+              </div>
+              <div class="mt-8">
+                <PropertyList
+                  properties={properties_for_list}
+                  title="Properties"
+                />
+                <button
+                  class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                  on:click={() => (see_all_properties = !see_all_properties)}
+                >
+                  {see_all_properties ? "See Less" : "See All"}
+                </button>
+              </div>
+              <div class="mt-8">
+                <RunSidebar
+                  {project_id}
+                  {task}
+                  {run}
+                  on_run_updated={(updated) => (run = updated)}
+                />
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col">
-          <PropertyList properties={properties_for_list} title="Properties" />
-          <button
-            class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
-            on:click={() => (see_all_properties = !see_all_properties)}
-          >
-            {see_all_properties ? "See Less" : "See All"}
-          </button>
+      {:else}
+        <div data-testid="single-turn-layout">
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
+            <div class="grow">
+              <div class="text-xl font-bold mb-4">Input</div>
+              <Output raw_output={run.input} />
+            </div>
+            <div class="w-72 2xl:w-96 flex-none flex flex-col">
+              <PropertyList
+                properties={properties_for_list}
+                title="Properties"
+              />
+              <button
+                class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                on:click={() => (see_all_properties = !see_all_properties)}
+              >
+                {see_all_properties ? "See Less" : "See All"}
+              </button>
+            </div>
+          </div>
+          <Run initial_run={run} {task} {project_id} />
         </div>
-      </div>
-      <Run initial_run={run} {task} {project_id} />
+      {/if}
     {:else}
       <div class="text-gray-500 text-lg">Run not found</div>
     {/if}
