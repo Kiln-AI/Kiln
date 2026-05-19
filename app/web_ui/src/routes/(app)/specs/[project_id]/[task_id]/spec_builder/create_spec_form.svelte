@@ -9,6 +9,7 @@
   import TaskSampleSelector from "$lib/utils/task_sample_selector.svelte"
   import type { TaskSampleExample } from "$lib/utils/task_sample_example"
   import type { Priority } from "$lib/types"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
 
   export let name: string
   export let property_values: Record<string, string | null>
@@ -27,6 +28,10 @@
   export let task_id: string
   export let task_sample_example: TaskSampleExample | null = null
   export let has_unsaved_manual_entry: boolean = false
+  // Empty string = "no saved prompt picked", which resolves to the existing
+  // task-instruction default in the parent. When the user picks one, this
+  // becomes its PromptId (e.g. id::abc or task_run_config::p::t::rc).
+  export let selected_prompt_method: string = ""
 
   let form_container: FormContainer
 
@@ -58,6 +63,11 @@
     warn_before_unload &&
     has_form_changes(property_values, initial_property_values)
 
+  // The SDG prompt picker is required when copilot is the chosen path —
+  // SDG with no prompt picked is undefined behavior. The non-copilot path
+  // doesn't use the picker so no constraint there.
+  $: prompt_required_unmet = copilot_allowed && selected_prompt_method === ""
+
   function handle_submit() {
     if (copilot_allowed) {
       dispatch("create_with_copilot")
@@ -79,6 +89,7 @@
   on:submit={handle_submit}
   bind:error
   bind:submitting
+  submit_disabled={prompt_required_unmet}
   compact_button={true}
   warn_before_unload={computed_warn_before_unload}
 >
@@ -112,6 +123,14 @@
   {/each}
 
   {#if copilot_allowed}
+    <PromptTypeSelector
+      bind:prompt_method={selected_prompt_method}
+      {project_id}
+      {task_id}
+      label="Prompt"
+      saved_prompts_only={true}
+      description="Prompt sent to Kiln Pro when generating synthetic data. Pick a saved prompt to mirror production, or 'Task Instruction' for the default."
+    />
     <TaskSampleSelector
       {project_id}
       {task_id}
