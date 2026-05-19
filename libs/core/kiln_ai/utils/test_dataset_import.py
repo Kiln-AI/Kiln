@@ -1312,6 +1312,20 @@ def test_import_csv_multiturn_empty_reasoning_content(multiturn_task: Task, tmp_
     assert "'reasoning_content' must be a non-empty string" in str(e.value)
 
 
+def test_import_csv_multiturn_reasoning_content_on_user_message_rejected(
+    multiturn_task: Task, tmp_path
+):
+    """`reasoning_content` on a user message must fail rather than be silently dropped."""
+
+    trace = [
+        {"role": "user", "content": "hi", "reasoning_content": "stray thought"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    with pytest.raises(KilnInvalidImportFormat) as e:
+        _import_multiturn_csv(multiturn_task, [{"trace": json.dumps(trace)}], tmp_path)
+    assert "'reasoning_content' is only allowed on assistant messages" in str(e.value)
+
+
 def test_import_csv_multiturn_starts_with_assistant(multiturn_task: Task, tmp_path):
     trace = [
         {"role": "assistant", "content": "hi"},
