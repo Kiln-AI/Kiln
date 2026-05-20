@@ -67,6 +67,15 @@ def pytest_addoption(parser):
         help="run tests that make paid API calls",
     )
     parser.addoption(
+        "--runprerelease",
+        action="store_true",
+        default=False,
+        help=(
+            "run only the curated pre-release smoke tests "
+            "(tests marked @pytest.mark.prerelease). Implies --runpaid for those tests."
+        ),
+    )
+    parser.addoption(
         "--runslow",
         action="store_true",
         default=False,
@@ -108,6 +117,18 @@ def is_single_manual_test(config, items) -> bool:
 def pytest_collection_modifyitems(config, items):
     # Always run test if it's a single test manually invoked
     if is_single_manual_test(config, items):
+        return
+
+    # --runprerelease runs only tests tagged @pytest.mark.prerelease and
+    # implicitly enables paid for those (prerelease tests are a curated subset
+    # of paid tests). Everything else gets skipped.
+    if config.getoption("--runprerelease"):
+        skip_non_prerelease = pytest.mark.skip(
+            reason="--runprerelease only runs tests marked @pytest.mark.prerelease"
+        )
+        for item in items:
+            if "prerelease" not in item.keywords:
+                item.add_marker(skip_non_prerelease)
         return
 
     # Mark tests that use paid services as skipped unless --runpaid is passed

@@ -31,6 +31,7 @@ def build_caching_test_task(tmp_path) -> Task:
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.parametrize(
     ("provider_name", "model_name"),
     [

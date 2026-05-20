@@ -177,6 +177,7 @@ def adapter_factory(
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_openai_stream_chunks(
     request: pytest.FixtureRequest,
@@ -243,6 +244,7 @@ async def test_invoke_openai_stream_chunks(
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_ai_sdk_stream(
     request: pytest.FixtureRequest,

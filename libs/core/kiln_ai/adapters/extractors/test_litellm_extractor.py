@@ -20,6 +20,10 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models_from_provider,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.adapters.pytest_prerelease_whitelist import (
+    PRERELEASE_EXTRACTION_MIME_PROBES,
+    PRERELEASE_EXTRACTION_MODELS,
+)
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
@@ -1422,4 +1426,72 @@ async def test_clear_cache_for_file_path(
                 f"irrelevant_key_{i}"
             )
             is not None
+        )
+
+
+# Curated prerelease smoke tests: same behavior as test_extract_document_success
+# and test_provider_bad_request above, but restricted to a small whitelist of
+# (model, provider) pairs and a small set of mime probes so --runprerelease
+# stays fast.
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_EXTRACTION_MODELS)
+@pytest.mark.parametrize("mime_type,text_probe", PRERELEASE_EXTRACTION_MIME_PROBES)
+async def test_extract_document_success_prerelease_smoke(
+    model_name,
+    provider_name,
+    mime_type,
+    text_probe,
+    mock_file_factory,
+):
+    model = built_in_models_from_provider(provider_name, model_name)
+    assert model is not None
+    if mime_type not in model.multimodal_mime_types:
+        pytest.skip(f"Model {model_name} configured to not support {mime_type}")
+    if (
+        mime_type == MockFileFactoryMimeType.MD
+        or mime_type == MockFileFactoryMimeType.TXT
+    ):
+        pytest.skip(f"Model {model_name} configured to passthrough {mime_type}")
+
+    test_file = mock_file_factory(mime_type)
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
+    output = await extractor.extract(
+        extraction_input=ExtractionInput(
+            path=str(test_file),
+            mime_type=mime_type,
+        )
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+
+    text_probe_str = ", ".join(text_probe)
+    assert any(probe.lower() in output.content.lower() for probe in text_probe), (
+        f"Expected any of [{text_probe_str}] to be in output: {output.content}"
+    )
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_EXTRACTION_MODELS)
+async def test_provider_bad_request_prerelease_smoke(
+    tmp_path, model_name, provider_name
+):
+    temp_file = tmp_path / "corrupted_file.pdf"
+    temp_file.write_bytes(b"invalid file")
+
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
+
+    with pytest.raises(ValueError, match=r"Error extracting .*corrupted_file.pdf: "):
+        await extractor.extract(
+            extraction_input=ExtractionInput(
+                path=temp_file.as_posix(),
+                mime_type="application/pdf",
+            )
         )

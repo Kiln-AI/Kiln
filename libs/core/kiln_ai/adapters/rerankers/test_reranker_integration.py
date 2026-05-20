@@ -62,6 +62,7 @@ class TestRerankerIntegrationSuccess:
     """Test cases for Reranker integration success."""
 
     @pytest.mark.paid
+    @pytest.mark.prerelease
     @pytest.mark.parametrize(
         "model_provider_name, model_name", get_all_reranker_model_combinations()
     )

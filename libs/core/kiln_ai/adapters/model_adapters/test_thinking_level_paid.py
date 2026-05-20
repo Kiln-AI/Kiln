@@ -9,6 +9,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
+from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_THINKING_MODELS
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
@@ -110,6 +111,51 @@ async def test_thinking_level_reasoning_content(
         assert reasoning_content is None, (
             f"Expected no reasoning content for thinking_level='none', "
             f"but got {len(reasoning_content)} chars "
+            f"(provider={provider_name}, model={model_name})"
+        )
+    else:
+        assert reasoning_content is not None, (
+            f"Expected reasoning content for thinking_level='{thinking_level}', "
+            f"but got None "
+            f"(provider={provider_name}, model={model_name})"
+        )
+
+
+# Curated prerelease smoke test: same behavior as test_thinking_level_reasoning_content
+# above, restricted to a small whitelist so --runprerelease stays fast.
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize(
+    ("provider_name", "model_name", "thinking_level"),
+    PRERELEASE_THINKING_MODELS,
+)
+async def test_thinking_level_reasoning_content_prerelease_smoke(
+    tmp_path, provider_name: str, model_name: str, thinking_level: str
+):
+    skip_if_missing_provider_keys(provider_name)
+    temperature = 1 if provider_name == ModelProviderName.anthropic else 0
+
+    task = build_thinking_level_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        KilnAgentRunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            thinking_level=thinking_level,
+            temperature=temperature,
+            top_p=1,
+        ),
+    )
+    run = await adapter.invoke(
+        "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
+    )
+    reasoning_content = reasoning_content_from_run(run)
+    if thinking_level == "none":
+        assert reasoning_content is None, (
+            f"Expected no reasoning content for thinking_level='none', "
+            f"but got {len(reasoning_content) if reasoning_content else 0} chars "
             f"(provider={provider_name}, model={model_name})"
         )
     else:

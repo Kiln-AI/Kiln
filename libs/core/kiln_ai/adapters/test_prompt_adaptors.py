@@ -30,6 +30,7 @@ def get_all_models_and_providers():
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_groq(tmp_path):
     if os.getenv("GROQ_API_KEY") is None:
         pytest.skip("GROQ_API_KEY not set")
@@ -54,6 +55,7 @@ async def test_groq(tmp_path):
     ],
 )
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_openrouter(tmp_path, model_name):
     await run_simple_test(tmp_path, model_name, "openrouter")
 
@@ -95,6 +97,7 @@ async def test_ollama_llama(tmp_path):
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_openai(tmp_path):
     if os.getenv("OPENAI_API_KEY") is None:
         pytest.skip("OPENAI_API_KEY not set")
@@ -102,6 +105,7 @@ async def test_openai(tmp_path):
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_amazon_bedrock(tmp_path):
     if (
         os.getenv("AWS_SECRET_ACCESS_KEY") is None
