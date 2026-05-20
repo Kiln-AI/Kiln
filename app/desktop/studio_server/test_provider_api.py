@@ -2788,6 +2788,60 @@ async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompleti
     )
 
 
+@pytest.mark.paid
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_vertex_live(mock_config_shared):
+    """End-to-end check that the Vertex (Gemini Enterprise Agent Platform)
+    Connect button flow still works against the real API. Run before a
+    release: a green run means a user with valid credentials clicking
+    "Connect" in the Kiln UI will succeed.
+
+    Prerequisites for running locally:
+
+    1. A Google Cloud project with the Vertex AI API enabled
+       (``gcloud services enable aiplatform.googleapis.com --project=<id>``).
+    2. Your account has ``roles/aiplatform.user`` on that project.
+    3. Application Default Credentials set up as a plain user credential
+       (NOT impersonating a service account that lacks access). Run
+       ``gcloud auth application-default login`` while a gcloud config
+       without ``auth/impersonate_service_account`` is active. Verify with::
+
+           cat ~/.config/gcloud/application_default_credentials.json | \\
+             jq '{type, service_account_impersonation_url}'
+
+       Want ``type: "authorized_user"`` and no impersonation URL.
+    4. Export the project ID:
+       ``KILN_TEST_VERTEX_PROJECT_ID=<your-project-id>``.
+       Optionally override location with ``KILN_TEST_VERTEX_LOCATION``
+       (defaults to ``global`` — what the UI suggests).
+
+    Skipped if ``KILN_TEST_VERTEX_PROJECT_ID`` is unset so the test doesn't
+    fire blindly in CI without credentials.
+
+    CMD:
+    KILN_TEST_VERTEX_PROJECT_ID=YOUR_PROJECT_ID uv run python3 -m pytest app/desktop/studio_server/test_provider_api.py -k connect_vertex_live --runpaid
+    """
+    import os
+
+    project_id = os.environ.get("KILN_TEST_VERTEX_PROJECT_ID")
+    if not project_id:
+        pytest.skip("KILN_TEST_VERTEX_PROJECT_ID not set")
+    location = os.environ.get("KILN_TEST_VERTEX_LOCATION", "global")
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    response = await connect_vertex(project_id, location)
+
+    assert response.status_code == 200, (
+        f"Vertex connect failed ({response.status_code}): {response.body.decode()}"
+    )
+    assert "Connected to Vertex" in response.body.decode()
+    assert mock_config.vertex_project_id == project_id
+    assert mock_config.vertex_location == location
+
+
 @pytest.mark.asyncio
 @patch("app.desktop.studio_server.provider_api.requests.get")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
