@@ -121,7 +121,7 @@
       name: "Google Gemini API",
       id: "gemini_api",
       description:
-        "Google's Gemini API (aka AI Studio). Not to be confused with Vertex AI.",
+        "Google's Gemini API (aka AI Studio). Not to be confused with Gemini Enterprise Agent Platform (formerly Vertex AI).",
       featured: false,
       api_key_steps: [
         "Go to https://aistudio.google.com/app/apikey",
@@ -131,9 +131,10 @@
       api_key_fields: ["API Key"],
     },
     {
-      name: "Google Vertex AI",
+      name: "Gemini Enterprise Agent Platform",
       id: "vertex",
-      description: "Google's Vertex API. Not to be confused with Gemini API.",
+      description:
+        "Google's Gemini Enterprise Agent Platform (formerly Vertex AI). Not to be confused with Gemini API.",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
