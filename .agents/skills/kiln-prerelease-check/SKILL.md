@@ -59,7 +59,7 @@ The fan-out tests (e.g. `test_extract_document_success` over every model × mime
   1. The provider entry has `deprecated=True` in our list.
   2. The provider itself rejects the slug at runtime (4xx / "model not found") — note our list trails provider deprecations, so this can happen *before* we've marked it deprecated.
   3. A newer non-deprecated sibling in the same family now exists in our list, regardless of whether the current pin is still working.
-- **DO NOT touch real prod-path code to make a prerelease test pass.** A test failure tells you something. Two flavors:
+- **DO NOT touch real prod-path code to make a prerelease test pass.** This includes hardcoded model **probes** in prod (e.g. the connectivity check inside `connect_vertex` — see Phase 4d). The skill is allowed to *flag* a probe whose pinned model has a newer sibling, but bumping the prod slug is the user's call, not yours — write it up in the report findings and wait. A test failure tells you something. Two flavors:
   1. **Real regression** (the prod code is now wrong, or the provider broke in a way we should adapt to): **leave it broken**, write it up clearly in the report, do not silently patch the production source.
   2. **Stale test housekeeping** (the test hardcodes a model slug we lazily picked, and one of the three signals above applies). **You can update the test.** Pick a current non-deprecated model from the same family and update the parametrization or assertion. Keep these test-only changes scoped and clearly noted in the report.
   If you cannot confidently tell flavor 1 from flavor 2, treat it as flavor 1 and report it.
@@ -276,6 +276,40 @@ git log --since="3 months ago" --diff-filter=AM --name-only --pretty=format: -- 
 
 In the report, list the few files in `recent_paid_files.txt` and ask the user whether any of their tests are prerelease-worthy.
 
+### 4d. Prod-code model probes (flag for user, don't edit)
+
+Some prod-code paths hardcode a model slug as a **probe** — a narrow connectivity / auth check where the model is just a vehicle to hit the API, not a feature the user picked. Today the canonical example is `app/desktop/studio_server/provider_api.py::connect_vertex`, which calls `litellm.acompletion(model="vertex_ai/gemini-X.Y-flash", …)` to verify the user's Vertex credentials when they click "Connect" in the UI.
+
+Probes like this should be **kept on the latest available model in their family**, otherwise the Connect button quietly drifts toward calling a deprecated/removed model. But **this skill never edits prod code directly** — it flags the situation in the report so the user can decide and make the change.
+
+How to tell a probe from real prod-path code:
+
+- ✅ Probe: a connectivity / auth check whose only job is to issue a tiny request to see if credentials work. The model choice is incidental; any current model from the same family would work.
+- ❌ Not a probe: code where the model is part of the user-visible behavior (defaults the user could see, fine-tune flows, eval scoring, etc.). Leave these alone — they're flavor 1 if broken.
+
+#### Sweep
+
+Grep for any hardcoded inference-probe slugs that target a vendor model directly (string with `gemini`/`gpt`/`claude`/`llama`, inside a `model="…"` kwarg, in non-test prod files):
+
+```bash
+grep -rnE 'model=["'\''][^"'\'']*((gemini|gpt|claude|llama)[^"'\'']*)["'\''']' \
+  app/desktop libs/core/kiln_ai libs/server/kiln_server \
+  --include="*.py" 2>/dev/null \
+  | grep -v "test_" | grep -v "/build/" \
+  | tee "${OUT}/prod_probes.txt"
+```
+
+For each hit:
+
+1. Confirm it's a probe (see ✅ / ❌ above). If you're not sure, treat it as not a probe.
+2. Check `ml_model_list.py` for the newest non-deprecated member of the same family at that provider (e.g. for `vertex_ai/gemini-X.Y-flash`, find the highest-versioned `gemini_*_flash` with a non-deprecated vertex provider entry).
+3. Record the finding in the report's "Prod-code probe sweep" table: file:line, current slug, suggested newer slug (or "none — already latest"), and the verifying live test (e.g. `test_connect_vertex_live`).
+4. **Do not edit prod code.** Leave the decision to the user. The verdict line at the end of the run should call out any flagged probes explicitly.
+
+If the prerelease test that exercises a probe fails outright (e.g. `test_connect_vertex_live` returns 4xx), that's a flavor-1 failure — list it under "Failures" in addition to flagging the probe.
+
+Every grep hit goes in the sweep table even when no newer sibling exists (`Suggested` = "none"). Silent "looks fine" is not allowed.
+
 ---
 
 ## Phase 5 — Write the report
@@ -321,14 +355,29 @@ Cases where you spotted staleness but did NOT swap (you weren't confident, the f
 - Recently added paid tests not in the prerelease set (with a one-line rationale for why each MIGHT be prerelease-worthy)
 
 ## Test updates applied (housekeeping, scoped to test files / whitelist only)
-Every swap goes here with both run outcomes. One row per swap:
+Every test/whitelist swap goes here with both run outcomes. One row per swap:
 
 | File:line | Old slug | New slug | Reason | Old run | New run |
 |---|---|---|---|---|---|
 | `…/pytest_prerelease_whitelist.py:NN` | `claude_sonnet_4_5` | `claude_sonnet_4_6` | newer-sibling-available | PASS | PASS |
 | `…/test_prompt_adaptors.py:NN` | `phi_3_5` | `phi_4` | deprecated-in-our-list | FAIL (provider 404) | PASS |
 
-`Reason` is one of: `provider-rejected` (4xx at provider), `deprecated-in-our-list`, `newer-sibling-available`. `Old run` and `New run` are both required — they prove the swap actually changed behavior (or that an upgrade-on-green stayed green). If both columns say FAIL, **the swap should have been reverted** — explain why it wasn't in a row below the table. Confirm NO prod code was touched.
+`Reason` is one of: `provider-rejected` (4xx at provider), `deprecated-in-our-list`, `newer-sibling-available`. `Old run` and `New run` are both required — they prove the swap actually changed behavior (or that an upgrade-on-green stayed green). If both columns say FAIL, **the swap should have been reverted** — explain why it wasn't in a row below the table.
+
+## Prod-code probe sweep (flag for user review — no edits)
+Mandatory every run. Lists every hardcoded inference-probe model slug found in prod code (Phase 4d). The skill does NOT edit prod code; this section is the artifact the user reads to decide whether to bump a probe.
+
+| File:line | Current slug | Suggested newer slug | Verifying test | Verifying test result | Notes |
+|---|---|---|---|---|---|
+| `app/desktop/studio_server/provider_api.py:NNNN` | `vertex_ai/gemini-3.5-flash` | `vertex_ai/gemini-3.X-flash` (from `ml_model_list.py`) | `test_connect_vertex_live` | PASS | current probe still works; newer family member available |
+| `path/to/file.py:NN` | `…` | none — already latest | `test_…` | PASS | no action needed |
+
+`Suggested newer slug` is "none — already latest" if `ml_model_list.py` doesn't have a newer non-deprecated sibling at that provider. If the verifying live test failed, also list it under "Failures" — that's a flavor-1 signal regardless of whether a newer slug is available.
+
+If a grep hit looks like real prod-path behavior rather than a probe, record it under "Flagged for user review" below — do not include it in this table.
+
+## Flagged for user review
+Things you noticed (test pins you weren't confident to swap, prod-path code that isn't a probe, suspicious failures you couldn't safely touch) that the user should look at. Each row: file:line, what's stale/suspicious, why you didn't change it.
 
 ## Suggested next steps
 What the user should do before tagging the release.
@@ -361,8 +410,9 @@ Then summarize the verdict in chat (one or two sentences):
 - [ ] `--runprerelease` pytest run, log captured
 - [ ] "Model pin sweep" table filled out for **every** whitelist entry and every hardcoded prerelease slug — including the ones that were kept (silent "looks fine" not allowed)
 - [ ] Newer-sibling upgrades applied even when the old slug was green
-- [ ] Every applied swap verified with run-old-then-run-new, both outcomes in the "Test updates applied" table
+- [ ] Every applied test/whitelist swap verified with run-old-then-run-new, both outcomes in the "Test updates applied" table
+- [ ] Phase 4d prod-probe sweep done; every grep hit listed in the "Prod-code probe sweep" table with `Suggested newer slug` (or "none — already latest")
 - [ ] Coverage-gap audit done (Phase 4b + 4c)
-- [ ] No production source code was modified
-- [ ] `REPORT.md` written with verdict, sweep table, swaps, failures, skips, gaps
-- [ ] Verdict surfaced to the user with the report path
+- [ ] No prod source code was modified (probe bumps left for the user to apply)
+- [ ] `REPORT.md` written with verdict, sweep table, swaps, probe table, failures, skips, gaps
+- [ ] Verdict surfaced to the user with the report path; any probe with a newer suggested slug called out explicitly
