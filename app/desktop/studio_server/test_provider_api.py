@@ -43,7 +43,6 @@ from app.desktop.studio_server.provider_api import (
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
     KilnEmbeddingModel,
@@ -66,6 +65,7 @@ from kiln_ai.adapters.reranker_list import (
     built_in_rerankers,
 )
 from kiln_ai.utils.config import Config
+from kiln_server.custom_errors import connect_custom_errors
 
 
 @pytest.fixture
@@ -2747,7 +2747,7 @@ async def test_connect_vertex_success(mock_config_shared, mock_litellm_acompleti
     assert response.status_code == 200
     assert "Connected to Vertex" in response.body.decode()
     mock_litellm_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-2.0-flash",
+        model="vertex_ai/gemini-3.5-flash",
         messages=[{"content": "Hello, how are you?", "role": "user"}],
         vertex_project="test-project-id",
         vertex_location="us-central1",
@@ -2772,7 +2772,7 @@ async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompleti
     assert "Failed to connect to Vertex" in response.body.decode()
     assert "Invalid project ID" in response.body.decode()
     mock_litellm_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-2.0-flash",
+        model="vertex_ai/gemini-3.5-flash",
         messages=[{"content": "Hello, how are you?", "role": "user"}],
         vertex_project="invalid-project-id",
         vertex_location="us-central1",

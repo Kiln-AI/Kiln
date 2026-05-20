@@ -551,7 +551,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   gemini_api: "Gemini API",
   azure_openai: "Azure OpenAI",
   huggingface: "Hugging Face",
-  vertex: "Google Vertex AI",
+  vertex: "Gemini Enterprise Agent Platform (formerly Vertex AI)",
   together_ai: "Together AI",
   siliconflow_cn: "SiliconFlow CN",
   cerebras: "Cerebras",
