@@ -34,24 +34,21 @@ def get_all_models_and_providers():
 async def test_groq(tmp_path):
     if os.getenv("GROQ_API_KEY") is None:
         pytest.skip("GROQ_API_KEY not set")
-    await run_simple_test(tmp_path, "llama_3_1_8b", "groq")
+    await run_simple_test(tmp_path, "llama_3_3_70b", "groq")
 
 
 @pytest.mark.parametrize(
     "model_name",
     [
-        "llama_3_1_8b",
-        "llama_3_1_70b",
-        "gemini_1_5_pro",
-        "gemini_1_5_flash",
-        "gemini_1_5_flash_8b",
-        "nemotron_70b",
-        "llama_3_2_3b",
-        "llama_3_2_11b",
-        "llama_3_2_90b",
-        "claude_3_5_haiku",
-        "claude_3_5_sonnet",
-        "phi_3_5",
+        "llama_4_maverick",
+        "llama_4_scout",
+        "llama_3_3_70b",
+        "gemini_3_flash",
+        "gemini_2_5_pro",
+        "claude_4_5_haiku",
+        "claude_sonnet_4_6",
+        "claude_opus_4_7",
+        "phi_4",
     ],
 )
 @pytest.mark.paid

@@ -133,6 +133,20 @@ This is the housekeeping pass: the test selection itself can rot. Three things t
 - Slug isn't (yet) marked deprecated in our list, but the **provider** returned 4xx / "model not found" during Phase 3's run. (Our curated list trails provider deprecations — being present and non-deprecated is not proof of usability.)
 - Slug works fine, but a **newer non-deprecated sibling** in the same family exists in our list. Prerelease should track what real users hit; keeping prerelease pinned at obsolete versions defeats the point. **Always upgrade in this case, even on a fully green run.**
 
+**Scope — what this sweep covers and what it does NOT cover.**
+
+In scope (hit these every run):
+- Entries in `libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py`.
+- Hardcoded model slugs inside the body or parametrize list of any test marked `@pytest.mark.prerelease`.
+- Hardcoded prod-code probes (covered separately in Phase 4d).
+
+Out of scope (leave alone):
+- Hardcoded slugs in **mock-only unit tests** — tests with no `@pytest.mark.paid` / `@pytest.mark.prerelease`, that patch out `litellm.acompletion` / `LiteLlmAdapter.acompletion_checking_response` / etc. The slug there is just a string used for assertions, no real API call happens, so a deprecated/old slug has zero behavior impact. Don't churn it.
+- Slugs in test data fixtures, recorded VCR cassettes, snapshot files.
+- Slugs inside `@pytest.mark.paid` tests that are NOT also `@pytest.mark.prerelease` — those run only on the full paid suite and are not the prerelease's responsibility to keep current.
+
+When in doubt: if the test runs offline / makes no network call / isn't in the prerelease set, the slug is a label, not a dependency. Skip it.
+
 Two places to look:
 
 1. **The whitelist file** — `libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py`. Every entry must still resolve to a non-deprecated `(model, provider)` in `ml_model_list.py` / `ml_embedding_model_list.py`. Run this check:

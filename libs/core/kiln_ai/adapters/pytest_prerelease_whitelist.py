@@ -17,16 +17,16 @@ from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 # (model_name, provider_name) — used by the litellm adapter prerelease smoke
 # tests that exercise basic completion / structured output / tool calling.
 PRERELEASE_CHAT_MODELS: list[tuple[str, str]] = [
-    ("gpt_4o_mini", ModelProviderName.openai.value),
     ("gpt_5_4_mini", ModelProviderName.openai.value),
     ("claude_4_5_haiku", ModelProviderName.anthropic.value),
     ("claude_sonnet_4_6", ModelProviderName.anthropic.value),
+    ("claude_opus_4_7", ModelProviderName.anthropic.value),
     ("gemini_3_flash", ModelProviderName.gemini_api.value),
     ("claude_sonnet_4_6", ModelProviderName.openrouter.value),
     ("gpt_5_4_mini", ModelProviderName.openrouter.value),
-    ("llama_3_1_8b", ModelProviderName.groq.value),
+    ("llama_3_3_70b", ModelProviderName.groq.value),
     ("qwen_3p6_plus", ModelProviderName.fireworks_ai.value),
-    ("minimax_m2_5", ModelProviderName.together_ai.value),
+    ("minimax_m2_7", ModelProviderName.together_ai.value),
 ]
 
 # (model_name, provider_name) — used by the embedding prerelease smoke tests

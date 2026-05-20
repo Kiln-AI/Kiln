@@ -282,7 +282,7 @@ async def test_structured_output_anthropic_json_schema_nested_object(tmp_path):
 async def test_structured_output_openai_json_schema_nested_object(tmp_path):
     await run_paid_structured_output_case(
         tmp_path=tmp_path,
-        model_name="gpt_4o_mini",
+        model_name="gpt_5_4_mini",
         provider_name=ModelProviderName.openai,
         structured_output_mode=StructuredOutputMode.json_schema,
         output_json_schema=NESTED_OBJECT_SCHEMA_JSON,
@@ -297,7 +297,7 @@ async def test_structured_output_openai_json_schema_nested_object(tmp_path):
 async def test_structured_output_openai_function_calling_nested_object(tmp_path):
     await run_paid_structured_output_case(
         tmp_path=tmp_path,
-        model_name="gpt_4o_mini",
+        model_name="gpt_5_4_mini",
         provider_name=ModelProviderName.openai,
         structured_output_mode=StructuredOutputMode.function_calling,
         output_json_schema=NESTED_OBJECT_SCHEMA_JSON,
@@ -342,7 +342,7 @@ async def test_structured_output_anthropic_json_schema_array_of_objects(tmp_path
 async def test_structured_output_openai_json_schema_flat_object(tmp_path):
     await run_paid_structured_output_case(
         tmp_path=tmp_path,
-        model_name="gpt_4o_mini",
+        model_name="gpt_5_4_mini",
         provider_name=ModelProviderName.openai,
         structured_output_mode=StructuredOutputMode.json_schema,
         output_json_schema=json_joke_schema,
