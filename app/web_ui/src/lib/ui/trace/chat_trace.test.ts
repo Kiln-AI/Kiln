@@ -1,10 +1,51 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest"
+import {
+  describe,
+  it,
+  expect,
+  afterEach,
+  afterAll,
+  beforeAll,
+  vi,
+} from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import ChatTrace from "./chat_trace.svelte"
 import type { Trace as TraceType, TraceMessage } from "$lib/types"
 
 afterEach(() => cleanup())
+
+// jsdom's <dialog> doesn't keep the `open` flag in sync with
+// showModal()/close() reliably (and didn't implement them at all before
+// jsdom ~22). Force-install minimal stubs we control so we can observe
+// open/close state. We restore originals in afterAll to avoid leaking.
+let original_show_modal: unknown
+let original_close: unknown
+let installed_polyfill = false
+beforeAll(() => {
+  const proto = HTMLDialogElement.prototype as unknown as Record<
+    string,
+    unknown
+  >
+  original_show_modal = proto.showModal
+  original_close = proto.close
+  proto.showModal = function () {
+    ;(this as unknown as { open: boolean }).open = true
+  }
+  proto.close = function () {
+    ;(this as unknown as { open: boolean }).open = false
+  }
+  installed_polyfill = true
+})
+afterAll(() => {
+  if (!installed_polyfill) return
+  const proto = HTMLDialogElement.prototype as unknown as Record<
+    string,
+    unknown
+  >
+  proto.showModal = original_show_modal
+  proto.close = original_close
+  installed_polyfill = false
+})
 
 function userMsg(content: string): TraceMessage {
   return { role: "user", content } as TraceMessage
@@ -482,5 +523,43 @@ describe("ChatTrace component — usage info row", () => {
     expect(
       container.querySelector("button[aria-label='Message usage info']"),
     ).toBeNull()
+  })
+
+  it("opens a usage breakdown dialog when the usage info button is clicked", async () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          total_tokens: 15,
+          cost: 0.0001234,
+        },
+        latency_ms: 1234,
+      }),
+    ]
+    const { container, baseElement } = render(ChatTrace, {
+      props: { trace, show_per_message_usage: true },
+    })
+    const button = container.querySelector(
+      "button[aria-label='Message usage info']",
+    ) as HTMLButtonElement
+    await fireEvent.click(button)
+    // The page mounts two Dialogs (subtask trace + usage info). Pick the
+    // one whose heading is "Message Usage".
+    const dialogs = Array.from(
+      baseElement.querySelectorAll<HTMLDialogElement>("dialog"),
+    )
+    const usage_dialog = dialogs.find((d) =>
+      (d.textContent ?? "").includes("Message Usage"),
+    )
+    expect(usage_dialog).toBeDefined()
+    const text = usage_dialog!.textContent ?? ""
+    expect(text).toContain("Cost")
+    expect(text).toContain("$0.000123")
+    expect(text).toContain("Total tokens")
+    expect(text).toContain("15")
+    expect(text).toContain("Input tokens")
+    expect(text).toContain("Output tokens")
+    expect(text).toContain("Latency")
   })
 })

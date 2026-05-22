@@ -7,8 +7,7 @@
   import InfoCircleIcon from "../icons/info_circle_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
-  import Float from "$lib/ui/float.svelte"
-  import { formatLatency } from "$lib/utils/formatters"
+  import UsageInfoDialog from "./usage_info_dialog.svelte"
 
   export let trace: Trace
   export let project_id: string | undefined = undefined
@@ -20,15 +19,15 @@
   export let on_fork:
     | ((run_id: string, trace_index: number) => void)
     | undefined = undefined
-  // Show the per-message usage/latency tooltip.
+  // Show the per-message usage info button.
   export let show_per_message_usage: boolean = false
 
   let thinkingExpanded: Record<number, boolean> = {}
   // Keyed by `${trace_index}-${tool_call_index}` so each tool call within an
   // assistant message expands independently.
   let toolCallExpanded: Record<string, boolean> = {}
-  let usageTooltipVisibleIndex: number = -1
   let tool_messages_dialog: ToolMessagesDialog | null = null
+  let usage_info_dialog: UsageInfoDialog | null = null
 
   // Build a map: tool_call_id -> tool message so we can nest tool results
   // under the assistant turn that requested them.
@@ -161,31 +160,11 @@
     )
   }
 
-  function usage_tooltip(message: TraceMessage): string {
-    const usage = message_usage(message)
-    const latency_ms = message_latency_ms(message)
-    const lines: string[] = []
-    if (usage) {
-      if (typeof usage.input_tokens === "number") {
-        lines.push(`Input tokens: ${usage.input_tokens}`)
-      }
-      if (typeof usage.output_tokens === "number") {
-        lines.push(`Output tokens: ${usage.output_tokens}`)
-      }
-      if (typeof usage.total_tokens === "number") {
-        lines.push(`Total tokens: ${usage.total_tokens}`)
-      }
-      if (typeof usage.cached_tokens === "number") {
-        lines.push(`Cached tokens: ${usage.cached_tokens}`)
-      }
-      if (typeof usage.cost === "number") {
-        lines.push(`Cost: $${usage.cost.toFixed(6)}`)
-      }
-    }
-    if (latency_ms !== null) {
-      lines.push(`Latency: ${formatLatency(latency_ms)}`)
-    }
-    return lines.join("\n")
+  function open_usage_dialog(message: TraceMessage) {
+    usage_info_dialog?.show({
+      usage: message_usage(message),
+      latency_ms: message_latency_ms(message),
+    })
   }
 </script>
 
@@ -219,49 +198,15 @@
                 data-testid="chat-msg-meta"
               >
                 {#if show_info}
-                  <!-- svelte-ignore a11y-no-static-element-interactions -->
-                  <div
-                    class="relative inline-block"
-                    on:mouseenter={() => (usageTooltipVisibleIndex = index)}
-                    on:mouseleave={() => {
-                      if (usageTooltipVisibleIndex === index)
-                        usageTooltipVisibleIndex = -1
-                    }}
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                    aria-label="Message usage info"
+                    title="View usage breakdown"
+                    on:click={() => open_usage_dialog(message)}
                   >
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                      aria-label="Message usage info"
-                      on:focus={() => (usageTooltipVisibleIndex = index)}
-                      on:blur={() => {
-                        if (usageTooltipVisibleIndex === index)
-                          usageTooltipVisibleIndex = -1
-                      }}
-                    >
-                      <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                    </button>
-                    {#if usageTooltipVisibleIndex === index}
-                      <Float
-                        placement="left"
-                        strategy="fixed"
-                        offset_px={6}
-                        role="tooltip"
-                      >
-                        <!-- svelte-ignore a11y-no-static-element-interactions -->
-                        <div
-                          class="px-3 py-2 text-xs text-base-content bg-stone-200 rounded-md shadow-lg whitespace-pre-line max-w-xs"
-                          on:mouseenter={() =>
-                            (usageTooltipVisibleIndex = index)}
-                          on:mouseleave={() => {
-                            if (usageTooltipVisibleIndex === index)
-                              usageTooltipVisibleIndex = -1
-                          }}
-                        >
-                          {usage_tooltip(message)}
-                        </div>
-                      </Float>
-                    {/if}
-                  </div>
+                    <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                  </button>
                 {/if}
                 {#if show_fork}
                   <button
@@ -323,49 +268,15 @@
                   class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
                   data-testid="chat-msg-meta"
                 >
-                  <!-- svelte-ignore a11y-no-static-element-interactions -->
-                  <div
-                    class="relative inline-block"
-                    on:mouseenter={() => (usageTooltipVisibleIndex = index)}
-                    on:mouseleave={() => {
-                      if (usageTooltipVisibleIndex === index)
-                        usageTooltipVisibleIndex = -1
-                    }}
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                    aria-label="Message usage info"
+                    title="View usage breakdown"
+                    on:click={() => open_usage_dialog(message)}
                   >
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                      aria-label="Message usage info"
-                      on:focus={() => (usageTooltipVisibleIndex = index)}
-                      on:blur={() => {
-                        if (usageTooltipVisibleIndex === index)
-                          usageTooltipVisibleIndex = -1
-                      }}
-                    >
-                      <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                    </button>
-                    {#if usageTooltipVisibleIndex === index}
-                      <Float
-                        placement="right"
-                        strategy="fixed"
-                        offset_px={6}
-                        role="tooltip"
-                      >
-                        <!-- svelte-ignore a11y-no-static-element-interactions -->
-                        <div
-                          class="px-3 py-2 text-xs text-base-content bg-stone-200 rounded-md shadow-lg whitespace-pre-line max-w-xs"
-                          on:mouseenter={() =>
-                            (usageTooltipVisibleIndex = index)}
-                          on:mouseleave={() => {
-                            if (usageTooltipVisibleIndex === index)
-                              usageTooltipVisibleIndex = -1
-                          }}
-                        >
-                          {usage_tooltip(message)}
-                        </div>
-                      </Float>
-                    {/if}
-                  </div>
+                    <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                  </button>
                 </div>
               {/if}
             </div>
@@ -480,49 +391,15 @@
                     class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
                     data-testid="chat-msg-meta"
                   >
-                    <!-- svelte-ignore a11y-no-static-element-interactions -->
-                    <div
-                      class="relative inline-block"
-                      on:mouseenter={() => (usageTooltipVisibleIndex = index)}
-                      on:mouseleave={() => {
-                        if (usageTooltipVisibleIndex === index)
-                          usageTooltipVisibleIndex = -1
-                      }}
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                      aria-label="Message usage info"
+                      title="View usage breakdown"
+                      on:click={() => open_usage_dialog(message)}
                     >
-                      <button
-                        type="button"
-                        class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                        aria-label="Message usage info"
-                        on:focus={() => (usageTooltipVisibleIndex = index)}
-                        on:blur={() => {
-                          if (usageTooltipVisibleIndex === index)
-                            usageTooltipVisibleIndex = -1
-                        }}
-                      >
-                        <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                      </button>
-                      {#if usageTooltipVisibleIndex === index}
-                        <Float
-                          placement="right"
-                          strategy="fixed"
-                          offset_px={6}
-                          role="tooltip"
-                        >
-                          <!-- svelte-ignore a11y-no-static-element-interactions -->
-                          <div
-                            class="px-3 py-2 text-xs text-base-content bg-stone-200 rounded-md shadow-lg whitespace-pre-line max-w-xs"
-                            on:mouseenter={() =>
-                              (usageTooltipVisibleIndex = index)}
-                            on:mouseleave={() => {
-                              if (usageTooltipVisibleIndex === index)
-                                usageTooltipVisibleIndex = -1
-                            }}
-                          >
-                            {usage_tooltip(message)}
-                          </div>
-                        </Float>
-                      {/if}
-                    </div>
+                      <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                    </button>
                   </div>
                 {/if}
               </div>
@@ -548,3 +425,4 @@
 </div>
 
 <ToolMessagesDialog bind:this={tool_messages_dialog} {project_id} />
+<UsageInfoDialog bind:this={usage_info_dialog} />
