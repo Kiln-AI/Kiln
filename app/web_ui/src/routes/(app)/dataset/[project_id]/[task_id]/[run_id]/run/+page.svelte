@@ -49,7 +49,7 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
-  import TraceComponent from "$lib/ui/trace/trace.svelte"
+  import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
@@ -767,10 +767,9 @@
                 </div>
               {/if}
               {#key run.id}
-                <TraceComponent
+                <ChatTrace
                   trace={run.trace ?? []}
                   {project_id}
-                  markdown_content={true}
                   {forkable_run_ids}
                   truncate_at_trace_index={fork_target?.trace_index ?? null}
                   {on_fork}

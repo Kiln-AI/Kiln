@@ -1,0 +1,486 @@
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, vi } from "vitest"
+import { render, cleanup, fireEvent } from "@testing-library/svelte"
+import ChatTrace from "./chat_trace.svelte"
+import type { Trace as TraceType, TraceMessage } from "$lib/types"
+
+afterEach(() => cleanup())
+
+function userMsg(content: string): TraceMessage {
+  return { role: "user", content } as TraceMessage
+}
+
+function assistantMsg(
+  content: string | null,
+  extras: Partial<{
+    tool_calls: unknown[]
+    reasoning_content: string
+    usage: unknown
+    latency_ms: number
+  }> = {},
+): TraceMessage {
+  return {
+    role: "assistant",
+    content,
+    ...extras,
+  } as TraceMessage
+}
+
+function systemMsg(content: string): TraceMessage {
+  return { role: "system", content } as TraceMessage
+}
+
+function toolMsg(
+  content: string,
+  tool_call_id = "call_1",
+  extras: Partial<{ is_error: boolean; kiln_task_tool_data: string }> = {},
+): TraceMessage {
+  return { role: "tool", content, tool_call_id, ...extras } as TraceMessage
+}
+
+function makeToolCall(
+  id: string,
+  name: string,
+  args: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    type: "function" as const,
+    function: { name, arguments: JSON.stringify(args) },
+  }
+}
+
+describe("ChatTrace component — layout & roles", () => {
+  it("right-aligns user messages and left-aligns assistant messages", () => {
+    const trace: TraceType = [userMsg("hello"), assistantMsg("hi there")]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const userWrap = container.querySelector(
+      "[data-testid='chat-msg-user']",
+    ) as HTMLElement
+    const asstWrap = container.querySelector(
+      "[data-testid='chat-msg-assistant']",
+    ) as HTMLElement
+    expect(userWrap).not.toBeNull()
+    expect(asstWrap).not.toBeNull()
+    expect(userWrap.className).toContain("items-end")
+    expect(asstWrap.className).toContain("items-start")
+  })
+
+  it("does NOT render tool messages as their own bubble", () => {
+    const trace: TraceType = [
+      userMsg("u"),
+      assistantMsg(null, { tool_calls: [makeToolCall("c1", "lookup")] }),
+      toolMsg('{"output": "42"}', "c1"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    // No standalone tool bubble — tool results nest inside the assistant turn.
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-user'], [data-testid='chat-msg-assistant'], [data-testid='chat-msg-system']",
+    )
+    expect(bubbles.length).toBe(2)
+  })
+
+  it("renders user content as markdown by default", () => {
+    const trace: TraceType = [userMsg("**bold**")]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const strong = container.querySelector("strong")
+    expect(strong).not.toBeNull()
+    expect(strong?.textContent).toBe("bold")
+  })
+
+  it("renders assistant content as markdown by default", () => {
+    const trace: TraceType = [assistantMsg("**bold answer**")]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const strong = container.querySelector("strong")
+    expect(strong).not.toBeNull()
+    expect(strong?.textContent).toBe("bold answer")
+  })
+
+  it("splits an assistant message with content + N tool calls into 1 + N bubbles", () => {
+    const trace: TraceType = [
+      assistantMsg("here is what I'll do", {
+        tool_calls: [makeToolCall("c1", "lookup"), makeToolCall("c2", "fetch")],
+      }),
+      toolMsg('{"output": "r1"}', "c1"),
+      toolMsg('{"output": "r2"}', "c2"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(3)
+    // First bubble holds the content; following bubbles each hold one tool call.
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-content']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-toolcall']"),
+    ).toBeNull()
+    expect(
+      bubbles[1].querySelector("[data-testid='chat-msg-toolcall']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[2].querySelector("[data-testid='chat-msg-toolcall']"),
+    ).not.toBeNull()
+  })
+
+  it("renders a single bubble when an assistant message has only content (no tool_calls)", () => {
+    const trace: TraceType = [assistantMsg("just an answer")]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(1)
+  })
+
+  it("renders one bubble per tool call when an assistant message has only tool_calls", () => {
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("c1", "lookup"), makeToolCall("c2", "fetch")],
+      }),
+      toolMsg('{"output": "r1"}', "c1"),
+      toolMsg('{"output": "r2"}', "c2"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(2)
+  })
+
+  it("places the metadata row inside the last bubble for the assistant turn, gated on expansion", async () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        tool_calls: [makeToolCall("c1", "lookup"), makeToolCall("c2", "fetch")],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+      toolMsg('{"output": "ok1"}', "c1"),
+      toolMsg('{"output": "ok2"}', "c2"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: { trace, show_per_message_usage: true },
+    })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(3)
+    // Meta is hidden on all bubbles while the last tool-call bubble is
+    // collapsed — including the last bubble itself.
+    expect(bubbles[0].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    expect(bubbles[1].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    expect(bubbles[2].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    // Expanding the last tool-call bubble reveals its meta.
+    const lastToggle = bubbles[2].querySelector(
+      "[data-testid='chat-msg-toolcall'] button",
+    ) as HTMLButtonElement
+    await fireEvent.click(lastToggle)
+    expect(
+      bubbles[2].querySelector("[data-testid='chat-msg-meta']"),
+    ).not.toBeNull()
+    // Other bubbles still have no meta.
+    expect(bubbles[0].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    expect(bubbles[1].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+  })
+
+  it("places the user metadata row inside the user bubble", () => {
+    const trace: TraceType = [
+      userMsg("hello"),
+      assistantMsg("hi"),
+      userMsg("again"),
+    ]
+    const forkable_run_ids = [null, null, "run-2"]
+    const { container } = render(ChatTrace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    const userBubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-user']",
+    )
+    expect(userBubbles.length).toBe(2)
+    // Fork button should be inside the second user bubble.
+    expect(
+      userBubbles[1].querySelector("button[aria-label='Fork from this turn']"),
+    ).not.toBeNull()
+  })
+})
+
+describe("ChatTrace component — thinking", () => {
+  it("starts with thinking collapsed", () => {
+    const trace: TraceType = [
+      assistantMsg("done", { reasoning_content: "step-by-step plan" }),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    // Header is visible.
+    expect(container.textContent).toContain("Thinking")
+    // Body text is NOT visible until expanded.
+    expect(container.textContent).not.toContain("step-by-step plan")
+  })
+
+  it("expands thinking when the toggle is clicked", async () => {
+    const trace: TraceType = [
+      assistantMsg("done", { reasoning_content: "deep thought" }),
+    ]
+    const { container, getByText } = render(ChatTrace, { props: { trace } })
+    await fireEvent.click(getByText("Thinking"))
+    expect(container.textContent).toContain("deep thought")
+  })
+
+  it("renders thinking content as markdown when expanded", async () => {
+    const trace: TraceType = [
+      assistantMsg("done", { reasoning_content: "**emphasis**" }),
+    ]
+    const { container, getByText } = render(ChatTrace, { props: { trace } })
+    await fireEvent.click(getByText("Thinking"))
+    const strong = container.querySelector(
+      "[data-testid='chat-msg-thinking'] strong",
+    )
+    expect(strong).not.toBeNull()
+    expect(strong?.textContent).toBe("emphasis")
+  })
+
+  it("omits the thinking section when reasoning_content is empty", () => {
+    const trace: TraceType = [assistantMsg("just an answer")]
+    const { container } = render(ChatTrace, { props: { trace } })
+    expect(
+      container.querySelector("[data-testid='chat-msg-thinking']"),
+    ).toBeNull()
+  })
+})
+
+describe("ChatTrace component — tool calls", () => {
+  it("renders one bubble per tool call with a 'Toolcall: {name}' label, collapsed by default", () => {
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [
+          makeToolCall("c1", "lookup"),
+          makeToolCall("c2", "fetch"),
+          makeToolCall("c3", "save"),
+        ],
+      }),
+      toolMsg('{"output": "r1"}', "c1"),
+      toolMsg('{"output": "r2"}', "c2"),
+      toolMsg('{"output": "r3"}', "c3"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const tcBubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-toolcall']",
+    )
+    expect(tcBubbles.length).toBe(3)
+    expect(container.textContent).toContain("Toolcall:")
+    expect(container.textContent).toContain("lookup")
+    expect(container.textContent).toContain("fetch")
+    expect(container.textContent).toContain("save")
+    // No expanded card visible yet.
+    expect(
+      container.querySelectorAll("[data-testid='chat-tool-call']").length,
+    ).toBe(0)
+    // No grouping summary like "3 tool calls" anymore.
+    expect(container.textContent).not.toContain("3 tool calls")
+  })
+
+  it("expands a tool-call bubble and reveals args + matching tool result", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("c1", "lookup", { q: "kiln" })],
+      }),
+      toolMsg('{"output": "answer-from-tool"}', "c1"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const tcBubble = container.querySelector(
+      "[data-testid='chat-msg-toolcall']",
+    ) as HTMLElement
+    const toggle = tcBubble.querySelector("button") as HTMLButtonElement
+    await fireEvent.click(toggle)
+    const cards = container.querySelectorAll("[data-testid='chat-tool-call']")
+    expect(cards.length).toBe(1)
+    const card = cards[0] as HTMLElement
+    expect(card.textContent).toContain("kiln")
+    expect(card.textContent).toContain("Tool Result")
+    expect(card.textContent).toContain("answer-from-tool")
+  })
+
+  it("expands tool-call bubbles independently", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [
+          makeToolCall("c1", "lookup", { q: "first" }),
+          makeToolCall("c2", "fetch", { q: "second" }),
+        ],
+      }),
+      toolMsg('{"output": "r1"}', "c1"),
+      toolMsg('{"output": "r2"}', "c2"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const tcBubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-toolcall']",
+    )
+    expect(tcBubbles.length).toBe(2)
+    // Expand only the second one.
+    const secondToggle = tcBubbles[1].querySelector(
+      "button",
+    ) as HTMLButtonElement
+    await fireEvent.click(secondToggle)
+    expect(
+      container.querySelectorAll("[data-testid='chat-tool-call']").length,
+    ).toBe(1)
+    expect(container.textContent).toContain("second")
+    expect(container.textContent).not.toContain("first")
+  })
+
+  it("marks the tool result as an error when the tool message reports is_error", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, { tool_calls: [makeToolCall("c1", "lookup")] }),
+      toolMsg("boom", "c1", { is_error: true }),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const toggle = container.querySelector(
+      "[data-testid='chat-msg-toolcall'] button",
+    ) as HTMLButtonElement
+    await fireEvent.click(toggle)
+    expect(container.textContent).toContain("Tool Error")
+  })
+
+  it("indicates when a tool call has no matching result", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, { tool_calls: [makeToolCall("c1", "lookup")] }),
+      // no matching tool message
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const toggle = container.querySelector(
+      "[data-testid='chat-msg-toolcall'] button",
+    ) as HTMLButtonElement
+    await fireEvent.click(toggle)
+    expect(container.textContent).toContain("No tool result recorded")
+  })
+})
+
+describe("ChatTrace component — system prompt", () => {
+  it("does not render system messages at all (no toggle, no content)", () => {
+    const trace: TraceType = [systemMsg("you are helpful"), userMsg("hi")]
+    const { container } = render(ChatTrace, { props: { trace } })
+    expect(
+      container.querySelector("[data-testid='chat-msg-system']"),
+    ).toBeNull()
+    expect(container.textContent).not.toContain("you are helpful")
+    expect(container.textContent).not.toContain("system prompt")
+  })
+
+  it("does not render developer messages either", () => {
+    const trace: TraceType = [
+      { role: "developer", content: "internal directive" } as TraceMessage,
+      userMsg("hi"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    expect(
+      container.querySelector("[data-testid='chat-msg-system']"),
+    ).toBeNull()
+    expect(container.textContent).not.toContain("internal directive")
+  })
+})
+
+describe("ChatTrace component — fork affordance", () => {
+  function fork_button(container: HTMLElement) {
+    return container.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label="Fork from this turn"]',
+    )
+  }
+
+  it("renders a fork button on user messages that are forkable", () => {
+    const trace: TraceType = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
+    const forkable_run_ids = [null, null, null, "run-2", null]
+    const { container } = render(ChatTrace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    expect(fork_button(container).length).toBe(1)
+  })
+
+  it("does NOT render a fork button on assistant messages even if forkable_run_ids[i] is set", () => {
+    const trace: TraceType = [userMsg("u1"), assistantMsg("a1")]
+    const forkable_run_ids = ["run-u", "run-a"]
+    const { container } = render(ChatTrace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    // Only the user msg gets a fork button.
+    expect(fork_button(container).length).toBe(1)
+  })
+
+  it("invokes on_fork with the mapped run id and trace index", async () => {
+    const trace: TraceType = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+    ]
+    const forkable_run_ids = [null, null, null, "run-leaf"]
+    const on_fork = vi.fn()
+    const { container } = render(ChatTrace, {
+      props: { trace, forkable_run_ids, on_fork },
+    })
+    const button = fork_button(container)[0]
+    expect(button).toBeDefined()
+    await fireEvent.click(button)
+    expect(on_fork).toHaveBeenCalledTimes(1)
+    expect(on_fork).toHaveBeenCalledWith("run-leaf", 3)
+  })
+
+  it("does NOT render any fork button when on_fork is not provided", () => {
+    const trace: TraceType = [userMsg("u1")]
+    const forkable_run_ids = ["run-1"]
+    const { container } = render(ChatTrace, {
+      props: { trace, forkable_run_ids },
+    })
+    expect(fork_button(container).length).toBe(0)
+  })
+
+  it("hides messages at or after truncate_at_trace_index", () => {
+    const trace: TraceType = [
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: { trace, truncate_at_trace_index: 2 },
+    })
+    // Only indices 0..1 render.
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-user'], [data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(2)
+  })
+})
+
+describe("ChatTrace component — usage info row", () => {
+  it("renders a usage info button when show_per_message_usage and message has usage", () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: { trace, show_per_message_usage: true },
+    })
+    expect(
+      container.querySelector("button[aria-label='Message usage info']"),
+    ).not.toBeNull()
+  })
+
+  it("does not render usage button when show_per_message_usage is false", () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: { trace, show_per_message_usage: false },
+    })
+    expect(
+      container.querySelector("button[aria-label='Message usage info']"),
+    ).toBeNull()
+  })
+})
