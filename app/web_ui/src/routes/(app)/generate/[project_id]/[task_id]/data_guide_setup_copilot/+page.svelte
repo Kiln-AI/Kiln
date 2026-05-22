@@ -288,7 +288,7 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
-          body: { guide },
+          body: { guide, source: "kiln_pro" },
         },
       )
       if (api_error) throw api_error

@@ -481,6 +481,10 @@ class TestAnalyzeInputDataGuide:
             },
         }
 
+    @staticmethod
+    def _make_task(instruction: str = "Translate the input to French.") -> Task:
+        return Task(name="MockTask", instruction=instruction)
+
     def test_no_api_key(self, client):
         with patch(
             "app.desktop.studio_server.utils.copilot_utils.Config.shared"
@@ -502,7 +506,7 @@ class TestAnalyzeInputDataGuide:
         mock_post_response = MagicMock()
         mock_post_response.status_code = 200
         mock_post_response.json.return_value = {
-            "draft_guide": "# Reference Inputs\n\n## Example 1\n```input\nhello\n```\n"
+            "draft_guide": "# Semantics\n\n## Data Patterns\nShort greetings.\n\n# Style\n\n## Input-Level Metrics\nOne short sentence.\n\n# Presentation Defaults\n\nLowercase casual register.\n"
         }
         mock_http = MagicMock()
         mock_http.post = AsyncMock(return_value=mock_post_response)
@@ -521,6 +525,8 @@ class TestAnalyzeInputDataGuide:
                 GuidePreviewSample(input="generated 2"),
             ]
 
+        task = self._make_task(instruction="Translate the input to French.")
+
         with (
             patch(
                 "app.desktop.studio_server.copilot_api.get_authenticated_client",
@@ -530,12 +536,20 @@ class TestAnalyzeInputDataGuide:
                 "app.desktop.studio_server.copilot_api.generate_input_preview_samples",
                 new=fake_preview,
             ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
         ):
             response = client.post(self.URL, json=self._payload())
 
         assert response.status_code == 200
         body = response.json()
-        assert body["draft_guide"].startswith("# Reference Inputs")
+        # Copilot analyze emits the Mike-strict three-section shape.
+        assert body["draft_guide"].startswith("# Semantics")
+        assert "# Style" in body["draft_guide"]
+        assert "# Presentation Defaults" in body["draft_guide"]
+        assert "# Reference Inputs" not in body["draft_guide"]
         assert body["preview_samples"] == [
             {"input": "generated 1"},
             {"input": "generated 2"},
@@ -545,7 +559,10 @@ class TestAnalyzeInputDataGuide:
         assert mock_http.post.await_args.args == (
             "/v1/copilot/analyze_input_data_guide",
         )
-        assert post_kwargs["json"]["task_prompt"] == "Translate to French."
+        # task_prompt comes from the server-resolved runtime prompt
+        # (task.instruction here, since this task has no default run config),
+        # NOT from the frontend-supplied target_task_info.task_prompt.
+        assert post_kwargs["json"]["task_prompt"] == "Translate the input to French."
         assert post_kwargs["json"]["input_examples"] == ["hello", "frog"]
         # The wrapper does NOT pass task_output_schema — output is out of scope.
         assert "task_output_schema" not in post_kwargs["json"]
@@ -563,9 +580,16 @@ class TestAnalyzeInputDataGuide:
         mock_authclient = MagicMock()
         mock_authclient.get_async_httpx_client.return_value = mock_http
 
-        with patch(
-            "app.desktop.studio_server.copilot_api.get_authenticated_client",
-            return_value=mock_authclient,
+        task = self._make_task()
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.get_authenticated_client",
+                return_value=mock_authclient,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
         ):
             response = client.post(self.URL, json=self._payload())
 
@@ -585,9 +609,16 @@ class TestAnalyzeInputDataGuide:
         mock_authclient = MagicMock()
         mock_authclient.get_async_httpx_client.return_value = mock_http
 
-        with patch(
-            "app.desktop.studio_server.copilot_api.get_authenticated_client",
-            return_value=mock_authclient,
+        task = self._make_task()
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.get_authenticated_client",
+                return_value=mock_authclient,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
         ):
             response = client.post(self.URL, json=self._payload())
 

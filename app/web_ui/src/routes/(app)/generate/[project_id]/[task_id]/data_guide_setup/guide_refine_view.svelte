@@ -192,10 +192,21 @@
 
   $: data_guide_properties = build_data_guide_properties(data_guide)
 
+  const source_labels: Record<NonNullable<DataGuide["source"]>, string> = {
+    manual: "Manual",
+    kiln_pro: "Kiln Pro",
+  }
+
   function build_data_guide_properties(g: DataGuide | null): UiProperty[] {
     const props: UiProperty[] = []
     if (g?.id) {
       props.push({ name: "ID", value: g.id })
+    }
+    if (g?.source) {
+      props.push({
+        name: "Source",
+        value: source_labels[g.source] ?? g.source,
+      })
     }
     if (g?.created_at) {
       props.push({ name: "Created At", value: formatDate(g.created_at) })
@@ -234,7 +245,7 @@
           {#if page_submitting}
             <span class="loading loading-spinner loading-xs"></span>
           {:else}
-            Test Data Guide
+            Refine Data Guide
           {/if}
         </button>
         <InfoTooltip

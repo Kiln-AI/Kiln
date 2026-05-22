@@ -23,6 +23,7 @@
     name: string
     text: string
     truncated: boolean
+    file: File
   }
 </script>
 
@@ -149,6 +150,7 @@
           name: file.name,
           text: truncated ? text.slice(0, MAX_DOC_CHARS) : text,
           truncated,
+          file,
         })
       } catch {
         failed.push(`${file.name} (read failed)`)

@@ -33,9 +33,6 @@
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
-  import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
-  import type { GuideSample } from "../data_guide_setup/guide_setup_form.svelte"
-  import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -78,28 +75,6 @@
   // can confirm the guide was saved (the new guide is below the fold). Read
   // once on mount and stripped from the URL so a refresh doesn't re-show it.
   let data_guide_just_saved = false
-
-  // Manual-path dialog: same behavior as before the chooser refactor — open
-  // an AddExample dialog from the synth intro, stash the result on the
-  // pending_data_guide_example store, then navigate to /data_guide_setup
-  // where the form pre-fills with that example. Only the "Set Up Manually"
-  // button uses this; "Set Up with Kiln Pro" goes straight to the copilot
-  // page (its uploader has its own add-example UX).
-  let manual_seed_dialog: AddExampleDialog
-  function handle_manual_seed_added(
-    event: CustomEvent<{
-      sample: GuideSample
-      index: number
-      mode: "add" | "edit"
-    }>,
-  ) {
-    pending_data_guide_example.set(event.detail.sample)
-    posthog.capture("data_guide_intro_clicked", {
-      choice: "manual",
-      seeded_example: true,
-    })
-    goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
-  }
 
   $: error = $loading_error || task_error
 
@@ -733,8 +708,8 @@
         ? JSON.parse(sample.input)
         : sample.input
       const save_sample_guidance = guidance_data.guidance_for_type("outputs")
-      // The Input Data Guide is intentionally NOT sent at the output stage —
-      // it describes inputs only, and output behavior is owned by the task's
+      // The Data Guide is intentionally NOT sent at the output stage — it
+      // describes inputs only, and output behavior is owned by the task's
       // system prompt + output schema.
       // Get a random split tag, if splits are defined
       const split_tag = get_random_split_tag()
@@ -908,26 +883,27 @@
             title="Create a Data Guide"
             description_paragraphs={[
               "A Data Guide tells us what realistic inputs to your task look like. Without one, the model might guess.",
-              "Let Kiln Pro draft the guide for you from a few example inputs or text documents, or set it up manually by adding examples and refining as you go.",
+              "Add examples, rate the data we generate, and we'll refine the guide from there.",
             ]}
             action_buttons={[
               {
-                label: "Set Up with Kiln Pro",
+                label: "Set Up Data Guide",
                 is_primary: true,
                 onClick: () => {
                   posthog.capture("data_guide_intro_clicked", {
-                    choice: "copilot",
+                    choice: "set_up",
                   })
-                  goto(
-                    `/generate/${project_id}/${task_id}/data_guide_setup_copilot`,
-                  )
+                  goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)
                 },
               },
               {
-                label: "Set Up Manually",
+                label: "Continue Without Data Guide",
                 is_primary: false,
                 onClick: () => {
-                  manual_seed_dialog?.open_add()
+                  posthog.capture("data_guide_intro_clicked", {
+                    choice: "skip",
+                  })
+                  skip_data_guide = true
                 },
               },
             ]}
@@ -936,26 +912,6 @@
               <NotebookIcon />
             </div>
           </Intro>
-          <div
-            class="flex flex-row gap-1 mt-4 justify-end w-full max-w-[300px]"
-          >
-            <span class="text-sm text-gray-500">or</span>
-            <button
-              type="button"
-              class="link underline text-sm text-gray-500"
-              on:click={() => {
-                skip_data_guide = true
-              }}
-            >
-              Continue without a Data Guide
-            </button>
-          </div>
-          <AddExampleDialog
-            bind:this={manual_seed_dialog}
-            {project_id}
-            {task_id}
-            on:submit={handle_manual_seed_added}
-          />
         </div>
       {:else if is_empty}
         {#if data_guide_just_saved}

@@ -22,8 +22,9 @@ async function seedDataGuide(
 /* @act
 ## Goals
 On a fresh task, the /synth page intro is the single entry point for creating
-an input data guide. Without a Kiln Pro key it shows one CTA: "Set Up Input
-Data Guide" → /data_guide_setup. Clicking it lands on the manual setup form.
+an input data guide. The single primary CTA "Set Up Data Guide" routes to a
+comparison page (`/data_guide_chooser`) that lets the user pick Manual vs
+Kiln Pro. From there, "Create Manually" lands on the manual setup form.
 
 ## Fixtures
 - registeredUser
@@ -31,16 +32,16 @@ Data Guide" → /data_guide_setup. Clicking it lands on the manual setup form.
 
 ## Hints
 - /synth?reason=fine_tune triggers is_setup=true. With a fresh task and no
-  saved guide, the "Create an Input Data Guide" Intro renders before the SDG
+  saved guide, the "Create a Data Guide" Intro renders before the SDG
   wizard.
-- Without a configured Kiln Pro key the primary CTA is "Set Up Input Data
-  Guide" (manual). With one, it's "Set Up with Kiln Pro" + secondary "Set Up
-  Manually".
+- Intro CTAs: primary "Set Up Data Guide" → /data_guide_chooser, secondary
+  "Continue Without" sets skip_data_guide=true (no nav).
 
 ## Assertions
-- The "Set Up Input Data Guide" CTA navigates to /data_guide_setup.
+- "Set Up Data Guide" navigates to /data_guide_chooser.
+- From the chooser, "Create Manually" navigates to /data_guide_setup.
 */
-test("/synth intro routes to manual setup", async ({
+test("/synth intro routes through chooser to manual setup", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -50,7 +51,13 @@ test("/synth intro routes to manual setup", async ({
 
   await page.goto(`/generate/${project.id}/${task.id}/synth?reason=fine_tune`)
 
-  await page.getByRole("button", { name: "Set Up Input Data Guide" }).click()
+  await page.getByRole("button", { name: "Set Up Data Guide" }).click()
+
+  await expect(page).toHaveURL(
+    `/generate/${project.id}/${task.id}/data_guide_chooser`,
+  )
+
+  await page.getByRole("button", { name: "Create Manually" }).click()
 
   await expect(page).toHaveURL(
     `/generate/${project.id}/${task.id}/data_guide_setup`,

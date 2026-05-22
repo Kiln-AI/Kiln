@@ -426,7 +426,8 @@ def test_topic_path_conversions():
             "wrapped_instruction",
             True,
         ),
-        # Test 2: Only topic path provided (no guidance)
+        # Test 2: Only topic path provided (no guidance). Topic path block is
+        # appended after a leading newline to the empty guidance string.
         (
             None,
             ["AI", "Machine Learning"],
@@ -434,12 +435,12 @@ def test_topic_path_conversions():
             """
 ## Topic Path
 The topic path for this sample is:
-["AI", "Machine Learning"]
-""",
+["AI", "Machine Learning"]""",
             "wrapped_instruction_with_topic",
             True,
         ),
-        # Test 3: Both guidance and topic path provided
+        # Test 3: Both guidance and topic path provided. Topic path block is
+        # appended directly after the guidance with a single newline separator.
         (
             "Focus on technical accuracy",
             ["Technology", "AI"],
@@ -447,8 +448,7 @@ The topic path for this sample is:
             """Focus on technical accuracy
 ## Topic Path
 The topic path for this sample is:
-["Technology", "AI"]
-""",
+["Technology", "AI"]""",
             "wrapped_instruction_combined",
             True,
         ),
@@ -727,6 +727,57 @@ def test_save_and_get_data_gen_guide(
     assert len(reloaded_task.data_guides()) == 1
 
 
+def test_save_data_gen_guide_defaults_source_to_manual(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    """First save without an explicit `source` defaults to 'manual' for
+    back-compat. Existing guides on disk also default to 'manual'."""
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "body"},
+    )
+    assert response.status_code == 200
+    assert response.json()["source"] == "manual"
+
+
+def test_save_data_gen_guide_persists_kiln_pro_source(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    """When the copilot flow saves a guide it sends source='kiln_pro'; the
+    backend persists it so refine can branch on it later."""
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "body", "source": "kiln_pro"},
+    )
+    assert response.status_code == 200
+    assert response.json()["source"] == "kiln_pro"
+
+
+def test_save_data_gen_guide_edit_preserves_existing_source(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    """Editing/refining a guide without sending `source` preserves whatever
+    source the existing guide already had — otherwise editing a kiln_pro guide
+    would silently flip it to manual and pick the wrong refine branch next time."""
+    client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "original", "source": "kiln_pro"},
+    )
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "edited"},
+    )
+    assert response.status_code == 200
+    assert response.json()["source"] == "kiln_pro"
+    assert response.json()["guide"] == "edited"
+
+
 def test_save_data_gen_guide_rejects_blank(
     mock_task_from_id,
     test_task,
@@ -855,8 +906,8 @@ def test_resolve_data_guide_no_persisted_returns_none(test_task):
 
 
 def test_combine_guidance_with_data_guide_only(test_task):
-    """With a saved guide and no session guidance, the helper wraps the
-    guide with the framing paragraph + stage hint."""
+    """With a saved guide and no template guidance, the helper wraps
+    the guide with the framing paragraph + stage hint."""
     from kiln_ai.datamodel.data_guide import DataGuide
 
     from app.desktop.studio_server.data_gen_api import _combine_guidance
@@ -868,14 +919,26 @@ def test_combine_guidance_with_data_guide_only(test_task):
 
     out = _combine_guidance(reloaded, None, "inputs")
     assert out is not None
-    assert "# Task Input Data Guide" in out
+    assert "# Task Data Guide" in out
     assert "GUIDE_BODY" in out
-    assert "mirror their structure and value patterns" in out
+    # New stage hint references the section shape (mirrors → "mirror their structure" still in inputs hint).
+    assert "mirror their structure" in out
+    # Authority cascade copy is present.
+    assert "Authority cascade" in out
+    # Template label appears in the cascade documentation, but the actual
+    # labeled block is not rendered (no template was passed).
+    assert "Per-stage guidance from the eval template" not in out
+    # The new wrapper teaches the new section shape — old XML rule-grouping
+    # framing must be gone. The migration help may still mention
+    # `<input_structural>` by name so older guides can be read; the
+    # assertion below targets the active *teaching*, not incidental references.
+    assert "Rule grouping" not in out
+    assert "two valid groups are" not in out
 
 
-def test_combine_guidance_data_guide_and_session(test_task):
-    """When both a guide and session guidance exist, both blocks are present
-    separated by a blank line."""
+def test_combine_guidance_data_guide_and_template(test_task):
+    """Both layers (data guide + template) appear in the right order with the
+    authority cascade preserved."""
     from kiln_ai.datamodel.data_guide import DataGuide
 
     from app.desktop.studio_server.data_gen_api import _combine_guidance
@@ -885,25 +948,29 @@ def test_combine_guidance_data_guide_and_session(test_task):
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
 
-    out = _combine_guidance(reloaded, "EXTRA_SESSION_GUIDANCE", "inputs")
+    out = _combine_guidance(reloaded, "TEMPLATE_GUIDANCE", "inputs")
     assert out is not None
     assert "GUIDE_BODY" in out
-    assert "EXTRA_SESSION_GUIDANCE" in out
-    # session guidance should appear after the data guide block
-    assert out.index("GUIDE_BODY") < out.index("EXTRA_SESSION_GUIDANCE")
+    assert "TEMPLATE_GUIDANCE" in out
+    assert "# Task Data Guide" in out
+    assert "Per-stage guidance from the eval template" in out
+    assert out.index("GUIDE_BODY") < out.index("TEMPLATE_GUIDANCE")
 
 
 def test_combine_guidance_session_only(test_task):
-    """With no saved guide and a session guidance, the helper just returns
-    the session guidance — no Task Data Guide framing."""
+    """With no saved guide and only template guidance, the helper just
+    returns the template-guidance block — no Data Guide framing."""
     from app.desktop.studio_server.data_gen_api import _combine_guidance
 
     out = _combine_guidance(test_task, "SESSION_ONLY", "topics")
-    assert out == "SESSION_ONLY"
+    assert out is not None
+    assert "SESSION_ONLY" in out
+    assert "# Template Guidance" in out
+    assert "# Task Data Guide" not in out
 
 
 def test_combine_guidance_empty_returns_none(test_task):
-    """No saved guide, no session guidance, no override → None."""
+    """No saved guide, no template, no override → None."""
     from app.desktop.studio_server.data_gen_api import _combine_guidance
 
     assert _combine_guidance(test_task, None, "topics") is None
@@ -937,6 +1004,60 @@ def test_combine_guidance_stage_hints_keys_are_input_only():
     from app.desktop.studio_server.data_gen_api import _DATA_GUIDE_STAGE_HINTS
 
     assert set(_DATA_GUIDE_STAGE_HINTS.keys()) == {"topics", "inputs"}
+
+
+def test_resolve_task_runtime_prompt_falls_back_when_no_default_run_config(
+    test_task,
+):
+    """When the task has no default_run_config_id, the resolver returns
+    `task.instruction` verbatim — that's still what the synthesis model sees
+    at runtime in this case."""
+    from app.desktop.studio_server.data_gen_api import _resolve_task_runtime_prompt
+
+    test_task.default_run_config_id = None
+    assert _resolve_task_runtime_prompt(test_task) == test_task.instruction
+
+
+def test_resolve_task_runtime_prompt_uses_default_run_config_prompt(test_task):
+    """When a default run config is set with a kiln_agent prompt_id, the
+    resolver returns the prompt that prompt_builder_from_id resolves to —
+    matching what the synthesis model actually sees at runtime."""
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    rc = TaskRunConfig(
+        name="default",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=test_task,
+    )
+    rc.save_to_file()
+
+    test_task.default_run_config_id = rc.id
+    test_task.save_to_file()
+
+    from app.desktop.studio_server.data_gen_api import _resolve_task_runtime_prompt
+
+    resolved = _resolve_task_runtime_prompt(test_task)
+    # SimplePromptBuilder builds from `task.instruction` plus framing — so the
+    # resolved prompt must contain the instruction but isn't necessarily equal
+    # to it (the builder may add output-format / system framing).
+    assert test_task.instruction in resolved
+
+
+def test_resolve_task_runtime_prompt_falls_back_when_default_rc_missing(
+    test_task,
+):
+    """If default_run_config_id points to a non-existent run config, fall
+    back to task.instruction rather than crashing."""
+    test_task.default_run_config_id = "nonexistent-id"
+
+    from app.desktop.studio_server.data_gen_api import _resolve_task_runtime_prompt
+
+    assert _resolve_task_runtime_prompt(test_task) == test_task.instruction
 
 
 def test_generate_sample_does_not_inject_data_guide(
@@ -1028,7 +1149,7 @@ def test_generate_sample_does_not_inject_data_guide(
     # data guide body.
     wrapped = captured.get("wrapped_with", "")
     assert "DO_NOT_LEAK_TO_OUTPUT_STAGE" not in wrapped
-    assert "Task Input Data Guide" not in wrapped
+    assert "Task Data Guide" not in wrapped
 
 
 # --- /data_gen_guide_preview endpoint ---

@@ -30,7 +30,10 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.data_gen_api import generate_input_preview_samples
+from app.desktop.studio_server.data_gen_api import (
+    _resolve_task_runtime_prompt,
+    generate_input_preview_samples,
+)
 from app.desktop.studio_server.api_models.copilot_models import (
     AnalyzeInputDataGuideApiInput,
     AnalyzeInputDataGuideApiOutput,
@@ -305,8 +308,11 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
+        task = task_from_id(project_id, task_id)
+        resolved_task_prompt = _resolve_task_runtime_prompt(task)
+
         analyze_payload = {
-            "task_prompt": input.target_task_info.task_prompt,
+            "task_prompt": resolved_task_prompt,
             "task_description": input.task_description,
             "task_input_schema": input.target_task_info.task_input_schema or None,
             "input_examples": input.input_examples,

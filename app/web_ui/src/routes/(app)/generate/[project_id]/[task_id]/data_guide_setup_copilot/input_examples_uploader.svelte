@@ -23,6 +23,11 @@
     type ExtractedDocument,
   } from "./add_documents_dialog.svelte"
   import Callout from "$lib/ui/callout.svelte"
+  import { client } from "$lib/api_client"
+
+  // Tag applied to documents persisted to the Document Library from this
+  // uploader. Lets users find / curate the doc that seeded a Data Guide later.
+  const DATA_GUIDE_DOC_TAG = "data_guide_example"
 
   export let project_id: string
   export let task_id: string
@@ -90,6 +95,44 @@
       upload_warning = `${dropped} file${dropped === 1 ? "" : "s"} skipped — entry limit (${MAX_TOTAL_ENTRIES}) reached.`
     }
     emit_change()
+    // Fire-and-forget: persist the accepted files to the Document Library so
+    // they appear under the data_guide_example tag for later curation. A
+    // failure here must NOT block the analyze flow — the user's primary
+    // action is to draft a guide, not to manage their library.
+    persist_uploaded_documents(accepted.map((d) => d.file))
+  }
+
+  async function persist_uploaded_documents(files: File[]) {
+    if (files.length === 0) return
+    const formData = new FormData()
+    files.forEach((file) => {
+      formData.append("files", file)
+      formData.append("names", file.name)
+    })
+    formData.append("tags", DATA_GUIDE_DOC_TAG)
+    try {
+      const { error } = await client.POST(
+        "/api/projects/{project_id}/documents/bulk",
+        {
+          params: { path: { project_id } },
+          // openapi-typescript can't serialize multipart uploads from the
+          // generated body type. Cast to satisfy the type checker; the runtime
+          // FormData is what FastAPI's UploadFile expects.
+          body: formData as unknown as { files: string[]; names: string[] },
+        },
+      )
+      if (error) {
+        console.error(
+          "Failed to persist uploaded documents to Document Library:",
+          error,
+        )
+      }
+    } catch (e) {
+      console.error(
+        "Failed to persist uploaded documents to Document Library:",
+        e,
+      )
+    }
   }
 
   function remove_entry(index: number) {

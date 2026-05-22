@@ -88,21 +88,19 @@
       <div
         class="text-[10px] text-gray-500 uppercase font-medium tracking-wide"
       >
-        Input Generation Options
+        Generation Model
       </div>
       <div class="mt-0.5 text-xs truncate">
-        Model: {input_model_name
+        {input_model_name
           ? friendly_model_name(input_model_name, $model_info)
           : "—"}
       </div>
-      <div class="text-xs text-gray-400 leading-none">…</div>
     </button>
   </div>
 
   <Dialog
     bind:this={input_config_dialog}
-    title="Input Generation Options"
-    sub_subtitle="Configure the run options used to generate example inputs."
+    title="Generation Options"
     action_buttons={[{ label: "Done", isPrimary: true }]}
   >
     <RunConfigComponent
@@ -124,28 +122,22 @@
   <Dialog
     bind:this={combined_config_dialog}
     title="Generation Options"
-    sub_subtitle="Options used to generate synthetic inputs."
     width="wide"
     action_buttons={[{ label: "Done", isPrimary: true }]}
   >
-    <div class="flex flex-col gap-6">
-      <div>
-        <div class="font-medium">Input Generation Options</div>
-        <RunConfigComponent
-          bind:this={input_run_config_component}
-          bind:model_name={input_model_name}
-          model={recommended_data_gen_model}
-          {project_id}
-          requires_structured_output={true}
-          show_name_field={false}
-          hide_prompt_selector={true}
-          show_tools_selector_in_advanced={true}
-          model_dropdown_settings={{
-            requires_data_gen: true,
-            suggested_mode: "data_gen",
-          }}
-        />
-      </div>
-    </div>
+    <RunConfigComponent
+      bind:this={input_run_config_component}
+      bind:model_name={input_model_name}
+      model={recommended_data_gen_model}
+      {project_id}
+      requires_structured_output={true}
+      show_name_field={false}
+      hide_prompt_selector={true}
+      show_tools_selector_in_advanced={true}
+      model_dropdown_settings={{
+        requires_data_gen: true,
+        suggested_mode: "data_gen",
+      }}
+    />
   </Dialog>
 {/if}

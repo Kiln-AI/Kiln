@@ -16,8 +16,9 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
-from kiln_ai.datamodel.data_guide import DataGuide
+from kiln_ai.datamodel.data_guide import DataGuide, DataGuideSource
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -89,6 +90,10 @@ class SaveTaskDataGuideInput(BaseModel):
         default="",
         description="Markdown body of the input data guide.",
     )
+    source: DataGuideSource | None = Field(
+        default=None,
+        description="Which flow created this guide. Determines which refine metaprompter branch runs on subsequent edits. On edit, omit to preserve the existing source; on first save, send the originating flow.",
+    )
 
 
 class GuidePreviewSample(BaseModel):
@@ -133,8 +138,10 @@ class GuideRefineOutput(BaseModel):
 
     guide: str = Field(
         description=(
-            "Full refined input data guide markdown. Includes `# Reference Inputs` "
-            "and `# Input Guidelines & Rules` sections as appropriate."
+            "Full refined input data guide markdown. Manual-flow guides include "
+            "`# Reference Inputs` plus `# Semantics`, `# Style`, "
+            "`# Presentation Defaults`. Kiln Pro / Copilot-flow guides include "
+            "only `# Semantics`, `# Style`, `# Presentation Defaults`."
         ),
     )
 
@@ -221,7 +228,10 @@ def connect_data_gen_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         combined_guidance = _combine_guidance(
-            task, input.guidance, "topics", input.data_guide
+            task,
+            input.guidance,
+            "topics",
+            input.data_guide,
         )
         categories_task = DataGenCategoriesTask(
             gen_type=input.gen_type,
@@ -269,7 +279,10 @@ def connect_data_gen_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         combined_guidance = _combine_guidance(
-            task, input.guidance, "inputs", input.data_guide
+            task,
+            input.guidance,
+            "inputs",
+            input.data_guide,
         )
         sample_task = DataGenSampleTask(
             target_task=task,
@@ -344,17 +357,15 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        # The Input Data Guide is intentionally NOT injected at the output
-        # generation stage — it describes inputs only, and output behavior is
-        # owned by the task's system prompt + output schema. Only per-call
-        # session guidance (`sample.guidance`) flows in here.
+        # The Data Guide is intentionally NOT injected at the output generation
+        # stage — it describes inputs only, and output behavior is owned by the
+        # task's system prompt + output schema. Only the template guidance for
+        # the output stage flows here, plus the topic path.
         guidance = sample.guidance or ""
         if len(sample.topic_path) > 0:
-            guidance += f"""
-## Topic Path
+            guidance += f"""\n## Topic Path
 The topic path for this sample is:
-[{", ".join(f'"{topic}"' for topic in sample.topic_path)}]
-"""
+[{", ".join(f'"{topic}"' for topic in sample.topic_path)}]"""
 
         if guidance.strip() != "":
             task.instruction = wrap_task_with_guidance(task.instruction, guidance)
@@ -584,11 +595,14 @@ The topic path for this sample is:
         existing = task.current_data_guide()
         if existing is not None:
             existing.guide = input.guide
+            if input.source is not None:
+                existing.source = input.source
             existing.save_to_file()
             return existing
         guide = DataGuide(
             parent=task,
             guide=input.guide,
+            source=input.source or "manual",
         )
         guide.save_to_file()
         return guide
@@ -657,11 +671,17 @@ The topic path for this sample is:
     ) -> GuideRefineResponse:
         task = task_from_id(project_id, task_id)
 
+        saved_guide = task.current_data_guide(readonly=True)
+        guide_source: DataGuideSource = (
+            saved_guide.source if saved_guide is not None else "manual"
+        )
+
         system_prompt = generate_guidance_refinement_prompt(
-            task_instruction=task.instruction,
+            task_instruction=_resolve_task_runtime_prompt(task),
             current_guide=input.current_guide,
             preview_samples=input.preview_samples,
             feedback=input.feedback,
+            source=guide_source,
             task_description=task.description,
             task_input_json_schema=task.input_json_schema,
         )
@@ -709,18 +729,21 @@ The topic path for this sample is:
 
 _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs"], str] = {
     "topics": (
-        "Since this stage generates topics (subject areas, not data), use the "
-        "guide only to inform what scenarios the task's inputs cover. Rules "
-        "and examples about input shape and content are background context — "
-        "do NOT reproduce them in the topic strings. Group tags are largely "
-        "irrelevant at this stage; you are generating short topic labels."
+        "You're generating short topic labels for this stage, not data. Use "
+        "the `# Semantics` section of the Data Guide to inform what scenarios "
+        "the inputs cover. Ignore `# Style` and `# Presentation Defaults` — "
+        "those apply at input generation time, not to topic strings. Don't "
+        "reproduce input format or length rules in the topic labels."
     ),
     "inputs": (
-        "Since this stage generates task **inputs**, apply rules in the "
-        "`<input_structural>` and `<input_semantic>` groups. Reference inputs "
-        "show what realistic inputs look like; mirror their structure and "
-        "value patterns. Rules that name measurable bounds (length, sentence "
-        "counts, field counts, formatting) are CEILINGS — never exceed them."
+        "You're generating task **inputs** for this stage. Apply the entire "
+        "Data Guide: `# Semantics` for what fields/values/relationships "
+        "appear; `# Style` for how inputs read and look (length, formatting, "
+        "tone); `# Presentation Defaults` for default conventions. If a "
+        "`# Reference Inputs` section is present (manual-flow guides), use "
+        "those examples as canonical templates and mirror their structure and "
+        "value patterns. Quantitative constraints in `# Style` are CEILINGS; "
+        "never exceed them."
     ),
 }
 
@@ -796,6 +819,34 @@ async def generate_input_preview_samples(
     return preview_samples
 
 
+def _resolve_task_runtime_prompt(task: Task) -> str:
+    """Return the prompt the synthesis model actually sees at runtime when this
+    task runs under its default run config — what the data-guide metaprompter
+    should reason about. Falls back to `task.instruction` when there's no
+    default run config, the run config can't be loaded, its properties don't
+    carry a prompt_id (e.g. MCP run configs), or prompt resolution fails."""
+    if not task.default_run_config_id:
+        return task.instruction
+    default_rc = next(
+        (
+            rc
+            for rc in task.run_configs(readonly=True)
+            if rc.id == task.default_run_config_id
+        ),
+        None,
+    )
+    if default_rc is None:
+        return task.instruction
+    prompt_id = getattr(default_rc.run_config_properties, "prompt_id", None)
+    if not prompt_id:
+        return task.instruction
+    try:
+        builder = prompt_builder_from_id(prompt_id, task)
+        return builder.build_prompt(include_json_instructions=False)
+    except Exception:
+        return task.instruction
+
+
 def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | None:
     """Return the data guide content to use for this call.
 
@@ -813,55 +864,71 @@ def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | No
 
 def _combine_guidance(
     task: Task,
-    session_guidance: str | None,
+    template_guidance: str | None,
     stage: Literal["topics", "inputs"],
     data_guide_override: str | None = None,
 ) -> str | None:
-    """Combine the task input data guide with the per-call/template guidance.
+    """Combine the task Data Guide with the per-call template guidance.
 
-    The guide is wrapped with a short framing paragraph + a stage-specific
-    hint so the LLM understands what it's reading and how to apply it for the
-    current generation stage. Without this wrapper, the model sees the user's
-    raw markdown with no context for where it came from or how to use it.
+    Two guidance layers, in increasing authority:
 
-    The Input Data Guide is consumed only at the topic and input generation
-    stages — never at output generation. Output behavior is owned by the
-    task's system prompt + output schema, not this guide.
+    1. **Data Guide** (lower priority) — the persisted, refined recipe for
+       what realistic inputs to this task look like. Stored on the task; same
+       across every batch.
+    2. **Template guidance** (higher priority) — the per-stage guidance string
+       from the eval template the user picked for this synth session
+       (e.g. the "Toxicity" template's input-stage prompt). Same across the
+       whole synth session, may differ across stages.
+
+    The Data Guide is consumed only at the topic and input generation stages
+    — never at output generation. Output behavior is owned by the task's
+    system prompt + output schema, not this guide.
     """
     parts: list[str] = []
     data_guide_content = _resolve_data_guide(task, data_guide_override)
     if data_guide_content:
         stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
         parts.append(
-            "# Task Input Data Guide\n\n"
-            "A Task Input Data Guide is a recipe for what realistic *inputs* "
-            "to this task look like. It contains: **reference inputs** "
-            "(concrete example inputs showing what realistic input looks "
-            "like), **structural rules** (how inputs are shaped — format, "
-            "length, layout, formatting conventions), and **semantic rules** "
-            "(what inputs mean — fields, valid values, relationships, domain "
-            "plausibility). Treat items in `# Input Guidelines & Rules` as "
-            "hard constraints, not suggestions.\n\n"
-            "**Rule grouping.** Rules in `# Input Guidelines & Rules` are "
-            "wrapped in XML-style group tags. The two valid groups are "
-            "`<input_structural>` and `<input_semantic>`. Each group contains "
-            "one or more `## <title>` rule blocks. Untagged rules (a `## "
-            "Title` block sitting outside any group, from older guides) "
-            "should be treated as `<input_semantic>`.\n\n"
+            "# Task Data Guide\n\n"
+            "A Task Data Guide is a recipe for what realistic *inputs* to "
+            "this task look like. It is organized into the following "
+            "top-level sections:\n\n"
+            "- `# Reference Inputs` (optional, manual-flow guides only) — "
+            "verbatim example inputs the user has curated.\n"
+            "- `# Semantics` — what information exists in inputs and how "
+            "fields relate (data patterns, value ranges, relationships, "
+            "constraints, domain).\n"
+            "- `# Style` — how inputs read and look (length, layout, "
+            "formatting conventions, quantitative constraints).\n"
+            "- `# Presentation Defaults` — overridable conventions (units, "
+            "date formats, terminology, ordering).\n\n"
+            "Treat Semantics and Style as hard constraints. Treat "
+            "Presentation Defaults as defaults that template guidance is "
+            "allowed to override. Older guides may use a different shape "
+            "(`# Input Guidelines & Rules` with `<input_structural>` / "
+            "`<input_semantic>` blocks) — read the content the same way "
+            "regardless of shape.\n\n"
             "**Authority cascade** when sources conflict (highest wins):\n"
-            "1. Per-run guidance below this guide, if any.\n"
-            "2. The rules and reference inputs in this guide.\n"
+            "1. Template guidance for this stage (if a `# Template Guidance` "
+            "block appears below).\n"
+            "2. The Data Guide above.\n"
             "3. Defaults you would otherwise pick.\n\n"
             "**Invariants — must always hold regardless of source:** logical "
             "relationships between fields, domain plausibility and accuracy, "
             "and truthfulness to the task's actual purpose.\n\n"
             f"{stage_hint}\n\n"
-            "<task_input_data_guide>\n"
+            "<task_data_guide>\n"
             f"{data_guide_content}\n"
-            "</task_input_data_guide>"
+            "</task_data_guide>"
         )
-    if session_guidance:
-        parts.append(session_guidance)
+    if template_guidance:
+        parts.append(
+            "# Template Guidance\n\n"
+            "Per-stage guidance from the eval template the user picked for "
+            "this synth session. Overrides the Data Guide above when in "
+            "conflict.\n\n"
+            f"{template_guidance}"
+        )
     return "\n\n".join(parts) if parts else None
 
 

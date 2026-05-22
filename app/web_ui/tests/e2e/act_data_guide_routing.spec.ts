@@ -4,8 +4,8 @@ import { test, expect } from "./fixtures"
 ## Goals
 With no saved input data guide, navigating directly to /data_guide must
 redirect to the synth page. The synth page intro is the single entry point
-for creating a new guide (Set Up with Kiln Pro / Set Up Manually / continue
-without).
+for creating a new guide ("Set Up Data Guide" → /data_guide_chooser, or
+"Continue Without").
 
 ## Fixtures
 - seededProjectWithTask

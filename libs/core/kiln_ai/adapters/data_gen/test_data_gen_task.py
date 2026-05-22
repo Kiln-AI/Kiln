@@ -660,15 +660,15 @@ def test_generate_sample_generation_prompt_with_guide_text():
 
 
 def test_generate_guidance_refinement_prompt_minimal():
-    """Includes the required sections — task instruction, current guide,
-    rated inputs, and feedback — when only the required args are passed."""
+    """Manual flow (current_guide has `# Reference Inputs`): metaprompter
+    teaches the four-section shape and the required context blocks."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="Translate to French",
         current_guide=(
             "# Reference Inputs\n\n"
             "## Example 1\n```input\nhi\n```\n\n"
-            "# Input Guidelines & Rules\n\n"
-            "<input_semantic>\n\n## Greeting\nInputs are casual greetings.\n\n</input_semantic>"
+            "# Semantics\n\n"
+            "## Data Patterns\nInputs are casual greetings.\n"
         ),
         preview_samples=[
             RatedSample(input="hello", looks_good=True),
@@ -680,13 +680,18 @@ def test_generate_guidance_refinement_prompt_minimal():
     assert "<task_instruction>\nTranslate to French\n</task_instruction>" in prompt
     assert "<current_guide>" in prompt
     assert "## Example 1" in prompt
-    assert "<input_semantic>" in prompt
+    # Manual-flow guide → metaprompter teaches the four-section shape.
+    assert "four top-level sections" in prompt
+    assert "# Reference Inputs" in prompt
+    assert "# Semantics" in prompt
+    assert "# Style" in prompt
+    assert "# Presentation Defaults" in prompt
     # Required samples section, with their ratings rendered as the rating attr
     assert '<sample_1 rating="Realistic">' in prompt
     assert '<sample_2 rating="Needs Work">' in prompt
     assert "<input>hello</input>" in prompt
     assert "<input>frog</input>" in prompt
-    # Outputs are no longer rendered — input data guide describes inputs only.
+    # Outputs are no longer rendered — Data Guide describes inputs only.
     assert "<output>" not in prompt
     assert "<feedback>\nThe second one isn't a greeting.\n</feedback>" in prompt
 
@@ -740,26 +745,26 @@ def test_generate_guidance_refinement_prompt_includes_optional_sections_when_pro
     )
 
 
-def test_generate_guidance_refinement_prompt_taxonomy_is_input_only():
-    """The metaprompter must instruct the LLM to use only the two valid
-    input-side group tags. Output-side groups (`<output_*>`, `<both_*>`) are
-    no longer valid for an Input Data Guide — outputs are out of scope."""
+def test_generate_guidance_refinement_prompt_section_taxonomy_manual_flow():
+    """Manual flow (source='manual'): the metaprompter teaches the four-section
+    shape and must NOT teach the old XML-tagged rule-grouping system."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="Translate to French",
-        # Empty guide so the input echo doesn't leak `<output_*>` into the
-        # prompt — we only want to assert the template doesn't reference them
-        # in its own instructions.
-        current_guide="",
+        current_guide="# Reference Inputs\n\n## Example 1\n```input\nhi\n```\n",
         preview_samples=[],
         feedback="",
+        source="manual",
     )
 
-    # The two valid groups must be referenced.
-    assert "`<input_structural>`" in prompt
-    assert "`<input_semantic>`" in prompt
+    # The four canonical sections must be referenced.
+    assert "four top-level sections" in prompt
+    assert "# Reference Inputs" in prompt
+    assert "# Semantics" in prompt
+    assert "# Style" in prompt
+    assert "# Presentation Defaults" in prompt
 
-    # The "two valid groups" framing must be present; old "four"/"six" framings must be gone.
-    assert "two valid groups" in prompt
+    # The old XML rule-group framing must be gone.
+    assert "two valid groups" not in prompt
     assert "four valid groups" not in prompt
     assert "six valid groups" not in prompt
 
@@ -767,9 +772,52 @@ def test_generate_guidance_refinement_prompt_taxonomy_is_input_only():
     assert "Scope: input shape and content" in prompt
 
 
+def test_generate_guidance_refinement_prompt_kiln_pro_is_surgical():
+    """Kiln Pro flow (source='kiln_pro'): the metaprompter takes the surgical
+    branch — three Mike sections only, explicit surgical-edit policy, and
+    rated samples are NOT rendered (only feedback drives changes)."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Translate to French",
+        current_guide="# Semantics\n\n## Data Patterns\nShort prose inputs.\n",
+        preview_samples=[
+            RatedSample(input="should NOT appear in prompt", looks_good=True),
+            RatedSample(input="should NOT appear either", looks_good=False),
+        ],
+        feedback="Make Data Patterns more specific.",
+        source="kiln_pro",
+    )
+
+    # Three canonical sections.
+    assert "three top-level sections" in prompt
+    assert "# Semantics" in prompt
+    assert "# Style" in prompt
+    assert "# Presentation Defaults" in prompt
+
+    # Surgical-edit policy is explicit.
+    assert "Surgical-edit policy" in prompt
+    assert "byte-for-byte" in prompt
+    assert "Do NOT add a `# Reference Inputs` section" in prompt
+
+    # Rated samples are NOT rendered at all on the kiln_pro branch.
+    assert "should NOT appear in prompt" not in prompt
+    assert "should NOT appear either" not in prompt
+    assert "<sample_1" not in prompt
+    assert "<sample_2" not in prompt
+    assert "Rated Inputs" not in prompt
+
+    # Feedback IS rendered — it's the only signal the surgical branch acts on.
+    assert "Make Data Patterns more specific." in prompt
+    assert "<feedback>" in prompt
+
+    # Old XML rule-group framing must still be absent.
+    assert "two valid groups" not in prompt
+    assert "four valid groups" not in prompt
+    assert "six valid groups" not in prompt
+
+
 def test_generate_guidance_refinement_prompt_explicitly_forbids_output_mining():
-    """The metaprompter must explicitly forbid writing rules about outputs of
-    any kind — output format, output decisions, classification rules, etc."""
+    """The metaprompter must explicitly forbid writing content about outputs
+    of any kind — output format, output decisions, classification rules, etc."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
         current_guide="",
@@ -780,9 +828,24 @@ def test_generate_guidance_refinement_prompt_explicitly_forbids_output_mining():
     assert "Do NOT mine the following" in prompt
     # Output decisions and classification rules must be explicitly out of scope.
     assert "output decisions" in prompt.lower() or "classification" in prompt.lower()
-    # Old four-cell framing must be gone.
-    assert "`<output_structural>`" not in prompt
-    assert "`<both_structural>`" not in prompt
+
+
+def test_generate_guidance_refinement_prompt_documents_legacy_migration():
+    """The metaprompter must instruct the LLM to absorb older XML-tagged
+    guides into the new four-section shape (and drop output-side blocks)."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="",
+        preview_samples=[],
+        feedback="",
+    )
+
+    # Migration section is referenced and tells the LLM what to do with old guides.
+    assert "Migrating older guides" in prompt
+    assert "<input_structural>" in prompt  # mentioned only in the migration context
+    assert "<input_semantic>" in prompt
+    # Old output-side groups should be explicitly dropped per the migration rules.
+    assert "Drop" in prompt and "<output_" in prompt
 
 
 def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
