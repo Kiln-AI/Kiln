@@ -137,6 +137,74 @@ describe("ChatTrace component — layout & roles", () => {
     expect(strong?.textContent).toBe("bold answer")
   })
 
+  it("splits an assistant message with reasoning + content into two bubbles (reasoning first)", () => {
+    const trace: TraceType = [
+      assistantMsg("the answer", { reasoning_content: "step-by-step" }),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(2)
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-thinking']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-content']"),
+    ).toBeNull()
+    expect(
+      bubbles[1].querySelector("[data-testid='chat-msg-content']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[1].querySelector("[data-testid='chat-msg-thinking']"),
+    ).toBeNull()
+  })
+
+  it("renders a single reasoning-only bubble when the assistant has only reasoning", () => {
+    const trace: TraceType = [
+      assistantMsg(null, { reasoning_content: "thinking out loud" }),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(1)
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-thinking']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-content']"),
+    ).toBeNull()
+  })
+
+  it("splits reasoning + content + N tool calls into 2 + N bubbles", () => {
+    const trace: TraceType = [
+      assistantMsg("here's the plan", {
+        reasoning_content: "thinking",
+        tool_calls: [makeToolCall("c1", "lookup"), makeToolCall("c2", "fetch")],
+      }),
+      toolMsg('{"output": "r1"}', "c1"),
+      toolMsg('{"output": "r2"}', "c2"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(4)
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-thinking']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[1].querySelector("[data-testid='chat-msg-content']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[2].querySelector("[data-testid='chat-msg-toolcall']"),
+    ).not.toBeNull()
+    expect(
+      bubbles[3].querySelector("[data-testid='chat-msg-toolcall']"),
+    ).not.toBeNull()
+  })
+
   it("splits an assistant message with content + N tool calls into 1 + N bubbles", () => {
     const trace: TraceType = [
       assistantMsg("here is what I'll do", {
@@ -187,6 +255,32 @@ describe("ChatTrace component — layout & roles", () => {
       "[data-testid='chat-msg-assistant']",
     )
     expect(bubbles.length).toBe(2)
+  })
+
+  it("gates the meta row on thinking expansion when the assistant has only reasoning", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, {
+        reasoning_content: "deep thought",
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: { trace, show_per_message_usage: true },
+    })
+    const bubbles = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant']",
+    )
+    expect(bubbles.length).toBe(1)
+    // Collapsed → no meta.
+    expect(bubbles[0].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    // Expanding reasoning reveals meta.
+    const toggle = bubbles[0].querySelector(
+      "[data-testid='chat-msg-thinking'] button",
+    ) as HTMLButtonElement
+    await fireEvent.click(toggle)
+    expect(
+      bubbles[0].querySelector("[data-testid='chat-msg-meta']"),
+    ).not.toBeNull()
   })
 
   it("places the metadata row inside the last bubble for the assistant turn, gated on expansion", async () => {

@@ -177,15 +177,19 @@
       {@const content = content_from_message(message)}
       {@const reasoning = reasoning_from_message(message)}
       {@const tool_calls = tool_calls_from_message(message)}
-      {@const has_text_bubble = !!(reasoning || content)}
+      {@const has_reasoning_bubble = !!reasoning}
+      {@const has_content_bubble = !!content}
       {@const has_tc_bubble = !!(tool_calls && tool_calls.length > 0)}
       {@const empty_assistant =
-        !has_text_bubble && !has_tc_bubble && message.role !== "user"}
+        !has_reasoning_bubble &&
+        !has_content_bubble &&
+        !has_tc_bubble &&
+        message.role !== "user"}
 
       {#if message.role === "user"}
         <div class="flex flex-col items-end" data-testid="chat-msg-user">
           <div
-            class="rounded-xl bg-primary/10 px-4 py-3 max-w-[80%] text-sm flex flex-col gap-1"
+            class="rounded-xl bg-primary/10 px-4 py-3 max-w-[70%] text-sm flex flex-col gap-1"
           >
             {#if content}
               <ChatMarkdown text={content} />
@@ -224,45 +228,76 @@
           </div>
         </div>
       {:else}
-        {#if has_text_bubble}
-          <!-- Assistant bubble 1: thinking + content. Meta lives here only when
-               there's no follow-up tool-call bubble for this message. -->
+        {#if has_reasoning_bubble}
+          <!-- Assistant reasoning bubble. Collapsed by default; toggling
+               reveals the model's thinking. Meta lives here only when there
+               is no following content or tool-call bubble. -->
+          {@const meta_here =
+            !has_content_bubble &&
+            !has_tc_bubble &&
+            show_info &&
+            !!thinkingExpanded[index]}
+          <div
+            class="flex flex-col items-start"
+            data-testid="chat-msg-assistant"
+          >
+            <div
+              class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+            >
+              <div data-testid="chat-msg-thinking">
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
+                  on:click={() =>
+                    (thinkingExpanded[index] = !thinkingExpanded[index])}
+                  aria-expanded={!!thinkingExpanded[index]}
+                >
+                  <span class="text-gray-400" aria-hidden="true">
+                    {thinkingExpanded[index] ? "▼" : "▶"}
+                  </span>
+                  <span class="font-medium">Thinking</span>
+                </button>
+                {#if thinkingExpanded[index]}
+                  <div class="mt-2">
+                    <ChatMarkdown text={reasoning} />
+                  </div>
+                {/if}
+              </div>
+              {#if meta_here}
+                <div
+                  class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
+                  data-testid="chat-msg-meta"
+                >
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                    aria-label="Message usage info"
+                    title="View usage breakdown"
+                    on:click={() => open_usage_dialog(message)}
+                  >
+                    <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                  </button>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        {#if has_content_bubble}
+          <!-- Assistant content bubble. Meta lives here only when there is
+               no following tool-call bubble for this message. Content is
+               always visible, so meta is not gated on expansion. -->
           {@const meta_here = !has_tc_bubble && show_info}
           <div
             class="flex flex-col items-start"
             data-testid="chat-msg-assistant"
           >
             <div
-              class="rounded-xl bg-base-200 px-4 py-3 w-[85%] text-sm flex flex-col gap-2"
+              class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
             >
-              {#if reasoning}
-                <div data-testid="chat-msg-thinking">
-                  <button
-                    type="button"
-                    class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
-                    on:click={() =>
-                      (thinkingExpanded[index] = !thinkingExpanded[index])}
-                    aria-expanded={!!thinkingExpanded[index]}
-                  >
-                    <span class="text-gray-400" aria-hidden="true">
-                      {thinkingExpanded[index] ? "▼" : "▶"}
-                    </span>
-                    <span class="font-medium">Thinking</span>
-                  </button>
-                  {#if thinkingExpanded[index]}
-                    <div class="mt-2 pl-3 border-l-2 border-base-300">
-                      <ChatMarkdown text={reasoning} />
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-
-              {#if content}
-                <div data-testid="chat-msg-content">
-                  <ChatMarkdown text={content} />
-                </div>
-              {/if}
-
+              <div data-testid="chat-msg-content">
+                <ChatMarkdown text={content} />
+              </div>
               {#if meta_here}
                 <div
                   class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
@@ -306,7 +341,7 @@
               data-testid="chat-msg-assistant"
             >
               <div
-                class="rounded-xl bg-base-200 px-4 py-3 w-[85%] text-sm flex flex-col gap-2"
+                class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
               >
                 <div data-testid="chat-msg-toolcall">
                   <button
@@ -413,7 +448,7 @@
             data-testid="chat-msg-assistant"
           >
             <div
-              class="rounded-xl bg-base-200 px-4 py-3 w-[85%] text-sm text-gray-400 italic"
+              class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm text-gray-400 italic"
             >
               (empty message)
             </div>
