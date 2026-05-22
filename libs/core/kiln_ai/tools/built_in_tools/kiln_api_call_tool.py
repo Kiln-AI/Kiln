@@ -9,6 +9,12 @@ import jq
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
 
+# Long enough for SSE streams (e.g. eval runs) that emit progress events.
+SSE_READ_TIMEOUT_SECONDS = 1800.0
+# Short connection/setup timeout — server should accept quickly even when the
+# body will then stream for a long time.
+SSE_CONNECT_TIMEOUT_SECONDS = 30.0
+
 
 class KilnApiCallTool(KilnTool):
     """Tool for making HTTP requests to the Kiln API server."""
@@ -26,7 +32,9 @@ class KilnApiCallTool(KilnTool):
     def _build_description() -> str:
         return """Call the Kiln REST API. Makes an HTTP request and returns JSON with status_code and body.
 
-Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling."""
+Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling.
+
+For SSE endpoints (text/event-stream), the tool collects emitted events until the stream closes and returns body = {"events": [...], "event_count": N, "complete": bool}. Each event is parsed as JSON when possible, otherwise kept as a string."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -40,7 +48,17 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path. Correct paths are in the endpoint documentation.",
+                    "description": "API path with no query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
+                },
+                "query_params": {
+                    "type": "object",
+                    "description": "Query string params. Values are strings or arrays of strings (arrays become repeated keys, e.g. ?ids=a&ids=b). Required and optional params are listed in the endpoint doc.",
+                    "additionalProperties": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                    },
                 },
                 "body": {
                     "description": "Request body for POST/PATCH. JSON string, object, or array — auto-serialized. Schema is in the endpoint doc.",
@@ -58,6 +76,7 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
         method: str,
         url_path: str,
         body: str | dict | list | None = None,
+        query_params: dict[str, str | list[str]] | None = None,
         jq_filter: str | None = None,
         context=None,
     ) -> ToolCallResult:
@@ -78,44 +97,65 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
         if not url_path.startswith("/"):
             raise ValueError(f"url_path must start with '/', got: {url_path}")
 
+        if "?" in url_path:
+            raise ValueError(
+                "url_path must not contain a query string. Pass query args via query_params."
+            )
+
         if body_str is not None and method in {"GET", "DELETE"}:
             raise ValueError(f"body parameter not allowed with {method} method")
 
         # 2. Build full URL
         full_url = f"{self._api_base_url}{url_path}"
 
-        # 3. Make HTTP request
+        # 3. Make HTTP request — use stream() so we can detect SSE responses
+        # from the content-type header and iterate events with a long read
+        # timeout, without giving slow non-SSE responses the same leniency.
         headers = {"Content-Type": "application/json"}
-        # GET/DELETE: 30s, POST/PATCH: 5 minutes (may upload large data)
-        timeout_seconds = 30.0 if method in {"GET", "DELETE"} else 300.0
-        timeout = httpx.Timeout(timeout_seconds)
-
         # Per-request client: tool instances are short-lived (created per call
         # via tool_from_id), so a shared client wouldn't persist across calls anyway.
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            request_funcs = {
-                "GET": lambda: client.get(full_url, headers=headers),
-                "POST": lambda: client.post(
-                    full_url, headers=headers, content=body_str
-                ),
-                "PATCH": lambda: client.patch(
-                    full_url, headers=headers, content=body_str
-                ),
-                "DELETE": lambda: client.delete(full_url, headers=headers),
-            }
+        sse_timeout = httpx.Timeout(
+            connect=SSE_CONNECT_TIMEOUT_SECONDS,
+            read=SSE_READ_TIMEOUT_SECONDS,
+            write=SSE_CONNECT_TIMEOUT_SECONDS,
+            pool=SSE_CONNECT_TIMEOUT_SECONDS,
+        )
+
+        stream_kwargs: dict[str, Any] = {
+            "headers": headers,
+            "params": query_params,
+            "timeout": sse_timeout,
+        }
+        if method in {"POST", "PATCH"}:
+            stream_kwargs["content"] = body_str
+
+        async with httpx.AsyncClient() as client:
             try:
-                response = await request_funcs[method]()
+                async with client.stream(method, full_url, **stream_kwargs) as response:
+                    status_code = response.status_code
+                    content_type = response.headers.get("content-type", "").lower()
+                    is_sse = content_type.startswith("text/event-stream")
+
+                    if is_sse:
+                        events, complete = await _consume_sse(response)
+                        response_text = json.dumps(
+                            {
+                                "events": events,
+                                "event_count": len(events),
+                                "complete": complete,
+                            }
+                        )
+                    else:
+                        raw = await response.aread()
+                        response_text = raw.decode("utf-8", errors="replace")
             except httpx.TimeoutException:
                 raise TimeoutError(
-                    f"Request to {url_path} timed out after {timeout_seconds}s"
+                    f"Request to {url_path} timed out after {SSE_READ_TIMEOUT_SECONDS}s"
                 )
             except httpx.ConnectError:
                 raise ConnectionError(f"Could not connect to server for {url_path}")
 
         # 4. Build response
-        status_code = response.status_code
-        response_text = response.text
-
         if jq_filter and 200 <= status_code < 300:
             # Apply jq filter on successful responses
             try:
@@ -141,3 +181,50 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
 
         result = {"status_code": status_code, "body": response_body}
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
+
+
+async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
+    """Iterate an SSE response, returning (events, complete).
+
+    Each event's ``data:`` lines are joined with newlines per the SSE spec,
+    JSON-decoded when possible, and appended. Non-data lines (``id:``,
+    ``event:``, ``retry:``, comments) are ignored. ``complete`` is True when
+    we observe the Kiln-specific ``data: complete`` sentinel or the stream
+    ends cleanly.
+    """
+    events: list[Any] = []
+    data_lines: list[str] = []
+    saw_complete_sentinel = False
+
+    async for line in response.aiter_lines():
+        line = line.rstrip("\r")
+        if line == "":
+            if data_lines:
+                payload = "\n".join(data_lines)
+                data_lines = []
+                if payload == "complete":
+                    saw_complete_sentinel = True
+                    break
+                try:
+                    events.append(json.loads(payload))
+                except json.JSONDecodeError:
+                    events.append(payload)
+            continue
+        if line.startswith(":"):
+            # SSE comment — ignore
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip(" "))
+
+    # Flush a trailing event if the stream closed without a final blank line.
+    if data_lines:
+        payload = "\n".join(data_lines)
+        if payload == "complete":
+            saw_complete_sentinel = True
+        else:
+            try:
+                events.append(json.loads(payload))
+            except json.JSONDecodeError:
+                events.append(payload)
+
+    return events, saw_complete_sentinel

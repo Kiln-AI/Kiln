@@ -55,6 +55,72 @@ class TestInputValidation:
         with pytest.raises(ValueError, match="body parameter not allowed with DELETE"):
             await tool.run(method="DELETE", url_path="/test", body="data")
 
+    @pytest.mark.asyncio
+    async def test_url_path_with_query_string_rejected(self, tool):
+        with pytest.raises(ValueError, match="must not contain a query string"):
+            await tool.run(method="GET", url_path="/test?foo=bar")
+
+
+class TestQueryParams:
+    @pytest.mark.asyncio
+    async def test_get_with_string_params(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(
+                method="GET",
+                url_path="/api/items",
+                query_params={"tag": "v1"},
+            )
+            assert route.calls.last.request.url.query == b"tag=v1"
+
+    @pytest.mark.asyncio
+    async def test_get_with_list_params_repeated_key(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/eval/run_comparison").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(
+                method="GET",
+                url_path="/api/eval/run_comparison",
+                query_params={"run_config_ids": ["a", "b"], "all_run_configs": "false"},
+            )
+            query = route.calls.last.request.url.query.decode()
+            assert "run_config_ids=a" in query
+            assert "run_config_ids=b" in query
+            assert "all_run_configs=false" in query
+
+    @pytest.mark.asyncio
+    async def test_post_with_query_params_and_body(self, tool):
+        with respx.mock:
+            route = respx.post("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(201, json={"id": "new"})
+            )
+            await tool.run(
+                method="POST",
+                url_path="/api/items",
+                body={"name": "x"},
+                query_params={"dry_run": "true"},
+            )
+            assert route.calls.last.request.url.query == b"dry_run=true"
+            assert (
+                route.calls.last.request.content == json.dumps({"name": "x"}).encode()
+            )
+
+    @pytest.mark.asyncio
+    async def test_empty_query_params_no_query_string(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(
+                method="GET",
+                url_path="/api/items",
+                query_params=None,
+            )
+            assert route.calls.last.request.url.query == b""
+
 
 class TestHappyPath:
     @pytest.mark.asyncio
@@ -254,18 +320,16 @@ class TestHttpErrors:
             respx.get("http://test-server:8757/test").mock(
                 side_effect=httpx.TimeoutException("timeout")
             )
-            with pytest.raises(
-                TimeoutError, match=r"Request to /test timed out after 30\.0s"
-            ):
+            with pytest.raises(TimeoutError, match=r"Request to /test timed out after"):
                 await tool.run(method="GET", url_path="/test")
 
     @pytest.mark.asyncio
-    async def test_timeout_uses_longer_timeout_for_post(self, tool):
+    async def test_timeout_on_post(self, tool):
         with respx.mock:
             respx.post("http://test-server:8757/test").mock(
                 side_effect=httpx.TimeoutException("timeout")
             )
-            with pytest.raises(TimeoutError, match=r"timed out after 300\.0s"):
+            with pytest.raises(TimeoutError, match=r"timed out after"):
                 await tool.run(method="POST", url_path="/test", body="{}")
 
 
@@ -337,3 +401,105 @@ class TestResponseConstruction:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 404
             assert parsed["body"] == err
+
+
+class TestSSEResponse:
+    """SSE responses are streamed, events collected, body returns
+    {events, event_count, complete}."""
+
+    @pytest.mark.asyncio
+    async def test_collects_events_and_marks_complete(self, tool):
+        body = (
+            'data: {"progress": 1, "total": 3}\n\n'
+            'data: {"progress": 2, "total": 3}\n\n'
+            'data: {"progress": 3, "total": 3}\n\n'
+            "data: complete\n\n"
+        )
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"]["event_count"] == 3
+            assert parsed["body"]["complete"] is True
+            assert parsed["body"]["events"][0] == {"progress": 1, "total": 3}
+            assert parsed["body"]["events"][-1] == {"progress": 3, "total": 3}
+
+    @pytest.mark.asyncio
+    async def test_incomplete_stream_marked_not_complete(self, tool):
+        body = 'data: {"progress": 1, "total": 3}\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["complete"] is False
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_sse_with_jq_filter(self, tool):
+        body = 'data: {"progress": 1}\n\ndata: {"progress": 2}\n\ndata: complete\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(
+                method="GET",
+                url_path="/api/eval/run",
+                jq_filter=".events | last | .progress",
+            )
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"] == 2
+
+    @pytest.mark.asyncio
+    async def test_non_json_data_lines_kept_as_strings(self, tool):
+        body = "data: hello\n\ndata: world\n\n"
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["events"] == ["hello", "world"]
+
+    @pytest.mark.asyncio
+    async def test_ignores_comments_and_non_data_fields(self, tool):
+        body = (
+            ": keepalive comment\n\n"
+            "event: ping\n\n"
+            'data: {"ok": true}\n\n'
+            "data: complete\n\n"
+        )
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+            assert parsed["body"]["events"] == [{"ok": True}]
+            assert parsed["body"]["complete"] is True
