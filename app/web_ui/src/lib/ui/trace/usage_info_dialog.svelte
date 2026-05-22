@@ -51,7 +51,7 @@
   $: properties = build_properties(usage, latency_ms)
 </script>
 
-<Dialog bind:this={dialog} title="Message Usage">
+<Dialog bind:this={dialog} title="Turn Usage">
   {#if properties.length > 0}
     <PropertyList {properties} />
   {:else}

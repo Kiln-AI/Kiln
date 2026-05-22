@@ -58,6 +58,7 @@
   import RunSidebar from "$lib/ui/run_sidebar.svelte"
   import {
     compute_forkable_run_ids,
+    compute_turn_run_ids,
     fork_target_from_user_block,
     type ForkTarget,
   } from "./fork_helpers"
@@ -616,6 +617,7 @@
   }
 
   $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], run_chain)
+  $: run_id_by_trace_index = compute_turn_run_ids(run?.trace ?? [], run_chain)
 
   // Bound to the fork-mode MultiturnComposer so we can consult is_dirty()
   // / request_swap() when the user clicks fork on a different turn while
@@ -770,7 +772,10 @@
                 <ChatTrace
                   trace={run.trace ?? []}
                   {project_id}
+                  {task_id}
                   {forkable_run_ids}
+                  {run_id_by_trace_index}
+                  current_run_id={run_id}
                   truncate_at_trace_index={fork_target?.trace_index ?? null}
                   {on_fork}
                   show_per_message_usage={task?.turn_mode === "multiturn"}

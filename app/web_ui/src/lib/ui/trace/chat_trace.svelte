@@ -8,11 +8,25 @@
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
   import UsageInfoDialog from "./usage_info_dialog.svelte"
+  import TaskRunLinkButton from "./task_run_link_button.svelte"
+  import { dataset_item_link } from "$lib/utils/link_builder"
 
   export let trace: Trace
   export let project_id: string | undefined = undefined
+  // Task id, used to build a link from each assistant turn to the TaskRun
+  // that produced it. When omitted, the "Open TaskRun" link is not shown.
+  export let task_id: string | undefined = undefined
   // Positional map from trace index to a TaskRun id for that user turn.
   export let forkable_run_ids: (string | null)[] | undefined = undefined
+  // Positional map from trace index to the run id of the TaskRun that
+  // produced that turn (every message within a turn — user, assistant,
+  // tool — shares the same run id). Used to link from an assistant bubble
+  // to the dataset run view.
+  export let run_id_by_trace_index: (string | null)[] | undefined = undefined
+  // The TaskRun id currently being viewed. When a turn's mapped run id
+  // matches this, the "Open TaskRun" link is omitted (it would just
+  // navigate to the same page).
+  export let current_run_id: string | undefined = undefined
   // When set, messages at trace indices >= this value are hidden.
   export let truncate_at_trace_index: number | null = null
   // Invoked when the user clicks a fork affordance on a user block.
@@ -166,6 +180,14 @@
       latency_ms: message_latency_ms(message),
     })
   }
+
+  function turn_run_link(trace_index: number): string | null {
+    if (!project_id || !task_id) return null
+    const run_id = run_id_by_trace_index?.[trace_index] ?? null
+    if (!run_id) return null
+    if (current_run_id && run_id === current_run_id) return null
+    return dataset_item_link(project_id, task_id, run_id)
+  }
 </script>
 
 <div class="flex flex-col gap-3 w-full">
@@ -185,6 +207,11 @@
         !has_content_bubble &&
         !has_tc_bubble &&
         message.role !== "user"}
+      <!-- Hoisted to the {#each} scope on purpose: declaring this with
+           {@const} inside an inner {#if} block trips a Svelte 4 update bug
+           when run_id_by_trace_index resolves asynchronously (see the chain
+           load in +page.svelte). At this scope the reactive path is stable. -->
+      {@const run_link = turn_run_link(index)}
 
       {#if message.role === "user"}
         <div class="flex flex-col items-end" data-testid="chat-msg-user">
@@ -202,26 +229,28 @@
                 data-testid="chat-msg-meta"
               >
                 {#if show_info}
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                    aria-label="Message usage info"
-                    title="View usage breakdown"
-                    on:click={() => open_usage_dialog(message)}
-                  >
-                    <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                  </button>
+                  <div class="tooltip tooltip-top" data-tip="View turn usage">
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                      aria-label="Message usage info"
+                      on:click={() => open_usage_dialog(message)}
+                    >
+                      <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                    </button>
+                  </div>
                 {/if}
                 {#if show_fork}
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                    aria-label="Fork from this turn"
-                    title="Fork from here"
-                    on:click={() => on_fork?.(fork_run_id, index)}
-                  >
-                    <span class="w-4 h-4 block"><ForkIcon /></span>
-                  </button>
+                  <div class="tooltip tooltip-top" data-tip="Fork from here">
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                      aria-label="Fork from this turn"
+                      on:click={() => on_fork?.(fork_run_id, index)}
+                    >
+                      <span class="w-4 h-4 block"><ForkIcon /></span>
+                    </button>
+                  </div>
                 {/if}
               </div>
             {/if}
@@ -231,24 +260,33 @@
         {#if has_reasoning_bubble}
           <!-- Assistant reasoning bubble. Collapsed by default; toggling
                reveals the model's thinking. Meta lives here only when there
-               is no following content or tool-call bubble. -->
+               is no following content or tool-call bubble, and only while
+               the bubble is expanded so the collapsed row stays minimal. -->
           {@const meta_here =
             !has_content_bubble &&
             !has_tc_bubble &&
-            show_info &&
+            (show_info || !!run_link) &&
             !!thinkingExpanded[index]}
           <div
             class="flex flex-col items-start"
             data-testid="chat-msg-assistant"
           >
+            <!-- Whole-bubble click expands when collapsed. The inner toggle
+                 button uses |stopPropagation so it still owns collapsing
+                 (and the container handler never accidentally re-expands). -->
+            <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
             <div
               class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+              class:cursor-pointer={!thinkingExpanded[index]}
+              on:click={() => {
+                if (!thinkingExpanded[index]) thinkingExpanded[index] = true
+              }}
             >
               <div data-testid="chat-msg-thinking">
                 <button
                   type="button"
                   class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
-                  on:click={() =>
+                  on:click|stopPropagation={() =>
                     (thinkingExpanded[index] = !thinkingExpanded[index])}
                   aria-expanded={!!thinkingExpanded[index]}
                 >
@@ -268,15 +306,19 @@
                   class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
                   data-testid="chat-msg-meta"
                 >
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                    aria-label="Message usage info"
-                    title="View usage breakdown"
-                    on:click={() => open_usage_dialog(message)}
-                  >
-                    <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                  </button>
+                  {#if show_info}
+                    <div class="tooltip tooltip-top" data-tip="View turn usage">
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                        aria-label="Message usage info"
+                        on:click={() => open_usage_dialog(message)}
+                      >
+                        <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                      </button>
+                    </div>
+                  {/if}
+                  <TaskRunLinkButton {run_link} />
                 </div>
               {/if}
             </div>
@@ -287,7 +329,7 @@
           <!-- Assistant content bubble. Meta lives here only when there is
                no following tool-call bubble for this message. Content is
                always visible, so meta is not gated on expansion. -->
-          {@const meta_here = !has_tc_bubble && show_info}
+          {@const meta_here = !has_tc_bubble && (show_info || !!run_link)}
           <div
             class="flex flex-col items-start"
             data-testid="chat-msg-assistant"
@@ -303,15 +345,19 @@
                   class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
                   data-testid="chat-msg-meta"
                 >
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                    aria-label="Message usage info"
-                    title="View usage breakdown"
-                    on:click={() => open_usage_dialog(message)}
-                  >
-                    <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                  </button>
+                  {#if show_info}
+                    <div class="tooltip tooltip-top" data-tip="View turn usage">
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                        aria-label="Message usage info"
+                        on:click={() => open_usage_dialog(message)}
+                      >
+                        <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                      </button>
+                    </div>
+                  {/if}
+                  <TaskRunLinkButton {run_link} />
                 </div>
               {/if}
             </div>
@@ -324,10 +370,12 @@
                  assistant message. -->
             {@const tc_key = `${index}-${tcIdx}`}
             {@const is_last_tc = tcIdx === tool_calls.length - 1}
-            <!-- Meta (cost/latency) only renders while this tool-call bubble
-                 is expanded — collapsed bubbles stay minimal and quiet. -->
+            <!-- Meta row only renders while this tool-call bubble is
+                 expanded — collapsed bubbles stay minimal and quiet. -->
             {@const meta_here =
-              is_last_tc && show_info && !!toolCallExpanded[tc_key]}
+              is_last_tc &&
+              (show_info || !!run_link) &&
+              !!toolCallExpanded[tc_key]}
             {@const result = tool_results_by_call_id.get(tool_call.id) ?? null}
             {@const result_content = result
               ? content_from_message(result.message)
@@ -340,14 +388,19 @@
               class="flex flex-col items-start"
               data-testid="chat-msg-assistant"
             >
+              <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
               <div
                 class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                class:cursor-pointer={!toolCallExpanded[tc_key]}
+                on:click={() => {
+                  if (!toolCallExpanded[tc_key]) toolCallExpanded[tc_key] = true
+                }}
               >
                 <div data-testid="chat-msg-toolcall">
                   <button
                     type="button"
                     class="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
-                    on:click={() =>
+                    on:click|stopPropagation={() =>
                       (toolCallExpanded[tc_key] = !toolCallExpanded[tc_key])}
                     aria-expanded={!!toolCallExpanded[tc_key]}
                   >
@@ -426,15 +479,22 @@
                     class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
                     data-testid="chat-msg-meta"
                   >
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                      aria-label="Message usage info"
-                      title="View usage breakdown"
-                      on:click={() => open_usage_dialog(message)}
-                    >
-                      <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                    </button>
+                    {#if show_info}
+                      <div
+                        class="tooltip tooltip-top"
+                        data-tip="View turn usage"
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
+                          aria-label="Message usage info"
+                          on:click={() => open_usage_dialog(message)}
+                        >
+                          <span class="w-4 h-4 block"><InfoCircleIcon /></span>
+                        </button>
+                      </div>
+                    {/if}
+                    <TaskRunLinkButton {run_link} />
                   </div>
                 {/if}
               </div>

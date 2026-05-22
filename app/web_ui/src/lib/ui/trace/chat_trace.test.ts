@@ -350,6 +350,39 @@ describe("ChatTrace component — thinking", () => {
     expect(container.textContent).not.toContain("step-by-step plan")
   })
 
+  it("expands thinking when the user clicks anywhere on the bubble (not just the toggle)", async () => {
+    const trace: TraceType = [
+      assistantMsg("done", { reasoning_content: "secret thought" }),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const thinkingTestid = container.querySelector(
+      "[data-testid='chat-msg-thinking']",
+    ) as HTMLElement
+    // The bubble is the parent of the chat-msg-thinking marker.
+    const bubble = thinkingTestid.parentElement as HTMLElement
+    expect(container.textContent).not.toContain("secret thought")
+    await fireEvent.click(bubble)
+    expect(container.textContent).toContain("secret thought")
+  })
+
+  it("clicking the toggle inside the bubble while expanded collapses it (does not re-expand via container click)", async () => {
+    const trace: TraceType = [
+      assistantMsg("done", { reasoning_content: "secret thought" }),
+    ]
+    const { container, getByText } = render(ChatTrace, { props: { trace } })
+    // Expand via container click.
+    const thinkingTestid = container.querySelector(
+      "[data-testid='chat-msg-thinking']",
+    ) as HTMLElement
+    const bubble = thinkingTestid.parentElement as HTMLElement
+    await fireEvent.click(bubble)
+    expect(container.textContent).toContain("secret thought")
+    // Now click the toggle button. The button's |stopPropagation must keep
+    // the container's expand-only handler from re-expanding.
+    await fireEvent.click(getByText("Thinking"))
+    expect(container.textContent).not.toContain("secret thought")
+  })
+
   it("expands thinking when the toggle is clicked", async () => {
     const trace: TraceType = [
       assistantMsg("done", { reasoning_content: "deep thought" }),
@@ -410,6 +443,24 @@ describe("ChatTrace component — tool calls", () => {
     ).toBe(0)
     // No grouping summary like "3 tool calls" anymore.
     expect(container.textContent).not.toContain("3 tool calls")
+  })
+
+  it("expands a tool-call bubble when the user clicks anywhere on it (not just the toggle)", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("c1", "lookup", { q: "secret-arg" })],
+      }),
+      toolMsg('{"output": "ok"}', "c1"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    const tcTestid = container.querySelector(
+      "[data-testid='chat-msg-toolcall']",
+    ) as HTMLElement
+    const bubble = tcTestid.parentElement as HTMLElement
+    // No args visible while collapsed.
+    expect(container.textContent).not.toContain("secret-arg")
+    await fireEvent.click(bubble)
+    expect(container.textContent).toContain("secret-arg")
   })
 
   it("expands a tool-call bubble and reveals args + matching tool result", async () => {
@@ -605,6 +656,171 @@ describe("ChatTrace component — usage info row", () => {
     ).not.toBeNull()
   })
 
+  it("renders a TaskRun link next to the usage button when run_id_by_trace_index + task_id + project_id are provided", () => {
+    const trace: TraceType = [
+      userMsg("hi"),
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    // user at index 0, assistant content at index 1 — both belong to the
+    // same TaskRun "run-leaf".
+    const run_id_by_trace_index = ["run-leaf", "run-leaf"]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        show_per_message_usage: true,
+        run_id_by_trace_index,
+        project_id: "proj-1",
+        task_id: "task-1",
+      },
+    })
+    const link = container.querySelector(
+      "[data-testid='chat-msg-run-link']",
+    ) as HTMLAnchorElement
+    expect(link).not.toBeNull()
+    expect(link.getAttribute("href")).toBe(
+      "/dataset/proj-1/task-1/run-leaf/run",
+    )
+  })
+
+  it("renders the TaskRun link in the meta row even when the message has no usage data", () => {
+    // No usage on the message — but a run_id is mapped. Meta row should
+    // still appear with just the link so the user can open the TaskRun.
+    const trace: TraceType = [userMsg("hi"), assistantMsg("answer")]
+    const run_id_by_trace_index = ["run-leaf", "run-leaf"]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        run_id_by_trace_index,
+        project_id: "proj-1",
+        task_id: "task-1",
+      },
+    })
+    const link = container.querySelector(
+      "[data-testid='chat-msg-run-link']",
+    ) as HTMLAnchorElement
+    expect(link).not.toBeNull()
+    expect(link.getAttribute("href")).toBe(
+      "/dataset/proj-1/task-1/run-leaf/run",
+    )
+    // Usage button is NOT shown when there's no usage data.
+    expect(
+      container.querySelector("button[aria-label='Message usage info']"),
+    ).toBeNull()
+  })
+
+  it("omits the TaskRun link when the mapped run id equals current_run_id", () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        show_per_message_usage: true,
+        run_id_by_trace_index: ["run-leaf"],
+        current_run_id: "run-leaf",
+        project_id: "proj-1",
+        task_id: "task-1",
+      },
+    })
+    // Usage button still appears, but the link is suppressed because the
+    // target run is the one we're already viewing.
+    expect(
+      container.querySelector("button[aria-label='Message usage info']"),
+    ).not.toBeNull()
+    expect(
+      container.querySelector("[data-testid='chat-msg-run-link']"),
+    ).toBeNull()
+  })
+
+  it("still renders the TaskRun link for earlier turns when current_run_id is set", () => {
+    const trace: TraceType = [
+      userMsg("first"),
+      assistantMsg("ans1"),
+      userMsg("second"),
+      assistantMsg("ans2"),
+    ]
+    // Two turns: "run-1" (first), "run-leaf" (latest, the one we're viewing).
+    const run_id_by_trace_index = ["run-1", "run-1", "run-leaf", "run-leaf"]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        run_id_by_trace_index,
+        current_run_id: "run-leaf",
+        project_id: "proj-1",
+        task_id: "task-1",
+      },
+    })
+    const links = container.querySelectorAll(
+      "[data-testid='chat-msg-run-link']",
+    )
+    // Only the earlier turn's assistant bubble shows a link; the latest
+    // turn's bubble matches current_run_id and is suppressed.
+    expect(links.length).toBe(1)
+    expect(links[0].getAttribute("href")).toBe(
+      "/dataset/proj-1/task-1/run-1/run",
+    )
+  })
+
+  it("omits the TaskRun link when run_id_by_trace_index lacks an entry for that turn", () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        show_per_message_usage: true,
+        run_id_by_trace_index: [null],
+        project_id: "proj-1",
+        task_id: "task-1",
+      },
+    })
+    expect(
+      container.querySelector("[data-testid='chat-msg-run-link']"),
+    ).toBeNull()
+  })
+
+  it("omits the TaskRun link when task_id is not provided", () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        show_per_message_usage: true,
+        run_id_by_trace_index: ["run-1"],
+        project_id: "proj-1",
+      },
+    })
+    expect(
+      container.querySelector("[data-testid='chat-msg-run-link']"),
+    ).toBeNull()
+  })
+
+  it("wraps the usage button in a tooltip so users know what it does before clicking", () => {
+    const trace: TraceType = [
+      assistantMsg("answer", {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: { trace, show_per_message_usage: true },
+    })
+    const button = container.querySelector(
+      "button[aria-label='Message usage info']",
+    ) as HTMLButtonElement
+    const tooltip = button.closest(".tooltip") as HTMLElement
+    expect(tooltip).not.toBeNull()
+    expect(tooltip.getAttribute("data-tip")).toBe("View turn usage")
+  })
+
   it("does not render usage button when show_per_message_usage is false", () => {
     const trace: TraceType = [
       assistantMsg("answer", {
@@ -639,12 +855,12 @@ describe("ChatTrace component — usage info row", () => {
     ) as HTMLButtonElement
     await fireEvent.click(button)
     // The page mounts two Dialogs (subtask trace + usage info). Pick the
-    // one whose heading is "Message Usage".
+    // one whose heading is "Turn Usage".
     const dialogs = Array.from(
       baseElement.querySelectorAll<HTMLDialogElement>("dialog"),
     )
     const usage_dialog = dialogs.find((d) =>
-      (d.textContent ?? "").includes("Message Usage"),
+      (d.textContent ?? "").includes("Turn Usage"),
     )
     expect(usage_dialog).toBeDefined()
     const text = usage_dialog!.textContent ?? ""
