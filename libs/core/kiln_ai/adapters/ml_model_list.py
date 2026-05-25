@@ -7276,7 +7276,7 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                suggested_for_evals=True,
+                suggested_for_evals=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.groq,
@@ -7284,7 +7284,7 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
+                suggested_for_evals=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -7292,7 +7292,7 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
+                suggested_for_evals=False,
             ),
         ],
     ),
@@ -7322,7 +7322,7 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
-                suggested_for_evals=True,
+                suggested_for_evals=False,
                 # this model on this provider currently fails the tool call test, but might work in the future
                 supports_function_calling=False,
             ),
@@ -7332,7 +7332,7 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
+                suggested_for_evals=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -7340,7 +7340,7 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
+                suggested_for_evals=False,
             ),
         ],
     ),
