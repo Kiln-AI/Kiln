@@ -1889,6 +1889,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-4.5-sonnet",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
@@ -1932,6 +1933,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.7-sonnet",
+                deprecated=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -1950,6 +1952,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-3.7-sonnet:thinking",
+                deprecated=True,
                 reasoning_capable=True,
                 # For reasoning models, we need to use json_instructions with OpenRouter
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -1975,6 +1978,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.5-sonnet",
+                deprecated=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -3090,6 +3094,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 model_id="nvidia/llama-3.1-nemotron-70b-instruct",
+                deprecated=True,
                 supports_function_calling=False,
             ),
         ],
@@ -3319,6 +3324,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cerebras,
                 model_id="llama3.1-8b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 supports_data_gen=False,
                 suggested_for_evals=False,
@@ -3396,6 +3402,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="meta-llama/llama-3.1-405b-instruct",
+                deprecated=True,
                 supports_function_calling=False,  # Not reliable
             ),
             KilnModelProvider(
@@ -3422,6 +3429,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/mistral-small-creative",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
@@ -4034,6 +4042,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 model_id="google/gemma-2-9b-it",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             # fireworks AI errors - not allowing system role. Exclude until resolved.
@@ -4176,6 +4185,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemma-3n-e2b-it",
+                deprecated=True,
                 supports_structured_output=False,
                 supports_data_gen=False,
                 supports_function_calling=False,
@@ -4205,6 +4215,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemma-3n-e4b-it",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=False,
                 supports_function_calling=False,
@@ -4227,6 +4238,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/mixtral-8x7b-instruct",
+                deprecated=True,
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
@@ -4247,6 +4259,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwq-32b",
+                deprecated=True,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
                 r1_openrouter_options=True,
@@ -4391,6 +4404,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen2.5-vl-32b-instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -4468,6 +4482,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen-2.5-vl-7b-instruct",
+                deprecated=True,
                 supports_structured_output=False,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -4661,6 +4676,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="deepseek-ai/DeepSeek-R1",  # Note: Together remapped the R1 endpoint to this 0528 model
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 reasoning_capable=True,
@@ -5213,6 +5229,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="x-ai/grok-4.1-fast",
+                deprecated=True,
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -5242,6 +5259,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="x-ai/grok-4",
+                deprecated=True,
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -5260,6 +5278,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="x-ai/grok-3",
+                deprecated=True,
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -5277,6 +5296,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="x-ai/grok-3-mini",
+                deprecated=True,
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -5681,6 +5701,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-4b:free",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
@@ -5708,6 +5729,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-4b:free",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=False,
@@ -6000,6 +6022,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="Qwen/Qwen3-32B",
+                deprecated=True,
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -6587,6 +6610,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/Qwen3-235B-A22B-Thinking-2507",
+                deprecated=True,
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -7197,6 +7221,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="moonshotai/Kimi-K2.5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 multimodal_capable=True,
@@ -7244,6 +7269,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="moonshotai/kimi-k2-instruct",
+                deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
@@ -7291,6 +7317,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="moonshotai/kimi-k2-instruct-0905",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 suggested_for_evals=True,
@@ -7504,6 +7531,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="MiniMaxAI/MiniMax-M2.5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
