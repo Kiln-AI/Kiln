@@ -478,6 +478,79 @@ def test_loading_from_file(test_base_kiln_file, mock_file_factory):
     assert model.attachment.path is not None
 
 
+def _save_then_tamper_attachment_path(
+    json_path: Path, mock_file_factory, malicious_path: str
+):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
+    model = ModelWithAttachment(
+        path=json_path,
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
+    )
+    model.save_to_file()
+
+    # tamper with the persisted attachment path, simulating a malicious .kiln file
+    # delivered via project import / git sync
+    with open(json_path) as f:
+        data = json.load(f)
+    data["attachment"]["path"] = malicious_path
+    with open(json_path, "w") as f:
+        json.dump(data, f)
+
+
+def test_loading_from_file_rejects_traversal_path(
+    test_base_kiln_file, mock_file_factory
+):
+    json_path = test_base_kiln_file.parent / "test_model.json"
+    _save_then_tamper_attachment_path(
+        json_path, mock_file_factory, "../../../../../../../etc/passwd"
+    )
+
+    with pytest.raises(ValueError, match="must be a relative path within the parent"):
+        ModelWithAttachment.load_from_file(json_path)
+
+
+def test_loading_from_file_rejects_absolute_path(
+    test_base_kiln_file, mock_file_factory
+):
+    json_path = test_base_kiln_file.parent / "test_model.json"
+    _save_then_tamper_attachment_path(json_path, mock_file_factory, "/etc/passwd")
+
+    with pytest.raises(ValueError, match="must be a relative path within the parent"):
+        ModelWithAttachment.load_from_file(json_path)
+
+
+def test_resolve_path_rejects_escaping_path(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
+    model = ModelWithAttachment(
+        path=test_base_kiln_file,
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
+    )
+    model.save_to_file()
+
+    # force a traversal path, bypassing load-time validation, to exercise the
+    # containment guard in resolve_path on its own
+    assert model.attachment is not None
+    model.attachment.input_path = None
+    model.attachment.path = Path("../../../../../../../etc/passwd")
+
+    with pytest.raises(ValueError, match="escapes its parent directory"):
+        model.attachment.resolve_path(test_base_kiln_file.parent)
+
+
+def test_resolve_path_allows_contained_path(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
+    model = ModelWithAttachment(
+        path=test_base_kiln_file,
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
+    )
+    model.save_to_file()
+
+    # a normal relative path inside the parent resolves without error
+    resolved = model.attachment.resolve_path(test_base_kiln_file.parent)
+    assert resolved.exists()
+    assert resolved.is_relative_to(test_base_kiln_file.parent.resolve())
+
+
 class ModelWithAttachmentNameOverride(KilnBaseModel):
     attachment: KilnAttachmentModel = Field(default=None)
 

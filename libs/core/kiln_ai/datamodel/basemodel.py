@@ -145,6 +145,10 @@ class KilnAttachmentModel(BaseModel):
             if isinstance(self.path, str):
                 self.path = Path(self.path)
             self.input_path = None
+            if self.path and (self.path.is_absolute() or ".." in self.path.parts):
+                raise ValueError(
+                    f"Attachment path must be a relative path within the parent: {self.path}"
+                )
             return self
 
         # when creating a new attachment, the path is not set yet (it is set when the model is saved)
@@ -271,7 +275,15 @@ class KilnAttachmentModel(BaseModel):
             raise ValueError(
                 f"Failed to resolve attachment path for {self.path} because parent path is not absolute: {parent_path}"
             )
-        return (parent_path / self.path).resolve()
+        parent_resolved = parent_path.resolve()
+        resolved = (parent_resolved / self.path).resolve()
+        try:
+            resolved.relative_to(parent_resolved)
+        except ValueError:
+            raise ValueError(
+                f"Attachment path {self.path!r} escapes its parent directory {parent_resolved}"
+            )
+        return resolved
 
 
 # Usage:
