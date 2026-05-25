@@ -7,7 +7,7 @@ import httpx
 import jq
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
+from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 
 
 class KilnApiCallTool(KilnTool):
@@ -55,11 +55,12 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
 
     async def run(  # type: ignore[override]
         self,
+        context: ToolCallContext | None = None,
+        *,
         method: str,
         url_path: str,
         body: str | dict | list | None = None,
         jq_filter: str | None = None,
-        context=None,
     ) -> ToolCallResult:
         body_str: str | None = None
         if isinstance(body, (dict, list)):
