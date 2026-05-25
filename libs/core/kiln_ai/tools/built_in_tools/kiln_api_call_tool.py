@@ -10,13 +10,17 @@ from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 
 # httpx read timeout is per-read (idle), not a wall-clock cap: it resets every
-# time a chunk arrives. So this bounds the gap *between* events, not total
-# stream duration — a multi-hour eval that emits progress regularly never trips
-# it; only ~30 min of total silence (no events, no keepalive) does.
-SSE_READ_TIMEOUT_SECONDS = 1800.0
+# time a chunk arrives. So this bounds the gap *between* reads, not total
+# request duration. For SSE that's the gap between events; for regular
+# responses it's the gap between body chunks. A multi-hour eval that streams
+# progress regularly never trips it — only this long of total silence does.
+# Kiln's SSE endpoints are chatty (and emit keepalive pings), so a low bound is
+# safe for them while still letting a genuinely stalled request fail reasonably
+# fast.
+READ_TIMEOUT_SECONDS = 120.0
 # Short connection/setup timeout — server should accept quickly even when the
 # body will then stream for a long time.
-SSE_CONNECT_TIMEOUT_SECONDS = 30.0
+CONNECT_TIMEOUT_SECONDS = 30.0
 
 
 class KilnApiCallTool(KilnTool):
@@ -114,22 +118,23 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
         full_url = f"{self._api_base_url}{url_path}"
 
         # 3. Make HTTP request — use stream() so we can detect SSE responses
-        # from the content-type header and iterate events with a long read
-        # timeout, without giving slow non-SSE responses the same leniency.
+        # from the content-type header and drain the event stream. The same
+        # timeout applies to SSE and non-SSE responses: read is per-read (idle),
+        # so it bounds silence on the channel rather than total duration.
         headers = {"Content-Type": "application/json"}
         # Per-request client: tool instances are short-lived (created per call
         # via tool_from_id), so a shared client wouldn't persist across calls anyway.
-        sse_timeout = httpx.Timeout(
-            connect=SSE_CONNECT_TIMEOUT_SECONDS,
-            read=SSE_READ_TIMEOUT_SECONDS,
-            write=SSE_CONNECT_TIMEOUT_SECONDS,
-            pool=SSE_CONNECT_TIMEOUT_SECONDS,
+        timeout = httpx.Timeout(
+            connect=CONNECT_TIMEOUT_SECONDS,
+            read=READ_TIMEOUT_SECONDS,
+            write=CONNECT_TIMEOUT_SECONDS,
+            pool=CONNECT_TIMEOUT_SECONDS,
         )
 
         stream_kwargs: dict[str, Any] = {
             "headers": headers,
             "params": query_params,
-            "timeout": sse_timeout,
+            "timeout": timeout,
         }
         if method in {"POST", "PATCH"}:
             stream_kwargs["content"] = body_str
@@ -153,12 +158,12 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
                         raw = await response.aread()
                         response_text = raw.decode("utf-8", errors="replace")
             except httpx.TimeoutException as e:
-                # Read timeouts use the long SSE bound; connect/write/pool use
-                # the short one. Report whichever actually fired.
+                # Read timeouts use the read bound; connect/write/pool use the
+                # connect one. Report whichever actually fired.
                 if isinstance(e, httpx.ReadTimeout):
-                    timeout_seconds = SSE_READ_TIMEOUT_SECONDS
+                    timeout_seconds = READ_TIMEOUT_SECONDS
                 else:
-                    timeout_seconds = SSE_CONNECT_TIMEOUT_SECONDS
+                    timeout_seconds = CONNECT_TIMEOUT_SECONDS
                 raise TimeoutError(
                     f"Request to {url_path} timed out after {timeout_seconds}s"
                 )

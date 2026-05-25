@@ -9,8 +9,8 @@ import respx
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import (
-    SSE_CONNECT_TIMEOUT_SECONDS,
-    SSE_READ_TIMEOUT_SECONDS,
+    CONNECT_TIMEOUT_SECONDS,
+    READ_TIMEOUT_SECONDS,
     KilnApiCallTool,
 )
 
@@ -376,7 +376,7 @@ class TestHttpErrors:
             )
             with pytest.raises(
                 TimeoutError,
-                match=rf"Request to /test timed out after {SSE_READ_TIMEOUT_SECONDS}s",
+                match=rf"Request to /test timed out after {READ_TIMEOUT_SECONDS}s",
             ):
                 await tool.run(method="GET", url_path="/test")
 
@@ -387,7 +387,7 @@ class TestHttpErrors:
                 side_effect=httpx.ReadTimeout("timeout")
             )
             with pytest.raises(
-                TimeoutError, match=rf"timed out after {SSE_READ_TIMEOUT_SECONDS}s"
+                TimeoutError, match=rf"timed out after {READ_TIMEOUT_SECONDS}s"
             ):
                 await tool.run(method="POST", url_path="/test", body="{}")
 
@@ -399,7 +399,7 @@ class TestHttpErrors:
             )
             with pytest.raises(
                 TimeoutError,
-                match=rf"Request to /test timed out after {SSE_CONNECT_TIMEOUT_SECONDS}s",
+                match=rf"Request to /test timed out after {CONNECT_TIMEOUT_SECONDS}s",
             ):
                 await tool.run(method="GET", url_path="/test")
 
@@ -758,7 +758,7 @@ class TestSSEReadTimeout:
         # exceeds the timeout while every gap stays well under it. If the bound
         # were a total cap this would raise TimeoutError.
         monkeypatch.setattr(
-            "kiln_ai.tools.built_in_tools.kiln_api_call_tool.SSE_READ_TIMEOUT_SECONDS",
+            "kiln_ai.tools.built_in_tools.kiln_api_call_tool.READ_TIMEOUT_SECONDS",
             0.5,
         )
 
