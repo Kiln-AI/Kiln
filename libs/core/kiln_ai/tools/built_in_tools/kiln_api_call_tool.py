@@ -9,7 +9,10 @@ import jq
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 
-# Long enough for SSE streams (e.g. eval runs) that emit progress events.
+# httpx read timeout is per-read (idle), not a wall-clock cap: it resets every
+# time a chunk arrives. So this bounds the gap *between* events, not total
+# stream duration — a multi-hour eval that emits progress regularly never trips
+# it; only ~30 min of total silence (no events, no keepalive) does.
 SSE_READ_TIMEOUT_SECONDS = 1800.0
 # Short connection/setup timeout — server should accept quickly even when the
 # body will then stream for a long time.
@@ -34,7 +37,7 @@ class KilnApiCallTool(KilnTool):
 
 Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling.
 
-For SSE endpoints (text/event-stream), the tool collects emitted events until the stream closes and returns body = {"events": [...], "event_count": N, "complete": bool}. Each event is parsed as JSON when possible, otherwise kept as a string."""
+For SSE endpoints (text/event-stream), the tool consumes the stream until it closes (or a `data: complete` sentinel) and returns body = {"event_count": N, "complete": bool}. Individual event payloads are not returned."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -139,11 +142,10 @@ For SSE endpoints (text/event-stream), the tool collects emitted events until th
                     is_sse = content_type.startswith("text/event-stream")
 
                     if is_sse:
-                        events, complete = await _consume_sse(response)
+                        event_count, complete = await _consume_sse(response)
                         response_text = json.dumps(
                             {
-                                "events": events,
-                                "event_count": len(events),
+                                "event_count": event_count,
                                 "complete": complete,
                             }
                         )
@@ -191,19 +193,20 @@ For SSE endpoints (text/event-stream), the tool collects emitted events until th
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
 
 
-async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
-    """Iterate an SSE response, returning (events, complete).
+async def _consume_sse(response: httpx.Response) -> tuple[int, bool]:
+    """Drain an SSE response, returning (event_count, complete).
 
-    Each event's ``data:`` lines are joined with newlines per the SSE spec,
-    JSON-decoded when possible, and appended. Non-data lines (``id:``,
-    ``event:``, ``retry:``, comments) are ignored. ``complete`` is True only
-    when we observe an explicit ``data: complete`` sentinel — a clean stream
-    end does NOT set it. That sentinel is emitted by some Kiln endpoints
-    (eval runs, RAG indexing) but not others (chat, which has no such marker),
-    so ``complete=False`` is normal for streams that don't use it and does not
-    by itself imply truncation.
+    Event payloads are intentionally not retained — a long stream (e.g. an eval
+    run) can emit thousands of events, and the caller only needs to know it
+    finished, not replay every progress update. We count events and detect the
+    explicit ``data: complete`` sentinel. ``complete`` is True only on that
+    sentinel — a clean stream end does NOT set it. The sentinel is emitted by
+    some Kiln endpoints (eval runs, RAG indexing) but not others (chat), so
+    ``complete=False`` is normal for streams that don't use it and does not by
+    itself imply truncation. Draining still blocks until the stream closes, so
+    the tool call returns only once the underlying operation has finished.
     """
-    events: list[Any] = []
+    event_count = 0
     data_lines: list[str] = []
     saw_complete_sentinel = False
 
@@ -216,7 +219,7 @@ async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
                 if payload == "complete":
                     saw_complete_sentinel = True
                     break
-                events.append(_decode_sse_payload(payload))
+                event_count += 1
             continue
         if line.startswith(":"):
             # SSE comment — ignore
@@ -231,14 +234,6 @@ async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
         if payload == "complete":
             saw_complete_sentinel = True
         else:
-            events.append(_decode_sse_payload(payload))
+            event_count += 1
 
-    return events, saw_complete_sentinel
-
-
-def _decode_sse_payload(payload: str) -> Any:
-    """JSON-decode an SSE data payload, falling back to the raw string."""
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError:
-        return payload
+    return event_count, saw_complete_sentinel

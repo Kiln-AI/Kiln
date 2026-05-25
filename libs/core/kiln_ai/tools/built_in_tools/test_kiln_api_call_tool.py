@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import json
 
 import httpx
@@ -473,11 +475,11 @@ class TestResponseConstruction:
 
 
 class TestSSEResponse:
-    """SSE responses are streamed, events collected, body returns
-    {events, event_count, complete}."""
+    """SSE responses are drained (events counted, not retained); body returns
+    {event_count, complete}."""
 
     @pytest.mark.asyncio
-    async def test_collects_events_and_marks_complete(self, tool):
+    async def test_counts_events_and_marks_complete(self, tool):
         body = (
             'data: {"progress": 1, "total": 3}\n\n'
             'data: {"progress": 2, "total": 3}\n\n'
@@ -495,10 +497,7 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
-            assert parsed["body"]["event_count"] == 3
-            assert parsed["body"]["complete"] is True
-            assert parsed["body"]["events"][0] == {"progress": 1, "total": 3}
-            assert parsed["body"]["events"][-1] == {"progress": 3, "total": 3}
+            assert parsed["body"] == {"event_count": 3, "complete": True}
 
     @pytest.mark.asyncio
     async def test_incomplete_stream_marked_not_complete(self, tool):
@@ -530,14 +529,16 @@ class TestSSEResponse:
             result = await tool.run(
                 method="GET",
                 url_path="/api/eval/run",
-                jq_filter=".events | last | .progress",
+                jq_filter=".event_count",
             )
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"] == 2
 
     @pytest.mark.asyncio
-    async def test_non_json_data_lines_kept_as_strings(self, tool):
+    async def test_non_json_data_lines_counted_not_parsed(self, tool):
+        # Non-JSON payloads are still counted as events; we don't parse or keep
+        # them.
         body = "data: hello\n\ndata: world\n\n"
         with respx.mock:
             respx.get("http://test-server:8757/api/stream").mock(
@@ -549,7 +550,7 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
-            assert parsed["body"]["events"] == ["hello", "world"]
+            assert parsed["body"]["event_count"] == 2
 
     @pytest.mark.asyncio
     async def test_ignores_comments_and_non_data_fields(self, tool):
@@ -569,9 +570,7 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
-            assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["events"] == [{"ok": True}]
-            assert parsed["body"]["complete"] is True
+            assert parsed["body"] == {"event_count": 1, "complete": True}
 
     @pytest.mark.asyncio
     async def test_trailing_complete_sentinel_without_blank_line(self, tool):
@@ -593,7 +592,7 @@ class TestSSEResponse:
 
     @pytest.mark.asyncio
     async def test_trailing_event_flushed_without_blank_line(self, tool):
-        # Last event has no terminating blank line; it must still be emitted.
+        # Last event has no terminating blank line; it must still be counted.
         body = 'data: {"progress": 1}\n\ndata: {"progress": 2}'
         with respx.mock:
             respx.get("http://test-server:8757/api/eval/run").mock(
@@ -605,14 +604,12 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
-            assert parsed["body"]["event_count"] == 2
-            assert parsed["body"]["events"][-1] == {"progress": 2}
-            assert parsed["body"]["complete"] is False
+            assert parsed["body"] == {"event_count": 2, "complete": False}
 
     @pytest.mark.asyncio
-    async def test_multiline_data_joined_with_newlines(self, tool):
-        # Consecutive data: lines in one event join with "\n" (SSE spec). The
-        # joined payload here is valid JSON, so it must also decode correctly.
+    async def test_multiline_data_counted_as_one_event(self, tool):
+        # Consecutive data: lines form a single event (joined per the SSE spec),
+        # so the block below is two events, not four lines.
         body = 'data: {"a": 1,\ndata: "b": 2}\n\ndata: line1\ndata: line2\n\n'
         with respx.mock:
             respx.get("http://test-server:8757/api/stream").mock(
@@ -624,8 +621,7 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
-            assert parsed["body"]["events"][0] == {"a": 1, "b": 2}
-            assert parsed["body"]["events"][1] == "line1\nline2"
+            assert parsed["body"]["event_count"] == 2
 
     @pytest.mark.asyncio
     async def test_empty_stream(self, tool):
@@ -639,7 +635,7 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
-            assert parsed["body"] == {"events": [], "event_count": 0, "complete": False}
+            assert parsed["body"] == {"event_count": 0, "complete": False}
 
     @pytest.mark.asyncio
     async def test_crlf_line_endings(self, tool):
@@ -654,9 +650,7 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
-            assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["events"][0] == {"progress": 1}
-            assert parsed["body"]["complete"] is True
+            assert parsed["body"] == {"event_count": 1, "complete": True}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -680,7 +674,6 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
             assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["events"] == [{"ok": True}]
 
     @pytest.mark.asyncio
     async def test_post_returns_sse(self, tool):
@@ -724,9 +717,9 @@ class TestSSEResponse:
 
     @pytest.mark.asyncio
     async def test_non_2xx_sse_response(self, tool):
-        # An error status with an event-stream content-type is still parsed as
-        # SSE (detection is content-type based); the partial events surface in
-        # the body and jq is skipped because the status is non-2xx.
+        # An error status with an event-stream content-type is still drained as
+        # SSE (detection is content-type based); jq is skipped because the
+        # status is non-2xx.
         body = 'data: {"type": "error", "message": "boom"}\n\n'
         with respx.mock:
             respx.get("http://test-server:8757/api/eval/run").mock(
@@ -739,5 +732,55 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 500
-            assert parsed["body"]["complete"] is False
-            assert parsed["body"]["events"] == [{"type": "error", "message": "boom"}]
+            assert parsed["body"] == {"event_count": 1, "complete": False}
+
+
+@contextlib.asynccontextmanager
+async def _sse_test_server(handler):
+    """Run *handler* as a localhost server on an ephemeral port; yield base URL.
+
+    Used to exercise real read-timeout behavior — respx returns mocked
+    responses without going through httpx's timeout machinery, so it can't
+    simulate inter-event delays.
+    """
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    async with server:
+        yield f"http://127.0.0.1:{port}"
+
+
+class TestSSEReadTimeout:
+    """The read timeout is per-read (idle), not a wall-clock cap on the stream."""
+
+    @pytest.mark.asyncio
+    async def test_slow_steady_stream_does_not_time_out(self, monkeypatch):
+        # Read timeout 0.5s; emit 8 events 0.1s apart so the total (~0.8s)
+        # exceeds the timeout while every gap stays well under it. If the bound
+        # were a total cap this would raise TimeoutError.
+        monkeypatch.setattr(
+            "kiln_ai.tools.built_in_tools.kiln_api_call_tool.SSE_READ_TIMEOUT_SECONDS",
+            0.5,
+        )
+
+        async def handler(reader, writer):
+            await reader.read(65536)
+            writer.write(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: text/event-stream\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            await writer.drain()
+            for i in range(8):
+                await asyncio.sleep(0.1)
+                writer.write(f'data: {{"progress": {i}}}\n\n'.encode())
+                await writer.drain()
+            writer.write(b"data: complete\n\n")
+            await writer.drain()
+            writer.close()
+
+        async with _sse_test_server(handler) as base_url:
+            tool = KilnApiCallTool(api_base_url=base_url)
+            result = await tool.run(method="GET", url_path="/stream")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"] == {"event_count": 8, "complete": True}
