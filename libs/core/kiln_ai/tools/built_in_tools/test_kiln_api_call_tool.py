@@ -41,6 +41,20 @@ class TestRunCallingConvention:
             result = await tool.run(method="GET", url_path="/test")
             assert json.loads(result.output)["status_code"] == 200
 
+    @pytest.mark.asyncio
+    async def test_run_with_positional_context_and_jq(self, tool):
+        # jq_filter must still bind as a keyword-only arg when context is passed
+        # positionally — i.e. the adapter convention with the full set of args.
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"name": "v", "extra": 1})
+            )
+            args = {"method": "GET", "url_path": "/test", "jq_filter": ".name"}
+            result = await tool.run(ToolCallContext(allow_saving=False), **args)
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"] == "v"
+
 
 class TestKilnApiCallToolInit:
     def test_custom_base_url(self):
