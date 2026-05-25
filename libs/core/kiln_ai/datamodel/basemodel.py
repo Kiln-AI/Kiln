@@ -8,7 +8,7 @@ import uuid
 from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Callable, Dict, List, Optional, Set, Type, TypeVar
 
 from pydantic import (
@@ -145,7 +145,11 @@ class KilnAttachmentModel(BaseModel):
             if isinstance(self.path, str):
                 self.path = Path(self.path)
             self.input_path = None
-            if self.path and (self.path.is_absolute() or ".." in self.path.parts):
+            if self.path and (
+                self.path.is_absolute()
+                or PureWindowsPath(self.path).is_absolute()
+                or ".." in PureWindowsPath(self.path).parts
+            ):
                 raise ValueError(
                     f"Attachment path must be a relative path within the parent: {self.path}"
                 )

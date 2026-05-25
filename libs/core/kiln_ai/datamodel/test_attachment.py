@@ -519,6 +519,18 @@ def test_loading_from_file_rejects_absolute_path(
         ModelWithAttachment.load_from_file(json_path)
 
 
+def test_loading_from_file_rejects_windows_traversal_path(
+    test_base_kiln_file, mock_file_factory
+):
+    json_path = test_base_kiln_file.parent / "test_model.json"
+    _save_then_tamper_attachment_path(
+        json_path, mock_file_factory, "..\\..\\..\\..\\..\\..\\..\\etc\\passwd"
+    )
+
+    with pytest.raises(ValueError, match="must be a relative path within the parent"):
+        ModelWithAttachment.load_from_file(json_path)
+
+
 def test_resolve_path_rejects_escaping_path(test_base_kiln_file, mock_file_factory):
     test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithAttachment(
