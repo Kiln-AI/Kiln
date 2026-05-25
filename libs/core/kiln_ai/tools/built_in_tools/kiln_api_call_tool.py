@@ -97,9 +97,10 @@ For SSE endpoints (text/event-stream), the tool collects emitted events until th
         if not url_path.startswith("/"):
             raise ValueError(f"url_path must start with '/', got: {url_path}")
 
-        if "?" in url_path:
+        if "?" in url_path or "#" in url_path:
             raise ValueError(
-                "url_path must not contain a query string. Pass query args via query_params."
+                "url_path must not contain a query string or fragment ('?' or '#'). "
+                "Pass query args via query_params."
             )
 
         if body_str is not None and method in {"GET", "DELETE"}:
@@ -148,9 +149,15 @@ For SSE endpoints (text/event-stream), the tool collects emitted events until th
                     else:
                         raw = await response.aread()
                         response_text = raw.decode("utf-8", errors="replace")
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as e:
+                # Read timeouts use the long SSE bound; connect/write/pool use
+                # the short one. Report whichever actually fired.
+                if isinstance(e, httpx.ReadTimeout):
+                    timeout_seconds = SSE_READ_TIMEOUT_SECONDS
+                else:
+                    timeout_seconds = SSE_CONNECT_TIMEOUT_SECONDS
                 raise TimeoutError(
-                    f"Request to {url_path} timed out after {SSE_READ_TIMEOUT_SECONDS}s"
+                    f"Request to {url_path} timed out after {timeout_seconds}s"
                 )
             except httpx.ConnectError:
                 raise ConnectionError(f"Could not connect to server for {url_path}")
@@ -188,9 +195,12 @@ async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
 
     Each event's ``data:`` lines are joined with newlines per the SSE spec,
     JSON-decoded when possible, and appended. Non-data lines (``id:``,
-    ``event:``, ``retry:``, comments) are ignored. ``complete`` is True when
-    we observe the Kiln-specific ``data: complete`` sentinel or the stream
-    ends cleanly.
+    ``event:``, ``retry:``, comments) are ignored. ``complete`` is True only
+    when we observe an explicit ``data: complete`` sentinel — a clean stream
+    end does NOT set it. That sentinel is emitted by some Kiln endpoints
+    (eval runs, RAG indexing) but not others (chat, which has no such marker),
+    so ``complete=False`` is normal for streams that don't use it and does not
+    by itself imply truncation.
     """
     events: list[Any] = []
     data_lines: list[str] = []

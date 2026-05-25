@@ -5,7 +5,11 @@ import pytest
 import respx
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
+from kiln_ai.tools.built_in_tools.kiln_api_call_tool import (
+    SSE_CONNECT_TIMEOUT_SECONDS,
+    SSE_READ_TIMEOUT_SECONDS,
+    KilnApiCallTool,
+)
 
 
 @pytest.fixture
@@ -59,6 +63,11 @@ class TestInputValidation:
     async def test_url_path_with_query_string_rejected(self, tool):
         with pytest.raises(ValueError, match="must not contain a query string"):
             await tool.run(method="GET", url_path="/test?foo=bar")
+
+    @pytest.mark.asyncio
+    async def test_url_path_with_fragment_rejected(self, tool):
+        with pytest.raises(ValueError, match="query string or fragment"):
+            await tool.run(method="GET", url_path="/test#section")
 
 
 class TestQueryParams:
@@ -315,22 +324,39 @@ class TestHttpErrors:
                 await tool.run(method="GET", url_path="/test")
 
     @pytest.mark.asyncio
-    async def test_timeout(self, tool):
+    async def test_read_timeout_reports_read_bound(self, tool):
         with respx.mock:
             respx.get("http://test-server:8757/test").mock(
-                side_effect=httpx.TimeoutException("timeout")
+                side_effect=httpx.ReadTimeout("timeout")
             )
-            with pytest.raises(TimeoutError, match=r"Request to /test timed out after"):
+            with pytest.raises(
+                TimeoutError,
+                match=rf"Request to /test timed out after {SSE_READ_TIMEOUT_SECONDS}s",
+            ):
                 await tool.run(method="GET", url_path="/test")
 
     @pytest.mark.asyncio
-    async def test_timeout_on_post(self, tool):
+    async def test_read_timeout_on_post(self, tool):
         with respx.mock:
             respx.post("http://test-server:8757/test").mock(
-                side_effect=httpx.TimeoutException("timeout")
+                side_effect=httpx.ReadTimeout("timeout")
             )
-            with pytest.raises(TimeoutError, match=r"timed out after"):
+            with pytest.raises(
+                TimeoutError, match=rf"timed out after {SSE_READ_TIMEOUT_SECONDS}s"
+            ):
                 await tool.run(method="POST", url_path="/test", body="{}")
+
+    @pytest.mark.asyncio
+    async def test_connect_timeout_reports_connect_bound(self, tool):
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                side_effect=httpx.ConnectTimeout("timeout")
+            )
+            with pytest.raises(
+                TimeoutError,
+                match=rf"Request to /test timed out after {SSE_CONNECT_TIMEOUT_SECONDS}s",
+            ):
+                await tool.run(method="GET", url_path="/test")
 
 
 class TestResponseConstruction:
