@@ -4286,6 +4286,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/QwQ-32B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -4343,6 +4344,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen2.5-VL-72B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -4422,6 +4424,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen2.5-VL-32B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -4500,6 +4503,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+                deprecated=True,
                 supports_structured_output=False,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -4940,6 +4944,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_function_calling=False,
@@ -5028,6 +5033,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -5343,6 +5349,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-Next-80B-A3B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
@@ -5367,6 +5374,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-Next-80B-A3B-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -6151,6 +6159,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-VL-235B-A22B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=False,
                 reasoning_capable=False,
@@ -6327,6 +6336,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-VL-235B-A22B-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=False,
                 reasoning_capable=True,
@@ -6953,6 +6963,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/glm-4.6v",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -6988,6 +6999,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-4.6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
@@ -7325,6 +7337,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/moonshotai/Kimi-K2-Instruct-0905",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 suggested_for_evals=True,
@@ -7356,6 +7369,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/moonshotai/Kimi-K2-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -7404,6 +7418,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="THUDM/GLM-Z1-32B-0414",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -7446,6 +7461,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="baidu/ERNIE-4.5-300B-A47B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
@@ -7635,6 +7651,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="ascend-tribe/pangu-pro-moe",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 supports_data_gen=True,
