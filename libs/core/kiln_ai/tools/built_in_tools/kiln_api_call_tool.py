@@ -7,7 +7,7 @@ import httpx
 import jq
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
+from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 
 # Long enough for SSE streams (e.g. eval runs) that emit progress events.
 SSE_READ_TIMEOUT_SECONDS = 1800.0
@@ -73,12 +73,13 @@ For SSE endpoints (text/event-stream), the tool collects emitted events until th
 
     async def run(  # type: ignore[override]
         self,
+        context: ToolCallContext | None = None,
+        *,
         method: str,
         url_path: str,
         body: str | dict | list | None = None,
         query_params: dict[str, str | list[str]] | None = None,
         jq_filter: str | None = None,
-        context=None,
     ) -> ToolCallResult:
         body_str: str | None = None
         if isinstance(body, (dict, list)):
