@@ -215,16 +215,14 @@ async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
                 if payload == "complete":
                     saw_complete_sentinel = True
                     break
-                try:
-                    events.append(json.loads(payload))
-                except json.JSONDecodeError:
-                    events.append(payload)
+                events.append(_decode_sse_payload(payload))
             continue
         if line.startswith(":"):
             # SSE comment — ignore
             continue
         if line.startswith("data:"):
-            data_lines.append(line[5:].lstrip(" "))
+            # SSE spec: strip exactly one leading space after "data:".
+            data_lines.append(line[5:].removeprefix(" "))
 
     # Flush a trailing event if the stream closed without a final blank line.
     if data_lines:
@@ -232,9 +230,14 @@ async def _consume_sse(response: httpx.Response) -> tuple[list[Any], bool]:
         if payload == "complete":
             saw_complete_sentinel = True
         else:
-            try:
-                events.append(json.loads(payload))
-            except json.JSONDecodeError:
-                events.append(payload)
+            events.append(_decode_sse_payload(payload))
 
     return events, saw_complete_sentinel
+
+
+def _decode_sse_payload(payload: str) -> Any:
+    """JSON-decode an SSE data payload, falling back to the raw string."""
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return payload

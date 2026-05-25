@@ -529,3 +529,172 @@ class TestSSEResponse:
             assert parsed["body"]["event_count"] == 1
             assert parsed["body"]["events"] == [{"ok": True}]
             assert parsed["body"]["complete"] is True
+
+    @pytest.mark.asyncio
+    async def test_trailing_complete_sentinel_without_blank_line(self, tool):
+        # Stream ends on "data: complete" with no final blank line, exercising
+        # the post-loop flush branch rather than the in-loop break.
+        body = 'data: {"progress": 1}\n\ndata: complete'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["complete"] is True
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_trailing_event_flushed_without_blank_line(self, tool):
+        # Last event has no terminating blank line; it must still be emitted.
+        body = 'data: {"progress": 1}\n\ndata: {"progress": 2}'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 2
+            assert parsed["body"]["events"][-1] == {"progress": 2}
+            assert parsed["body"]["complete"] is False
+
+    @pytest.mark.asyncio
+    async def test_multiline_data_joined_with_newlines(self, tool):
+        # Consecutive data: lines in one event join with "\n" (SSE spec). The
+        # joined payload here is valid JSON, so it must also decode correctly.
+        body = 'data: {"a": 1,\ndata: "b": 2}\n\ndata: line1\ndata: line2\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["events"][0] == {"a": 1, "b": 2}
+            assert parsed["body"]["events"][1] == "line1\nline2"
+
+    @pytest.mark.asyncio
+    async def test_empty_stream(self, tool):
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content="",
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"] == {"events": [], "event_count": 0, "complete": False}
+
+    @pytest.mark.asyncio
+    async def test_crlf_line_endings(self, tool):
+        body = 'data: {"progress": 1}\r\n\r\ndata: complete\r\n\r\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+            assert parsed["body"]["events"][0] == {"progress": 1}
+            assert parsed["body"]["complete"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "content_type",
+        [
+            "text/event-stream",
+            "text/event-stream; charset=utf-8",
+            "TEXT/EVENT-STREAM",
+        ],
+    )
+    async def test_content_type_variants_detected_as_sse(self, tool, content_type):
+        body = 'data: {"ok": true}\n\ndata: complete\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": content_type},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+            assert parsed["body"]["events"] == [{"ok": True}]
+
+    @pytest.mark.asyncio
+    async def test_post_returns_sse(self, tool):
+        body = 'data: {"progress": 1}\n\ndata: complete\n\n'
+        with respx.mock:
+            respx.post("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(
+                method="POST", url_path="/api/eval/run", body={"id": "x"}
+            )
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+            assert parsed["body"]["complete"] is True
+
+    @pytest.mark.asyncio
+    async def test_sse_with_query_params(self, tool):
+        body = 'data: {"progress": 1}\n\ndata: complete\n\n'
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(
+                method="GET",
+                url_path="/api/eval/run",
+                query_params={"run_config_ids": ["a", "b"]},
+            )
+            query = route.calls.last.request.url.query.decode()
+            assert "run_config_ids=a" in query
+            assert "run_config_ids=b" in query
+            parsed = json.loads(result.output)
+            assert parsed["body"]["complete"] is True
+
+    @pytest.mark.asyncio
+    async def test_non_2xx_sse_response(self, tool):
+        # An error status with an event-stream content-type is still parsed as
+        # SSE (detection is content-type based); the partial events surface in
+        # the body and jq is skipped because the status is non-2xx.
+        body = 'data: {"type": "error", "message": "boom"}\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    500,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 500
+            assert parsed["body"]["complete"] is False
+            assert parsed["body"]["events"] == [{"type": "error", "message": "boom"}]
