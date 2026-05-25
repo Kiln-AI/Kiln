@@ -334,6 +334,14 @@ class BulkUploadResponse(BaseModel):
     success: bool = Field(description="Whether the import succeeded.")
     filename: str = Field(description="The filename that was imported.")
     imported_count: int = Field(description="The number of task runs imported.")
+    imported_conversation_count: int | None = Field(
+        default=None,
+        description=(
+            "The number of conversations imported. None for single-turn uploads; "
+            "set for multiturn uploads (where one row = one conversation that "
+            "materializes as multiple TaskRuns linked via parent_task_run_id)."
+        ),
+    )
 
 
 class CreateTaskRunRequest(BaseModel):
@@ -840,7 +848,6 @@ def connect_run_api(app: FastAPI):
             content = await file.read()
             f.write(content)
 
-        imported_count = 0
         try:
             importer = DatasetFileImporter(
                 task,
@@ -851,7 +858,7 @@ def connect_run_api(app: FastAPI):
                     tag_splits=splits_dict,
                 ),
             )
-            imported_count = importer.create_runs_from_file()
+            import_result = importer.create_runs_from_file()
         except KilnInvalidImportFormat as e:
             logger.error(
                 f"Invalid import format in {file_name}: {e!s}",
@@ -865,7 +872,8 @@ def connect_run_api(app: FastAPI):
         return BulkUploadResponse(
             success=True,
             filename=file_name,
-            imported_count=imported_count,
+            imported_count=import_result.imported_run_count,
+            imported_conversation_count=import_result.imported_conversation_count,
         )
 
     @app.get(
