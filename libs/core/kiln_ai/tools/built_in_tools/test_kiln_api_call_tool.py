@@ -5,12 +5,41 @@ import pytest
 import respx
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 
 
 @pytest.fixture
 def tool():
     return KilnApiCallTool(api_base_url="http://test-server:8757")
+
+
+class TestRunCallingConvention:
+    """run() must work via both tool-execution paths: the adapter's
+    ``tool.run(context, **args)`` (LiteLlmAdapter.process_tool_calls) and the
+    studio_server executor's ``tool.run(**args)`` (no context)."""
+
+    @pytest.mark.asyncio
+    async def test_run_with_positional_context(self, tool):
+        # Mirrors LiteLlmAdapter.process_tool_calls: context passed positionally,
+        # call args expanded as keywords.
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            args = {"method": "GET", "url_path": "/test"}
+            result = await tool.run(ToolCallContext(allow_saving=False), **args)
+            assert json.loads(result.output)["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_run_without_context(self, tool):
+        # Mirrors studio_server.chat.stream_session.execute_tool: tool.run(**args).
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            result = await tool.run(method="GET", url_path="/test")
+            assert json.loads(result.output)["status_code"] == 200
 
 
 class TestKilnApiCallToolInit:
