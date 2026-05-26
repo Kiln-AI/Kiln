@@ -16,7 +16,7 @@ Small project. Two phases — foundation (engine + datamodel) then adapter integ
   - Tests: `utils/test_jinja_engine.py`, `datamodel/test_input_transform.py`, extensions to `datamodel/test_run_config.py` per architecture §7.1–7.3.
   - Run `uv run ./checks.sh --agent-mode`.
 
-- [ ] **Phase 2: Adapter integration**
+- [x] **Phase 2: Adapter integration**
   - Add `_apply_input_transform` helper to `BaseAdapter` in `libs/core/kiln_ai/adapters/model_adapters/base_adapter.py`.
   - Wire call sites in `_run_returning_run_output` (sync) and `_prepare_stream` (streaming), keeping the original `input` for `generate_run` and using a separate `model_input` for the formatter — per architecture §4.3.
   - Adapter integration tests per architecture §7.4: object-schema, plaintext (JSON + non-JSON), array-schema, identity (transform=None) byte-identical, streaming path parity, `UndefinedError` surfaces pre-inference (mock provider, assert never invoked), MCP run config unchanged.
