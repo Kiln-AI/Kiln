@@ -41,7 +41,7 @@ class KilnApiCallTool(KilnTool):
 
 Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling.
 
-For SSE endpoints (text/event-stream), the tool consumes the stream until it closes (or a `data: complete` sentinel) and returns body = {"event_count": N, "complete": bool}. Individual event payloads are not returned."""
+For SSE endpoints (text/event-stream), the tool consumes the stream until it closes (or a `data: complete` sentinel) and returns body = {"event_count": N, "stream_complete": bool, "message": str}. stream_complete only means the stream ended — not that the underlying job succeeded; check the flow's status afterward. Individual event payloads are not returned."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -151,8 +151,10 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
                         response_text = json.dumps(
                             {
                                 "event_count": event_count,
-                                "complete": complete,
-                            }
+                                "stream_complete": complete,
+                                "message": "The stream has completed. Note this is not a guarantee that the job has completed with zero errors - check the status of the flow you were triggering after this.",
+                            },
+                            ensure_ascii=False,
                         )
                     else:
                         raw = await response.aread()
