@@ -14,6 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
+from kiln_ai.datamodel.input_transform import InputTransform
 from kiln_ai.datamodel.prompt_id import PromptId
 from kiln_ai.datamodel.tool_id import ToolId
 
@@ -77,6 +78,14 @@ class KilnAgentRunConfigProperties(BaseModel):
     tools_config: ToolsRunConfig | None = Field(
         default=None,
         description="The tools config to use for this run config, defining which tools are available to the model.",
+    )
+    input_transform: InputTransform | None = Field(
+        default=None,
+        description=(
+            "Optional transform applied to the task input at run time, producing "
+            "the first user message sent to the model. Default None preserves "
+            "the identity path."
+        ),
     )
 
     @field_validator("thinking_level")
