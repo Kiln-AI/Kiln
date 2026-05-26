@@ -476,10 +476,10 @@ class TestResponseConstruction:
 
 class TestSSEResponse:
     """SSE responses are drained (events counted, not retained); body returns
-    {event_count, stream_complete, message}."""
+    {event_count, message}."""
 
     @pytest.mark.asyncio
-    async def test_counts_events_and_marks_complete(self, tool):
+    async def test_counts_events_and_excludes_complete_sentinel(self, tool):
         body = (
             'data: {"progress": 1, "total": 3}\n\n'
             'data: {"progress": 2, "total": 3}\n\n'
@@ -498,10 +498,9 @@ class TestSSEResponse:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"]["event_count"] == 3
-            assert parsed["body"]["stream_complete"] is True
 
     @pytest.mark.asyncio
-    async def test_incomplete_stream_marked_not_complete(self, tool):
+    async def test_incomplete_stream_counts_events(self, tool):
         body = 'data: {"progress": 1, "total": 3}\n\n'
         with respx.mock:
             respx.get("http://test-server:8757/api/eval/run").mock(
@@ -513,7 +512,6 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
-            assert parsed["body"]["stream_complete"] is False
             assert parsed["body"]["event_count"] == 1
 
     @pytest.mark.asyncio
@@ -572,7 +570,6 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
             assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["stream_complete"] is True
 
     @pytest.mark.asyncio
     async def test_trailing_complete_sentinel_without_blank_line(self, tool):
@@ -589,7 +586,6 @@ class TestSSEResponse:
             )
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
-            assert parsed["body"]["stream_complete"] is True
             assert parsed["body"]["event_count"] == 1
 
     @pytest.mark.asyncio
@@ -607,7 +603,6 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
             assert parsed["body"]["event_count"] == 2
-            assert parsed["body"]["stream_complete"] is False
 
     @pytest.mark.asyncio
     async def test_multiline_data_counted_as_one_event(self, tool):
@@ -639,7 +634,6 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
             assert parsed["body"]["event_count"] == 0
-            assert parsed["body"]["stream_complete"] is False
 
     @pytest.mark.asyncio
     async def test_crlf_line_endings(self, tool):
@@ -655,7 +649,6 @@ class TestSSEResponse:
             result = await tool.run(method="GET", url_path="/api/eval/run")
             parsed = json.loads(result.output)
             assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["stream_complete"] is True
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -696,7 +689,6 @@ class TestSSEResponse:
             )
             parsed = json.loads(result.output)
             assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["stream_complete"] is True
 
     @pytest.mark.asyncio
     async def test_sse_with_query_params(self, tool):
@@ -718,7 +710,7 @@ class TestSSEResponse:
             assert "run_config_ids=a" in query
             assert "run_config_ids=b" in query
             parsed = json.loads(result.output)
-            assert parsed["body"]["stream_complete"] is True
+            assert parsed["body"]["event_count"] == 1
 
     @pytest.mark.asyncio
     async def test_non_2xx_sse_response(self, tool):
@@ -738,7 +730,6 @@ class TestSSEResponse:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 500
             assert parsed["body"]["event_count"] == 1
-            assert parsed["body"]["stream_complete"] is False
 
 
 @contextlib.asynccontextmanager
@@ -790,4 +781,3 @@ class TestSSEReadTimeout:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"]["event_count"] == 8
-            assert parsed["body"]["stream_complete"] is True
