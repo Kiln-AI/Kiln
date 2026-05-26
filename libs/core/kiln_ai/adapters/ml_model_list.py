@@ -187,6 +187,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_3 = "grok_4_3"
     grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
@@ -526,7 +527,13 @@ DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS = {
     "Medium": "medium",
     "High": "high",
     "Extra High": "xhigh",
-    "Max": "max",
+}
+
+GROK_4_3_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
 }
 
 
@@ -4773,6 +4780,12 @@ built_in_models: List[KilnModel] = [
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
         ],
     ),
     # DeepSeek 3.2
@@ -5196,6 +5209,36 @@ built_in_models: List[KilnModel] = [
                 uncensored=True,
                 suggested_for_uncensored_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Grok 4.3
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_3,
+        friendly_name="Grok 4.3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.3",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                openrouter_reasoning_object=True,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
