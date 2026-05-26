@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
   compute_forkable_run_ids,
-  compute_turn_run_ids,
   fork_target_from_user_block,
   content_string_from_user_message,
 } from "./fork_helpers"
@@ -73,72 +72,6 @@ describe("compute_forkable_run_ids", () => {
     const chain: RunChainEntry[] = [{ run_id: "run-1", turn_index: 1 }]
     const result = compute_forkable_run_ids(trace, chain)
     expect(result).toEqual([null, null, null])
-  })
-})
-
-describe("compute_turn_run_ids", () => {
-  function toolMsg(content: string, tool_call_id = "c1"): TraceMessage {
-    return { role: "tool", content, tool_call_id } as TraceMessage
-  }
-
-  it("assigns every message in a turn — user, assistant, tool — to its turn's run id", () => {
-    const trace: Trace = [
-      systemMsg("s"),
-      userMsg("u1"),
-      assistantMsg("a1"),
-      userMsg("u2"),
-      assistantMsg("a2"),
-      toolMsg('{"output": "r"}'),
-      assistantMsg("a2-final"),
-    ]
-    const chain: RunChainEntry[] = [
-      { run_id: "run-1", turn_index: 1 },
-      { run_id: "run-2", turn_index: 2 },
-    ]
-    const result = compute_turn_run_ids(trace, chain)
-    // System message before any user message stays unmapped.
-    // Turn 1 starts at index 1 (user u1) and includes index 2 (assistant a1).
-    // Turn 2 starts at index 3 (user u2) and includes 4..6.
-    expect(result).toEqual([
-      null,
-      "run-1",
-      "run-1",
-      "run-2",
-      "run-2",
-      "run-2",
-      "run-2",
-    ])
-  })
-
-  it("includes turn 1 (unlike compute_forkable_run_ids)", () => {
-    const trace: Trace = [userMsg("u1"), assistantMsg("a1")]
-    const chain: RunChainEntry[] = [{ run_id: "run-1", turn_index: 1 }]
-    expect(compute_turn_run_ids(trace, chain)).toEqual(["run-1", "run-1"])
-  })
-
-  it("suffix-aligns a broken chain — earlier turns remain unmapped", () => {
-    const trace: Trace = [
-      userMsg("u1"),
-      assistantMsg("a1"),
-      userMsg("u2"),
-      assistantMsg("a2"),
-      userMsg("u3"),
-      assistantMsg("a3"),
-    ]
-    const chain: RunChainEntry[] = [{ run_id: "run-3", turn_index: 3 }]
-    expect(compute_turn_run_ids(trace, chain)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      "run-3",
-      "run-3",
-    ])
-  })
-
-  it("returns all nulls when chain is empty", () => {
-    const trace: Trace = [userMsg("u1"), assistantMsg("a1")]
-    expect(compute_turn_run_ids(trace, [])).toEqual([null, null])
   })
 })
 

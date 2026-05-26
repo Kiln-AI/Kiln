@@ -60,40 +60,6 @@ export function compute_forkable_run_ids(
   return result
 }
 
-// Compute, for each trace index, the run id of the TaskRun that "owns"
-// that message (i.e. the turn started by the user message at or before that
-// index). Same suffix-alignment as compute_forkable_run_ids, but every
-// position within a turn — user, assistant, tool — maps to the turn's
-// run id, including turn 1 (which is excluded from forkable_run_ids).
-export function compute_turn_run_ids(
-  trace: Trace,
-  chain: RunChainEntry[],
-): (string | null)[] {
-  const result: (string | null)[] = trace.map(() => null)
-  const user_trace_indices: number[] = []
-  for (let i = 0; i < trace.length; i++) {
-    if (trace[i].role === "user") {
-      user_trace_indices.push(i)
-    }
-  }
-  const total_turns = user_trace_indices.length
-  if (total_turns === 0 || chain.length === 0) {
-    return result
-  }
-  const offset = total_turns - chain.length
-  if (offset < 0) return result
-  for (let k = 0; k < total_turns; k++) {
-    const chain_idx = k - offset
-    if (chain_idx < 0 || chain_idx >= chain.length) continue
-    const start = user_trace_indices[k]
-    const end = k + 1 < total_turns ? user_trace_indices[k + 1] : trace.length
-    for (let i = start; i < end; i++) {
-      result[i] = chain[chain_idx].run_id
-    }
-  }
-  return result
-}
-
 // Look up the data needed to open a fork composer for a clicked user
 // block. Returns null if the click target can't be resolved (defensive —
 // the trace component only renders the fork button when a chain entry was
