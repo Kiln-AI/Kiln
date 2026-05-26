@@ -1325,6 +1325,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provider/verify_kiln_copilot_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify Kiln Copilot API Key
+         * @description Verify the stored Kiln Copilot API key against the Kiln server.
+         *
+         *     Returns `{is_valid: bool}`. A stale key the server rejects with
+         *     401/403 is cleared from local config so subsequent flows fall back to
+         *     the connect screen instead of silently using a dead key. Network
+         *     failures leave the key in place and report `false` for this check
+         *     only — they shouldn't punish the user for a transient blip.
+         */
+        get: operations["verify_kiln_copilot_api_key_api_provider_verify_kiln_copilot_api_key_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}": {
         parameters: {
             query?: never;
@@ -13709,6 +13735,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_kiln_copilot_api_key_api_provider_verify_kiln_copilot_api_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
