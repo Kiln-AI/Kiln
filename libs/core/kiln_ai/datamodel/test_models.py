@@ -883,7 +883,7 @@ def test_task_runs_multiple_levels_via_parent_task_run_id(task: Task):
 
     assert task.path is not None
     loaded_task = Task.load_from_file(task.path)
-    all_runs = {r.id: r for r in loaded_task.runs()}
+    all_runs = {r.id: r for r in loaded_task.runs(include_intermediate_runs=True)}
     assert len(all_runs) == 3
     assert all_runs[run2.id].parent_task_run_id == run1.id
     assert all_runs[run3.id].parent_task_run_id == run2.id
@@ -1017,7 +1017,7 @@ def test_comprehensive_flat_task_run_hierarchy(tmp_path):
     loaded_project = Project.load_from_file(project_path)
     loaded_task = loaded_project.tasks()[0]
 
-    all_runs = {r.id: r for r in loaded_task.runs()}
+    all_runs = {r.id: r for r in loaded_task.runs(include_intermediate_runs=True)}
     assert len(all_runs) == 8
 
     assert all_runs[run1_l1.id].parent_task_run_id is None
@@ -1087,7 +1087,7 @@ def test_task_run_runs_on_disk(tmp_path):
     child_run.save_to_file()
 
     loaded_task = Task.load_from_file(task.path)
-    children = loaded_task.runs()
+    children = loaded_task.runs(include_intermediate_runs=True)
     assert len(children) == 2
     by_id = {r.id: r for r in children}
     assert by_id[child_run.id].parent_task_run_id == parent_run.id

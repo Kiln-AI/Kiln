@@ -332,7 +332,7 @@ This is the full conversation history for the task run:
         """
         Build the LLM as Judge score for the given run and run output.
         """
-        # Convert the output format we asked for (discreet values) to our float scores
+        # Convert the output format we asked for (discrete values) to our float scores
         scores: EvalScores = {}
         if not isinstance(run_output.output, dict):
             raise ValueError("LLM as Judge output must be a dictionary")

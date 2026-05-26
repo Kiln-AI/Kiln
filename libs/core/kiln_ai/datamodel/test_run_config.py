@@ -120,6 +120,27 @@ class TestKilnAgentRunConfigProperties:
         data_value = config_with_value.model_dump(exclude_unset=True)
         assert data_value["thinking_level"] == "low"
 
+    def test_thinking_level_deserializes_even_if_provider_drops_support(self):
+        """Run configs with a thinking_level must still deserialize after the
+        provider removes that level from available_thinking_levels. The
+        thinking_level field is a free-form string with no cross-validation
+        against the provider config."""
+        raw_json = json.dumps(
+            {
+                "type": "kiln_agent",
+                "model_name": "gemma_4_31b",
+                "model_provider_name": "gemini_api",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "default",
+                "thinking_level": "high",
+            }
+        )
+        config = run_config_adapter.validate_json(raw_json)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.thinking_level == "high"
+        assert config.model_name == "gemma_4_31b"
+        assert config.model_provider_name == ModelProviderName.gemini_api
+
     def test_thinking_level_normalizes_and_rejects_blank(self):
         config = KilnAgentRunConfigProperties(
             model_name="gpt-4",

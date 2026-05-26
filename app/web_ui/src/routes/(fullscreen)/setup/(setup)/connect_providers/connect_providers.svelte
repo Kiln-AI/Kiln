@@ -121,7 +121,7 @@
       name: "Google Gemini API",
       id: "gemini_api",
       description:
-        "Google's Gemini API (aka AI Studio). Not to be confused with Vertex AI.",
+        "Google's Gemini API (aka AI Studio). Not to be confused with Gemini Enterprise Agent Platform (formerly Vertex AI).",
       featured: false,
       api_key_steps: [
         "Go to https://aistudio.google.com/app/apikey",
@@ -131,9 +131,10 @@
       api_key_fields: ["API Key"],
     },
     {
-      name: "Google Vertex AI",
+      name: "Gemini Enterprise Agent Platform",
       id: "vertex",
-      description: "Google's Vertex API. Not to be confused with Gemini API.",
+      description:
+        "Google's Gemini Enterprise Agent Platform (formerly Vertex AI). Not to be confused with Gemini API.",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -199,7 +200,7 @@
         "Get the access key ID and secret access key for the new user. Paste them below and click 'Connect'",
       ],
       api_key_warning:
-        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they easier to setup and have more models.",
+        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they are easier to set up and have more models.",
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
@@ -776,7 +777,7 @@
   onMount(async () => {
     await check_existing_providers()
 
-    // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
+    // Check Ollama every load, as it can be closed. More ephemeral (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
