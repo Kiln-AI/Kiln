@@ -17,7 +17,7 @@ from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 # Kiln's SSE endpoints are chatty (and emit keepalive pings), so a low bound is
 # safe for them while still letting a genuinely stalled request fail reasonably
 # fast.
-READ_TIMEOUT_SECONDS = 120.0
+READ_TIMEOUT_SECONDS = 900.0
 # Short connection/setup timeout — server should accept quickly even when the
 # body will then stream for a long time.
 CONNECT_TIMEOUT_SECONDS = 30.0
