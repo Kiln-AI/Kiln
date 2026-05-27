@@ -35,9 +35,9 @@ from app.desktop.studio_server.data_gen_api import (
     generate_input_preview_samples,
 )
 from app.desktop.studio_server.api_models.copilot_models import (
-    AnalyzeInputDataGuideApiInput,
-    AnalyzeInputDataGuideApiOutput,
-    AnalyzeInputDataGuidePreviewSampleApi,
+    DraftInputDataGuideApiInput,
+    DraftInputDataGuideApiOutput,
+    DraftInputDataGuidePreviewSampleApi,
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
     GenerateBatchApiInput,
@@ -277,13 +277,13 @@ def connect_copilot_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/copilot/analyze_input_data_guide",
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/draft_input_data_guide",
         tags=["Copilot"],
         openapi_extra=agent_policy_require_approval(
-            "Analyze input examples with Copilot to draft a data guide?"
+            "Draft a data guide from input examples with Copilot?"
         ),
     )
-    async def analyze_input_data_guide(
+    async def draft_input_data_guide(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -291,15 +291,14 @@ def connect_copilot_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-        input: AnalyzeInputDataGuideApiInput,
-    ) -> AnalyzeInputDataGuideApiOutput:
-        """Analyze a heterogeneous list of input examples (manual entries,
-        existing task runs, uploaded text documents) with the Kiln Copilot to
-        produce a draft input data guide and a small set of preview inputs the
-        user can review.
+        input: DraftInputDataGuideApiInput,
+    ) -> DraftInputDataGuideApiOutput:
+        """Draft an input data guide from a heterogeneous list of input examples
+        (manual entries, existing task runs, uploaded text documents) using the
+        Kiln Copilot, plus a small set of preview inputs the user can review.
 
         Two-step internally: (1) call kiln_server's
-        `/v1/copilot/analyze_input_data_guide` to get the draft guide markdown,
+        `/v1/copilot/draft_input_data_guide` to get the draft guide markdown,
         then (2) reuse the local input-preview helper with that draft to
         generate `num_preview_samples` preview inputs. Both go back to the
         client in one response so the UI can drop straight into the existing
@@ -311,9 +310,8 @@ def connect_copilot_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         resolved_task_prompt = _resolve_task_runtime_prompt(task)
 
-        analyze_payload = {
+        draft_payload = {
             "task_prompt": resolved_task_prompt,
-            "task_description": input.task_description,
             "task_input_schema": input.target_task_info.task_input_schema or None,
             "input_examples": input.input_examples,
         }
@@ -321,16 +319,16 @@ def connect_copilot_api(app: FastAPI):
         # Call kiln_server directly via the underlying httpx client. The
         # generated `kiln_ai_server_client` doesn't include this endpoint
         # yet — when it's regenerated post-deploy, swap to the typed client
-        # method (analyze_input_data_guide_v1_copilot_analyze_input_data_guide_post).
+        # method (draft_input_data_guide_v1_copilot_draft_input_data_guide_post).
         async with client.get_async_httpx_client() as http:
             response = await http.post(
-                "/v1/copilot/analyze_input_data_guide",
-                json=analyze_payload,
+                "/v1/copilot/draft_input_data_guide",
+                json=draft_payload,
             )
         if response.status_code != 200:
             raise HTTPException(
                 status_code=response.status_code,
-                detail=f"Failed to analyze input data guide: {response.text}",
+                detail=f"Failed to draft input data guide: {response.text}",
             )
         try:
             payload = response.json()
@@ -354,10 +352,10 @@ def connect_copilot_api(app: FastAPI):
             num_samples=input.num_preview_samples,
         )
 
-        return AnalyzeInputDataGuideApiOutput(
+        return DraftInputDataGuideApiOutput(
             draft_guide=draft_guide,
             preview_samples=[
-                AnalyzeInputDataGuidePreviewSampleApi(input=s.input) for s in preview
+                DraftInputDataGuidePreviewSampleApi(input=s.input) for s in preview
             ],
         )
 

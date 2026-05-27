@@ -173,7 +173,7 @@
     try {
       captured_input_run_config = input_run_config
       const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/copilot/analyze_input_data_guide",
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/draft_input_data_guide",
         {
           params: { path: { project_id, task_id } },
           body: {
@@ -186,7 +186,6 @@
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },
-            task_description: task?.description ?? null,
             input_examples: entries.map((e) => e.text),
             num_preview_samples: 5,
             run_config_properties: input_run_config,

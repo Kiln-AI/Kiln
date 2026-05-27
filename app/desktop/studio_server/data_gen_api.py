@@ -682,7 +682,6 @@ The topic path for this sample is:
             preview_samples=input.preview_samples,
             feedback=input.feedback,
             source=guide_source,
-            task_description=task.description,
             task_input_json_schema=task.input_json_schema,
         )
 
@@ -758,7 +757,7 @@ async def generate_input_preview_samples(
     """Generate preview *inputs* for a draft input data guide.
 
     Reused by both the manual `/data_gen_guide_preview` endpoint and the
-    copilot `/copilot/analyze_input_data_guide` proxy so they go through the
+    copilot `/copilot/draft_input_data_guide` proxy so they go through the
     same input-generation framing the runtime SDG uses.
     """
     project = project_from_id(project_id)

@@ -2729,7 +2729,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/copilot/analyze_input_data_guide": {
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/draft_input_data_guide": {
         parameters: {
             query?: never;
             header?: never;
@@ -2739,20 +2739,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Analyze Input Data Guide
-         * @description Analyze a heterogeneous list of input examples (manual entries,
-         *     existing task runs, uploaded text documents) with the Kiln Copilot to
-         *     produce a draft input data guide and a small set of preview inputs the
-         *     user can review.
+         * Draft Input Data Guide
+         * @description Draft an input data guide from a heterogeneous list of input examples
+         *     (manual entries, existing task runs, uploaded text documents) using the
+         *     Kiln Copilot, plus a small set of preview inputs the user can review.
          *
          *     Two-step internally: (1) call kiln_server's
-         *     `/v1/copilot/analyze_input_data_guide` to get the draft guide markdown,
+         *     `/v1/copilot/draft_input_data_guide` to get the draft guide markdown,
          *     then (2) reuse the local input-preview helper with that draft to
          *     generate `num_preview_samples` preview inputs. Both go back to the
          *     client in one response so the UI can drop straight into the existing
          *     review/refine flow.
          */
-        post: operations["analyze_input_data_guide_api_projects__project_id__tasks__task_id__copilot_analyze_input_data_guide_post"];
+        post: operations["draft_input_data_guide_api_projects__project_id__tasks__task_id__copilot_draft_input_data_guide_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3444,65 +3443,6 @@ export interface components {
             items: components["schemas"]["AgentOverviewToolServer"][];
             /** Archived Tool Server Count */
             archived_tool_server_count: number;
-        };
-        /**
-         * AnalyzeInputDataGuideApiInput
-         * @description Input for the input data guide copilot's analyze step.
-         */
-        AnalyzeInputDataGuideApiInput: {
-            /** @description The task info including prompt, input schema, and output schema. */
-            target_task_info: components["schemas"]["TaskInfoApi"];
-            /**
-             * Task Description
-             * @description Optional human-facing description of the target task.
-             */
-            task_description?: string | null;
-            /**
-             * Input Examples
-             * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
-             */
-            input_examples: string[];
-            /**
-             * Num Preview Samples
-             * @description Number of preview inputs to generate alongside the draft guide.
-             * @default 5
-             */
-            num_preview_samples: number;
-            /** @description Run config used to generate preview inputs locally with the returned draft guide. Same shape the manual preview endpoint uses. */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
-        };
-        /**
-         * AnalyzeInputDataGuideApiOutput
-         * @description Output of the input data guide copilot's analyze step.
-         *
-         *     Combines (a) the draft guide markdown produced by the copilot service with
-         *     (b) preview inputs generated locally by re-running the existing
-         *     `/data_gen_guide_preview` flow against the draft. The preview is generated
-         *     locally so it shares the same input-generation infrastructure the manual
-         *     refine loop uses.
-         */
-        AnalyzeInputDataGuideApiOutput: {
-            /**
-             * Draft Guide
-             * @description Full draft input data guide markdown.
-             */
-            draft_guide: string;
-            /**
-             * Preview Samples
-             * @description Preview inputs generated using the draft guide for the user to review.
-             */
-            preview_samples: components["schemas"]["AnalyzeInputDataGuidePreviewSampleApi"][];
-        };
-        /**
-         * AnalyzeInputDataGuidePreviewSampleApi
-         * @description One preview-generated input returned alongside the draft guide.
-         */
-        AnalyzeInputDataGuidePreviewSampleApi: {
-            /**
-             * Input
-             * @description A generated example input the draft guide produces.
-             */
-            input: string;
         };
         /** AnswerOption */
         AnswerOption: {
@@ -5151,6 +5091,60 @@ export interface components {
              * @description Whether the library is empty
              */
             is_empty: boolean;
+        };
+        /**
+         * DraftInputDataGuideApiInput
+         * @description Input for the input data guide copilot's draft step.
+         */
+        DraftInputDataGuideApiInput: {
+            /** @description The task info including prompt, input schema, and output schema. */
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            /**
+             * Input Examples
+             * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
+             */
+            input_examples: string[];
+            /**
+             * Num Preview Samples
+             * @description Number of preview inputs to generate alongside the draft guide.
+             * @default 5
+             */
+            num_preview_samples: number;
+            /** @description Run config used to generate preview inputs locally with the returned draft guide. Same shape the manual preview endpoint uses. */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+        };
+        /**
+         * DraftInputDataGuideApiOutput
+         * @description Output of the input data guide copilot's draft step.
+         *
+         *     Combines (a) the draft guide markdown produced by the copilot service with
+         *     (b) preview inputs generated locally by re-running the existing
+         *     `/data_gen_guide_preview` flow against the draft. The preview is generated
+         *     locally so it shares the same input-generation infrastructure the manual
+         *     refine loop uses.
+         */
+        DraftInputDataGuideApiOutput: {
+            /**
+             * Draft Guide
+             * @description Full draft input data guide markdown.
+             */
+            draft_guide: string;
+            /**
+             * Preview Samples
+             * @description Preview inputs generated using the draft guide for the user to review.
+             */
+            preview_samples: components["schemas"]["DraftInputDataGuidePreviewSampleApi"][];
+        };
+        /**
+         * DraftInputDataGuidePreviewSampleApi
+         * @description One preview-generated input returned alongside the draft guide.
+         */
+        DraftInputDataGuidePreviewSampleApi: {
+            /**
+             * Input
+             * @description A generated example input the draft guide produces.
+             */
+            input: string;
         };
         /**
          * EmbeddingConfig
@@ -16919,7 +16913,7 @@ export interface operations {
             };
         };
     };
-    analyze_input_data_guide_api_projects__project_id__tasks__task_id__copilot_analyze_input_data_guide_post: {
+    draft_input_data_guide_api_projects__project_id__tasks__task_id__copilot_draft_input_data_guide_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -16933,7 +16927,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AnalyzeInputDataGuideApiInput"];
+                "application/json": components["schemas"]["DraftInputDataGuideApiInput"];
             };
         };
         responses: {
@@ -16943,7 +16937,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnalyzeInputDataGuideApiOutput"];
+                    "application/json": components["schemas"]["DraftInputDataGuideApiOutput"];
                 };
             };
             /** @description Validation Error */

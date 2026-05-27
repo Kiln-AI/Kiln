@@ -301,7 +301,6 @@ def _generate_kiln_pro_refinement_prompt(
     task_instruction: str,
     current_guide: str,
     feedback: str,
-    task_description: str | None = None,
     task_input_json_schema: str | None = None,
 ) -> str:
     """Surgical-edit refine prompt for guides that originated from the Kiln
@@ -338,14 +337,6 @@ The task's runtime system prompt:
 {task_instruction}
 </task_instruction>"""
 
-    if task_description and task_description.strip():
-        prompt += f"""
-
-A short human-facing description of the task:
-<task_description>
-{task_description}
-</task_description>"""
-
     if task_input_json_schema and task_input_json_schema.strip():
         prompt += f"""
 
@@ -381,7 +372,6 @@ def generate_guidance_refinement_prompt(
     preview_samples: list[RatedSample],
     feedback: str,
     source: DataGuideSource = "manual",
-    task_description: str | None = None,
     task_input_json_schema: str | None = None,
 ) -> str:
     """Generate a prompt for refining a Data Guide based on user feedback.
@@ -400,9 +390,8 @@ def generate_guidance_refinement_prompt(
       the user's feedback and edits only the parts that feedback addresses.
       Rated samples are not rendered; untouched sections stay byte-for-byte.
 
-    The optional task_description / task_input_json_schema args give the LLM
-    extra grounding so the refined guide stays consistent with the task's
-    actual purpose and input shape.
+    The optional task_input_json_schema arg gives the LLM extra grounding so
+    the refined guide stays consistent with the task's actual input shape.
     """
 
     if source == "kiln_pro":
@@ -410,7 +399,6 @@ def generate_guidance_refinement_prompt(
             task_instruction=task_instruction,
             current_guide=current_guide,
             feedback=feedback,
-            task_description=task_description,
             task_input_json_schema=task_input_json_schema,
         )
 
@@ -494,14 +482,6 @@ The task's runtime system prompt:
 <task_instruction>
 {task_instruction}
 </task_instruction>"""
-
-    if task_description and task_description.strip():
-        prompt += f"""
-
-A short human-facing description of the task:
-<task_description>
-{task_description}
-</task_description>"""
 
     if task_input_json_schema and task_input_json_schema.strip():
         prompt += f"""

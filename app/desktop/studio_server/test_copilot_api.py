@@ -447,11 +447,11 @@ class TestCreateSpecWithCopilot:
         assert specs[0].eval_id == evals[0].id
 
 
-class TestAnalyzeInputDataGuide:
+class TestDraftInputDataGuide:
     """Tests for the input data guide copilot proxy endpoint.
 
     The endpoint internally:
-    1. POSTs to kiln_server's /v1/copilot/analyze_input_data_guide via the
+    1. POSTs to kiln_server's /v1/copilot/draft_input_data_guide via the
        authenticated client's underlying httpx.AsyncClient → expects
        `{"draft_guide": str}` back
     2. Calls the local `generate_input_preview_samples` helper to produce
@@ -459,7 +459,7 @@ class TestAnalyzeInputDataGuide:
     3. Returns both fields together
     """
 
-    URL = "/api/projects/proj_x/tasks/task_y/copilot/analyze_input_data_guide"
+    URL = "/api/projects/proj_x/tasks/task_y/copilot/draft_input_data_guide"
 
     @staticmethod
     def _payload() -> dict:
@@ -469,7 +469,6 @@ class TestAnalyzeInputDataGuide:
                 "task_input_schema": "",
                 "task_output_schema": "",
             },
-            "task_description": "A simple translation task.",
             "input_examples": ["hello", "frog"],
             "num_preview_samples": 2,
             "run_config_properties": {
@@ -545,7 +544,7 @@ class TestAnalyzeInputDataGuide:
 
         assert response.status_code == 200
         body = response.json()
-        # Copilot analyze emits the Mike-strict three-section shape.
+        # Copilot draft emits the Mike-strict three-section shape.
         assert body["draft_guide"].startswith("# Semantics")
         assert "# Style" in body["draft_guide"]
         assert "# Presentation Defaults" in body["draft_guide"]
@@ -556,9 +555,7 @@ class TestAnalyzeInputDataGuide:
         ]
         # Verify the upstream call hit the v1 endpoint with our payload shape.
         post_kwargs = mock_http.post.await_args.kwargs
-        assert mock_http.post.await_args.args == (
-            "/v1/copilot/analyze_input_data_guide",
-        )
+        assert mock_http.post.await_args.args == ("/v1/copilot/draft_input_data_guide",)
         # task_prompt comes from the server-resolved runtime prompt
         # (task.instruction here, since this task has no default run config),
         # NOT from the frontend-supplied target_task_info.task_prompt.
@@ -566,6 +563,9 @@ class TestAnalyzeInputDataGuide:
         assert post_kwargs["json"]["input_examples"] == ["hello", "frog"]
         # The wrapper does NOT pass task_output_schema — output is out of scope.
         assert "task_output_schema" not in post_kwargs["json"]
+        # The wrapper does NOT pass task_description — the model shouldn't see
+        # the user-facing task description.
+        assert "task_description" not in post_kwargs["json"]
 
     def test_upstream_error_propagates(self, client, mock_api_key):
         mock_post_response = MagicMock()

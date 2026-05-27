@@ -152,19 +152,16 @@ class SpecQuestionerApiInput(BaseModel):
 
 # Analyze Input Data Guide
 
-ANALYZE_INPUT_DATA_GUIDE_MAX_EXAMPLES = 50
-ANALYZE_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES = 20
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 50
+DRAFT_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES = 20
 
 
-class AnalyzeInputDataGuideApiInput(BaseModel):
-    """Input for the input data guide copilot's analyze step."""
+class DraftInputDataGuideApiInput(BaseModel):
+    """Input for the input data guide copilot's draft step."""
 
     target_task_info: TaskInfoApi = Field(
         ...,
         description="The task info including prompt, input schema, and output schema.",
-    )
-    task_description: str | None = Field(
-        None, description="Optional human-facing description of the target task."
     )
     input_examples: list[str] = Field(
         ...,
@@ -175,13 +172,13 @@ class AnalyzeInputDataGuideApiInput(BaseModel):
             "treated as a candidate reference input regardless of source."
         ),
         min_length=1,
-        max_length=ANALYZE_INPUT_DATA_GUIDE_MAX_EXAMPLES,
+        max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES,
     )
     num_preview_samples: int = Field(
         5,
         description="Number of preview inputs to generate alongside the draft guide.",
         ge=1,
-        le=ANALYZE_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES,
+        le=DRAFT_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES,
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description=(
@@ -191,7 +188,7 @@ class AnalyzeInputDataGuideApiInput(BaseModel):
     )
 
 
-class AnalyzeInputDataGuidePreviewSampleApi(BaseModel):
+class DraftInputDataGuidePreviewSampleApi(BaseModel):
     """One preview-generated input returned alongside the draft guide."""
 
     input: str = Field(
@@ -199,8 +196,8 @@ class AnalyzeInputDataGuidePreviewSampleApi(BaseModel):
     )
 
 
-class AnalyzeInputDataGuideApiOutput(BaseModel):
-    """Output of the input data guide copilot's analyze step.
+class DraftInputDataGuideApiOutput(BaseModel):
+    """Output of the input data guide copilot's draft step.
 
     Combines (a) the draft guide markdown produced by the copilot service with
     (b) preview inputs generated locally by re-running the existing
@@ -210,6 +207,6 @@ class AnalyzeInputDataGuideApiOutput(BaseModel):
     """
 
     draft_guide: str = Field(description="Full draft input data guide markdown.")
-    preview_samples: list[AnalyzeInputDataGuidePreviewSampleApi] = Field(
+    preview_samples: list[DraftInputDataGuidePreviewSampleApi] = Field(
         description="Preview inputs generated using the draft guide for the user to review."
     )

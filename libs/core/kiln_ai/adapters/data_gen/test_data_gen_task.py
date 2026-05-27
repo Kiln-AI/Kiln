@@ -697,17 +697,18 @@ def test_generate_guidance_refinement_prompt_minimal():
 
 
 def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none():
-    """The task description and input JSON schema sections are optional — they
-    shouldn't appear in the output when their args are None or blank. Output
-    JSON schema is no longer accepted by the function signature."""
+    """The input JSON schema section is optional — it shouldn't appear in the
+    output when the arg is None or blank. Output JSON schema and task
+    description are no longer accepted by the function signature."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
         current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
-        task_description=None,
         task_input_json_schema=None,
     )
+    # task_description is no longer passed to the refine LLM — the model
+    # shouldn't see the user-facing task description.
     assert "<task_description>" not in prompt
     assert "<task_input_json_schema>" not in prompt
     # Output JSON schema must never appear — input data guide is input-only.
@@ -719,7 +720,6 @@ def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none()
         current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
-        task_description="   ",
         task_input_json_schema="\n",
     )
     assert "<task_description>" not in prompt_blank
@@ -733,12 +733,10 @@ def test_generate_guidance_refinement_prompt_includes_optional_sections_when_pro
         current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
-        task_description="A short task description.",
         task_input_json_schema='{"type":"object"}',
     )
-    assert (
-        "<task_description>\nA short task description.\n</task_description>" in prompt
-    )
+    # task_description is never rendered — the model shouldn't see it.
+    assert "<task_description>" not in prompt
     assert (
         '<task_input_json_schema>\n{"type":"object"}\n</task_input_json_schema>'
         in prompt

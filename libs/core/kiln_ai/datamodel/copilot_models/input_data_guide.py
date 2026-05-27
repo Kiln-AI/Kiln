@@ -12,8 +12,8 @@ Models live in /lib so they can be shared across lib, server, and client.
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class InputDataGuideAnalysisInput(BaseModel):
-    """Request payload for the analyze step of the Input Data Guide copilot."""
+class InputDataGuideDraftInput(BaseModel):
+    """Request payload for the draft step of the Input Data Guide copilot."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -21,11 +21,6 @@ class InputDataGuideAnalysisInput(BaseModel):
         ...,
         description="The task's runtime system prompt — used to ground the analysis in what the task is actually for.",
         title="task_prompt",
-    )
-    task_description: str | None = Field(
-        None,
-        description="Optional human-facing description of the task.",
-        title="task_description",
     )
     task_input_schema: str | None = Field(
         None,
@@ -37,8 +32,8 @@ class InputDataGuideAnalysisInput(BaseModel):
         description=(
             "A heterogeneous list of input examples. Each entry is a string and "
             "may be a short manual example, the input portion of an existing task "
-            "run, or the full text of an uploaded document. The analyzer treats "
-            "every entry as a candidate 'reference input' regardless of source."
+            "run, or the full text of an uploaded document. Every entry is "
+            "treated as a candidate 'reference input' regardless of source."
         ),
         title="input_examples",
         min_length=1,
@@ -65,18 +60,17 @@ class InputDataGuidePreviewSample(BaseModel):
     )
 
 
-class InputDataGuideAnalysisOutput(BaseModel):
-    """Response payload for the analyze step of the Input Data Guide copilot."""
+class InputDataGuideDraftOutput(BaseModel):
+    """Response payload for the draft step of the Input Data Guide copilot."""
 
     model_config = ConfigDict(extra="forbid")
 
     draft_guide: str = Field(
         ...,
         description=(
-            "Full draft input data guide markdown. Contains a `# Reference "
-            "Inputs` section and an `# Input Guidelines & Rules` section with "
-            "rules wrapped in `<input_structural>` and `<input_semantic>` "
-            "groups only."
+            "Full draft input data guide markdown. Contains exactly three "
+            "top-level sections in order: `# Semantics`, `# Style`, "
+            "`# Presentation Defaults`."
         ),
         title="draft_guide",
     )
