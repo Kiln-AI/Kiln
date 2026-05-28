@@ -86,6 +86,12 @@ class JobRegistry:
         # normally — the former must transition to paused/cancelled, the latter
         # must keep its succeeded result.
         self._cancel_delivered: set[str] = set()
+        # Per-job completion events for awaiters (registry.wait). Created lazily
+        # by wait(); set by _emit() on the terminal transition; reclaimed in
+        # delete(). Bounded to one event per waited job, tracking the same
+        # lifecycle as the JobRecord. Shared across all awaiters of a job so one
+        # awaiter cancelling its wait() leaves the event (and the task) untouched.
+        self._completion_events: dict[str, asyncio.Event] = {}
         self._running_count = 0
         self.events = JobEventBus(snapshot_provider=self._snapshot)
 
@@ -383,6 +389,7 @@ class JobRegistry:
             )
         self._jobs.pop(job_id, None)
         self._remove_pending(job_id)
+        self._completion_events.pop(job_id, None)
         if job.run_id is not None:
             error_log.delete_errors(job.run_id)
         self.events.publish_deleted(job_id, job.type, job.project_id)
@@ -474,6 +481,32 @@ class JobRegistry:
 
     def _emit(self, job: JobRecord) -> None:
         self.events.publish_job(job)
+        if job.status.is_terminal:
+            ev = self._completion_events.get(job.id)
+            if ev is not None:
+                ev.set()
+
+    # -- await completion ----------------------------------------------------
+
+    async def wait(self, job_id: str, timeout: float | None = None) -> JobRecord:
+        """Observe a job until it reaches a terminal state, then return its record.
+
+        A pure observer, mirroring the SSE stream's decoupling: cancelling this
+        await (caller drops off / client disconnects) tears down only the awaiter
+        — the job's supervising task is owned by the registry and keeps running.
+        Multi-waiter safe: all awaiters of a job share one Event. timeout=None
+        waits indefinitely; on timeout asyncio.wait_for raises
+        asyncio.TimeoutError, which propagates to the caller.
+        """
+        job = self._require(job_id)
+        # Create the event before the terminal check so there's no race window:
+        # single-threaded asyncio guarantees no await between setdefault and the
+        # check, and _emit only sets the event if it already exists here.
+        ev = self._completion_events.setdefault(job_id, asyncio.Event())
+        if job.status.is_terminal:
+            return job
+        await asyncio.wait_for(ev.wait(), timeout)
+        return job
 
 
 job_registry = JobRegistry()

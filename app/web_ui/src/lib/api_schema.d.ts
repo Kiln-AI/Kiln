@@ -3166,6 +3166,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{id}/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wait For Job
+         * @description Block until the job reaches a terminal state, then return its record.
+         *
+         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
+         *     cancels this handler coroutine, which cancels the wait() await and tears
+         *     down only the awaiter — the job's supervising task keeps running.
+         */
+        get: operations["wait_for_job_api_jobs__id__wait_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{id}/errors": {
         parameters: {
             query?: never;
@@ -17875,7 +17899,12 @@ export interface operations {
     };
     create_job_api_jobs__type__post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description When true, block until the job reaches a terminal state and return the full JobRecord instead of CreateJobResponse. */
+                wait?: boolean;
+                /** @description Seconds to wait when wait=true (504 on timeout). Omit to wait indefinitely. */
+                timeout?: number | null;
+            };
             header?: never;
             path: {
                 /** @description The registered job type to run. */
@@ -17895,7 +17924,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreateJobResponse"];
+                    "application/json": components["schemas"]["CreateJobResponse"] | components["schemas"]["JobRecord"];
                 };
             };
             /** @description Validation Error */
@@ -17992,6 +18021,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_job_api_jobs__id__wait_get: {
+        parameters: {
+            query?: {
+                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
+                timeout?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
                 };
             };
             /** @description Validation Error */

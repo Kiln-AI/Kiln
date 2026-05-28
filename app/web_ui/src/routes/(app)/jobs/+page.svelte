@@ -222,6 +222,7 @@
       <table class="table">
         <thead>
           <tr>
+            <th>ID</th>
             <th>Type</th>
             <th>Status</th>
             <th>Progress</th>
@@ -233,6 +234,9 @@
         <tbody>
           {#each $jobs as job (job.id)}
             <tr>
+              <td class="font-mono text-xs text-gray-500 whitespace-nowrap"
+                >{job.id}</td
+              >
               <td class="font-medium">{job_type_display(job.type)}</td>
               <td>
                 <span class="badge {job_status_badge_class(job.status)}">

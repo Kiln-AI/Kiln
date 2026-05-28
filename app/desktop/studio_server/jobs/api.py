@@ -164,12 +164,28 @@ def connect_jobs_api(app: FastAPI) -> None:
         summary="Create Job",
         tags=["Jobs"],
         status_code=201,
+        response_model=CreateJobResponse | JobRecord,
         openapi_extra=ALLOW_AGENT,
     )
     async def create_job(
         type: Annotated[str, Path(description="The registered job type to run.")],
         request: CreateJobRequest,
-    ) -> CreateJobResponse:
+        wait: Annotated[
+            bool,
+            Query(
+                description="When true, block until the job reaches a terminal "
+                "state and return the full JobRecord instead of CreateJobResponse."
+            ),
+        ] = False,
+        timeout: Annotated[
+            float | None,
+            Query(
+                ge=0,
+                description="Seconds to wait when wait=true (504 on timeout). "
+                "Omit to wait indefinitely.",
+            ),
+        ] = None,
+    ) -> CreateJobResponse | JobRecord:
         try:
             worker = job_registry.worker_for(type)
         except JobOperationError:
@@ -186,7 +202,14 @@ def connect_jobs_api(app: FastAPI) -> None:
             project_id=request.project_id or _project_id_from_params(validated),
             metadata=request.metadata,
         )
-        return CreateJobResponse(job_id=job.id, status=job.status)
+        if not wait:
+            return CreateJobResponse(job_id=job.id, status=job.status)
+        try:
+            return await job_registry.wait(job.id, timeout=timeout)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504, detail="Job did not complete within the timeout."
+            )
 
     @app.get(
         "/api/jobs/{id}",
@@ -219,6 +242,37 @@ def connect_jobs_api(app: FastAPI) -> None:
                 status_code=404, detail="No result available for this job."
             )
         return job.result
+
+    @app.get(
+        "/api/jobs/{id}/wait",
+        summary="Wait For Job",
+        tags=["Jobs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def wait_for_job(
+        id: Annotated[str, Path(description="The job id.")],
+        timeout: Annotated[
+            float | None,
+            Query(
+                ge=0,
+                description="Seconds to wait before giving up (504 on timeout). "
+                "Omit to wait indefinitely.",
+            ),
+        ] = None,
+    ) -> JobRecord:
+        """Block until the job reaches a terminal state, then return its record.
+
+        A pure observer, like the SSE stream: if the client disconnects, uvicorn
+        cancels this handler coroutine, which cancels the wait() await and tears
+        down only the awaiter — the job's supervising task keeps running."""
+        try:
+            return await job_registry.wait(id, timeout=timeout)
+        except JobNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Job not found: {id}")
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504, detail="Job did not complete within the timeout."
+            )
 
     @app.get(
         "/api/jobs/{id}/errors",

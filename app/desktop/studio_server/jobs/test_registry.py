@@ -709,6 +709,89 @@ async def test_registry_emits_snapshot_and_job_events(registry):
     assert any(e.data["status"] == "succeeded" for e in job_events)
 
 
+# -- wait --------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_immediately_for_terminal_job(registry):
+    job = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
+    await wait_for_status(registry, job.id, BackgroundJobStatus.SUCCEEDED)
+    awaited = await asyncio.wait_for(registry.wait(job.id), timeout=1.0)
+    assert awaited.id == job.id
+    assert awaited.status == BackgroundJobStatus.SUCCEEDED
+    assert awaited.result == {"completed_steps": 2}
+
+
+@pytest.mark.asyncio
+async def test_wait_blocks_then_returns_terminal_record(registry):
+    job = await registry.create("noop", {"steps": 4, "sleep_per_step_seconds": 0.03})
+    await wait_for_status(registry, job.id, BackgroundJobStatus.RUNNING)
+    awaited = await asyncio.wait_for(registry.wait(job.id), timeout=3.0)
+    assert awaited.status == BackgroundJobStatus.SUCCEEDED
+    assert awaited.result == {"completed_steps": 4}
+
+
+@pytest.mark.asyncio
+async def test_wait_unknown_raises(registry):
+    with pytest.raises(JobNotFoundError):
+        await registry.wait("j_doesnotexist")
+
+
+@pytest.mark.asyncio
+async def test_wait_times_out(registry):
+    job = await registry.create("noop", {"steps": 50, "sleep_per_step_seconds": 0.05})
+    await wait_for_status(registry, job.id, BackgroundJobStatus.RUNNING)
+    with pytest.raises(asyncio.TimeoutError):
+        await registry.wait(job.id, timeout=0.01)
+    await registry.cancel(job.id)
+
+
+@pytest.mark.asyncio
+async def test_wait_cancellation_leaves_job_running(registry):
+    # The load-bearing decoupling invariant: abandoning a wait() must NOT stop
+    # the job. A second concurrent waiter still resolves to the terminal record.
+    job = await registry.create("noop", {"steps": 6, "sleep_per_step_seconds": 0.05})
+    await wait_for_status(registry, job.id, BackgroundJobStatus.RUNNING)
+
+    abandoned = asyncio.create_task(registry.wait(job.id))
+    survivor = asyncio.create_task(registry.wait(job.id))
+    # Let both awaiters reach their await point, then abandon the first.
+    await asyncio.sleep(0.02)
+    abandoned.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await abandoned
+
+    # The job keeps running and the surviving waiter resolves to its terminal
+    # record — the supervising task was untouched by the cancelled awaiter.
+    result = await asyncio.wait_for(survivor, timeout=3.0)
+    assert result.status == BackgroundJobStatus.SUCCEEDED
+    assert result.result == {"completed_steps": 6}
+
+
+@pytest.mark.asyncio
+async def test_wait_multiple_waiters_both_resolve(registry):
+    job = await registry.create("noop", {"steps": 4, "sleep_per_step_seconds": 0.03})
+    await wait_for_status(registry, job.id, BackgroundJobStatus.RUNNING)
+    first = asyncio.create_task(registry.wait(job.id))
+    second = asyncio.create_task(registry.wait(job.id))
+    one, two = await asyncio.wait_for(asyncio.gather(first, second), timeout=3.0)
+    assert one.status == BackgroundJobStatus.SUCCEEDED
+    assert two.status == BackgroundJobStatus.SUCCEEDED
+    assert one.result == two.result == {"completed_steps": 4}
+
+
+@pytest.mark.asyncio
+async def test_delete_removes_completion_event(registry):
+    job = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
+    # wait() lazily creates the completion event; it survives to the terminal set.
+    awaited = await asyncio.wait_for(registry.wait(job.id), timeout=3.0)
+    assert awaited.status == BackgroundJobStatus.SUCCEEDED
+    assert job.id in registry._completion_events
+
+    await registry.delete(job.id)
+    assert job.id not in registry._completion_events
+
+
 # -- not found ---------------------------------------------------------------
 
 

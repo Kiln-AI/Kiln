@@ -45,7 +45,10 @@ export async function create_job(
   params: Record<string, unknown> = {},
   metadata: Record<string, unknown> | null = null,
   project_id: string | null = null,
-): Promise<components["schemas"]["CreateJobResponse"]> {
+): Promise<
+  | components["schemas"]["CreateJobResponse"]
+  | components["schemas"]["JobRecord"]
+> {
   const { data, error } = await client.POST("/api/jobs/{type}", {
     params: { path: { type } },
     body: { params, metadata, project_id },
