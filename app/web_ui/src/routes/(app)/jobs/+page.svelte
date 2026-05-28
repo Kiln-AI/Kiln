@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import RunEvalDialog from "./run_eval_dialog.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
   import { jobs, synced, connection } from "$lib/stores/jobs_store"
   import {
@@ -64,7 +65,13 @@
     }
   }
 
+  let run_eval_dialog: RunEvalDialog
+
   $: action_buttons = [
+    {
+      label: "Run eval",
+      handler: () => run_eval_dialog?.show(),
+    },
     {
       label: creating_test_job ? "Starting…" : "Start test job",
       handler: start_test_job,
@@ -360,3 +367,5 @@
     <p class="text-sm text-gray-500">No result available.</p>
   {/if}
 </Dialog>
+
+<RunEvalDialog bind:this={run_eval_dialog} />
