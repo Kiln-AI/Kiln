@@ -12,5 +12,6 @@ export enum Section {
   Skills,
   Optimize,
   Assistant,
+  Jobs,
   None,
 }

@@ -33,6 +33,7 @@ from app.desktop.studio_server.dev_tools import connect_dev_tools
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
+from app.desktop.studio_server.jobs.api import connect_jobs_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
@@ -142,6 +143,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_agent_api(app)
     connect_dev_tools(app)
     connect_chat_api(app)
+    connect_jobs_api(app)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app

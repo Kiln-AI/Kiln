@@ -18,6 +18,8 @@
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
   import ChatBar from "./chat_bar.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
+  import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
+  import SidebarJobsBadge from "$lib/components/SidebarJobsBadge.svelte"
   import { Section } from "$lib/ui/section"
   import Dialog from "$lib/ui/dialog.svelte"
   import SidebarRail from "./sidebar_rail.svelte"
@@ -108,6 +110,8 @@
       section = Section.Specs
     } else if (path_start("/optimize", $page.url.pathname)) {
       section = Section.Optimize
+    } else if (path_start("/jobs", $page.url.pathname)) {
+      section = Section.Jobs
     } else if (path_start("/assistant", $page.url.pathname)) {
       section = Section.Assistant
     } else {
@@ -274,6 +278,16 @@
 
             Evals</a
           >
+        </li>
+
+        <li class="menu-sm">
+          <a href="/jobs" class={section == Section.Jobs ? "active" : ""}>
+            <div class="sidebar-icon">
+              <JobsIcon />
+            </div>
+            Jobs
+            <SidebarJobsBadge variant="inline" />
+          </a>
         </li>
 
         <li class="menu-sm">

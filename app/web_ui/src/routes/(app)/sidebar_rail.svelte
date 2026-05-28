@@ -8,6 +8,8 @@
   import SidebarRailSettings from "./sidebar_rail_settings.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
+  import SidebarJobsBadge from "$lib/components/SidebarJobsBadge.svelte"
 
   export let section: Section = Section.None
   export let openTaskDialog: () => void
@@ -106,6 +108,13 @@
   >
     <div slot="icon" class="w-full h-full">
       <EvalIcon />
+    </div>
+  </SidebarRailItem>
+
+  <SidebarRailItem href="/jobs" active={section === Section.Jobs} label="Jobs">
+    <div slot="icon" class="w-full h-full relative">
+      <JobsIcon />
+      <SidebarJobsBadge variant="rail" />
     </div>
   </SidebarRailItem>
 
