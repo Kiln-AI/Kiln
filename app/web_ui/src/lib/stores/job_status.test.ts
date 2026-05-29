@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest"
 import {
   available_actions,
+  completed_jobs,
   is_active,
   is_terminal,
   job_status_badge_class,
   job_status_display,
+  jobs_indicator,
   progress_label,
   progress_percent,
 } from "./job_status"
@@ -124,5 +126,37 @@ describe("progress_percent", () => {
 
   it("returns 100 when complete", () => {
     expect(progress_percent({ success: 8, error: 2, total: 10 })).toBe(100)
+  })
+})
+
+describe("completed_jobs", () => {
+  it("returns exactly the terminal jobs", () => {
+    const jobs = [
+      makeJob({ id: "a", status: "running" }),
+      makeJob({ id: "b", status: "succeeded" }),
+      makeJob({ id: "c", status: "pending" }),
+      makeJob({ id: "d", status: "failed" }),
+      makeJob({ id: "e", status: "paused" }),
+      makeJob({ id: "f", status: "cancelled" }),
+    ]
+    expect(completed_jobs(jobs).map((j) => j.id)).toEqual(["b", "d", "f"])
+  })
+
+  it("returns an empty array when nothing is terminal", () => {
+    expect(completed_jobs([makeJob({ status: "running" })])).toEqual([])
+  })
+})
+
+describe("jobs_indicator", () => {
+  it("shows a spinner with the active count when any job is active", () => {
+    expect(jobs_indicator(2, 5)).toEqual({ kind: "spinner", count: 2 })
+  })
+
+  it("shows a static total count when none active but jobs remain", () => {
+    expect(jobs_indicator(0, 3)).toEqual({ kind: "static", count: 3 })
+  })
+
+  it("is hidden when there are no jobs at all", () => {
+    expect(jobs_indicator(0, 0)).toEqual({ kind: "hidden" })
   })
 })

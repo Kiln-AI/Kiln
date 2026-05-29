@@ -107,3 +107,31 @@ export function progress_percent(progress: JobProgress | undefined): number {
   const processed = (progress?.success ?? 0) + (progress?.error ?? 0)
   return Math.max(0, Math.min(100, Math.round((processed / total) * 100)))
 }
+
+// The jobs that "Clear completed" removes: every job in a terminal state.
+export function completed_jobs(jobs: JobRecord[]): JobRecord[] {
+  return jobs.filter((job) => is_terminal(job.status))
+}
+
+// What the sidebar Jobs indicator should render, derived purely from the live
+// counts so it can be unit-tested without mounting the component:
+//   - "spinner": at least one active job; show a subtle spinner + active count.
+//   - "static": no active jobs but some still exist; show a muted total count.
+//   - "hidden": no jobs at all; show no indicator.
+export type JobsIndicator =
+  | { kind: "spinner"; count: number }
+  | { kind: "static"; count: number }
+  | { kind: "hidden" }
+
+export function jobs_indicator(
+  active_count: number,
+  total_count: number,
+): JobsIndicator {
+  if (active_count > 0) {
+    return { kind: "spinner", count: active_count }
+  }
+  if (total_count > 0) {
+    return { kind: "static", count: total_count }
+  }
+  return { kind: "hidden" }
+}

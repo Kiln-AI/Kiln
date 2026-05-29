@@ -19,7 +19,9 @@
   import ChatBar from "./chat_bar.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
-  import SidebarJobsBadge from "$lib/components/SidebarJobsBadge.svelte"
+  import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
+  import JobsDialog from "$lib/components/jobs_dialog.svelte"
+  import { jobs_dialog } from "$lib/stores/jobs_dialog"
   import { Section } from "$lib/ui/section"
   import Dialog from "$lib/ui/dialog.svelte"
   import SidebarRail from "./sidebar_rail.svelte"
@@ -281,13 +283,17 @@
         </li>
 
         <li class="menu-sm">
-          <a href="/jobs" class={section == Section.Jobs ? "active" : ""}>
+          <button
+            type="button"
+            class="w-full {section == Section.Jobs ? 'active' : ''}"
+            on:click={() => jobs_dialog.open()}
+          >
             <div class="sidebar-icon">
               <JobsIcon />
             </div>
             Jobs
-            <SidebarJobsBadge variant="inline" />
-          </a>
+            <SidebarJobsIndicator variant="inline" />
+          </button>
         </li>
 
         <li class="menu-sm">
@@ -486,6 +492,8 @@
 <Dialog bind:this={taskDialog} title="Select Task" width="wide">
   <SelectTasksMenu on:dismiss={() => taskDialog?.close()} />
 </Dialog>
+
+<JobsDialog />
 
 <style>
   :global(ul > li.menu-nested) {

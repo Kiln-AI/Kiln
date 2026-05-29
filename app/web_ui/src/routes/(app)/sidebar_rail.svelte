@@ -9,7 +9,8 @@
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
-  import SidebarJobsBadge from "$lib/components/SidebarJobsBadge.svelte"
+  import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
+  import { jobs_dialog } from "$lib/stores/jobs_dialog"
 
   export let section: Section = Section.None
   export let openTaskDialog: () => void
@@ -111,10 +112,14 @@
     </div>
   </SidebarRailItem>
 
-  <SidebarRailItem href="/jobs" active={section === Section.Jobs} label="Jobs">
+  <SidebarRailItem
+    on_click={() => jobs_dialog.open()}
+    active={section === Section.Jobs}
+    label="Jobs"
+  >
     <div slot="icon" class="w-full h-full relative">
       <JobsIcon />
-      <SidebarJobsBadge variant="rail" />
+      <SidebarJobsIndicator variant="rail" />
     </div>
   </SidebarRailItem>
 
