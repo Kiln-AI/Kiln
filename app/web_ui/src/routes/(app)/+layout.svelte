@@ -112,8 +112,6 @@
       section = Section.Specs
     } else if (path_start("/optimize", $page.url.pathname)) {
       section = Section.Optimize
-    } else if (path_start("/jobs", $page.url.pathname)) {
-      section = Section.Jobs
     } else if (path_start("/assistant", $page.url.pathname)) {
       section = Section.Assistant
     } else {
@@ -283,20 +281,6 @@
         </li>
 
         <li class="menu-sm">
-          <button
-            type="button"
-            class="w-full {section == Section.Jobs ? 'active' : ''}"
-            on:click={() => jobs_dialog.open()}
-          >
-            <div class="sidebar-icon">
-              <JobsIcon />
-            </div>
-            Jobs
-            <SidebarJobsIndicator variant="inline" />
-          </button>
-        </li>
-
-        <li class="menu-sm">
           <a
             href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
             class={section == Section.Optimize ? "active" : ""}
@@ -443,6 +427,20 @@
 
         <li class="mt-auto pt-2 bg-transparent">
           <ProgressWidget />
+        </li>
+        <li class="menu-sm">
+          <button
+            type="button"
+            class="text-xs text-base-content/60"
+            on:click={() => jobs_dialog.open()}
+            aria-label="Background jobs"
+          >
+            <div class="sidebar-icon opacity-60">
+              <JobsIcon />
+            </div>
+            Jobs
+            <SidebarJobsIndicator variant="inline" />
+          </button>
         </li>
         {#if $update_info.update_result && $update_info.update_result.has_update}
           <li class="menu-sm mt-2">

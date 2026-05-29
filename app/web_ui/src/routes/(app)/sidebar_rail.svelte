@@ -112,22 +112,18 @@
     </div>
   </SidebarRailItem>
 
-  <SidebarRailItem
-    on_click={() => jobs_dialog.open()}
-    active={section === Section.Jobs}
-    label="Jobs"
-  >
-    <div slot="icon" class="w-full h-full relative">
-      <JobsIcon />
-      <SidebarJobsIndicator variant="rail" />
-    </div>
-  </SidebarRailItem>
-
   <SidebarRailOptimizeGroup {section} />
 
   <div class="flex-1"></div>
 
   <SidebarRailProgress />
+
+  <SidebarRailItem on_click={() => jobs_dialog.open()} label="Jobs">
+    <div slot="icon" class="w-full h-full relative">
+      <JobsIcon />
+      <SidebarJobsIndicator variant="rail" />
+    </div>
+  </SidebarRailItem>
 
   <SidebarRailSettings active={section === Section.Settings} />
 </nav>
