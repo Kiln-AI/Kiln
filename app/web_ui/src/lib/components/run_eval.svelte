@@ -37,7 +37,7 @@
         })
       }
 
-      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/evals/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_comparison?${params.toString()}`
+      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/evals/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_comparison_jobs?${params.toString()}`
     } else if (eval_type === "eval_config") {
       // Eval config only supports running all evals for now
       run_all = true

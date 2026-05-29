@@ -14,7 +14,7 @@ from kiln_server.utils.agent_checks.policy import (
 from pydantic import BaseModel, Field, ValidationError
 
 from . import error_log
-from .events import JobEvent
+from .events import JobEvent, KeepalivePing, iter_with_keepalive
 from .models import BackgroundJobStatus, JobRecord
 from .registry import (
     JobNotFoundError,
@@ -74,29 +74,27 @@ async def _event_stream(
     """Pure-observer SSE generator.
 
     Subscribes to the registry event bus and forwards snapshot/job/deleted
-    events, injecting a keepalive comment between events. Closing this generator
-    (client disconnect, via CancellableStreamingResponse) only unsubscribes from
-    the bus — it never touches any job's supervising task. Jobs keep running.
+    events, injecting a keepalive comment during quiet windows. Closing this
+    generator (client disconnect, via CancellableStreamingResponse) only
+    unsubscribes from the bus — it never touches any job's supervising task.
+    Jobs keep running.
+
+    The keepalive goes through the shared `iter_with_keepalive` feeder-task
+    helper so a quiet-window timeout can never cancel (and thus tear down) the
+    underlying subscription. Here that only saved a churny 15s reconnect, but it
+    shares the fix with the eval stream, where a torn-down subscription would
+    otherwise pause/cancel still-running jobs on a still-connected client.
     """
     subscription: AsyncGenerator[JobEvent, None] = job_registry.events.subscribe(
         job_id=job_id,
         type_name=type_name,
         project_id=project_id,
     )
-    try:
-        while True:
-            try:
-                event = await asyncio.wait_for(
-                    subscription.__anext__(), timeout=KEEPALIVE_SECONDS
-                )
-            except asyncio.TimeoutError:
-                yield ": ping\n\n"
-                continue
-            except StopAsyncIteration:
-                break
-            yield _format_sse(event)
-    finally:
-        await subscription.aclose()
+    async for item in iter_with_keepalive(subscription, KEEPALIVE_SECONDS):
+        if isinstance(item, KeepalivePing):
+            yield ": ping\n\n"
+        else:
+            yield _format_sse(item)
 
 
 def connect_jobs_api(app: FastAPI) -> None:

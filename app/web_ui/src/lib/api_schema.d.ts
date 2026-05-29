@@ -3258,6 +3258,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison_jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Run Config Comparison (Jobs)
+         * @description Run an eval config against one or more run configs as background jobs
+         *     (one job per run config) and stream aggregate progress via SSE.
+         *
+         *     Mirrors run_comparison's params and SSE shape, but is backed by the
+         *     background job system. Closing the stream cancels still-pending jobs and
+         *     pauses still-running ones; the idempotent eval jobs are resumable and
+         *     skip already-scored items.
+         */
+        get: operations["run_eval_config_jobs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -18184,6 +18210,49 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_config_jobs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_jobs_get: {
+        parameters: {
+            query?: {
+                /** @description The list of run configuration IDs to evaluate. */
+                run_config_ids?: string[];
+                /** @description Whether to evaluate all run configurations for the task. */
+                all_run_configs?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
+                eval_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

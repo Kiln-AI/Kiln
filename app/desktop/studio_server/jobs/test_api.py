@@ -655,122 +655,112 @@ async def test_event_stream_forwards_snapshot_then_job(registry):
         await stream.aclose()
 
 
-def _parse_sse_block(block: str) -> tuple[str | None, dict | None]:
-    event_name: str | None = None
-    data: dict | None = None
-    for line in block.splitlines():
-        if line.startswith("event:"):
-            event_name = line[len("event:") :].strip()
-        elif line.startswith("data:"):
-            data = json.loads(line[len("data:") :].strip())
-    return event_name, data
+async def _read_sse_event_from_gen(gen, target: str, timeout: float = 3.0) -> dict:
+    """Pull SSE chunks from an async-generator stream until one matches `target`.
 
-
-async def _read_until_event(line_iter, target: str, timeout: float = 3.0) -> dict:
-    """Read SSE blocks from a shared line iterator until one matches the target
-    event name; return its data. httpx allows streaming the body only once, so a
-    single iterator must be threaded through all reads on a response."""
-    buffer = ""
+    Each `data:` line is a complete JSON payload (the generator yields one
+    `event: <name>\\ndata: <json>\\n\\n` block per chunk). Skips keepalive
+    comments (`: ping\\n\\n`) so a quiet window between events doesn't fool the
+    test. Bounds the wait per chunk with `timeout` so a hung stream fails loudly.
+    """
     while True:
-        line = await asyncio.wait_for(line_iter.__anext__(), timeout=timeout)
-        if line == "":
-            event_name, data = _parse_sse_block(buffer)
-            buffer = ""
-            if event_name == target and data is not None:
-                return data
-        else:
-            buffer += line + "\n"
+        chunk = await asyncio.wait_for(gen.__anext__(), timeout=timeout)
+        # Keepalive comment — no event, no data; keep reading.
+        if chunk.startswith(":"):
+            continue
+        event_name: str | None = None
+        data: dict | None = None
+        for line in chunk.splitlines():
+            if line.startswith("event:"):
+                event_name = line[len("event:") :].strip()
+            elif line.startswith("data:"):
+                data = json.loads(line[len("data:") :].strip())
+        if event_name == target and data is not None:
+            return data
+
+
+# These tests used to drive the SSE endpoint via `httpx.ASGITransport`, but
+# httpx's ASGITransport awaits the ASGI app to completion before returning the
+# response — there is no streaming read path. The previous tests "worked" only
+# because the OLD keepalive code accidentally tore down the subscription on a
+# single quiet window, ending the stream after one ping. With that bug fixed,
+# the stream is genuinely long-lived and the ASGITransport pattern hangs. So we
+# drive `_event_stream` directly — same generator the route mounts on the
+# CancellableStreamingResponse — and assert the same observable behavior.
 
 
 @pytest.mark.asyncio
-async def test_sse_empty_snapshot(app, fast_keepalive):
-    # Connecting with no jobs yields an empty snapshot. (httpx's ASGITransport
-    # sends http.disconnect right after the GET body, so we only assert the
-    # initial snapshot here; live-event delivery is covered below with a job
-    # that is already running before we connect.)
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream("GET", "/api/jobs/events") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            snapshot = await _read_until_event(response.aiter_lines(), "snapshot")
-            assert snapshot == {"jobs": []}
+async def test_sse_empty_snapshot(registry, fast_keepalive):
+    """Connecting with no jobs yields a `snapshot` event whose data is empty."""
+    stream = jobs_api._event_stream(job_id=None, type_name=None, project_id=None)
+    try:
+        snapshot = await _read_sse_event_from_gen(stream, "snapshot")
+        assert snapshot == {"jobs": []}
+    finally:
+        await stream.aclose()
 
 
 @pytest.mark.asyncio
-async def test_sse_snapshot_then_job_event(app, registry, fast_keepalive):
+async def test_sse_snapshot_then_job_event(registry, fast_keepalive):
     # Start a long-running job first, so it appears in the snapshot and keeps
     # emitting live `job` progress events while we observe the stream.
     job = await registry.create("noop", {"steps": 40, "sleep_per_step_seconds": 0.05})
 
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream("GET", "/api/jobs/events") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            lines = response.aiter_lines()
+    stream = jobs_api._event_stream(job_id=None, type_name=None, project_id=None)
+    try:
+        snapshot = await _read_sse_event_from_gen(stream, "snapshot")
+        assert [j["id"] for j in snapshot["jobs"]] == [job.id]
 
-            snapshot = await _read_until_event(lines, "snapshot")
-            assert [j["id"] for j in snapshot["jobs"]] == [job.id]
-
-            data = await _read_until_event(lines, "job")
-            assert data["id"] == job.id
-            assert data["type"] == "noop"
+        data = await _read_sse_event_from_gen(stream, "job")
+        assert data["id"] == job.id
+        assert data["type"] == "noop"
+    finally:
+        await stream.aclose()
 
     await _safe_cancel(registry, job.id)
 
 
 @pytest.mark.asyncio
-async def test_sse_filters_by_job_id(app, registry, fast_keepalive):
+async def test_sse_filters_by_job_id(registry, fast_keepalive):
     # Both jobs run; only `target`'s events should reach a job_id-filtered stream.
     other = await registry.create("noop", {"steps": 40, "sleep_per_step_seconds": 0.05})
     target = await registry.create(
         "noop", {"steps": 40, "sleep_per_step_seconds": 0.05}
     )
 
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream(
-            "GET", "/api/jobs/events", params={"job_id": target.id}
-        ) as response:
-            lines = response.aiter_lines()
-            snapshot = await _read_until_event(lines, "snapshot")
-            snapshot_ids = {j["id"] for j in snapshot["jobs"]}
-            assert target.id in snapshot_ids
-            assert other.id not in snapshot_ids
+    stream = jobs_api._event_stream(job_id=target.id, type_name=None, project_id=None)
+    try:
+        snapshot = await _read_sse_event_from_gen(stream, "snapshot")
+        snapshot_ids = {j["id"] for j in snapshot["jobs"]}
+        assert target.id in snapshot_ids
+        assert other.id not in snapshot_ids
 
-            # The progress event that arrives is for the target, never `other`.
-            data = await _read_until_event(lines, "job")
-            assert data["id"] == target.id
+        # The progress event that arrives is for the target, never `other`.
+        data = await _read_sse_event_from_gen(stream, "job")
+        assert data["id"] == target.id
+    finally:
+        await stream.aclose()
 
     await _safe_cancel(registry, other.id)
     await _safe_cancel(registry, target.id)
 
 
 @pytest.mark.asyncio
-async def test_sse_disconnect_leaves_job_running(app, registry, fast_keepalive):
-    """The decoupling guarantee: dropping the SSE stream mid-run must NOT stop
-    the job. Only explicit cancel/pause stops a job."""
+async def test_sse_disconnect_leaves_job_running(registry, fast_keepalive):
+    """The decoupling guarantee: closing the SSE stream mid-run must NOT stop
+    the job. Only explicit cancel/pause stops a job. (Closing the generator is
+    exactly what CancellableStreamingResponse does on a real client disconnect.)
+    """
     job = await registry.create("noop", {"steps": 6, "sleep_per_step_seconds": 0.05})
 
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream("GET", "/api/jobs/events") as response:
-            lines = response.aiter_lines()
-            await _read_until_event(lines, "snapshot")
-            # Observe at least one live job event so we know the run is underway.
-            await _read_until_event(lines, "job")
-        # Exiting the `stream` context drops the client connection, which cancels
-        # the SSE subscription generator (CancellableStreamingResponse). The job
-        # task lives in the registry and must keep running.
+    stream = jobs_api._event_stream(job_id=None, type_name=None, project_id=None)
+    await _read_sse_event_from_gen(stream, "snapshot")
+    # Observe at least one live job event so we know the run is underway.
+    await _read_sse_event_from_gen(stream, "job")
+    # Simulate client disconnect by closing the generator. With the keepalive
+    # fix in place, this is the ONLY way the stream ends — quiet windows no
+    # longer accidentally finalize the subscription.
+    await stream.aclose()
 
     assert registry._jobs[job.id].status in (
         BackgroundJobStatus.RUNNING,
