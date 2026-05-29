@@ -18,7 +18,7 @@
   }
 </script>
 
-<Dialog bind:this={dialog} title="Jobs" width="wide">
+<Dialog bind:this={dialog} title="Jobs" width="extra-wide">
   <p class="text-sm font-light mb-4">
     <a href="/jobs" class="link" on:click={() => dialog?.close()}
       >View full page →</a

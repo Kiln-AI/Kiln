@@ -438,7 +438,7 @@
             <div class="sidebar-icon opacity-60">
               <JobsIcon />
             </div>
-            Jobs
+            In progress
             <SidebarJobsIndicator variant="inline" />
           </button>
         </li>
