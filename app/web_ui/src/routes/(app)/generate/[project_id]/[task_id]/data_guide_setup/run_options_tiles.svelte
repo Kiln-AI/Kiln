@@ -101,6 +101,7 @@
   <Dialog
     bind:this={input_config_dialog}
     title="Generation Options"
+    sub_subtitle="The run options used to generate synthetic inputs for review."
     action_buttons={[{ label: "Done", isPrimary: true }]}
   >
     <RunConfigComponent
@@ -122,6 +123,7 @@
   <Dialog
     bind:this={combined_config_dialog}
     title="Generation Options"
+    sub_subtitle="The run options used to generate synthetic inputs for review."
     width="wide"
     action_buttons={[{ label: "Done", isPrimary: true }]}
   >

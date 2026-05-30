@@ -1,138 +1,144 @@
 <script lang="ts" context="module">
-  // Each entry funnels into a single `text` string sent to the analyze
-  // endpoint. `source` and `label` exist for display only — the wire format is
-  // just `text`.
+  // What goes to the analyze endpoint is just `text`. Document entries
+  // additionally carry `document_id` so the page can resolve missing
+  // extractions before send, and an optional `extraction_id` once an
+  // extraction has been picked.
   export type InputExampleEntry = {
-    source: "upload" | "manual" | "task_run"
+    source: "document" | "manual" | "task_run"
     label: string
     text: string
+    document_id?: string
+    extraction_id?: string
+    task_run_id?: string
   }
 
-  export const MAX_TOTAL_ENTRIES = 50
+  // Soft cap on examples sent to analyze. Mirrors the backend's
+  // DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES. Not enforced at add time — users can
+  // add more freely; the analyze step takes the first MAX_TOTAL_ENTRIES and
+  // warns when over.
+  export const MAX_TOTAL_ENTRIES = 200
+  // Per-example character ceiling. Mirrors the backend's
+  // DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH — each example becomes one
+  // summarize LLM call. Unlike the count cap, this is a hard reject: the
+  // analyze step blocks before sending if any example exceeds it.
+  export const MAX_EXAMPLE_LENGTH = 200_000
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher } from "svelte"
-  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
-  import ClampedText from "$lib/ui/clamped_text.svelte"
-  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
-  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
-  import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
-  import type { GuideSample } from "../data_guide_setup/guide_setup_form.svelte"
-  import AddDocumentsDialog, {
-    type ExtractedDocument,
-  } from "./add_documents_dialog.svelte"
-  import Callout from "$lib/ui/callout.svelte"
+  import { createEventDispatcher, onMount } from "svelte"
+  import type { Task, BulkCreateDocumentsResponse, TaskRun } from "$lib/types"
   import { client } from "$lib/api_client"
+  import SelectFromLibraryDialog, {
+    type LibraryPick,
+  } from "./select_from_library_dialog.svelte"
+  import ExistingRunPickerDialog from "./existing_run_picker_dialog.svelte"
+  import ImportCsvDialog, {
+    type CsvImportRow,
+  } from "./import_csv_dialog.svelte"
+  import AddManualStructuredDialog from "./add_manual_structured_dialog.svelte"
+  import AddSamplesPickerDialog, {
+    type SampleSource,
+  } from "./add_samples_picker_dialog.svelte"
+  import AllSamplesDialog from "./all_samples_dialog.svelte"
+  import UploadFileDialog from "../../../../docs/library/[project_id]/upload_file_dialog.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import CopyDocumentsIcon from "$lib/ui/icons/copy_documents_icon.svelte"
+  import FileIcon from "$lib/ui/icons/file_icon.svelte"
+  import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
+  import EditIcon from "$lib/ui/icons/edit_icon.svelte"
 
-  // Tag applied to documents persisted to the Document Library from this
-  // uploader. Lets users find / curate the doc that seeded a Data Guide later.
+  const DOCS_LINK = "https://docs.kiln.tech/docs/synthetic-data-generation"
+
+  // Tag applied to documents uploaded to the Document Library from this page.
+  // Persists so users can find / curate them later under that tag.
   const DATA_GUIDE_DOC_TAG = "data_guide_example"
 
   export let project_id: string
   export let task_id: string
+  export let task: Task | null = null
   export let entries: InputExampleEntry[] = []
 
-  let upload_warning: string | null = null
-  let add_example_dialog: AddExampleDialog
-  let add_documents_dialog: AddDocumentsDialog
+  let add_samples_picker: AddSamplesPickerDialog
+  let all_samples_dialog: AllSamplesDialog
+  let upload_file_dialog: UploadFileDialog
+  let select_from_library_dialog: SelectFromLibraryDialog
+  let existing_run_picker_dialog: ExistingRunPickerDialog
+  let import_csv_dialog: ImportCsvDialog
+  let add_manual_structured_dialog: AddManualStructuredDialog
+
+  // Whether the project has any documents in its library yet. Drives the
+  // "Document Library" row visibility in the source picker — no point offering
+  // it when nothing's there.
+  let library_has_docs: boolean = false
+
+  let dataset_has_runs: boolean = false
 
   const dispatch = createEventDispatcher<{
     change: { entries: InputExampleEntry[] }
+    extraction_complete: { extractor_config_id: string; error_count: number }
   }>()
+
+  function forward_extraction_complete(
+    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
+  ) {
+    dispatch("extraction_complete", event.detail)
+  }
+
+  // Plaintext tasks (no input JSON schema) lean on document uploads as the
+  // primary input source. Structured-input tasks expose a structured manual
+  // entry path + existing-run picker instead.
+  $: is_structured_task = !!task?.input_json_schema
+
+  $: doc_count = entries.filter((e) => e.source === "document").length
+  $: run_count = entries.filter((e) => e.source === "task_run").length
+  $: manual_count = entries.filter((e) => e.source === "manual").length
+  $: existing_document_ids = entries
+    .map((e) => e.document_id)
+    .filter((id): id is string => !!id)
+  $: existing_task_run_ids = entries
+    .map((e) => e.task_run_id)
+    .filter((id): id is string => !!id)
+  // Soft count cap: only the first MAX_TOTAL_ENTRIES are analyzed. We don't
+  // block adding more; this just drives a heads-up notice.
+  $: over_count = entries.length > MAX_TOTAL_ENTRIES
+  // Examples whose resolved text exceeds the per-example limit. Computed
+  // reactively so document entries are flagged as soon as extraction populates
+  // their text — not just at Continue. The analyze step hard-blocks on these.
+  $: over_length_count = entries.filter(
+    (e) => !!e.text && e.text.length > MAX_EXAMPLE_LENGTH,
+  ).length
+
+  onMount(() => {
+    refresh_library_has_docs()
+    refresh_dataset_has_runs()
+  })
+
+  async function refresh_library_has_docs() {
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/documents",
+        { params: { path: { project_id } } },
+      )
+      library_has_docs = !!data && data.length > 0
+    } catch {
+      library_has_docs = false
+    }
+  }
+
+  async function refresh_dataset_has_runs() {
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs",
+        { params: { path: { project_id, task_id } } },
+      )
+      dataset_has_runs = !!data && data.length > 0
+    } catch {
+      dataset_has_runs = false
+    }
+  }
 
   function emit_change() {
     dispatch("change", { entries })
-  }
-
-  function open_add_example_dialog() {
-    add_example_dialog?.open_add()
-  }
-
-  function handle_request_documents() {
-    // AddExampleDialog already closes itself when "From Documents" is picked;
-    // open the docs dialog as a follow-on so the user lands in a single visible flow.
-    upload_warning = null
-    add_documents_dialog?.show()
-  }
-
-  function handle_example_submit(
-    event: CustomEvent<{
-      sample: GuideSample
-      index: number
-      mode: "add" | "edit"
-    }>,
-  ) {
-    const { sample } = event.detail
-    if (!sample.input.trim()) return
-    const entry: InputExampleEntry = {
-      source: sample.task_run_id ? "task_run" : "manual",
-      label: sample.task_run_id
-        ? `Existing run · ${sample.task_run_id.slice(0, 6)}`
-        : `Manual ${entries.filter((e) => e.source === "manual").length + 1}`,
-      text: sample.input,
-    }
-    entries = [...entries, entry]
-    emit_change()
-  }
-
-  function handle_documents_added(
-    event: CustomEvent<{ documents: ExtractedDocument[] }>,
-  ) {
-    upload_warning = null
-    const { documents } = event.detail
-    const remaining = MAX_TOTAL_ENTRIES - entries.length
-    const dropped =
-      documents.length > remaining ? documents.length - remaining : 0
-    const accepted = documents.slice(0, Math.max(0, remaining))
-    const new_entries: InputExampleEntry[] = accepted.map((d) => ({
-      source: "upload",
-      label: d.truncated ? `${d.name} (truncated)` : d.name,
-      text: d.text,
-    }))
-    entries = [...entries, ...new_entries]
-    if (dropped > 0) {
-      upload_warning = `${dropped} file${dropped === 1 ? "" : "s"} skipped — entry limit (${MAX_TOTAL_ENTRIES}) reached.`
-    }
-    emit_change()
-    // Fire-and-forget: persist the accepted files to the Document Library so
-    // they appear under the data_guide_example tag for later curation. A
-    // failure here must NOT block the analyze flow — the user's primary
-    // action is to draft a guide, not to manage their library.
-    persist_uploaded_documents(accepted.map((d) => d.file))
-  }
-
-  async function persist_uploaded_documents(files: File[]) {
-    if (files.length === 0) return
-    const formData = new FormData()
-    files.forEach((file) => {
-      formData.append("files", file)
-      formData.append("names", file.name)
-    })
-    formData.append("tags", DATA_GUIDE_DOC_TAG)
-    try {
-      const { error } = await client.POST(
-        "/api/projects/{project_id}/documents/bulk",
-        {
-          params: { path: { project_id } },
-          // openapi-typescript can't serialize multipart uploads from the
-          // generated body type. Cast to satisfy the type checker; the runtime
-          // FormData is what FastAPI's UploadFile expects.
-          body: formData as unknown as { files: string[]; names: string[] },
-        },
-      )
-      if (error) {
-        console.error(
-          "Failed to persist uploaded documents to Document Library:",
-          error,
-        )
-      }
-    } catch (e) {
-      console.error(
-        "Failed to persist uploaded documents to Document Library:",
-        e,
-      )
-    }
   }
 
   function remove_entry(index: number) {
@@ -140,127 +146,370 @@
     emit_change()
   }
 
-  let see_all_dialog: SeeAllDialog
+  // --- Source picker dispatch ----------------------------------------------
 
-  // Map each entry to a GuideSample shape so the existing AddExampleDialog can
-  // filter "Select Existing" against task_runs already added (treats every
-  // entry as a candidate input).
-  $: existing_examples_for_dialog = entries.map(
-    (e): GuideSample => ({ input: e.text }),
-  )
-  $: remaining_doc_slots = Math.max(0, MAX_TOTAL_ENTRIES - entries.length)
+  function open_source_picker() {
+    add_samples_picker?.show()
+  }
+
+  function handle_source_pick(event: CustomEvent<{ source: SampleSource }>) {
+    const s = event.detail.source
+    if (s === "upload") {
+      upload_file_dialog?.show()
+    } else if (s === "library") {
+      select_from_library_dialog?.show()
+    } else if (s === "dataset") {
+      existing_run_picker_dialog?.show()
+    } else if (s === "csv") {
+      import_csv_dialog?.show()
+    } else if (s === "manual_structured") {
+      add_manual_structured_dialog?.show()
+    }
+  }
+
+  // Uploads run inside the reused upload dialog (it tags files with
+  // DATA_GUIDE_DOC_TAG). Turn the created docs into document entries; the upload
+  // dialog then runs the inline extraction step before it closes.
+  function handle_documents_uploaded(
+    result: BulkCreateDocumentsResponse | null,
+  ) {
+    if (!result) return
+    const created = result.created_documents.filter(
+      (d): d is typeof d & { id: string } => !!d.id,
+    )
+    if (created.length === 0) return
+    const new_entries: InputExampleEntry[] = created.map((d) => ({
+      source: "document",
+      label: d.friendly_name,
+      text: "",
+      document_id: d.id,
+    }))
+    entries = [...entries, ...new_entries]
+    emit_change()
+    library_has_docs = true
+  }
+
+  // --- Source dialog handlers -----------------------------------------------
+
+  // The library dialog tags the picks and runs the inline extraction step
+  // itself; here we just add them as (text-less) document entries. Their text is
+  // hydrated when the dialog reports extraction_complete.
+  function handle_library_add(event: CustomEvent<{ picks: LibraryPick[] }>) {
+    const new_entries: InputExampleEntry[] = event.detail.picks.map((p) => ({
+      source: "document",
+      label: p.label,
+      text: "",
+      document_id: p.document_id,
+    }))
+    entries = [...entries, ...new_entries]
+    emit_change()
+  }
+
+  function handle_existing_runs_add(event: CustomEvent<{ runs: TaskRun[] }>) {
+    const new_entries: InputExampleEntry[] = event.detail.runs.map((run) => {
+      const id = run.id ?? undefined
+      return {
+        source: "task_run",
+        label: id ? `Existing run · ${id.slice(0, 6)}` : "Existing run",
+        text: run.input ?? "",
+        task_run_id: id,
+      }
+    })
+    entries = [...entries, ...new_entries]
+    emit_change()
+  }
+
+  function handle_csv_import(event: CustomEvent<{ rows: CsvImportRow[] }>) {
+    const new_entries: InputExampleEntry[] = event.detail.rows.map(
+      (r, idx) => ({
+        source: "manual",
+        label: `CSV row ${manual_count + idx + 1}`,
+        text: r.text,
+      }),
+    )
+    entries = [...entries, ...new_entries]
+    emit_change()
+  }
+
+  function handle_structured_add(event: CustomEvent<{ text: string }>) {
+    entries = [
+      ...entries,
+      {
+        source: "manual",
+        label: `Manual ${manual_count + 1}`,
+        text: event.detail.text,
+      },
+    ]
+    emit_change()
+  }
+
+  // --- All Samples handlers ------------------------------------------------
+
+  type FilterKey = "all" | "document" | "task_run" | "manual"
+  let initial_all_samples_filter: FilterKey = "all"
+
+  function open_all_samples(filter: FilterKey = "all") {
+    initial_all_samples_filter = filter
+    all_samples_dialog?.show()
+  }
+
+  function handle_all_samples_remove(event: CustomEvent<{ index: number }>) {
+    remove_entry(event.detail.index)
+  }
 </script>
 
-<div class="flex flex-col gap-3">
-  <Callout
-    title="Help us generate more realistic inputs."
-    description="Kiln Pro analyzes your example inputs to draft data generation guidelines for review."
-  >
-    <div slot="icon">
-      <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-      <svg
-        class="w-5 h-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+<div>
+  {#if entries.length === 0}
+    <!-- Intro / empty state ---------------------------------------------- -->
+    <div class="flex items-center justify-center py-12 sm:py-16">
+      <Intro
+        title="Start by Adding Examples"
+        description_markdown={"Show Kiln what good inputs look like. Add real or representative examples of the inputs your task will receive.\nKiln Pro uses them to draft a Data Guide you can review and refine. More examples lead to a better guide."}
+        action_buttons={[
+          {
+            label: "Add Examples",
+            is_primary: true,
+            onClick: open_source_picker,
+          },
+          {
+            label: "Docs & Guide",
+            href: DOCS_LINK,
+            new_tab: true,
+            is_primary: false,
+          },
+        ]}
       >
-        <path
-          d="M8.03339 3.65784C8.37932 2.78072 9.62068 2.78072 9.96661 3.65785L11.0386 6.37599C11.1442 6.64378 11.3562 6.85576 11.624 6.96137L14.3422 8.03339C15.2193 8.37932 15.2193 9.62068 14.3422 9.96661L11.624 11.0386C11.3562 11.1442 11.1442 11.3562 11.0386 11.624L9.96661 14.3422C9.62067 15.2193 8.37932 15.2193 8.03339 14.3422L6.96137 11.624C6.85575 11.3562 6.64378 11.1442 6.37599 11.0386L3.65784 9.96661C2.78072 9.62067 2.78072 8.37932 3.65785 8.03339L6.37599 6.96137C6.64378 6.85575 6.85576 6.64378 6.96137 6.37599L8.03339 3.65784Z"
-          stroke="currentColor"
-          stroke-width="1.5"
-        />
-        <path
-          d="M16.4885 13.3481C16.6715 12.884 17.3285 12.884 17.5115 13.3481L18.3121 15.3781C18.368 15.5198 18.4802 15.632 18.6219 15.6879L20.6519 16.4885C21.116 16.6715 21.116 17.3285 20.6519 17.5115L18.6219 18.3121C18.4802 18.368 18.368 18.4802 18.3121 18.6219L17.5115 20.6519C17.3285 21.116 16.6715 21.116 16.4885 20.6519L15.6879 18.6219C15.632 18.4802 15.5198 18.368 15.3781 18.3121L13.3481 17.5115C12.884 17.3285 12.884 16.6715 13.3481 16.4885L15.3781 15.6879C15.5198 15.632 15.632 15.5198 15.6879 15.3781L16.4885 13.3481Z"
-          stroke="currentColor"
-          stroke-width="1.5"
-        />
-      </svg>
-    </div>
-  </Callout>
-  <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
-    <div class="min-w-0 flex-1">
-      <div class="font-medium">Example Inputs</div>
-      <div class="text-sm text-gray-500">
-        Add examples manually, from documents, or selecting from existing
-        examples.
-      </div>
-    </div>
-    <div class="flex flex-row gap-2 shrink-0">
-      <button
-        type="button"
-        class="btn btn-sm whitespace-nowrap {entries.length === 0
-          ? 'btn-primary'
-          : 'btn-outline'}"
-        on:click={open_add_example_dialog}
-        disabled={entries.length >= MAX_TOTAL_ENTRIES}
-      >
-        + Add Example
-      </button>
-    </div>
-  </div>
-
-  {#if upload_warning}
-    <div class="text-xs text-warning">{upload_warning}</div>
-  {/if}
-
-  {#if entries.length > 0}
-    <div class="rounded-lg border">
-      <table class="table table-fixed">
-        <thead>
-          <tr>
-            <th>Input</th>
-            <th style="width: 50px"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each entries as entry, i}
-            {@const text_content = formatExpandedContent(entry.text)}
-            <tr>
-              <td class="py-2">
-                <ClampedText
-                  content={text_content.isJson ? "" : text_content.value}
-                  html_content={text_content.isJson ? text_content.value : null}
-                  on:see_all={() =>
-                    see_all_dialog.show(entry.label, entry.text)}
-                />
-              </td>
-              <td class="py-2 p-0">
-                <div class="dropdown dropdown-end dropdown-hover">
-                  <TableActionMenu
-                    items={[
-                      { label: "Remove", onclick: () => remove_entry(i) },
-                    ]}
-                  />
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+        <div slot="icon" class="h-12 w-12">
+          <CopyDocumentsIcon />
+        </div>
+      </Intro>
     </div>
   {:else}
-    <div
-      class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
-    >
-      No example inputs
+    <!-- Filled summary ---------------------------------------------------- -->
+    <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <div class="text-xl font-bold text-[#131517] tracking-tight">
+          Examples
+        </div>
+        <div class="text-sm text-[#5a5a5a] mt-1">
+          {#if over_count}
+            <span class="font-semibold text-[#131517] tabular-nums"
+              >{MAX_TOTAL_ENTRIES}</span
+            >
+            of
+            <span class="tabular-nums">{entries.length}</span>
+            examples will be analyzed to draft your guide.
+          {:else}
+            <span class="font-semibold text-[#131517] tabular-nums"
+              >{entries.length}
+              {entries.length === 1 ? "example" : "examples"}</span
+            >
+            will be analyzed to draft your guide.
+          {/if}
+        </div>
+        {#if over_count}
+          <div class="text-sm text-[#5a5a5a] mt-1">
+            You've added more than {MAX_TOTAL_ENTRIES} examples — only the first
+            {MAX_TOTAL_ENTRIES} will be analyzed.
+          </div>
+        {/if}
+        {#if over_length_count > 0}
+          <div class="text-sm text-error mt-1">
+            {over_length_count}
+            {over_length_count === 1 ? "example exceeds" : "examples exceed"}
+            the {MAX_EXAMPLE_LENGTH.toLocaleString()} character limit. Open
+            <button
+              type="button"
+              class="link"
+              on:click={() => open_all_samples("all")}>See All</button
+            >
+            to remove or shorten
+            {over_length_count === 1 ? "it" : "them"} before continuing.
+          </div>
+        {/if}
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline"
+          on:click={() => open_all_samples("all")}
+        >
+          See All
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary btn-outline gap-1.5"
+          on:click={open_source_picker}
+        >
+          Add Examples
+        </button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {#if !is_structured_task}
+        <button
+          type="button"
+          class="stat-tile"
+          on:click={() => open_all_samples("document")}
+          disabled={doc_count === 0}
+        >
+          <div class="tile-head">
+            <div class="tile-icon bg-blue-50 text-[#628BD9]">
+              <FileIcon kind="document" />
+            </div>
+          </div>
+          <div class="tile-count">{doc_count}</div>
+          <div class="tile-label">
+            {doc_count === 1 ? "Document" : "Documents"}
+          </div>
+        </button>
+      {/if}
+
+      <button
+        type="button"
+        class="stat-tile"
+        on:click={() => open_all_samples("task_run")}
+        disabled={run_count === 0}
+      >
+        <div class="tile-head">
+          <div class="tile-icon bg-blue-50 text-[#628BD9]">
+            <DatabaseIcon />
+          </div>
+        </div>
+        <div class="tile-count">{run_count}</div>
+        <div class="tile-label">From Dataset</div>
+      </button>
+
+      <button
+        type="button"
+        class="stat-tile"
+        on:click={() => open_all_samples("manual")}
+        disabled={manual_count === 0}
+      >
+        <div class="tile-head">
+          <div class="tile-icon bg-blue-50 text-[#628BD9]">
+            <EditIcon />
+          </div>
+        </div>
+        <div class="tile-count">{manual_count}</div>
+        <div class="tile-label">Imported Examples</div>
+      </button>
     </div>
   {/if}
 </div>
 
-<AddExampleDialog
-  bind:this={add_example_dialog}
+<AddSamplesPickerDialog
+  bind:this={add_samples_picker}
+  {is_structured_task}
+  {library_has_docs}
+  {dataset_has_runs}
+  on:pick={handle_source_pick}
+/>
+
+<UploadFileDialog
+  bind:this={upload_file_dialog}
+  auto_tags={[DATA_GUIDE_DOC_TAG]}
+  close_on_success={true}
+  extract_after_upload={true}
+  extract_tags={[DATA_GUIDE_DOC_TAG]}
+  subtitle="Add files to use as example inputs for your data guide."
+  onUploadCompleted={handle_documents_uploaded}
+  onExtractionComplete={(extractor_config_id, error_count) =>
+    dispatch("extraction_complete", { extractor_config_id, error_count })}
+/>
+
+<AllSamplesDialog
+  bind:this={all_samples_dialog}
   {project_id}
   {task_id}
-  existing_examples={existing_examples_for_dialog}
-  allow_documents={true}
-  on:submit={handle_example_submit}
-  on:request_documents={handle_request_documents}
+  {entries}
+  initial_filter={initial_all_samples_filter}
+  on:remove={handle_all_samples_remove}
 />
 
-<AddDocumentsDialog
-  bind:this={add_documents_dialog}
-  max_files={remaining_doc_slots}
-  on:add={handle_documents_added}
+<SelectFromLibraryDialog
+  bind:this={select_from_library_dialog}
+  {project_id}
+  {existing_document_ids}
+  auto_tags={[DATA_GUIDE_DOC_TAG]}
+  on:add={handle_library_add}
+  on:extraction_complete={forward_extraction_complete}
 />
 
-<SeeAllDialog bind:this={see_all_dialog} />
+<ExistingRunPickerDialog
+  bind:this={existing_run_picker_dialog}
+  {project_id}
+  {task_id}
+  {existing_task_run_ids}
+  on:add={handle_existing_runs_add}
+/>
+
+<ImportCsvDialog bind:this={import_csv_dialog} on:add={handle_csv_import} />
+
+{#if task?.input_json_schema}
+  <AddManualStructuredDialog
+    bind:this={add_manual_structured_dialog}
+    input_json_schema={task.input_json_schema}
+    on:add={handle_structured_add}
+  />
+{/if}
+
+<style>
+  .stat-tile {
+    text-align: left;
+    border-radius: 16px;
+    border: 1px solid #bebebe; /* base-300, matching the optimize cards */
+    background: #fff;
+    padding: 20px 24px;
+    transition: all 200ms;
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-tile:hover:not(:disabled) {
+    /* primary/50 + lift + shadow, matching the optimize tab cards */
+    border-color: rgba(65, 92, 245, 0.5);
+    box-shadow:
+      0 10px 15px -3px rgb(0 0 0 / 0.1),
+      0 4px 6px -4px rgb(0 0 0 / 0.1);
+    transform: translateY(-2px);
+  }
+  .stat-tile:disabled {
+    /* scaled-down base-300 so inactive tiles read lighter */
+    border-color: #e0e0e0;
+    opacity: 0.65;
+    cursor: default;
+  }
+  .tile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .tile-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tile-icon :global(svg) {
+    width: 19px;
+    height: 19px;
+    display: block;
+  }
+  .tile-count {
+    font-size: 34px;
+    font-weight: 700;
+    color: #131517;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile-label {
+    font-size: 15px;
+    color: #131517;
+    margin-top: 8px;
+    font-weight: 500;
+  }
+</style>

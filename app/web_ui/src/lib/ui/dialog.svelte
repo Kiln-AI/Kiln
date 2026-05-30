@@ -101,7 +101,11 @@
         <h3 class="text-lg font-medium">
           {title}
         </h3>
-        {#if subtitle}
+        {#if $$slots.subtitle}
+          <!-- Rich subtitle (e.g. with an inline link). Takes precedence over
+               the plain `subtitle` prop. -->
+          <div class="text-base"><slot name="subtitle" /></div>
+        {:else if subtitle}
           <p class="text-base">{subtitle}</p>
         {/if}
         {#if sub_subtitle}

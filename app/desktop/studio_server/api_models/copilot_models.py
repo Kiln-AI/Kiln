@@ -1,8 +1,10 @@
 """Shared Pydantic models for the Copilot API."""
 
+from typing import Annotated
+
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 # Base models
@@ -152,8 +154,12 @@ class SpecQuestionerApiInput(BaseModel):
 
 # Analyze Input Data Guide
 
-DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 50
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 200
 DRAFT_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES = 20
+# Per-example character ceiling. Each example becomes one summarize LLM call;
+# 200k chars stays well under the model's context window even for prose. The
+# client mirrors this and blocks before sending, so hitting it here is a guard.
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH = 200_000
 
 
 class DraftInputDataGuideApiInput(BaseModel):
@@ -163,7 +169,12 @@ class DraftInputDataGuideApiInput(BaseModel):
         ...,
         description="The task info including prompt, input schema, and output schema.",
     )
-    input_examples: list[str] = Field(
+    input_examples: list[
+        Annotated[
+            str,
+            StringConstraints(max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH),
+        ]
+    ] = Field(
         ...,
         description=(
             "Heterogeneous list of input examples — short manual entries, the "

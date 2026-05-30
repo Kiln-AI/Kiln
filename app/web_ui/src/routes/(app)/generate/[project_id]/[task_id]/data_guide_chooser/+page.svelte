@@ -19,13 +19,14 @@
 
   function pick_kiln_pro() {
     posthog.capture("data_guide_chooser_picked", { choice: "kiln_pro" })
-    goto(`/generate/pro_auth`)
+    goto(`/generate/${project_id}/${task_id}/data_guide_setup_copilot`)
   }
 </script>
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Create Data Guide"
+    title="Set Up Data Guide"
+    subtitle="Your Data Guide will help us generate better synthetic inputs."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     breadcrumbs={[
@@ -37,9 +38,6 @@
     ]}
   >
     <div class="my-4 max-w-[680px] mx-auto">
-      <div class="font-medium text-xl text-center">
-        Choose your Data Guide Workflow
-      </div>
       <div class="overflow-x-auto">
         <table class="table w-full mt-4">
           <colgroup>

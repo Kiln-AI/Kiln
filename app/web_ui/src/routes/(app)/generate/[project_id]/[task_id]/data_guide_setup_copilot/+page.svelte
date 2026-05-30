@@ -14,7 +14,6 @@
   import GuidePreview from "../data_guide_setup/guide_preview.svelte"
   import RunOptionsTiles from "../data_guide_setup/run_options_tiles.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import Warning from "$lib/ui/warning.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
@@ -25,15 +24,24 @@
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import InputExamplesUploader, {
     type InputExampleEntry,
+    MAX_EXAMPLE_LENGTH,
+    MAX_TOTAL_ENTRIES,
   } from "./input_examples_uploader.svelte"
   import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
   import posthog from "posthog-js"
-  import DataGuideProRequired from "./data_guide_pro_required.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
+  import ExtractionDialog from "$lib/components/extraction_dialog.svelte"
+  import type Dialog from "$lib/ui/dialog.svelte"
+
+  // Tag used to scope the auto-extraction-on-submit popup. Mirrors the
+  // constant in input_examples_uploader.svelte — uploaded docs and library
+  // picks are both tagged with this so a single SSE run extracts them all.
+  const DATA_GUIDE_DOC_TAG = "data_guide_example"
 
   type CopilotState =
     | "loading"
-    | "pro_required"
+    | "connect"
     | "create"
     | "analyzing"
     | "preview"
@@ -45,6 +53,9 @@
   let error: KilnError | null = null
   let submitting = false
   let saved = false
+  // Set once the user finishes the Kiln Pro connect flow inline; flips the
+  // connect card into its "Connected" state with a Continue button.
+  let connect_success = false
 
   let entries: InputExampleEntry[] = []
 
@@ -78,26 +89,35 @@
   $: has_entries = entries.length > 0
 
   onMount(async () => {
-    try {
-      const { data, error: api_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
-        { params: { path: { project_id, task_id } } },
-      )
-      if (api_error) {
-        error = createKilnError(api_error)
+    // A fresh Kiln Pro OAuth callback (?code=...) must be handled by the inline
+    // ConnectKilnCopilotSteps component — show the connect state immediately and
+    // don't run the redirect/availability checks that would short-circuit it.
+    const oauth_callback = new URLSearchParams(window.location.search).has(
+      "code",
+    )
+
+    if (!oauth_callback) {
+      try {
+        const { data, error: api_error } = await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+          { params: { path: { project_id, task_id } } },
+        )
+        if (api_error) {
+          error = createKilnError(api_error)
+          current_state = "load_error"
+          return
+        }
+        if (data) {
+          goto(`/generate/${project_id}/${task_id}/data_guide`, {
+            replaceState: true,
+          })
+          return
+        }
+      } catch (e) {
+        error = createKilnError(e)
         current_state = "load_error"
         return
       }
-      if (data) {
-        goto(`/generate/${project_id}/${task_id}/data_guide`, {
-          replaceState: true,
-        })
-        return
-      }
-    } catch (e) {
-      error = createKilnError(e)
-      current_state = "load_error"
-      return
     }
 
     if ($current_task?.id === task_id) {
@@ -130,27 +150,55 @@
       pending_data_guide_example.set(null)
     }
 
+    // Returning from OAuth — let the connect card finish the token exchange.
+    if (oauth_callback) {
+      current_state = "connect"
+      return
+    }
+
     // Pro is required for the analyze endpoint. If the key isn't connected,
-    // show the connect-Kiln-Pro card; the auth route returns the user here on
-    // success.
+    // show the connect-Kiln-Pro card inline.
     let pro_available = false
     try {
       pro_available = await checkKilnCopilotAvailable()
     } catch {
       pro_available = false
     }
-    if (!pro_available) {
-      current_state = "pro_required"
-      return
-    }
-
-    current_state = "create"
+    current_state = pro_available ? "create" : "connect"
   })
+
+  function handle_connect_success() {
+    connect_success = true
+  }
+
+  function proceed_after_connect() {
+    connect_success = false
+    current_state = "create"
+  }
 
   function handle_entries_change(
     event: CustomEvent<{ entries: InputExampleEntry[] }>,
   ) {
     entries = event.detail.entries
+  }
+
+  let extraction_dialog: Dialog | null = null
+  // What to do once the extraction popup completes. "analyze" = continue to
+  // the analyze API (Continue button path). "refresh" = just hydrate entry
+  // text and stay in create state (auto-trigger after upload/library pick).
+  let extraction_next_step: "analyze" | "refresh" = "refresh"
+
+  // The document dialogs now run extraction inline and report completion here.
+  // Hydrate the matching entries' text and stay in the create state.
+  async function handle_inline_extraction_complete(
+    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
+  ) {
+    error = null
+    try {
+      await refresh_extractions(event.detail?.extractor_config_id)
+    } catch (e) {
+      error = createKilnError(e)
+    }
   }
 
   async function handle_analyze() {
@@ -166,12 +214,138 @@
       )
       return
     }
-    const input_run_config: KilnAgentRunConfigProperties = rc
+    captured_input_run_config = rc
 
+    // Fallback: if there's still a pending document at Continue time (user
+    // cancelled the auto-trigger popup), reopen it before analyze.
+    const pending = entries.some(
+      (e) => e.source === "document" && !e.text && !!e.document_id,
+    )
+    if (pending) {
+      extraction_next_step = "analyze"
+      extraction_dialog?.show()
+      return
+    }
+
+    try {
+      await run_analyze()
+    } catch (e) {
+      error = createKilnError(e)
+      current_state = "create"
+    }
+  }
+
+  // Resolve text for document entries that don't have it yet. When the user
+  // ran a specific extractor (extractor_config_id), prefer that extractor's
+  // extraction — a doc can have several (one per extractor / RAG tool). Fall
+  // back to the most recent extraction if there's no exact match.
+  async function refresh_extractions(
+    extractor_config_id?: string | null,
+  ): Promise<InputExampleEntry[]> {
+    const updated = await Promise.all(
+      entries.map(async (e) => {
+        if (e.source !== "document" || e.text || !e.document_id) return e
+        try {
+          const { data: extractions } = await client.GET(
+            "/api/projects/{project_id}/documents/{document_id}/extractions",
+            {
+              params: {
+                path: { project_id, document_id: e.document_id },
+              },
+            },
+          )
+          if (!extractions || extractions.length === 0) return e
+          const matching = extractor_config_id
+            ? extractions.filter((x) => x.extractor?.id === extractor_config_id)
+            : []
+          const pool = matching.length > 0 ? matching : extractions
+          const chosen = [...pool].sort((a, b) =>
+            (b.created_at || "").localeCompare(a.created_at || ""),
+          )[0]
+          if (!chosen) return e
+          return {
+            ...e,
+            text: chosen.output_content,
+            extraction_id: chosen.id,
+          }
+        } catch {
+          return e
+        }
+      }),
+    )
+    entries = updated
+    return updated
+  }
+
+  async function handle_extraction_complete(
+    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
+  ) {
+    error = null
+    const extractor_config_id = event.detail?.extractor_config_id
+    if (extraction_next_step === "refresh") {
+      // Auto-trigger flow (after upload / library pick). Hydrate entry text
+      // and stay in the create state.
+      try {
+        await refresh_extractions(extractor_config_id)
+      } catch (e) {
+        error = createKilnError(e)
+      }
+      return
+    }
+
+    // Continue-button flow: hydrate, then run analyze.
     submitting = true
     current_state = "analyzing"
     try {
-      captured_input_run_config = input_run_config
+      const updated = await refresh_extractions(extractor_config_id)
+      const ready_entries = updated.filter((e) => !!e.text)
+      const still_missing = updated.length - ready_entries.length
+      if (ready_entries.length === 0) {
+        throw new KilnError(
+          "Extraction produced no usable text for any selected document.",
+        )
+      }
+      if (still_missing > 0) {
+        console.warn(
+          `${still_missing} document entries skipped — extraction empty.`,
+        )
+      }
+      await run_analyze(ready_entries)
+    } catch (e) {
+      error = createKilnError(e)
+      current_state = "create"
+    } finally {
+      submitting = false
+    }
+  }
+
+  async function run_analyze(override_entries?: InputExampleEntry[]) {
+    const ready = (override_entries ?? entries).filter((e) => !!e.text)
+    if (ready.length === 0) {
+      throw new KilnError("No input examples with content to analyze.")
+    }
+    if (!captured_input_run_config) {
+      throw new KilnError("Pick a kiln_agent run config for input generation.")
+    }
+    // Soft count cap: analyze only the first MAX_TOTAL_ENTRIES. Extra examples
+    // are silently dropped here (the UI already warns when over the limit).
+    const to_analyze = ready.slice(0, MAX_TOTAL_ENTRIES)
+    // Hard length cap: block (don't truncate) when any analyzed example exceeds
+    // the per-example limit — name the offenders so the user can fix them.
+    const over_limit = to_analyze.filter(
+      (e) => e.text.length > MAX_EXAMPLE_LENGTH,
+    )
+    if (over_limit.length > 0) {
+      const names = over_limit.map((e) => e.label).join(", ")
+      throw new KilnError(
+        `${over_limit.length} example${over_limit.length === 1 ? "" : "s"} ` +
+          `exceed the ${MAX_EXAMPLE_LENGTH.toLocaleString()} character limit ` +
+          `(${names}). Remove or shorten ${over_limit.length === 1 ? "it" : "them"} to continue.`,
+      )
+    }
+    submitting = true
+    current_state = "analyzing"
+    try {
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/draft_input_data_guide",
         {
@@ -186,9 +360,9 @@
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },
-            input_examples: entries.map((e) => e.text),
+            input_examples: to_analyze.map((e) => e.text),
             num_preview_samples: 5,
-            run_config_properties: input_run_config,
+            run_config_properties: captured_input_run_config,
           },
         },
       )
@@ -205,7 +379,7 @@
       preview_initial_guide = guide
       current_state = "preview"
       posthog.capture("data_guide_copilot_analyzed", {
-        entry_count: entries.length,
+        entry_count: to_analyze.length,
       })
     } catch (e) {
       error = createKilnError(e)
@@ -329,8 +503,23 @@
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <span class="loading loading-spinner loading-lg text-primary" />
       </div>
-    {:else if current_state === "pro_required"}
-      <DataGuideProRequired />
+    {:else if current_state === "connect"}
+      <div
+        class="flex flex-col max-w-[400px] mx-auto mt-24 md:mt-36 border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
+      >
+        <ConnectKilnCopilotSteps
+          onSuccess={handle_connect_success}
+          showCheckmark={connect_success}
+        />
+        {#if connect_success}
+          <button
+            class="btn btn-primary mt-4 btn-wide mx-auto"
+            on:click={proceed_after_connect}
+          >
+            Continue
+          </button>
+        {/if}
+      </div>
     {:else if current_state === "create"}
       <FormContainer
         submit_label="Continue"
@@ -340,12 +529,15 @@
         submit_disabled={!has_entries}
         compact_button={true}
         warn_before_unload={has_entries}
+        submit_visible={has_entries}
       >
         <InputExamplesUploader
           {project_id}
           {task_id}
+          {task}
           {entries}
           on:change={handle_entries_change}
+          on:extraction_complete={handle_inline_extraction_complete}
         />
 
         <RunOptionsTiles
@@ -354,27 +546,18 @@
           {project_id}
           {task}
         />
-
-        {#if !has_entries}
-          <div class="flex justify-end">
-            <Warning
-              warning_message="Add at least one example input to continue."
-              warning_color="warning"
-              warning_icon="exclaim"
-              tight
-            />
-          </div>
-        {/if}
       </FormContainer>
-      <div class="flex justify-end mt-2">
-        <button
-          type="button"
-          class="link text-sm text-gray-500 hover:text-gray-700"
-          on:click={() => run_options_tiles?.open_combined_dialog()}
-        >
-          Generation options
-        </button>
-      </div>
+      {#if has_entries}
+        <div class="flex justify-end mt-2">
+          <button
+            type="button"
+            class="link text-sm text-gray-500 hover:text-gray-700"
+            on:click={() => run_options_tiles?.open_combined_dialog()}
+          >
+            Generation options
+          </button>
+        </div>
+      {/if}
     {:else if current_state === "analyzing"}
       <AnalyzingAnimation
         title="Analyzing Inputs"
@@ -413,3 +596,10 @@
     {/if}
   </AppPage>
 </div>
+
+<ExtractionDialog
+  bind:dialog={extraction_dialog}
+  target_tags={[DATA_GUIDE_DOC_TAG]}
+  preselect_default_extractor={true}
+  on:extraction_complete={handle_extraction_complete}
+/>

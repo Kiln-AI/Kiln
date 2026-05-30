@@ -1,0 +1,74 @@
+<script lang="ts">
+  import { createEventDispatcher } from "svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import ExtractorPicker from "./extractor_picker.svelte"
+  import { KilnError } from "$lib/utils/error_handlers"
+
+  export let dialog: Dialog | null = null
+  export let keyboard_submit: boolean = false
+  export let selected_extractor_id: string | null = null
+  export let target_tags: string[] = []
+  // When true, default the selector to the most-recently-created (non-archived)
+  // extractor so the common case is one click. Off by default to leave other
+  // callers' behavior unchanged.
+  export let preselect_default_extractor: boolean = false
+
+  const dispatch = createEventDispatcher<{
+    extractor_config_selected: { extractor_config_id: string }
+    extraction_complete: { extractor_config_id: string; error_count: number }
+    close: void
+  }>()
+
+  let picker: ExtractorPicker
+  let extracting = false
+  let error: KilnError | null = null
+
+  function handle_complete(
+    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
+  ) {
+    dispatch("extraction_complete", event.detail)
+    dialog?.close()
+  }
+</script>
+
+<Dialog
+  bind:this={dialog}
+  title="Document Extraction"
+  sub_subtitle="Documents like PDFs, images and videos need to be converted into text before they can be used as example inputs."
+  width="normal"
+>
+  <FormContainer
+    submit_visible={!extracting}
+    submit_label="Run Extraction"
+    gap={4}
+    {keyboard_submit}
+    bind:error
+    bind:submitting={extracting}
+    on:submit={async () => {
+      try {
+        await picker.run_extraction()
+      } catch {
+        // Surfaced via the bound `error`.
+      }
+    }}
+    on:close={() => {
+      picker?.reset()
+      error = null
+      dispatch("close")
+    }}
+  >
+    <ExtractorPicker
+      bind:this={picker}
+      bind:extracting
+      bind:error
+      bind:selected_extractor_id
+      {target_tags}
+      {preselect_default_extractor}
+      show_run_button={false}
+      on:extractor_config_selected={(e) =>
+        dispatch("extractor_config_selected", e.detail)}
+      on:extraction_complete={handle_complete}
+    />
+  </FormContainer>
+</Dialog>

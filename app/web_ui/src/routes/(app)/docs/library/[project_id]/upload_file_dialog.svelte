@@ -11,8 +11,33 @@
   import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
   import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import ExtractorPicker from "$lib/components/extractor_picker.svelte"
 
-  export let onUploadCompleted: () => void
+  export let onUploadCompleted: (
+    result: BulkCreateDocumentsResponse | null,
+  ) => void
+  // When true, the dialog stays open after a successful upload and shows an
+  // inline extractor picker so the just-uploaded docs can be converted to text
+  // without a second dialog. Opt-in; other callers keep the existing behavior.
+  export let extract_after_upload: boolean = false
+  // Tags scoping the inline extraction run (the uploaded docs must carry these;
+  // pass the same tags as `auto_tags`).
+  export let extract_tags: string[] = []
+  // Called when the inline extraction run completes.
+  export let onExtractionComplete:
+    | ((extractor_config_id: string, error_count: number) => void)
+    | null = null
+  // When set, the tag picker is hidden and these tags are auto-applied to every
+  // uploaded file (a short note is shown instead). Used by flows that curate
+  // documents under a fixed tag, e.g. the Data Guide sample uploader.
+  export let auto_tags: string[] = []
+  // Skip the in-dialog success screen and close as soon as the upload finishes.
+  // Callers that drive their own post-upload UI (e.g. adding the docs as
+  // samples) use this together with the onUploadCompleted result.
+  export let close_on_success: boolean = false
+  // Subtitle shown under the dialog title. Defaults to the document library
+  // copy; flows like the Data Guide override it to describe their own context.
+  export let subtitle: string = "Add files to your project's document library"
 
   let upload_error: KilnError | null = null
   let selected_files: File[] = []
@@ -101,6 +126,15 @@
   let show_upload_result = false
   let unsupported_files_count = 0
   let show_success_dialog = false
+  // When `extract_after_upload` is set, the extractor picker is shown inline at
+  // the bottom of the dialog once files are selected. Sticky so it stays mounted
+  // across the upload (which clears selected_files) and the extraction run.
+  let extractor_picker: ExtractorPicker
+  let extracting = false
+  let picker_active = false
+  $: if (extract_after_upload && selected_files.length > 0) {
+    picker_active = true
+  }
 
   // tags
   let selected_tags: string[] = []
@@ -119,7 +153,7 @@
 
     try {
       const success = await uploadFiles()
-      // If upload was successful and we're showing success dialog, keep dialog open
+      // Keep the dialog open when we're showing the success screen.
       if (success && show_success_dialog) {
         return false
       }
@@ -146,8 +180,9 @@
       formData.append(`names`, file.name)
     })
 
-    if (selected_tags.length > 0) {
-      selected_tags.forEach((tag) => {
+    const tags_to_apply = auto_tags.length > 0 ? auto_tags : selected_tags
+    if (tags_to_apply.length > 0) {
+      tags_to_apply.forEach((tag) => {
         formData.append("tags", tag)
       })
     }
@@ -173,11 +208,13 @@
 
     upload_result = data
     show_upload_result = true
-    show_success_dialog = true
+    // In inline-extraction mode the picker drives the close; never show the
+    // plain success screen there.
+    show_success_dialog = !close_on_success && !extract_after_upload
 
     const uploaded_files = selected_files
     selected_files = []
-    onUploadCompleted()
+    onUploadCompleted(data)
 
     // reload document tags for the project - because total counts have changed
     // and we cannot know which ones due to partial upload rejection possibly
@@ -195,6 +232,28 @@
     })
 
     return true
+  }
+
+  // before_run hook for the inline extractor picker: upload the selected files
+  // (tagging them via auto_tags) so the extraction run, scoped by extract_tags,
+  // catches them. A no-op on retry, where the files were already uploaded and
+  // selected_files has been cleared. Throws on failure so the picker aborts and
+  // surfaces the error.
+  async function upload_for_extraction(): Promise<void> {
+    if (selected_files.length === 0) return
+    tag_picker?.flush_pending_tag()
+    upload_error = null
+    upload_in_progress = true
+    upload_progress = 0
+    upload_total = selected_files.length
+    try {
+      const ok = await uploadFiles()
+      if (!ok) throw new KilnError("Upload failed", null)
+    } finally {
+      upload_in_progress = false
+      upload_progress = 0
+      upload_total = 0
+    }
   }
 
   function file_count_summary(files: File[]): Record<string, number> {
@@ -269,6 +328,8 @@
     upload_result = null
     show_upload_result = false
     show_success_dialog = false
+    picker_active = false
+    extractor_picker?.reset()
     unsupported_files_count = 0
     selected_tags = []
   }
@@ -279,14 +340,21 @@
     upload_result = null
     show_upload_result = false
     show_success_dialog = false
+    picker_active = false
+    extractor_picker?.reset()
     unsupported_files_count = 0
     selected_tags = []
     return true
   }
 
-  function handleCancel() {
+  function handle_extraction_complete(
+    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
+  ) {
+    onExtractionComplete?.(
+      event.detail.extractor_config_id,
+      event.detail.error_count,
+    )
     close()
-    return true
   }
 
   function file_supported(file: File): boolean {
@@ -303,26 +371,25 @@
   bind:this={dialog}
   title={show_success_dialog
     ? "Completed"
-    : upload_in_progress
+    : upload_in_progress || extracting
       ? "Processing Documents"
       : "Add Documents"}
-  sub_subtitle={show_success_dialog
-    ? undefined
-    : "Add files to your project's document library"}
-  action_buttons={show_success_dialog
-    ? [{ label: "Close", isPrimary: true, action: () => close() }]
-    : [
-        { label: "Cancel", isCancel: true, action: () => handleCancel() },
-        {
-          label:
-            selected_files.length > 1
-              ? `Add ${selected_files.length} Files`
-              : "Add",
-          asyncAction: () => handleUpload(),
-          disabled: selected_files.length === 0,
-          isPrimary: true,
-        },
-      ]}
+  sub_subtitle={show_success_dialog ? undefined : subtitle}
+  action_buttons={extract_after_upload
+    ? []
+    : show_success_dialog
+      ? [{ label: "Close", isPrimary: true, action: () => close() }]
+      : [
+          {
+            label:
+              selected_files.length > 1
+                ? `Add ${selected_files.length} Files`
+                : "Add",
+            asyncAction: () => handleUpload(),
+            disabled: selected_files.length === 0,
+            isPrimary: true,
+          },
+        ]}
 >
   <div class="font-light text-sm">
     <div class="space-y-4">
@@ -343,7 +410,7 @@
             {/if}
           </p>
         </div>
-      {:else}
+      {:else if !extracting}
         <!-- Normal upload state content -->
         <div>
           <p>The following file types are supported:</p>
@@ -356,7 +423,7 @@
         </div>
       {/if}
 
-      {#if !show_success_dialog}
+      {#if !show_success_dialog && !extracting}
         <div class="pb-2">
           <!-- Dropzone -->
           <div
@@ -406,29 +473,49 @@
         </div>
 
         <!-- Tag selection -->
-        <div>
-          <FormElement
-            inputType="header_only"
-            label="Tags"
-            id="tags_section"
-            description="Add tags to organize your documents"
-            info_description="Any tags set here will be added to each document you add. Tags can be used to filter your document set."
-            optional={true}
-            value=""
-          />
-          <TagPicker
-            bind:this={tag_picker}
-            tags={selected_tags}
-            tag_type="doc"
-            {project_id}
-            initial_expanded={true}
-            hide_dropdown_after_select={false}
-            show_close_button={false}
-            on:tags_changed={(event) => {
-              selected_tags = event.detail.current
-            }}
-          />
-        </div>
+        {#if auto_tags.length === 0}
+          <div>
+            <FormElement
+              inputType="header_only"
+              label="Tags"
+              id="tags_section"
+              description="Add tags to organize your documents"
+              info_description="Any tags set here will be added to each document you add. Tags can be used to filter your document set."
+              optional={true}
+              value=""
+            />
+            <TagPicker
+              bind:this={tag_picker}
+              tags={selected_tags}
+              tag_type="doc"
+              {project_id}
+              initial_expanded={true}
+              hide_dropdown_after_select={false}
+              show_close_button={false}
+              on:tags_changed={(event) => {
+                selected_tags = event.detail.current
+              }}
+            />
+          </div>
+        {:else}
+          <div class="text-sm text-gray-500">
+            These files will be saved to your
+            <a
+              href={`/docs/library/${project_id}`}
+              target="_blank"
+              rel="noopener"
+              class="link">Document Library</a
+            >
+            with the tag
+            {#each auto_tags as tag, i}
+              <code class="bg-base-200 px-1 py-px rounded">{tag}</code>{i <
+              auto_tags.length - 1
+                ? ", "
+                : ""}
+            {/each}
+            so you can find them later.
+          </div>
+        {/if}
 
         {#if show_upload_result && upload_result}
           {#if upload_result.created_documents.length > 0}
@@ -450,7 +537,7 @@
         {/if}
       {/if}
 
-      {#if !show_success_dialog}
+      {#if !show_success_dialog && !extracting}
         <!-- Selected files list -->
         {#if selected_files.length > 0}
           <div class="space-y-2">
@@ -501,6 +588,21 @@
             ></progress>
           </div>
         {/if}
+      {/if}
+
+      {#if extract_after_upload && picker_active}
+        <div class="mt-2">
+          <ExtractorPicker
+            bind:this={extractor_picker}
+            bind:extracting
+            target_tags={extract_tags}
+            preselect_default_extractor={true}
+            show_run_button={true}
+            description="Select an extractor configuration to convert uploaded documents into text."
+            before_run={upload_for_extraction}
+            on:extraction_complete={handle_extraction_complete}
+          />
+        </div>
       {/if}
 
       {#if upload_error}

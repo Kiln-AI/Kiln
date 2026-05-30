@@ -6,6 +6,7 @@
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
 
   export let title: string
+  export let subtitle: string = ""
   export let docs_link: string
   export let breadcrumbs: Array<{ label: string; href: string }>
   export let success_redirect_url: string
@@ -43,6 +44,7 @@
 
 <AppPage
   {title}
+  {subtitle}
   sub_subtitle="Read the Docs"
   sub_subtitle_link={docs_link}
   {breadcrumbs}
