@@ -3503,11 +3503,7 @@ export interface components {
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
         };
-        /**
-         * Audio
-         * @description Data about a previous audio response from the model.
-         *     [Learn more](https://platform.openai.com/docs/guides/audio).
-         */
+        /** Audio */
         Audio: {
             /** Id */
             id: string;
@@ -3592,6 +3588,7 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
+             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -3746,10 +3743,7 @@ export interface components {
             latency_ms?: number | null;
             usage?: components["schemas"]["MessageUsage"] | null;
         };
-        /**
-         * ChatCompletionContentPartImageParam
-         * @description Learn about [image inputs](https://platform.openai.com/docs/guides/vision).
-         */
+        /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
             image_url: components["schemas"]["ImageURL"];
             /**
@@ -3758,10 +3752,7 @@ export interface components {
              */
             type: "image_url";
         };
-        /**
-         * ChatCompletionContentPartInputAudioParam
-         * @description Learn about [audio inputs](https://platform.openai.com/docs/guides/audio).
-         */
+        /** ChatCompletionContentPartInputAudioParam */
         ChatCompletionContentPartInputAudioParam: {
             input_audio: components["schemas"]["InputAudio"];
             /**
@@ -3780,10 +3771,7 @@ export interface components {
              */
             type: "refusal";
         };
-        /**
-         * ChatCompletionContentPartTextParam
-         * @description Learn about [text inputs](https://platform.openai.com/docs/guides/text-generation).
-         */
+        /** ChatCompletionContentPartTextParam */
         ChatCompletionContentPartTextParam: {
             /** Text */
             text: string;
@@ -3793,12 +3781,7 @@ export interface components {
              */
             type: "text";
         };
-        /**
-         * ChatCompletionDeveloperMessageParam
-         * @description Developer-provided instructions that the model should follow, regardless of
-         *     messages sent by the user. With o1 models and newer, `developer` messages
-         *     replace the previous `system` messages.
-         */
+        /** ChatCompletionDeveloperMessageParam */
         ChatCompletionDeveloperMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3822,10 +3805,7 @@ export interface components {
              */
             role: "function";
         };
-        /**
-         * ChatCompletionMessageFunctionToolCallParam
-         * @description A call to a function tool created by the model.
-         */
+        /** ChatCompletionMessageFunctionToolCallParam */
         ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
@@ -3836,12 +3816,7 @@ export interface components {
              */
             type: "function";
         };
-        /**
-         * ChatCompletionSystemMessageParam
-         * @description Developer-provided instructions that the model should follow, regardless of
-         *     messages sent by the user. With o1 models and newer, use `developer` messages
-         *     for this purpose instead.
-         */
+        /** ChatCompletionSystemMessageParam */
         ChatCompletionSystemMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3871,11 +3846,7 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
-        /**
-         * ChatCompletionUserMessageParam
-         * @description Messages sent by an end user, containing prompts or additional context
-         *     information.
-         */
+        /** ChatCompletionUserMessageParam */
         ChatCompletionUserMessageParam: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
@@ -6108,10 +6079,7 @@ export interface components {
              */
             output: string;
         };
-        /**
-         * File
-         * @description Learn about [file inputs](https://platform.openai.com/docs/guides/text) for text generation.
-         */
+        /** File */
         File: {
             file: components["schemas"]["FileFile"];
             /**
@@ -6485,22 +6453,14 @@ export interface components {
             /** Improper Formatting Examples */
             improper_formatting_examples?: string;
         };
-        /**
-         * Function
-         * @description The function that the model called.
-         */
+        /** Function */
         Function: {
             /** Arguments */
             arguments: string;
             /** Name */
             name: string;
         };
-        /**
-         * FunctionCall
-         * @description Deprecated and replaced by `tool_calls`.
-         *
-         *     The name and arguments of a function that should be called, as generated by the model.
-         */
+        /** FunctionCall */
         FunctionCall: {
             /** Arguments */
             arguments: string;
@@ -6806,7 +6766,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        "KilnBaseModel-Input": {
+        KilnBaseModel: {
             /**
              * V
              * @description Schema version for migration support.
@@ -6834,48 +6794,6 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-        };
-        /**
-         * KilnBaseModel
-         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
-         *
-         *     Attributes:
-         *         v (int): Schema version number for migration support
-         *         id (str): Unique identifier for the model instance
-         *         path (Path): File system path where the model is stored
-         *         created_at (datetime): Timestamp when the model was created
-         *         created_by (str): User ID of the creator
-         */
-        "KilnBaseModel-Output": {
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
-            /**
-             * Id
-             * @description Unique identifier for this record.
-             */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -9655,7 +9573,7 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -10362,10 +10280,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig
