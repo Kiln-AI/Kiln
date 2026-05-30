@@ -51,9 +51,15 @@ class TestInputTransformDiscriminatedUnion:
         assert result.type == "jinja"
         assert result.template == "{{ input }}"
 
-    def test_dispatch_jinja_from_dict_no_explicit_type(self):
-        result = input_transform_adapter.validate_python({"template": "{{ input }}"})
-        assert isinstance(result, JinjaInputTransform)
+    def test_dispatch_missing_type_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            input_transform_adapter.validate_python({"template": "{{ input }}"})
+
+    def test_dispatch_unknown_type_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            input_transform_adapter.validate_python(
+                {"type": "unknown", "template": "{{ x }}"}
+            )
 
     def test_dispatch_from_model_instance(self):
         instance = JinjaInputTransform(template="{{ input }}")

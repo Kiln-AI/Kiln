@@ -100,6 +100,20 @@ class TestRenderInputTransform:
         with pytest.raises(SecurityError):
             render_input_transform(transform, {})
 
+    def test_sandbox_violation_mro_walking(self):
+        transform = JinjaInputTransform(
+            template="{{ input.__class__.__mro__[1].__subclasses__() }}"
+        )
+        with pytest.raises(SecurityError):
+            render_input_transform(transform, {})
+
+    def test_sandbox_violation_subclasses_traversal(self):
+        transform = JinjaInputTransform(
+            template="{{ ''.__class__.__mro__[2].__subclasses__() }}"
+        )
+        with pytest.raises(SecurityError):
+            render_input_transform(transform, "")
+
     def test_empty_template_returns_empty_string(self):
         transform = JinjaInputTransform(template="")
         result = render_input_transform(transform, {"foo": 1})
@@ -141,9 +155,21 @@ class TestExtract:
         )
         assert result == [1, 2]
 
+    def test_materializes_generator_without_list_filter(self):
+        result = extract(
+            "data | map(attribute='x')",
+            {"data": [{"x": 1}, {"x": 2}]},
+        )
+        assert isinstance(result, list)
+        assert result == [1, 2]
+
     def test_nested_attribute_access(self):
         result = extract("a.b", {"a": {"b": "deep"}})
         assert result == "deep"
+
+    def test_malformed_expression_raises_value_error(self):
+        with pytest.raises(ValueError, match="Invalid Jinja2 expression"):
+            extract("{{ invalid", {})
 
 
 class TestTrimAndLstripBlocks:

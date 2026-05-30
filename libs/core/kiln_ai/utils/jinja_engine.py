@@ -84,7 +84,14 @@ def extract(expression: str, data: dict) -> Any:
     - Explicit null values return None.
     - Generators are auto-materialized to lists.
     """
-    compiled = _expression_env.compile_expression(expression, undefined_to_none=False)
+    try:
+        compiled = _expression_env.compile_expression(
+            expression, undefined_to_none=False
+        )
+    except TemplateSyntaxError as e:
+        raise ValueError(
+            f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
+        ) from e
     result = compiled(**data)
     if isinstance(result, types.GeneratorType):
         result = list(result)

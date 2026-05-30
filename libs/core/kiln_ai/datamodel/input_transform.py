@@ -23,10 +23,10 @@ class JinjaInputTransform(BaseModel):
         return v
 
 
-def _get_input_transform_type(data: Any) -> str:
+def _get_input_transform_type(data: Any) -> str | None:
     if isinstance(data, dict):
-        return data.get("type", "jinja")
-    return getattr(data, "type", "jinja")
+        return data.get("type")
+    return getattr(data, "type", None)
 
 
 InputTransform = Annotated[
