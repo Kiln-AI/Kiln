@@ -343,12 +343,10 @@ def finetune_provider_model(
         model_provider.model_id = f"openai/{endpoint_id}"
 
     if fine_tune.structured_output_mode is not None:
-        # If we know the model was trained with specific output mode, set it
         model_provider.structured_output_mode = fine_tune.structured_output_mode
     else:
-        # Some early adopters won't have structured_output_mode set on their fine-tunes.
-        # We know that OpenAI uses json_schema, and Fireworks (only other provider) use json_mode.
-        # This can be removed in the future
+        # Legacy fallback for early fine-tunes that don't have structured_output_mode set.
+        # OpenAI (no longer supported for new fine-tunes) used json_schema; others use json_mode.
         if provider == ModelProviderName.openai:
             model_provider.structured_output_mode = StructuredOutputMode.json_schema
         else:
@@ -530,7 +528,7 @@ def provider_name_from_id(id: str) -> str:
             case ModelProviderName.huggingface:
                 return "Hugging Face"
             case ModelProviderName.vertex:
-                return "Google Vertex AI"
+                return "Gemini Enterprise Agent Platform (formerly Vertex AI)"
             case ModelProviderName.together_ai:
                 return "Together AI"
             case ModelProviderName.siliconflow_cn:

@@ -12,6 +12,16 @@ from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, Task
 
 logger = logging.getLogger(__name__)
 
+# Python's csv module defaults to 131,072 bytes per field, which legitimate
+# imports can exceed when a row contains a long prompt, response, or chat
+# transcript (surfacing as ``_csv.Error: field larger than field limit``).
+# 100 MiB is far larger than any realistic prompt/response (even a 2M-token
+# context window serializes to <10 MiB of text) while still bounding memory
+# from a maliciously crafted file, and fits in a 32-bit signed C long so
+# ``csv.field_size_limit`` accepts it on every supported platform
+# (including 64-bit Windows).
+_CSV_FIELD_SIZE_LIMIT_BYTES = 100 * 1024 * 1024
+
 
 class DatasetImportFormat(str, Enum):
     """
@@ -211,6 +221,8 @@ def import_csv(
     """Import a CSV dataset.
 
     All rows are validated before any are persisted to files to avoid partial imports."""
+
+    csv.field_size_limit(_CSV_FIELD_SIZE_LIMIT_BYTES)
 
     session_id = str(int(time.time()))
     dataset_path = config.dataset_path

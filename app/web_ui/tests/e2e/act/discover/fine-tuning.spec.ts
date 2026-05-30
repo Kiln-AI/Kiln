@@ -287,7 +287,7 @@ test.describe("Fine-tuning", () => {
 
     await expect(
       page.getByText(
-        "For 1-click fine-tuning connect OpenAI, Fireworks, Together, or Google Vertex.",
+        "For 1-click fine-tuning connect Fireworks, Together, or Google Vertex.",
       ),
     ).toBeVisible()
   })

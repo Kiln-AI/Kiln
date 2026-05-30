@@ -18,6 +18,31 @@ from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_ent
 
 logger = logging.getLogger(__name__)
 
+# Only models explicitly listed as supported in Fireworks fine-tuning docs:
+# https://docs.fireworks.ai/fine-tuning/managed-finetuning-intro#supported-base-models
+FIREWORKS_SUPPORTED_FINETUNE_MODELS: set[str] = {
+    "gemma-4-26b-a4b-it",
+    "gemma-4-31b-it",
+    "glm-5p1",
+    "kimi-k2p5",
+    "kimi-k2p6",
+    "llama-v3p3-70b-instruct",
+    "minimax-m2p5",
+    "nemotron-nano-3-30b-a3b",
+    "qwen3-235b-a22b-instruct-2507",
+    "qwen3-30b-a3b",
+    "qwen3-30b-a3b-instruct-2507",
+    "qwen3-32b",
+    "qwen3-4b",
+    "qwen3-8b",
+    "qwen3-vl-8b-instruct",
+    "qwen3p5-27b",
+    "qwen3p5-35b-a3b",
+    "qwen3p5-397b-a17b",
+    "qwen3p5-9b",
+    "qwen3p6-27b",
+}
+
 # https://docs.fireworks.ai/fine-tuning/fine-tuning-models#supported-base-models-loras-on-serverless
 serverless_models = [
     "accounts/fireworks/models/llama-v3p1-8b-instruct",

@@ -278,7 +278,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Runs */
+        /**
+         * List Runs
+         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+         */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
         /**
@@ -299,7 +302,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Run Summaries */
+        /**
+         * List Run Summaries
+         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized.
+         */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
         post?: never;
@@ -387,7 +393,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Run Tags */
+        /**
+         * List Run Tags
+         * @description Counts only include tags from leaf TaskRuns. For multiturn tasks, tags attached to intermediate runs in a chain are not included.
+         */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
         post?: never;
