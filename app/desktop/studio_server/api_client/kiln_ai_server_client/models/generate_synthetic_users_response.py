@@ -24,7 +24,8 @@ class GenerateSyntheticUsersResponse:
     Clients should re-call to retry.
 
         Attributes:
-            cases (list[SyntheticUserCase]):
+            cases (list[SyntheticUserCase]): Generated synthetic-user cases. On success, contains exactly `num_cases` items
+                (the strict-N batch contract — see class docstring).
     """
 
     cases: list[SyntheticUserCase]
