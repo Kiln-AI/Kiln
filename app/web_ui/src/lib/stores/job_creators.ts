@@ -4,7 +4,7 @@
 // come online (create_rag_job, create_finetune_job, …).
 
 import { create_job } from "$lib/stores/jobs_api"
-import { eval_tag } from "$lib/stores/job_tags"
+import { eval_tag, finetune_tag } from "$lib/stores/job_tags"
 import type { components } from "$lib/api_schema"
 
 export type EvalJobParams = {
@@ -35,6 +35,33 @@ export async function create_eval_job(
         eval_config_id: params.eval_config_id,
         run_config_id: params.run_config_id,
       }),
+    },
+    params.project_id,
+  )
+}
+
+// Scaffolding for the finetune job type. The worker + endpoint are deferred to
+// a follow-up PR; this declares the tag shape + creator so when that PR lands,
+// it's purely additive (a new worker + endpoint registration).
+export type FinetuneJobParams = {
+  project_id: string
+  task_id: string
+  finetune_id: string
+}
+
+export async function create_finetune_job(
+  params: FinetuneJobParams,
+  display?: { primary?: string; secondary?: string },
+): Promise<CreateJobResult> {
+  return create_job(
+    "finetune",
+    { ...params },
+    {
+      tag: finetune_tag({
+        task_id: params.task_id,
+        finetune_id: params.finetune_id,
+      }),
+      ...(display ? { display } : {}),
     },
     params.project_id,
   )

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { JobRecord } from "$lib/stores/jobs_api"
-import { back_url_for, eval_tag } from "./job_tags"
+import { back_url_for, eval_tag, finetune_tag } from "./job_tags"
 
 function make_job(over: Partial<JobRecord>): JobRecord {
   return {
@@ -76,14 +76,20 @@ describe("back_url_for", () => {
     expect(back_url_for(job)).toBe("/specs/p1/t1")
   })
 
+  it("returns the finetune detail URL for a finetune tag", () => {
+    const job = make_job({
+      project_id: "p1",
+      metadata: {
+        tag: finetune_tag({ task_id: "t1", finetune_id: "ft1" }),
+      },
+    })
+    expect(back_url_for(job)).toBe("/fine_tune/p1/t1/fine_tune/ft1")
+  })
+
   it("returns null for kinds without a canonical page yet", () => {
     const rag_job = make_job({
       metadata: { tag: { kind: "rag", rag_config_id: "rcfg" } },
     })
-    const ft_job = make_job({
-      metadata: { tag: { kind: "finetune", finetune_id: "ft1" } },
-    })
     expect(back_url_for(rag_job)).toBeNull()
-    expect(back_url_for(ft_job)).toBeNull()
   })
 })

@@ -36,6 +36,7 @@ export type RagTag = {
 
 export type FinetuneTag = {
   kind: "finetune"
+  task_id: string
   finetune_id: string
 }
 
@@ -69,6 +70,10 @@ export function eval_tag(parts: Omit<EvalTag, "kind">): EvalTag {
   return { kind: "eval", ...parts }
 }
 
+export function finetune_tag(parts: Omit<FinetuneTag, "kind">): FinetuneTag {
+  return { kind: "finetune", ...parts }
+}
+
 // Canonical "back to source" URL for a tracked job — the page in the UI that
 // owns this job's context. Used by the jobs widget to make rows clickable.
 // Returns null when no canonical URL is defined for the job's tag kind.
@@ -88,8 +93,9 @@ export function back_url_for(record: JobRecord): string | null {
         return `/specs/${project_id}/${tag.task_id}/${tag.spec_id}/${tag.eval_id}/compare_run_configs`
       }
       return `/specs/${project_id}/${tag.task_id}`
-    case "rag":
     case "finetune":
+      return `/fine_tune/${project_id}/${tag.task_id}/fine_tune/${tag.finetune_id}`
+    case "rag":
     case "prompt_optimization":
       // Placeholders for when those features start producing jobs.
       return null
