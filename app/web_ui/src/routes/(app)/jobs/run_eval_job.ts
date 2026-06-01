@@ -3,8 +3,7 @@ import type { OptionGroup } from "$lib/ui/fancy_select_types"
 import { formatEvalConfigName } from "$lib/utils/formatters"
 import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
 import type { ProviderModels } from "$lib/types"
-import type { create_job } from "$lib/stores/jobs_api"
-import { eval_tag } from "$lib/stores/job_tags"
+import type { create_eval_job } from "$lib/stores/job_creators"
 import type { client } from "$lib/api_client"
 
 export type RunEvalSelection = {
@@ -49,25 +48,14 @@ export function build_run_eval_params(
 // Starts the eval background job for a complete selection. Returns true if a
 // job was started; false when the selection is incomplete (nothing to do).
 export async function start_eval_job(
-  create_job_fn: typeof create_job,
+  create_eval_job_fn: typeof create_eval_job,
   selection: RunEvalSelection,
 ): Promise<boolean> {
   const params = build_run_eval_params(selection)
   if (!params) {
     return false
   }
-  await create_job_fn(
-    "eval",
-    { ...params },
-    {
-      tag: eval_tag({
-        eval_id: params.eval_id,
-        eval_config_id: params.eval_config_id,
-        run_config_id: params.run_config_id,
-      }),
-    },
-    params.project_id,
-  )
+  await create_eval_job_fn(params)
   return true
 }
 

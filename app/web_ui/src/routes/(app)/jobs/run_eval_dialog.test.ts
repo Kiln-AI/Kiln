@@ -12,8 +12,8 @@ vi.mock("$lib/api_client", () => ({
   base_url: "http://localhost:8757",
 }))
 
-vi.mock("$lib/stores/jobs_api", () => ({
-  create_job: vi.fn(),
+vi.mock("$lib/stores/job_creators", () => ({
+  create_eval_job: vi.fn(),
 }))
 
 // FancySelect relies on @floating-ui/dom, which is unavailable in jsdom.

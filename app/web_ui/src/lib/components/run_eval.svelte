@@ -4,7 +4,13 @@
   import Warning from "$lib/ui/warning.svelte"
   import { base_url } from "$lib/api_client"
   import { jobs } from "$lib/stores/jobs_store"
-  import { match_ongoing_jobs, aggregate_progress } from "./run_eval_awareness"
+  import {
+    filter_by_tag,
+    ongoing,
+    aggregate,
+    compute_run_state,
+  } from "$lib/stores/job_selectors"
+  import { onDestroy } from "svelte"
   import posthog from "posthog-js"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
@@ -55,31 +61,63 @@
   let eval_total_count = 0
   let eval_error_count = 0
 
-  // Store-derived overlay: when this button has no in-session run
-  // (eval_state === "not_started") but eval jobs matching this triple are
-  // already pending/running in the project, treat it as "running" and source
-  // the counter from the jobs store rather than a local EventSource. Paused
-  // and terminal statuses are excluded — the user can re-click to start a
-  // fresh idempotent run that picks up where the prior one left off.
-  $: matching_ongoing_jobs =
-    eval_type === "run_config" && current_eval_config_id != null
-      ? match_ongoing_jobs(
+  // Awareness via the project-scoped jobs store. The store is authoritative
+  // for "is it running" (paused & terminals are NOT ongoing), so a stuck
+  // local "running" — e.g. an SSE that never received its terminal sentinel
+  // because the user paused the job via the widget — is overridden and the
+  // button returns to "Run Eval". Local terminal states (complete /
+  // complete_with_errors) still display when no jobs are ongoing.
+  $: matching =
+    eval_type === "run_config" && current_eval_config_id !== null
+      ? filter_by_tag(
           $jobs,
-          eval_id,
-          current_eval_config_id,
-          run_config_ids,
-          run_all,
+          "eval",
+          (t) =>
+            t.eval_id === eval_id &&
+            t.eval_config_id === current_eval_config_id &&
+            (run_all || run_config_ids.includes(t.run_config_id)),
         )
       : []
-  $: store_running = matching_ongoing_jobs.length > 0
-  $: store_aggregate = aggregate_progress(matching_ongoing_jobs)
-  $: using_store_mode = eval_state === "not_started" && store_running
-  $: effective_eval_state =
-    eval_state !== "not_started"
-      ? eval_state
-      : store_running
-        ? "running"
-        : "not_started"
+  $: ongoing_matching = ongoing(matching)
+  $: store_running = ongoing_matching.length > 0
+  $: store_aggregate = aggregate(ongoing_matching)
+
+  // `initiating` bridges the click-to-store-update window so the button
+  // doesn't flicker between "Run Eval" -> "Running…" -> "Run Eval" -> "Running…"
+  // while the EventSource opens and the server publishes the first job events.
+  // Cleared as soon as the store actually sees an ongoing job, or after a
+  // safety timeout.
+  let initiating = false
+  let initiating_timer: ReturnType<typeof setTimeout> | null = null
+  function start_initiating() {
+    initiating = true
+    if (initiating_timer) clearTimeout(initiating_timer)
+    initiating_timer = setTimeout(() => {
+      initiating = false
+      initiating_timer = null
+    }, 5000)
+  }
+  function clear_initiating() {
+    initiating = false
+    if (initiating_timer) {
+      clearTimeout(initiating_timer)
+      initiating_timer = null
+    }
+  }
+  $: if (store_running && initiating) clear_initiating()
+  onDestroy(() => {
+    if (initiating_timer) clearTimeout(initiating_timer)
+  })
+
+  $: effective_eval_state = compute_run_state(
+    store_running,
+    initiating,
+    eval_state,
+  )
+
+  // Counter values: when the in-session local counter hasn't been populated
+  // (no local SSE this session), source the display from the store aggregate.
+  $: using_store_mode = eval_state === "not_started"
   $: display_complete = using_store_mode
     ? store_aggregate.progress
     : eval_complete_count
@@ -119,6 +157,7 @@
     eval_complete_count = 0
     eval_total_count = 0
     eval_error_count = 0
+    start_initiating()
 
     const eventSource = new EventSource(run_url)
 

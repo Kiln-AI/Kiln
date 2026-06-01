@@ -9,7 +9,7 @@ import {
   type RunEvalSelection,
 } from "./run_eval_job"
 import type { EvalConfig, TaskRunConfig } from "$lib/types"
-import type { create_job } from "$lib/stores/jobs_api"
+import type { create_eval_job } from "$lib/stores/job_creators"
 import type { client } from "$lib/api_client"
 
 const complete: RunEvalSelection = {
@@ -70,54 +70,42 @@ describe("can_submit_run_eval", () => {
 })
 
 describe("start_eval_job", () => {
-  it("calls create_job with the eval type, selected params, and project_id", async () => {
-    const create_job_fn = vi.fn().mockResolvedValue({
+  it("calls create_eval_job with the resolved params", async () => {
+    const create_eval_job_fn = vi.fn().mockResolvedValue({
       job_id: "j_1",
       status: "pending",
-    }) as unknown as typeof create_job
-    const started = await start_eval_job(create_job_fn, complete)
+    }) as unknown as typeof create_eval_job
+    const started = await start_eval_job(create_eval_job_fn, complete)
     expect(started).toBe(true)
-    expect(create_job_fn).toHaveBeenCalledTimes(1)
-    expect(create_job_fn).toHaveBeenCalledWith(
-      "eval",
-      {
-        project_id: "p_1",
-        task_id: "t_1",
-        eval_id: "e_1",
-        eval_config_id: "ec_1",
-        run_config_id: "rc_1",
-      },
-      {
-        tag: {
-          kind: "eval",
-          eval_id: "e_1",
-          eval_config_id: "ec_1",
-          run_config_id: "rc_1",
-        },
-      },
-      "p_1",
-    )
+    expect(create_eval_job_fn).toHaveBeenCalledTimes(1)
+    expect(create_eval_job_fn).toHaveBeenCalledWith({
+      project_id: "p_1",
+      task_id: "t_1",
+      eval_id: "e_1",
+      eval_config_id: "ec_1",
+      run_config_id: "rc_1",
+    })
   })
 
-  it("does not call create_job when the selection is incomplete", async () => {
-    const create_job_fn = vi.fn() as unknown as typeof create_job
-    const started = await start_eval_job(create_job_fn, {
+  it("does not call create_eval_job when the selection is incomplete", async () => {
+    const create_eval_job_fn = vi.fn() as unknown as typeof create_eval_job
+    const started = await start_eval_job(create_eval_job_fn, {
       ...complete,
       eval_config_id: null,
     })
     expect(started).toBe(false)
-    expect(create_job_fn).not.toHaveBeenCalled()
+    expect(create_eval_job_fn).not.toHaveBeenCalled()
   })
 
-  it("does not call create_job when no task is selected", async () => {
-    const create_job_fn = vi.fn() as unknown as typeof create_job
-    const started = await start_eval_job(create_job_fn, {
+  it("does not call create_eval_job when no task is selected", async () => {
+    const create_eval_job_fn = vi.fn() as unknown as typeof create_eval_job
+    const started = await start_eval_job(create_eval_job_fn, {
       ...complete,
       project_id: null,
       task_id: null,
     })
     expect(started).toBe(false)
-    expect(create_job_fn).not.toHaveBeenCalled()
+    expect(create_eval_job_fn).not.toHaveBeenCalled()
   })
 })
 

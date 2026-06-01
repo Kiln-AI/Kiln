@@ -3,7 +3,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { create_job } from "$lib/stores/jobs_api"
+  import { create_eval_job } from "$lib/stores/job_creators"
   import {
     ui_state,
     model_info,
@@ -195,7 +195,7 @@
     submit_error = null
     submitting = true
     try {
-      const started = await start_eval_job(create_job, {
+      const started = await start_eval_job(create_eval_job, {
         project_id,
         task_id,
         eval_id: selected_eval_id,
