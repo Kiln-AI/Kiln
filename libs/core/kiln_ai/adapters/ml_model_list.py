@@ -7597,7 +7597,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="minimax/minimax-m3",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
                 r1_openrouter_options=True,
