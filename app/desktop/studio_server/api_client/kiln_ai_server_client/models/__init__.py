@@ -55,6 +55,14 @@ from .function_call import FunctionCall
 from .generate_batch_input import GenerateBatchInput
 from .generate_batch_output import GenerateBatchOutput
 from .generate_batch_output_data_by_topic import GenerateBatchOutputDataByTopic
+from .generate_synthetic_users_request import GenerateSyntheticUsersRequest
+from .generate_synthetic_users_response import GenerateSyntheticUsersResponse
+from .generate_v1_synthetic_user_generate_post_response_401 import GenerateV1SyntheticUserGeneratePostResponse401
+from .generate_v1_synthetic_user_generate_post_response_500 import GenerateV1SyntheticUserGeneratePostResponse500
+from .generate_v1_synthetic_user_generate_post_response_502 import GenerateV1SyntheticUserGeneratePostResponse502
+from .generate_v1_synthetic_user_generate_post_response_502_code import (
+    GenerateV1SyntheticUserGeneratePostResponse502Code,
+)
 from .get_session_v1_chat_sessions_session_id_get_response_400 import GetSessionV1ChatSessionsSessionIdGetResponse400
 from .get_session_v1_chat_sessions_session_id_get_response_404 import GetSessionV1ChatSessionsSessionIdGetResponse404
 from .get_session_v1_chat_sessions_session_id_get_response_426 import GetSessionV1ChatSessionsSessionIdGetResponse426
@@ -83,6 +91,7 @@ from .mcp_run_config_properties import McpRunConfigProperties
 from .mcp_tool_reference import MCPToolReference
 from .mcp_tool_reference_input_schema_type_0 import MCPToolReferenceInputSchemaType0
 from .mcp_tool_reference_output_schema_type_0 import MCPToolReferenceOutputSchemaType0
+from .message_usage import MessageUsage
 from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
@@ -110,6 +119,7 @@ from .synthetic_data_generation_session_config import SyntheticDataGenerationSes
 from .synthetic_data_generation_session_config_input import SyntheticDataGenerationSessionConfigInput
 from .synthetic_data_generation_step_config import SyntheticDataGenerationStepConfig
 from .synthetic_data_generation_step_config_input import SyntheticDataGenerationStepConfigInput
+from .synthetic_user_case import SyntheticUserCase
 from .task_info import TaskInfo
 from .task_metadata import TaskMetadata
 from .task_output import TaskOutput
@@ -166,6 +176,12 @@ __all__ = (
     "GenerateBatchInput",
     "GenerateBatchOutput",
     "GenerateBatchOutputDataByTopic",
+    "GenerateSyntheticUsersRequest",
+    "GenerateSyntheticUsersResponse",
+    "GenerateV1SyntheticUserGeneratePostResponse401",
+    "GenerateV1SyntheticUserGeneratePostResponse500",
+    "GenerateV1SyntheticUserGeneratePostResponse502",
+    "GenerateV1SyntheticUserGeneratePostResponse502Code",
     "GetSessionV1ChatSessionsSessionIdGetResponse400",
     "GetSessionV1ChatSessionsSessionIdGetResponse404",
     "GetSessionV1ChatSessionsSessionIdGetResponse426",
@@ -194,6 +210,7 @@ __all__ = (
     "MCPToolReference",
     "MCPToolReferenceInputSchemaType0",
     "MCPToolReferenceOutputSchemaType0",
+    "MessageUsage",
     "ModelProviderName",
     "NewProposedSpecEditApi",
     "OutputFileInfo",
@@ -221,6 +238,7 @@ __all__ = (
     "SyntheticDataGenerationSessionConfigInput",
     "SyntheticDataGenerationStepConfig",
     "SyntheticDataGenerationStepConfigInput",
+    "SyntheticUserCase",
     "TaskInfo",
     "TaskMetadata",
     "TaskOutput",
