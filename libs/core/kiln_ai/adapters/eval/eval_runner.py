@@ -232,14 +232,39 @@ class EvalRunner:
                 task_output = result_task_run.output.output
                 task_run_usage = result_task_run.usage
 
-                parent_eval = job.eval_config.parent_eval()
-                if (
-                    parent_eval
-                    and parent_eval.evaluation_data_type == EvalDataType.full_trace
-                    and result_task_run.trace
-                ):
-                    trace = json.dumps(result_task_run.trace, indent=2)
+                # Always persist the full trace when available. The trace is the
+                # only record of what the model actually saw — needed to verify
+                # input_transform rendering, system prompt content, and to debug
+                # eval failures after the fact. EvalDataType still controls
+                # judging behavior; it no longer gates trace persistence.
+                #
+                # Use pydantic_core.to_json so the encoder handles BaseModel
+                # instances and other non-stdlib-serializable types that can
+                # appear in real provider SDK trace objects. Fall back to a
+                # repr-based encoder on the off chance to_json can't handle
+                # something — a degraded trace is still more useful than
+                # crashing the whole eval job.
+                if result_task_run.trace:
+                    try:
+                        from pydantic_core import to_json
 
+                        trace = to_json(result_task_run.trace, indent=2).decode()
+                    except Exception as e:
+                        # Broad catch: pydantic_core.to_json can raise
+                        # PydanticSerializationError (subclass of RuntimeError)
+                        # plus the usual TypeError / ValueError. Falling back
+                        # to a repr-based encoder is always preferable to
+                        # crashing the eval job over an unprintable trace.
+                        logger.warning(
+                            "Falling back to repr trace encoding (%s) for dataset item %s",
+                            type(e).__name__,
+                            job.item.id,
+                        )
+                        trace = json.dumps(
+                            result_task_run.trace, indent=2, default=repr
+                        )
+
+                parent_eval = job.eval_config.parent_eval()
                 if (
                     parent_eval
                     and parent_eval.evaluation_data_type

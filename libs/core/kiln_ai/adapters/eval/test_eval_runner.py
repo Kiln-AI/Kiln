@@ -724,7 +724,15 @@ async def test_run_job_with_full_trace_evaluation_data_type(
 async def test_run_job_with_final_answer_evaluation_data_type(
     mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
 ):
-    """Test EvalRunner with final_answer evaluation_data_type (default)"""
+    """Test EvalRunner persists task_run_trace even when evaluation_data_type
+    is not full_trace.
+
+    Trace persistence is independent of evaluation_data_type — the trace is the
+    only record of what the model actually saw, and is needed to verify
+    rendering (input_transform), system prompt content, and to debug failures
+    after the fact. evaluation_data_type still controls judging behavior; it
+    no longer gates trace persistence.
+    """
     # Set the eval config to use final_answer evaluation data type (default)
     mock_eval_config.parent.evaluation_data_type = EvalDataType.final_answer
 
@@ -775,11 +783,16 @@ async def test_run_job_with_final_answer_evaluation_data_type(
 
     assert success is True
 
-    # Verify eval run was saved without trace
+    # Verify the trace is persisted even for final_answer evals
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 1
     saved_run = eval_runs[0]
-    assert saved_run.task_run_trace is None
+    assert saved_run.task_run_trace is not None
+    assert isinstance(saved_run.task_run_trace, str)
+    import json
+
+    parsed_trace = json.loads(saved_run.task_run_trace)
+    assert parsed_trace == mock_trace
 
 
 @pytest.mark.asyncio
