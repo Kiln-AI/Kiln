@@ -7603,6 +7603,21 @@ built_in_models: List[KilnModel] = [
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                    # documents (via PDF-as-image)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
