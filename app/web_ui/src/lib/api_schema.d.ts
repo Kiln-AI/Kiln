@@ -7042,6 +7042,8 @@ export interface components {
         JobRecord: {
             /** Id */
             id: string;
+            /** Name */
+            name?: string | null;
             /** Type */
             type: string;
             status: components["schemas"]["BackgroundJobStatus"];

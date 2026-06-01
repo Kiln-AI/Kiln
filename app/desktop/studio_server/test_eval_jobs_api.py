@@ -82,14 +82,18 @@ def stub_eval_loaders(monkeypatch):
 
     class _FakeEval:
         id = "eval1"
+        name = "Fake Eval"
 
     class _FakeEvalConfig:
+        name = "Fake Judge"
+
         def parent_eval(self):
             return _FakeEval()
 
     class _FakeRunConfig:
         def __init__(self, rc_id):
             self.id = rc_id
+            self.name = f"run-config-{rc_id}"
 
     monkeypatch.setattr(
         eval_jobs_api,
@@ -100,6 +104,11 @@ def stub_eval_loaders(monkeypatch):
         eval_jobs_api,
         "get_all_run_configs",
         lambda *a, **k: [_FakeRunConfig("rc_a"), _FakeRunConfig("rc_b")],
+    )
+    monkeypatch.setattr(
+        eval_jobs_api,
+        "task_run_config_from_id",
+        lambda project_id, task_id, run_config_id: _FakeRunConfig(run_config_id),
     )
 
 
@@ -265,13 +274,26 @@ async def test_disconnect_cancels_pending_and_pauses_running(monkeypatch):
 
     class _FakeEval:
         id = "eval1"
+        name = "Fake Eval"
 
     class _FakeEvalConfig:
+        name = "Fake Judge"
+
         def parent_eval(self):
             return _FakeEval()
 
+    class _FakeRunConfig:
+        def __init__(self, rc_id):
+            self.id = rc_id
+            self.name = f"run-config-{rc_id}"
+
     monkeypatch.setattr(
         eval_jobs_api, "eval_config_from_id", lambda *a, **k: _FakeEvalConfig()
+    )
+    monkeypatch.setattr(
+        eval_jobs_api,
+        "task_run_config_from_id",
+        lambda project_id, task_id, run_config_id: _FakeRunConfig(run_config_id),
     )
 
     app = FastAPI()

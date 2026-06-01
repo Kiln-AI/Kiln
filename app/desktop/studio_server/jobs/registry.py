@@ -33,6 +33,114 @@ MAX_CONCURRENT_ENV_VAR = "KILN_JOBS_MAX_CONCURRENT"
 _JOB_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"
 _JOB_ID_LENGTH = 12
 
+# Friendly adjective-noun name assigned to every job. Not unique (the id is the
+# canonical key) — just a more human label than `j_kwyevdvylgaz`.
+_JOB_NAME_ADJECTIVES = (
+    "amber",
+    "ancient",
+    "bold",
+    "brave",
+    "bright",
+    "calm",
+    "clever",
+    "cosmic",
+    "crisp",
+    "curious",
+    "dapper",
+    "eager",
+    "fearless",
+    "fierce",
+    "gentle",
+    "graceful",
+    "happy",
+    "humble",
+    "jolly",
+    "keen",
+    "lively",
+    "lucky",
+    "merry",
+    "mighty",
+    "noble",
+    "patient",
+    "polished",
+    "quiet",
+    "quick",
+    "radiant",
+    "rapid",
+    "rugged",
+    "scarlet",
+    "serene",
+    "silent",
+    "silver",
+    "soaring",
+    "spirited",
+    "steady",
+    "stellar",
+    "stoic",
+    "sturdy",
+    "swift",
+    "thoughtful",
+    "twilight",
+    "valiant",
+    "vivid",
+    "warm",
+    "wise",
+    "zesty",
+)
+
+_JOB_NAME_NOUNS = (
+    "albatross",
+    "anchor",
+    "aurora",
+    "beacon",
+    "blossom",
+    "boulder",
+    "breeze",
+    "canyon",
+    "cedar",
+    "chestnut",
+    "comet",
+    "cypress",
+    "delta",
+    "ember",
+    "falcon",
+    "forest",
+    "fox",
+    "geyser",
+    "glacier",
+    "harbor",
+    "harvest",
+    "horizon",
+    "hummingbird",
+    "ibex",
+    "island",
+    "lantern",
+    "lighthouse",
+    "lynx",
+    "maple",
+    "meadow",
+    "monsoon",
+    "moss",
+    "mountain",
+    "nebula",
+    "ocean",
+    "orchard",
+    "otter",
+    "panther",
+    "pebble",
+    "phoenix",
+    "prairie",
+    "puffin",
+    "raven",
+    "ridge",
+    "river",
+    "shadow",
+    "spruce",
+    "summit",
+    "tundra",
+    "willow",
+)
+
 
 class JobNotFoundError(Exception):
     pass
@@ -48,6 +156,10 @@ class JobOperationError(Exception):
 def _new_job_id() -> str:
     suffix = "".join(secrets.choice(_JOB_ID_ALPHABET) for _ in range(_JOB_ID_LENGTH))
     return f"j_{suffix}"
+
+
+def _new_job_name() -> str:
+    return f"{secrets.choice(_JOB_NAME_ADJECTIVES)}-{secrets.choice(_JOB_NAME_NOUNS)}"
 
 
 def _resolve_max_concurrent(explicit: int | None) -> int:
@@ -167,6 +279,7 @@ class JobRegistry:
         job_id = self._fresh_job_id()
         job = JobRecord(
             id=job_id,
+            name=_new_job_name(),
             type=type_name,
             status=BackgroundJobStatus.PENDING,
             params=validated.model_dump(mode="json"),

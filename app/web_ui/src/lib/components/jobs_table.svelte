@@ -86,6 +86,19 @@
     return capitalize(type)
   }
 
+  // Per-kind summary stashed by the producer at create time
+  // (`metadata.display`). Keeps the table generic across job kinds.
+  function display_primary(job: JobRecord): string | null {
+    const d = (job.metadata as { display?: { primary?: unknown } } | null)
+      ?.display
+    return typeof d?.primary === "string" ? d.primary : null
+  }
+  function display_secondary(job: JobRecord): string | null {
+    const d = (job.metadata as { display?: { secondary?: unknown } } | null)
+      ?.display
+    return typeof d?.secondary === "string" ? d.secondary : null
+  }
+
   function has_errors(job: JobRecord): boolean {
     return (job.progress?.error ?? 0) > 0 || job.status === "failed"
   }
@@ -199,8 +212,9 @@
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
+          <th>Name</th>
           <th>Type</th>
+          <th>Details</th>
           <th>Status</th>
           <th>Progress</th>
           <th>Message</th>
@@ -211,16 +225,28 @@
       <tbody>
         {#each $jobs as job (job.id)}
           <tr>
-            <td class="font-mono text-xs text-gray-500 whitespace-nowrap"
-              >{job.id}</td
-            >
-            <td class="font-medium">
+            <td class="font-medium whitespace-nowrap">
               {#if back_url_for(job)}
-                <a href={back_url_for(job)} class="link"
-                  >{job_type_display(job.type)}</a
+                <a href={back_url_for(job)} class="link">{job.name || job.id}</a
                 >
               {:else}
-                {job_type_display(job.type)}
+                {job.name || job.id}
+              {/if}
+            </td>
+            <td>{job_type_display(job.type)}</td>
+            <td class="text-sm max-w-72">
+              {#if display_primary(job)}
+                <div class="truncate" title={display_primary(job) ?? ""}>
+                  {display_primary(job)}
+                </div>
+              {/if}
+              {#if display_secondary(job)}
+                <div
+                  class="text-xs text-gray-500 truncate"
+                  title={display_secondary(job) ?? ""}
+                >
+                  {display_secondary(job)}
+                </div>
               {/if}
             </td>
             <td>

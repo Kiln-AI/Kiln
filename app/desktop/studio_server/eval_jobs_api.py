@@ -10,7 +10,11 @@ from kiln_server.cancellable_streaming_response import CancellableStreamingRespo
 from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 
-from .eval_api import eval_config_from_id, get_all_run_configs
+from .eval_api import (
+    eval_config_from_id,
+    get_all_run_configs,
+    task_run_config_from_id,
+)
 from .jobs.events import JobEvent, KeepalivePing, iter_with_keepalive
 from .jobs.models import BackgroundJobStatus, JobRecord
 from .jobs.registry import JobOperationError, job_registry
@@ -263,6 +267,7 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
 
         job_ids: list[str] = []
         for run_config_id in run_config_id_list:
+            run_config = task_run_config_from_id(project_id, task_id, run_config_id)
             job = await job_registry.create(
                 "eval",
                 {
@@ -281,7 +286,14 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
                         "eval_id": str(eval.id),
                         "eval_config_id": eval_config_id,
                         "run_config_id": run_config_id,
-                    }
+                    },
+                    # Per-kind summary stashed at create time. Producers populate
+                    # `metadata.display` and the jobs widget renders it verbatim,
+                    # so the table stays generic across feature kinds.
+                    "display": {
+                        "primary": f"Eval: {eval.name}",
+                        "secondary": f"Judge: {eval_config.name} · Run config: {run_config.name}",
+                    },
                 },
             )
             job_ids.append(job.id)

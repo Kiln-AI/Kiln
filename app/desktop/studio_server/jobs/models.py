@@ -75,6 +75,11 @@ class JobRecord(BaseModel):
     """Ephemeral, in-memory bookkeeping for a single job. Never persisted to disk."""
 
     id: str
+    # Friendly adjective-noun label assigned by the registry at create time,
+    # used in the UI instead of the cryptic `id`. Not unique — `id` remains
+    # the canonical key. Optional for backward compatibility with older
+    # records that may have been created before this field existed.
+    name: str | None = None
     type: str
     status: BackgroundJobStatus
     run_id: str | None = None
