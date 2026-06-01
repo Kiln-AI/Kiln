@@ -87,7 +87,14 @@ describe("start_eval_job", () => {
         eval_config_id: "ec_1",
         run_config_id: "rc_1",
       },
-      null,
+      {
+        tag: {
+          kind: "eval",
+          eval_id: "e_1",
+          eval_config_id: "ec_1",
+          run_config_id: "rc_1",
+        },
+      },
       "p_1",
     )
   })

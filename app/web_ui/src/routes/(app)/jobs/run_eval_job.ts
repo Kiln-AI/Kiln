@@ -4,6 +4,7 @@ import { formatEvalConfigName } from "$lib/utils/formatters"
 import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
 import type { ProviderModels } from "$lib/types"
 import type { create_job } from "$lib/stores/jobs_api"
+import { eval_tag } from "$lib/stores/job_tags"
 import type { client } from "$lib/api_client"
 
 export type RunEvalSelection = {
@@ -55,7 +56,18 @@ export async function start_eval_job(
   if (!params) {
     return false
   }
-  await create_job_fn("eval", { ...params }, null, params.project_id)
+  await create_job_fn(
+    "eval",
+    { ...params },
+    {
+      tag: eval_tag({
+        eval_id: params.eval_id,
+        eval_config_id: params.eval_config_id,
+        run_config_id: params.run_config_id,
+      }),
+    },
+    params.project_id,
+  )
   return true
 }
 

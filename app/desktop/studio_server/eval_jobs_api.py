@@ -266,6 +266,14 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
                     "run_config_id": run_config_id,
                 },
                 project_id=project_id,
+                metadata={
+                    "tag": {
+                        "kind": "eval",
+                        "eval_id": str(eval.id),
+                        "eval_config_id": eval_config_id,
+                        "run_config_id": run_config_id,
+                    }
+                },
             )
             job_ids.append(job.id)
 

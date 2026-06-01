@@ -3,6 +3,8 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { base_url } from "$lib/api_client"
+  import { jobs } from "$lib/stores/jobs_store"
+  import { match_ongoing_jobs, aggregate_progress } from "./run_eval_awareness"
   import posthog from "posthog-js"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
@@ -52,6 +54,39 @@
   let eval_complete_count = 0
   let eval_total_count = 0
   let eval_error_count = 0
+
+  // Store-derived overlay: when this button has no in-session run
+  // (eval_state === "not_started") but eval jobs matching this triple are
+  // already pending/running in the project, treat it as "running" and source
+  // the counter from the jobs store rather than a local EventSource. Paused
+  // and terminal statuses are excluded — the user can re-click to start a
+  // fresh idempotent run that picks up where the prior one left off.
+  $: matching_ongoing_jobs =
+    eval_type === "run_config" && current_eval_config_id != null
+      ? match_ongoing_jobs(
+          $jobs,
+          eval_id,
+          current_eval_config_id,
+          run_config_ids,
+          run_all,
+        )
+      : []
+  $: store_running = matching_ongoing_jobs.length > 0
+  $: store_aggregate = aggregate_progress(matching_ongoing_jobs)
+  $: using_store_mode = eval_state === "not_started" && store_running
+  $: effective_eval_state =
+    eval_state !== "not_started"
+      ? eval_state
+      : store_running
+        ? "running"
+        : "not_started"
+  $: display_complete = using_store_mode
+    ? store_aggregate.progress
+    : eval_complete_count
+  $: display_total = using_store_mode ? store_aggregate.total : eval_total_count
+  $: display_errors = using_store_mode
+    ? store_aggregate.errors
+    : eval_error_count
 
   function run_eval(): boolean {
     if (eval_type === "run_config" && !current_eval_config_id) {
@@ -170,7 +205,7 @@
   }
 </script>
 
-{#if eval_state === "not_started"}
+{#if effective_eval_state === "not_started"}
   <button
     class="btn {run_button_style_class()} {btn_primary
       ? 'btn-primary'
@@ -186,12 +221,12 @@
       running_progress_dialog?.show()
     }}
   >
-    {#if eval_state === "running"}
+    {#if effective_eval_state === "running"}
       <div class="loading loading-spinner loading-xs"></div>
       Running...
-    {:else if eval_state === "complete"}
+    {:else if effective_eval_state === "complete"}
       Eval Complete
-    {:else if eval_state === "complete_with_errors"}
+    {:else if effective_eval_state === "complete_with_errors"}
       Eval Errors
     {:else}
       Eval Status
@@ -202,12 +237,12 @@
 <Dialog
   bind:this={running_progress_dialog}
   title=""
-  action_buttons={run_dialog_buttons(eval_state)}
+  action_buttons={run_dialog_buttons(effective_eval_state)}
 >
   <div
     class="mt-12 mb-6 flex flex-col items-center justify-center min-h-[100px] text-center"
   >
-    {#if eval_state === "complete" && eval_complete_count == 0}
+    {#if effective_eval_state === "complete" && display_complete == 0}
       <div class="font-medium">No Data Needed to be Evaluated</div>
       <div class="text-gray-500 text-sm mt-2 flex flex-col gap-2">
         <div>
@@ -219,23 +254,23 @@
           > for instructions.
         </div>
       </div>
-    {:else if eval_state === "complete"}
+    {:else if effective_eval_state === "complete"}
       <div class="font-medium">Eval Complete 🎉</div>
-    {:else if eval_state === "complete_with_errors"}
+    {:else if effective_eval_state === "complete_with_errors"}
       <div class="font-medium">Eval Complete with Errors</div>
-    {:else if eval_state === "running"}
+    {:else if effective_eval_state === "running"}
       <div class="loading loading-spinner loading-lg text-success"></div>
       <div class="font-medium mt-4">Running...</div>
     {/if}
     <div class="text-sm font-light min-w-[120px]">
-      {#if eval_total_count > 0}
+      {#if display_total > 0}
         <div>
-          {eval_complete_count + eval_error_count} of {eval_total_count}
+          {display_complete + display_errors} of {display_total}
         </div>
       {/if}
-      {#if eval_error_count > 0}
+      {#if display_errors > 0}
         <div class="text-error font-light text-xs">
-          {eval_error_count} error{eval_error_count === 1 ? "" : "s"}
+          {display_errors} error{display_errors === 1 ? "" : "s"}
         </div>
       {/if}
       {#if eval_run_error}

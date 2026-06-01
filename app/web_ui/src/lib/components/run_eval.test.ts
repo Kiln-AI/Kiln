@@ -15,6 +15,18 @@ vi.mock("posthog-js", () => ({
   default: { capture: vi.fn() },
 }))
 
+// These URL tests are about the run-comparison-jobs URL shape; mock the
+// project-scoped jobs store so the store-derived "is running" overlay sees
+// an empty job list and the component renders the idle "Run Eval" button.
+vi.mock("$lib/stores/jobs_store", () => ({
+  jobs: {
+    subscribe: (run: (value: unknown[]) => void) => {
+      run([])
+      return () => {}
+    },
+  },
+}))
+
 const event_source_urls: string[] = []
 
 class FakeEventSource {
@@ -25,6 +37,8 @@ class FakeEventSource {
     this.url = url
     event_source_urls.push(url)
   }
+  addEventListener() {}
+  removeEventListener() {}
   close() {}
 }
 
