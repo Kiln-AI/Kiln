@@ -1,12 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { JobRecord } from "$lib/stores/jobs_api"
-import {
-  filter_by_tag,
-  ongoing,
-  is_ongoing,
-  aggregate,
-  compute_run_state,
-} from "./job_selectors"
+import { filter_by_tag, ongoing, compute_run_state } from "./job_selectors"
 
 const E = "e1"
 const C = "c1"
@@ -86,7 +80,7 @@ describe("filter_by_tag", () => {
   })
 })
 
-describe("ongoing / is_ongoing", () => {
+describe("ongoing", () => {
   it("includes only pending and running — excludes paused and terminals", () => {
     const all: JobRecord[] = [
       make_job({ id: "j_running", status: "running" }),
@@ -101,29 +95,6 @@ describe("ongoing / is_ongoing", () => {
         .map((j) => j.id)
         .sort(),
     ).toEqual(["j_pending", "j_running"])
-    expect(is_ongoing(all)).toBe(true)
-    expect(
-      is_ongoing(
-        all.filter((j) => j.status !== "running" && j.status !== "pending"),
-      ),
-    ).toBe(false)
-  })
-})
-
-describe("aggregate", () => {
-  it("sums success/total/error across jobs, treating nullish as zero", () => {
-    const jobs: JobRecord[] = [
-      make_job({
-        progress: { total: 50, success: 12, error: 1, updated_at: "x" },
-      }),
-      make_job({
-        progress: { total: 30, success: 7, error: 2, updated_at: "x" },
-      }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      make_job({ progress: null as any }),
-    ]
-    expect(aggregate(jobs)).toEqual({ progress: 19, total: 80, errors: 3 })
-    expect(aggregate([])).toEqual({ progress: 0, total: 0, errors: 0 })
   })
 })
 

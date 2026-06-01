@@ -7,7 +7,6 @@
   import {
     filter_by_tag,
     ongoing,
-    aggregate,
     compute_run_state,
   } from "$lib/stores/job_selectors"
   import { onDestroy } from "svelte"
@@ -78,9 +77,7 @@
             (run_all || run_config_ids.includes(t.run_config_id)),
         )
       : []
-  $: ongoing_matching = ongoing(matching)
-  $: store_running = ongoing_matching.length > 0
-  $: store_aggregate = aggregate(ongoing_matching)
+  $: store_running = ongoing(matching).length > 0
 
   // `initiating` bridges the click-to-store-update window so the button
   // doesn't flicker between "Run Eval" -> "Running…" -> "Run Eval" -> "Running…"
@@ -114,17 +111,6 @@
     initiating,
     eval_state,
   )
-
-  // Counter values: when the in-session local counter hasn't been populated
-  // (no local SSE this session), source the display from the store aggregate.
-  $: using_store_mode = eval_state === "not_started"
-  $: display_complete = using_store_mode
-    ? store_aggregate.progress
-    : eval_complete_count
-  $: display_total = using_store_mode ? store_aggregate.total : eval_total_count
-  $: display_errors = using_store_mode
-    ? store_aggregate.errors
-    : eval_error_count
 
   function run_eval(): boolean {
     if (eval_type === "run_config" && !current_eval_config_id) {
@@ -281,7 +267,7 @@
   <div
     class="mt-12 mb-6 flex flex-col items-center justify-center min-h-[100px] text-center"
   >
-    {#if effective_eval_state === "complete" && display_complete == 0}
+    {#if effective_eval_state === "complete" && eval_complete_count == 0}
       <div class="font-medium">No Data Needed to be Evaluated</div>
       <div class="text-gray-500 text-sm mt-2 flex flex-col gap-2">
         <div>
@@ -302,14 +288,14 @@
       <div class="font-medium mt-4">Running...</div>
     {/if}
     <div class="text-sm font-light min-w-[120px]">
-      {#if display_total > 0}
+      {#if eval_total_count > 0}
         <div>
-          {display_complete + display_errors} of {display_total}
+          {eval_complete_count + eval_error_count} of {eval_total_count}
         </div>
       {/if}
-      {#if display_errors > 0}
+      {#if eval_error_count > 0}
         <div class="text-error font-light text-xs">
-          {display_errors} error{display_errors === 1 ? "" : "s"}
+          {eval_error_count} error{eval_error_count === 1 ? "" : "s"}
         </div>
       {/if}
       {#if eval_run_error}

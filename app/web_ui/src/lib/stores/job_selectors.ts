@@ -1,6 +1,6 @@
 // Generic selectors over the project-scoped jobs store. Designed to be reused
-// by any "Run X" feature: take a JobRecord array (typically `$jobs`), narrow by
-// tag, derive status slices, and aggregate progress.
+// by any "Run X" feature: take a JobRecord array (typically `$jobs`), narrow
+// by tag, slice by status.
 //
 // These are pure functions on arrays rather than Readable<...> store
 // transformers, because real consumers' predicates depend on reactive
@@ -9,12 +9,6 @@
 
 import type { JobRecord } from "$lib/stores/jobs_api"
 import { get_tag, type JobTag } from "$lib/stores/job_tags"
-
-export type AggregateProgress = {
-  progress: number
-  total: number
-  errors: number
-}
 
 // Narrow to records carrying a tag of the given `kind`, optionally refined by
 // the tag fields and/or the full record.
@@ -36,21 +30,6 @@ export function filter_by_tag<K extends JobTag["kind"]>(
 // excluded.
 export function ongoing(records: JobRecord[]): JobRecord[] {
   return records.filter((j) => j.status === "pending" || j.status === "running")
-}
-
-export function is_ongoing(records: JobRecord[]): boolean {
-  return records.some((j) => j.status === "pending" || j.status === "running")
-}
-
-export function aggregate(records: JobRecord[]): AggregateProgress {
-  return records.reduce<AggregateProgress>(
-    (acc, j) => ({
-      progress: acc.progress + (j.progress?.success ?? 0),
-      total: acc.total + (j.progress?.total ?? 0),
-      errors: acc.errors + (j.progress?.error ?? 0),
-    }),
-    { progress: 0, total: 0, errors: 0 },
-  )
 }
 
 // Effective "Run X" button state, with the store as the source of truth for
