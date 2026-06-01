@@ -27,6 +27,10 @@ export async function create_eval_job(
     { ...params },
     {
       tag: eval_tag({
+        task_id: params.task_id,
+        // spec_id unavailable from this producer (Jobs-panel dialog);
+        // back_url_for falls back to the task page.
+        spec_id: null,
         eval_id: params.eval_id,
         eval_config_id: params.eval_config_id,
         run_config_id: params.run_config_id,

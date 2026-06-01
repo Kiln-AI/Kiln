@@ -94,6 +94,7 @@
         bind:eval_state
         {project_id}
         {task_id}
+        {spec_id}
         {eval_id}
         {current_eval_config_id}
         run_all={true}
@@ -174,6 +175,7 @@
                     <RunEval
                       {project_id}
                       {task_id}
+                      {spec_id}
                       {eval_id}
                       {current_eval_config_id}
                       run_config_ids={[task_run_config.id || ""]}

@@ -9,6 +9,8 @@ const R2 = "rc2"
 
 function eval_tag_meta(
   over: Partial<{
+    task_id: string
+    spec_id: string | null
     eval_id: string
     eval_config_id: string
     run_config_id: string
@@ -17,6 +19,8 @@ function eval_tag_meta(
   return {
     tag: {
       kind: "eval",
+      task_id: over.task_id ?? "t1",
+      spec_id: over.spec_id ?? null,
       eval_id: over.eval_id ?? E,
       eval_config_id: over.eval_config_id ?? C,
       run_config_id: over.run_config_id ?? R1,

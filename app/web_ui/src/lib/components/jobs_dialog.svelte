@@ -3,6 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import JobsTable from "./jobs_table.svelte"
   import { jobs_dialog } from "$lib/stores/jobs_dialog"
+  import { beforeNavigate } from "$app/navigation"
 
   let dialog: Dialog
 
@@ -16,6 +17,13 @@
     last_signal = $jobs_dialog_open_signal
     dialog?.show()
   }
+
+  // Any client-side navigation (e.g. clicking a back-to-source link inside
+  // the table) should close the modal — otherwise it stays overlaid on the
+  // destination page. close() on an already-closed dialog is a no-op.
+  beforeNavigate(() => {
+    dialog?.close()
+  })
 </script>
 
 <Dialog bind:this={dialog} title="Jobs" width="extra-wide">

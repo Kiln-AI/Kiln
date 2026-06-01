@@ -227,6 +227,13 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
                 description="Whether to evaluate all run configurations for the task."
             ),
         ] = False,
+        spec_id: Annotated[
+            str | None,
+            Query(
+                description="Optional spec id from the calling page; stored on the "
+                "job's tag so the jobs widget can link back to the right page."
+            ),
+        ] = None,
     ) -> CancellableStreamingResponse:
         """Run an eval config against one or more run configs as background jobs
         (one job per run config) and stream aggregate progress via SSE.
@@ -269,6 +276,8 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
                 metadata={
                     "tag": {
                         "kind": "eval",
+                        "task_id": task_id,
+                        "spec_id": spec_id,
                         "eval_id": str(eval.id),
                         "eval_config_id": eval_config_id,
                         "run_config_id": run_config_id,

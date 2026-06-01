@@ -18235,6 +18235,8 @@ export interface operations {
                 run_config_ids?: string[];
                 /** @description Whether to evaluate all run configurations for the task. */
                 all_run_configs?: boolean;
+                /** @description Optional spec id from the calling page; stored on the job's tag so the jobs widget can link back to the right page. */
+                spec_id?: string | null;
             };
             header?: never;
             path: {

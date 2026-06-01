@@ -24,6 +24,7 @@
     type JobErrorEntry,
     type JobRecord,
   } from "$lib/stores/jobs_api"
+  import { back_url_for } from "$lib/stores/job_tags"
   import { formatDate, capitalize } from "$lib/utils/formatters"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
@@ -213,7 +214,15 @@
             <td class="font-mono text-xs text-gray-500 whitespace-nowrap"
               >{job.id}</td
             >
-            <td class="font-medium">{job_type_display(job.type)}</td>
+            <td class="font-medium">
+              {#if back_url_for(job)}
+                <a href={back_url_for(job)} class="link"
+                  >{job_type_display(job.type)}</a
+                >
+              {:else}
+                {job_type_display(job.type)}
+              {/if}
+            </td>
             <td>
               <span class="badge {job_status_badge_class(job.status)}">
                 {job_status_display(job.status)}

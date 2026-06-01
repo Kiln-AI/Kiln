@@ -29,6 +29,11 @@
   export let current_eval_config_id: string | null = null
   export let run_all: boolean = false
   export let run_config_ids: string[] = []
+  // Optional: route-bound callers pass spec_id from $page.params so the
+  // resulting jobs carry it on their tag and the jobs widget can link back
+  // to the compare_run_configs page. Callers without a spec_id (e.g. the
+  // Jobs-panel dialog) leave it null; jobs then link back to the task page.
+  export let spec_id: string | null = null
   let run_url: string = ""
   $: {
     if (eval_type === "run_config") {
@@ -42,6 +47,10 @@
         run_config_ids.forEach((id) => {
           params.append("run_config_ids", id)
         })
+      }
+
+      if (spec_id) {
+        params.append("spec_id", spec_id)
       }
 
       run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/evals/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_comparison_jobs?${params.toString()}`
