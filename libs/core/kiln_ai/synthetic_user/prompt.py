@@ -10,7 +10,10 @@ from kiln_ai.synthetic_user.models import SyntheticUserInfo
 
 _OPENING = (
     "You are playing the role of a user interacting with an AI assistant. "
-    "Stay in character — respond as the user would, not as the assistant."
+    "Stay in character — respond as the user would, not as the assistant. "
+    "Your entire output is the user's next message, verbatim and nothing "
+    "else: no narration, no meta-commentary, no quotes, no labels like "
+    '"User:". Just the message text the user would type.'
 )
 
 _CONVENTIONS = """## Conversation style
