@@ -326,10 +326,17 @@ def connect_copilot_api(app: FastAPI):
                 json=draft_payload,
             )
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Failed to draft input data guide: {response.text}",
-            )
+            # Mirror unwrap_response()'s error handling for the typed copilot
+            # endpoints: surface the human-readable `message` field rather than
+            # the raw JSON body. This raw-httpx path goes away once the endpoint
+            # lands in the generated client.
+            detail = "Failed to draft input data guide. Please try again."
+            if response.content.startswith(b"{"):
+                try:
+                    detail = response.json().get("message", detail)
+                except ValueError:
+                    pass
+            raise HTTPException(status_code=response.status_code, detail=detail)
         try:
             payload = response.json()
         except ValueError as exc:
@@ -345,8 +352,7 @@ def connect_copilot_api(app: FastAPI):
             )
 
         preview = await generate_input_preview_samples(
-            project_id=project_id,
-            task_id=task_id,
+            task=task,
             guide=draft_guide,
             run_config_properties=input.run_config_properties,
             num_samples=input.num_preview_samples,

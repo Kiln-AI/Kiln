@@ -121,6 +121,14 @@ class GuideRefineInput(BaseModel):
         default="",
         description="Markdown body of the current input data guide — the metaprompter rewrites it wholesale.",
     )
+    source: DataGuideSource | None = Field(
+        default=None,
+        description=(
+            "Which flow owns the in-memory guide, so the metaprompter branches "
+            "correctly during the pre-save refine loop. When omitted, falls back "
+            "to the persisted guide's source (correct only once the guide is saved)."
+        ),
+    )
     feedback: str = Field(
         description="User feedback on what's wrong with the previewed inputs"
     )
@@ -646,8 +654,7 @@ The topic path for this sample is:
         input: GuidePreviewInput,
     ) -> list[GuidePreviewSample]:
         return await generate_input_preview_samples(
-            project_id=project_id,
-            task_id=task_id,
+            task=task_from_id(project_id, task_id),
             guide=input.guide,
             run_config_properties=input.run_config_properties,
             num_samples=input.num_samples,
@@ -671,10 +678,11 @@ The topic path for this sample is:
     ) -> GuideRefineResponse:
         task = task_from_id(project_id, task_id)
 
-        saved_guide = task.current_data_guide(readonly=True)
-        guide_source: DataGuideSource = (
-            saved_guide.source if saved_guide is not None else "manual"
-        )
+        if input.source is not None:
+            guide_source: DataGuideSource = input.source
+        else:
+            saved_guide = task.current_data_guide(readonly=True)
+            guide_source = saved_guide.source if saved_guide is not None else "manual"
 
         system_prompt = generate_guidance_refinement_prompt(
             task_instruction=_resolve_task_runtime_prompt(task),
@@ -748,8 +756,7 @@ _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs"], str] = {
 
 
 async def generate_input_preview_samples(
-    project_id: str,
-    task_id: str,
+    task: Task,
     guide: str,
     run_config_properties: KilnAgentRunConfigProperties,
     num_samples: int,
@@ -760,8 +767,9 @@ async def generate_input_preview_samples(
     copilot `/copilot/draft_input_data_guide` proxy so they go through the
     same input-generation framing the runtime SDG uses.
     """
-    project = project_from_id(project_id)
-    task = task_from_id(project_id, task_id)
+    project = task.parent_project()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Task has no parent project")
 
     # Wrap the draft guide through `_combine_guidance` so the preview's
     # input-generation pass receives the same Input Data Guide framing

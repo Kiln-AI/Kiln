@@ -567,10 +567,40 @@ class TestDraftInputDataGuide:
         # the user-facing task description.
         assert "task_description" not in post_kwargs["json"]
 
-    def test_upstream_error_propagates(self, client, mock_api_key):
+    def test_upstream_error_surfaces_message_field(self, client, mock_api_key):
+        mock_post_response = MagicMock()
+        mock_post_response.status_code = 402
+        mock_post_response.content = b'{"message": "Your trial has expired."}'
+        mock_post_response.json.return_value = {"message": "Your trial has expired."}
+
+        mock_http = MagicMock()
+        mock_http.post = AsyncMock(return_value=mock_post_response)
+        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        mock_authclient = MagicMock()
+        mock_authclient.get_async_httpx_client.return_value = mock_http
+
+        task = self._make_task()
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.get_authenticated_client",
+                return_value=mock_authclient,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+        ):
+            response = client.post(self.URL, json=self._payload())
+
+        assert response.status_code == 402
+        assert response.json()["message"] == "Your trial has expired."
+
+    def test_upstream_error_non_json_falls_back_to_default(self, client, mock_api_key):
         mock_post_response = MagicMock()
         mock_post_response.status_code = 502
-        mock_post_response.text = "upstream down"
+        mock_post_response.content = b"upstream down"
 
         mock_http = MagicMock()
         mock_http.post = AsyncMock(return_value=mock_post_response)
@@ -594,7 +624,9 @@ class TestDraftInputDataGuide:
             response = client.post(self.URL, json=self._payload())
 
         assert response.status_code == 502
-        assert "upstream down" in response.json()["message"]
+        assert response.json()["message"] == (
+            "Failed to draft input data guide. Please try again."
+        )
 
     def test_empty_draft_returns_500(self, client, mock_api_key):
         mock_post_response = MagicMock()

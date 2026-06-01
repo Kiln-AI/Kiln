@@ -3,8 +3,11 @@ Data models for the Input Data Guide copilot.
 
 The Input Data Guide copilot takes a heterogeneous mix of input examples (short
 manual entries, selected task runs, uploaded text documents) and produces a
-draft markdown guide describing what realistic inputs to the task look like,
-plus a small set of preview-generated inputs for the user to review.
+draft markdown guide describing what realistic inputs to the task look like.
+
+Preview inputs are not produced here: the studio_server proxy combines this
+draft with a separate call to its existing preview endpoint to generate inputs
+the user can rate.
 
 Models live in /lib so they can be shared across lib, server, and client.
 """
@@ -37,26 +40,7 @@ class InputDataGuideDraftInput(BaseModel):
         ),
         title="input_examples",
         min_length=1,
-        max_length=50,
-    )
-    num_preview_samples: int = Field(
-        5,
-        description="Number of preview inputs to generate alongside the draft guide.",
-        ge=1,
-        le=20,
-        title="num_preview_samples",
-    )
-
-
-class InputDataGuidePreviewSample(BaseModel):
-    """One preview-generated input returned by the analyze step."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    input: str = Field(
-        ...,
-        description="A generated example input that the resulting draft guide produces.",
-        title="input",
+        max_length=200,
     )
 
 
@@ -73,12 +57,4 @@ class InputDataGuideDraftOutput(BaseModel):
             "`# Presentation Defaults`."
         ),
         title="draft_guide",
-    )
-    preview_samples: list[InputDataGuidePreviewSample] = Field(
-        ...,
-        description=(
-            "Preview inputs generated using the draft guide so the user can "
-            "rate them in the existing review/refine UI."
-        ),
-        title="preview_samples",
     )

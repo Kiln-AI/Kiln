@@ -154,6 +154,7 @@
         throw new KilnError("No model configuration available", null)
       }
 
+      let refined_guide = guide
       if (has_negative_feedback) {
         const { data, error: api_error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine",
@@ -171,7 +172,7 @@
         if (api_error) throw api_error
         if (!data) throw new KilnError("No refinement returned", null)
 
-        guide = data.refined_guide
+        refined_guide = data.refined_guide
       }
 
       const { data: preview_data, error: preview_error } = await client.POST(
@@ -179,7 +180,7 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guide,
+            guide: refined_guide,
             run_config_properties: captured_input_run_config,
             num_samples: 5,
           },
@@ -189,6 +190,7 @@
       if (preview_error) throw preview_error
       if (!preview_data) throw new KilnError("No preview inputs returned", null)
 
+      guide = refined_guide
       preview_samples = preview_data as PreviewSample[]
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,

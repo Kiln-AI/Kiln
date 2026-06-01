@@ -6749,6 +6749,11 @@ export interface components {
              */
             current_guide: string;
             /**
+             * Source
+             * @description Which flow owns the in-memory guide, so the metaprompter branches correctly during the pre-save refine loop. When omitted, falls back to the persisted guide's source (correct only once the guide is saved).
+             */
+            source?: ("manual" | "kiln_pro") | null;
+            /**
              * Feedback
              * @description User feedback on what's wrong with the previewed inputs
              */
