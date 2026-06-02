@@ -1926,6 +1926,11 @@ export interface paths {
         /**
          * Run Run Config Comparison
          * @description Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
+         *
+         *     Wire-compatible legacy endpoint: delegates to the background job system
+         *     (one tracked job per run config) so runs triggered here — including ones
+         *     kicked off by the Kiln assistant / MCP tools that still call this URL —
+         *     show up in the jobs panel alongside UI-triggered runs.
          */
         get: operations["run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get"];
         put?: never;

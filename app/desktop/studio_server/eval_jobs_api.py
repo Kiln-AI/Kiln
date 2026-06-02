@@ -199,6 +199,85 @@ async def _aggregate_progress_stream(
             _schedule_cleanup_on_disconnect(job_ids)
 
 
+async def run_eval_comparison_via_jobs(
+    project_id: str,
+    task_id: str,
+    eval_id: str,
+    eval_config_id: str,
+    run_config_ids: list[str],
+    all_run_configs: bool,
+    spec_id: str | None = None,
+) -> CancellableStreamingResponse:
+    """Shared spawn-and-stream entry point for both the new `run_comparison_jobs`
+    endpoint and the legacy `run_comparison` endpoint. Spawns one tracked job per
+    run-config and streams aggregate progress in the legacy SSE shape so existing
+    consumers (UI button, agent skill) keep working unchanged while the work is
+    now visible in the jobs panel."""
+    eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+    eval = eval_config.parent_eval()
+    if eval is None:
+        raise HTTPException(status_code=404, detail="Eval config has no parent eval.")
+
+    if all_run_configs:
+        run_config_id_list = [
+            str(rc.id) for rc in get_all_run_configs(project_id, task_id)
+        ]
+    else:
+        if len(run_config_ids) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No run config ids provided. At least one run config id is required.",
+            )
+        run_config_id_list = run_config_ids
+
+    job_ids: list[str] = []
+    for run_config_id in run_config_id_list:
+        run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+        job = await job_registry.create(
+            "eval",
+            {
+                "project_id": project_id,
+                "task_id": task_id,
+                "eval_id": str(eval.id),
+                "eval_config_id": eval_config_id,
+                "run_config_id": run_config_id,
+            },
+            project_id=project_id,
+            metadata={
+                "tag": {
+                    "kind": "eval",
+                    "task_id": task_id,
+                    "spec_id": spec_id,
+                    "eval_id": str(eval.id),
+                    "eval_config_id": eval_config_id,
+                    "run_config_id": run_config_id,
+                },
+                # Per-kind summary stashed at create time. Producers populate
+                # `metadata.display` and the jobs widget renders it verbatim,
+                # so the table stays generic across feature kinds.
+                "display": {
+                    "primary": f"Eval: {eval.name}",
+                    "secondary": [
+                        f"Judge: {eval_config.name}",
+                        f"Run config: {run_config.name}",
+                    ],
+                },
+            },
+            # Lifecycle identity: an eval run targets a specific
+            # (eval, eval_config, run_config) triple. Re-launching the same
+            # triple supersedes the older row instead of stacking a new one.
+            # EvalRunner is idempotent (skips already-scored items), so the
+            # successor picks up wherever the predecessor left off.
+            idempotency_key=f"{eval.id}:{eval_config_id}:{run_config_id}",
+        )
+        job_ids.append(job.id)
+
+    return CancellableStreamingResponse(
+        content=_aggregate_progress_stream(project_id, job_ids),
+        media_type="text/event-stream",
+    )
+
+
 def connect_eval_jobs_api(app: FastAPI) -> None:
     # JS SSE client (EventSource) only does GET, so we mirror run_comparison's
     # GET shape and stream aggregate progress over N background eval jobs.
@@ -246,68 +325,12 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
         background job system. Closing the stream cancels still-pending jobs and
         pauses still-running ones; the idempotent eval jobs are resumable and
         skip already-scored items."""
-        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
-        eval = eval_config.parent_eval()
-        if eval is None:
-            raise HTTPException(
-                status_code=404, detail="Eval config has no parent eval."
-            )
-
-        if all_run_configs:
-            run_config_id_list = [
-                str(rc.id) for rc in get_all_run_configs(project_id, task_id)
-            ]
-        else:
-            if len(run_config_ids) == 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No run config ids provided. At least one run config id is required.",
-                )
-            run_config_id_list = run_config_ids
-
-        job_ids: list[str] = []
-        for run_config_id in run_config_id_list:
-            run_config = task_run_config_from_id(project_id, task_id, run_config_id)
-            job = await job_registry.create(
-                "eval",
-                {
-                    "project_id": project_id,
-                    "task_id": task_id,
-                    "eval_id": str(eval.id),
-                    "eval_config_id": eval_config_id,
-                    "run_config_id": run_config_id,
-                },
-                project_id=project_id,
-                metadata={
-                    "tag": {
-                        "kind": "eval",
-                        "task_id": task_id,
-                        "spec_id": spec_id,
-                        "eval_id": str(eval.id),
-                        "eval_config_id": eval_config_id,
-                        "run_config_id": run_config_id,
-                    },
-                    # Per-kind summary stashed at create time. Producers populate
-                    # `metadata.display` and the jobs widget renders it verbatim,
-                    # so the table stays generic across feature kinds.
-                    "display": {
-                        "primary": f"Eval: {eval.name}",
-                        "secondary": [
-                            f"Judge: {eval_config.name}",
-                            f"Run config: {run_config.name}",
-                        ],
-                    },
-                },
-                # Lifecycle identity: an eval run targets a specific
-                # (eval, eval_config, run_config) triple. Re-launching the same
-                # triple supersedes the older row instead of stacking a new one.
-                # EvalRunner is idempotent (skips already-scored items), so the
-                # successor picks up wherever the predecessor left off.
-                idempotency_key=f"{eval.id}:{eval_config_id}:{run_config_id}",
-            )
-            job_ids.append(job.id)
-
-        return CancellableStreamingResponse(
-            content=_aggregate_progress_stream(project_id, job_ids),
-            media_type="text/event-stream",
+        return await run_eval_comparison_via_jobs(
+            project_id=project_id,
+            task_id=task_id,
+            eval_id=eval_id,
+            eval_config_id=eval_config_id,
+            run_config_ids=run_config_ids,
+            all_run_configs=all_run_configs,
+            spec_id=spec_id,
         )

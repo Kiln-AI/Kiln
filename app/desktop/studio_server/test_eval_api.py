@@ -443,58 +443,58 @@ def test_get_eval_configs(
 
 
 @pytest.mark.asyncio
-async def test_run_eval_config(
+async def test_run_eval_config_delegates_to_jobs_system(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
 ):
-    mock_task_from_id.return_value = mock_task
+    """The legacy /run_comparison endpoint must now delegate to the background
+    job system so runs triggered here (e.g. by the assistant / MCP tools that
+    still call this URL) are tracked in the jobs panel. We verify both the
+    delegation call and that the wire shape callers depend on is preserved."""
+    from fastapi.responses import StreamingResponse
 
-    # Mock progress updates
-    progress_updates = [
-        Mock(complete=1, total=3, errors=0),
-        Mock(complete=2, total=3, errors=0),
-        Mock(complete=3, total=3, errors=0),
-    ]
+    async def fake_stream():
+        # Mimic the legacy SSE wire shape: per-progress event then `complete`.
+        for i in (1, 2, 3):
+            yield f'data: {{"progress": {i}, "total": 3, "errors": 0}}\n\n'
+        yield "data: complete\n\n"
 
-    # Create async generator for mock progress
-    async def mock_run():
-        for progress in progress_updates:
-            yield progress
+    fake_response = StreamingResponse(fake_stream(), media_type="text/event-stream")
 
-    with (
-        patch(
-            "app.desktop.studio_server.eval_api.task_run_config_from_id"
-        ) as mock_run_config_from_id,
-        patch("app.desktop.studio_server.eval_api.EvalRunner") as MockEvalRunner,
-    ):
-        mock_run_config_from_id.return_value = mock_run_config
-        mock_eval_runner = Mock()
-        mock_eval_runner.run.return_value = mock_run()
-        MockEvalRunner.return_value = mock_eval_runner
-
-        # Make request with specific run_config_ids
+    with patch(
+        "app.desktop.studio_server.eval_jobs_api.run_eval_comparison_via_jobs",
+        return_value=fake_response,
+    ) as mock_delegate:
         response = client.get(
             "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
             params={"run_config_ids": ["run_config1", "run_config2"]},
         )
 
-        assert response.status_code == 200
+    assert response.status_code == 200
 
-        # Parse SSE messages
-        messages = [msg for msg in response.iter_lines() if msg]
+    # Delegation actually happened, with the params from the path/query forwarded
+    # untouched. `spec_id=None` because the legacy endpoint doesn't expose it.
+    mock_delegate.assert_awaited_once()
+    kwargs = mock_delegate.await_args.kwargs
+    assert kwargs == {
+        "project_id": "project1",
+        "task_id": "task1",
+        "eval_id": "eval1",
+        "eval_config_id": "eval_config1",
+        "run_config_ids": ["run_config1", "run_config2"],
+        "all_run_configs": False,
+        "spec_id": None,
+    }
 
-        # Should have 4 messages: 3 progress updates and 1 complete
-        assert len(messages) == 4
-
-        # Check progress messages
-        for i, msg in enumerate(messages[:-1]):
-            assert msg.startswith("data: ")
-            data = json.loads(msg.split("data: ")[1])
-            assert data["progress"] == i + 1
-            assert data["total"] == 3
-            assert data["errors"] == 0
-
-        # Check complete message
-        assert messages[-1] == "data: complete"
+    # Wire shape unchanged: 3 progress messages + final `complete`.
+    messages = [msg for msg in response.iter_lines() if msg]
+    assert len(messages) == 4
+    for i, msg in enumerate(messages[:-1]):
+        assert msg.startswith("data: ")
+        data = json.loads(msg.split("data: ")[1])
+        assert data["progress"] == i + 1
+        assert data["total"] == 3
+        assert data["errors"] == 0
+    assert messages[-1] == "data: complete"
 
 
 @pytest.mark.asyncio

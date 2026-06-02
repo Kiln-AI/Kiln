@@ -895,7 +895,6 @@ def connect_evals_api(app: FastAPI):
     )
     @no_write_lock
     async def run_eval_config(
-        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -918,33 +917,29 @@ def connect_evals_api(app: FastAPI):
             ),
         ] = False,
     ) -> StreamingResponse:
-        """Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them."""
-        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+        """Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
 
-        # Load the list of run configs to use. Two options:
-        run_configs: list[TaskRunConfig] = []
-        if all_run_configs:
-            # special case, we cannot directly load task.run_configs(), we need to also get all finetune run configs which live inside the finetune model
-            run_configs = get_all_run_configs(project_id, task_id)
-        else:
-            if len(run_config_ids) == 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No run config ids provided. At least one run config id is required.",
-                )
-            run_configs = [
-                task_run_config_from_id(project_id, task_id, run_config_id)
-                for run_config_id in run_config_ids
-            ]
-
-        eval_runner = EvalRunner(
-            eval_configs=[eval_config],
-            run_configs=run_configs,
-            eval_run_type="task_run_eval",
-            save_context=build_save_context(request),
+        Wire-compatible legacy endpoint: delegates to the background job system
+        (one tracked job per run config) so runs triggered here — including ones
+        kicked off by the Kiln assistant / MCP tools that still call this URL —
+        show up in the jobs panel alongside UI-triggered runs.
+        """
+        # Late import: eval_api is imported eagerly at desktop server startup,
+        # while eval_jobs_api pulls in the registry which we'd rather not load
+        # at import time. This keeps the dependency edge lazy.
+        from app.desktop.studio_server.eval_jobs_api import (
+            run_eval_comparison_via_jobs,
         )
 
-        return await run_eval_runner_with_status(eval_runner)
+        return await run_eval_comparison_via_jobs(
+            project_id=project_id,
+            task_id=task_id,
+            eval_id=eval_id,
+            eval_config_id=eval_config_id,
+            run_config_ids=run_config_ids,
+            all_run_configs=all_run_configs,
+            spec_id=None,
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
