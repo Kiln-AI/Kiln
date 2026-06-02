@@ -333,7 +333,10 @@
 >
   <div class="flex flex-col gap-2 font-light mt-4">
     <div>Run this eval with the selected configuration?</div>
-    <div>Don't close this page if you want to monitor progress.</div>
+    <div>
+      Runs in the background — you can leave this page and check progress later
+      in the Jobs panel.
+    </div>
     <Warning
       warning_color="warning"
       warning_message="This may use considerable compute/credits."

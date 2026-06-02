@@ -137,23 +137,6 @@ def _parse_sse_blocks(text: str) -> list[str]:
     return payloads
 
 
-async def _wait_for_status(
-    registry: JobRegistry,
-    job_id: str,
-    target: set[BackgroundJobStatus],
-    timeout: float = 3.0,
-) -> None:
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        job = registry._jobs.get(job_id)
-        if job is not None and job.status in target:
-            return
-        await asyncio.sleep(0.01)
-    job = registry._jobs.get(job_id)
-    actual = job.status if job else "missing"
-    raise AssertionError(f"Job {job_id} did not reach {target}; was {actual}")
-
-
 @pytest.mark.asyncio
 async def test_creates_one_job_per_run_config(client, registry):
     async with client.stream(
@@ -213,8 +196,11 @@ async def test_stream_emits_aggregate_then_complete(client, registry):
 
 
 @pytest.mark.asyncio
-async def test_disconnect_pauses_running_jobs(app, registry, monkeypatch):
-    # Slow the stub so both jobs are still RUNNING when the client drops.
+async def test_disconnect_leaves_jobs_running(app, registry, monkeypatch):
+    """The SSE stream is a pure observer: closing the stream (client disconnect)
+    does NOT pause or cancel the underlying eval jobs. They keep running in the
+    registry until they finish on their own — same as every other job in the
+    system."""
     monkeypatch.setattr(_StubEvalWorker, "steps", 200)
     monkeypatch.setattr(_StubEvalWorker, "sleep_per_step_seconds", 0.05)
     transport = httpx.ASGITransport(app=app)
@@ -237,8 +223,7 @@ async def test_disconnect_pauses_running_jobs(app, registry, monkeypatch):
                         break
 
         # Cancelling the in-flight read drops the connection mid-stream — the
-        # same signal uvicorn delivers on a real client disconnect. That tears
-        # down the aggregate generator, whose finally schedules detached pauses.
+        # same signal uvicorn delivers on a real client disconnect.
         reader = asyncio.create_task(read_stream())
         await asyncio.sleep(0.3)
         reader.cancel()
@@ -247,106 +232,23 @@ async def test_disconnect_pauses_running_jobs(app, registry, monkeypatch):
         except asyncio.CancelledError:
             pass
 
-    eval_jobs = registry.list_jobs(type_name="eval", project_id="project1")
-    assert len(eval_jobs) == 2
-    # The load-bearing behavior: a job that was still running when the client
-    # dropped must end up paused (resumable), not left running or cancelled.
-    for job in eval_jobs:
-        await _wait_for_status(registry, job.id, {BackgroundJobStatus.PAUSED})
-    statuses = {j.status for j in registry.list_jobs(type_name="eval")}
-    assert statuses == {BackgroundJobStatus.PAUSED}
+        eval_jobs = registry.list_jobs(type_name="eval", project_id="project1")
+        assert len(eval_jobs) == 2
+        # The jobs MUST still be alive (pending/running) immediately after the
+        # disconnect — never paused or cancelled by the stream teardown.
+        for job in eval_jobs:
+            assert job.status in (
+                BackgroundJobStatus.PENDING,
+                BackgroundJobStatus.RUNNING,
+            ), f"unexpected status after disconnect: {job.status}"
 
-
-@pytest.mark.asyncio
-async def test_disconnect_cancels_pending_and_pauses_running(monkeypatch):
-    # Cap concurrency below the number of run configs so some jobs are still
-    # PENDING when the client drops. The bug: pausing the running jobs frees
-    # slots that _dispatch_pending hands to the pending jobs, promoting them to
-    # RUNNING so they run to completion unattended. The fix cancels pending
-    # FIRST (removing them from the queue) before pausing running.
-    monkeypatch.setattr(_StubEvalWorker, "steps", 200)
-    monkeypatch.setattr(_StubEvalWorker, "sleep_per_step_seconds", 0.05)
-
-    reg = JobRegistry(max_concurrent=2)
-    reg.register_type(_StubEvalWorker)
-    monkeypatch.setattr(eval_jobs_api, "job_registry", reg)
-    monkeypatch.setattr(jobs_api, "job_registry", reg)
-
-    class _FakeEval:
-        id = "eval1"
-        name = "Fake Eval"
-
-    class _FakeEvalConfig:
-        name = "Fake Judge"
-
-        def parent_eval(self):
-            return _FakeEval()
-
-    class _FakeRunConfig:
-        def __init__(self, rc_id):
-            self.id = rc_id
-            self.name = f"run-config-{rc_id}"
-
-    monkeypatch.setattr(
-        eval_jobs_api, "eval_config_from_id", lambda *a, **k: _FakeEvalConfig()
-    )
-    monkeypatch.setattr(
-        eval_jobs_api,
-        "task_run_config_from_id",
-        lambda project_id, task_id, run_config_id: _FakeRunConfig(run_config_id),
-    )
-
-    app = FastAPI()
-    connect_eval_jobs_api(app)
-    transport = httpx.ASGITransport(app=app)
-
-    run_config_ids = ["rc1", "rc2", "rc3", "rc4", "rc5"]
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-
-        async def read_stream() -> None:
-            async with http_client.stream(
-                "GET",
-                PATH,
-                params={
-                    "all_run_configs": "false",
-                    "run_config_ids": run_config_ids,
-                },
-            ) as response:
-                assert response.status_code == 200
-                async for line in response.aiter_lines():
-                    if line.startswith("data:"):
-                        break
-
-        reader = asyncio.create_task(read_stream())
-        await asyncio.sleep(0.3)
-        reader.cancel()
-        try:
-            await reader
-        except asyncio.CancelledError:
-            pass
-
-    eval_jobs = reg.list_jobs(type_name="eval", project_id="project1")
-    assert len(eval_jobs) == len(run_config_ids)
-
-    # max_concurrent=2 => exactly 2 jobs were RUNNING (now PAUSED) and the other
-    # 3 were PENDING (now CANCELLED). Crucially none reached SUCCEEDED.
-    for job in eval_jobs:
-        await _wait_for_status(
-            reg,
-            job.id,
-            {BackgroundJobStatus.PAUSED, BackgroundJobStatus.CANCELLED},
-        )
-    final = reg.list_jobs(type_name="eval", project_id="project1")
-    statuses = [j.status for j in final]
-    paused = [s for s in statuses if s == BackgroundJobStatus.PAUSED]
-    cancelled = [s for s in statuses if s == BackgroundJobStatus.CANCELLED]
-    assert len(paused) == 2
-    assert len(cancelled) == 3
-    assert BackgroundJobStatus.SUCCEEDED not in statuses
-    assert BackgroundJobStatus.RUNNING not in statuses
-    assert reg._pending_ids == []
+        # Tear down for test isolation: cancel the still-running jobs so they
+        # don't outlive the test event loop. Outside production-relevant flow.
+        for job in eval_jobs:
+            try:
+                await registry.cancel(job.id)
+            except Exception:
+                pass
 
 
 @pytest.mark.asyncio
@@ -397,17 +299,16 @@ async def test_deleted_tracked_job_unblocks_stream(registry, monkeypatch):
 @pytest.mark.asyncio
 async def test_keepalive_does_not_tear_down_subscription(registry, monkeypatch):
     # Regression: the old `asyncio.wait_for(subscription.__anext__(), ...)` form
-    # cancelled the in-flight pull on each keepalive timeout, which threw
-    # CancelledError into the real `JobEventBus.subscribe` generator, ran its
-    # finally (unsubscribe), and finalized it — so after a single quiet window
-    # the stream ended and the `completed is False` cleanup paused/cancelled
-    # still-running jobs on a still-connected client.
+    # cancelled the in-flight pull on each keepalive timeout, ending the stream
+    # after the first quiet window. The shared `iter_with_keepalive` feeder-task
+    # helper now keeps the subscription alive across pings.
     #
     # Drive the REAL bus (no fake subscription): one slow job whose first
     # progress event is far enough out that several keepalive intervals elapse
-    # first. Assert (1) more than one ping is emitted across those quiet
-    # intervals — proving the subscription survived the pings — and (2) the job
-    # is NOT paused/cancelled while the client stays connected.
+    # first. Assert that more than one ping is emitted across those quiet
+    # intervals — proving the subscription survived. The job status is now
+    # trivially unaffected by stream lifecycle (pure observer), but we still
+    # assert it as a sanity check.
     monkeypatch.setattr(eval_jobs_api, "KEEPALIVE_SECONDS", 0.05)
     # A long first step (relative to the 0.05s keepalive) creates a quiet window
     # spanning many keepalive intervals before any `job` event reaches the bus.
