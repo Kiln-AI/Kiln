@@ -1,8 +1,11 @@
+import json
+
 import pytest
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
+    CalculateTool,
     DivideTool,
     MultiplyTool,
     SubtractTool,
@@ -202,3 +205,53 @@ class TestDivideTool:
         tool = DivideTool()
         with pytest.raises(ZeroDivisionError, match="Cannot divide by zero"):
             await tool.run(a=0, b=0)
+
+
+class TestCalculateTool:
+    """Test the CalculateTool safe expression evaluator."""
+
+    async def test_init(self):
+        tool = CalculateTool()
+        assert await tool.id() == KilnBuiltInToolId.CALCULATE
+        assert await tool.name() == "calculate"
+
+    async def test_sqrt_expression(self):
+        tool = CalculateTool()
+        out = json.loads(
+            (await tool.run(expression="sqrt(0.864 * 0.136 / 147)")).output
+        )
+        assert out["result"] == pytest.approx(0.0283, abs=5e-4)
+
+    async def test_constants(self):
+        tool = CalculateTool()
+        out = json.loads((await tool.run(expression="2 * pi")).output)
+        assert out["result"] == pytest.approx(6.283185, abs=1e-5)
+
+    async def test_operator_precedence(self):
+        tool = CalculateTool()
+        out = json.loads((await tool.run(expression="2 + 3 * 4 ** 2")).output)
+        assert out["result"] == 50
+
+    async def test_disallowed_name_errors(self):
+        result = await CalculateTool().run(expression="__import__('os')")
+        assert result.is_error is True
+
+    async def test_attribute_access_errors(self):
+        result = await CalculateTool().run(expression="(1).__class__")
+        assert result.is_error is True
+
+    async def test_division_by_zero_errors(self):
+        result = await CalculateTool().run(expression="1/0")
+        assert result.is_error is True
+
+    async def test_syntax_error(self):
+        result = await CalculateTool().run(expression="1 +")
+        assert result.is_error is True
+
+    async def test_empty_expression_errors(self):
+        result = await CalculateTool().run(expression="   ")
+        assert result.is_error is True
+
+    async def test_huge_exponent_guarded(self):
+        result = await CalculateTool().run(expression="9 ** 99999")
+        assert result.is_error is True
