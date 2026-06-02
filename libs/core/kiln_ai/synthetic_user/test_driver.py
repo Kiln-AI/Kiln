@@ -205,6 +205,83 @@ async def test_respond_filters_visible_message_roles(
 
 
 @pytest.mark.asyncio
+async def test_respond_drops_tool_dispatch_only_assistant_turns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tool-using target produces assistant turns with content=None and
+    tool_calls set. Those are actions the target took, not speech the SU
+    should respond to. They must be filtered out before role_swap so the
+    swap's strict-content invariant doesn't fire and so the SU's view of
+    the conversation stays a coherent text-only dialog.
+    """
+    adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
+    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    # Shape that comes out of a tool-using target: user → tool-dispatch
+    # assistant (content=None) → final text-response assistant.
+    conversation: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "what's the weather?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                }
+            ],
+        },  # type: ignore[typeddict-item]
+        {"role": "assistant", "content": "It's 72F."},
+    ]
+
+    await drv.respond(conversation)
+
+    call = adapter.invoke_returning_run_output.await_args
+    # The tool-dispatch turn (None content) was dropped. After role-swap:
+    #   eval [user, assistant("It's 72F.")] → LLM [assistant, user("It's 72F.")]
+    # Last swapped turn becomes `input`; prior_trace is [sys, ...rest].
+    assert call.args[0] == "It's 72F."
+    prior_trace = call.kwargs["prior_trace"]
+    assert len(prior_trace) == 2  # [sys, swapped user 'what's the weather']
+    assert prior_trace[0]["content"] == drv._system_prompt
+    assert prior_trace[1] == {"role": "assistant", "content": "what's the weather?"}
+
+
+@pytest.mark.asyncio
+async def test_respond_keeps_assistant_turns_with_text_and_tool_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Some providers emit assistant turns with BOTH text content AND
+    tool_calls in the same message ("Let me look that up." + dispatch).
+    The text is user-facing — the SU should see it. Only None-content
+    turns get dropped.
+    """
+    adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
+    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    conversation: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "what's the weather?"},
+        {
+            "role": "assistant",
+            "content": "Let me look that up.",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                }
+            ],
+        },  # type: ignore[typeddict-item]
+    ]
+
+    await drv.respond(conversation)
+
+    call = adapter.invoke_returning_run_output.await_args
+    # The combined text+tool_calls assistant turn is NOT filtered out —
+    # its text becomes the input the SU responds to.
+    assert call.args[0] == "Let me look that up."
+
+
+@pytest.mark.asyncio
 async def test_respond_with_custom_visible_roles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

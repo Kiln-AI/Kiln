@@ -31,6 +31,16 @@ from kiln_ai.utils.open_ai_types import (
 )
 
 
+def _is_tool_dispatch_only(msg: ChatCompletionMessageParam) -> bool:
+    """True if `msg` is an assistant turn with no user-facing text (i.e.,
+    a pure tool-call dispatch). The SU LLM shouldn't see these — they're
+    actions the target took, not speech the SU is reacting to. Assistant
+    turns that carry text alongside tool_calls are NOT filtered out
+    (the text is the user-facing part).
+    """
+    return msg["role"] == "assistant" and msg.get("content") is None
+
+
 class SyntheticUserDriver:
     """Plays one synthetic user across multiple turns.
 
@@ -96,7 +106,15 @@ class SyntheticUserDriver:
             for m in conversation
             if m["role"] in self._driver_config.visible_message_roles
         ]
-        # 2) Invariants this driver enforces (moved from kiln_server's
+        # 2) Drop tool-dispatch-only assistant turns (content=None). These
+        #    represent the target calling a tool with no user-facing text —
+        #    not speech the SU should "see" or respond to. Assistant turns
+        #    that carry BOTH text and tool_calls are kept, since the text is
+        #    user-facing. role_swap stays strict on None content (the trip
+        #    wire); upstream filtering is what keeps it from firing on a
+        #    tool-using target.
+        visible = [m for m in visible if not _is_tool_dispatch_only(m)]
+        # 3) Invariants this driver enforces (moved from kiln_server's
         #    removed /respond route validator).
         if not visible:
             raise ValueError("No LLM-visible messages in conversation.")
@@ -106,7 +124,7 @@ class SyntheticUserDriver:
                 "is responding to that turn."
             )
 
-        # 3) Role-swap then assemble prior_trace + input. The last swapped
+        # 4) Role-swap then assemble prior_trace + input. The last swapped
         #    turn becomes the LLM `input`; everything before it goes into
         #    `prior_trace` with a system message prepended.
         swapped = role_swap(visible)
