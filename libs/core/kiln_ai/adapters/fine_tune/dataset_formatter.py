@@ -203,6 +203,7 @@ def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
     try:
         json_data = json.loads(training_chat[-1].content or "")
     except json.JSONDecodeError as e:
+        print(training_chat[-1].content)
         raise ValueError(
             f"Last message is not JSON (structured), and this format expects structured data: {e}"
         )
@@ -460,9 +461,7 @@ class DatasetFormatter:
             if cache_key in self._tool_cache:
                 tool_definitions.append(self._tool_cache[cache_key])
             else:
-                from kiln_ai.adapters.adapter_registry import (
-                    load_skills_from_tool_ids,
-                )
+                from kiln_ai.adapters.adapter_registry import load_skills_from_tool_ids
                 from kiln_ai.tools.skill_tool import SkillTool
 
                 skills_dict = load_skills_from_tool_ids(task, skill_tool_ids)

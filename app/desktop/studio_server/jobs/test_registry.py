@@ -394,6 +394,57 @@ async def test_pause_rejected_when_not_supported():
 
 
 @pytest.mark.asyncio
+async def test_cancel_rejected_when_not_supported():
+    # supports_cancel=False marks the job as not user-interruptible (e.g.
+    # finetune watcher wrapping a remote provider job). The registry must refuse
+    # cancel rather than tearing down the supervising task.
+    class NonCancelableWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "noncancelable"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        supports_cancel = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(NonCancelableWorker)
+    job = await reg.create("noncancelable", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    with pytest.raises(JobOperationError):
+        await reg.cancel(job.id)
+    # Job is still running — the flag must gate cancel, not silently no-op.
+    assert reg._jobs[job.id].status == BackgroundJobStatus.RUNNING
+    # Force-cleanup so the test doesn't leak the supervising task.
+    reg._jobs[job.id].supports_cancel = True
+    await reg.cancel(job.id)
+
+
+@pytest.mark.asyncio
+async def test_supports_cancel_stamped_on_record_at_create():
+    class WatcherWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "watcher"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        supports_cancel = False
+
+        async def compute_state(self, params):
+            return JobDerivedState(total=1, success=1, error=0, is_complete=True)
+
+        async def run(self, params, ctx):
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(WatcherWorker)
+    job = await reg.create("watcher", {})
+    assert job.supports_cancel is False
+    assert job.supports_pause is False
+
+
+@pytest.mark.asyncio
 async def test_pause_rejected_when_not_running(registry):
     job = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
     await wait_for_status(registry, job.id, BackgroundJobStatus.SUCCEEDED)

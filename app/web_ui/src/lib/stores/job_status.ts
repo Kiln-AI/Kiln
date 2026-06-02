@@ -65,21 +65,24 @@ export function job_status_badge_class(status: BackgroundJobStatus): string {
 export type JobAction = "pause" | "resume" | "cancel" | "delete"
 
 // The set of lifecycle actions valid for a job given its status and whether
-// its worker supports pause. Mirrors the state machine (functional_spec §3) and
-// the delete policy (architecture open item #7: delete only on terminal state).
+// its worker supports pause/cancel. Mirrors the state machine (functional_spec
+// §3) and the delete policy (architecture open item #7: delete only on
+// terminal state). `supports_cancel === false` hides cancel entirely (e.g.
+// finetune watcher: nothing local to interrupt).
 export function available_actions(job: JobRecord): JobAction[] {
+  const cancel: JobAction[] = job.supports_cancel ? ["cancel"] : []
   switch (job.status) {
     case "running": {
-      const actions: JobAction[] = ["cancel"]
+      const actions: JobAction[] = [...cancel]
       if (job.supports_pause) {
         actions.unshift("pause")
       }
       return actions
     }
     case "paused":
-      return ["resume", "cancel"]
+      return ["resume", ...cancel]
     case "pending":
-      return ["cancel"]
+      return [...cancel]
     case "succeeded":
     case "failed":
     case "cancelled":

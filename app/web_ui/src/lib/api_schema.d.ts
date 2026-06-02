@@ -7071,6 +7071,11 @@ export interface components {
              */
             supports_pause: boolean;
             /**
+             * Supports Cancel
+             * @default true
+             */
+            supports_cancel: boolean;
+            /**
              * Created At
              * Format: date-time
              */

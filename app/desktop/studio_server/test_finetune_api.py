@@ -735,6 +735,58 @@ async def test_create_finetune(
     )
 
 
+@pytest.mark.asyncio
+async def test_create_finetune_spawns_watcher_job_when_jobs_wired(
+    mock_task_from_id_disk_backed,
+    test_task,
+    mock_finetune_registry,
+    mock_finetune_adapter,
+):
+    """When the jobs router is mounted alongside the finetune router, creating
+    a finetune must spawn a tracked watcher job tagged with the finetune id."""
+    from app.desktop.studio_server.jobs.api import connect_jobs_api
+    from app.desktop.studio_server.jobs.registry import job_registry
+
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    app = FastAPI()
+    connect_custom_errors(app)
+    connect_jobs_api(app)
+    connect_fine_tune_api(app)
+    client = TestClient(app)
+
+    pre_existing = set(job_registry._jobs.keys())
+
+    request_data = {
+        "name": "New Finetune",
+        "description": "Test",
+        "dataset_id": "split1",
+        "train_split_name": "train",
+        "parameters": {},
+        "provider": "test_provider",
+        "base_model_id": "base_model_1",
+        "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
+    }
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes", json=request_data
+    )
+    assert response.status_code == 200
+    spawned = [
+        job
+        for job_id, job in job_registry._jobs.items()
+        if job_id not in pre_existing and job.type == "finetune"
+    ]
+    assert len(spawned) == 1
+    job = spawned[0]
+    assert job.metadata["tag"]["kind"] == "finetune"
+    assert job.metadata["tag"]["finetune_id"] == response.json()["id"]
+    # supports_cancel must be False — the user can't kill a remote training
+    # from here, so the cancel button is hidden.
+    assert job.supports_cancel is False
+    assert job.supports_pause is False
+
+
 def test_create_finetune_invalid_provider(client, mock_task_from_id_disk_backed):
     request_data = {
         "dataset_id": "split1",

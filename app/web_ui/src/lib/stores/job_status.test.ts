@@ -18,6 +18,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     type: "noop",
     status: "running",
     supports_pause: false,
+    supports_cancel: true,
     ...overrides,
   }
 }
@@ -76,6 +77,30 @@ describe("available_actions", () => {
     ] as BackgroundJobStatus[]) {
       expect(available_actions(makeJob({ status }))).toEqual(["delete"])
     }
+  })
+
+  it("hides cancel when supports_cancel is false (finetune watcher)", () => {
+    // No buttons at all while pending/running/paused — the user can't usefully
+    // interrupt a provider-side training from here.
+    expect(
+      available_actions(makeJob({ status: "running", supports_cancel: false })),
+    ).toEqual([])
+    expect(
+      available_actions(makeJob({ status: "pending", supports_cancel: false })),
+    ).toEqual([])
+    expect(
+      available_actions(
+        makeJob({
+          status: "paused",
+          supports_pause: true,
+          supports_cancel: false,
+        }),
+      ),
+    ).toEqual(["resume"])
+    // Terminal states still allow Clear (delete), independent of supports_cancel.
+    expect(
+      available_actions(makeJob({ status: "failed", supports_cancel: false })),
+    ).toEqual(["delete"])
   })
 })
 

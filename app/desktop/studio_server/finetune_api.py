@@ -61,6 +61,8 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from pydantic import BaseModel, Field, model_validator
 
+from .jobs.registry import JobOperationError, job_registry
+
 logger = logging.getLogger(__name__)
 
 
@@ -653,6 +655,44 @@ def connect_fine_tune_api(app: FastAPI):
             data_strategy=request.data_strategy,
             run_config=request.run_config_properties,
         )
+
+        # Spawn a background watcher job so the user can see training progress
+        # in the jobs panel. The job is purely an observer — `create_and_start`
+        # has already submitted the run to the provider; the worker just polls
+        # FineTuneStatus until terminal. Failures bubble up as job FAILED.
+        # Best-effort: the finetune itself succeeded above, so a registry that
+        # hasn't had the worker registered yet (e.g. a stripped-down app) must
+        # not cause us to fail the create response.
+        try:
+            await job_registry.create(
+                "finetune",
+                {
+                    "project_id": project_id,
+                    "task_id": task_id,
+                    "finetune_id": str(finetune_model.id),
+                },
+                project_id=project_id,
+                metadata={
+                    "tag": {
+                        "kind": "finetune",
+                        "task_id": task_id,
+                        "finetune_id": str(finetune_model.id),
+                    },
+                    "display": {
+                        "primary": f"Finetune: {finetune_model.name}",
+                        "secondary": [
+                            f"Provider: {request.provider}",
+                            f"Base model: {request.base_model_id}",
+                        ],
+                    },
+                },
+            )
+        except JobOperationError as exc:
+            logger.warning(
+                "Could not spawn finetune watcher job for %s: %s",
+                finetune_model.id,
+                exc,
+            )
 
         return finetune_model
 

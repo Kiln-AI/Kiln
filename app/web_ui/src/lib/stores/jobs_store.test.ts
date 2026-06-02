@@ -80,6 +80,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     type: "noop",
     status: "running",
     supports_pause: true,
+    supports_cancel: true,
     created_at: "2026-05-28T12:00:00Z",
     ...overrides,
   }

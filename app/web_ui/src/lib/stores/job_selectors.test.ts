@@ -40,6 +40,7 @@ function make_job(over: Partial<JobRecord>): JobRecord {
     metadata: eval_tag_meta(),
     project_id: "p1",
     supports_pause: true,
+    supports_cancel: true,
     created_at: "now",
     updated_at: "now",
     started_at: "now",

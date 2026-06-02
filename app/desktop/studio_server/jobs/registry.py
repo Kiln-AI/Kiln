@@ -286,6 +286,7 @@ class JobRegistry:
             metadata=metadata or {},
             project_id=project_id,
             supports_pause=worker.supports_pause,
+            supports_cancel=worker.supports_cancel,
         )
         self._jobs[job_id] = job
         self._pending_ids.append(job_id)
@@ -468,6 +469,8 @@ class JobRegistry:
 
     async def cancel(self, job_id: str) -> JobRecord:
         job = self._require(job_id)
+        if not job.supports_cancel:
+            raise JobOperationError(f"Job type '{job.type}' does not support cancel")
         if job.status.is_terminal:
             raise JobOperationError(
                 f"Cannot cancel a job in status '{job.status.value}'"

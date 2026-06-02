@@ -22,6 +22,7 @@ from .registry import (
     job_registry,
 )
 from .workers.eval import EvalJobWorker
+from .workers.finetune import FinetuneJobWorker
 from .workers.noop import NoopJobWorker
 
 KEEPALIVE_SECONDS = 15.0
@@ -102,6 +103,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
     job_registry.register_type(NoopJobWorker)
     job_registry.register_type(EvalJobWorker)
+    job_registry.register_type(FinetuneJobWorker)
 
     @app.get(
         "/api/jobs/events",

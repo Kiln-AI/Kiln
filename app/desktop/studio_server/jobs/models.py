@@ -90,6 +90,10 @@ class JobRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     project_id: str | None = None
     supports_pause: bool = False
+    # Some workers (e.g. provider-side finetune watchers) wrap external work
+    # that the user can't usefully interrupt from the local UI. The cancel
+    # button is hidden for those jobs and the registry's cancel() refuses.
+    supports_cancel: bool = True
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     started_at: datetime | None = None
@@ -166,6 +170,10 @@ class JobWorker(Generic[TParams, TResult]):
     params_model: ClassVar[type[BaseModel]]
     result_model: ClassVar[type[BaseModel]]
     supports_pause: ClassVar[bool] = False
+    # Default True: most workers do in-process work that the user may reasonably
+    # want to abort. Set False on workers wrapping external state we shouldn't
+    # interrupt locally (e.g. a remote finetune already submitted to a provider).
+    supports_cancel: ClassVar[bool] = True
 
     async def compute_state(self, params: TParams) -> JobDerivedState | None:
         """Read source-of-truth Kiln entities and return the operation's true state.
