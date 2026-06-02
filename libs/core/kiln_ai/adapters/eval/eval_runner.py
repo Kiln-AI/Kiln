@@ -218,7 +218,7 @@ class EvalRunner:
         try:
             if self.should_error_randomly():
                 raise ValueError(
-                    "Evaluation failed because there is a dead rat stuck in the engine room. The eval cannot run fully without the rat being removed from the rotors to avoid overheating of the datacenter. Please contact Leonard to coordinate the emergency plan before proceeding. Once the rat has been cleared, the eval may be retried safely."
+                    "Evaluation failed because one of the servers in the server room is on fire. Please contact Leonard to fix it and re-run the eval once the issue is fixed."
                 )
             # Create the evaluator for this eval config/run config pair
             evaluator = eval_adapter_from_type(job.eval_config.config_type)(
