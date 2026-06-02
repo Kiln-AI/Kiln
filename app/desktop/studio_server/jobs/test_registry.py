@@ -939,9 +939,10 @@ async def test_idempotency_key_supersedes_paused_predecessor(registry):
 
 
 @pytest.mark.asyncio
-async def test_idempotency_key_does_not_touch_terminal_predecessor(registry):
-    """Terminal jobs are kept for history (Clear button removes them). They
-    must not be torn down by a new same-key create."""
+async def test_idempotency_key_keeps_succeeded_predecessor(registry):
+    """Succeeded jobs carry the previous attempt's result and stay in the panel
+    as history (Clear button removes them). They must not be torn down by a
+    new same-key create."""
     first = await registry.create(
         "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
     )
@@ -949,9 +950,62 @@ async def test_idempotency_key_does_not_touch_terminal_predecessor(registry):
     second = await registry.create(
         "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
     )
-    # The completed predecessor stays in the panel as history.
     assert first.id in registry._jobs
     assert second.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_cancelled_predecessor():
+    """A cancelled job is a purely transient 'user changed their mind' state
+    with no result or error info — a fresh same-key launch should replace it
+    rather than leaving a noise Cancelled row behind the new run."""
+
+    class _Long(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "long"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Long)
+    first = await reg.create("long", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.RUNNING)
+    await reg.cancel(first.id)
+    assert reg._jobs[first.id].status == BackgroundJobStatus.CANCELLED
+    second = await reg.create("long", {}, idempotency_key="K")
+    # The cancelled predecessor is gone — replaced, not preserved.
+    assert first.id not in reg._jobs
+    assert second.id in reg._jobs
+    await reg.cancel(second.id)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_keeps_failed_predecessor():
+    """Failed jobs carry the previous attempt's error summary that the user
+    may still need to inspect while retrying. They are preserved across a
+    same-key re-launch (the panel can carry both rows)."""
+
+    class _Boom(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "boom"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            raise RuntimeError("nope")
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Boom)
+    first = await reg.create("boom", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.FAILED)
+    second = await reg.create("boom", {}, idempotency_key="K")
+    await wait_for_status(reg, second.id, BackgroundJobStatus.FAILED)
+    assert first.id in reg._jobs
+    assert second.id in reg._jobs
 
 
 @pytest.mark.asyncio

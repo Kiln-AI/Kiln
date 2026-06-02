@@ -299,20 +299,27 @@ class JobRegistry:
         return job
 
     async def _supersede_matching(self, type_name: str, key: str) -> None:
-        """Tear down any non-terminal jobs with the same (type, idempotency_key).
+        """Tear down any supersedable jobs with the same (type, idempotency_key).
 
-        Idempotent workers compute their state from source-of-truth entities, so
-        a fresh job will pick up wherever the superseded one left off — there's
-        no progress to preserve. We cancel AND remove rather than leaving a
-        Cancelled row behind, since the user's mental model is "Run this again,"
-        not "Cancel the old one and start a new one."
+        Supersedable = non-terminal (pending / running / paused) OR cancelled.
+        Cancelled is included because it's a purely transient "user changed
+        their mind" state — it carries no result or error info, so leaving an
+        old cancelled row behind a fresh same-key launch is pure noise.
+        Succeeded and failed are preserved: those rows carry the previous
+        attempt's result/error which the user may still need.
+
+        Idempotent workers compute their state from source-of-truth entities,
+        so a fresh job will pick up wherever the superseded one left off —
+        there's no progress to preserve. We cancel AND remove rather than
+        leaving a Cancelled row behind, since the user's mental model is
+        "Run this again," not "Cancel the old one and start a new one."
         """
         targets = [
             j
             for j in self._jobs.values()
             if j.type == type_name
             and j.idempotency_key == key
-            and not j.status.is_terminal
+            and (not j.status.is_terminal or j.status == BackgroundJobStatus.CANCELLED)
         ]
         for old in targets:
             await self._teardown_superseded(old)
