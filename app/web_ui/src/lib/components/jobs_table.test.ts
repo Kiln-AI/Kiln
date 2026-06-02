@@ -84,10 +84,10 @@ describe("JobsTable", () => {
     })
   })
 
-  it("renders a dismiss button (not a Delete label) for terminal rows", () => {
+  it("renders a Clear button (not a Delete label) for terminal rows", () => {
     jobs.set([makeJob({ id: "succeeded", status: "succeeded" })])
-    const { getByLabelText, queryByText } = render(JobsTable)
-    expect(getByLabelText("Dismiss job")).not.toBeNull()
+    const { getByText, queryByText } = render(JobsTable)
+    expect(getByText("Clear")).not.toBeNull()
     expect(queryByText("Delete")).toBeNull()
   })
 
@@ -95,10 +95,10 @@ describe("JobsTable", () => {
     jobs.set([
       makeJob({ id: "running", status: "running", supports_pause: true }),
     ])
-    const { getByText, queryByLabelText } = render(JobsTable)
+    const { getByText, queryByText } = render(JobsTable)
     expect(getByText("Pause")).not.toBeNull()
     expect(getByText("Cancel")).not.toBeNull()
-    expect(queryByLabelText("Dismiss job")).toBeNull()
+    expect(queryByText("Clear")).toBeNull()
   })
 
   it("gates row actions on status: paused shows Resume + Cancel", () => {
@@ -110,11 +110,11 @@ describe("JobsTable", () => {
 
   it("gates row actions on status: pending shows only Cancel", () => {
     jobs.set([makeJob({ id: "pending", status: "pending" })])
-    const { getByText, queryByText, queryByLabelText } = render(JobsTable)
+    const { getByText, queryByText } = render(JobsTable)
     expect(getByText("Cancel")).not.toBeNull()
     expect(queryByText("Pause")).toBeNull()
     expect(queryByText("Resume")).toBeNull()
-    expect(queryByLabelText("Dismiss job")).toBeNull()
+    expect(queryByText("Clear")).toBeNull()
   })
 
   it("shows the loading spinner before the first sync", () => {
@@ -157,6 +157,40 @@ describe("JobsTable", () => {
     // Each line gets its own element rather than being collapsed into one.
     expect(getByText("Judge: Judge-1")).not.toBeNull()
     expect(getByText("Run config: RC-1")).not.toBeNull()
+  })
+
+  it("uses 'View Results' / 'View Errors' labels for the result/errors buttons", () => {
+    jobs.set([
+      makeJob({
+        id: "succ",
+        status: "succeeded",
+        result: { foo: "bar" } as unknown as Record<string, unknown>,
+        progress: {
+          total: 10,
+          success: 9,
+          error: 1,
+          updated_at: "2024-01-01",
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    expect(getByText("View Results")).not.toBeNull()
+    expect(getByText("View Errors")).not.toBeNull()
+  })
+
+  it("renders the Details primary text in red when the job has errored", () => {
+    jobs.set([
+      makeJob({
+        id: "failed",
+        status: "failed",
+        metadata: { display: { primary: "Eval: Bad Run" } },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    const primary = getByText("Eval: Bad Run")
+    // Either the text node itself or an ancestor cell carries the error color.
+    const cell = primary.closest(".text-error") || primary
+    expect(cell.className).toContain("text-error")
   })
 
   it("still renders a string display.secondary as a single line (back-compat)", () => {

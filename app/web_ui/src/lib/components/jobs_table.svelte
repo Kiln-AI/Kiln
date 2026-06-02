@@ -1,7 +1,6 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
-  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { jobs, synced, connection } from "$lib/stores/jobs_store"
   import {
     available_actions,
@@ -25,7 +24,7 @@
     type JobRecord,
   } from "$lib/stores/jobs_api"
   import { back_url_for } from "$lib/stores/job_tags"
-  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import { formatDate } from "$lib/utils/formatters"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   let action_error: KilnError | null = null
@@ -77,13 +76,6 @@
     } finally {
       clearing_completed = false
     }
-  }
-
-  function job_type_display(type: string): string {
-    if (type === "noop") {
-      return "No-op"
-    }
-    return capitalize(type)
   }
 
   // Per-kind summary stashed by the producer at create time
@@ -220,8 +212,6 @@
     <table class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Type</th>
           <th>Details</th>
           <th>Status</th>
           <th>Progress</th>
@@ -232,22 +222,23 @@
       </thead>
       <tbody>
         {#each $jobs as job (job.id)}
+          {@const primary = display_primary(job) || job.name || job.id}
+          {@const url = back_url_for(job)}
+          {@const errored = has_errors(job)}
           <tr>
-            <td class="font-medium whitespace-nowrap">
-              {#if back_url_for(job)}
-                <a href={back_url_for(job)} class="link">{job.name || job.id}</a
-                >
-              {:else}
-                {job.name || job.id}
-              {/if}
-            </td>
-            <td>{job_type_display(job.type)}</td>
             <td class="text-sm max-w-72">
-              {#if display_primary(job)}
-                <div class="truncate" title={display_primary(job) ?? ""}>
-                  {display_primary(job)}
-                </div>
-              {/if}
+              <div
+                class="truncate font-medium {errored ? 'text-error' : ''}"
+                title={primary}
+              >
+                {#if url}
+                  <a href={url} class="link {errored ? 'text-error' : ''}"
+                    >{primary}</a
+                  >
+                {:else}
+                  {primary}
+                {/if}
+              </div>
               {#each display_secondary_lines(job) as line}
                 <div class="text-xs text-gray-500 truncate" title={line}>
                   {line}
@@ -295,27 +286,25 @@
                     class="btn btn-xs btn-ghost"
                     on:click={() => open_result(job)}
                   >
-                    Result
+                    View Results
                   </button>
                 {/if}
                 {#if has_errors(job)}
                   <button
-                    class="btn btn-xs btn-ghost"
+                    class="btn btn-xs btn-ghost text-error"
                     on:click={() => open_errors(job)}
                   >
-                    Errors
+                    View Errors
                   </button>
                 {/if}
                 {#each available_actions(job) as action}
                   {#if action === "delete"}
                     <button
-                      class="btn btn-xs btn-ghost btn-square text-error"
+                      class="btn btn-xs btn-ghost text-error"
                       disabled={in_flight[job.id]}
-                      aria-label="Dismiss job"
-                      title="Dismiss job"
                       on:click={() => run_action(action, job.id)}
                     >
-                      <span class="w-4 h-4 block"><CloseIcon /></span>
+                      Clear
                     </button>
                   {:else}
                     <button
