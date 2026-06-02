@@ -20,12 +20,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
-from kiln_ai.tools.built_in_tools.stats_tools import (
-    ComparePairedTool,
-    CompareProportionsTool,
-    McNemarPairedTool,
-    ProportionCITool,
-)
+from kiln_ai.tools.built_in_tools.stats_tools import StatisticsTool
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.utils.config import Config
@@ -50,14 +45,8 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 return DivideTool()
             case KilnBuiltInToolId.CALCULATE:
                 return CalculateTool()
-            case KilnBuiltInToolId.PROPORTION_CI:
-                return ProportionCITool()
-            case KilnBuiltInToolId.COMPARE_PROPORTIONS:
-                return CompareProportionsTool()
-            case KilnBuiltInToolId.MCNEMAR_PAIRED:
-                return McNemarPairedTool()
-            case KilnBuiltInToolId.COMPARE_PAIRED:
-                return ComparePairedTool()
+            case KilnBuiltInToolId.STATISTICS:
+                return StatisticsTool()
             case KilnBuiltInToolId.CALL_KILN_API:
                 api_base_url = Config.shared().kiln_local_api_base_url()
                 if not api_base_url:

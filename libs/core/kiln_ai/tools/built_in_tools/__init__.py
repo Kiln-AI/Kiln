@@ -6,22 +6,14 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
-from kiln_ai.tools.built_in_tools.stats_tools import (
-    ComparePairedTool,
-    CompareProportionsTool,
-    McNemarPairedTool,
-    ProportionCITool,
-)
+from kiln_ai.tools.built_in_tools.stats_tools import StatisticsTool
 
 __all__ = [
     "AddTool",
     "CalculateTool",
-    "ComparePairedTool",
-    "CompareProportionsTool",
     "DivideTool",
     "KilnApiCallTool",
-    "McNemarPairedTool",
     "MultiplyTool",
-    "ProportionCITool",
+    "StatisticsTool",
     "SubtractTool",
 ]
