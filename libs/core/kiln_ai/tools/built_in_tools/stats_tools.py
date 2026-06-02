@@ -589,16 +589,16 @@ _PARAMETERS_SCHEMA = {
             "minimum": 0,
             "description": "[mcnemar_paired] discordant count where treatment HELPED (baseline fail, treatment pass). Provide with 'b'.",
         },
-        # compare_paired
+        # compare_paired (null entries are allowed — pairs with a missing side are dropped)
         "values_a": {
             "type": "array",
-            "items": {"type": "number"},
-            "description": "[compare_paired] per-case baseline values. values_a[i] and values_b[i] must be the same case.",
+            "items": {"type": ["number", "null"]},
+            "description": "[compare_paired] per-case baseline values (null allowed — that pair is skipped). values_a[i] and values_b[i] must be the same case.",
         },
         "values_b": {
             "type": "array",
-            "items": {"type": "number"},
-            "description": "[compare_paired] per-case treatment values, positionally paired with values_a.",
+            "items": {"type": ["number", "null"]},
+            "description": "[compare_paired] per-case treatment values (null allowed), positionally paired with values_a.",
         },
     },
     "required": ["operation"],
