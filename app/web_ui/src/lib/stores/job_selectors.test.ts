@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest"
 import type { JobRecord } from "$lib/stores/jobs_api"
-import { filter_by_tag, ongoing, compute_run_state } from "./job_selectors"
+import {
+  filter_by_tag,
+  ongoing,
+  compute_run_state,
+  live_eval_progress_by_run_config,
+} from "./job_selectors"
 
 const E = "e1"
 const C = "c1"
@@ -130,5 +135,94 @@ describe("compute_run_state", () => {
 
   it("default is 'not_started'", () => {
     expect(compute_run_state(false, false, "not_started")).toBe("not_started")
+  })
+})
+
+describe("live_eval_progress_by_run_config", () => {
+  it("returns fraction = (success+error)/total per run_config for running jobs", () => {
+    const jobs: JobRecord[] = [
+      make_job({
+        id: "j1",
+        status: "running",
+        metadata: eval_tag_meta({ run_config_id: R1 }),
+        progress: { total: 100, success: 23, error: 2, updated_at: "now" },
+      }),
+      make_job({
+        id: "j2",
+        status: "running",
+        metadata: eval_tag_meta({ run_config_id: R2 }),
+        progress: { total: 50, success: 50, error: 0, updated_at: "now" },
+      }),
+    ]
+    const out = live_eval_progress_by_run_config(jobs, E, C)
+    expect(out.get(R1)).toBeCloseTo(0.25)
+    expect(out.get(R2)).toBeCloseTo(1.0)
+  })
+
+  it("includes paused jobs (last-reported progress beats stale cache)", () => {
+    const jobs: JobRecord[] = [
+      make_job({
+        id: "j1",
+        status: "paused",
+        metadata: eval_tag_meta({ run_config_id: R1 }),
+        progress: { total: 10, success: 4, error: 0, updated_at: "now" },
+      }),
+    ]
+    const out = live_eval_progress_by_run_config(jobs, E, C)
+    expect(out.get(R1)).toBeCloseTo(0.4)
+  })
+
+  it("ignores terminal and pending jobs (no live signal there)", () => {
+    const jobs: JobRecord[] = [
+      make_job({
+        id: "done",
+        status: "succeeded",
+        metadata: eval_tag_meta({ run_config_id: R1 }),
+        progress: { total: 10, success: 10, error: 0, updated_at: "now" },
+      }),
+      make_job({
+        id: "queued",
+        status: "pending",
+        metadata: eval_tag_meta({ run_config_id: R2 }),
+        progress: { total: 10, success: 0, error: 0, updated_at: "now" },
+      }),
+    ]
+    const out = live_eval_progress_by_run_config(jobs, E, C)
+    expect(out.size).toBe(0)
+  })
+
+  it("ignores jobs from other evals or other configs", () => {
+    const jobs: JobRecord[] = [
+      make_job({
+        id: "other_eval",
+        status: "running",
+        metadata: eval_tag_meta({ eval_id: "different", run_config_id: R1 }),
+        progress: { total: 10, success: 5, error: 0, updated_at: "now" },
+      }),
+      make_job({
+        id: "other_cfg",
+        status: "running",
+        metadata: eval_tag_meta({
+          eval_config_id: "different",
+          run_config_id: R1,
+        }),
+        progress: { total: 10, success: 5, error: 0, updated_at: "now" },
+      }),
+    ]
+    const out = live_eval_progress_by_run_config(jobs, E, C)
+    expect(out.size).toBe(0)
+  })
+
+  it("skips jobs without a meaningful total (avoid 0/0 division)", () => {
+    const jobs: JobRecord[] = [
+      make_job({
+        id: "starting",
+        status: "running",
+        metadata: eval_tag_meta({ run_config_id: R1 }),
+        progress: { total: 0, success: 0, error: 0, updated_at: "now" },
+      }),
+    ]
+    const out = live_eval_progress_by_run_config(jobs, E, C)
+    expect(out.size).toBe(0)
   })
 })

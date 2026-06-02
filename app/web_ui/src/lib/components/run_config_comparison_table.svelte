@@ -7,6 +7,8 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
+  import { jobs } from "$lib/stores/jobs_store"
+  import { live_eval_progress_by_run_config } from "$lib/stores/job_selectors"
 
   export let project_id: string
   export let task_id: string
@@ -32,6 +34,15 @@
   export let score_summary_error: KilnError | null = null
 
   $: spec_id_for_url = spec_id || "legacy"
+
+  // Per-run-config % from any in-flight eval job for this (eval, eval_config).
+  // Lets the "X% Complete" label tick up in real time during a run; the cached
+  // score_summary only refreshes on completion (via on_eval_complete), so
+  // without this overlay the number sits frozen even though the job is making
+  // progress. Empty when no eval_config is active or nothing's running.
+  $: live_progress = current_eval_config_id
+    ? live_eval_progress_by_run_config($jobs, eval_id, current_eval_config_id)
+    : new Map<string, number>()
 
   function show_incomplete_warning(
     score_summary: EvalResultSummary | null,
@@ -152,10 +163,13 @@
       </thead>
       <tbody>
         {#each sorted_task_run_configs as task_run_config (task_run_config.id)}
+          {@const live_pct = live_progress.get(task_run_config.id || "")}
           {@const percent_complete =
-            score_summary?.run_config_percent_complete?.[
+            live_pct ??
+            (score_summary?.run_config_percent_complete?.[
               "" + task_run_config.id
-            ] || 0.0}
+            ] ||
+              0.0)}
           <tr class="max-w-[400px]">
             <td>
               <RunConfigSummary

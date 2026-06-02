@@ -94,6 +94,15 @@ class JobRecord(BaseModel):
     # that the user can't usefully interrupt from the local UI. The cancel
     # button is hidden for those jobs and the registry's cancel() refuses.
     supports_cancel: bool = True
+    # Producer-supplied lifecycle identity. When set, creating a new job with
+    # the same (type, idempotency_key) tears down any non-terminal predecessor
+    # (cancel + remove from the index) so the panel doesn't pile up duplicate
+    # rows for the same logical run. The producer picks the granularity — for
+    # evals this is (eval, eval_config, run_config); for finetune watchers it's
+    # left unset because each provider submission is a fresh identity.
+    # Kept distinct from metadata.tag, which is the *display/back-nav* identity
+    # — same in most cases today but the contracts are unrelated.
+    idempotency_key: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     started_at: datetime | None = None

@@ -273,9 +273,12 @@ class JobRegistry:
         params: dict[str, Any] | BaseModel,
         project_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> JobRecord:
         worker = self.worker_for(type_name)
         validated = self._validate_params(worker, params)
+        if idempotency_key is not None:
+            await self._supersede_matching(type_name, idempotency_key)
         job_id = self._fresh_job_id()
         job = JobRecord(
             id=job_id,
@@ -287,12 +290,53 @@ class JobRegistry:
             project_id=project_id,
             supports_pause=worker.supports_pause,
             supports_cancel=worker.supports_cancel,
+            idempotency_key=idempotency_key,
         )
         self._jobs[job_id] = job
         self._pending_ids.append(job_id)
         self._emit(job)
         self._dispatch_pending()
         return job
+
+    async def _supersede_matching(self, type_name: str, key: str) -> None:
+        """Tear down any non-terminal jobs with the same (type, idempotency_key).
+
+        Idempotent workers compute their state from source-of-truth entities, so
+        a fresh job will pick up wherever the superseded one left off — there's
+        no progress to preserve. We cancel AND remove rather than leaving a
+        Cancelled row behind, since the user's mental model is "Run this again,"
+        not "Cancel the old one and start a new one."
+        """
+        targets = [
+            j
+            for j in self._jobs.values()
+            if j.type == type_name
+            and j.idempotency_key == key
+            and not j.status.is_terminal
+        ]
+        for old in targets:
+            await self._teardown_superseded(old)
+
+    async def _teardown_superseded(self, job: JobRecord) -> None:
+        # Mirror the lifecycle paths in cancel() — but unconditionally, since
+        # this is a registry-internal teardown rather than a user action.
+        # `supports_cancel=False` workers must still be replaceable here, or
+        # idempotency would silently break for them.
+        job_id = job.id
+        if job.status == BackgroundJobStatus.PENDING:
+            self._remove_pending(job_id)
+        elif job.status == BackgroundJobStatus.RUNNING:
+            self._cancel_intent.add(job_id)
+            await self._cancel_task(job_id)
+        # PAUSED needs no task teardown — there's no running task to cancel.
+        # In all paths, the record is removed entirely (same cleanup as delete())
+        # so the panel stays clean and resources are released.
+        self._jobs.pop(job_id, None)
+        self._remove_pending(job_id)
+        self._completion_events.pop(job_id, None)
+        if job.run_id is not None:
+            error_log.delete_errors(job.run_id)
+        self.events.publish_deleted(job_id, job.type, job.project_id)
 
     def _fresh_job_id(self) -> str:
         job_id = _new_job_id()

@@ -855,3 +855,168 @@ async def test_get_unknown_returns_none(registry):
 async def test_lifecycle_op_unknown_raises(registry):
     with pytest.raises(JobNotFoundError):
         await registry.cancel("j_doesnotexist")
+
+
+# -- idempotency_key (supersede on create) ----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_pending_predecessor():
+    """Saturate the slot with a long-running job so a same-key second create
+    finds its predecessor still PENDING. The old record must vanish; only the
+    new one remains."""
+
+    class _Long(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "long"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=1)
+    reg.register_type(_Long)
+    # First job occupies the only slot.
+    blocker = await reg.create("long", {})
+    await wait_for_status(reg, blocker.id, BackgroundJobStatus.RUNNING)
+    # Second job with the SAME key — should NOT supersede `blocker` (different
+    # key), so it just sits pending.
+    pending_other = await reg.create("long", {}, idempotency_key="K")
+    assert pending_other.status == BackgroundJobStatus.PENDING
+    # Third job with the same "K" key — must supersede `pending_other`.
+    successor = await reg.create("long", {}, idempotency_key="K")
+    assert pending_other.id not in reg._jobs
+    assert successor.id in reg._jobs
+    # The unrelated `blocker` is untouched.
+    assert blocker.id in reg._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_running_predecessor():
+    class _Long(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "long"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Long)
+    first = await reg.create("long", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.RUNNING)
+    second = await reg.create("long", {}, idempotency_key="K")
+    # Predecessor is fully removed (no Cancelled row left behind).
+    assert first.id not in reg._jobs
+    # Successor takes its place.
+    await wait_for_status(
+        reg, second.id, {BackgroundJobStatus.RUNNING, BackgroundJobStatus.PENDING}
+    )
+    # Tear down the leftover task so asyncio doesn't warn about destroying a
+    # pending coroutine when the event loop closes.
+    await reg.cancel(second.id)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_paused_predecessor(registry):
+    """A paused job has no live task; the supersede path must still remove
+    the record cleanly without trying to cancel a non-existent task."""
+    first = await registry.create(
+        "noop",
+        {"steps": 100, "sleep_per_step_seconds": 0.01},
+        idempotency_key="K",
+    )
+    await wait_for_status(registry, first.id, BackgroundJobStatus.RUNNING)
+    await registry.pause(first.id)
+    assert registry._jobs[first.id].status == BackgroundJobStatus.PAUSED
+    second = await registry.create("noop", {"steps": 1}, idempotency_key="K")
+    assert first.id not in registry._jobs
+    assert second.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_does_not_touch_terminal_predecessor(registry):
+    """Terminal jobs are kept for history (Clear button removes them). They
+    must not be torn down by a new same-key create."""
+    first = await registry.create(
+        "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
+    )
+    await wait_for_status(registry, first.id, BackgroundJobStatus.SUCCEEDED)
+    second = await registry.create(
+        "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
+    )
+    # The completed predecessor stays in the panel as history.
+    assert first.id in registry._jobs
+    assert second.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_only_matches_within_same_type(registry):
+    """Two different worker types sharing the same arbitrary key must NOT
+    supersede each other — keys are scoped per type to avoid cross-type
+    collisions on common strings."""
+
+    class _Other(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "other"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    registry.register_type(_Other)
+    noop_job = await registry.create(
+        "noop",
+        {"steps": 100, "sleep_per_step_seconds": 0.01},
+        idempotency_key="K",
+    )
+    other_job = await registry.create("other", {}, idempotency_key="K")
+    # Both still present — same key, different types.
+    assert noop_job.id in registry._jobs
+    assert other_job.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_noncancelable_predecessor():
+    """`supports_cancel=False` (e.g. finetune watchers) must still be
+    supersedable — idempotency is registry-internal teardown, not a user
+    cancel action. Otherwise idempotency would silently break for watchers."""
+
+    class _Watcher(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "watcher"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        supports_cancel = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Watcher)
+    first = await reg.create("watcher", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.RUNNING)
+    # User-issued cancel would refuse (supports_cancel=False); supersede must not.
+    with pytest.raises(JobOperationError):
+        await reg.cancel(first.id)
+    second = await reg.create("watcher", {}, idempotency_key="K")
+    assert first.id not in reg._jobs
+    assert second.id in reg._jobs
+    # Clean up the watcher's still-running task so it doesn't leak past the test.
+    second.supports_cancel = True
+    await reg.cancel(second.id)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_is_stamped_on_record(registry):
+    job = await registry.create("noop", {"steps": 1}, idempotency_key="hello")
+    assert registry._jobs[job.id].idempotency_key == "hello"
+    job2 = await registry.create("noop", {"steps": 1})
+    assert registry._jobs[job2.id].idempotency_key is None

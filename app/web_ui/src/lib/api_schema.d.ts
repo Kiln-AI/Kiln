@@ -4585,6 +4585,11 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Idempotency Key
+             * @description Optional lifecycle identity. When set, any non-terminal job of the same type with the same key is torn down before this one is created, so re-running the same logical job doesn't pile up duplicate rows.
+             */
+            idempotency_key?: string | null;
         };
         /**
          * CreateJobResponse
@@ -7075,6 +7080,8 @@ export interface components {
              * @default true
              */
             supports_cancel: boolean;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
             /**
              * Created At
              * Format: date-time

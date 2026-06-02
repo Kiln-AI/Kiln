@@ -48,6 +48,13 @@ class CreateJobRequest(BaseModel):
         default=None,
         description="Free-form pass-through attribution, stored verbatim.",
     )
+    idempotency_key: str | None = Field(
+        default=None,
+        description="Optional lifecycle identity. When set, any non-terminal "
+        "job of the same type with the same key is torn down before this one "
+        "is created, so re-running the same logical job doesn't pile up "
+        "duplicate rows.",
+    )
 
 
 class CreateJobResponse(BaseModel):
@@ -201,6 +208,7 @@ def connect_jobs_api(app: FastAPI) -> None:
             params=validated,
             project_id=request.project_id or _project_id_from_params(validated),
             metadata=request.metadata,
+            idempotency_key=request.idempotency_key,
         )
         if not wait:
             return CreateJobResponse(job_id=job.id, status=job.status)

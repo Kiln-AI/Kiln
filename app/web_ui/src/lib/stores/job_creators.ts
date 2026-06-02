@@ -37,6 +37,11 @@ export async function create_eval_job(
       }),
     },
     params.project_id,
+    // Lifecycle identity: re-launching the same (eval, config, run_config)
+    // triple supersedes the older row rather than stacking a new one. Must
+    // match the backend producer in eval_jobs_api so both entry points share
+    // the same dedup key.
+    `${params.eval_id}:${params.eval_config_id}:${params.run_config_id}`,
   )
 }
 

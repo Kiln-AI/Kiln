@@ -56,3 +56,36 @@ export function compute_run_state(
   if (local === "complete" || local === "complete_with_errors") return local
   return "not_started"
 }
+
+// Live "X% complete" derived from the running/paused eval jobs in the store,
+// keyed by run_config_id within a fixed (eval_id, eval_config_id) context.
+// Callers (e.g. RunConfigComparisonTable) overlay this on top of the cached
+// score_summary so the percentage ticks up in real time during a run instead
+// of staying frozen until the next score_summary refetch on completion.
+// Returns null when there's no in-progress job to read from, signalling the
+// caller to fall back to its cached value.
+export function live_eval_progress_by_run_config(
+  records: JobRecord[],
+  eval_id: string,
+  eval_config_id: string,
+): Map<string, number> {
+  const out = new Map<string, number>()
+  const live = filter_by_tag(
+    records,
+    "eval",
+    (t) => t.eval_id === eval_id && t.eval_config_id === eval_config_id,
+  )
+  // Include paused jobs: their last-reported progress is still fresher than
+  // the cached score_summary, so showing it beats showing the stale value.
+  for (const job of live) {
+    if (job.status !== "running" && job.status !== "paused") continue
+    const tag = get_tag(job)
+    if (tag?.kind !== "eval") continue
+    const total = job.progress?.total ?? 0
+    const done = (job.progress?.success ?? 0) + (job.progress?.error ?? 0)
+    if (total > 0 && tag.run_config_id) {
+      out.set(tag.run_config_id, Math.max(0, Math.min(1, done / total)))
+    }
+  }
+  return out
+}

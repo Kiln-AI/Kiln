@@ -298,6 +298,12 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
                         ],
                     },
                 },
+                # Lifecycle identity: an eval run targets a specific
+                # (eval, eval_config, run_config) triple. Re-launching the same
+                # triple supersedes the older row instead of stacking a new one.
+                # EvalRunner is idempotent (skips already-scored items), so the
+                # successor picks up wherever the predecessor left off.
+                idempotency_key=f"{eval.id}:{eval_config_id}:{run_config_id}",
             )
             job_ids.append(job.id)
 
