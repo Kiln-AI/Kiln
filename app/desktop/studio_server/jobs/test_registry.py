@@ -988,10 +988,12 @@ async def test_idempotency_key_supersedes_paused_predecessor(registry):
 
 
 @pytest.mark.asyncio
-async def test_idempotency_key_keeps_succeeded_predecessor(registry):
-    """Succeeded jobs carry the previous attempt's result and stay in the panel
-    as history (Clear button removes them). They must not be torn down by a
-    new same-key create."""
+async def test_idempotency_key_supersedes_succeeded_predecessor(registry):
+    """A succeeded predecessor is pure history — the source-of-truth entities
+    its run produced (EvalRuns, etc.) persist independently of the job row, so
+    the panel doesn't need to keep an obsolete 'last time it succeeded' row
+    once the user re-launches. Drop it the same way we drop running/cancelled
+    predecessors."""
     first = await registry.create(
         "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
     )
@@ -999,7 +1001,7 @@ async def test_idempotency_key_keeps_succeeded_predecessor(registry):
     second = await registry.create(
         "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
     )
-    assert first.id in registry._jobs
+    assert first.id not in registry._jobs
     assert second.id in registry._jobs
 
 

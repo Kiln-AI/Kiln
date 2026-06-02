@@ -20,8 +20,19 @@ export function is_terminal(status: BackgroundJobStatus): boolean {
   return TERMINAL_STATUSES.includes(status)
 }
 
-export function job_status_display(status: BackgroundJobStatus): string {
-  switch (status) {
+// "Completed with errors" means: the worker ran to a clean finish (status is
+// `succeeded` — no fatal raise) but reported non-zero per-item errors via
+// progress.error. Distinct from `failed`, which is a fatal raise out of run().
+// Display is the only surface for the distinction: the underlying enum stays
+// `succeeded` so existing supersede / cancel / terminal-set logic doesn't need
+// to learn a new state.
+function succeeded_with_errors(job: JobRecord): boolean {
+  return job.status === "succeeded" && (job.progress?.error ?? 0) > 0
+}
+
+export function job_status_display(job: JobRecord): string {
+  if (succeeded_with_errors(job)) return "Completed with errors"
+  switch (job.status) {
     case "pending":
       return "Pending"
     case "running":
@@ -29,13 +40,13 @@ export function job_status_display(status: BackgroundJobStatus): string {
     case "paused":
       return "Paused"
     case "succeeded":
-      return "Succeeded"
+      return "Completed"
     case "failed":
       return "Failed"
     case "cancelled":
       return "Cancelled"
     default: {
-      const exhaustive: never = status
+      const exhaustive: never = job.status
       return exhaustive
     }
   }
@@ -44,8 +55,10 @@ export function job_status_display(status: BackgroundJobStatus): string {
 // Outline-badge styling matching the RAG "Processing Status" badges
 // (table_rag_config_row.svelte). Both surfaces show pipeline state, and
 // matching them keeps the visual language consistent across pages.
-export function job_status_badge_class(status: BackgroundJobStatus): string {
-  switch (status) {
+export function job_status_badge_class(job: JobRecord): string {
+  // Completed-with-errors gets the warning tone — finished, but worth a look.
+  if (succeeded_with_errors(job)) return "badge-outline badge-warning"
+  switch (job.status) {
     case "running":
       return "badge-outline badge-success"
     case "succeeded":
@@ -59,7 +72,7 @@ export function job_status_badge_class(status: BackgroundJobStatus): string {
     case "cancelled":
       return "badge-outline"
     default: {
-      const exhaustive: never = status
+      const exhaustive: never = job.status
       return exhaustive
     }
   }

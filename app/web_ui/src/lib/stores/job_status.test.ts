@@ -109,13 +109,32 @@ describe("job_status_display / job_status_badge_class", () => {
     ["pending", "Pending", "badge-outline"],
     ["running", "Running", "badge-outline badge-success"],
     ["paused", "Paused", "badge-outline badge-warning"],
-    ["succeeded", "Succeeded", "badge-outline badge-primary"],
+    ["succeeded", "Completed", "badge-outline badge-primary"],
     ["failed", "Failed", "badge-outline badge-error"],
     ["cancelled", "Cancelled", "badge-outline"],
   ]
   it.each(cases)("maps %s", (status, label, badge) => {
-    expect(job_status_display(status)).toBe(label)
-    expect(job_status_badge_class(status)).toBe(badge)
+    expect(job_status_display(makeJob({ status }))).toBe(label)
+    expect(job_status_badge_class(makeJob({ status }))).toBe(badge)
+  })
+
+  it("shows 'Completed with errors' when a succeeded job has progress.error > 0", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 4, error: 1, total: 5, updated_at: "now" },
+    })
+    expect(job_status_display(job)).toBe("Completed with errors")
+    // Warning tone, not primary — finished, but worth a look.
+    expect(job_status_badge_class(job)).toBe("badge-outline badge-warning")
+  })
+
+  it("shows plain 'Completed' for a succeeded job with no errors", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 5, error: 0, total: 5, updated_at: "now" },
+    })
+    expect(job_status_display(job)).toBe("Completed")
+    expect(job_status_badge_class(job)).toBe("badge-outline badge-primary")
   })
 })
 

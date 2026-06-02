@@ -301,12 +301,12 @@ class JobRegistry:
     async def _supersede_matching(self, type_name: str, key: str) -> None:
         """Tear down any supersedable jobs with the same (type, idempotency_key).
 
-        Supersedable = non-terminal (pending / running / paused) OR cancelled.
-        Cancelled is included because it's a purely transient "user changed
-        their mind" state — it carries no result or error info, so leaving an
-        old cancelled row behind a fresh same-key launch is pure noise.
-        Succeeded and failed are preserved: those rows carry the previous
-        attempt's result/error which the user may still need.
+        Supersedable = everything except FAILED. Failed jobs carry the previous
+        attempt's error summary that the user may still need to inspect while
+        retrying, so they stay in the panel. Pending/running/paused get cancelled
+        and removed; cancelled and succeeded jobs are pure history that the
+        fresh launch makes obsolete — the source-of-truth EvalRuns etc. persist
+        independently, so dropping the succeeded row loses no real data.
 
         Idempotent workers compute their state from source-of-truth entities,
         so a fresh job will pick up wherever the superseded one left off —
@@ -319,7 +319,7 @@ class JobRegistry:
             for j in self._jobs.values()
             if j.type == type_name
             and j.idempotency_key == key
-            and (not j.status.is_terminal or j.status == BackgroundJobStatus.CANCELLED)
+            and j.status != BackgroundJobStatus.FAILED
         ]
         for old in targets:
             await self._teardown_superseded(old)

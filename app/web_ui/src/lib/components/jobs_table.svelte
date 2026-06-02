@@ -250,10 +250,8 @@
               {/each}
             </td>
             <td>
-              <span
-                class="badge px-3 py-1 {job_status_badge_class(job.status)}"
-              >
-                {job_status_display(job.status)}
+              <span class="badge px-3 py-1 {job_status_badge_class(job)}">
+                {job_status_display(job)}
               </span>
             </td>
             <td>
