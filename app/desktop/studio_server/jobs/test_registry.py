@@ -649,6 +649,55 @@ async def test_report_progress_preserves_total_and_message_when_omitted():
 
 
 @pytest.mark.asyncio
+async def test_apply_derived_preserves_error_when_compute_state_returns_none():
+    """A compute_state that omits `error` (error=None) must preserve the
+    runtime error count last reported via report_progress. This is the path
+    that keeps View Errors visible on paused eval jobs: EvalRun entities only
+    persist successes, so compute_state can't reconstruct failures and leaves
+    error=None — the registry preserves the live count instead of wiping it."""
+
+    class _ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "error_then_none"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = True
+        started: asyncio.Event
+        gate: asyncio.Event
+
+        async def compute_state(self, params):
+            return JobDerivedState(
+                total=10, success=2, is_complete=False
+            )  # error left None
+
+        async def run(self, params, ctx):
+            await ctx.report_progress(success=2, error=3, total=10)
+            type(self).started.set()
+            try:
+                await type(self).gate.wait()
+            except asyncio.CancelledError:
+                task = asyncio.current_task()
+                if task is not None:
+                    task.uncancel()
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_ErrorThenNoneWorker)
+    _ErrorThenNoneWorker.started = asyncio.Event()
+    _ErrorThenNoneWorker.gate = asyncio.Event()
+
+    job = await reg.create("error_then_none", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    await asyncio.wait_for(_ErrorThenNoneWorker.started.wait(), timeout=3.0)
+    assert reg._jobs[job.id].progress.error == 3
+
+    result = await reg.pause(job.id)
+    assert result.status == BackgroundJobStatus.PAUSED
+    # The runtime error count survives the reconcile so the "View Errors"
+    # button stays available in the panel while the job is paused.
+    assert result.progress.error == 3
+
+
+@pytest.mark.asyncio
 async def test_apply_derived_preserves_total_when_compute_state_returns_none():
     # A compute_state that returns total=None (unknown denominator) alongside
     # success/error counts must not wipe a total set earlier via report_progress.

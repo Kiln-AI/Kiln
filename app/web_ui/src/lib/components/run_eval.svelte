@@ -9,6 +9,7 @@
     ongoing,
     compute_run_state,
   } from "$lib/stores/job_selectors"
+  import { is_terminal } from "$lib/stores/job_status"
   import { onDestroy } from "svelte"
   import posthog from "posthog-js"
 
@@ -53,9 +54,13 @@
         params.append("spec_id", spec_id)
       }
 
-      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/evals/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_comparison_jobs?${params.toString()}`
+      // run_comparison is now a one-shot JSON endpoint that spawns tracked
+      // jobs and returns their ids. Live progress comes from the jobs SSE
+      // store, not this endpoint.
+      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/evals/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_comparison?${params.toString()}`
     } else if (eval_type === "eval_config") {
-      // Eval config only supports running all evals for now
+      // Eval config (calibration) is still SSE-driven — not yet upgraded to
+      // the job system. Kept here unchanged so the eval_configs page works.
       run_all = true
       run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/evals/${encodeURIComponent(eval_id)}/run_calibration`
     }
@@ -65,9 +70,41 @@
   let running_progress_dialog: Dialog | null = null
   let eval_run_error: KilnError | null = null
 
-  let eval_complete_count = 0
-  let eval_total_count = 0
-  let eval_error_count = 0
+  // Job ids returned by the run_comparison call. Live progress is summed
+  // from these specific records in $jobs so prior succeeded runs of the same
+  // (eval, eval_config, run_config) don't pollute the counters. Cleared on
+  // each fresh launch.
+  let active_job_ids: string[] = []
+  let calibration_complete_count = 0
+  let calibration_total_count = 0
+  let calibration_error_count = 0
+
+  $: active_jobs = active_job_ids.length
+    ? $jobs.filter((j) => active_job_ids.includes(j.id))
+    : []
+  $: eval_complete_count =
+    eval_type === "run_config"
+      ? active_jobs.reduce((s, j) => s + (j.progress?.success ?? 0), 0)
+      : calibration_complete_count
+  $: eval_total_count =
+    eval_type === "run_config"
+      ? active_jobs.reduce((s, j) => s + (j.progress?.total ?? 0), 0)
+      : calibration_total_count
+  $: eval_error_count =
+    eval_type === "run_config"
+      ? active_jobs.reduce((s, j) => s + (j.progress?.error ?? 0), 0)
+      : calibration_error_count
+  // All spawned jobs reached a terminal state — drive the dialog from
+  // "running" to "complete" / "complete_with_errors".
+  $: all_active_terminal =
+    eval_type === "run_config" &&
+    active_jobs.length > 0 &&
+    active_jobs.length === active_job_ids.length &&
+    active_jobs.every((j) => is_terminal(j.status))
+  $: if (all_active_terminal && eval_state === "running") {
+    eval_state = eval_error_count > 0 ? "complete_with_errors" : "complete"
+    on_run_complete()
+  }
 
   // Awareness via the project-scoped jobs store. The store is authoritative
   // for "is it running" (paused & terminals are NOT ongoing), so a stuck
@@ -149,32 +186,73 @@
     }
 
     eval_state = "running"
-    eval_complete_count = 0
-    eval_total_count = 0
-    eval_error_count = 0
+    eval_run_error = null
+    active_job_ids = []
+    calibration_complete_count = 0
+    calibration_total_count = 0
+    calibration_error_count = 0
     start_initiating()
-
-    const eventSource = new EventSource(run_url)
 
     posthog.capture("run_eval", {
       eval_type: eval_type,
       run_all: run_all,
     })
 
+    if (eval_type === "run_config") {
+      // Job-system path: one HTTP call returns the spawned job ids. The
+      // jobs-store SSE stream drives the live counters via $jobs.
+      spawn_run_config_eval()
+    } else {
+      // Calibration is still streaming SSE (not yet migrated to the job
+      // system). Kept inline so this component covers both flows.
+      stream_calibration_eval()
+    }
+
+    // Switch over to the progress dialog, closing the run dialog
+    running_progress_dialog?.show()
+    return true
+  }
+
+  async function spawn_run_config_eval(): Promise<void> {
+    try {
+      const response = await fetch(run_url)
+      if (!response.ok) {
+        const body = await response.text()
+        throw new Error(
+          `Eval run failed: ${response.status} ${body || response.statusText}`,
+        )
+      }
+      const data = (await response.json()) as {
+        kiln_job_tracking_ids: string[]
+      }
+      active_job_ids = data.kiln_job_tracking_ids
+      // Empty list = no work to do (no run configs matched, or supersede tore
+      // everything down). Either way: nothing to wait for.
+      if (active_job_ids.length === 0) {
+        eval_state = "complete"
+        on_run_complete()
+      }
+    } catch (error) {
+      eval_run_error = createKilnError(error)
+      eval_state = "complete_with_errors"
+      on_run_complete()
+    }
+  }
+
+  function stream_calibration_eval(): void {
+    const eventSource = new EventSource(run_url)
     eventSource.onmessage = (event) => {
       try {
         if (event.data === "complete") {
-          // Special end message
           eventSource.close()
           eval_state =
-            eval_error_count > 0 ? "complete_with_errors" : "complete"
-
+            calibration_error_count > 0 ? "complete_with_errors" : "complete"
           on_run_complete()
         } else {
           const data = JSON.parse(event.data)
-          eval_complete_count = data.progress
-          eval_total_count = data.total
-          eval_error_count = data.errors
+          calibration_complete_count = data.progress
+          calibration_total_count = data.total
+          calibration_error_count = data.errors
           eval_state = "running"
         }
       } catch (error) {
@@ -185,18 +263,12 @@
         on_run_complete()
       }
     }
-
-    // Don't restart on an error (default SSE behavior)
     eventSource.onerror = (error) => {
       eventSource.close()
       eval_state = "complete_with_errors"
       eval_run_error = createKilnError(error)
       on_run_complete()
     }
-
-    // Switch over to the progress dialog, closing the run dialog
-    running_progress_dialog?.show()
-    return true
   }
 
   // Returns false so the dialog isn't closed

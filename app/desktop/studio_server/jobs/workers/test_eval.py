@@ -195,7 +195,10 @@ async def test_compute_state_no_eval_runs(
 
     assert state.total == 3
     assert state.success == 0
-    assert state.error == 0
+    # error left None so the registry preserves the runtime error count
+    # across pause — EvalRun entities don't persist per-item failures, so we
+    # have no opinion to assert here.
+    assert state.error is None
     assert state.is_complete is False
 
 

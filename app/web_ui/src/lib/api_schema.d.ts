@@ -1925,12 +1925,13 @@ export interface paths {
         };
         /**
          * Run Run Config Comparison
-         * @description Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
+         * @description Kick off an eval run against one or more run configs as tracked background jobs.
          *
-         *     Wire-compatible legacy endpoint: delegates to the background job system
-         *     (one tracked job per run config) so runs triggered here — including ones
-         *     kicked off by the Kiln assistant / MCP tools that still call this URL —
-         *     show up in the jobs panel alongside UI-triggered runs.
+         *     Returns immediately with the tracked job ids; observe live progress via
+         *     the jobs SSE stream (`GET /api/jobs/events`) or by re-fetching the job
+         *     records. Each spawned job is idempotent and supersedes any in-flight job
+         *     with the same `(eval, eval_config, run_config)` identity — re-running
+         *     won't pile up duplicate rows.
          */
         get: operations["run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get"];
         put?: never;
@@ -3257,32 +3258,6 @@ export interface paths {
         put?: never;
         /** Cancel Job */
         post: operations["cancel_job_api_jobs__id__cancel_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison_jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Run Run Config Comparison (Jobs)
-         * @description Run an eval config against one or more run configs as background jobs
-         *     (one job per run config) and stream aggregate progress via SSE.
-         *
-         *     Mirrors run_comparison's params and SSE shape, but is backed by the
-         *     background job system. Closing the stream cancels still-pending jobs and
-         *     pauses still-running ones; the idempotent eval jobs are resumable and
-         *     skip already-scored items.
-         */
-        get: operations["run_eval_config_jobs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_jobs_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5968,6 +5943,17 @@ export interface components {
             task_run_usage?: components["schemas"]["Usage"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * EvalRunComparisonResponse
+         * @description Response returned when an eval comparison kicks off background jobs.
+         */
+        EvalRunComparisonResponse: {
+            /**
+             * Kiln Job Tracking Ids
+             * @description Background job ids spawned for this comparison — one per run config. Use these to follow live progress via the jobs events stream or to poll the job records.
+             */
+            kiln_job_tracking_ids: string[];
         };
         /**
          * EvalRunResult
@@ -15473,6 +15459,8 @@ export interface operations {
                 run_config_ids?: string[];
                 /** @description Whether to evaluate all run configurations for the task. */
                 all_run_configs?: boolean;
+                /** @description Optional spec id from the calling page; stored on the job's tag so the jobs widget can link back to the right page. */
+                spec_id?: string | null;
             };
             header?: never;
             path: {
@@ -15495,7 +15483,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EvalRunComparisonResponse"];
                 };
             };
             /** @description Validation Error */
@@ -18229,51 +18217,6 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    run_eval_config_jobs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_jobs_get: {
-        parameters: {
-            query?: {
-                /** @description The list of run configuration IDs to evaluate. */
-                run_config_ids?: string[];
-                /** @description Whether to evaluate all run configurations for the task. */
-                all_run_configs?: boolean;
-                /** @description Optional spec id from the calling page; stored on the job's tag so the jobs widget can link back to the right page. */
-                spec_id?: string | null;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-                /** @description The unique identifier of the eval. */
-                eval_id: string;
-                /** @description The unique identifier of the eval configuration. */
-                eval_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };

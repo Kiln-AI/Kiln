@@ -92,7 +92,11 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         return JobDerivedState(
             total=total,
             success=success,
-            error=0,
+            # error left unset (None = "no opinion"): EvalRun entities only
+            # exist for successes, so we can't reconstruct a runtime error
+            # count from disk. Leaving it None tells the registry to preserve
+            # the count last reported via report_progress, so a pause doesn't
+            # hide the View Errors button.
             is_complete=success >= total,
         )
 

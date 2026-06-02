@@ -628,7 +628,10 @@ class JobRegistry:
         new_progress = JobProgress(
             total=derived.total if derived.total is not None else job.progress.total,
             success=derived.success,
-            error=derived.error,
+            # error=None means "no opinion" — preserve the prior runtime count
+            # so View Errors stays available across a pause when the worker's
+            # source-of-truth entities don't track failures.
+            error=derived.error if derived.error is not None else job.progress.error,
             message=derived.message
             if derived.message is not None
             else job.progress.message,

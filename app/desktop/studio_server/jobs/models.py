@@ -59,7 +59,13 @@ class JobDerivedState(BaseModel):
 
     total: int | None = None
     success: int = 0
-    error: int = 0
+    # None = "no opinion" — registry preserves the prior runtime error count.
+    # Workers whose source-of-truth entities don't persist per-item failures
+    # (e.g. EvalRunner — EvalRun entities only exist for successes) should
+    # leave this None so a pause doesn't wipe runtime errors that "View Errors"
+    # needs to surface. Workers where the count IS authoritative (e.g. finetune
+    # status checks) set it explicitly.
+    error: int | None = None
     is_complete: bool = False
     message: str | None = None
 

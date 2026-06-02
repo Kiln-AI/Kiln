@@ -1,7 +1,6 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import JobsTable from "$lib/components/jobs_table.svelte"
-  import RunEvalDialog from "./run_eval_dialog.svelte"
   import { create_job } from "$lib/stores/jobs_api"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { agentInfo } from "$lib/agent"
@@ -40,13 +39,7 @@
     }
   }
 
-  let run_eval_dialog: RunEvalDialog
-
   $: action_buttons = [
-    {
-      label: "Run eval",
-      handler: () => run_eval_dialog?.show(),
-    },
     {
       label: creating_test_job ? "Starting…" : "Start test job",
       handler: start_test_job,
@@ -71,5 +64,3 @@
 
   <JobsTable />
 </AppPage>
-
-<RunEvalDialog bind:this={run_eval_dialog} />
