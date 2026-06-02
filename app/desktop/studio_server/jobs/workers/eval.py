@@ -1,14 +1,35 @@
 from __future__ import annotations
 
 from app.desktop.git_sync.save_context import save_context_for_project
-from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
 from kiln_ai.datamodel.task import Task
+from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel
 
 from ...eval_api import eval_config_from_id, task_run_config_from_id
 from ..models import JobContext, JobDerivedState, JobWorker
+
+
+class _ReportErrorObserver(AsyncJobRunnerObserver[EvalJob]):
+    """Pipes per-item EvalRunner errors into the JobContext's error log so the
+    jobs panel's "View Errors" dialog has real entries to show (not just an
+    error count). Fires once per job after all retries — see AsyncJobRunner's
+    notify_error contract. Best-effort: a failed report is swallowed by
+    ctx.report_error rather than killing the eval flow.
+    """
+
+    def __init__(self, ctx: JobContext) -> None:
+        self._ctx = ctx
+
+    async def on_error(self, job: EvalJob, error: Exception) -> None:
+        dataset_item_id = getattr(getattr(job, "item", None), "id", None)
+        await self._ctx.report_error(
+            f"Error scoring dataset item {dataset_item_id or '?'}: {error}",
+            dataset_item_id=str(dataset_item_id) if dataset_item_id else None,
+            exception_type=type(error).__name__,
+        )
 
 
 class EvalJobParams(BaseModel):
@@ -84,7 +105,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         baseline = await self.compute_state(params)
         baseline_success = baseline.success
 
-        eval_runner = self._build_eval_runner(params)
+        eval_runner = self._build_eval_runner(params, ctx)
 
         success = baseline_success
         total = baseline.total if baseline.total is not None else baseline_success
@@ -103,7 +124,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
 
         return EvalJobResult(total=total, success=success, error=error)
 
-    def _build_eval_runner(self, params: EvalJobParams) -> EvalRunner:
+    def _build_eval_runner(self, params: EvalJobParams, ctx: JobContext) -> EvalRunner:
         eval_config = eval_config_from_id(
             params.project_id,
             params.task_id,
@@ -124,6 +145,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             run_configs=[run_config],
             eval_run_type="task_run_eval",
             save_context=save_context,
+            observers=[_ReportErrorObserver(ctx)],
         )
 
     def _eval_and_task(self, eval_config: EvalConfig) -> tuple[Eval, Task]:
