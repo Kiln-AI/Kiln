@@ -242,3 +242,19 @@ export const active_jobs_count: Readable<number> = derived(
     return count
   },
 )
+
+// Strictly the number of jobs with status === "running". Drives the sidebar
+// spinner: a paused job is open but not actively doing work, so it should not
+// trigger the loading visual.
+export const running_jobs_count: Readable<number> = derived(
+  jobs_store,
+  ($map) => {
+    let count = 0
+    for (const job of $map.values()) {
+      if (job.status === "running") {
+        count += 1
+      }
+    }
+    return count
+  },
+)

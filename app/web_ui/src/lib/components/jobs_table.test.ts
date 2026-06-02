@@ -139,4 +139,40 @@ describe("JobsTable", () => {
     const { getByText } = render(JobsTable)
     expect(getByText("Can't connect to the job stream")).not.toBeNull()
   })
+
+  it("renders each secondary line on its own row when display.secondary is a list", () => {
+    jobs.set([
+      makeJob({
+        id: "j_eval",
+        type: "eval",
+        metadata: {
+          display: {
+            primary: "Eval: My Eval",
+            secondary: ["Judge: Judge-1", "Run config: RC-1"],
+          },
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    // Each line gets its own element rather than being collapsed into one.
+    expect(getByText("Judge: Judge-1")).not.toBeNull()
+    expect(getByText("Run config: RC-1")).not.toBeNull()
+  })
+
+  it("still renders a string display.secondary as a single line (back-compat)", () => {
+    jobs.set([
+      makeJob({
+        id: "j_legacy",
+        type: "eval",
+        metadata: {
+          display: {
+            primary: "Eval: Legacy",
+            secondary: "Judge: X · Run config: Y",
+          },
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    expect(getByText("Judge: X · Run config: Y")).not.toBeNull()
+  })
 })

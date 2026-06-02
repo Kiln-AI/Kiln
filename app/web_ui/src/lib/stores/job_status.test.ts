@@ -148,15 +148,21 @@ describe("completed_jobs", () => {
 })
 
 describe("jobs_indicator", () => {
-  it("shows a spinner with the active count when any job is active", () => {
-    expect(jobs_indicator(2, 5)).toEqual({ kind: "spinner", count: 2 })
+  it("shows a spinner with the active count when at least one job is running", () => {
+    // 1 running, 3 active total (running + paused + pending), 5 jobs total.
+    expect(jobs_indicator(1, 3, 5)).toEqual({ kind: "spinner", count: 3 })
+  })
+
+  it("stays static when only paused/pending jobs exist (no running)", () => {
+    // 0 running, 2 active (paused), 2 total — must NOT spin.
+    expect(jobs_indicator(0, 2, 2)).toEqual({ kind: "static", count: 2 })
   })
 
   it("shows a static total count when none active but jobs remain", () => {
-    expect(jobs_indicator(0, 3)).toEqual({ kind: "static", count: 3 })
+    expect(jobs_indicator(0, 0, 3)).toEqual({ kind: "static", count: 3 })
   })
 
   it("is hidden when there are no jobs at all", () => {
-    expect(jobs_indicator(0, 0)).toEqual({ kind: "hidden" })
+    expect(jobs_indicator(0, 0, 0)).toEqual({ kind: "hidden" })
   })
 })

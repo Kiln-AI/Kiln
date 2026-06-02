@@ -220,6 +220,25 @@ describe("jobs_store", () => {
     unsubJobs()
   })
 
+  it("running_jobs_count counts only status === 'running'", async () => {
+    const { jobs, running_jobs_count } = await loadStore()
+    const unsubJobs = jobs.subscribe(() => {})
+    const unsub = running_jobs_count.subscribe(() => {})
+    const source = FakeEventSource.latest()
+    source.emit("snapshot", {
+      jobs: [
+        makeJob({ id: "a", status: "pending" }),
+        makeJob({ id: "b", status: "running" }),
+        makeJob({ id: "c", status: "running" }),
+        makeJob({ id: "d", status: "paused" }),
+        makeJob({ id: "e", status: "succeeded" }),
+      ],
+    })
+    expect(get(running_jobs_count)).toBe(2)
+    unsub()
+    unsubJobs()
+  })
+
   it("closes the EventSource when the last subscriber unsubscribes (pure observer)", async () => {
     const { jobs } = await loadStore()
     const unsub1 = jobs.subscribe(() => {})

@@ -87,16 +87,24 @@
   }
 
   // Per-kind summary stashed by the producer at create time
-  // (`metadata.display`). Keeps the table generic across job kinds.
+  // (`metadata.display`). Keeps the table generic across job kinds. `secondary`
+  // may be a single string or a list of lines — producers with multiple detail
+  // fields (e.g. evals: judge + run config) emit a list so each renders on its
+  // own row instead of getting truncated into a single dot-separated line.
   function display_primary(job: JobRecord): string | null {
     const d = (job.metadata as { display?: { primary?: unknown } } | null)
       ?.display
     return typeof d?.primary === "string" ? d.primary : null
   }
-  function display_secondary(job: JobRecord): string | null {
+  function display_secondary_lines(job: JobRecord): string[] {
     const d = (job.metadata as { display?: { secondary?: unknown } } | null)
       ?.display
-    return typeof d?.secondary === "string" ? d.secondary : null
+    const raw = d?.secondary
+    if (typeof raw === "string") return [raw]
+    if (Array.isArray(raw)) {
+      return raw.filter((line): line is string => typeof line === "string")
+    }
+    return []
   }
 
   function has_errors(job: JobRecord): boolean {
@@ -240,14 +248,11 @@
                   {display_primary(job)}
                 </div>
               {/if}
-              {#if display_secondary(job)}
-                <div
-                  class="text-xs text-gray-500 truncate"
-                  title={display_secondary(job) ?? ""}
-                >
-                  {display_secondary(job)}
+              {#each display_secondary_lines(job) as line}
+                <div class="text-xs text-gray-500 truncate" title={line}>
+                  {line}
                 </div>
-              {/if}
+              {/each}
             </td>
             <td>
               <span class="badge {job_status_badge_class(job.status)}">

@@ -292,7 +292,10 @@ def connect_eval_jobs_api(app: FastAPI) -> None:
                     # so the table stays generic across feature kinds.
                     "display": {
                         "primary": f"Eval: {eval.name}",
-                        "secondary": f"Judge: {eval_config.name} · Run config: {run_config.name}",
+                        "secondary": [
+                            f"Judge: {eval_config.name}",
+                            f"Run config: {run_config.name}",
+                        ],
                     },
                 },
             )

@@ -115,8 +115,9 @@ export function completed_jobs(jobs: JobRecord[]): JobRecord[] {
 
 // What the sidebar Jobs indicator should render, derived purely from the live
 // counts so it can be unit-tested without mounting the component:
-//   - "spinner": at least one active job; show a subtle spinner + active count.
-//   - "static": no active jobs but some still exist; show a muted total count.
+//   - "spinner": at least one job is *running*; show a spinner + open-job count.
+//     Paused jobs don't trigger the spinner — they're open but not doing work.
+//   - "static": no running jobs but some still exist; show a static count.
 //   - "hidden": no jobs at all; show no indicator.
 export type JobsIndicator =
   | { kind: "spinner"; count: number }
@@ -124,10 +125,11 @@ export type JobsIndicator =
   | { kind: "hidden" }
 
 export function jobs_indicator(
+  running_count: number,
   active_count: number,
   total_count: number,
 ): JobsIndicator {
-  if (active_count > 0) {
+  if (running_count > 0) {
     return { kind: "spinner", count: active_count }
   }
   if (total_count > 0) {

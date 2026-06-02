@@ -51,7 +51,9 @@ export type FinetuneJobParams = {
 
 export async function create_finetune_job(
   params: FinetuneJobParams,
-  display?: { primary?: string; secondary?: string },
+  // `secondary` may be one string or a list of lines — the jobs table renders
+  // each list entry on its own row so multi-field details don't get truncated.
+  display?: { primary?: string; secondary?: string | string[] },
 ): Promise<CreateJobResult> {
   return create_job(
     "finetune",
