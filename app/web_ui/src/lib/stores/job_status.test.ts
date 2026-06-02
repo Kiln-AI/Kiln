@@ -106,12 +106,12 @@ describe("available_actions", () => {
 
 describe("job_status_display / job_status_badge_class", () => {
   const cases: [BackgroundJobStatus, string, string][] = [
-    ["pending", "Pending", "badge-ghost"],
-    ["running", "Running", "badge-info"],
-    ["paused", "Paused", "badge-warning"],
-    ["succeeded", "Succeeded", "badge-success"],
-    ["failed", "Failed", "badge-error"],
-    ["cancelled", "Cancelled", "badge-ghost"],
+    ["pending", "Pending", "badge-outline"],
+    ["running", "Running", "badge-outline badge-success"],
+    ["paused", "Paused", "badge-outline badge-warning"],
+    ["succeeded", "Succeeded", "badge-outline badge-primary"],
+    ["failed", "Failed", "badge-outline badge-error"],
+    ["cancelled", "Cancelled", "badge-outline"],
   ]
   it.each(cases)("maps %s", (status, label, badge) => {
     expect(job_status_display(status)).toBe(label)

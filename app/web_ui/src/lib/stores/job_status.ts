@@ -41,20 +41,23 @@ export function job_status_display(status: BackgroundJobStatus): string {
   }
 }
 
+// Outline-badge styling matching the RAG "Processing Status" badges
+// (table_rag_config_row.svelte). Both surfaces show pipeline state, and
+// matching them keeps the visual language consistent across pages.
 export function job_status_badge_class(status: BackgroundJobStatus): string {
   switch (status) {
     case "running":
-      return "badge-info"
+      return "badge-outline badge-success"
     case "succeeded":
-      return "badge-success"
+      return "badge-outline badge-primary"
     case "failed":
-      return "badge-error"
+      return "badge-outline badge-error"
     case "paused":
-      return "badge-warning"
+      return "badge-outline badge-warning"
     case "pending":
-      return "badge-ghost"
+      return "badge-outline"
     case "cancelled":
-      return "badge-ghost"
+      return "badge-outline"
     default: {
       const exhaustive: never = status
       return exhaustive
