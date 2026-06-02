@@ -21,15 +21,12 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.synthetic_user import runner as runner_mod
+from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
-
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SyntheticUserCase,
-)
-from app.desktop.studio_server.synthetic_user import runner as runner_mod
-from app.desktop.studio_server.synthetic_user.runner import (
+from kiln_ai.synthetic_user.runner import (
     BatchCompletedEvent,
     BatchEvent,
     BatchStartedEvent,
@@ -38,7 +35,6 @@ from app.desktop.studio_server.synthetic_user.runner import (
     TurnCompletedEvent,
     run_cases_batch,
 )
-
 
 # ───────────────────────── helpers / fixtures ─────────────────────────
 
@@ -113,7 +109,7 @@ def _patch_su_driver(
     """
     call_counter = {"i": 0}
 
-    def _ctor(blob, config):  # noqa: ARG001
+    def _ctor(blob, config):
         idx = call_counter["i"]
         call_counter["i"] += 1
         replies = (
@@ -253,7 +249,7 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     )
 
     # Each case's driver gets two replies at $0.01 each → $0.02 SU per case.
-    def _ctor(blob, config):  # noqa: ARG001
+    def _ctor(blob, config):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(side_effect=[("u2", 0.01), ("u3", 0.01)])
         return instance
@@ -399,7 +395,7 @@ async def test_malformed_blob_surfaces_as_case_failed(
     """
     call_counter = {"i": 0}
 
-    def _ctor(blob, config):  # noqa: ARG001
+    def _ctor(blob, config):
         idx = call_counter["i"]
         call_counter["i"] += 1
         if idx == 1:

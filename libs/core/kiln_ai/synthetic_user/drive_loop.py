@@ -15,12 +15,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
-
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SyntheticUserCase,
-)
 
 
 class TargetInvoker(Protocol):

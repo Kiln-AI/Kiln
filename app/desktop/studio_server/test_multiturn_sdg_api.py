@@ -29,7 +29,7 @@ from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserRequestError,
     SyntheticUserServerError,
 )
-from app.desktop.studio_server.synthetic_user.runner import (
+from kiln_ai.synthetic_user.runner import (
     BatchCompletedEvent,
     BatchStartedEvent,
     CaseCompletedEvent,

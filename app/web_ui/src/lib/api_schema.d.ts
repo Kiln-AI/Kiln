@@ -6626,7 +6626,7 @@ export interface components {
         GenerateCasesApiOutput: {
             /**
              * Cases
-             * @description A SyntheticUserCase as returned by kiln_server's /generate. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
+             * @description A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
              */
             cases: {
                 [key: string]: unknown;
@@ -8575,7 +8575,7 @@ export interface components {
         RunCasesBatchApiInput: {
             /**
              * Cases
-             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase as returned by kiln_server's /generate. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
              */
             cases: {
                 [key: string]: unknown;

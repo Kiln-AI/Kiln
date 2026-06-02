@@ -30,6 +30,8 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.synthetic_user.case import SyntheticUserCase
+from kiln_ai.synthetic_user.drive_loop import TargetInvoker, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.synthetic_user.parser import (
@@ -38,14 +40,6 @@ from kiln_ai.synthetic_user.parser import (
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
-
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SyntheticUserCase,
-)
-from app.desktop.studio_server.synthetic_user.drive_loop import (
-    TargetInvoker,
-    drive_case,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +325,7 @@ async def _drive_one_case_and_emit(
                 total_cost=_cumulative_cost(leaf) + result.su_total_cost,
             )
         )
-    except Exception as e:  # noqa: BLE001 — beta error surface
+    except Exception as e:
         # Adapter network errors, model misconfig, save_to_file blow-up,
         # anything unexpected. Log with full traceback; emit a structured
         # failure so the batch invariant holds (every case gets one event).

@@ -39,22 +39,9 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import build_save_context, no_write_lock
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
-from pydantic import BaseModel, Field
-
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SyntheticUserCase,
-)
-from app.desktop.studio_server.synthetic_user.client import (
-    SyntheticUserClient,
-    SyntheticUserRequestError,
-    SyntheticUserServerError,
-)
-from app.desktop.studio_server.synthetic_user.runner import (
+from kiln_ai.synthetic_user.runner import (
     CONCURRENCY,
     MAX_TURNS_DEFAULT,
     NUM_CASES_MAX,
@@ -66,6 +53,17 @@ from app.desktop.studio_server.synthetic_user.runner import (
     TurnCompletedEvent,
     run_cases_batch,
 )
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.synthetic_user.client import (
+    SyntheticUserClient,
+    SyntheticUserRequestError,
+    SyntheticUserServerError,
+)
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 logger = logging.getLogger(__name__)
@@ -73,16 +71,16 @@ logger = logging.getLogger(__name__)
 
 # ───────────────────────── Pydantic API models ─────────────────────────
 
-# Cases ride the wire as `list[dict[str, Any]]` rather than a Pydantic
-# mirror — the SDK's SyntheticUserCase is the single source of truth, and
-# we round-trip via `to_dict` / `from_dict` at the boundary. Trade-off:
-# TS bindings type cases as `Record<string, unknown>` instead of getting
-# per-field autocomplete.
+# Cases ride the wire as `list[dict[str, Any]]`: the kiln_server SDK
+# emits cases as attrs models with `to_dict()` (used by `/generate_cases`
+# below) and the libs/core runner consumes `SyntheticUserCase` (Pydantic).
+# Both are field-identical; this route validates dicts straight into the
+# libs/core type via Pydantic. Trade-off: TS bindings type cases as
+# `Record<string, unknown>` instead of getting per-field autocomplete.
 SyntheticUserCaseDict = dict[str, Any]
 _CASE_DICT_DESCRIPTION = (
-    "A SyntheticUserCase as returned by kiln_server's /generate. Shape: "
-    "{seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info "
-    "value is an XML-tagged blob: "
+    "A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str}. "
+    "The synthetic_user_info value is an XML-tagged blob: "
     "<persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. "
     "Parsed client-side by kiln_ai.synthetic_user.parser."
 )
@@ -328,17 +326,20 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         task = task_from_id(project_id, task_id)
         _guard_multiturn(task)
 
-        # SDK from_dict raises on missing/wrong-typed required fields;
-        # surface that as a clean 400 instead of letting it explode inside
-        # the SSE generator.
+        # Parse dict → libs/core RunnerCase. Pydantic raises ValidationError
+        # on missing keys or empty strings; surface as a clean 400 instead
+        # of letting it explode inside the SSE generator. We go straight to
+        # the libs/core type (skipping the SDK round-trip) because the two
+        # shapes are field-identical and the runner only needs the libs/core
+        # one.
         try:
-            sdk_cases = [SyntheticUserCase.from_dict(c) for c in input.cases]
-        except (KeyError, TypeError, ValueError) as exc:
+            runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError + any future shape drift
             raise HTTPException(
                 status_code=400,
                 detail={
                     "code": "invalid_case_shape",
-                    "message": f"Could not parse cases against the SDK shape: {exc}",
+                    "message": f"Could not parse cases against the runner shape: {exc}",
                 },
             ) from exc
 
@@ -349,7 +350,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         async def event_generator():
             try:
                 async for event in run_cases_batch(
-                    cases=sdk_cases,
+                    cases=runner_cases,
                     target_task=task,
                     target_run_config=target_run_config,
                     su_driver_config=su_driver_config,
