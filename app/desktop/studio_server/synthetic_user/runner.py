@@ -443,11 +443,7 @@ def _build_input_source(
             props["behavior_guidance"] = info.behavior_guidance
         props["seed_prompt"] = case.seed_prompt
 
-    # The validator rejects empty string property values. Strip any that
-    # would trip it (shouldn't happen for required fields in practice, but
-    # this protects against an empty seed_prompt or a malformed config).
-    filtered = {k: v for k, v in props.items() if not (isinstance(v, str) and v == "")}
-    return DataSource(type=DataSourceType.synthetic, properties=filtered)
+    return DataSource(type=DataSourceType.synthetic, properties=props)
 
 
 # ───────────────────────── small utilities ─────────────────────────
