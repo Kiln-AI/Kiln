@@ -41,37 +41,9 @@ jobs:
         run: uv sync
       - name: Install Node deps
         run: npm ci
-      - name: Get Playwright version
-        id: pw-version
-        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
-      - name: Install Playwright system deps
-        run: npx playwright install-deps chromium
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      - name: Install Playwright Browsers
         timeout-minutes: 5
-        run: |
-          BROWSER_DIR="$HOME/.cache/ms-playwright/chromium-1217"
-          HEADLESS_DIR="$HOME/.cache/ms-playwright/chromium_headless_shell-1217"
-          mkdir -p "$BROWSER_DIR" "$HEADLESS_DIR"
-
-          echo "Downloading Chrome for Testing..."
-          curl -sSL --retry 3 "https://cdn.playwright.dev/builds/cft/147.0.7727.15/linux64/chrome-linux64.zip" -o /tmp/chrome.zip
-          unzip -q /tmp/chrome.zip -d "$BROWSER_DIR"
-          rm /tmp/chrome.zip
-
-          echo "Downloading Chrome Headless Shell..."
-          curl -sSL --retry 3 "https://cdn.playwright.dev/builds/cft/147.0.7727.15/linux64/chrome-headless-shell-linux64.zip" -o /tmp/headless.zip
-          unzip -q /tmp/headless.zip -d "$HEADLESS_DIR"
-          rm /tmp/headless.zip
-
-          echo "Browser install complete"
-          ls -la "$BROWSER_DIR" "$HEADLESS_DIR"
+        run: npx playwright install --with-deps chromium
       - name: Run Playwright tests
         timeout-minutes: 10
         run: npx playwright test
