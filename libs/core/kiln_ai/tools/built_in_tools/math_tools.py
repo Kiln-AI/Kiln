@@ -213,7 +213,7 @@ def _eval_node(node):
         if (
             op is operator.pow
             and isinstance(right, (int, float))
-            and right > _MAX_POW_EXPONENT
+            and abs(right) > _MAX_POW_EXPONENT
         ):
             raise ValueError(f"Exponent too large (max {_MAX_POW_EXPONENT}).")
         return op(left, right)
@@ -230,9 +230,22 @@ def _eval_node(node):
             raise ValueError("Keyword arguments are not allowed.")
         fn = _FUNCS[node.func.id]
         args = [_eval_node(a) for a in node.args]
+        if (
+            fn is pow
+            and len(args) >= 2
+            and isinstance(args[1], (int, float))
+            and abs(args[1]) > _MAX_POW_EXPONENT
+        ):
+            raise ValueError(f"Exponent too large (max {_MAX_POW_EXPONENT}).")
         if fn is math.factorial and args and args[0] > _MAX_FACTORIAL:
             raise ValueError(f"factorial argument too large (max {_MAX_FACTORIAL}).")
-        return fn(*args)
+        # Surface bad calls (wrong arity, non-numeric args, math domain errors) as
+        # structured ValueErrors so the tool returns a clean error rather than an
+        # uncaught TypeError/ValueError from the underlying function.
+        try:
+            return fn(*args)
+        except (TypeError, ValueError) as e:
+            raise ValueError(str(e)) from e
     if isinstance(node, ast.Name):
         if node.id not in _NAMES:
             raise ValueError(f"Name '{node.id}' is not allowed.")

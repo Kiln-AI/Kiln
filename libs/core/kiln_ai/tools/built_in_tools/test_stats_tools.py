@@ -59,6 +59,11 @@ class TestProportionCI:
         result = await ProportionCITool().run(proportion=1.4, n=10)
         assert result.is_error is True
 
+    async def test_non_numeric_successes_errors(self):
+        result = await ProportionCITool().run(successes="abc", n=10)
+        assert result.is_error is True
+        assert "successes" in (result.error_message or "")
+
 
 class TestCompareProportions:
     async def test_significant_difference(self):

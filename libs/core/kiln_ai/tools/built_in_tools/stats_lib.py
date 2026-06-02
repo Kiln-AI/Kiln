@@ -261,6 +261,11 @@ def wilcoxon_signed_rank_p(diffs: Sequence[float]) -> float | None:
     and an exact-permutation table is needed; surface ``None`` rather
     than render a misleading p.
 
+    The variance term omits the tie-correction factor, so the test is
+    slightly conservative (p-values marginally inflated) when tied absolute
+    differences are present — results can differ slightly from
+    ``scipy.stats.wilcoxon``, which applies that correction.
+
     Non-parametric, robust to outliers, and the natural companion to
     ``paired_bootstrap_diff_ci`` for "did treatment systematically
     shift this metric?" — sign matters but distribution shape doesn't.

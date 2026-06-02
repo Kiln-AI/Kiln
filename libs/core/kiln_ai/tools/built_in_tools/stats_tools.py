@@ -53,12 +53,18 @@ def resolve_successes(proportion, successes, n: int) -> int:
     [0, n] (a 1.0 proportion legitimately yields n). Raises ValueError on bad input.
     """
     if successes is not None:
-        s = int(successes)
+        try:
+            s = int(successes)
+        except (TypeError, ValueError):
+            raise ValueError(f"successes must be an integer (got {successes!r}).")
         if s < 0 or s > n:
             raise ValueError(f"successes ({s}) must be between 0 and n ({n}).")
         return s
     if proportion is not None:
-        p = float(proportion)
+        try:
+            p = float(proportion)
+        except (TypeError, ValueError):
+            raise ValueError(f"proportion must be a number (got {proportion!r}).")
         if not (0.0 <= p <= 1.0):
             raise ValueError(f"proportion must be in [0,1] (got {p}).")
         return max(0, min(n, round(p * n)))

@@ -255,3 +255,27 @@ class TestCalculateTool:
     async def test_huge_exponent_guarded(self):
         result = await CalculateTool().run(expression="9 ** 99999")
         assert result.is_error is True
+
+    async def test_huge_negative_exponent_guarded(self):
+        result = await CalculateTool().run(expression="9 ** -99999")
+        assert result.is_error is True
+
+    async def test_pow_call_exponent_guarded(self):
+        # The pow() function path is guarded the same as the ** operator.
+        result = await CalculateTool().run(expression="pow(9, 99999)")
+        assert result.is_error is True
+
+    async def test_bad_call_arity_is_structured_error(self):
+        # Wrong arity must return a structured error, not raise an uncaught TypeError.
+        for expr in ("min()", "round(1, 2, 3)"):
+            result = await CalculateTool().run(expression=expr)
+            assert result.is_error is True, expr
+
+    async def test_factorial_non_integer_is_structured_error(self):
+        result = await CalculateTool().run(expression="factorial(1.5)")
+        assert result.is_error is True
+
+    async def test_math_domain_error_is_structured(self):
+        # sqrt(-1) raises ValueError underneath; the tool surfaces it as is_error.
+        result = await CalculateTool().run(expression="sqrt(-1)")
+        assert result.is_error is True
