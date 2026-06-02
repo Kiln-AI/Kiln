@@ -223,7 +223,7 @@ async def test_three_cases_produce_full_event_stream(
     assert events[-1].successful == 3
     assert events[-1].failed == 0
     assert events[-1].batch_tag == "testbatch"
-    assert events[-1].total_cost == pytest.approx(0.07)
+    assert events[-1].target_total_cost == pytest.approx(0.07)
 
     turn_events = [e for e in events if isinstance(e, TurnCompletedEvent)]
     case_done = [e for e in events if isinstance(e, CaseCompletedEvent)]
@@ -280,6 +280,40 @@ async def test_leaf_is_tagged_with_synthetic_user_case_and_batch_tag(
     assert "synthetic_user_case" in leaf.tags
     assert "synthetic_user_batch:abc123" in leaf.tags
     leaf.save_to_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_leaf_tagging_is_idempotent_on_pre_tagged_leaf(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-tagging a leaf that already has the runner's tags + an unrelated
+    user tag preserves the user tag and dedupes the runner's tags. The
+    spec calls this out as the property that makes re-runs safe.
+    """
+    leaf = _fake_run("leaf")
+    leaf.tags = [
+        "synthetic_user_case",
+        "synthetic_user_batch:abc123",
+        "user_kept_this",
+    ]
+    _patch_adapter_for_task(monkeypatch, [leaf])
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+            batch_tag="abc123",
+        )
+    )
+
+    assert leaf.tags.count("synthetic_user_case") == 1
+    assert leaf.tags.count("synthetic_user_batch:abc123") == 1
+    assert "user_kept_this" in leaf.tags
+    assert leaf.tags == sorted(leaf.tags)
 
 
 @pytest.mark.asyncio

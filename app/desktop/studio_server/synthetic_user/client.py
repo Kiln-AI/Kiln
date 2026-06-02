@@ -34,7 +34,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
-    UNSET,
     Response,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
@@ -162,11 +161,7 @@ class SyntheticUserClient:
 
 def _code_or_default(code: object, default: str) -> str:
     """Resolve a typed-model `code` field that may be `UNSET` or a string."""
-    if isinstance(code, str) and code:
-        return code
-    if code is UNSET or code is None:
-        return default
-    return default
+    return code if isinstance(code, str) and code else default
 
 
 def _format_validation_detail(error: HTTPValidationError) -> str:

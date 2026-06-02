@@ -33,6 +33,7 @@ from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -86,7 +87,11 @@ class CaseCompletedEvent:
     chain_run_ids: list[str]
     leaf_run_id: str
     total_turns: int
-    total_cost: float
+    # Sum of the target adapter's cumulative_usage.cost across this case's
+    # turns. Excludes the SU driver's per-turn LLM spend — SU turns run via
+    # invoke_returning_run_output and never persist a TaskRun, so their cost
+    # isn't rolled up here. Rename in mind for when SU cost gets threaded.
+    target_total_cost: float
 
 
 @dataclass(frozen=True)
@@ -101,7 +106,9 @@ class BatchCompletedEvent:
     successful: int
     failed: int
     batch_tag: str
-    total_cost: float
+    # Sum of CaseCompletedEvent.target_total_cost across successful cases.
+    # Same SU-exclusion caveat applies.
+    target_total_cost: float
 
 
 BatchEvent = (
@@ -125,6 +132,7 @@ async def run_cases_batch(
     turns: int = DEFAULT_TURNS,
     concurrency: int = CONCURRENCY,
     batch_tag: str | None = None,
+    save_context: SaveContext | None = None,
 ) -> AsyncIterator[BatchEvent]:
     """Drive `cases` concurrently against `target_task`, streaming progress.
 
@@ -132,6 +140,14 @@ async def run_cases_batch(
     target-task LLM and the SU LLM aren't both hammered at unbounded fan-out.
     Events from different cases interleave; ordering WITHIN a case is
     `turn_completed`* → `case_completed | case_failed`.
+
+    `save_context` wraps the leaf-tag save (the one write this runner
+    controls). The adapter's per-turn `run.save_to_file()` inside
+    `adapter.invoke` does NOT take a save_context — that's a kiln_ai-side
+    plumbing gap shared with the chat SSE pattern, not specific to this
+    runner. The route still uses `@no_write_lock` because wrapping the
+    full streaming response in one atomic_write would block all other
+    writes for the batch duration.
 
     Yields:
       BatchStartedEvent — once, before any case runs.
@@ -148,6 +164,7 @@ async def run_cases_batch(
         raise ValueError("concurrency must be >= 1")
 
     resolved_batch_tag = batch_tag or _new_batch_tag()
+    save_ctx: SaveContext = save_context or default_save_context
     semaphore = asyncio.Semaphore(concurrency)
     # `None` is the end-of-stream sentinel pushed when all cases finish.
     queue: asyncio.Queue[BatchEvent | None] = asyncio.Queue()
@@ -163,6 +180,7 @@ async def run_cases_batch(
                 turns=turns,
                 batch_tag=resolved_batch_tag,
                 queue=queue,
+                save_ctx=save_ctx,
             )
 
     # Kick the cases off BEFORE the first yield so they start running
@@ -181,7 +199,7 @@ async def run_cases_batch(
 
     successful = 0
     failed = 0
-    total_cost = 0.0
+    target_total_cost = 0.0
     try:
         yield BatchStartedEvent(batch_tag=resolved_batch_tag, num_cases=len(cases))
 
@@ -192,7 +210,7 @@ async def run_cases_batch(
             yield event
             if isinstance(event, CaseCompletedEvent):
                 successful += 1
-                total_cost += event.total_cost
+                target_total_cost += event.target_total_cost
             elif isinstance(event, CaseFailedEvent):
                 failed += 1
 
@@ -200,7 +218,7 @@ async def run_cases_batch(
             successful=successful,
             failed=failed,
             batch_tag=resolved_batch_tag,
-            total_cost=total_cost,
+            target_total_cost=target_total_cost,
         )
     finally:
         # Cancel any in-flight case tasks before awaiting the closer. Without
@@ -227,6 +245,7 @@ async def _drive_one_case_and_emit(
     turns: int,
     batch_tag: str,
     queue: asyncio.Queue[BatchEvent | None],
+    save_ctx: SaveContext,
 ) -> None:
     """Run drive_case for one case, translating per-turn outcomes to events
     on `queue` and ending with either CaseCompletedEvent or CaseFailedEvent.
@@ -285,7 +304,8 @@ async def _drive_one_case_and_emit(
         # so a tag-save failure (full disk, validator rejection on a
         # malformed batch_tag) surfaces as case_failed, not a silent drop.
         leaf = result.chain[-1]
-        _tag_leaf(leaf, batch_tag)
+        async with save_ctx():
+            _tag_leaf(leaf, batch_tag)
 
         await queue.put(
             CaseCompletedEvent(
@@ -295,7 +315,7 @@ async def _drive_one_case_and_emit(
                 ],
                 leaf_run_id=str(leaf.id) if leaf.id is not None else "",
                 total_turns=len(result.chain),
-                total_cost=_cumulative_cost(leaf),
+                target_total_cost=_cumulative_cost(leaf),
             )
         )
     except Exception as e:  # noqa: BLE001 — beta error surface
