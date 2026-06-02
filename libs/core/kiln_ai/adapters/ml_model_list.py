@@ -142,6 +142,7 @@ class ModelName(str, Enum):
     claude_opus_4_5 = "claude_opus_4_5"
     claude_opus_4_6 = "claude_opus_4_6"
     claude_opus_4_7 = "claude_opus_4_7"
+    claude_opus_4_8 = "claude_opus_4_8"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -187,6 +188,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_3 = "grok_4_3"
     grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
@@ -520,13 +522,27 @@ CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
     "Max": "max",
 }
 
+CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
     "Extra High": "xhigh",
-    "Max": "max",
+}
+
+GROK_4_3_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
 }
 
 
@@ -1994,17 +2010,17 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude Opus 4.7
+    # Claude Opus 4.8
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_opus_4_7,
-        friendly_name="Claude Opus 4.7",
+        name=ModelName.claude_opus_4_8,
+        friendly_name="Claude Opus 4.8",
         featured_rank=2,
         editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="anthropic/claude-opus-4.7",
+                model_id="anthropic/claude-opus-4.8",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
@@ -2025,13 +2041,58 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-8",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Claude Opus 4.7
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_7,
+        friendly_name="Claude Opus 4.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-7",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -4773,6 +4834,12 @@ built_in_models: List[KilnModel] = [
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
         ],
     ),
     # DeepSeek 3.2
@@ -5196,6 +5263,36 @@ built_in_models: List[KilnModel] = [
                 uncensored=True,
                 suggested_for_uncensored_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Grok 4.3
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_3,
+        friendly_name="Grok 4.3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.3",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                openrouter_reasoning_object=True,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
