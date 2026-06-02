@@ -76,12 +76,19 @@ class SyntheticUserDriver:
         )
         self._adapter = adapter_for_task(self._task, self._run_config)
 
-    async def respond(self, conversation: list[ChatCompletionMessageParam]) -> str:
-        """Return the SU's next message.
+    async def respond(
+        self, conversation: list[ChatCompletionMessageParam]
+    ) -> tuple[str, float]:
+        """Return the SU's next message and the cost of producing it.
 
         `conversation` is in the eval frame and must end on an `assistant`
         (target) turn — the SU is responding to that turn. Drive-loop
         termination is the caller's concern; this just produces one reply.
+
+        The cost is read from the in-memory TaskRun's `usage.cost`. SU
+        turns aren't persisted, so this is the only place the cost
+        surfaces — callers (e.g. drive_case) must thread it forward if
+        they want to report total spend.
         """
         # 1) Filter to visible roles (drop system/tool if present).
         visible = [
@@ -118,11 +125,20 @@ class SyntheticUserDriver:
 
         # 4) Adapter call. invoke_returning_run_output returns
         #    (TaskRun, RunOutput) without writing the TaskRun to disk.
-        _task_run, run_output = await self._adapter.invoke_returning_run_output(
+        task_run, run_output = await self._adapter.invoke_returning_run_output(
             user_input, prior_trace=prior_trace
         )
         raw = run_output.output
         if not isinstance(raw, str):
             raise RuntimeError("synthetic user returned non-string output")
 
-        return raw
+        # Per-call cost from the in-memory TaskRun. None when the
+        # provider doesn't surface pricing (rare; defaults to 0.0 so the
+        # downstream sum stays well-defined).
+        cost = (
+            float(task_run.usage.cost)
+            if task_run.usage is not None and task_run.usage.cost is not None
+            else 0.0
+        )
+
+        return raw, cost

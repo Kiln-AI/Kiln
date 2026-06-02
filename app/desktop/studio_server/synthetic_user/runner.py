@@ -90,11 +90,11 @@ class CaseCompletedEvent:
     chain_run_ids: list[str]
     leaf_run_id: str
     total_turns: int
-    # Sum of the target adapter's cumulative_usage.cost across this case's
-    # turns. Excludes the SU driver's per-turn LLM spend — SU turns run via
-    # invoke_returning_run_output and never persist a TaskRun, so their cost
-    # isn't rolled up here. Rename in mind for when SU cost gets threaded.
-    target_total_cost: float
+    # Honest total spend for this case: target adapter's
+    # cumulative_usage.cost on the leaf + the SU driver's per-turn cost
+    # summed across turns. SU turns aren't persisted as TaskRuns; drive_case
+    # threads their cost through DriveCaseResult.su_total_cost.
+    total_cost: float
 
 
 @dataclass(frozen=True)
@@ -109,9 +109,8 @@ class BatchCompletedEvent:
     successful: int
     failed: int
     batch_tag: str
-    # Sum of CaseCompletedEvent.target_total_cost across successful cases.
-    # Same SU-exclusion caveat applies.
-    target_total_cost: float
+    # Sum of CaseCompletedEvent.total_cost across successful cases.
+    total_cost: float
 
 
 BatchEvent = (
@@ -213,7 +212,7 @@ async def run_cases_batch(
 
     successful = 0
     failed = 0
-    target_total_cost = 0.0
+    total_cost = 0.0
     try:
         yield BatchStartedEvent(batch_tag=resolved_batch_tag, num_cases=len(cases))
 
@@ -224,7 +223,7 @@ async def run_cases_batch(
             yield event
             if isinstance(event, CaseCompletedEvent):
                 successful += 1
-                target_total_cost += event.target_total_cost
+                total_cost += event.total_cost
             elif isinstance(event, CaseFailedEvent):
                 failed += 1
 
@@ -232,7 +231,7 @@ async def run_cases_batch(
             successful=successful,
             failed=failed,
             batch_tag=resolved_batch_tag,
-            target_total_cost=target_total_cost,
+            total_cost=total_cost,
         )
     finally:
         # Cancel any in-flight case tasks before awaiting the closer. Without
@@ -329,7 +328,7 @@ async def _drive_one_case_and_emit(
                 ],
                 leaf_run_id=str(leaf.id) if leaf.id is not None else "",
                 total_turns=len(result.chain),
-                target_total_cost=_cumulative_cost(leaf),
+                total_cost=_cumulative_cost(leaf) + result.su_total_cost,
             )
         )
     except Exception as e:  # noqa: BLE001 — beta error surface

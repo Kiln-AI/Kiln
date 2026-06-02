@@ -91,10 +91,13 @@ class _FakeInvoker:
         return _fake_run(new_trace, run_id=f"run-turn-{len(self.calls)}")
 
 
-def _su_driver_with_replies(replies: list[str]) -> Mock:
-    """Mock(spec=SyntheticUserDriver) with respond() returning canned strings."""
+def _su_driver_with_replies(replies: list[str], cost_per_reply: float = 0.0) -> Mock:
+    """Mock(spec=SyntheticUserDriver) with respond() returning canned
+    (message, cost) tuples. `cost_per_reply` lets cost-aware tests inject
+    a non-zero per-call cost; defaults to 0.0 for the legacy tests.
+    """
     drv = Mock(spec=SyntheticUserDriver)
-    drv.respond = AsyncMock(side_effect=replies)
+    drv.respond = AsyncMock(side_effect=[(r, cost_per_reply) for r in replies])
     return drv
 
 

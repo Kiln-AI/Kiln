@@ -122,7 +122,9 @@ def _patch_su_driver(
             else list(replies_per_case)
         )
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=replies)
+        # respond() returns (message, cost). Tests that don't care about
+        # cost get 0.0 — the runner adds it to total_cost regardless.
+        instance.respond = AsyncMock(side_effect=[(r, 0.0) for r in replies])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -224,7 +226,7 @@ async def test_three_cases_produce_full_event_stream(
     assert events[-1].successful == 3
     assert events[-1].failed == 0
     assert events[-1].batch_tag == "testbatch"
-    assert events[-1].target_total_cost == pytest.approx(0.07)
+    assert events[-1].total_cost == pytest.approx(0.07)
 
     turn_events = [e for e in events if isinstance(e, TurnCompletedEvent)]
     case_done = [e for e in events if isinstance(e, CaseCompletedEvent)]
@@ -233,6 +235,48 @@ async def test_three_cases_produce_full_event_stream(
     assert {e.case_index for e in case_done} == {0, 1, 2}
     for ev in case_done:
         assert ev.total_turns == 1
+
+
+@pytest.mark.asyncio
+async def test_total_cost_sums_target_and_su_driver_spend(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CaseCompletedEvent.total_cost = leaf.cumulative_usage.cost + sum of
+    SU driver's per-turn cost across the case. BatchCompletedEvent.total_cost
+    sums those across successful cases. Locks in the honest-totals contract.
+    """
+    leaf_a = _fake_run("a-leaf", cost=0.10)
+    leaf_b = _fake_run("b-leaf", cost=0.05)
+    _patch_adapter_for_task(
+        monkeypatch,
+        [_fake_run("a-1"), leaf_a, _fake_run("b-1"), leaf_b],
+    )
+
+    # Each case's driver gets two replies at $0.01 each → $0.02 SU per case.
+    def _ctor(blob, config):  # noqa: ARG001
+        instance = Mock(spec=SyntheticUserDriver)
+        instance.respond = AsyncMock(side_effect=[("u2", 0.01), ("u3", 0.01)])
+        return instance
+
+    monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case(0), _case(1)],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            concurrency=1,
+        )
+    )
+
+    case_a, case_b = (e for e in events if isinstance(e, CaseCompletedEvent))
+    assert case_a.total_cost == pytest.approx(0.10 + 0.02)
+    assert case_b.total_cost == pytest.approx(0.05 + 0.02)
+
+    batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert batch.total_cost == pytest.approx(0.12 + 0.07)
 
 
 @pytest.mark.asyncio
@@ -361,7 +405,7 @@ async def test_malformed_blob_surfaces_as_case_failed(
         if idx == 1:
             raise SyntheticUserInfoParseError("bad blob")
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(return_value="ok")
+        instance.respond = AsyncMock(return_value=("ok", 0.0))
         return instance
 
     _patch_su_driver_factory(monkeypatch, _ctor)

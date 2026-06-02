@@ -58,9 +58,15 @@ class DriveCaseResult:
     `chain` is the list of persisted TaskRuns the adapter produced (leaf
     last). There is no stop_reason field — every case ends after exactly
     `turns` iterations by design.
+
+    `su_total_cost` sums the SU driver's per-turn LLM cost across the
+    case. SU turns aren't persisted as TaskRuns, so this is the only
+    place that spend surfaces — the runner adds it to the target's
+    `cumulative_usage.cost` to produce an honest total.
     """
 
     chain: list[TaskRun]
+    su_total_cost: float
 
 
 async def drive_case(
@@ -101,6 +107,7 @@ async def drive_case(
     prev_run: TaskRun | None = None
     prev_trace: list[ChatCompletionMessageParam] | None = None
     chain: list[TaskRun] = []
+    su_total_cost: float = 0.0
 
     for _ in range(turns):
         new_run = await target_invoker(
@@ -112,7 +119,8 @@ async def drive_case(
 
         # The SU driver does the role filtering / role swap / invariant
         # checks itself. We pass the new run's cumulative trace as-is.
-        su_message = await su_driver.respond(new_run.trace or [])
+        su_message, su_cost = await su_driver.respond(new_run.trace or [])
+        su_total_cost += su_cost
 
         if on_turn is not None:
             await on_turn(run=new_run, su_message=su_message)
@@ -121,4 +129,4 @@ async def drive_case(
         prev_run = new_run
         prev_trace = new_run.trace
 
-    return DriveCaseResult(chain=chain)
+    return DriveCaseResult(chain=chain, su_total_cost=su_total_cost)

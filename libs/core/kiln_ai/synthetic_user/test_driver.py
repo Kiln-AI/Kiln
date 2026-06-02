@@ -13,6 +13,7 @@ import pytest
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import driver as driver_mod
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
@@ -35,14 +36,27 @@ def _fake_run_output(text: str | dict = "hi from the SU") -> RunOutput:
     return RunOutput(output=text, intermediate_outputs=None)
 
 
-def _patch_adapter(monkeypatch: pytest.MonkeyPatch, return_value: RunOutput) -> Mock:
+def _patch_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    return_value: RunOutput,
+    cost: float | None = None,
+) -> Mock:
     """Replace adapter_for_task with a stub returning a mock adapter whose
     invoke_returning_run_output yields (Mock(spec=TaskRun), return_value).
     Returns the mock adapter so tests can assert call args.
+
+    Pass `cost` to populate the in-memory TaskRun's `.usage.cost`; when
+    omitted, `.usage` is None and `respond()` should report cost=0.0.
     """
+    task_run = Mock(spec=TaskRun)
+    task_run.usage = (
+        Usage(input_tokens=0, output_tokens=0, total_tokens=0, cost=cost)
+        if cost is not None
+        else None
+    )
     adapter = Mock()
     adapter.invoke_returning_run_output = AsyncMock(
-        return_value=(Mock(spec=TaskRun), return_value)
+        return_value=(task_run, return_value)
     )
     monkeypatch.setattr(
         driver_mod, "adapter_for_task", lambda task, run_config: adapter
@@ -92,9 +106,12 @@ def test_construction_raises_on_empty_required_tag(
 
 
 @pytest.mark.asyncio
-async def test_respond_returns_adapter_output(
+async def test_respond_returns_adapter_output_and_zero_cost_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """When the provider doesn't surface pricing, cost defaults to 0.0
+    so downstream sums stay well-defined.
+    """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("the SU's reply"))
     drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
@@ -102,10 +119,28 @@ async def test_respond_returns_adapter_output(
         {"role": "assistant", "content": "a1"},
     ]
 
-    out = await drv.respond(conversation)
+    message, cost = await drv.respond(conversation)
 
-    assert out == "the SU's reply"
+    assert message == "the SU's reply"
+    assert cost == 0.0
     adapter.invoke_returning_run_output.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_respond_returns_cost_from_task_run_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-call cost is read from the in-memory TaskRun's `usage.cost`."""
+    _patch_adapter(monkeypatch, _fake_run_output("hi"), cost=0.0123)
+    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    conversation: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+    ]
+
+    _, cost = await drv.respond(conversation)
+
+    assert cost == pytest.approx(0.0123)
 
 
 @pytest.mark.asyncio

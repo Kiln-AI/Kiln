@@ -309,7 +309,7 @@ def test_run_cases_batch_emits_full_sse_event_stream(
             chain_run_ids=["r0a"],
             leaf_run_id="r0a",
             total_turns=1,
-            target_total_cost=0.01,
+            total_cost=0.01,
         ),
         CaseFailedEvent(
             case_index=1,
@@ -317,7 +317,7 @@ def test_run_cases_batch_emits_full_sse_event_stream(
             message="missing required tag",
         ),
         BatchCompletedEvent(
-            successful=1, failed=1, batch_tag="testbatch", target_total_cost=0.01
+            successful=1, failed=1, batch_tag="testbatch", total_cost=0.01
         ),
     ]
 
@@ -365,7 +365,7 @@ def test_run_cases_batch_emits_full_sse_event_stream(
         "successful": 1,
         "failed": 1,
         "batch_tag": "testbatch",
-        "target_total_cost": 0.01,
+        "total_cost": 0.01,
     }
 
 
@@ -391,9 +391,7 @@ def test_run_cases_batch_jsonable_handles_message_usage_in_trace(
                 {"role": "assistant", "content": "hi back", "usage": usage},  # type: ignore[typeddict-unknown-key]
             ],
         ),
-        BatchCompletedEvent(
-            successful=1, failed=0, batch_tag="tb", target_total_cost=0.001
-        ),
+        BatchCompletedEvent(successful=1, failed=0, batch_tag="tb", total_cost=0.001),
     ]
 
     async def _fake_runner(**_kwargs) -> AsyncIterator:
