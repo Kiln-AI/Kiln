@@ -172,11 +172,24 @@ def _format_validation_detail(error: HTTPValidationError) -> str:
     if not isinstance(detail, list):
         return "Validation error (no detail)."
     parts: list[str] = []
+    skipped = 0
     for item in detail:
         if not isinstance(item, ValidationError):
+            skipped += 1
             continue
         loc = ".".join(str(x) for x in item.loc)
         parts.append(f"{loc}: {item.msg}")
     if not parts:
+        # The SDK's HTTPValidationError.detail had items the SDK couldn't
+        # parse as ValidationError — a shape we don't expect today. Log
+        # so we can spot the discrepancy if it ever appears in the wild,
+        # instead of silently returning the empty fallback.
+        if skipped:
+            logger.warning(
+                "HTTPValidationError carried %d non-ValidationError detail item(s); "
+                "raw detail repr: %r",
+                skipped,
+                detail,
+            )
         return "Validation error (no detail)."
     return "Validation error: " + "; ".join(parts)

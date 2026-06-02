@@ -56,7 +56,7 @@ from app.desktop.studio_server.synthetic_user.client import (
 )
 from app.desktop.studio_server.synthetic_user.runner import (
     CONCURRENCY,
-    DEFAULT_TURNS,
+    MAX_TURNS_DEFAULT,
     NUM_CASES_MAX,
     BatchCompletedEvent,
     BatchEvent,
@@ -127,7 +127,7 @@ class RunCasesBatchApiInput(BaseModel):
         ),
     )
     turns: int = Field(
-        default=DEFAULT_TURNS,
+        default=MAX_TURNS_DEFAULT,
         ge=1,
         le=20,
         description=(
@@ -224,7 +224,9 @@ def _jsonable(obj: Any) -> Any:
     raise TypeError(f"{type(obj).__name__} is not JSON serializable")
 
 
-def _to_http_exception(exc: Exception) -> HTTPException:
+def _to_http_exception(
+    exc: SyntheticUserRequestError | SyntheticUserServerError,
+) -> HTTPException:
     """Translate SyntheticUserClient's typed exceptions to HTTPExceptions.
 
     Returns the exception rather than raising so callers can `raise … from exc`
@@ -245,21 +247,14 @@ def _to_http_exception(exc: Exception) -> HTTPException:
             status_code=status,
             detail={"code": exc.code, "message": exc.message},
         )
-    if isinstance(exc, SyntheticUserServerError):
-        # Preserve the upstream 5xx (502 → 502, 503 → 503, ...). Anything
-        # unrecognized falls to a clean 500.
-        status = (
-            exc.status_code if exc.status_code and 500 <= exc.status_code < 600 else 500
-        )
-        return HTTPException(
-            status_code=status,
-            detail={"code": exc.code, "message": exc.message},
-        )
-    # Generic fallback — shouldn't happen for known typed exceptions but
-    # keeps the helper exhaustive at the call site.
+    # SyntheticUserServerError: preserve the upstream 5xx (502 → 502,
+    # 503 → 503, ...). Anything unrecognized falls to a clean 500.
+    status = (
+        exc.status_code if exc.status_code and 500 <= exc.status_code < 600 else 500
+    )
     return HTTPException(
-        status_code=500,
-        detail={"code": "internal_error", "message": str(exc)},
+        status_code=status,
+        detail={"code": exc.code, "message": exc.message},
     )
 
 
@@ -343,7 +338,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                 status_code=400,
                 detail={
                     "code": "invalid_case_shape",
-                    "message": (f"Could not parse cases against the SDK shape: {exc}"),
+                    "message": f"Could not parse cases against the SDK shape: {exc}",
                 },
             ) from exc
 

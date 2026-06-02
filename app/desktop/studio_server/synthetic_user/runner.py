@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 # Module constants. Sized for an MVP beta — easy to bump in one place.
 NUM_CASES_MAX = 10
-DEFAULT_TURNS = 5
+MAX_TURNS_DEFAULT = 5
 CONCURRENCY = 4
 
 # Tag scheme. `_TAG_SU_CASE` lets the dataset view filter to all SU-generated
@@ -129,7 +129,7 @@ async def run_cases_batch(
     target_task: Task,
     target_run_config: KilnAgentRunConfigProperties,
     su_driver_config: SyntheticUserDriverConfig,
-    turns: int = DEFAULT_TURNS,
+    turns: int = MAX_TURNS_DEFAULT,
     concurrency: int = CONCURRENCY,
     batch_tag: str | None = None,
     save_context: SaveContext | None = None,
@@ -186,16 +186,27 @@ async def run_cases_batch(
     # Kick the cases off BEFORE the first yield so they start running
     # concurrently with consumer setup. If the consumer disconnects between
     # BatchStartedEvent and the drain loop, the `finally` below still
-    # cancels them.
-    case_tasks = [asyncio.create_task(_drive_one(i, c)) for i, c in enumerate(cases)]
+    # cancels them. Tasks are named so asyncio debug dumps and pending-
+    # task warnings point at this code path.
+    case_tasks = [
+        asyncio.create_task(
+            _drive_one(i, c), name=f"su_case_{i}_{resolved_batch_tag[:6]}"
+        )
+        for i, c in enumerate(cases)
+    ]
 
     async def _close_when_done() -> None:
         # `return_exceptions=True` so a stray bug doesn't leave the queue
         # draining forever; we surface failures via per-case CaseFailedEvent.
+        # On the cancel path (consumer disconnect), the drain loop has
+        # already exited, so the final `put(None)` is into-the-void —
+        # harmless because the queue is unbounded and never re-read.
         await asyncio.gather(*case_tasks, return_exceptions=True)
         await queue.put(None)
 
-    closer = asyncio.create_task(_close_when_done())
+    closer = asyncio.create_task(
+        _close_when_done(), name=f"su_closer_{resolved_batch_tag[:6]}"
+    )
 
     successful = 0
     failed = 0
@@ -351,6 +362,13 @@ def _make_target_invoker(
     attribution context in `input_source.properties` while subsequent
     runs carry only the slim `{batch_tag, turn_index}` — the case is
     recoverable by walking `parent_task_run_id` to the root.
+
+    Concurrency: the returned closure is NOT safe to invoke concurrently.
+    `nonlocal turn_index` is incremented per call; concurrent callers
+    would race on the increment and the resulting `is_root` flag.
+    `drive_case` calls it sequentially within a single case (the
+    `for _ in range(turns)` loop), which is the contract; cases are
+    isolated by having their own closure with their own `turn_index`.
     """
     adapter = adapter_for_task(target_task, target_run_config)
     turn_index = 0
@@ -443,6 +461,12 @@ def _tag_leaf(leaf: TaskRun, batch_tag: str) -> None:
     Tags are deduplicated (treated as a set then sorted) so re-runs
     against an already-tagged leaf are idempotent. A save_to_file
     exception surfaces to the caller (which converts to CaseFailedEvent).
+
+    Reentrancy: the read-modify-write on `leaf.tags` assumes a single
+    writer per leaf. The current call shape guarantees this (each case
+    has its own leaf), so concurrent tagging across cases hits four
+    different files. A future refactor that shares leaves across cases
+    would need to re-introduce locking here.
     """
     tags = set(leaf.tags or [])
     tags.add(_TAG_SU_CASE)

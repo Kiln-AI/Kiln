@@ -450,6 +450,25 @@ def test_run_cases_batch_translates_runner_failure_to_batch_failed(
     assert "upstream catastrophe" in failed_evt["message"]
 
 
+def test_event_to_payload_raises_on_unregistered_event_type() -> None:
+    """If a new BatchEvent dataclass is added but not registered in
+    `_EVENT_NAMES`, `_event_to_payload` must fail loud at test time, not
+    silently emit a malformed SSE frame in production. Locks in the
+    defensive RuntimeError so a contributor adding a new event without
+    updating the map fails the build instead of shipping a wire bug.
+    """
+    from dataclasses import dataclass
+
+    from app.desktop.studio_server.multiturn_sdg_api import _event_to_payload
+
+    @dataclass(frozen=True)
+    class _UnregisteredEvent:
+        x: int = 1
+
+    with pytest.raises(RuntimeError, match="Unregistered BatchEvent type"):
+        _event_to_payload(_UnregisteredEvent())  # type: ignore[arg-type]
+
+
 def test_run_cases_batch_jsonable_typeerror_surfaces_as_batch_failed(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:

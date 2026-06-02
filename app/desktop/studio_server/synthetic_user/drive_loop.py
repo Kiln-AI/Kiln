@@ -24,10 +24,10 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 
 
 class TargetInvoker(Protocol):
-    """Callable that invokes the target task for one turn. Phase 3 wraps
-    `adapter_for_task(task, run_config).invoke` to satisfy this; tests
-    pass in a fake. Keeps the drive loop target-agnostic — it just cares
-    about the persisted TaskRun that comes back.
+    """Callable that invokes the target task for one turn. The runner
+    wraps `adapter_for_task(task, run_config).invoke` to satisfy this;
+    tests pass in a fake. Keeps the drive loop target-agnostic — it just
+    cares about the persisted TaskRun that comes back.
     """
 
     async def __call__(
@@ -91,6 +91,11 @@ async def drive_case(
     """
     if turns < 1:
         raise ValueError(f"turns must be >= 1, got {turns}")
+    # Assert-loud on missing seed. An empty string would silently flow
+    # into the target adapter and surface as a confusing model-side error
+    # rather than a clean "the case is malformed" signal.
+    if not case.seed_prompt:
+        raise ValueError("case.seed_prompt must be a non-empty string")
 
     user_msg: str = case.seed_prompt
     prev_run: TaskRun | None = None

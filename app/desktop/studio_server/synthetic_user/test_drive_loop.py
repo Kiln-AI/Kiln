@@ -234,8 +234,12 @@ async def test_drive_case_works_without_on_turn_hook() -> None:
 # ───────────────────────── invariants ─────────────────────────
 
 
+@pytest.mark.parametrize("bad_turns", [0, -1, -100])
 @pytest.mark.asyncio
-async def test_drive_case_rejects_invalid_turns() -> None:
+async def test_drive_case_rejects_invalid_turns(bad_turns: int) -> None:
+    """Parameterized so a regression that mistyped `if turns == 0` instead of
+    `if turns < 1` would be caught by the negative cases.
+    """
     invoker = _FakeInvoker(assistant_replies=[])
     su = _su_driver_with_replies([])
 
@@ -244,7 +248,25 @@ async def test_drive_case_rejects_invalid_turns() -> None:
             case=_case(),
             target_invoker=invoker,
             su_driver=su,
-            turns=0,
+            turns=bad_turns,
+        )
+
+
+@pytest.mark.asyncio
+async def test_drive_case_rejects_empty_seed_prompt() -> None:
+    """An empty seed would silently flow into the target adapter and
+    surface as a confusing model-side error; assert-loud at the boundary
+    so this fails as the unambiguous "malformed case" it is.
+    """
+    invoker = _FakeInvoker(assistant_replies=[])
+    su = _su_driver_with_replies([])
+
+    with pytest.raises(ValueError, match="seed_prompt"):
+        await drive_case(
+            case=_case(seed=""),
+            target_invoker=invoker,
+            su_driver=su,
+            turns=1,
         )
 
 

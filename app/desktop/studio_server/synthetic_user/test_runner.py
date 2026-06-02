@@ -8,6 +8,7 @@ ordering / per-case bookkeeping.
 """
 
 import asyncio
+import re
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -333,9 +334,13 @@ async def test_auto_generates_batch_tag_when_not_provided(
         )
     )
 
+    # Couple the assertion to the public contract — the auto-generated
+    # tag must satisfy the batch_tag input regex `[A-Za-z0-9_-]{1,64}` so
+    # it can be passed back as `batch_tag` on a subsequent run. Avoids
+    # restating the implementation (uuid4().hex[:12]), which would lock
+    # us in to a specific length/charset just because that's what we picked.
     started = next(e for e in events if isinstance(e, BatchStartedEvent))
-    assert len(started.batch_tag) == 12
-    assert all(c in "0123456789abcdef" for c in started.batch_tag)
+    assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}", started.batch_tag) is not None
 
 
 # ───────────────────────── per-case failure isolation ─────────────────────────
