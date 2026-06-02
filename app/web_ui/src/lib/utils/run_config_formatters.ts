@@ -3,6 +3,7 @@ import type {
   PromptResponse,
   ProviderModels,
   ToolSetApiDescription,
+  InputTransform,
 } from "$lib/types"
 import {
   model_name,
@@ -124,6 +125,48 @@ export function getRunConfigPromptInfoText(
   }
 }
 
+export function getInputTransformDisplay(transform: InputTransform): {
+  valueLabel: string
+  summaryLabel: string
+  modalSubtitle: string
+} {
+  switch (transform.type) {
+    case "jinja":
+      return {
+        valueLabel: "Custom Template",
+        summaryLabel: "Custom",
+        modalSubtitle: "Type: Custom Jinja2 Template",
+      }
+    default: {
+      const _exhaustive: never = transform.type
+      throw new Error(`Unknown input transform type: ${_exhaustive}`)
+    }
+  }
+}
+
+export function getRunConfigInputTransform(
+  run_config: TaskRunConfig,
+): InputTransform | null {
+  const t = run_config.run_config_properties.type
+  switch (t) {
+    case "mcp":
+      return null
+    case "kiln_agent":
+      return run_config.run_config_properties.input_transform ?? null
+    default: {
+      const _exhaustive: never = t
+      throw new Error(`Unknown run config type: ${_exhaustive}`)
+    }
+  }
+}
+
+export function getRunConfigInputTransformSummaryLabel(
+  run_config: TaskRunConfig,
+): string | null {
+  const transform = getRunConfigInputTransform(run_config)
+  return transform ? getInputTransformDisplay(transform).summaryLabel : null
+}
+
 export function getRunConfigUiProperties(
   project_id: string,
   task_id: string,
@@ -131,6 +174,7 @@ export function getRunConfigUiProperties(
   model_info: ProviderModels | null,
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
+  on_view_input_transform?: () => void,
 ): UiProperty[] {
   const run_config_type = run_config.run_config_properties.type
   switch (run_config_type) {
@@ -197,6 +241,9 @@ export function getRunConfigUiProperties(
 
       const prompt_info_text = getRunConfigPromptInfoText(run_config)
 
+      const input_transform =
+        run_config.run_config_properties.input_transform ?? null
+
       const all_ids = run_config.run_config_properties.tools_config?.tools || []
       const { tool_ids, skill_ids } = split_tool_and_skill_ids(all_ids)
       const tools_property_info = available_tools
@@ -228,6 +275,16 @@ export function getRunConfigUiProperties(
           value: prompt_value,
           link: prompt_link_value,
           tooltip: prompt_info_text || undefined,
+        },
+        {
+          name: "Input Transformer",
+          value: input_transform
+            ? getInputTransformDisplay(input_transform).valueLabel
+            : "None",
+          action:
+            input_transform && on_view_input_transform
+              ? on_view_input_transform
+              : undefined,
         },
         {
           name: "Available Tools",
