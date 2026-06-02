@@ -41,9 +41,17 @@ jobs:
         run: uv sync
       - name: Install Node deps
         run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ hashFiles('app/web_ui/package-lock.json') }}
       - name: Install Playwright Browsers
+        timeout-minutes: 5
         run: npx playwright install --with-deps chromium
       - name: Run Playwright tests
+        timeout-minutes: 10
         run: npx playwright test
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
