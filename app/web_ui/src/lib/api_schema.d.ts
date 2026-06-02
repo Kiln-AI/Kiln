@@ -2760,6 +2760,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Multi-Turn SU Cases */
+        post: operations["generate_cases_api_projects__project_id__tasks__task_id__multiturn_sdg_generate_cases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/run_cases_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Multi-Turn SU Cases Batch */
+        post: operations["stream_run_cases_batch_api_projects__project_id__tasks__task_id__multiturn_sdg_run_cases_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/git_sync/test_access": {
         parameters: {
             query?: never;
@@ -6581,6 +6615,23 @@ export interface components {
                 [key: string]: components["schemas"]["SampleApi"][];
             };
         };
+        /** GenerateCasesApiInput */
+        GenerateCasesApiInput: {
+            /** Target Specification */
+            target_specification: string;
+            /** Num Cases */
+            num_cases: number;
+        };
+        /** GenerateCasesApiOutput */
+        GenerateCasesApiOutput: {
+            /**
+             * Cases
+             * @description A SyntheticUserCase as returned by kiln_server's /generate. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
+             */
+            cases: {
+                [key: string]: unknown;
+            }[];
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -8520,6 +8571,29 @@ export interface components {
             /** Feedback */
             feedback: string;
         };
+        /** RunCasesBatchApiInput */
+        RunCasesBatchApiInput: {
+            /**
+             * Cases
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase as returned by kiln_server's /generate. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
+             */
+            cases: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Turns
+             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @default 5
+             */
+            turns: number;
+            target_run_config: components["schemas"]["TargetRunConfigSpec"];
+            su_driver: components["schemas"]["SyntheticUserDriverSpec"];
+            /**
+             * Batch Tag
+             * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
+             */
+            batch_tag?: string | null;
+        };
         /**
          * RunChainEntry
          * @description A single entry in a multi-turn run's conversation chain.
@@ -9286,6 +9360,16 @@ export interface components {
             /** Prompt */
             prompt: string;
         };
+        /**
+         * SyntheticUserDriverSpec
+         * @description How to drive the synthetic user. Caller controls because probe
+         *     quality and cost both depend on the model.
+         */
+        SyntheticUserDriverSpec: {
+            /** Model Name */
+            model_name: string;
+            model_provider: components["schemas"]["ModelProviderName"];
+        };
         /** TabooProperties */
         TabooProperties: {
             /**
@@ -9297,6 +9381,21 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
+        };
+        /**
+         * TargetRunConfigSpec
+         * @description How to invoke the target task on each turn — same fields a manual
+         *     UI run would use.
+         */
+        TargetRunConfigSpec: {
+            /** Model Name */
+            model_name: string;
+            model_provider: components["schemas"]["ModelProviderName"];
+            /**
+             * Prompt Id
+             * @default simple_prompt_builder
+             */
+            prompt_id: string;
         };
         /**
          * Task
@@ -16926,6 +17025,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_cases_api_projects__project_id__tasks__task_id__multiturn_sdg_generate_cases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ID of the project containing the target task. */
+                project_id: string;
+                /** @description ID of the target task. Must be a multi-turn task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateCasesApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateCasesApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_run_cases_batch_api_projects__project_id__tasks__task_id__multiturn_sdg_run_cases_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ID of the project containing the target task. */
+                project_id: string;
+                /** @description ID of the target task. Must be a multi-turn task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCasesBatchApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
