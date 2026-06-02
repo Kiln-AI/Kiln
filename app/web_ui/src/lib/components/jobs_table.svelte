@@ -128,7 +128,11 @@
     errors_loading = true
     errors_dialog?.show()
     try {
-      error_entries = await get_job_errors(job.id)
+      const all = await get_job_errors(job.id)
+      // Fatal entries (the one the registry writes when run() raises) duplicate
+      // what the red summary banner already shows — drop them so the user only
+      // sees the per-item, non-fatal errors that aren't already surfaced.
+      error_entries = all.filter((e) => e["fatal"] !== true)
     } catch (e) {
       errors_load_error = createKilnError(e)
     } finally {
@@ -329,11 +333,10 @@
 
 <Dialog bind:this={errors_dialog} title="Job Errors" width="wide">
   {#if errors_summary?.error}
-    <div
-      role="alert"
-      class="alert alert-error text-sm mb-4 flex flex-col items-start gap-1"
-    >
-      <span class="font-medium break-words">{errors_summary.error}</span>
+    <div role="alert" class="text-sm mb-4 flex flex-col items-start gap-1">
+      <span class="font-medium break-words text-error"
+        >{errors_summary.error}</span
+      >
       {#if errors_summary.detail}
         <pre
           class="text-xs w-full bg-base-200 text-base-content rounded-md p-2 overflow-x-auto max-h-48">{JSON.stringify(
