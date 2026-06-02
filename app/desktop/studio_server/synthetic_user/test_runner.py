@@ -490,11 +490,13 @@ async def test_concurrency_semaphore_caps_in_flight_cases(
 
 
 @pytest.mark.asyncio
-async def test_root_input_source_carries_blob_and_seed_prompt(
+async def test_root_input_source_carries_decomposed_case_context(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """First adapter.invoke call gets an input_source with the full SU
-    case context: the opaque blob + seed_prompt.
+    """First adapter.invoke call gets an input_source with the decomposed
+    SU case context (persona/goal/behavior_guidance/seed_prompt) rather
+    than the opaque blob. Lets dataset readers inspect attribution
+    without re-parsing.
     """
     captured: list[dict[str, Any]] = []
 
@@ -524,8 +526,51 @@ async def test_root_input_source_carries_blob_and_seed_prompt(
     assert props["model_provider"] == "openrouter"
     assert props["batch_tag"] == "rb1"
     assert props["turn_index"] == 1
-    assert props["synthetic_user_info"] == case.synthetic_user_info
+    # Decomposed — no opaque blob persisted.
+    assert "synthetic_user_info" not in props
+    assert props["persona"] == "persona-0"
+    assert props["goal"] == "goal-0"
+    assert props["behavior_guidance"] == "guidance-0"
     assert props["seed_prompt"] == case.seed_prompt
+
+
+@pytest.mark.asyncio
+async def test_root_input_source_omits_behavior_guidance_when_absent(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`behavior_guidance` is the only optional SU info field — when the
+    blob omits the tag (or has empty content), the property must be
+    absent rather than empty-stringed. The DataSource validator rejects
+    empty strings, so the filter in `_build_input_source` would otherwise
+    save us here, but we want the wire shape predictable either way.
+    """
+    captured: list[dict[str, Any]] = []
+
+    async def _capture(**kwargs: Any) -> Mock:
+        captured.append(kwargs)
+        return _fake_run(f"r-{len(captured)}")
+
+    _patch_adapter_for_task(monkeypatch, _capture)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    case_no_guidance = SyntheticUserCase(
+        seed_prompt="hello",
+        synthetic_user_info="<persona>p</persona><goal>g</goal>",
+    )
+    await _collect(
+        run_cases_batch(
+            cases=[case_no_guidance],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    props = captured[0]["input_source"].properties
+    assert props["persona"] == "p"
+    assert props["goal"] == "g"
+    assert "behavior_guidance" not in props
 
 
 @pytest.mark.asyncio

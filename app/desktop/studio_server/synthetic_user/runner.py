@@ -32,7 +32,10 @@ from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
-from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
+from kiln_ai.synthetic_user.parser import (
+    SyntheticUserInfoParseError,
+    parse_synthetic_user_info,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -413,9 +416,15 @@ def _build_input_source(
     extra property keys alongside the required `model_name` /
     `model_provider` / `adapter_name`.
 
-    Root run carries the full opaque blob + seed_prompt so anyone landing
-    on this run can recover the case context without walking the chain.
-    Subsequent runs carry only the slim batch_tag/turn_index pair.
+    Root run carries the decomposed case context (persona / goal /
+    behavior_guidance / seed_prompt) so a reader landing on the run can
+    inspect the SU configuration without re-parsing the blob. Subsequent
+    runs carry only the slim batch_tag/turn_index pair; the full context
+    is recoverable by walking `parent_task_run_id` to the root.
+
+    The blob itself is not persisted — it's losslessly reconstructable
+    from the decomposed fields via `build_synthetic_user_info` if any
+    downstream tool needs the original wire form.
     """
     props: dict[str, str | int | float] = {
         "model_name": su_driver_config.model_name,
@@ -425,7 +434,14 @@ def _build_input_source(
         "turn_index": turn_index,
     }
     if is_root:
-        props["synthetic_user_info"] = case.synthetic_user_info
+        # Parse is cheap (regex on a short string) and was already
+        # validated when the SU driver was built — re-parsing here can't
+        # surface a new error class.
+        info = parse_synthetic_user_info(case.synthetic_user_info)
+        props["persona"] = info.persona
+        props["goal"] = info.goal
+        if info.behavior_guidance:
+            props["behavior_guidance"] = info.behavior_guidance
         props["seed_prompt"] = case.seed_prompt
 
     # The validator rejects empty string property values. Strip any that
