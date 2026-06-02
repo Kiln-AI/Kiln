@@ -58,8 +58,7 @@ jobs:
         run: |
           BROWSER_DIR="$HOME/.cache/ms-playwright/chromium-1217"
           HEADLESS_DIR="$HOME/.cache/ms-playwright/chromium_headless_shell-1217"
-          FFMPEG_DIR="$HOME/.cache/ms-playwright/ffmpeg-1011"
-          mkdir -p "$BROWSER_DIR" "$HEADLESS_DIR" "$FFMPEG_DIR"
+          mkdir -p "$BROWSER_DIR" "$HEADLESS_DIR"
 
           echo "Downloading Chrome for Testing..."
           curl -sSL --retry 3 "https://cdn.playwright.dev/builds/cft/147.0.7727.15/linux64/chrome-linux64.zip" -o /tmp/chrome.zip
@@ -71,13 +70,8 @@ jobs:
           unzip -q /tmp/headless.zip -d "$HEADLESS_DIR"
           rm /tmp/headless.zip
 
-          echo "Downloading FFmpeg..."
-          curl -sSL --retry 3 "https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux64.zip" -o /tmp/ffmpeg.zip
-          unzip -q /tmp/ffmpeg.zip -d "$FFMPEG_DIR"
-          rm /tmp/ffmpeg.zip
-
           echo "Browser install complete"
-          ls -la "$BROWSER_DIR" "$HEADLESS_DIR" "$FFMPEG_DIR"
+          ls -la "$BROWSER_DIR" "$HEADLESS_DIR"
       - name: Run Playwright tests
         timeout-minutes: 10
         run: npx playwright test
