@@ -7605,18 +7605,17 @@ built_in_models: List[KilnModel] = [
                 parser=ModelParserID.r1_thinking,
                 multimodal_capable=True,
                 supports_vision=True,
+                supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
                 multimodal_mime_types=[
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
                     # documents (via PDF-as-image)
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # NOTE: M3 natively supports video but OpenRouter doesn't route it correctly
                 ],
             ),
         ],
