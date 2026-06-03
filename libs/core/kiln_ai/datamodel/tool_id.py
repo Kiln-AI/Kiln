@@ -30,7 +30,6 @@ class KilnBuiltInToolId(str, Enum):
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"
     DIVIDE_NUMBERS = "kiln_tool::divide_numbers"
     CALL_KILN_API = "kiln_tool::call_kiln_api"
-    CALCULATE = "kiln_tool::calculate"
     STATISTICS = "kiln_tool::statistics"
 
 

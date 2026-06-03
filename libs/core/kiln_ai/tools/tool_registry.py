@@ -15,7 +15,6 @@ from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
-    CalculateTool,
     DivideTool,
     MultiplyTool,
     SubtractTool,
@@ -43,8 +42,6 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 return MultiplyTool()
             case KilnBuiltInToolId.DIVIDE_NUMBERS:
                 return DivideTool()
-            case KilnBuiltInToolId.CALCULATE:
-                return CalculateTool()
             case KilnBuiltInToolId.STATISTICS:
                 return StatisticsTool()
             case KilnBuiltInToolId.CALL_KILN_API:
