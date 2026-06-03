@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
 
 from ..models.task_output_rating_type import TaskOutputRatingType
 from ..types import UNSET, Unset
@@ -151,7 +150,7 @@ class TaskOutputRating:
         if isinstance(_created_at, Unset):
             created_at = UNSET
         else:
-            created_at = isoparse(_created_at)
+            created_at = datetime.datetime.fromisoformat(_created_at)
 
         created_by = d.pop("created_by", UNSET)
 

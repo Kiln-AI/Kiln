@@ -8,18 +8,22 @@ from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
-T = TypeVar("T", bound="Usage")
+T = TypeVar("T", bound="MessageUsage")
 
 
 @_attrs_define
-class Usage:
-    """Token usage, cost, and aggregate LLM latency for a per-run accumulator.
+class MessageUsage:
+    """Token usage and cost for a single LLM call or a multi-message sum.
 
-    Extends :class:`MessageUsage` with ``total_llm_latency_ms``, which is
-    only meaningful while a single run is in flight (its model calls run
-    sequentially in real time). For per-message records and full-trace
-    sums use :class:`MessageUsage` — those values would mix latencies
-    from different points in time, so the field doesn't apply.
+    Carries only the fields that are meaningfully aggregatable across
+    messages: token counts and cost. Per-call latency lives on the
+    individual message's ``latency_ms`` field; aggregating it across the
+    full trace would mix latencies from different points in time, so
+    ``MessageUsage`` does NOT carry ``total_llm_latency_ms``.
+
+    The :class:`Usage` subclass adds ``total_llm_latency_ms`` for the
+    in-flight per-run accumulator that tracks how long this run spent
+    waiting on LLM calls.
 
         Attributes:
             input_tokens (int | None | Unset): The number of input tokens used.
@@ -27,8 +31,6 @@ class Usage:
             total_tokens (int | None | Unset): The total number of tokens used.
             cost (float | None | Unset): The cost in US dollars, saved at runtime (prices can change over time).
             cached_tokens (int | None | Unset): Number of tokens served from prompt cache. None if not reported.
-            total_llm_latency_ms (int | None | Unset): Total time spent waiting on LLM API calls in milliseconds. Sum of
-                per-call latencies, excludes tool execution time.
     """
 
     input_tokens: int | None | Unset = UNSET
@@ -36,7 +38,6 @@ class Usage:
     total_tokens: int | None | Unset = UNSET
     cost: float | None | Unset = UNSET
     cached_tokens: int | None | Unset = UNSET
-    total_llm_latency_ms: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,12 +71,6 @@ class Usage:
         else:
             cached_tokens = self.cached_tokens
 
-        total_llm_latency_ms: int | None | Unset
-        if isinstance(self.total_llm_latency_ms, Unset):
-            total_llm_latency_ms = UNSET
-        else:
-            total_llm_latency_ms = self.total_llm_latency_ms
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update({})
@@ -89,8 +84,6 @@ class Usage:
             field_dict["cost"] = cost
         if cached_tokens is not UNSET:
             field_dict["cached_tokens"] = cached_tokens
-        if total_llm_latency_ms is not UNSET:
-            field_dict["total_llm_latency_ms"] = total_llm_latency_ms
 
         return field_dict
 
@@ -143,26 +136,16 @@ class Usage:
 
         cached_tokens = _parse_cached_tokens(d.pop("cached_tokens", UNSET))
 
-        def _parse_total_llm_latency_ms(data: object) -> int | None | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(int | None | Unset, data)
-
-        total_llm_latency_ms = _parse_total_llm_latency_ms(d.pop("total_llm_latency_ms", UNSET))
-
-        usage = cls(
+        message_usage = cls(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cost=cost,
             cached_tokens=cached_tokens,
-            total_llm_latency_ms=total_llm_latency_ms,
         )
 
-        usage.additional_properties = d
-        return usage
+        message_usage.additional_properties = d
+        return message_usage
 
     @property
     def additional_keys(self) -> list[str]:
