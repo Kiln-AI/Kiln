@@ -1,13 +1,8 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterEach, vi } from "vitest"
+import { describe, it, expect, beforeAll, afterEach } from "vitest"
 import { render, fireEvent, cleanup } from "@testing-library/svelte"
-import { goto } from "$app/navigation"
 import PropertyList from "./property_list.svelte"
 import type { UiProperty } from "./property_list"
-
-vi.mock("$app/navigation", () => ({
-  goto: vi.fn(),
-}))
 
 // jsdom does not implement HTMLDialogElement.showModal/close. The Dialog
 // component used for the "+N more" modal calls them, so polyfill with no-ops
@@ -27,7 +22,6 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup()
-  vi.clearAllMocks()
 })
 
 function render_props(properties: UiProperty[]) {
@@ -97,7 +91,7 @@ describe("PropertyList collapse_badges", () => {
     )
   })
 
-  it("renders the same badge pills in the modal and navigates on click", async () => {
+  it("renders the same badge pills (semantic links) in the modal", async () => {
     const { getByText, container } = render_props([
       {
         name: "Available Tools",
@@ -108,14 +102,11 @@ describe("PropertyList collapse_badges", () => {
       },
     ])
     await fireEvent.click(getByText("+1 more"))
-    // Modal pills use the same badge markup as the inline list.
-    const pills = container.querySelectorAll(
-      "dialog button.badge.badge-outline",
-    )
+    // Modal pills use the same badge markup as the inline list: semantic
+    // anchors for links pointing at the tool's page.
+    const pills = container.querySelectorAll("dialog a.badge.badge-outline")
     expect(pills.length).toBe(2)
     expect(pills[1].textContent?.trim()).toBe("beta")
-    // Clicking a pill navigates to its tool link.
-    await fireEvent.click(pills[1])
-    expect(goto).toHaveBeenCalledWith("/tools/b")
+    expect(pills[1].getAttribute("href")).toBe("/tools/b")
   })
 })

@@ -65,16 +65,16 @@
                     ? property.links[i]
                     : null
                   : null}
-                <button
-                  class="badge badge-outline h-auto hover:bg-base-200"
-                  on:click={() => {
-                    if (link) {
-                      goto(link)
-                    }
-                  }}
-                >
-                  {value}
-                </button>
+                {#if link}
+                  <a
+                    href={link}
+                    class="badge badge-outline h-auto hover:bg-base-200"
+                  >
+                    {value}
+                  </a>
+                {:else}
+                  <span class="badge badge-outline h-auto">{value}</span>
+                {/if}
               {/each}
               {#if collapse}
                 <button
@@ -142,16 +142,13 @@
         modal_links && modal_links.length === modal_values.length
           ? modal_links[i]
           : null}
-      <button
-        class="badge badge-outline h-auto hover:bg-base-200"
-        on:click={() => {
-          if (link) {
-            goto(link)
-          }
-        }}
-      >
-        {value}
-      </button>
+      {#if link}
+        <a href={link} class="badge badge-outline h-auto hover:bg-base-200">
+          {value}
+        </a>
+      {:else}
+        <span class="badge badge-outline h-auto">{value}</span>
+      {/if}
     {/each}
   </div>
 </Dialog>
