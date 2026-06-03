@@ -159,17 +159,19 @@
 
 <div data-testid="multiturn-composer" class="flex flex-col gap-4">
   {#if mode === "fork"}
+    <!-- Status header for the composer, not a chat bubble. The fork
+         affordance is metadata about what Send will do, so it's styled as a
+         label + helper text aligned to the input below — the filled rounded
+         bubble treatment is reserved for actual messages. -->
     <div
       data-testid="multiturn-fork-context-strip"
-      class="flex flex-col gap-1 bg-base-200 rounded-lg px-4 py-2 text-sm"
+      class="flex flex-col gap-0.5"
     >
-      <div class="flex flex-row items-center gap-2">
-        <span class="w-4 h-4 text-gray-500"><ForkIcon /></span>
-        <span class="font-medium">
-          Forking turn {forked_turn_index}
-        </span>
+      <div class="flex flex-row items-center gap-2 text-sm font-medium">
+        <span class="w-4 h-4 text-gray-500 flex-none"><ForkIcon /></span>
+        <span>Forking turn {forked_turn_index}</span>
       </div>
-      <p class="text-gray-500">
+      <p class="text-xs text-gray-500">
         Editing this message will create a new conversation branch. The original
         conversation it branched off from will be preserved unchanged in your
         dataset.
@@ -192,9 +194,16 @@
       bind:submitting
       primary={true}
       keyboard_submit={true}
+      focus_on_mount={false}
     >
       <div data-testid="multiturn-composer-input">
-        <RunInputForm bind:this={input_form} input_schema={null} />
+        <RunInputForm
+          bind:this={input_form}
+          input_schema={null}
+          label="Message"
+          placeholder="Write a message…"
+          hide_label={true}
+        />
       </div>
       <svelte:fragment slot="submit_left">
         <button
@@ -216,9 +225,16 @@
       bind:submitting
       primary={true}
       keyboard_submit={true}
+      focus_on_mount={false}
     >
       <div data-testid="multiturn-composer-input">
-        <RunInputForm bind:this={input_form} input_schema={null} />
+        <RunInputForm
+          bind:this={input_form}
+          input_schema={null}
+          label="Message"
+          placeholder="Write a message…"
+          hide_label={true}
+        />
       </div>
     </FormContainer>
   {/if}

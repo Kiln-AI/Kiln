@@ -10,6 +10,12 @@
 
   export let input_schema: string | null | undefined
   export let onInputChange: (() => void) | null = null
+  // Plaintext-mode label/placeholder. The label doubles as the validation
+  // message and aria-label, so it stays meaningful even when visually hidden
+  // (e.g. the multiturn composer hides the header and uses a custom hint).
+  export let label: string = "Plaintext Input"
+  export let placeholder: string | null = null
+  export let hide_label: boolean = false
   let plaintext_input: string = ""
   $: void (plaintext_input, onInputChange?.())
 
@@ -67,7 +73,9 @@
 
 {#if !input_schema}
   <FormElement
-    label="Plaintext Input"
+    {label}
+    {placeholder}
+    {hide_label}
     inputType="textarea"
     height="large"
     {id}
