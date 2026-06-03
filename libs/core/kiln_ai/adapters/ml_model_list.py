@@ -256,6 +256,7 @@ class ModelName(str, Enum):
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
+    minimax_m3 = "minimax_m3"
     minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
     minimax_m2_1 = "minimax_m2_1"
@@ -7583,6 +7584,39 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Minimax M3
+    # 1M context, native multimodal (text/image/video input), sparse attention
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m3,
+        friendly_name="Minimax M3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m3",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents (via PDF-as-image)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # NOTE: M3 natively supports video but OpenRouter doesn't route it correctly
+                ],
             ),
         ],
     ),
