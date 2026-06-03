@@ -2075,6 +2075,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/validate_input_transform_template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Input Transform Template */
+        post: operations["validate_input_transform_template_api_validate_input_transform_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks_compatible_with_tool": {
         parameters: {
             query?: never;
@@ -10272,6 +10289,27 @@ export interface components {
             /** Id */
             id?: string;
         };
+        /** ValidateInputTransformTemplateRequest */
+        ValidateInputTransformTemplateRequest: {
+            /**
+             * Template
+             * @description The Jinja2 template source to validate.
+             */
+            template: string;
+        };
+        /** ValidateInputTransformTemplateResponse */
+        ValidateInputTransformTemplateResponse: {
+            /**
+             * Valid
+             * @description Whether the template is valid Jinja2.
+             */
+            valid: boolean;
+            /**
+             * Error
+             * @description The compile error message, if invalid.
+             */
+            error?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -15370,6 +15408,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_input_transform_template_api_validate_input_transform_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidateInputTransformTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidateInputTransformTemplateResponse"];
                 };
             };
             /** @description Validation Error */

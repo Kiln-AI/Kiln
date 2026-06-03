@@ -314,3 +314,26 @@ export function getRunConfigUiProperties(
     }
   }
 }
+
+export function buildJinjaInputTransform(template: string): InputTransform {
+  return { type: "jinja", template }
+}
+
+export function inputTransformsEqual(
+  a: InputTransform | null | undefined,
+  b: InputTransform | null | undefined,
+): boolean {
+  const an = a ?? null
+  const bn = b ?? null
+  if (an === null || bn === null) {
+    return an === bn
+  }
+  switch (an.type) {
+    case "jinja":
+      return bn.type === "jinja" && an.template === bn.template
+    default: {
+      const _exhaustive: never = an.type
+      throw new Error(`Unknown input transform type: ${_exhaustive}`)
+    }
+  }
+}

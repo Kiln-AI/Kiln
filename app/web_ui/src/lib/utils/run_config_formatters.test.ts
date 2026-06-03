@@ -6,6 +6,8 @@ import {
   getInputTransformDisplay,
   getRunConfigInputTransform,
   getRunConfigInputTransformSummaryLabel,
+  buildJinjaInputTransform,
+  inputTransformsEqual,
 } from "./run_config_formatters"
 
 const JINJA_TRANSFORM: InputTransform = {
@@ -195,5 +197,59 @@ describe("getRunConfigUiProperties (kiln_agent input transformer row)", () => {
     const transformIdx = names.indexOf("Input Transformer")
     expect(promptIdx).toBeGreaterThanOrEqual(0)
     expect(transformIdx).toBe(promptIdx + 1)
+  })
+})
+
+describe("buildJinjaInputTransform", () => {
+  it("builds a jinja input transform from a template string", () => {
+    const result = buildJinjaInputTransform("Hello {{ input }}")
+    expect(result).toEqual({ type: "jinja", template: "Hello {{ input }}" })
+  })
+
+  it("preserves empty strings", () => {
+    const result = buildJinjaInputTransform("")
+    expect(result).toEqual({ type: "jinja", template: "" })
+  })
+})
+
+describe("inputTransformsEqual", () => {
+  it("returns true for null/null", () => {
+    expect(inputTransformsEqual(null, null)).toBe(true)
+  })
+
+  it("returns true for undefined/undefined", () => {
+    expect(inputTransformsEqual(undefined, undefined)).toBe(true)
+  })
+
+  it("returns true for null/undefined", () => {
+    expect(inputTransformsEqual(null, undefined)).toBe(true)
+  })
+
+  it("returns false for null/set", () => {
+    expect(inputTransformsEqual(null, JINJA_TRANSFORM)).toBe(false)
+  })
+
+  it("returns false for set/null", () => {
+    expect(inputTransformsEqual(JINJA_TRANSFORM, null)).toBe(false)
+  })
+
+  it("returns false for undefined/set", () => {
+    expect(inputTransformsEqual(undefined, JINJA_TRANSFORM)).toBe(false)
+  })
+
+  it("returns false for set/undefined", () => {
+    expect(inputTransformsEqual(JINJA_TRANSFORM, undefined)).toBe(false)
+  })
+
+  it("returns true for same template", () => {
+    const a = { type: "jinja" as const, template: "Hello {{ input }}" }
+    const b = { type: "jinja" as const, template: "Hello {{ input }}" }
+    expect(inputTransformsEqual(a, b)).toBe(true)
+  })
+
+  it("returns false for different templates", () => {
+    const a = { type: "jinja" as const, template: "Hello {{ input }}" }
+    const b = { type: "jinja" as const, template: "Goodbye {{ input }}" }
+    expect(inputTransformsEqual(a, b)).toBe(false)
   })
 })
