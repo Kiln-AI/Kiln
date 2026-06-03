@@ -3,8 +3,7 @@
 `SyntheticUserInfo` is the parsed form of the tagged blob the server sends
 on `/generate`; the parser produces it and `prompt.render_system_prompt`
 consumes it. `SyntheticUserDriverConfig` carries the per-eval runtime
-config — model, provider, role visibility — moved here from the kiln_server
-wire (where it used to live on the now-deleted `/respond` request).
+config — model, provider, role visibility.
 """
 
 from typing import Literal

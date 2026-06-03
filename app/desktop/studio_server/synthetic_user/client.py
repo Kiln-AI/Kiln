@@ -5,14 +5,9 @@ Owns two concerns the SDK leaves to callers:
 1. Error classification. The SDK parses 200/401/422/500/502 into typed
    models; we translate those into the wrapper's typed exception hierarchy
    so callers never inspect raw HTTP status codes.
-2. No retry. `/generate` is a once-per-batch authoring call (not a per-turn
-   hot loop), and kiln_server's own pipeline already retries transient
-   provider failures once before returning 502. A 502 reaching us is a
-   genuine per-batch failure that should surface, not a transient to retry.
-
-No `/respond` here. Per-turn synthetic-user invocation lives in
-`libs/core/kiln_ai/synthetic_user/`. This wrapper exists only for the
-authoring call.
+2. No retry. `/generate` is a once-per-batch authoring call, and
+   kiln_server already retries transient provider failures internally
+   before returning 502. A 502 reaching us is a genuine failure.
 """
 
 import logging

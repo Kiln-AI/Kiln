@@ -1,5 +1,4 @@
-"""Per-turn synthetic-user driver — the OSS-side replacement for kiln_server's
-removed `/respond` route.
+"""Per-turn synthetic-user driver.
 
 Wraps a kiln_ai LiteLLM adapter and exposes a single async `respond()` that:
 1. Filters the eval-frame conversation to `visible_message_roles`.
@@ -7,11 +6,8 @@ Wraps a kiln_ai LiteLLM adapter and exposes a single async `respond()` that:
 3. Calls the adapter with the persona system prompt prepended as
    `prior_trace` and the latest swapped user turn as `input`.
 
-The driver does NOT persist `TaskRun`s — it uses
-`adapter.invoke_returning_run_output(...)` which builds an in-memory run
-without writing to disk. The eval-dataset chain consists only of *target*
-TaskRuns (created elsewhere by `adapter.invoke(...)`). The SU is an
-orchestration component, not an eval-dataset row.
+The driver does NOT persist `TaskRun`s — it builds in-memory runs only.
+The eval-dataset chain consists only of *target* TaskRuns.
 """
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -89,16 +85,10 @@ class SyntheticUserDriver:
     async def respond(
         self, conversation: list[ChatCompletionMessageParam]
     ) -> tuple[str, float]:
-        """Return the SU's next message and the cost of producing it.
+        """Return the SU's next message and the per-call cost.
 
         `conversation` is in the eval frame and must end on an `assistant`
-        (target) turn — the SU is responding to that turn. Drive-loop
-        termination is the caller's concern; this just produces one reply.
-
-        The cost is read from the in-memory TaskRun's `usage.cost`. SU
-        turns aren't persisted, so this is the only place the cost
-        surfaces — callers (e.g. drive_case) must thread it forward if
-        they want to report total spend.
+        (target) turn. Drive-loop termination is the caller's concern.
         """
         # 1) Filter to visible roles (drop system/tool if present).
         visible = [
@@ -106,16 +96,10 @@ class SyntheticUserDriver:
             for m in conversation
             if m["role"] in self._driver_config.visible_message_roles
         ]
-        # 2) Drop tool-dispatch-only assistant turns (content=None). These
-        #    represent the target calling a tool with no user-facing text —
-        #    not speech the SU should "see" or respond to. Assistant turns
-        #    that carry BOTH text and tool_calls are kept, since the text is
-        #    user-facing. role_swap stays strict on None content (the trip
-        #    wire); upstream filtering is what keeps it from firing on a
-        #    tool-using target.
+        # 2) Drop tool-dispatch-only assistant turns (content=None).
+        #    See _is_tool_dispatch_only for rationale.
         visible = [m for m in visible if not _is_tool_dispatch_only(m)]
-        # 3) Invariants this driver enforces (moved from kiln_server's
-        #    removed /respond route validator).
+        # 3) Invariants.
         if not visible:
             raise ValueError("No LLM-visible messages in conversation.")
         if visible[-1]["role"] != "assistant":
@@ -141,8 +125,7 @@ class SyntheticUserDriver:
         }
         prior_trace: list[ChatCompletionMessageParam] = [system_msg, *swapped[:-1]]
 
-        # 4) Adapter call. invoke_returning_run_output returns
-        #    (TaskRun, RunOutput) without writing the TaskRun to disk.
+        # 5) Adapter call (in-memory, no disk write).
         task_run, run_output = await self._adapter.invoke_returning_run_output(
             user_input, prior_trace=prior_trace
         )
@@ -150,9 +133,8 @@ class SyntheticUserDriver:
         if not isinstance(raw, str):
             raise RuntimeError("synthetic user returned non-string output")
 
-        # Per-call cost from the in-memory TaskRun. None when the
-        # provider doesn't surface pricing (rare; defaults to 0.0 so the
-        # downstream sum stays well-defined).
+        # Per-call cost; defaults to 0.0 when the provider doesn't
+        # surface pricing.
         cost = (
             float(task_run.usage.cost)
             if task_run.usage is not None and task_run.usage.cost is not None

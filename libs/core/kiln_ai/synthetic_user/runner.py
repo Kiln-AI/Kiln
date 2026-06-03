@@ -1,21 +1,8 @@
 """Batch runner — fans drive_case out across N cases, streams BatchEvents.
 
-`run_cases_batch` is an async generator yielding typed events so the
-upcoming SSE endpoint can map each to a `data:` frame without
-re-instrumenting. Cases run concurrently under an asyncio.Semaphore.
-
-Responsibilities owned here (not in drive_case):
-- Building the per-case `SyntheticUserDriver` (catches malformed
-  `synthetic_user_info` blob → `CaseFailedEvent` for that case only).
-- Building the per-case `TargetInvoker` that wraps `adapter.invoke` with
-  the SU-attribution `input_source` — opaque blob on the root run, slim
-  `{batch_tag, turn_index}` on subsequent turns.
-- Tagging the leaf TaskRun for downstream eval-dataset discovery.
-- Per-case error isolation (typed driver / loop / unexpected exceptions
-  → `CaseFailedEvent` without affecting other in-flight cases).
-- Bounded cleanup on consumer disconnect — case tasks are cancelled
-  before the closer awaits them, so a browser disconnect doesn't keep
-  the request alive for the duration of every in-flight case.
+`run_cases_batch` is an async generator yielding typed events. Cases run
+concurrently under an asyncio.Semaphore. Per-case failures surface as
+`CaseFailedEvent` without affecting other in-flight cases.
 """
 
 import asyncio
@@ -43,7 +30,7 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 logger = logging.getLogger(__name__)
 
-# Module constants. Sized for an MVP beta — easy to bump in one place.
+# Module constants.
 NUM_CASES_MAX = 10
 MAX_TURNS_DEFAULT = 5
 CONCURRENCY = 4
@@ -84,10 +71,7 @@ class CaseCompletedEvent:
     chain_run_ids: list[str]
     leaf_run_id: str
     total_turns: int
-    # Honest total spend for this case: target adapter's
-    # cumulative_usage.cost on the leaf + the SU driver's per-turn cost
-    # summed across turns. SU turns aren't persisted as TaskRuns; drive_case
-    # threads their cost through DriveCaseResult.su_total_cost.
+    # Target adapter cost + SU driver cost for this case.
     total_cost: float
 
 
@@ -136,14 +120,6 @@ async def run_cases_batch(
     target-task LLM and the SU LLM aren't both hammered at unbounded fan-out.
     Events from different cases interleave; ordering WITHIN a case is
     `turn_completed`* → `case_completed | case_failed`.
-
-    `save_context` wraps the leaf-tag save (the one write this runner
-    controls). The adapter's per-turn `run.save_to_file()` inside
-    `adapter.invoke` does NOT take a save_context — that's a kiln_ai-side
-    plumbing gap shared with the chat SSE pattern, not specific to this
-    runner. The route still uses `@no_write_lock` because wrapping the
-    full streaming response in one atomic_write would block all other
-    writes for the batch duration.
 
     Yields:
       BatchStartedEvent — once, before any case runs.
@@ -254,18 +230,13 @@ async def _drive_one_case_and_emit(
     queue: asyncio.Queue[BatchEvent | None],
     save_ctx: SaveContext,
 ) -> None:
-    """Run drive_case for one case, translating per-turn outcomes to events
-    on `queue` and ending with either CaseCompletedEvent or CaseFailedEvent.
+    """Run drive_case for one case, emitting events on `queue`.
 
-    All upstream work — SyntheticUserDriver construction, target_invoker
-    construction, drive_case execution, leaf tagging — runs inside a single
-    try/except so any failure surfaces as a CaseFailedEvent rather than
-    escaping into `asyncio.gather(return_exceptions=True)` (which would
-    silently drop the case from the event stream).
+    Everything runs inside a single try/except so any failure surfaces as
+    a CaseFailedEvent rather than silently dropping the case.
     """
     try:
-        # Construct the per-case SU driver. Parses the blob immediately;
-        # a malformed blob fails this case without affecting others.
+        # Malformed blob fails this case without affecting others.
         try:
             su_driver = SyntheticUserDriver(case.synthetic_user_info, su_driver_config)
         except SyntheticUserInfoParseError as e:
@@ -404,20 +375,10 @@ def _build_input_source(
 ) -> DataSource:
     """Attribute the user-side input on this turn to the SU driver model.
 
-    Reuses `DataSourceType.synthetic` (a model produced this text) rather
-    than inventing a new type — the existing validator accepts arbitrary
-    extra property keys alongside the required `model_name` /
-    `model_provider` / `adapter_name`.
-
     Root run carries the decomposed case context (persona / goal /
-    behavior_guidance / seed_prompt) so a reader landing on the run can
-    inspect the SU configuration without re-parsing the blob. Subsequent
-    runs carry only the slim batch_tag/turn_index pair; the full context
-    is recoverable by walking `parent_task_run_id` to the root.
-
-    The blob itself is not persisted — it's losslessly reconstructable
-    from the decomposed fields via `build_synthetic_user_info` if any
-    downstream tool needs the original wire form.
+    behavior_guidance / seed_prompt). Subsequent runs carry only the slim
+    batch_tag/turn_index pair — full context is recoverable by walking
+    parent_task_run_id to the root.
     """
     props: dict[str, str | int | float] = {
         "model_name": su_driver_config.model_name,

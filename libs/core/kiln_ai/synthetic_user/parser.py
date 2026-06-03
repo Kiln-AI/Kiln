@@ -22,7 +22,7 @@ class SyntheticUserInfoParseError(ValueError):
 
 
 def _extract(blob: str, tag: str) -> str | None:
-    """Greedy first-match. Returns the trimmed content, or None if no match."""
+    """First match, non-greedy content. Returns trimmed content, or None."""
     m = re.search(rf"<{tag}>(.*?)</{tag}>", blob, re.DOTALL)
     if m is None:
         return None
