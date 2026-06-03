@@ -268,7 +268,11 @@
     await reset_to_custom_options_if_needed()
   }
 
+  let pending_run_config_applied = false
   async function apply_pending_run_config_if_needed() {
+    if (pending_run_config_applied) {
+      return
+    }
     if (!pending_run_config_id || !current_task?.id) {
       return
     }
@@ -281,6 +285,10 @@
     if (exists) {
       selected_run_config_id = pending_run_config_id
     }
+    // Apply the deep-linked run config only once. Otherwise it keeps re-forcing
+    // selected_run_config_id back on every reactive pass, fighting the user's
+    // manual changes (e.g. changing the model) and causing an infinite loop.
+    pending_run_config_applied = true
   }
 
   let pending_tool_selection_applied = false
