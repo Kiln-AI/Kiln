@@ -16,6 +16,8 @@
   export let label: string = "Plaintext Input"
   export let placeholder: string | null = null
   export let hide_label: boolean = false
+  // Disables the plaintext textarea (e.g. while a multiturn send is in flight).
+  export let disabled: boolean = false
   let plaintext_input: string = ""
   $: void (plaintext_input, onInputChange?.())
 
@@ -76,6 +78,7 @@
     {label}
     {placeholder}
     {hide_label}
+    {disabled}
     inputType="textarea"
     height="large"
     {id}

@@ -23,6 +23,11 @@
   export let forked_turn_index: number | undefined = undefined
   export let on_success: (new_run_id: string) => void | Promise<void>
   export let on_cancel: (() => void) | undefined = undefined
+  // Append-mode optimistic hooks: on_send_start fires with the message text
+  // the moment a send begins (so the parent can show it in the transcript
+  // right away), and on_send_settled fires once the send resolves or fails.
+  export let on_send_start: ((text: string) => void) | undefined = undefined
+  export let on_send_settled: (() => void) | undefined = undefined
 
   // forked_turn_index is required when mode is "fork" — it's used for both
   // the context-strip heading and dirty-tracking baseline. Callers always
@@ -111,6 +116,8 @@
   async function handle_submit() {
     run_error = null
     submitting = true
+    // Surface the message in the transcript optimistically while we wait.
+    on_send_start?.(current_text())
     try {
       const result = await send_multiturn({
         project_id,
@@ -128,6 +135,7 @@
       // not cleared in that case so the user does not lose their typed text.
       run_error = createKilnError(e)
     } finally {
+      on_send_settled?.()
       submitting = false
       await tick()
     }
@@ -185,7 +193,9 @@
        provided at all — even if its content renders nothing — so we can't
        collapse via an empty-conditional slot without regressing append-mode
        layout (full-width button vs. fork-mode's right-aligned button next
-       to Cancel). The cancel-button markup is the only difference. -->
+       to Cancel). The cancel-button markup is the only difference. While
+       submitting, FormContainer disables/​spinners the Send button and we
+       disable the textarea — the area stays put rather than being hidden. -->
   {#if mode === "fork" && on_cancel}
     <FormContainer
       submit_label="Send"
@@ -203,6 +213,7 @@
           label="Message"
           placeholder="Write a message…"
           hide_label={true}
+          disabled={submitting}
         />
       </div>
       <svelte:fragment slot="submit_left">
@@ -234,6 +245,7 @@
           label="Message"
           placeholder="Write a message…"
           hide_label={true}
+          disabled={submitting}
         />
       </div>
     </FormContainer>

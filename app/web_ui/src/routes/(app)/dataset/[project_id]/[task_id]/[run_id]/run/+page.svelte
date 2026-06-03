@@ -39,7 +39,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
-  import type { ProviderModels, PromptResponse } from "$lib/types"
+  import type { ProviderModels, PromptResponse, TraceMessage } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
   import {
@@ -520,7 +520,36 @@
     run.id !== scrolled_for_run_id
   ) {
     scrolled_for_run_id = run.id ?? null
+    // The freshly-loaded run's trace already contains the just-sent turn, so
+    // drop any optimistic placeholder to avoid showing it twice.
+    optimistic_sent_message = null
     apply_transcript_scroll()
+  }
+
+  // While a send is in flight we append the user's message to the transcript
+  // optimistically so it shows immediately, then redirect once the run lands.
+  let optimistic_sent_message: string | null = null
+  $: display_trace = build_display_trace(
+    run?.trace ?? [],
+    optimistic_sent_message,
+  )
+  function build_display_trace(
+    trace: TraceMessage[],
+    optimistic: string | null,
+  ): TraceMessage[] {
+    if (optimistic === null) return trace
+    return [...trace, { role: "user", content: optimistic } as TraceMessage]
+  }
+
+  function handle_send_start(text: string) {
+    optimistic_sent_message = text
+    apply_transcript_scroll()
+  }
+
+  function handle_send_settled() {
+    // Clears the placeholder on error (no new run loads in that case); on
+    // success the run-load reactive above has already cleared it.
+    optimistic_sent_message = null
   }
 
   async function apply_transcript_scroll() {
@@ -550,9 +579,7 @@
       }
     }
     stick()
-    settle_observer = new MutationObserver(() =>
-      requestAnimationFrame(stick),
-    )
+    settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
     settle_observer.observe(el, {
       childList: true,
       subtree: true,
@@ -816,9 +843,7 @@
              scrolls for it if needed. Below xl this falls back to normal
              document flow. The 100vh offset clears the app header above. -->
         <div data-testid="multiturn-layout">
-          <div
-            class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start"
-          >
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start">
             <div
               class="grow flex flex-col min-w-0 min-h-0 xl:h-[calc(100vh-11rem)]"
             >
@@ -858,7 +883,7 @@
                 {/if}
                 {#key run.id}
                   <ChatTrace
-                    trace={run.trace ?? []}
+                    trace={display_trace}
                     {project_id}
                     {forkable_run_ids}
                     truncate_at_trace_index={fork_target?.trace_index ?? null}
@@ -889,6 +914,8 @@
                     parent_task_run_id={run.id ?? null}
                     run_config_component={multiturn_run_config_component}
                     on_success={handle_send}
+                    on_send_start={handle_send_start}
+                    on_send_settled={handle_send_settled}
                   />
                 {/if}
               </div>
@@ -902,7 +929,10 @@
                   >{multiturn_show_raw_data ? "Hide" : "Show"} Raw Data</button
                 >
                 <div class={multiturn_show_raw_data ? "" : "hidden"}>
-                  <h1 class="text-xl font-bold mt-2 mb-2" id="multiturn_raw_data">
+                  <h1
+                    class="text-xl font-bold mt-2 mb-2"
+                    id="multiturn_raw_data"
+                  >
                     Raw Data
                   </h1>
                   <div class="text-sm max-h-[40vh] overflow-auto">
