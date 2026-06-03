@@ -18,6 +18,13 @@ async def _run(operation, **kwargs) -> dict:
     return json.loads(result.output)
 
 
+def _outcomes(n11, n10, n01, n00):
+    """Build two aligned 0/1 arrays with the given 2x2 cell counts."""
+    a = [1] * n11 + [1] * n10 + [0] * n01 + [0] * n00
+    b = [1] * n11 + [0] * n10 + [1] * n01 + [0] * n00
+    return a, b
+
+
 class TestOperationDispatch:
     async def test_unknown_operation_errors(self):
         result = await StatisticsTool().run(operation="ttest", n=10)
@@ -40,11 +47,6 @@ class TestProportionCI:
         assert out["method"] == "wilson"
         assert out["ci_low_pct"] < out["percent"] < out["ci_high_pct"]
 
-    async def test_successes_path_equals_proportion_path(self):
-        a = await _run("proportion_ci", proportion=0.864, n=147)
-        b = await _run("proportion_ci", successes=127, n=147)
-        assert a == b
-
     async def test_extreme_proportion_clamped(self):
         out = await _run("proportion_ci", proportion=0.99, n=104)
         assert out["ci_high"] <= 1.0
@@ -62,18 +64,23 @@ class TestProportionCI:
         assert result.is_error is True
         assert "n" in (result.error_message or "")
 
+    async def test_missing_proportion_errors(self):
+        result = await StatisticsTool().run(operation="proportion_ci", n=100)
+        assert result.is_error is True
+        assert "proportion" in (result.error_message or "")
+
     async def test_proportion_out_of_range_errors(self):
         result = await StatisticsTool().run(
             operation="proportion_ci", proportion=1.4, n=10
         )
         assert result.is_error is True
 
-    async def test_non_numeric_successes_errors(self):
+    async def test_non_numeric_proportion_errors(self):
         result = await StatisticsTool().run(
-            operation="proportion_ci", successes="abc", n=10
+            operation="proportion_ci", proportion="abc", n=10
         )
         assert result.is_error is True
-        assert "successes" in (result.error_message or "")
+        assert "proportion" in (result.error_message or "")
 
 
 class TestCompareProportions:
@@ -101,7 +108,11 @@ class TestCompareProportions:
 
     async def test_negative_delta_sign(self):
         out = await _run(
-            "compare_proportions", successes_a=90, n_a=100, successes_b=80, n_b=100
+            "compare_proportions",
+            proportion_a=0.90,
+            n_a=100,
+            proportion_b=0.80,
+            n_b=100,
         )
         assert out["delta_pct"] < 0
 
@@ -113,45 +124,31 @@ class TestCompareProportions:
 
 
 class TestMcNemarPaired:
-    async def test_counts_form_gold(self):
-        out = await _run("mcnemar_paired", b=13, c=6, n=104)
+    async def test_gold_anchor(self):
+        # 2x2: n11=51, n10=13 (b), n01=6 (c), n00=34 (n=104) -> exact p=0.1671.
+        a, b = _outcomes(51, 13, 6, 34)
+        out = await _run("mcnemar_paired", outcomes_a=a, outcomes_b=b)
+        assert out["table"] == {"n11": 51, "n10": 13, "n01": 6, "n00": 34}
+        assert out["discordant_hurt_b"] == 13
+        assert out["discordant_helped_c"] == 6
         assert out["p_exact"] == pytest.approx(0.1671, abs=1e-4)
         assert out["chi2_cc"] == pytest.approx(1.895, abs=1e-3)
         assert out["significant"] is False
-        assert out["ci_method"] == "mcnemar_wald"
+        assert out["ci_method"] == "newcombe_paired"
         assert out["delta_pct"] == pytest.approx(-6.7, abs=0.1)
         assert "pooling_warning" in out
 
-    async def test_arrays_match_counts(self):
-        # 3 both-pass, 2 both-fail, 4 (A pass / B fail) -> b, 1 (A fail / B pass) -> c.
-        outcomes_a = [1, 1, 1, 0, 0, 1, 1, 1, 1, 0]
-        outcomes_b = [1, 1, 1, 0, 0, 0, 0, 0, 0, 1]
-        from_arrays = await _run(
-            "mcnemar_paired", outcomes_a=outcomes_a, outcomes_b=outcomes_b
-        )
-        assert from_arrays["table"] == {"n11": 3, "n10": 4, "n01": 1, "n00": 2}
-        assert from_arrays["discordant_hurt_b"] == 4
-        assert from_arrays["discordant_helped_c"] == 1
-        from_counts = await _run("mcnemar_paired", b=4, c=1, n=10)
-        assert from_arrays["p_exact"] == from_counts["p_exact"]
-
-    async def test_full_table_uses_newcombe_paired(self):
-        out = await _run("mcnemar_paired", n11=51, n10=13, n01=6, n00=34)
-        assert out["ci_method"] == "newcombe_paired"
-        assert out["p_a_pct"] is not None
-        assert out["p_b_pct"] is not None
-        assert out["delta_pct"] == pytest.approx(-6.7, abs=0.1)
+    async def test_significant_when_discordant_lopsided(self):
+        a, b = _outcomes(60, 2, 30, 50)  # b=2, c=30 -> clearly significant
+        out = await _run("mcnemar_paired", outcomes_a=a, outcomes_b=b)
+        assert out["significant"] is True
+        assert out["p_exact"] < 0.05
 
     async def test_no_discordant(self):
-        out = await _run("mcnemar_paired", b=0, c=0, n=50)
+        a, b = _outcomes(40, 0, 0, 10)
+        out = await _run("mcnemar_paired", outcomes_a=a, outcomes_b=b)
         assert out["p_exact"] == 1.0
         assert out["significant"] is False
-
-    async def test_counts_without_n_omits_delta(self):
-        out = await _run("mcnemar_paired", b=8, c=3)
-        assert out["delta"] is None
-        assert out["ci_method"] is None
-        assert out["p_exact"] == pytest.approx(0.2266, abs=1e-3)
 
     async def test_array_length_mismatch_errors(self):
         result = await StatisticsTool().run(
@@ -237,3 +234,5 @@ class TestRegistryWiring:
             "compare_paired",
         }
         assert params["required"] == ["operation"]
+        # Boiled down to one input form per operation — keep the surface small.
+        assert len(params["properties"]) == 12

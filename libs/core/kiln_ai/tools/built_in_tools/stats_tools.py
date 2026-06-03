@@ -5,11 +5,11 @@ computes standard errors, confidence intervals, and significance reliably
 instead of doing the arithmetic in its own reasoning. The pure math lives in
 ``stats_lib.py``; this module dispatches to it per operation.
 
-Method-selection guide for the agent:
-- one proportion (a "85% pass, n=200" cell) -> operation="proportion_ci"
-- two proportions over the SAME items (e.g. with vs without a change) -> "mcnemar_paired"
-- two independent proportions / only marginals available -> "compare_proportions"
-- a continuous/count metric, paired per case -> "compare_paired"
+Each operation takes one natural input form (no alternative encodings):
+- "proportion_ci": a proportion + n          -> Wilson CI + standard error
+- "compare_proportions": two proportions + their n -> unpaired difference + significance
+- "mcnemar_paired": two aligned 0/1 arrays    -> paired McNemar test
+- "compare_paired": two paired numeric arrays -> paired bootstrap + Wilcoxon
 """
 
 import json
@@ -53,31 +53,26 @@ def _error(msg: str) -> ToolCallResult:
     )
 
 
-def resolve_successes(proportion, successes, n: int) -> int:
-    """Resolve an integer success count from either a fraction or an explicit count.
+def _successes(proportion, n: int, label: str = "proportion") -> int:
+    """Integer success count from a proportion + n (rounded, clamped to [0, n])."""
+    if proportion is None:
+        raise ValueError(f"'{label}' is required.")
+    try:
+        p = float(proportion)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be a number (got {proportion!r}).")
+    if not (0.0 <= p <= 1.0):
+        raise ValueError(f"{label} must be in [0,1] (got {p}).")
+    return max(0, min(n, round(p * n)))
 
-    ``successes`` wins when both are given. The fraction path rounds and clamps to
-    [0, n] (a 1.0 proportion legitimately yields n). Raises ValueError on bad input.
-    """
-    if successes is not None:
-        try:
-            s = int(successes)
-        except (TypeError, ValueError):
-            raise ValueError(f"successes must be an integer (got {successes!r}).")
-        if s < 0 or s > n:
-            raise ValueError(f"successes ({s}) must be between 0 and n ({n}).")
-        return s
-    if proportion is not None:
-        try:
-            p = float(proportion)
-        except (TypeError, ValueError):
-            raise ValueError(f"proportion must be a number (got {proportion!r}).")
-        if not (0.0 <= p <= 1.0):
-            raise ValueError(f"proportion must be in [0,1] (got {p}).")
-        return max(0, min(n, round(p * n)))
-    raise ValueError(
-        "Provide either 'proportion' (a fraction) or 'successes' (a count)."
-    )
+
+def _require_n(value, label: str) -> int:
+    if value is None:
+        raise ValueError(f"'{label}' (sample size) is required.")
+    n = int(value)
+    if n <= 0:
+        raise ValueError(f"{label} must be a positive integer (got {n}).")
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -87,16 +82,9 @@ def resolve_successes(proportion, successes, n: int) -> int:
 
 def _op_proportion_ci(kwargs) -> ToolCallResult:
     try:
-        n = kwargs.get("n")
-        if n is None:
-            raise ValueError("'n' (sample size) is required.")
-        n = int(n)
-        if n <= 0:
-            raise ValueError(f"n must be a positive integer (got {n}).")
+        n = _require_n(kwargs.get("n"), "n")
         confidence = float(kwargs.get("confidence", 0.95))
-        successes = resolve_successes(
-            kwargs.get("proportion"), kwargs.get("successes"), n
-        )
+        successes = _successes(kwargs.get("proportion"), n)
         z = z_for_confidence(confidence)
     except (ValueError, TypeError) as e:
         return _error(str(e))
@@ -135,19 +123,11 @@ def _op_proportion_ci(kwargs) -> ToolCallResult:
 
 def _op_compare_proportions(kwargs) -> ToolCallResult:
     try:
-        n_a, n_b = kwargs.get("n_a"), kwargs.get("n_b")
-        if n_a is None or n_b is None:
-            raise ValueError("Both 'n_a' and 'n_b' (sample sizes) are required.")
-        n_a, n_b = int(n_a), int(n_b)
-        if n_a <= 0 or n_b <= 0:
-            raise ValueError("n_a and n_b must be positive integers.")
+        n_a = _require_n(kwargs.get("n_a"), "n_a")
+        n_b = _require_n(kwargs.get("n_b"), "n_b")
         confidence = float(kwargs.get("confidence", 0.95))
-        s_a = resolve_successes(
-            kwargs.get("proportion_a"), kwargs.get("successes_a"), n_a
-        )
-        s_b = resolve_successes(
-            kwargs.get("proportion_b"), kwargs.get("successes_b"), n_b
-        )
+        s_a = _successes(kwargs.get("proportion_a"), n_a, "proportion_a")
+        s_b = _successes(kwargs.get("proportion_b"), n_b, "proportion_b")
         z = z_for_confidence(confidence)
     except (ValueError, TypeError) as e:
         return _error(str(e))
@@ -226,128 +206,78 @@ def _coerce_binary(values, label: str) -> list[int]:
     return out
 
 
-def _resolve_table(
-    kwargs,
-) -> tuple[tuple[int, int, int, int] | None, int, int, int | None]:
-    """Return (table_or_None, b, c, n_pairs_or_None) from whichever input form was given."""
+def _table_from_outcomes(kwargs) -> tuple[int, int, int, int]:
+    """Build the (n11, n10, n01, n00) 2x2 table from two aligned 0/1 arrays."""
     oa, ob = kwargs.get("outcomes_a"), kwargs.get("outcomes_b")
-    cells = [kwargs.get(k) for k in ("n11", "n10", "n01", "n00")]
-    b_in, c_in, n_in = kwargs.get("b"), kwargs.get("c"), kwargs.get("n")
-
-    if oa is not None or ob is not None:
-        if oa is None or ob is None:
-            raise ValueError("Provide both 'outcomes_a' and 'outcomes_b'.")
-        if not isinstance(oa, list) or not isinstance(ob, list):
-            raise ValueError("'outcomes_a' and 'outcomes_b' must be arrays.")
-        if len(oa) != len(ob):
-            raise ValueError(
-                f"Paired arrays must be equal length (got {len(oa)} vs {len(ob)})."
-            )
-        if len(oa) == 0:
-            raise ValueError("Paired arrays are empty.")
-        a = _coerce_binary(oa, "outcomes_a")
-        bb = _coerce_binary(ob, "outcomes_b")
-        n11 = n10 = n01 = n00 = 0
-        for x, y in zip(a, bb):
-            if x == 1 and y == 1:
-                n11 += 1
-            elif x == 1 and y == 0:
-                n10 += 1
-            elif x == 0 and y == 1:
-                n01 += 1
-            else:
-                n00 += 1
-        return ((n11, n10, n01, n00), n10, n01, n11 + n10 + n01 + n00)
-
-    if all(v is not None for v in cells):
-        n11, n10, n01, n00 = (int(v) for v in cells)
-        if min(n11, n10, n01, n00) < 0:
-            raise ValueError("2x2 counts must be non-negative.")
-        return ((n11, n10, n01, n00), n10, n01, n11 + n10 + n01 + n00)
-
-    if b_in is not None and c_in is not None:
-        b, c = int(b_in), int(c_in)
-        if b < 0 or c < 0:
-            raise ValueError("'b' and 'c' must be non-negative.")
-        n_pairs = int(n_in) if n_in is not None else None
-        if n_pairs is not None and n_pairs < b + c:
-            raise ValueError(f"n ({n_pairs}) cannot be less than b + c ({b + c}).")
-        return (None, b, c, n_pairs)
-
-    raise ValueError(
-        "Provide one of: two aligned 0/1 arrays (outcomes_a, outcomes_b); the discordant "
-        "counts b and c; or the full 2x2 table (n11, n10, n01, n00)."
-    )
+    if not isinstance(oa, list) or not isinstance(ob, list):
+        raise ValueError("'outcomes_a' and 'outcomes_b' must be arrays of 0/1 values.")
+    if len(oa) != len(ob):
+        raise ValueError(
+            f"Paired arrays must be equal length (got {len(oa)} vs {len(ob)})."
+        )
+    if len(oa) == 0:
+        raise ValueError("Paired arrays are empty.")
+    a = _coerce_binary(oa, "outcomes_a")
+    b = _coerce_binary(ob, "outcomes_b")
+    n11 = n10 = n01 = n00 = 0
+    for x, y in zip(a, b):
+        if x == 1 and y == 1:
+            n11 += 1
+        elif x == 1 and y == 0:
+            n10 += 1
+        elif x == 0 and y == 1:
+            n01 += 1
+        else:
+            n00 += 1
+    return (n11, n10, n01, n00)
 
 
 def _op_mcnemar_paired(kwargs) -> ToolCallResult:
     try:
         confidence = float(kwargs.get("confidence", 0.95))
         z = z_for_confidence(confidence)
-        table, b, c, n_pairs = _resolve_table(kwargs)
+        n11, n10, n01, n00 = _table_from_outcomes(kwargs)
     except (ValueError, TypeError) as e:
         return _error(str(e))
 
+    b, c = n10, n01  # discordant: a-pass/b-fail (hurt), a-fail/b-pass (helped)
+    n_pairs = n11 + n10 + n01 + n00
     p_exact = mcnemar_exact_p(b, c)
     chi2, p_cc = mcnemar_chi2_cc(b, c)
     significant = p_exact < (1.0 - confidence)
     conf_pct = round(confidence * 100)
 
-    p_a = p_b = delta = ci_low = ci_high = None
-    ci_method = None
-    if table is not None:
-        assert n_pairs is not None  # a built table always carries a pair count
-        n11, n10, n01, n00 = table
-        p_a = (n11 + n10) / n_pairs
-        p_b = (n11 + n01) / n_pairs
-        diff_ci = paired_proportion_diff_ci(n11, n10, n01, n00, z)
-        if diff_ci is not None:
-            delta, ci_low, ci_high = diff_ci
-            ci_method = "newcombe_paired"
-    elif n_pairs is not None:
-        delta = (c - b) / n_pairs
-        se = math.sqrt(max(0.0, b + c - (b - c) ** 2 / n_pairs)) / n_pairs
-        ci_low = round(max(-1.0, delta - z * se), 4)
-        ci_high = round(min(1.0, delta + z * se), 4)
-        delta = round(delta, 4)
-        ci_method = "mcnemar_wald"
+    p_a = (n11 + n10) / n_pairs
+    p_b = (n11 + n01) / n_pairs
+    diff_ci = paired_proportion_diff_ci(n11, n10, n01, n00, z)
+    delta, ci_low, ci_high = diff_ci if diff_ci is not None else (None, None, None)
 
     verdict = (
         "statistically significant" if significant else "not statistically significant"
     )
+    interpretation = (
+        f"Treatment helped c={c} item(s) and hurt b={b} (n={n_pairs} paired). "
+        f"McNemar exact two-sided p={round(p_exact, 4)} — {verdict} at {conf_pct}%."
+    )
     if delta is not None:
-        interpretation = (
-            f"Treatment helped c={c} item(s) and hurt b={b} (n={n_pairs} paired). "
-            f"McNemar exact two-sided p={round(p_exact, 4)} — {verdict} at {conf_pct}%. "
-            f"Net delta {round(delta * 100, 1):+}pp."
-        )
-    else:
-        interpretation = (
-            f"Treatment helped c={c} item(s) and hurt b={b}. McNemar exact two-sided "
-            f"p={round(p_exact, 4)} — {verdict} at {conf_pct}%. Provide n or the full 2x2 "
-            f"table for a delta and CI."
-        )
+        interpretation += f" Net delta {round(delta * 100, 1):+}pp."
 
     out = {
         "operation": "mcnemar_paired",
         "n_pairs": n_pairs,
-        "table": (
-            {"n11": table[0], "n10": table[1], "n01": table[2], "n00": table[3]}
-            if table is not None
-            else None
-        ),
+        "table": {"n11": n11, "n10": n10, "n01": n01, "n00": n00},
         "discordant_hurt_b": b,
         "discordant_helped_c": c,
-        "p_a": round(p_a, 4) if p_a is not None else None,
-        "p_b": round(p_b, 4) if p_b is not None else None,
-        "p_a_pct": round(p_a * 100, 1) if p_a is not None else None,
-        "p_b_pct": round(p_b * 100, 1) if p_b is not None else None,
+        "p_a": round(p_a, 4),
+        "p_b": round(p_b, 4),
+        "p_a_pct": round(p_a * 100, 1),
+        "p_b_pct": round(p_b * 100, 1),
         "delta": delta,
         "delta_pct": round(delta * 100, 1) if delta is not None else None,
         "p_exact": round(p_exact, 4),
         "chi2_cc": round(chi2, 3),
         "p_chi2_cc": round(p_cc, 4),
-        "ci_method": ci_method,
+        "ci_method": "newcombe_paired" if diff_ci is not None else None,
         "ci_low": ci_low,
         "ci_high": ci_high,
         "ci_low_pct": round(ci_low * 100, 1) if ci_low is not None else None,
@@ -480,11 +410,11 @@ _OPERATIONS = {
     "compare_paired": _op_compare_paired,
 }
 
-_STATISTICS_DESCRIPTION = """Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand in your reasoning. Set `operation` to pick the test:
+_STATISTICS_DESCRIPTION = """Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand in your reasoning. Set `operation`:
 
-- "proportion_ci": confidence interval + standard error for ONE proportion (e.g. a "85% pass, n=200" cell). Params: `proportion` (a fraction) or `successes`, plus `n`.
-- "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`/`successes_a` + `n_a`, and `proportion_b`/`successes_b` + `n_b`.
-- "mcnemar_paired": the PAIRED test for two binary pass/fail conditions scored over the SAME items — more powerful than compare_proportions; prefer it when comparing run configs on one eval dataset. Params: two aligned 0/1 arrays `outcomes_a`/`outcomes_b` (fetch per-item eval results and pair on dataset_id), OR discordant counts `b`/`c` (optionally `n`), OR the 2x2 table `n11`/`n10`/`n01`/`n00`.
+- "proportion_ci": confidence interval + standard error for ONE proportion (e.g. an "85% pass, n=200" cell). Params: `proportion` (a fraction in [0,1]) and `n`.
+- "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`, `n_a`, `proportion_b`, `n_b`.
+- "mcnemar_paired": the PAIRED test for two binary pass/fail conditions scored over the SAME items — more powerful than compare_proportions; prefer it when comparing run configs on one eval dataset. Params: `outcomes_a`, `outcomes_b` — two aligned 0/1 arrays (fetch per-item eval results and pair on dataset_id).
 - "compare_paired": paired comparison of two numeric arrays for continuous/count metrics (latency, tokens, cost) — NOT binary pass/fail. Params: `values_a`, `values_b`.
 
 Returns JSON with the statistic, a confidence interval, a boolean `significant`, and a one-sentence interpretation. `confidence` defaults to 0.95."""
@@ -503,29 +433,19 @@ _PARAMETERS_SCHEMA = {
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "[proportion_ci] proportion as a fraction in [0,1] (e.g. 0.85). Provide this OR 'successes'.",
-        },
-        "successes": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[proportion_ci] integer count of successes. Provide this OR 'proportion'.",
+            "description": "[proportion_ci] the proportion as a fraction in [0,1] (e.g. 0.85).",
         },
         "n": {
             "type": "integer",
             "minimum": 1,
-            "description": "[proportion_ci] sample size; [mcnemar_paired] total paired items (with the b/c form).",
+            "description": "[proportion_ci] sample size (> 0).",
         },
         # compare_proportions
         "proportion_a": {
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "[compare_proportions] baseline proportion in [0,1]. Provide this OR 'successes_a'.",
-        },
-        "successes_a": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[compare_proportions] baseline integer successes. Provide this OR 'proportion_a'.",
+            "description": "[compare_proportions] baseline proportion in [0,1].",
         },
         "n_a": {
             "type": "integer",
@@ -536,12 +456,7 @@ _PARAMETERS_SCHEMA = {
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "[compare_proportions] treatment proportion in [0,1]. Provide this OR 'successes_b'.",
-        },
-        "successes_b": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[compare_proportions] treatment integer successes. Provide this OR 'proportion_b'.",
+            "description": "[compare_proportions] treatment proportion in [0,1].",
         },
         "n_b": {
             "type": "integer",
@@ -559,37 +474,7 @@ _PARAMETERS_SCHEMA = {
             "items": {"type": "number"},
             "description": "[mcnemar_paired] per-item treatment outcomes (0/1), positionally paired with outcomes_a.",
         },
-        "n11": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[mcnemar_paired] 2x2 count: both passed.",
-        },
-        "n10": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[mcnemar_paired] 2x2 count: baseline passed, treatment failed (treatment hurt). Same as b.",
-        },
-        "n01": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[mcnemar_paired] 2x2 count: baseline failed, treatment passed (treatment helped). Same as c.",
-        },
-        "n00": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[mcnemar_paired] 2x2 count: both failed.",
-        },
-        "b": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[mcnemar_paired] discordant count where treatment HURT (baseline pass, treatment fail). Provide with 'c'.",
-        },
-        "c": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "[mcnemar_paired] discordant count where treatment HELPED (baseline fail, treatment pass). Provide with 'b'.",
-        },
-        # compare_paired (null entries are allowed — pairs with a missing side are dropped)
+        # compare_paired
         "values_a": {
             "type": "array",
             "items": {"type": ["number", "null"]},
