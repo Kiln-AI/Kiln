@@ -7,6 +7,10 @@ export type UiProperty = {
   error?: boolean
   warn_icon?: boolean
   badge?: boolean
+  // Only applies to badge + string[] values. When true and there is more than
+  // one value, show the first badge plus a "+N more" badge that opens a modal
+  // with the full list. Keeps long lists (e.g. tools/skills) from overflowing.
+  collapse_badges?: boolean
   value_with_link?: {
     prefix: string
     link_text: string
