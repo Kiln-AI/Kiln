@@ -268,9 +268,9 @@
     await reset_to_custom_options_if_needed()
   }
 
-  let pending_run_config_applied = false
+  let last_applied_pending_run_config_id: string | null = null
   async function apply_pending_run_config_if_needed() {
-    if (pending_run_config_applied) {
+    if (pending_run_config_id === last_applied_pending_run_config_id) {
       return
     }
     if (!pending_run_config_id || !current_task?.id) {
@@ -285,10 +285,12 @@
     if (exists) {
       selected_run_config_id = pending_run_config_id
     }
-    // Apply the deep-linked run config only once. Otherwise it keeps re-forcing
-    // selected_run_config_id back on every reactive pass, fighting the user's
-    // manual changes (e.g. changing the model) and causing an infinite loop.
-    pending_run_config_applied = true
+    // Apply each deep-linked run config only once (tracked by ID). Otherwise it
+    // keeps re-forcing selected_run_config_id back on every reactive pass,
+    // fighting the user's manual changes (e.g. changing the model) and causing
+    // an infinite loop. Tracking the ID (rather than a boolean) still lets a new
+    // deep link applied within the same session take effect.
+    last_applied_pending_run_config_id = pending_run_config_id
   }
 
   let pending_tool_selection_applied = false

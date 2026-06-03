@@ -87,13 +87,30 @@ const DEEP_LINKED_CONFIG = {
   },
 } as unknown as TaskRunConfig
 
-// Flush a bounded number of reactive cycles to let the (fixed) component
-// settle. If a regression reintroduces the infinite reactive loop, the
-// assertions below will fail (or the runner will time out, since the runaway
-// microtask cascade is exactly the "browser hang" this fixes).
-async function flush(cycles = 100) {
-  for (let i = 0; i < cycles; i++) {
+// Yield to a macrotask, which lets Node fully drain the pending microtask queue
+// first — including the component's async reactive cascade (debounced updates
+// and awaited store loads).
+const drain = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+// Pump reactive cycles until the observed state holds steady across consecutive
+// rounds, up to a small cap. This lets the (fixed) component settle quickly and
+// fail fast, rather than depending on an exact cycle count. If a regression
+// reintroduces the infinite reactive loop the state never stabilizes — the
+// runaway microtask cascade starves the macrotask queue, which is exactly the
+// "browser hang" this fixes — and the runner times out.
+async function flush_until_stable(
+  read: () => string,
+  max_cycles = 20,
+  stable_threshold = 2,
+) {
+  let previous = read()
+  let stable = 0
+  for (let i = 0; i < max_cycles && stable < stable_threshold; i++) {
+    await drain()
     await tick()
+    const current = read()
+    stable = current === previous ? stable + 1 : 0
+    previous = current
   }
 }
 
@@ -118,7 +135,10 @@ describe("RunConfigComponent deep-link + manual model change", () => {
       },
     })
 
-    await flush()
+    // Combined snapshot so stabilization detects changes to either field.
+    const snapshot = () =>
+      `${getByTestId("selected").textContent}|${getByTestId("model").textContent}`
+    await flush_until_stable(snapshot)
 
     // Deep link applied: the run config is selected and its model is filled in.
     expect(getByTestId("selected").textContent).toBe("rc-1")
@@ -126,7 +146,7 @@ describe("RunConfigComponent deep-link + manual model change", () => {
 
     // Simulate the user manually changing the model in the dropdown.
     component.$set({ model: "openai/gpt-4o-mini" })
-    await flush()
+    await flush_until_stable(snapshot)
 
     // It must settle: the run config deselects to "custom" and the user's
     // manual model choice is preserved (the deep link does not keep
