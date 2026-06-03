@@ -206,6 +206,7 @@ def connect_run_config_api(app: FastAPI):
     @app.post(
         "/api/validate_input_transform_template",
         tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def validate_input_transform_template(
         request: ValidateInputTransformTemplateRequest,
