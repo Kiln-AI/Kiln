@@ -164,10 +164,7 @@
   sub_subtitle="Upload a CSV to add each row as an example input. The CSV must contain a single column, with one input per row. Do not include a header row."
   action_buttons={[
     {
-      label:
-        parsed_rows.length > 1
-          ? `Import ${parsed_rows.length} Example${parsed_rows.length === 1 ? "" : "s"}`
-          : "Import",
+      label: "Import",
       asyncAction: () => handle_add(),
       disabled: parsed_rows.length === 0,
       isPrimary: true,

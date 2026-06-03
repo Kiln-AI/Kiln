@@ -426,6 +426,7 @@
   {entries}
   initial_filter={initial_all_samples_filter}
   on:remove={handle_all_samples_remove}
+  on:add={open_source_picker}
 />
 
 <SelectFromLibraryDialog

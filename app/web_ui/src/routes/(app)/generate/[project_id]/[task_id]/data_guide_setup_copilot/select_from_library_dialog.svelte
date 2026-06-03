@@ -91,6 +91,12 @@
       }),
     )
 
+  function library_tags_href(tags: string[]): string {
+    const params = new URLSearchParams()
+    tags.forEach((t) => params.append("tags", t))
+    return `/docs/library/${project_id}?${params.toString()}`
+  }
+
   function build_picks(): LibraryPick[] {
     const picks: LibraryPick[] = []
     for (const id of selected_ids) {
@@ -169,9 +175,10 @@
       <TagFirstSelector
         bind:this={selector}
         items={selector_items}
-        text_header="Name"
-        view_label="View in Document Library"
-        view_href={(id) => `/docs/library/${project_id}/${id}`}
+        count_header="Documents"
+        unit_singular="document"
+        unit_plural="documents"
+        filtered_href={library_tags_href}
         bind:selected_ids
       />
     {/if}
@@ -184,9 +191,7 @@
           target_tags={auto_tags}
           preselect_default_extractor={true}
           show_run_button={true}
-          run_button_label={`Add ${selected_ids.length} Document${
-            selected_ids.length === 1 ? "" : "s"
-          }`}
+          run_button_label="Add"
           description="Convert your selected documents to text so they can be used as example inputs."
           before_run={before_extraction}
           on:extraction_complete={handle_extraction_complete}

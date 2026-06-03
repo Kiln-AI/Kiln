@@ -1,7 +1,7 @@
 <script lang="ts">
   // Tag-first existing-run picker for the Kiln Pro Data Guide flow. Select runs
-  // by tag (or All); expand the panel to uncheck individual runs. Synthetic
-  // runs are excluded — seeding a guide from AI-generated inputs is circular.
+  // by tag; the union of the chosen tags is added. Synthetic runs are excluded
+  // — seeding a guide from AI-generated inputs is circular.
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import TagFirstSelector, {
@@ -80,22 +80,26 @@
     close()
     return true
   }
+
+  function dataset_tags_href(tags: string[]): string {
+    const params = new URLSearchParams()
+    tags.forEach((t) => params.append("tags", t))
+    return `/dataset/${project_id}/${task_id}?${params.toString()}`
+  }
 </script>
 
 <Dialog
   bind:this={dialog}
   width="wide"
   title="Select from Dataset"
-  action_buttons={selected_ids.length > 0
-    ? [
-        {
-          label: `Add ${selected_ids.length} Input${selected_ids.length === 1 ? "" : "s"}`,
-          action: () => handle_add(),
-          disabled: selected_ids.length === 0,
-          isPrimary: true,
-        },
-      ]
-    : []}
+  action_buttons={[
+    {
+      label: "Add",
+      action: () => handle_add(),
+      disabled: selected_ids.length === 0,
+      isPrimary: true,
+    },
+  ]}
 >
   <p slot="subtitle" class="text-sm font-light">
     Add examples from your <a
@@ -127,8 +131,10 @@
     <TagFirstSelector
       bind:this={selector}
       items={selector_items}
-      view_label="View in Dataset"
-      view_href={(id) => `/dataset/${project_id}/${task_id}/${id}/run`}
+      count_header="Runs"
+      unit_singular="run"
+      unit_plural="runs"
+      filtered_href={dataset_tags_href}
       bind:selected_ids
     />
   {/if}

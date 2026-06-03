@@ -65,6 +65,9 @@
     if (input.files) {
       addFiles(Array.from(input.files))
     }
+    // Clear the value so re-selecting the same file fires `change` again —
+    // native file inputs don't emit it when the chosen file is unchanged.
+    input.value = ""
   }
 
   function addFiles(files: File[]) {
