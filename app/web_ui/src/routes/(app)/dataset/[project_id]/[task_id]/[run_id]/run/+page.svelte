@@ -51,6 +51,7 @@
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
+  import ChatLoading from "../../../../../assistant/chat_loading.svelte"
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
@@ -501,8 +502,11 @@
 
   async function handle_send(new_run_id: string) {
     load_error = null
-    run = null
-    loading = true
+    // Deliberately do NOT clear `run` or flip `loading` here: keeping the
+    // current transcript (with its optimistic message + loading indicator)
+    // mounted while we navigate avoids the blank full-page spinner flash.
+    // `awaiting_response` keeps the composer disabled until the new run
+    // renders, and the run-load reactive clears the optimistic state then.
     await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
       replaceState: true,
     })
@@ -522,14 +526,19 @@
   ) {
     scrolled_for_run_id = run.id ?? null
     // The freshly-loaded run's trace already contains the just-sent turn, so
-    // drop any optimistic placeholder to avoid showing it twice.
+    // drop the optimistic placeholder + loader to avoid showing them twice.
     optimistic_sent_message = null
+    awaiting_response = false
     apply_transcript_scroll()
   }
 
   // While a send is in flight we append the user's message to the transcript
-  // optimistically so it shows immediately, then redirect once the run lands.
+  // optimistically and show a loading indicator below it, then redirect once
+  // the run lands. `awaiting_response` stays true from send-start until the
+  // new run renders (cleared above), so the loader shows continuously across
+  // the navigation and the composer stays disabled the whole time.
   let optimistic_sent_message: string | null = null
+  let awaiting_response = false
   $: display_trace = build_display_trace(
     run?.trace ?? [],
     optimistic_sent_message,
@@ -544,12 +553,24 @@
 
   function handle_send_start(text: string) {
     optimistic_sent_message = text
+    awaiting_response = true
     apply_transcript_scroll()
   }
 
-  function handle_send_settled() {
-    // Clears the placeholder on error (no new run loads in that case); on
-    // success the run-load reactive above has already cleared it.
+  function handle_send_settled(ok: boolean) {
+    // On error no new run loads, so clear the optimistic state here. On
+    // success we leave it: the run-load reactive clears it once the new run
+    // (with the real response) renders, keeping the loader up until then.
+    if (!ok) {
+      optimistic_sent_message = null
+      awaiting_response = false
+    }
+  }
+
+  // Safety net: if loading the new run fails after a successful send, don't
+  // leave the loader spinning or the composer disabled forever.
+  $: if (load_error) {
+    awaiting_response = false
     optimistic_sent_message = null
   }
 
@@ -877,6 +898,11 @@
                     show_per_message_usage={task?.turn_mode === "multiturn"}
                   />
                 {/key}
+                {#if awaiting_response}
+                  <div data-testid="multiturn-pending-response">
+                    <ChatLoading />
+                  </div>
+                {/if}
               </div>
               <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
                 {#if fork_target}
@@ -899,6 +925,7 @@
                     task_id={multiturn_task_id}
                     parent_task_run_id={run.id ?? null}
                     run_config_component={multiturn_run_config_component}
+                    busy={awaiting_response}
                     on_success={handle_send}
                     on_send_start={handle_send_start}
                     on_send_settled={handle_send_settled}

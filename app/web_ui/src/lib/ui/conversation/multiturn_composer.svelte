@@ -25,9 +25,15 @@
   export let on_cancel: (() => void) | undefined = undefined
   // Append-mode optimistic hooks: on_send_start fires with the message text
   // the moment a send begins (so the parent can show it in the transcript
-  // right away), and on_send_settled fires once the send resolves or fails.
+  // right away), and on_send_settled fires once the send resolves or fails
+  // (ok=false means it errored). on success the parent keeps the composer
+  // busy until the new run renders.
   export let on_send_start: ((text: string) => void) | undefined = undefined
-  export let on_send_settled: (() => void) | undefined = undefined
+  export let on_send_settled: ((ok: boolean) => void) | undefined = undefined
+  // Externally-driven busy state: keeps the composer disabled after a
+  // successful send while the parent navigates to / loads the new run, so the
+  // user can't fire a second send against the stale parent run.
+  export let busy: boolean = false
 
   // forked_turn_index is required when mode is "fork" — it's used for both
   // the context-strip heading and dirty-tracking baseline. Callers always
@@ -118,6 +124,7 @@
     submitting = true
     // Surface the message in the transcript optimistically while we wait.
     on_send_start?.(current_text())
+    let ok = false
     try {
       const result = await send_multiturn({
         project_id,
@@ -127,7 +134,9 @@
         input_form,
         on_success,
       })
-      if (!result.ok) {
+      if (result.ok) {
+        ok = true
+      } else {
         run_error = createKilnError(result.error)
       }
     } catch (e) {
@@ -135,7 +144,7 @@
       // not cleared in that case so the user does not lose their typed text.
       run_error = createKilnError(e)
     } finally {
-      on_send_settled?.()
+      on_send_settled?.(ok)
       submitting = false
       await tick()
     }
@@ -235,8 +244,9 @@
       on:submit={handle_submit}
       bind:error={run_error}
       bind:submitting
+      submit_disabled={busy}
       primary={true}
-      keyboard_submit={true}
+      keyboard_submit={!busy}
       focus_on_mount={false}
     >
       <div data-testid="multiturn-composer-input">
@@ -246,7 +256,7 @@
           label="Message"
           placeholder="Write a message…"
           hide_label={true}
-          disabled={submitting}
+          disabled={submitting || busy}
           height="medium"
         />
       </div>

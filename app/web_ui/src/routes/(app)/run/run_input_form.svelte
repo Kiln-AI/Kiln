@@ -77,16 +77,21 @@
 </script>
 
 {#if !input_schema}
-  <FormElement
-    {label}
-    {placeholder}
-    {hide_label}
-    {disabled}
-    {height}
-    inputType="textarea"
-    {id}
-    bind:value={plaintext_input}
-  />
+  <!-- Keyed on formKey so clear_input() remounts the field and resets its
+       validation state — otherwise the now-empty textarea immediately flags
+       "Required" right after a successful send. -->
+  {#key formKey}
+    <FormElement
+      {label}
+      {placeholder}
+      {hide_label}
+      {disabled}
+      {height}
+      inputType="textarea"
+      {id}
+      bind:value={plaintext_input}
+    />
+  {/key}
 {:else if structured_input_model}
   {#key formKey}
     <RunInputFormElement
