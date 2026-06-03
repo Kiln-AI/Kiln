@@ -51,7 +51,7 @@
   inputType="fancy_select"
   bind:value={select_value}
   fancy_select_options={options}
-  info_description="Transform the provided input using a jinja template, before sending the input to the model. Allows you to add context, or filter data."
+  info_description="Transform the provided input before sending the input to the model. Allows you to add context, or filter data."
 />
 
 <InputTransformCreateModal bind:this={create_modal} {on_created} />

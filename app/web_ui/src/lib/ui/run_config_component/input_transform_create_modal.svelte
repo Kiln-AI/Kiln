@@ -51,7 +51,9 @@
 <Dialog
   bind:this={dialog}
   title="Input Transform"
-  subtitle="Transform the provided input using a jinja template, before sending the input to the model. Allows you to add context, or filter data."
+  subtitle="Add a jinja template to transform input"
+  sub_subtitle="Learn more about input templates"
+  sub_subtitle_link="https://docs.kiln.tech/docs/input-templates-and-feature-engineering"
 >
   <FormContainer
     submit_label="Create"

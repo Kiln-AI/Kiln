@@ -39,7 +39,7 @@ describe("InputTransformSelector", () => {
     })
     expect(container.textContent).toContain("Input Transform")
     expect(container.textContent).toContain(
-      "Transform the provided input using a jinja template",
+      "Transform the provided input before sending the input to the model",
     )
   })
 

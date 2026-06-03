@@ -43,7 +43,7 @@ describe("InputTransformCreateModal", () => {
 
     expect(container.textContent).toContain("Input Transform")
     expect(container.textContent).toContain(
-      "Transform the provided input using a jinja template",
+      "Add a jinja template to transform input",
     )
   })
 
