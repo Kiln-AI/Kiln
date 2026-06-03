@@ -1949,8 +1949,29 @@ class TestInputTransformIntegration:
         transform = JinjaInputTransform(template="{{ input.missing_key }}")
         adapter = self._make_adapter(base_task, input_transform=transform)
 
-        with pytest.raises(UndefinedError):
+        with pytest.raises(ValueError, match="Input transform failed:") as exc_info:
             await self._invoke_with_capture(adapter, {"foo": "bar"})
+        assert "missing_key" in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, UndefinedError)
+
+    def test_apply_input_transform_success(self, base_task):
+        """Successful transform returns the rendered string unchanged."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="Hello {{ input.name }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+        result = adapter._apply_input_transform({"name": "world"})
+        assert result == "Hello world"
+
+    def test_apply_input_transform_error_wraps_with_prefix(self, base_task):
+        """Runtime errors from the template are wrapped with a descriptive prefix."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="{{ input.x.no_such_attr }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+
+        with pytest.raises(ValueError, match="Input transform failed:"):
+            adapter._apply_input_transform({"x": "a string"})
 
     @pytest.mark.asyncio
     async def test_input_transform_mcp_unchanged(self, base_task):

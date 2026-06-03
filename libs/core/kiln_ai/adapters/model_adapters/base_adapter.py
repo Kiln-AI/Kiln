@@ -529,7 +529,10 @@ class BaseAdapter(metaclass=ABCMeta):
         transform = self.run_config.input_transform
         if transform is None:
             return input
-        return render_input_transform(transform, input)
+        try:
+            return render_input_transform(transform, input)
+        except Exception as e:
+            raise ValueError(f"Input transform failed: {e}") from e
 
     def has_structured_output(self) -> bool:
         return self.output_schema is not None
