@@ -34,6 +34,9 @@
   // successful send while the parent navigates to / loads the new run, so the
   // user can't fire a second send against the stale parent run.
   export let busy: boolean = false
+  // When true, sending with no parent_task_run_id starts a new root
+  // conversation (the first turn). Used by the /run page.
+  export let allow_root_turn: boolean = false
 
   // forked_turn_index is required when mode is "fork" — it's used for both
   // the context-strip heading and dirty-tracking baseline. Callers always
@@ -133,6 +136,7 @@
         run_config_component,
         input_form,
         on_success,
+        allow_root_turn,
       })
       if (result.ok) {
         ok = true

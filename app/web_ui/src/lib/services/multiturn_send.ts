@@ -22,6 +22,10 @@ export type SendMultiturnArgs = {
   input_form: InputFormController | null | undefined
   on_success: (new_run_id: string) => Promise<void> | void
   tags?: string[]
+  // When true, a missing parent_task_run_id is allowed and creates a new
+  // root conversation (the first turn). Used by the /run page; the in-chat
+  // composer leaves this false so it can't fire before its run has loaded.
+  allow_root_turn?: boolean
 }
 
 export type SendMultiturnResult =
@@ -45,9 +49,10 @@ export async function send_multiturn(
     // Multiturn turns are manual runs, tagged the same as the /run page so
     // they aren't singled out from other manually-created runs.
     tags = ["manual_run"],
+    allow_root_turn = false,
   } = args
 
-  if (!parent_task_run_id) {
+  if (!parent_task_run_id && !allow_root_turn) {
     return {
       ok: false,
       error: new Error(
@@ -88,7 +93,7 @@ export async function send_multiturn(
         plaintext_input: text,
         structured_input: null,
         tags,
-        parent_task_run_id,
+        parent_task_run_id: parent_task_run_id ?? null,
       },
     },
   )
