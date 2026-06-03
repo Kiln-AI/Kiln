@@ -18,6 +18,9 @@
   export let hide_label: boolean = false
   // Disables the plaintext textarea (e.g. while a multiturn send is in flight).
   export let disabled: boolean = false
+  // Height of the plaintext textarea. Defaults to the tall input used on the
+  // /run page; the multiturn composer overrides it with a shorter box.
+  export let height: "base" | "medium" | "large" | "xl" = "large"
   let plaintext_input: string = ""
   $: void (plaintext_input, onInputChange?.())
 
@@ -79,8 +82,8 @@
     {placeholder}
     {hide_label}
     {disabled}
+    {height}
     inputType="textarea"
-    height="large"
     {id}
     bind:value={plaintext_input}
   />

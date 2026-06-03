@@ -214,6 +214,7 @@
           placeholder="Write a message…"
           hide_label={true}
           disabled={submitting}
+          height="medium"
         />
       </div>
       <svelte:fragment slot="submit_left">
@@ -246,6 +247,7 @@
           placeholder="Write a message…"
           hide_label={true}
           disabled={submitting}
+          height="medium"
         />
       </div>
     </FormContainer>
