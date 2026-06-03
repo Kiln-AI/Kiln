@@ -36,6 +36,7 @@
   } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
@@ -88,7 +89,7 @@
   $: noLayoutBottomPadding?.set(!!is_multiturn)
   onDestroy(() => noLayoutBottomPadding?.set(false))
   let see_all_properties = false
-  let multiturn_show_raw_data = false
+  let raw_data_dialog: Dialog | null = null
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined
   let skills_property_value: string | string[] = "None"
@@ -599,21 +600,6 @@
 
   onDestroy(stop_pinning_transcript)
 
-  function multiturn_toggle_raw_data() {
-    multiturn_show_raw_data = !multiturn_show_raw_data
-    if (multiturn_show_raw_data) {
-      setTimeout(() => {
-        const rawDataElement = document.getElementById("multiturn_raw_data")
-        if (rawDataElement) {
-          rawDataElement.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          })
-        }
-      }, 100)
-    }
-  }
-
   // ---- Multiturn composer state ----
   let multiturn_run_config_component: RunConfigComponent
   let multiturn_save_config_error: KilnError | null = null
@@ -919,26 +905,14 @@
                   />
                 {/if}
               </div>
-              <!-- Raw data sits under the composer, collapsed by default.
-                   When open it scrolls internally so it can't blow out the
-                   fixed-height chat column. -->
+              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
               <div class="xl:flex-none mt-2">
                 <button
                   class="text-xs link"
-                  on:click={multiturn_toggle_raw_data}
-                  >{multiturn_show_raw_data ? "Hide" : "Show"} Raw Data</button
+                  on:click={() => raw_data_dialog?.show()}
                 >
-                <div class={multiturn_show_raw_data ? "" : "hidden"}>
-                  <h1
-                    class="text-xl font-bold mt-2 mb-2"
-                    id="multiturn_raw_data"
-                  >
-                    Raw Data
-                  </h1>
-                  <div class="text-sm max-h-[40vh] overflow-auto">
-                    <Output raw_output={JSON.stringify(run, null, 2)} />
-                  </div>
-                </div>
+                  Show Raw Data
+                </button>
               </div>
             </div>
             <div class="w-72 2xl:w-96 flex-none flex flex-col">
@@ -1026,6 +1000,14 @@
   {delete_url}
   {after_delete}
 />
+
+<Dialog bind:this={raw_data_dialog} title="Raw Data" width="wide">
+  {#if run}
+    <div class="text-sm max-h-[70vh] overflow-auto">
+      <Output raw_output={JSON.stringify(run, null, 2)} />
+    </div>
+  {/if}
+</Dialog>
 
 <style>
   /* Match the Assistant chat transcript scrollbar. */

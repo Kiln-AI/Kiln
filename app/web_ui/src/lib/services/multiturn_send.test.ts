@@ -100,7 +100,7 @@ describe("send_multiturn", () => {
     const body = (opts as { body: Record<string, unknown> }).body
     expect(body.parent_task_run_id).toBe("leaf-42")
     expect(body.plaintext_input).toBe("hi there")
-    expect(body.tags).toEqual(["multiturn_run"])
+    expect(body.tags).toEqual(["manual_run"])
     expect(body.structured_input).toBeNull()
     expect(body.run_config_properties).toBeDefined()
     expect(on_success).toHaveBeenCalledWith("new-run-99")

@@ -42,7 +42,9 @@ export async function send_multiturn(
     run_config_component,
     input_form,
     on_success,
-    tags = ["multiturn_run"],
+    // Multiturn turns are manual runs, tagged the same as the /run page so
+    // they aren't singled out from other manually-created runs.
+    tags = ["manual_run"],
   } = args
 
   if (!parent_task_run_id) {
