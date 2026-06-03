@@ -257,7 +257,7 @@ describe("ChatTrace component — layout & roles", () => {
     expect(bubbles.length).toBe(2)
   })
 
-  it("gates the meta row on thinking expansion when the assistant has only reasoning", async () => {
+  it("renders a usage actions row for the assistant turn, independent of thinking expansion", () => {
     const trace: TraceType = [
       assistantMsg(null, {
         reasoning_content: "deep thought",
@@ -267,23 +267,16 @@ describe("ChatTrace component — layout & roles", () => {
     const { container } = render(ChatTrace, {
       props: { trace, show_per_message_usage: true },
     })
-    const bubbles = container.querySelectorAll(
-      "[data-testid='chat-msg-assistant']",
-    )
-    expect(bubbles.length).toBe(1)
-    // Collapsed → no meta.
-    expect(bubbles[0].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
-    // Expanding reasoning reveals meta.
-    const toggle = bubbles[0].querySelector(
-      "[data-testid='chat-msg-thinking'] button",
-    ) as HTMLButtonElement
-    await fireEvent.click(toggle)
+    // One actions row for the turn, present without expanding (it's revealed
+    // on hover via CSS, not gated on the thinking toggle).
+    const metas = container.querySelectorAll("[data-testid='chat-msg-meta']")
+    expect(metas.length).toBe(1)
     expect(
-      bubbles[0].querySelector("[data-testid='chat-msg-meta']"),
+      metas[0].querySelector("button[aria-label='View turn usage']"),
     ).not.toBeNull()
   })
 
-  it("places the metadata row inside the last bubble for the assistant turn, gated on expansion", async () => {
+  it("renders a single usage actions row per assistant turn, outside the bubbles", () => {
     const trace: TraceType = [
       assistantMsg("answer", {
         tool_calls: [makeToolCall("c1", "lookup"), makeToolCall("c2", "fetch")],
@@ -295,26 +288,17 @@ describe("ChatTrace component — layout & roles", () => {
     const { container } = render(ChatTrace, {
       props: { trace, show_per_message_usage: true },
     })
+    // Exactly one actions row for the whole turn — not one per bubble.
+    const metas = container.querySelectorAll("[data-testid='chat-msg-meta']")
+    expect(metas.length).toBe(1)
+    // And it lives outside the individual message bubbles.
     const bubbles = container.querySelectorAll(
       "[data-testid='chat-msg-assistant']",
     )
     expect(bubbles.length).toBe(3)
-    // Meta is hidden on all bubbles while the last tool-call bubble is
-    // collapsed — including the last bubble itself.
-    expect(bubbles[0].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
-    expect(bubbles[1].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
-    expect(bubbles[2].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
-    // Expanding the last tool-call bubble reveals its meta.
-    const lastToggle = bubbles[2].querySelector(
-      "[data-testid='chat-msg-toolcall'] button",
-    ) as HTMLButtonElement
-    await fireEvent.click(lastToggle)
-    expect(
-      bubbles[2].querySelector("[data-testid='chat-msg-meta']"),
-    ).not.toBeNull()
-    // Other bubbles still have no meta.
-    expect(bubbles[0].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
-    expect(bubbles[1].querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    bubbles.forEach((b) => {
+      expect(b.querySelector("[data-testid='chat-msg-meta']")).toBeNull()
+    })
   })
 
   it("places the user metadata row inside the user bubble", () => {
@@ -652,7 +636,7 @@ describe("ChatTrace component — usage info row", () => {
       props: { trace, show_per_message_usage: true },
     })
     expect(
-      container.querySelector("button[aria-label='Message usage info']"),
+      container.querySelector("button[aria-label='View turn usage']"),
     ).not.toBeNull()
   })
 
@@ -666,7 +650,7 @@ describe("ChatTrace component — usage info row", () => {
       props: { trace, show_per_message_usage: true },
     })
     const button = container.querySelector(
-      "button[aria-label='Message usage info']",
+      "button[aria-label='View turn usage']",
     ) as HTMLButtonElement
     const tooltip = button.closest(".tooltip") as HTMLElement
     expect(tooltip).not.toBeNull()
@@ -683,7 +667,7 @@ describe("ChatTrace component — usage info row", () => {
       props: { trace, show_per_message_usage: false },
     })
     expect(
-      container.querySelector("button[aria-label='Message usage info']"),
+      container.querySelector("button[aria-label='View turn usage']"),
     ).toBeNull()
   })
 
@@ -703,7 +687,7 @@ describe("ChatTrace component — usage info row", () => {
       props: { trace, show_per_message_usage: true },
     })
     const button = container.querySelector(
-      "button[aria-label='Message usage info']",
+      "button[aria-label='View turn usage']",
     ) as HTMLButtonElement
     await fireEvent.click(button)
     // The page mounts two Dialogs (subtask trace + usage info). Pick the

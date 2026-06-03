@@ -326,8 +326,14 @@
     subtask_usage_loading: boolean,
     subtask_tokens: number | null,
     subtask_latency_ms: number | null,
+    final_turn_usage: boolean,
   ) {
     let properties = []
+
+    // In multiturn the usage shown here is just the final turn's run, so drop
+    // the "Total" prefix that implies a whole-conversation aggregate.
+    const label = (metric: string) =>
+      final_turn_usage ? metric : "Total " + metric
 
     const run_cost = run?.usage?.cost ?? 0
     const run_tokens = run?.usage?.total_tokens ?? 0
@@ -335,14 +341,14 @@
 
     if (subtask_usage_loading) {
       properties.push({
-        name: "Total Cost",
+        name: label("Cost"),
         value: "Loading...",
       })
     } else {
       const total_cost = run_cost + (subtask_cost ?? 0)
       if (total_cost > 0) {
         properties.push({
-          name: "Total Cost",
+          name: label("Cost"),
           value: `$${total_cost.toFixed(6)}`,
         })
       }
@@ -362,14 +368,14 @@
 
     if (subtask_usage_loading) {
       properties.push({
-        name: "Total Tokens",
+        name: label("Tokens"),
         value: "Loading...",
       })
     } else {
       const total_tokens = run_tokens + (subtask_tokens ?? 0)
       if (total_tokens > 0) {
         properties.push({
-          name: "Total Tokens",
+          name: label("Tokens"),
           value: total_tokens,
         })
       }
@@ -389,14 +395,14 @@
 
     if (subtask_usage_loading) {
       properties.push({
-        name: "Total Latency",
+        name: label("Latency"),
         value: "Loading...",
       })
     } else {
       const total_latency = run_latency + (subtask_latency_ms ?? 0)
       if (total_latency > 0) {
         properties.push({
-          name: "Total Latency",
+          name: label("Latency"),
           value: formatLatency(total_latency),
         })
       }
@@ -417,6 +423,7 @@
     return properties
   }
 
+  $: is_multiturn = task?.turn_mode === "multiturn"
   $: load_subtask_usage(run?.trace)
   $: usage_properties = get_usage_properties(
     run,
@@ -424,6 +431,7 @@
     subtask_usage_loading,
     subtask_tokens,
     subtask_latency_ms,
+    is_multiturn,
   )
 
   // ---- Feedback ----
@@ -716,7 +724,10 @@
   </div>
   <div>
     {#if usage_properties && usage_properties.length > 0}
-      <PropertyList properties={usage_properties} title="Usage" />
+      <PropertyList
+        properties={usage_properties}
+        title={is_multiturn ? "Final Turn Usage" : "Usage"}
+      />
     {/if}
   </div>
 </div>

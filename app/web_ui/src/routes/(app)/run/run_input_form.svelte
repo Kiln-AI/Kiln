@@ -10,6 +10,17 @@
 
   export let input_schema: string | null | undefined
   export let onInputChange: (() => void) | null = null
+  // Plaintext-mode label/placeholder. The label doubles as the validation
+  // message and aria-label, so it stays meaningful even when visually hidden
+  // (e.g. the multiturn composer hides the header and uses a custom hint).
+  export let label: string = "Plaintext Input"
+  export let placeholder: string | null = null
+  export let hide_label: boolean = false
+  // Disables the plaintext textarea (e.g. while a multiturn send is in flight).
+  export let disabled: boolean = false
+  // Height of the plaintext textarea. Defaults to the tall input used on the
+  // /run page; the multiturn composer overrides it with a shorter box.
+  export let height: "base" | "medium" | "large" | "xl" = "large"
   let plaintext_input: string = ""
   $: void (plaintext_input, onInputChange?.())
 
@@ -67,9 +78,12 @@
 
 {#if !input_schema}
   <FormElement
-    label="Plaintext Input"
+    {label}
+    {placeholder}
+    {hide_label}
+    {disabled}
+    {height}
     inputType="textarea"
-    height="large"
     {id}
     bind:value={plaintext_input}
   />

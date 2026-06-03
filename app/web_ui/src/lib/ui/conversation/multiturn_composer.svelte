@@ -23,6 +23,11 @@
   export let forked_turn_index: number | undefined = undefined
   export let on_success: (new_run_id: string) => void | Promise<void>
   export let on_cancel: (() => void) | undefined = undefined
+  // Append-mode optimistic hooks: on_send_start fires with the message text
+  // the moment a send begins (so the parent can show it in the transcript
+  // right away), and on_send_settled fires once the send resolves or fails.
+  export let on_send_start: ((text: string) => void) | undefined = undefined
+  export let on_send_settled: (() => void) | undefined = undefined
 
   // forked_turn_index is required when mode is "fork" — it's used for both
   // the context-strip heading and dirty-tracking baseline. Callers always
@@ -111,6 +116,8 @@
   async function handle_submit() {
     run_error = null
     submitting = true
+    // Surface the message in the transcript optimistically while we wait.
+    on_send_start?.(current_text())
     try {
       const result = await send_multiturn({
         project_id,
@@ -128,6 +135,7 @@
       // not cleared in that case so the user does not lose their typed text.
       run_error = createKilnError(e)
     } finally {
+      on_send_settled?.()
       submitting = false
       await tick()
     }
@@ -159,17 +167,19 @@
 
 <div data-testid="multiturn-composer" class="flex flex-col gap-4">
   {#if mode === "fork"}
+    <!-- Status header for the composer, not a chat bubble. The fork
+         affordance is metadata about what Send will do, so it's styled as a
+         label + helper text aligned to the input below — the filled rounded
+         bubble treatment is reserved for actual messages. -->
     <div
       data-testid="multiturn-fork-context-strip"
-      class="flex flex-col gap-1 bg-base-200 rounded-lg px-4 py-2 text-sm"
+      class="flex flex-col gap-0.5"
     >
-      <div class="flex flex-row items-center gap-2">
-        <span class="w-4 h-4 text-gray-500"><ForkIcon /></span>
-        <span class="font-medium">
-          Forking turn {forked_turn_index}
-        </span>
+      <div class="flex flex-row items-center gap-2 text-sm font-medium">
+        <span class="w-4 h-4 text-gray-500 flex-none"><ForkIcon /></span>
+        <span>Forking turn {forked_turn_index}</span>
       </div>
-      <p class="text-gray-500">
+      <p class="text-xs text-gray-500">
         Editing this message will create a new conversation branch. The original
         conversation it branched off from will be preserved unchanged in your
         dataset.
@@ -183,7 +193,9 @@
        provided at all — even if its content renders nothing — so we can't
        collapse via an empty-conditional slot without regressing append-mode
        layout (full-width button vs. fork-mode's right-aligned button next
-       to Cancel). The cancel-button markup is the only difference. -->
+       to Cancel). The cancel-button markup is the only difference. While
+       submitting, FormContainer disables/​spinners the Send button and we
+       disable the textarea — the area stays put rather than being hidden. -->
   {#if mode === "fork" && on_cancel}
     <FormContainer
       submit_label="Send"
@@ -192,9 +204,18 @@
       bind:submitting
       primary={true}
       keyboard_submit={true}
+      focus_on_mount={false}
     >
       <div data-testid="multiturn-composer-input">
-        <RunInputForm bind:this={input_form} input_schema={null} />
+        <RunInputForm
+          bind:this={input_form}
+          input_schema={null}
+          label="Message"
+          placeholder="Write a message…"
+          hide_label={true}
+          disabled={submitting}
+          height="medium"
+        />
       </div>
       <svelte:fragment slot="submit_left">
         <button
@@ -216,9 +237,18 @@
       bind:submitting
       primary={true}
       keyboard_submit={true}
+      focus_on_mount={false}
     >
       <div data-testid="multiturn-composer-input">
-        <RunInputForm bind:this={input_form} input_schema={null} />
+        <RunInputForm
+          bind:this={input_form}
+          input_schema={null}
+          label="Message"
+          placeholder="Write a message…"
+          hide_label={true}
+          disabled={submitting}
+          height="medium"
+        />
       </div>
     </FormContainer>
   {/if}

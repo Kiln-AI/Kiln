@@ -3,8 +3,7 @@
   import Output from "$lib/ui/output.svelte"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
-  import ForkIcon from "../icons/fork_icon.svelte"
-  import InfoCircleIcon from "../icons/info_circle_icon.svelte"
+  import ChatMessageActions from "./chat_message_actions.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
   import UsageInfoDialog from "./usage_info_dialog.svelte"
@@ -187,301 +186,229 @@
         message.role !== "user"}
 
       {#if message.role === "user"}
-        <div class="flex flex-col items-end" data-testid="chat-msg-user">
-          <div
-            class="rounded-xl bg-primary/10 px-4 py-3 max-w-[70%] text-sm flex flex-col gap-1"
-          >
+        <!-- `group` so the actions row below reveals on hover/focus. -->
+        <div class="group flex flex-col items-end" data-testid="chat-msg-user">
+          <div class="rounded-xl bg-primary/10 px-4 py-3 max-w-[70%] text-sm">
             {#if content}
               <ChatMarkdown text={content} />
             {:else}
               <span class="text-gray-400 italic">(empty message)</span>
             {/if}
-            {#if show_info || show_fork}
-              <div
-                class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
-                data-testid="chat-msg-meta"
-              >
-                {#if show_info}
-                  <div class="tooltip tooltip-top" data-tip="View turn usage">
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                      aria-label="Message usage info"
-                      on:click={() => open_usage_dialog(message)}
-                    >
-                      <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                    </button>
-                  </div>
-                {/if}
-                {#if show_fork}
-                  <div class="tooltip tooltip-top" data-tip="Fork from here">
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                      aria-label="Fork from this turn"
-                      on:click={() => on_fork?.(fork_run_id, index)}
-                    >
-                      <span class="w-4 h-4 block"><ForkIcon /></span>
-                    </button>
-                  </div>
-                {/if}
-              </div>
-            {/if}
           </div>
+          {#if show_info || show_fork}
+            <ChatMessageActions
+              align="end"
+              show_usage={show_info}
+              show_fork={!!show_fork}
+              on_usage={() => open_usage_dialog(message)}
+              on_fork={() => {
+                if (fork_run_id) on_fork?.(fork_run_id, index)
+              }}
+            />
+          {/if}
         </div>
       {:else}
-        {#if has_reasoning_bubble}
-          <!-- Assistant reasoning bubble. Collapsed by default; toggling
-               reveals the model's thinking. Meta lives here only when there
-               is no following content or tool-call bubble, and only while
-               the bubble is expanded so the collapsed row stays minimal. -->
-          {@const meta_here =
-            !has_content_bubble &&
-            !has_tc_bubble &&
-            show_info &&
-            !!thinkingExpanded[index]}
-          <div
-            class="flex flex-col items-start"
-            data-testid="chat-msg-assistant"
-          >
-            <!-- Whole-bubble click expands when collapsed. The inner toggle
-                 button uses |stopPropagation so it still owns collapsing
-                 (and the container handler never accidentally re-expands). -->
-            <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-            <div
-              class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
-              class:cursor-pointer={!thinkingExpanded[index]}
-              on:click={() => {
-                if (!thinkingExpanded[index]) thinkingExpanded[index] = true
-              }}
-            >
-              <div data-testid="chat-msg-thinking">
-                <button
-                  type="button"
-                  class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
-                  on:click|stopPropagation={() =>
-                    (thinkingExpanded[index] = !thinkingExpanded[index])}
-                  aria-expanded={!!thinkingExpanded[index]}
-                >
-                  <span class="text-gray-400" aria-hidden="true">
-                    {thinkingExpanded[index] ? "▼" : "▶"}
-                  </span>
-                  <span class="font-medium">Thinking</span>
-                </button>
-                {#if thinkingExpanded[index]}
-                  <div class="mt-2">
-                    <ChatMarkdown text={reasoning} />
-                  </div>
-                {/if}
-              </div>
-              {#if meta_here}
-                <div
-                  class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
-                  data-testid="chat-msg-meta"
-                >
-                  {#if show_info}
-                    <div class="tooltip tooltip-top" data-tip="View turn usage">
-                      <button
-                        type="button"
-                        class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                        aria-label="Message usage info"
-                        on:click={() => open_usage_dialog(message)}
-                      >
-                        <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                      </button>
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-          </div>
-        {/if}
-
-        {#if has_content_bubble}
-          <!-- Assistant content bubble. Meta lives here only when there is
-               no following tool-call bubble for this message. Content is
-               always visible, so meta is not gated on expansion. -->
-          {@const meta_here = !has_tc_bubble && show_info}
-          <div
-            class="flex flex-col items-start"
-            data-testid="chat-msg-assistant"
-          >
-            <div
-              class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
-            >
-              <div data-testid="chat-msg-content">
-                <ChatMarkdown text={content} />
-              </div>
-              {#if meta_here}
-                <div
-                  class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
-                  data-testid="chat-msg-meta"
-                >
-                  {#if show_info}
-                    <div class="tooltip tooltip-top" data-tip="View turn usage">
-                      <button
-                        type="button"
-                        class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                        aria-label="Message usage info"
-                        on:click={() => open_usage_dialog(message)}
-                      >
-                        <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                      </button>
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-          </div>
-        {/if}
-
-        {#if has_tc_bubble && tool_calls}
-          {#each tool_calls as tool_call, tcIdx}
-            <!-- One bubble per tool call. Meta lives on the last one for this
-                 assistant message. -->
-            {@const tc_key = `${index}-${tcIdx}`}
-            {@const is_last_tc = tcIdx === tool_calls.length - 1}
-            <!-- Meta row only renders while this tool-call bubble is
-                 expanded — collapsed bubbles stay minimal and quiet. -->
-            {@const meta_here =
-              is_last_tc && show_info && !!toolCallExpanded[tc_key]}
-            {@const result = tool_results_by_call_id.get(tool_call.id) ?? null}
-            {@const result_content = result
-              ? content_from_message(result.message)
-              : undefined}
-            {@const kiln_data = result
-              ? kiln_task_tool_data_from_message(result.message)
-              : null}
-            {@const tool_error = result ? is_tool_error(result.message) : false}
-            <div
-              class="flex flex-col items-start"
-              data-testid="chat-msg-assistant"
-            >
-              <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+        <!-- One group per assistant turn: all of its bubbles share a single
+             hover-revealed actions row rendered below them. -->
+        <div
+          class="group flex flex-col items-start"
+          data-testid="chat-msg-assistant-turn"
+        >
+          <div class="flex w-full flex-col gap-3">
+            {#if has_reasoning_bubble}
+              <!-- Assistant reasoning bubble. Collapsed by default; toggling
+                   reveals the model's thinking. -->
               <div
-                class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
-                class:cursor-pointer={!toolCallExpanded[tc_key]}
-                on:click={() => {
-                  if (!toolCallExpanded[tc_key]) toolCallExpanded[tc_key] = true
-                }}
+                class="flex flex-col items-start"
+                data-testid="chat-msg-assistant"
               >
-                <div data-testid="chat-msg-toolcall">
-                  <button
-                    type="button"
-                    class="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
-                    on:click|stopPropagation={() =>
-                      (toolCallExpanded[tc_key] = !toolCallExpanded[tc_key])}
-                    aria-expanded={!!toolCallExpanded[tc_key]}
-                  >
-                    <span class="text-gray-400" aria-hidden="true">
-                      {toolCallExpanded[tc_key] ? "▼" : "▶"}
-                    </span>
-                    <span class="font-medium">
-                      Toolcall: <span class="font-mono"
-                        >{tool_call.function.name}</span
-                      >
-                    </span>
-                  </button>
-                  {#if toolCallExpanded[tc_key]}
-                    <div
-                      class="mt-3 flex flex-col gap-3"
-                      data-testid="chat-tool-call"
+                <!-- Whole-bubble click expands when collapsed. The inner toggle
+                     button uses |stopPropagation so it still owns collapsing
+                     (and the container handler never accidentally re-expands). -->
+                <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+                <div
+                  class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                  class:cursor-pointer={!thinkingExpanded[index]}
+                  on:click={() => {
+                    if (!thinkingExpanded[index]) thinkingExpanded[index] = true
+                  }}
+                >
+                  <div data-testid="chat-msg-thinking">
+                    <button
+                      type="button"
+                      class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
+                      on:click|stopPropagation={() =>
+                        (thinkingExpanded[index] = !thinkingExpanded[index])}
+                      aria-expanded={!!thinkingExpanded[index]}
                     >
-                      <div>
-                        <div class="text-xs text-gray-500 font-bold mb-1">
-                          Invoked Tool Call
-                        </div>
-                        <ToolCall
-                          {tool_call}
-                          {project_id}
-                          persistent_tool_id={kiln_data?.tool_id}
-                        />
-                      </div>
-                      {#if result_content !== undefined}
-                        <div>
-                          <div
-                            class="text-xs font-bold mb-1 {tool_error
-                              ? 'text-error'
-                              : 'text-gray-500'}"
-                          >
-                            {tool_error ? "Tool Error" : "Tool Result"}
-                          </div>
-                          <div
-                            class={tool_error
-                              ? "border border-error/20 rounded-lg p-2"
-                              : ""}
-                          >
-                            <Output
-                              raw_output={result_content}
-                              no_padding={true}
-                            />
-                          </div>
-                        </div>
-                      {:else if result === null}
-                        <div class="text-xs text-gray-400 italic">
-                          No tool result recorded.
-                        </div>
-                      {/if}
-                      {#if kiln_data}
-                        <div>
-                          <button
-                            class="link text-xs text-gray-500"
-                            on:click={() => {
-                              tool_messages_dialog?.show(kiln_data)
-                            }}
-                          >
-                            <div class="flex flex-row items-center gap-1">
-                              <span>Subtask Message Trace</span>
-                              <div class="w-4 h-4">
-                                <ArrowRightUpIcon />
-                              </div>
-                            </div>
-                          </button>
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-
-                {#if meta_here}
-                  <div
-                    class="flex justify-end items-center gap-1 mt-1 -mr-2 -mb-1"
-                    data-testid="chat-msg-meta"
-                  >
-                    {#if show_info}
-                      <div
-                        class="tooltip tooltip-top"
-                        data-tip="View turn usage"
-                      >
-                        <button
-                          type="button"
-                          class="btn btn-xs btn-square btn-ghost text-gray-500 hover:text-gray-900"
-                          aria-label="Message usage info"
-                          on:click={() => open_usage_dialog(message)}
-                        >
-                          <span class="w-4 h-4 block"><InfoCircleIcon /></span>
-                        </button>
+                      <span class="text-gray-400" aria-hidden="true">
+                        {thinkingExpanded[index] ? "▼" : "▶"}
+                      </span>
+                      <span class="font-medium">Thinking</span>
+                    </button>
+                    {#if thinkingExpanded[index]}
+                      <div class="mt-2">
+                        <ChatMarkdown text={reasoning} />
                       </div>
                     {/if}
                   </div>
-                {/if}
+                </div>
               </div>
-            </div>
-          {/each}
-        {/if}
+            {/if}
 
-        {#if empty_assistant}
-          <div
-            class="flex flex-col items-start"
-            data-testid="chat-msg-assistant"
-          >
-            <div
-              class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm text-gray-400 italic"
-            >
-              (empty message)
-            </div>
+            {#if has_content_bubble}
+              <!-- Assistant content bubble. -->
+              <div
+                class="flex flex-col items-start"
+                data-testid="chat-msg-assistant"
+              >
+                <div
+                  class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                >
+                  <div data-testid="chat-msg-content">
+                    <ChatMarkdown text={content} />
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if has_tc_bubble && tool_calls}
+              {#each tool_calls as tool_call, tcIdx}
+                <!-- One bubble per tool call. -->
+                {@const tc_key = `${index}-${tcIdx}`}
+                {@const result =
+                  tool_results_by_call_id.get(tool_call.id) ?? null}
+                {@const result_content = result
+                  ? content_from_message(result.message)
+                  : undefined}
+                {@const kiln_data = result
+                  ? kiln_task_tool_data_from_message(result.message)
+                  : null}
+                {@const tool_error = result
+                  ? is_tool_error(result.message)
+                  : false}
+                <div
+                  class="flex flex-col items-start"
+                  data-testid="chat-msg-assistant"
+                >
+                  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+                  <div
+                    class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                    class:cursor-pointer={!toolCallExpanded[tc_key]}
+                    on:click={() => {
+                      if (!toolCallExpanded[tc_key])
+                        toolCallExpanded[tc_key] = true
+                    }}
+                  >
+                    <div data-testid="chat-msg-toolcall">
+                      <button
+                        type="button"
+                        class="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
+                        on:click|stopPropagation={() =>
+                          (toolCallExpanded[tc_key] =
+                            !toolCallExpanded[tc_key])}
+                        aria-expanded={!!toolCallExpanded[tc_key]}
+                      >
+                        <span class="text-gray-400" aria-hidden="true">
+                          {toolCallExpanded[tc_key] ? "▼" : "▶"}
+                        </span>
+                        <span class="font-medium">
+                          Toolcall: <span class="font-mono"
+                            >{tool_call.function.name}</span
+                          >
+                        </span>
+                      </button>
+                      {#if toolCallExpanded[tc_key]}
+                        <div
+                          class="mt-3 flex flex-col gap-3"
+                          data-testid="chat-tool-call"
+                        >
+                          <div>
+                            <div class="text-xs text-gray-500 font-bold mb-1">
+                              Invoked Tool Call
+                            </div>
+                            <ToolCall
+                              {tool_call}
+                              {project_id}
+                              persistent_tool_id={kiln_data?.tool_id}
+                            />
+                          </div>
+                          {#if result_content !== undefined}
+                            <div>
+                              <div
+                                class="text-xs font-bold mb-1 {tool_error
+                                  ? 'text-error'
+                                  : 'text-gray-500'}"
+                              >
+                                {tool_error ? "Tool Error" : "Tool Result"}
+                              </div>
+                              <div
+                                class={tool_error
+                                  ? "border border-error/20 rounded-lg p-2"
+                                  : ""}
+                              >
+                                <Output
+                                  raw_output={result_content}
+                                  no_padding={true}
+                                />
+                              </div>
+                            </div>
+                          {:else if result === null}
+                            <div class="text-xs text-gray-400 italic">
+                              No tool result recorded.
+                            </div>
+                          {/if}
+                          {#if kiln_data}
+                            <div>
+                              <button
+                                class="link text-xs text-gray-500"
+                                on:click={() => {
+                                  tool_messages_dialog?.show(kiln_data)
+                                }}
+                              >
+                                <div class="flex flex-row items-center gap-1">
+                                  <span>Subtask Message Trace</span>
+                                  <div class="w-4 h-4">
+                                    <ArrowRightUpIcon />
+                                  </div>
+                                </div>
+                              </button>
+                            </div>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            {/if}
+
+            {#if empty_assistant}
+              <div
+                class="flex flex-col items-start"
+                data-testid="chat-msg-assistant"
+              >
+                <div
+                  class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm text-gray-400 italic"
+                >
+                  (empty message)
+                </div>
+              </div>
+            {/if}
           </div>
-        {/if}
+          {#if show_info}
+            <!-- Constrain to the bubble width so the right-aligned action sits
+                 at the bubble's right edge, not the far column edge. -->
+            <div class="w-[70%]">
+              <ChatMessageActions
+                align="end"
+                show_usage={true}
+                show_fork={false}
+                on_usage={() => open_usage_dialog(message)}
+              />
+            </div>
+          {/if}
+        </div>
       {/if}
     {/if}
   {/each}

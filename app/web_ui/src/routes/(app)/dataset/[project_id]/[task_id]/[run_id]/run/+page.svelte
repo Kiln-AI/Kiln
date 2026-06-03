@@ -20,7 +20,7 @@
     load_task_prompts,
   } from "$lib/stores/prompts_store"
   import { page } from "$app/stores"
-  import { getContext } from "svelte"
+  import { getContext, onDestroy, tick } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type {
@@ -36,10 +36,11 @@
   } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
-  import type { ProviderModels, PromptResponse } from "$lib/types"
+  import type { ProviderModels, PromptResponse, TraceMessage } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
   import {
@@ -77,8 +78,18 @@
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
+
+  // The multiturn view is a full-height chat layout (scrollable transcript +
+  // composer pinned to the bottom), so it needs the app shell's bottom
+  // padding removed. Single-turn keeps the normal padded document flow.
+  $: is_multiturn = task?.turn_mode === "multiturn"
+  const noLayoutBottomPadding = getContext<Writable<boolean> | undefined>(
+    "noLayoutBottomPadding",
+  )
+  $: noLayoutBottomPadding?.set(!!is_multiturn)
+  onDestroy(() => noLayoutBottomPadding?.set(false))
   let see_all_properties = false
-  let multiturn_show_raw_data = false
+  let raw_data_dialog: Dialog | null = null
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined
   let skills_property_value: string | string[] = "None"
@@ -497,20 +508,97 @@
     })
   }
 
-  function multiturn_toggle_raw_data() {
-    multiturn_show_raw_data = !multiturn_show_raw_data
-    if (multiturn_show_raw_data) {
-      setTimeout(() => {
-        const rawDataElement = document.getElementById("multiturn_raw_data")
-        if (rawDataElement) {
-          rawDataElement.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          })
-        }
-      }, 100)
+  // The transcript scroll container (the chat-style scrollview on xl+).
+  let transcript_scroll_el: HTMLElement | null = null
+  // Scroll the transcript to the latest turn whenever a run renders — both on
+  // initial load and after sending a new turn. The composer is pinned
+  // separately, so "bottom" lands on the newest message, not the textbox.
+  let scrolled_for_run_id: string | null = null
+  $: if (
+    run &&
+    run.id === run_id &&
+    task?.turn_mode === "multiturn" &&
+    run.id !== scrolled_for_run_id
+  ) {
+    scrolled_for_run_id = run.id ?? null
+    // The freshly-loaded run's trace already contains the just-sent turn, so
+    // drop any optimistic placeholder to avoid showing it twice.
+    optimistic_sent_message = null
+    apply_transcript_scroll()
+  }
+
+  // While a send is in flight we append the user's message to the transcript
+  // optimistically so it shows immediately, then redirect once the run lands.
+  let optimistic_sent_message: string | null = null
+  $: display_trace = build_display_trace(
+    run?.trace ?? [],
+    optimistic_sent_message,
+  )
+  function build_display_trace(
+    trace: TraceMessage[],
+    optimistic: string | null,
+  ): TraceMessage[] {
+    if (optimistic === null) return trace
+    return [...trace, { role: "user", content: optimistic } as TraceMessage]
+  }
+
+  function handle_send_start(text: string) {
+    optimistic_sent_message = text
+    apply_transcript_scroll()
+  }
+
+  function handle_send_settled() {
+    // Clears the placeholder on error (no new run loads in that case); on
+    // success the run-load reactive above has already cleared it.
+    optimistic_sent_message = null
+  }
+
+  async function apply_transcript_scroll() {
+    // Wait for ChatTrace (keyed on run.id) to render the new trace, then a
+    // frame so layout settles before measuring/scrolling.
+    await tick()
+    requestAnimationFrame(() => {
+      pin_transcript_to_bottom()
+    })
+  }
+
+  // Keep the transcript pinned to the bottom for a short window after load.
+  // A single scroll isn't enough: ChatMarkdown (and any images) reflow after
+  // our initial frames, growing scrollHeight, which is why it lands "almost"
+  // at the bottom. We re-pin on every mutation until things settle, then stop
+  // so we don't fight the user's own scrolling.
+  let settle_observer: MutationObserver | null = null
+  let settle_timeout: ReturnType<typeof setTimeout> | null = null
+
+  function pin_transcript_to_bottom() {
+    const el = transcript_scroll_el
+    if (!el || typeof MutationObserver === "undefined") return
+    stop_pinning_transcript()
+    const stick = () => {
+      if (transcript_scroll_el) {
+        transcript_scroll_el.scrollTop = transcript_scroll_el.scrollHeight
+      }
+    }
+    stick()
+    settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
+    settle_observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    settle_timeout = setTimeout(stop_pinning_transcript, 1000)
+  }
+
+  function stop_pinning_transcript() {
+    settle_observer?.disconnect()
+    settle_observer = null
+    if (settle_timeout) {
+      clearTimeout(settle_timeout)
+      settle_timeout = null
     }
   }
+
+  onDestroy(stop_pinning_transcript)
 
   // ---- Multiturn composer state ----
   let multiturn_run_config_component: RunConfigComponent
@@ -721,6 +809,7 @@
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
     action_buttons={buttons}
     breadcrumbs={get_breadcrumbs()}
+    no_y_padding={is_multiturn}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -733,91 +822,97 @@
     {:else if run && task}
       {#if task.turn_mode === "multiturn" && task.id}
         {@const multiturn_task_id = task.id}
+        <!-- Chat-style layout: on xl+ the conversation column is bounded to
+             the viewport so the transcript scrolls and the composer stays
+             pinned to the bottom. The right Options column keeps its natural
+             height (top-aligned) so its dropdowns aren't clipped and the page
+             scrolls for it if needed. Below xl this falls back to normal
+             document flow. The 100vh offset clears the app header above. -->
         <div data-testid="multiturn-layout">
-          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-            <div class="grow flex flex-col gap-6">
-              {#if run_has_children}
-                <div role="alert" data-testid="run-has-children-banner">
-                  <Warning
-                    warning_color="warning"
-                    warning_icon="info"
-                    warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
-                    outline={true}
-                  />
-                </div>
-              {/if}
-              {#if chain_broken}
-                <div role="alert" data-testid="fork-chain-broken-banner">
-                  <Warning
-                    warning_color="warning"
-                    warning_icon="exclaim"
-                    warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
-                    outline={true}
-                  />
-                </div>
-              {/if}
-              {#if chain_load_failed}
-                <div role="alert" data-testid="fork-load-failed-banner">
-                  <Warning
-                    warning_color="warning"
-                    warning_icon="exclaim"
-                    warning_message="Couldn't load conversation history. Forking is unavailable."
-                    outline={true}
-                  />
-                </div>
-              {/if}
-              {#key run.id}
-                <ChatTrace
-                  trace={run.trace ?? []}
-                  {project_id}
-                  {forkable_run_ids}
-                  truncate_at_trace_index={fork_target?.trace_index ?? null}
-                  {on_fork}
-                  show_per_message_usage={task?.turn_mode === "multiturn"}
-                />
-              {/key}
-              {#if fork_target}
-                <MultiturnComposer
-                  bind:this={fork_composer}
-                  mode="fork"
-                  {project_id}
-                  task_id={multiturn_task_id}
-                  parent_task_run_id={fork_target.parent_run_id}
-                  run_config_component={multiturn_run_config_component}
-                  prefill_text={fork_target.prefill}
-                  forked_turn_index={fork_target.turn_index}
-                  on_success={handle_fork_success}
-                  on_cancel={cancel_fork}
-                />
-              {:else}
-                <MultiturnComposer
-                  mode="append"
-                  {project_id}
-                  task_id={multiturn_task_id}
-                  parent_task_run_id={run.id ?? null}
-                  run_config_component={multiturn_run_config_component}
-                  on_success={handle_send}
-                />
-              {/if}
-              <div>
-                <div class="mt-2">
-                  <button
-                    class="text-xs link"
-                    on:click={multiturn_toggle_raw_data}
-                    >{multiturn_show_raw_data ? "Hide" : "Show"} Raw Data</button
-                  >
-                </div>
-                <div class={multiturn_show_raw_data ? "" : "hidden"}>
-                  <h1
-                    class="text-xl font-bold mt-2 mb-2"
-                    id="multiturn_raw_data"
-                  >
-                    Raw Data
-                  </h1>
-                  <div class="text-sm">
-                    <Output raw_output={JSON.stringify(run, null, 2)} />
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start">
+            <div
+              class="grow flex flex-col min-w-0 min-h-0 xl:h-[calc(100vh-11rem)]"
+            >
+              <div
+                bind:this={transcript_scroll_el}
+                class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
+              >
+                {#if run_has_children}
+                  <div role="alert" data-testid="run-has-children-banner">
+                    <Warning
+                      warning_color="warning"
+                      warning_icon="info"
+                      warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
+                      outline={true}
+                    />
                   </div>
-                </div>
+                {/if}
+                {#if chain_broken}
+                  <div role="alert" data-testid="fork-chain-broken-banner">
+                    <Warning
+                      warning_color="warning"
+                      warning_icon="exclaim"
+                      warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
+                      outline={true}
+                    />
+                  </div>
+                {/if}
+                {#if chain_load_failed}
+                  <div role="alert" data-testid="fork-load-failed-banner">
+                    <Warning
+                      warning_color="warning"
+                      warning_icon="exclaim"
+                      warning_message="Couldn't load conversation history. Forking is unavailable."
+                      outline={true}
+                    />
+                  </div>
+                {/if}
+                {#key run.id}
+                  <ChatTrace
+                    trace={display_trace}
+                    {project_id}
+                    {forkable_run_ids}
+                    truncate_at_trace_index={fork_target?.trace_index ?? null}
+                    {on_fork}
+                    show_per_message_usage={task?.turn_mode === "multiturn"}
+                  />
+                {/key}
+              </div>
+              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+                {#if fork_target}
+                  <MultiturnComposer
+                    bind:this={fork_composer}
+                    mode="fork"
+                    {project_id}
+                    task_id={multiturn_task_id}
+                    parent_task_run_id={fork_target.parent_run_id}
+                    run_config_component={multiturn_run_config_component}
+                    prefill_text={fork_target.prefill}
+                    forked_turn_index={fork_target.turn_index}
+                    on_success={handle_fork_success}
+                    on_cancel={cancel_fork}
+                  />
+                {:else}
+                  <MultiturnComposer
+                    mode="append"
+                    {project_id}
+                    task_id={multiturn_task_id}
+                    parent_task_run_id={run.id ?? null}
+                    run_config_component={multiturn_run_config_component}
+                    on_success={handle_send}
+                    on_send_start={handle_send_start}
+                    on_send_settled={handle_send_settled}
+                  />
+                {/if}
+              </div>
+              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
+              <div class="xl:flex-none mt-2">
+                <button
+                  class="text-xs link"
+                  on:click={() => raw_data_dialog?.show()}
+                >
+                  Show Raw Data
+                </button>
               </div>
             </div>
             <div class="w-72 2xl:w-96 flex-none flex flex-col">
@@ -905,3 +1000,36 @@
   {delete_url}
   {after_delete}
 />
+
+<Dialog bind:this={raw_data_dialog} title="Raw Data" width="wide">
+  {#if run}
+    <div class="text-sm max-h-[70vh] overflow-auto">
+      <Output raw_output={JSON.stringify(run, null, 2)} />
+    </div>
+  {/if}
+</Dialog>
+
+<style>
+  /* Match the Assistant chat transcript scrollbar. */
+  .chat-messages-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-thumb {
+    background-color: oklch(var(--bc) / 0.2);
+    border-radius: 3px;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(var(--bc) / 0.35);
+  }
+
+  .chat-messages-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
+  }
+</style>
