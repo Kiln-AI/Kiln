@@ -194,7 +194,7 @@
        collapse via an empty-conditional slot without regressing append-mode
        layout (full-width button vs. fork-mode's right-aligned button next
        to Cancel). The cancel-button markup is the only difference. While
-       submitting, FormContainer disables/​spinners the Send button and we
+       submitting, FormContainer disables/spinners the Send button and we
        disable the textarea — the area stays put rather than being hidden. -->
   {#if mode === "fork" && on_cancel}
     <FormContainer
