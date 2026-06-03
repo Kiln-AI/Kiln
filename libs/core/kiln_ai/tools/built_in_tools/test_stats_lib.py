@@ -111,6 +111,12 @@ class TestWilcoxon:
         assert p is not None
         assert p < 0.05
 
+    def test_symmetric_sample_p_is_one(self) -> None:
+        # Perfectly balanced ranks (w_plus == mu) must give z = 0 / p = 1.0,
+        # not a spurious p < 1 from the continuity correction overshooting 0.
+        p = wilcoxon_signed_rank_p([1.0, -1.0, 2.0, -2.0, 3.0, -3.0])
+        assert p == 1.0
+
 
 class TestBootstrapDeterminism:
     def test_paired_bootstrap_deterministic(self) -> None:

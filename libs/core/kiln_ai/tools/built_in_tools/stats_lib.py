@@ -293,8 +293,12 @@ def wilcoxon_signed_rank_p(diffs: Sequence[float]) -> float | None:
     sigma = math.sqrt(n * (n + 1) * (2 * n + 1) / 24.0)
     if sigma == 0:
         return None
-    # Continuity correction: shift |W - mu| by 0.5 toward mu.
-    z = (w_plus - mu - math.copysign(0.5, w_plus - mu)) / sigma
+    # Continuity correction: shrink |W - mu| toward 0 by 0.5, clamped at 0 so
+    # a perfectly symmetric sample (w_plus == mu) gives z = 0 / p = 1.0 instead
+    # of overshooting via copysign(0.5, 0.0) == 0.5 (and never flips sign when
+    # |W - mu| < 0.5).
+    num = w_plus - mu
+    z = math.copysign(max(0.0, abs(num) - 0.5), num) / sigma
     # Two-sided p-value from standard normal.
     p = 2.0 * (1.0 - 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0))))
     return min(1.0, max(0.0, p))
