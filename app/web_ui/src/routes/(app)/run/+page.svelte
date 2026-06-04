@@ -250,7 +250,9 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<!-- Multi-turn uses the full width (sidebar pinned right, chat centered);
+     single-turn keeps the capped reading width. -->
+<div class={is_multiturn ? "" : "max-w-[1400px]"}>
   <AppPage
     title="Run"
     bind:subtitle
@@ -263,49 +265,57 @@
       <!-- Multi-turn: a chat-style new conversation that mirrors the in-run
            multiturn page. The first message starts a root run, then we
            redirect to the dataset run page to continue the conversation. -->
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start">
+      <div
+        class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
+      >
         <div
-          class="grow flex flex-col min-w-0 min-h-0 xl:h-[calc(100vh-11rem)]"
+          class="grow flex flex-col items-center min-w-0 xl:h-full xl:min-h-0"
         >
           <div
-            class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
+            class="flex w-full max-w-3xl flex-col min-w-0 xl:h-full xl:min-h-0"
           >
-            {#if mt_awaiting_response}
-              <ChatTrace
-                trace={mt_display_trace}
-                {project_id}
-                show_per_message_usage={false}
-              />
-              <div data-testid="run-multiturn-pending">
-                <ChatLoading />
-              </div>
-            {:else}
-              <div class="flex flex-1 items-center justify-center">
-                <div class="text-center max-w-md px-4">
-                  <div class="text-lg font-medium">Start a conversation</div>
-                  <div class="text-sm mt-1 text-gray-500">
-                    Send a message to begin a multi-turn run with “{$current_task.name}”.
+            <div
+              class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
+            >
+              {#if mt_awaiting_response}
+                <ChatTrace
+                  trace={mt_display_trace}
+                  {project_id}
+                  show_per_message_usage={false}
+                />
+                <div data-testid="run-multiturn-pending">
+                  <ChatLoading />
+                </div>
+              {:else}
+                <div class="flex flex-1 items-center justify-center">
+                  <div class="text-center max-w-md px-4">
+                    <div class="text-lg font-medium">Start a conversation</div>
+                    <div class="text-sm mt-1 text-gray-500">
+                      Send a message to begin a multi-turn run with “{$current_task.name}”.
+                    </div>
                   </div>
                 </div>
-              </div>
-            {/if}
-          </div>
-          <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
-            <MultiturnComposer
-              mode="append"
-              {project_id}
-              {task_id}
-              parent_task_run_id={null}
-              allow_root_turn={true}
-              {run_config_component}
-              busy={mt_awaiting_response}
-              on_success={handle_first_turn_success}
-              on_send_start={handle_mt_send_start}
-              on_send_settled={handle_mt_send_settled}
-            />
+              {/if}
+            </div>
+            <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+              <MultiturnComposer
+                mode="append"
+                {project_id}
+                {task_id}
+                parent_task_run_id={null}
+                allow_root_turn={true}
+                {run_config_component}
+                busy={mt_awaiting_response}
+                on_success={handle_first_turn_success}
+                on_send_start={handle_mt_send_start}
+                on_send_settled={handle_mt_send_settled}
+              />
+            </div>
           </div>
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
+        <div
+          class="w-72 2xl:w-96 flex-none flex flex-col gap-4 chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto"
+        >
           <div class="text-xl font-bold">Options</div>
           <SavedRunConfigurationsDropdown
             {project_id}

@@ -824,7 +824,9 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<!-- Multi-turn uses the full width (sidebar pinned to the right edge, chat
+     centered); single-turn keeps the capped reading width. -->
+<div class={is_multiturn ? "" : "max-w-[1400px]"}>
   <AppPage
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
@@ -843,106 +845,114 @@
     {:else if run && task}
       {#if task.turn_mode === "multiturn" && task.id}
         {@const multiturn_task_id = task.id}
-        <!-- Chat-style layout: on xl+ the conversation column is bounded to
-             the viewport so the transcript scrolls and the composer stays
-             pinned to the bottom. The right Options column keeps its natural
-             height (top-aligned) so its dropdowns aren't clipped and the page
-             scrolls for it if needed. Below xl this falls back to normal
-             document flow. The 100vh offset clears the app header above. -->
+        <!-- Chat-style layout: on xl+ the whole row is bounded to the viewport
+             height. Both the centered chat column and the right-pinned Options
+             sidebar fill that height and scroll independently. The chat
+             transcript scrolls with the composer pinned below it. Below xl this
+             falls back to normal document flow. The 100vh offset clears the app
+             header above. -->
         <div data-testid="multiturn-layout">
-          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start">
+          <div
+            class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
+          >
             <div
-              class="grow flex flex-col min-w-0 min-h-0 xl:h-[calc(100vh-11rem)]"
+              class="grow flex flex-col items-center min-w-0 xl:h-full xl:min-h-0"
             >
               <div
-                bind:this={transcript_scroll_el}
-                class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
+                class="flex w-full max-w-3xl flex-col min-w-0 xl:h-full xl:min-h-0"
               >
-                {#if run_has_children}
-                  <div role="alert" data-testid="run-has-children-banner">
-                    <Warning
-                      warning_color="warning"
-                      warning_icon="info"
-                      warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
-                      outline={true}
-                    />
-                  </div>
-                {/if}
-                {#if chain_broken}
-                  <div role="alert" data-testid="fork-chain-broken-banner">
-                    <Warning
-                      warning_color="warning"
-                      warning_icon="exclaim"
-                      warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
-                      outline={true}
-                    />
-                  </div>
-                {/if}
-                {#if chain_load_failed}
-                  <div role="alert" data-testid="fork-load-failed-banner">
-                    <Warning
-                      warning_color="warning"
-                      warning_icon="exclaim"
-                      warning_message="Couldn't load conversation history. Forking is unavailable."
-                      outline={true}
-                    />
-                  </div>
-                {/if}
-                {#key run.id}
-                  <ChatTrace
-                    trace={display_trace}
-                    {project_id}
-                    {forkable_run_ids}
-                    truncate_at_trace_index={fork_target?.trace_index ?? null}
-                    {on_fork}
-                    show_per_message_usage={task?.turn_mode === "multiturn"}
-                  />
-                {/key}
-                {#if awaiting_response}
-                  <div data-testid="multiturn-pending-response">
-                    <ChatLoading />
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
-                {#if fork_target}
-                  <MultiturnComposer
-                    bind:this={fork_composer}
-                    mode="fork"
-                    {project_id}
-                    task_id={multiturn_task_id}
-                    parent_task_run_id={fork_target.parent_run_id}
-                    run_config_component={multiturn_run_config_component}
-                    prefill_text={fork_target.prefill}
-                    forked_turn_index={fork_target.turn_index}
-                    on_success={handle_fork_success}
-                    on_cancel={cancel_fork}
-                  />
-                {:else}
-                  <MultiturnComposer
-                    mode="append"
-                    {project_id}
-                    task_id={multiturn_task_id}
-                    parent_task_run_id={run.id ?? null}
-                    run_config_component={multiturn_run_config_component}
-                    busy={awaiting_response}
-                    on_success={handle_send}
-                    on_send_start={handle_send_start}
-                    on_send_settled={handle_send_settled}
-                  />
-                {/if}
-              </div>
-              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
-              <div class="xl:flex-none mt-2">
-                <button
-                  class="text-xs link"
-                  on:click={() => raw_data_dialog?.show()}
+                <div
+                  bind:this={transcript_scroll_el}
+                  class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
                 >
-                  Show Raw Data
-                </button>
+                  {#if run_has_children}
+                    <div role="alert" data-testid="run-has-children-banner">
+                      <Warning
+                        warning_color="warning"
+                        warning_icon="info"
+                        warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
+                        outline={true}
+                      />
+                    </div>
+                  {/if}
+                  {#if chain_broken}
+                    <div role="alert" data-testid="fork-chain-broken-banner">
+                      <Warning
+                        warning_color="warning"
+                        warning_icon="exclaim"
+                        warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
+                        outline={true}
+                      />
+                    </div>
+                  {/if}
+                  {#if chain_load_failed}
+                    <div role="alert" data-testid="fork-load-failed-banner">
+                      <Warning
+                        warning_color="warning"
+                        warning_icon="exclaim"
+                        warning_message="Couldn't load conversation history. Forking is unavailable."
+                        outline={true}
+                      />
+                    </div>
+                  {/if}
+                  {#key run.id}
+                    <ChatTrace
+                      trace={display_trace}
+                      {project_id}
+                      {forkable_run_ids}
+                      truncate_at_trace_index={fork_target?.trace_index ?? null}
+                      {on_fork}
+                      show_per_message_usage={task?.turn_mode === "multiturn"}
+                    />
+                  {/key}
+                  {#if awaiting_response}
+                    <div data-testid="multiturn-pending-response">
+                      <ChatLoading />
+                    </div>
+                  {/if}
+                </div>
+                <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+                  {#if fork_target}
+                    <MultiturnComposer
+                      bind:this={fork_composer}
+                      mode="fork"
+                      {project_id}
+                      task_id={multiturn_task_id}
+                      parent_task_run_id={fork_target.parent_run_id}
+                      run_config_component={multiturn_run_config_component}
+                      prefill_text={fork_target.prefill}
+                      forked_turn_index={fork_target.turn_index}
+                      on_success={handle_fork_success}
+                      on_cancel={cancel_fork}
+                    />
+                  {:else}
+                    <MultiturnComposer
+                      mode="append"
+                      {project_id}
+                      task_id={multiturn_task_id}
+                      parent_task_run_id={run.id ?? null}
+                      run_config_component={multiturn_run_config_component}
+                      busy={awaiting_response}
+                      on_success={handle_send}
+                      on_send_start={handle_send_start}
+                      on_send_settled={handle_send_settled}
+                    />
+                  {/if}
+                </div>
+                <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
+                <div class="xl:flex-none mt-2">
+                  <button
+                    class="text-xs link"
+                    on:click={() => raw_data_dialog?.show()}
+                  >
+                    Show Raw Data
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="w-72 2xl:w-96 flex-none flex flex-col">
+            <div
+              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto"
+            >
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
