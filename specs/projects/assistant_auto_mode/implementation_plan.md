@@ -9,7 +9,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
 
 ## Phases
 
-- [ ] **Phase 1 — Branch + `enable_auto_mode` tool in libs/core**
+- [x] **Phase 1 — Branch + `enable_auto_mode` tool in libs/core**
   - Create/switch branch `leonard/kil-692-assistant-auto-mode` in this repo.
   - Add `EnableAutoModeTool` (`libs/core/kiln_ai/tools/built_in_tools/enable_auto_mode_tool.py`),
     `KilnBuiltInToolId.ENABLE_AUTO_MODE`, `tool_registry.py` case; schema `reason?: string`;

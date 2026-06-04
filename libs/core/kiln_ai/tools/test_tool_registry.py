@@ -19,6 +19,7 @@ from kiln_ai.datamodel.tool_id import (
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import EnableAutoModeTool
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
@@ -73,6 +74,13 @@ class TestToolRegistry:
         assert isinstance(tool, KilnApiCallTool)
         assert await tool.id() == KilnBuiltInToolId.CALL_KILN_API
         assert await tool.name() == "call_kiln_api"
+
+    async def test_tool_from_id_enable_auto_mode(self):
+        tool = tool_from_id(KilnBuiltInToolId.ENABLE_AUTO_MODE)
+
+        assert isinstance(tool, EnableAutoModeTool)
+        assert await tool.id() == KilnBuiltInToolId.ENABLE_AUTO_MODE
+        assert await tool.name() == "enable_auto_mode"
 
     async def test_tool_from_id_with_string_values(self):
         """Test that tool_from_id works with string values of enum members."""
