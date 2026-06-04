@@ -17,6 +17,8 @@ Tool IDs can be one of:
 - A remote MCP tool: mcp::remote::<server_id>::<tool_name>
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
 - A Kiln task tool: kiln_task::<server_id>
+- A Kiln skill tool: kiln_tool::skill::<skill_id>
+- A Kiln skill search tool: kiln_tool::skill_search::<skill_id>
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
@@ -37,6 +39,7 @@ RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
+SKILL_SEARCH_TOOL_ID_PREFIX = "kiln_tool::skill_search::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
 
 
@@ -115,6 +118,15 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Skill search tools must have format: kiln_tool::skill_search::<skill_id>
+    if id.startswith(SKILL_SEARCH_TOOL_ID_PREFIX):
+        skill_id = skill_id_from_skill_search_tool_id(id)
+        if not skill_id:
+            raise ValueError(
+                f"Invalid skill search tool ID: {id}. Expected format: 'kiln_tool::skill_search::<skill_id>'."
+            )
+        return id
+
     # Skill tools must have format: kiln_tool::skill::<skill_id>
     if id.startswith(SKILL_TOOL_ID_PREFIX):
         skill_id = skill_id_from_tool_id(id)
@@ -190,6 +202,21 @@ def skill_id_from_tool_id(id: str) -> str:
 def build_skill_tool_id(skill_id: str) -> str:
     """Construct the tool ID for a skill."""
     return f"{SKILL_TOOL_ID_PREFIX}{skill_id}"
+
+
+def skill_id_from_skill_search_tool_id(id: str) -> str:
+    """Get the skill ID from a skill search tool ID."""
+    parts = id.split("::")
+    if not id.startswith(SKILL_SEARCH_TOOL_ID_PREFIX) or len(parts) != 3:
+        raise ValueError(
+            f"Invalid skill search tool ID: {id}. Expected format: 'kiln_tool::skill_search::<skill_id>'."
+        )
+    return parts[2]
+
+
+def build_skill_search_tool_id(skill_id: str) -> str:
+    """Construct the tool ID for a skill search tool."""
+    return f"{SKILL_SEARCH_TOOL_ID_PREFIX}{skill_id}"
 
 
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
