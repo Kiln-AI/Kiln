@@ -1067,7 +1067,15 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail="This eval does not have a train set. Set a train set filter on the eval first.",
             )
-        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+        # Reuse the already-loaded eval to find the config (avoids re-reading it from disk).
+        eval_config = next(
+            (config for config in eval.configs() if config.id == eval_config_id), None
+        )
+        if eval_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Eval config not found. ID: {eval_config_id}",
+            )
 
         result = await find_failing_train_examples(
             eval_config,

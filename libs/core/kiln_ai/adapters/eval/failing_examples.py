@@ -117,20 +117,30 @@ async def _score_one(
         )
         return None
 
-    # Persist as an eval_config_eval run, mirroring EvalRunner.run_job's eval_config_eval branch.
-    async with save_context():
-        eval_run = EvalRun(
-            parent=eval_config,
-            task_run_config_id=None,
-            dataset_id=task_run.id,
-            eval_config_eval=True,
-            scores=scores,
-            input=task_run.input,
-            output=task_run.output.output,
-            intermediate_outputs=intermediate_outputs,
-            task_run_usage=task_run.usage,
+    # Persist as an eval_config_eval run (best-effort cache), mirroring EvalRunner.run_job's
+    # eval_config_eval branch. A save failure (disk full, git lock, ...) must not crash the whole
+    # concurrent batch, and we still return the freshly computed scores either way.
+    try:
+        async with save_context():
+            eval_run = EvalRun(
+                parent=eval_config,
+                task_run_config_id=None,
+                dataset_id=task_run.id,
+                eval_config_eval=True,
+                scores=scores,
+                input=task_run.input,
+                output=task_run.output.output,
+                intermediate_outputs=intermediate_outputs,
+                task_run_usage=task_run.usage,
+            )
+            eval_run.save_to_file()
+    except Exception:
+        logger.error(
+            "Error saving eval run for train item %s for eval config %s",
+            task_run.id,
+            eval_config.id,
+            exc_info=True,
         )
-        eval_run.save_to_file()
 
     return scores, intermediate_outputs
 

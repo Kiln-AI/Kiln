@@ -158,6 +158,17 @@ def test_example_fails_no_relevant_scores():
     assert example_fails({}, [], 0.75) is False
 
 
+def test_example_fails_with_missing_scores():
+    output_scores = [
+        EvalOutputScore(name="Accuracy", type=TaskOutputRatingType.pass_fail),
+        EvalOutputScore(name="Quality", type=TaskOutputRatingType.five_star),
+    ]
+    # Quality missing, Accuracy fails -> no present score passes -> example fails
+    assert example_fails({"accuracy": 0.0}, output_scores, 0.75) is True
+    # Quality missing, Accuracy passes -> a score passes -> not a failure
+    assert example_fails({"accuracy": 1.0}, output_scores, 0.75) is False
+
+
 def test_feedback_from_intermediate_outputs():
     assert feedback_from_intermediate_outputs(None) is None
     assert feedback_from_intermediate_outputs({}) is None
@@ -412,3 +423,30 @@ async def test_count_validation(mock_eval_config):
         await find_failing_train_examples(mock_eval_config, count=0, max_samples=5)
     with pytest.raises(ValueError, match="max_samples must be"):
         await find_failing_train_examples(mock_eval_config, count=5, max_samples=2)
+
+
+@pytest.mark.asyncio
+async def test_judge_errors_are_skipped(
+    mock_task, mock_eval, mock_eval_config, data_source
+):
+    make_train_run(mock_task, data_source, "error-item")
+    fail_run = make_train_run(mock_task, data_source, "fail-item")
+
+    def score_fn(task_run):
+        if task_run.input == "error-item":
+            raise RuntimeError("Judge error")
+        return {"accuracy": 0.0}
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "kiln_ai.adapters.eval.failing_examples.eval_adapter_from_type",
+            lambda _type: scripted_evaluator_factory(score_fn),
+        )
+        result = await find_failing_train_examples(
+            mock_eval_config, count=2, max_samples=2, rng=random.Random(1)
+        )
+
+    # The errored item is skipped (but still counted as examined); only the failure is returned.
+    assert len(result.examples) == 1
+    assert result.num_judged == 2
+    assert result.examples[0].dataset_id == fail_run.id
