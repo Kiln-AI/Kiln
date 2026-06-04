@@ -291,7 +291,8 @@
                   <div class="text-center max-w-md px-4">
                     <div class="text-lg font-medium">Start a conversation</div>
                     <div class="text-sm mt-1 text-gray-500">
-                      Send a message to begin a multi-turn run with “{$current_task.name}”.
+                      Send a message to begin a multi-turn conversation for your
+                      task.
                     </div>
                   </div>
                 </div>
