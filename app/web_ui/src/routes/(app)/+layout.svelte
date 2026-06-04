@@ -278,6 +278,10 @@
           >
         </li>
 
+        <!-- Evals V2 (Beta) — runs alongside the v1 "Evals" entry above for
+             team comparison and review. Once v2 ships GA, the v1 entry +
+             the entire /specs route should be removed and this entry
+             renamed to "Evals". Tracked: eventually-replace-v1-eval-tab. -->
         <li class="menu-sm">
           <a
             href={`/specs_v2/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}

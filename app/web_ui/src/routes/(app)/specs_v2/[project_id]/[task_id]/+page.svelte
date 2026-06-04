@@ -4,9 +4,15 @@
   import { onMount } from "svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
-  import { client } from "$lib/api_client"
+  import { client, base_url } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { load_task } from "$lib/stores"
+  import { get_task_composite_id, load_task } from "$lib/stores"
+  import {
+    load_task_run_configs,
+    run_configs_by_task_composite_id,
+  } from "$lib/stores/run_configs_store"
+  import { get } from "svelte/store"
+  import { isKilnAgentRunConfig } from "$lib/types"
   // Reuse v1 spec_builder components so v2 looks identical on the shared
   // screens (clarify Q&A, refine). When v1 evolves, v2 follows for free.
   import Questions from "../../../specs/[project_id]/[task_id]/spec_builder/questions.svelte"
@@ -258,9 +264,7 @@
   let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
   let judge_info: SyntheticDataGenerationStepConfigApi | null = null
 
-  // multi-turn output — chains populated from real run_cases_batch SSE
-  // events once that wiring lands. Until then, on_generate_multi_turn
-  // surfaces an "endpoint wiring pending" error.
+  // multi-turn output — chains populated from real run_cases_batch SSE events.
   type ChainTurn = { role: "user" | "assistant"; content: string }
   type Chain = {
     case_index: number
@@ -276,7 +280,7 @@
   const multi_turn_total = NUM_CASES
   // Real batch_tag from run_cases_batch's BatchStartedEvent. The on_save
   // multi-turn branch uses this to tell the backend which chains to tag
-  // for the eval dataset. Null until SSE wiring is added.
+  // for the eval dataset.
   let real_multi_turn_batch_tag: string | null = null
 
   async function on_generate_single_turn() {
@@ -312,22 +316,223 @@
     }
   }
 
+  // ── Step 4 multi-turn — drives real run_cases_batch SSE.
+  //
+  // Sequence:
+  //   1. Pull the task's default run config → target_run_config for the
+  //      drive loop. Multi-turn requires a KilnAgentRunConfig (the
+  //      conversation needs an agent-shaped invoker).
+  //   2. POST /multiturn_sdg/generate_cases → list of synthetic-user
+  //      cases (seed prompt + persona blob).
+  //   3. POST /multiturn_sdg/run_cases_batch as SSE; consume the stream
+  //      and surface BatchEvent dispatch into component state.
+  //
+  // SU driver model is hardcoded for MVP (see design.md) — claude_4_5_haiku
+  // via openrouter. Exposing the choice in the UI is deferred.
+  const SU_DRIVER_DEFAULT = {
+    model_name: "claude_4_5_haiku",
+    model_provider: "openrouter",
+  } as const
+  const TURNS_PER_CASE = 5
+
+  type SseEvent =
+    | {
+        event: "batch_started"
+        batch_tag: string
+        num_cases: number
+      }
+    | {
+        event: "turn_completed"
+        case_index: number
+        assistant_run_id: string
+        su_next_message: string
+        cumulative_cost: number
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        trace: any[]
+      }
+    | {
+        event: "case_completed"
+        case_index: number
+        chain_run_ids: string[]
+        leaf_run_id: string
+        total_turns: number
+        total_cost: number
+      }
+    | {
+        event: "case_failed"
+        case_index: number
+        error_code: string
+        message: string
+      }
+    | {
+        event: "batch_completed"
+        successful: number
+        failed: number
+        batch_tag: string
+        total_cost: number
+      }
+
   async function on_generate_multi_turn() {
-    // TODO: wire EventSource against
-    //   POST /api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/run_cases_batch
-    // Dispatch on BatchStartedEvent → seed real_multi_turn_batch_tag,
-    // TurnCompletedEvent → update progress, CaseCompletedEvent → append
-    // to multi_turn_chains, BatchCompletedEvent → advance step.
-    // Until that wiring lands the multi-turn pipeline can't produce real
-    // chains — surface a clear error rather than silently doing nothing.
     generation_loading = true
     generation_error = null
     multi_turn_progress = 0
     multi_turn_chains = []
-    await sleep(100)
-    generation_error =
-      "Multi-turn generation isn't wired to run_cases_batch yet."
-    generation_loading = false
+    real_multi_turn_batch_tag = null
+
+    try {
+      // 1. Resolve target_run_config from the task's default run config.
+      if (!task?.id || !task.default_run_config_id) {
+        generation_error =
+          "Task has no default run config — set one in task settings."
+        return
+      }
+      await load_task_run_configs(project_id, task.id)
+      const run_configs =
+        get(run_configs_by_task_composite_id)[
+          get_task_composite_id(project_id, task.id)
+        ] ?? []
+      const default_config = run_configs.find(
+        (c) => c.id === task!.default_run_config_id,
+      )
+      if (!default_config) {
+        generation_error = "Task default run config not found."
+        return
+      }
+      const rcp = default_config.run_config_properties
+      if (!isKilnAgentRunConfig(rcp)) {
+        generation_error =
+          "Multi-turn requires a Kiln Agent run config on the task default."
+        return
+      }
+      const target_run_config = {
+        model_name: rcp.model_name,
+        model_provider: rcp.model_provider_name,
+        prompt_id: rcp.prompt_id ?? "simple_prompt_builder",
+      }
+
+      // 2. Generate synthetic-user cases via copilot.
+      const refined_description =
+        (refined_property_values.issue_description as string | null) ??
+        description
+      const cases_resp = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            target_specification: refined_description,
+            num_cases: NUM_CASES,
+          },
+        },
+      )
+      if (cases_resp.error || !cases_resp.data) {
+        generation_error = "Failed to generate synthetic-user cases."
+        return
+      }
+
+      // 3. Stream run_cases_batch. The endpoint is POST so we can't use
+      // EventSource (which is GET-only). Manual fetch + ReadableStream +
+      // SSE line parsing — same pattern as streaming_chat.ts.
+      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/multiturn_sdg/run_cases_batch`
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          cases: cases_resp.data.cases,
+          turns: TURNS_PER_CASE,
+          target_run_config,
+          su_driver: SU_DRIVER_DEFAULT,
+        }),
+      })
+
+      if (!response.ok || !response.body) {
+        let detail: string
+        try {
+          const err_json = await response.json()
+          detail = err_json?.message ?? err_json?.detail?.message ?? "unknown"
+        } catch {
+          detail = await response.text().catch(() => "unknown")
+        }
+        generation_error = `run_cases_batch failed (${response.status}): ${detail}`
+        return
+      }
+
+      // Per-case cumulative trace from turn_completed events. The leaf's
+      // trace at case_completed time is what we render on the review cards.
+      const traces_by_case: Record<number, ChainTurn[]> = {}
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      stream_loop: while (true) {
+        const { done, value } = await reader.read()
+        if (done) break stream_loop
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? ""
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          const payload = line.slice(6).trim()
+          if (!payload) continue
+          let event: SseEvent
+          try {
+            event = JSON.parse(payload) as SseEvent
+          } catch {
+            continue
+          }
+
+          if (event.event === "batch_started") {
+            real_multi_turn_batch_tag = event.batch_tag
+          } else if (event.event === "turn_completed") {
+            // event.trace is OpenAI-format messages; project to ChainTurn.
+            const turns: ChainTurn[] = (event.trace ?? [])
+              .map((msg) => ({
+                role: msg.role as ChainTurn["role"],
+                content:
+                  typeof msg.content === "string"
+                    ? msg.content
+                    : JSON.stringify(msg.content),
+              }))
+              .filter(
+                (t: ChainTurn) => t.role === "user" || t.role === "assistant",
+              )
+            traces_by_case[event.case_index] = turns
+          } else if (event.event === "case_completed") {
+            multi_turn_chains = [
+              ...multi_turn_chains,
+              {
+                case_index: event.case_index,
+                persona_summary: `Case ${event.case_index + 1}`,
+                total_cost: event.total_cost ?? 0,
+                trace: traces_by_case[event.case_index] ?? [],
+              },
+            ]
+            multi_turn_progress = multi_turn_chains.length
+          } else if (event.event === "case_failed") {
+            console.warn(
+              `SU case ${event.case_index} failed: ${event.error_code} ${event.message}`,
+            )
+          } else if (event.event === "batch_completed") {
+            break stream_loop
+          }
+        }
+      }
+
+      if (multi_turn_chains.length === 0) {
+        generation_error =
+          "All synthetic-user cases failed — check task and SU driver model availability."
+        return
+      }
+
+      current_step = "review"
+    } catch (e) {
+      generation_error =
+        e instanceof Error ? e.message : "Multi-turn generation failed."
+    } finally {
+      generation_loading = false
+    }
   }
 
   function on_continue_from_generate_step() {
@@ -394,6 +599,8 @@
   // path. The clarify_spec response also includes single-turn examples and
   // sdg_session_config which we ignore — multi-turn save uses neither.
   // Stopgap until a dedicated "default judge config" endpoint ships.
+  // clarify_spec is single-turn-specific but its response includes a
+  // judge_result that's reusable as the multi-turn save's judge_info.
   async function fetch_judge_info_via_clarify_spec() {
     const { data, error } = await client.POST("/api/copilot/clarify_spec", {
       body: {
@@ -439,11 +646,14 @@
         issue_description,
       }
 
+      // Multi-turn save: tag the chains produced by run_cases_batch.
+      // judge_info isn't carried through the multi-turn pipeline so we
+      // fetch one via clarify_spec — wasteful but works until a dedicated
+      // "default judge config" endpoint ships.
       if (is_multi_turn) {
         if (real_multi_turn_batch_tag === null) {
           save_error =
-            "Multi-turn save needs a batch_tag from run_cases_batch; " +
-            "generation isn't wired yet."
+            "No multi-turn chains were generated — go back to Step 4."
           return
         }
         const ok = await fetch_judge_info_via_clarify_spec()
@@ -537,10 +747,6 @@
   // ── Navigation helpers
   function back_to_task() {
     goto(`/specs/${project_id}/${task_id}`)
-  }
-
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   // Auto-load questions when entering Step 2
