@@ -16,7 +16,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     signal-only `run()`. Unit tests mirroring `test_kiln_api_call_tool.py` /
     `test_tool_registry.py`. (Architecture §7.)
 
-- [ ] **Phase 2 — App-server auto-run engine** (`app/desktop/studio_server/chat/auto/`)
+- [x] **Phase 2 — App-server auto-run engine** (`app/desktop/studio_server/chat/auto/`)
   - Refactor: extract `iter_upstream_round()` from `ChatStreamSession.stream()` + **golden
     regression test** proving interactive output is unchanged. (Architecture §3.1.)
   - `models.py` (`AutoRunStatus`, `AutoChatSeed`, `AutoRunRecord`), `registry.py`
