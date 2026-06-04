@@ -22,6 +22,10 @@ export type SendMultiturnArgs = {
   input_form: InputFormController | null | undefined
   on_success: (new_run_id: string) => Promise<void> | void
   tags?: string[]
+  // The message text to send. When omitted, it's read from input_form. Pass
+  // it explicitly when the caller has already cleared the input (so the text
+  // isn't lost from the in-flight request).
+  plaintext?: string
   // When true, a missing parent_task_run_id is allowed and creates a new
   // root conversation (the first turn). Used by the /run page; the in-chat
   // composer leaves this false so it can't fire before its run has loaded.
@@ -50,6 +54,7 @@ export async function send_multiturn(
     // they aren't singled out from other manually-created runs.
     tags = ["manual_run"],
     allow_root_turn = false,
+    plaintext,
   } = args
 
   if (!parent_task_run_id && !allow_root_turn) {
@@ -83,7 +88,7 @@ export async function send_multiturn(
     }
   }
 
-  const text = input_form?.get_plaintext_input_data() ?? ""
+  const text = plaintext ?? input_form?.get_plaintext_input_data() ?? ""
   const { data, error: fetch_error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/run",
     {

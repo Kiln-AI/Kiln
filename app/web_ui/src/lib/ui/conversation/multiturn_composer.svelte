@@ -125,8 +125,13 @@
   async function handle_submit() {
     run_error = null
     submitting = true
-    // Surface the message in the transcript optimistically while we wait.
-    on_send_start?.(current_text())
+    // Capture the text, surface it optimistically, and clear the textarea
+    // immediately so the composer reads as "sent". The text is passed to
+    // send_multiturn explicitly so clearing doesn't drop the in-flight
+    // message; on failure we put it back so the user can retry.
+    const text = current_text()
+    on_send_start?.(text)
+    input_form?.clear_input?.()
     let ok = false
     try {
       const result = await send_multiturn({
@@ -137,6 +142,7 @@
         input_form,
         on_success,
         allow_root_turn,
+        plaintext: text,
       })
       if (result.ok) {
         ok = true
@@ -144,10 +150,16 @@
         run_error = createKilnError(result.error)
       }
     } catch (e) {
-      // on_success threw (e.g. goto/load_run failed). Input is intentionally
-      // not cleared in that case so the user does not lose their typed text.
+      // on_success threw (e.g. goto/load_run failed).
       run_error = createKilnError(e)
     } finally {
+      if (!ok) {
+        // Restore the message so it isn't lost, and surface the failure.
+        input_form?.set_plaintext_input?.(text)
+        if (!run_error) {
+          run_error = createKilnError(new Error("Failed to send message."))
+        }
+      }
       on_send_settled?.(ok)
       submitting = false
       await tick()
@@ -233,7 +245,7 @@
       <svelte:fragment slot="submit_left">
         <button
           type="button"
-          class="btn btn-ghost"
+          class="btn"
           data-testid="multiturn-composer-cancel"
           on:click={handle_cancel_click}
           disabled={submitting}

@@ -236,7 +236,7 @@
                   <div data-testid="chat-msg-thinking">
                     <button
                       type="button"
-                      class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
+                      class="flex w-full items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
                       on:click|stopPropagation={() =>
                         (thinkingExpanded[index] = !thinkingExpanded[index])}
                       aria-expanded={!!thinkingExpanded[index]}
@@ -303,7 +303,7 @@
                     <div data-testid="chat-msg-toolcall">
                       <button
                         type="button"
-                        class="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
+                        class="flex w-full items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
                         on:click|stopPropagation={() =>
                           (toolCallExpanded[tc_key] =
                             !toolCallExpanded[tc_key])}
