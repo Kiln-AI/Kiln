@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from kiln_ai.adapters.rag.progress import (
+    LogMessage,
     RagProgress,
     compute_current_progress_for_rag_config,
 )
@@ -194,6 +195,26 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
         silent_skips = max(0, final_total - final_success - aggregated_errors)
         final_errors = aggregated_errors + silent_skips
         if silent_skips > 0:
+            # Without an explanatory entry, both "View Errors" surfaces (the
+            # RAG dialog's log list and the job-panel's per-run error log)
+            # show a red "Completed with errors" badge for an empty list,
+            # which leaves the user with no way to find out what happened.
+            skip_message = (
+                f"{silent_skips} document(s) could not be processed "
+                "(missing source file, excluded by configuration, or "
+                "otherwise unreachable). Marked as errors so the run "
+                "doesn't show as fully complete."
+            )
+            existing_logs = latest.logs or []
+            latest = latest.model_copy(
+                update={
+                    "logs": [
+                        *existing_logs,
+                        LogMessage(level="error", message=skip_message),
+                    ]
+                }
+            )
+            await ctx.report_error(skip_message)
             await ctx.report_progress(
                 success=final_success,
                 error=final_errors,
