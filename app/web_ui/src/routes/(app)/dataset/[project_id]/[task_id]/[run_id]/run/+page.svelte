@@ -20,10 +20,15 @@
     load_task_prompts,
   } from "$lib/stores/prompts_store"
   import { page } from "$app/stores"
-  import { getContext } from "svelte"
+  import { getContext, onDestroy, tick } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { Task, TaskRun, StructuredOutputMode } from "$lib/types"
+  import type {
+    Task,
+    TaskRun,
+    StructuredOutputMode,
+    RunChainEntry,
+  } from "$lib/types"
   import { isMcpRunConfig } from "$lib/types"
   import {
     formatDate,
@@ -31,10 +36,11 @@
   } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import { prompt_link } from "$lib/utils/link_builder"
-  import type { ProviderModels, PromptResponse } from "$lib/types"
+  import { dataset_item_link, prompt_link } from "$lib/utils/link_builder"
+  import type { ProviderModels, PromptResponse, TraceMessage } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
   import {
@@ -44,6 +50,19 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
+  import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
+  import ChatLoading from "../../../../../assistant/chat_loading.svelte"
+  import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import { isKilnAgentRunConfig, type TaskRunConfig } from "$lib/types"
+  import Warning from "$lib/ui/warning.svelte"
+  import RunSidebar from "$lib/ui/run_sidebar.svelte"
+  import {
+    compute_forkable_run_ids,
+    fork_target_from_user_block,
+    type ForkTarget,
+  } from "./fork_helpers"
 
   $: run_id = $page.params.run_id!
   $: task_id = $page.params.task_id!
@@ -60,7 +79,18 @@
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
+
+  // The multiturn view is a full-height chat layout (scrollable transcript +
+  // composer pinned to the bottom), so it needs the app shell's bottom
+  // padding removed. Single-turn keeps the normal padded document flow.
+  $: is_multiturn = task?.turn_mode === "multiturn"
+  const noLayoutBottomPadding = getContext<Writable<boolean> | undefined>(
+    "noLayoutBottomPadding",
+  )
+  $: noLayoutBottomPadding?.set(!!is_multiturn)
+  onDestroy(() => noLayoutBottomPadding?.set(false))
   let see_all_properties = false
+  let raw_data_dialog: Dialog | null = null
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined
   let skills_property_value: string | string[] = "None"
@@ -242,6 +272,19 @@
       properties.push({
         name: "ID",
         value: run.id,
+      })
+    }
+
+    if (run?.parent_task_run_id) {
+      const parent_link = dataset_item_link(
+        project_id,
+        task_id,
+        run.parent_task_run_id,
+      )
+      properties.push({
+        name: "Parent ID",
+        value: run.parent_task_run_id,
+        link: parent_link ?? undefined,
       })
     }
 
@@ -457,6 +500,270 @@
     })
   }
 
+  async function handle_send(new_run_id: string) {
+    load_error = null
+    // Deliberately do NOT clear `run` or flip `loading` here: keeping the
+    // current transcript (with its optimistic message + loading indicator)
+    // mounted while we navigate avoids the blank full-page spinner flash.
+    // `awaiting_response` keeps the composer disabled until the new run
+    // renders, and the run-load reactive clears the optimistic state then.
+    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
+      replaceState: true,
+    })
+  }
+
+  // The transcript scroll container (the chat-style scrollview on xl+).
+  let transcript_scroll_el: HTMLElement | null = null
+  // Scroll the transcript to the latest turn whenever a run renders — both on
+  // initial load and after sending a new turn. The composer is pinned
+  // separately, so "bottom" lands on the newest message, not the textbox.
+  let scrolled_for_run_id: string | null = null
+  $: if (
+    run &&
+    run.id === run_id &&
+    task?.turn_mode === "multiturn" &&
+    run.id !== scrolled_for_run_id
+  ) {
+    scrolled_for_run_id = run.id ?? null
+    // The freshly-loaded run's trace already contains the just-sent turn, so
+    // drop the optimistic placeholder + loader to avoid showing them twice.
+    optimistic_sent_message = null
+    awaiting_response = false
+    apply_transcript_scroll()
+  }
+
+  // While a send is in flight we append the user's message to the transcript
+  // optimistically and show a loading indicator below it, then redirect once
+  // the run lands. `awaiting_response` stays true from send-start until the
+  // new run renders (cleared above), so the loader shows continuously across
+  // the navigation and the composer stays disabled the whole time.
+  let optimistic_sent_message: string | null = null
+  let awaiting_response = false
+  $: display_trace = build_display_trace(
+    run?.trace ?? [],
+    optimistic_sent_message,
+  )
+  function build_display_trace(
+    trace: TraceMessage[],
+    optimistic: string | null,
+  ): TraceMessage[] {
+    if (optimistic === null) return trace
+    return [...trace, { role: "user", content: optimistic } as TraceMessage]
+  }
+
+  function handle_send_start(text: string) {
+    optimistic_sent_message = text
+    awaiting_response = true
+    apply_transcript_scroll()
+  }
+
+  function handle_send_settled(ok: boolean) {
+    // On error no new run loads, so clear the optimistic state here. On
+    // success we leave it: the run-load reactive clears it once the new run
+    // (with the real response) renders, keeping the loader up until then.
+    if (!ok) {
+      optimistic_sent_message = null
+      awaiting_response = false
+    }
+  }
+
+  // Safety net: if loading the new run fails after a successful send, don't
+  // leave the loader spinning or the composer disabled forever.
+  $: if (load_error) {
+    awaiting_response = false
+    optimistic_sent_message = null
+  }
+
+  async function apply_transcript_scroll() {
+    // Wait for ChatTrace (keyed on run.id) to render the new trace, then a
+    // frame so layout settles before measuring/scrolling.
+    await tick()
+    requestAnimationFrame(() => {
+      pin_transcript_to_bottom()
+    })
+  }
+
+  // Keep the transcript pinned to the bottom for a short window after load.
+  // A single scroll isn't enough: ChatMarkdown (and any images) reflow after
+  // our initial frames, growing scrollHeight, which is why it lands "almost"
+  // at the bottom. We re-pin on every mutation until things settle, then stop
+  // so we don't fight the user's own scrolling.
+  let settle_observer: MutationObserver | null = null
+  let settle_timeout: ReturnType<typeof setTimeout> | null = null
+
+  function pin_transcript_to_bottom() {
+    const el = transcript_scroll_el
+    if (!el || typeof MutationObserver === "undefined") return
+    stop_pinning_transcript()
+    const stick = () => {
+      if (transcript_scroll_el) {
+        transcript_scroll_el.scrollTop = transcript_scroll_el.scrollHeight
+      }
+    }
+    stick()
+    settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
+    settle_observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    settle_timeout = setTimeout(stop_pinning_transcript, 1000)
+  }
+
+  function stop_pinning_transcript() {
+    settle_observer?.disconnect()
+    settle_observer = null
+    if (settle_timeout) {
+      clearTimeout(settle_timeout)
+      settle_timeout = null
+    }
+  }
+
+  onDestroy(stop_pinning_transcript)
+
+  // ---- Multiturn composer state ----
+  let multiturn_run_config_component: RunConfigComponent
+  let multiturn_save_config_error: KilnError | null = null
+  let multiturn_set_default_error: KilnError | null = null
+  let multiturn_selected_run_config_id: string | null = null
+  let multiturn_selected_model_specific_run_config_id: string | null = null
+
+  function multiturn_initial_model(r: TaskRun | null): string {
+    const cfg = r?.output?.source?.run_config ?? null
+    if (cfg && isKilnAgentRunConfig(cfg)) {
+      return `${cfg.model_provider_name}/${cfg.model_name}`
+    }
+    return ""
+  }
+  function multiturn_initial_prompt(r: TaskRun | null): string {
+    const cfg = r?.output?.source?.run_config ?? null
+    if (cfg && isKilnAgentRunConfig(cfg)) {
+      return cfg.prompt_id
+    }
+    return "simple_prompt_builder"
+  }
+
+  async function handle_save_new_multiturn_run_config(): Promise<TaskRunConfig> {
+    if (!multiturn_run_config_component) {
+      throw new Error("Run configuration component is not loaded")
+    }
+    return await multiturn_run_config_component.save_new_run_config()
+  }
+
+  // ---- Run chain / fork state ----
+  let run_chain: RunChainEntry[] = []
+  let chain_broken = false
+  let chain_load_failed = false
+  let run_has_children = false
+  let chain_loaded_for_run_id: string | null = null
+  let fork_target: ForkTarget | null = null
+
+  // Reset fork + chain state whenever the run id changes so we don't surface
+  // stale data (banners, suffix-aligned mappings) from the previous run
+  // before the new fetch resolves.
+  $: if (run_id) {
+    fork_target = null
+    run_chain = []
+    chain_broken = false
+    chain_load_failed = false
+    run_has_children = false
+  }
+
+  $: if (
+    task &&
+    run &&
+    task.turn_mode === "multiturn" &&
+    chain_loaded_for_run_id !== run_id
+  ) {
+    load_run_chain(project_id, task_id, run_id)
+  }
+
+  async function load_run_chain(
+    req_project_id: string,
+    req_task_id: string,
+    req_run_id: string,
+  ) {
+    chain_loaded_for_run_id = req_run_id
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
+        {
+          params: {
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              run_id: req_run_id,
+            },
+          },
+        },
+      )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
+      if (error) {
+        throw error
+      }
+      run_chain = data?.chain ?? []
+      chain_broken = !!data?.chain_broken
+      run_has_children = !!data?.has_children
+      chain_load_failed = false
+    } catch (_) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
+      run_chain = []
+      chain_broken = false
+      run_has_children = false
+      chain_load_failed = true
+    }
+  }
+
+  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], run_chain)
+
+  // Bound to the fork-mode MultiturnComposer so we can consult is_dirty()
+  // / request_swap() when the user clicks fork on a different turn while
+  // a composer is already open.
+  let fork_composer: MultiturnComposer | null = null
+
+  function on_fork(clicked_run_id: string, trace_index: number) {
+    const target = fork_target_from_user_block(
+      clicked_run_id,
+      trace_index,
+      run?.trace ?? [],
+      run_chain,
+    )
+    if (!target) return
+    const apply = () => {
+      fork_target = target
+    }
+    // No active fork composer (or it's not the same turn we're already on):
+    // if one is open, route through it so it can prompt on dirty edits.
+    if (fork_target && fork_composer) {
+      if (fork_target.trace_index === target.trace_index) {
+        // Clicking fork on the already-active turn is a no-op.
+        return
+      }
+      fork_composer.request_swap(apply)
+      return
+    }
+    apply()
+  }
+
+  function cancel_fork() {
+    fork_target = null
+  }
+
+  async function handle_fork_success(new_run_id: string) {
+    fork_target = null
+    await handle_send(new_run_id)
+  }
+
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -517,12 +824,15 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<!-- Multi-turn uses the full width (sidebar pinned to the right edge, chat
+     centered); single-turn keeps the capped reading width. -->
+<div class={is_multiturn ? "" : "max-w-[1400px]"}>
   <AppPage
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
     action_buttons={buttons}
     breadcrumbs={get_breadcrumbs()}
+    no_y_padding={is_multiturn}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -533,22 +843,193 @@
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
     {:else if run && task}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
-        <div class="grow">
-          <div class="text-xl font-bold mb-4">Input</div>
-          <Output raw_output={run.input} />
-        </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col">
-          <PropertyList properties={properties_for_list} title="Properties" />
-          <button
-            class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
-            on:click={() => (see_all_properties = !see_all_properties)}
+      {#if task.turn_mode === "multiturn" && task.id}
+        {@const multiturn_task_id = task.id}
+        <!-- Chat-style layout: on xl+ the whole row is bounded to the viewport
+             height. Both the centered chat column and the right-pinned Options
+             sidebar fill that height and scroll independently. The chat
+             transcript scrolls with the composer pinned below it. Below xl this
+             falls back to normal document flow. The 100vh offset clears the app
+             header above. -->
+        <div data-testid="multiturn-layout">
+          <div
+            class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
           >
-            {see_all_properties ? "See Less" : "See All"}
-          </button>
+            <!-- The chat column is full width so its scrollbar sits at the
+                 right boundary; the conversation + composer are centered
+                 inside via max-w + mx-auto. -->
+            <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
+              <div
+                bind:this={transcript_scroll_el}
+                class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden"
+              >
+                <div
+                  class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
+                >
+                  {#if run_has_children}
+                    <div role="alert" data-testid="run-has-children-banner">
+                      <Warning
+                        warning_color="warning"
+                        warning_icon="info"
+                        warning_message="This run already has follow-up turns. Sending a new message here will start a new conversation branch — the existing continuations will be preserved."
+                        outline={true}
+                      />
+                    </div>
+                  {/if}
+                  {#if chain_broken}
+                    <div role="alert" data-testid="fork-chain-broken-banner">
+                      <Warning
+                        warning_color="warning"
+                        warning_icon="exclaim"
+                        warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
+                        outline={true}
+                      />
+                    </div>
+                  {/if}
+                  {#if chain_load_failed}
+                    <div role="alert" data-testid="fork-load-failed-banner">
+                      <Warning
+                        warning_color="warning"
+                        warning_icon="exclaim"
+                        warning_message="Couldn't load conversation history. Forking is unavailable."
+                        outline={true}
+                      />
+                    </div>
+                  {/if}
+                  {#key run.id}
+                    <ChatTrace
+                      trace={display_trace}
+                      {project_id}
+                      {forkable_run_ids}
+                      truncate_at_trace_index={fork_target?.trace_index ?? null}
+                      {on_fork}
+                      show_per_message_usage={task?.turn_mode === "multiturn"}
+                    />
+                  {/key}
+                  {#if awaiting_response}
+                    <div data-testid="multiturn-pending-response">
+                      <ChatLoading />
+                    </div>
+                  {/if}
+                </div>
+              </div>
+              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+                <div class="mx-auto w-full max-w-3xl">
+                  {#if fork_target}
+                    <MultiturnComposer
+                      bind:this={fork_composer}
+                      mode="fork"
+                      {project_id}
+                      task_id={multiturn_task_id}
+                      parent_task_run_id={fork_target.parent_run_id}
+                      run_config_component={multiturn_run_config_component}
+                      prefill_text={fork_target.prefill}
+                      forked_turn_index={fork_target.turn_index}
+                      on_success={handle_fork_success}
+                      on_cancel={cancel_fork}
+                    />
+                  {:else}
+                    <MultiturnComposer
+                      mode="append"
+                      {project_id}
+                      task_id={multiturn_task_id}
+                      parent_task_run_id={run.id ?? null}
+                      run_config_component={multiturn_run_config_component}
+                      busy={awaiting_response}
+                      on_success={handle_send}
+                      on_send_start={handle_send_start}
+                      on_send_settled={handle_send_settled}
+                    />
+                  {/if}
+                </div>
+              </div>
+              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
+              <div class="xl:flex-none mt-2">
+                <div class="mx-auto w-full max-w-3xl">
+                  <button
+                    class="text-xs link"
+                    on:click={() => raw_data_dialog?.show()}
+                  >
+                    Show Raw Data
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div
+              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-6"
+            >
+              <div class="text-xl font-bold mb-4">Options</div>
+              <div class="flex flex-col gap-4">
+                {#key run.id}
+                  <SavedRunConfigurationsDropdown
+                    {project_id}
+                    current_task={task}
+                    bind:selected_run_config_id={multiturn_selected_run_config_id}
+                    bind:save_config_error={multiturn_save_config_error}
+                    bind:set_default_error={multiturn_set_default_error}
+                    save_new_run_config={handle_save_new_multiturn_run_config}
+                    selected_model_specific_run_config_id={multiturn_selected_model_specific_run_config_id}
+                  />
+                  <RunConfigComponent
+                    model={multiturn_initial_model(run)}
+                    prompt_method={multiturn_initial_prompt(run)}
+                    bind:this={multiturn_run_config_component}
+                    {project_id}
+                    current_task={task}
+                    requires_structured_output={false}
+                    bind:selected_run_config_id={multiturn_selected_run_config_id}
+                    bind:set_default_error={multiturn_set_default_error}
+                    bind:selected_model_specific_run_config_id={multiturn_selected_model_specific_run_config_id}
+                    show_name_field={false}
+                  />
+                {/key}
+              </div>
+              <div class="mt-8">
+                <PropertyList
+                  properties={properties_for_list}
+                  title="Properties"
+                />
+                <button
+                  class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                  on:click={() => (see_all_properties = !see_all_properties)}
+                >
+                  {see_all_properties ? "See Less" : "See All"}
+                </button>
+              </div>
+              <div class="mt-8">
+                <RunSidebar
+                  {project_id}
+                  {task}
+                  {run}
+                  on_run_updated={(updated) => (run = updated)}
+                />
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <Run initial_run={run} {task} {project_id} />
+      {:else}
+        <div data-testid="single-turn-layout">
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
+            <div class="grow">
+              <div class="text-xl font-bold mb-4">Input</div>
+              <Output raw_output={run.input} />
+            </div>
+            <div class="w-72 2xl:w-96 flex-none flex flex-col">
+              <PropertyList
+                properties={properties_for_list}
+                title="Properties"
+              />
+              <button
+                class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                on:click={() => (see_all_properties = !see_all_properties)}
+              >
+                {see_all_properties ? "See Less" : "See All"}
+              </button>
+            </div>
+          </div>
+          <Run initial_run={run} {task} {project_id} />
+        </div>
+      {/if}
     {:else}
       <div class="text-gray-500 text-lg">Run not found</div>
     {/if}
@@ -561,3 +1042,36 @@
   {delete_url}
   {after_delete}
 />
+
+<Dialog bind:this={raw_data_dialog} title="Raw Data" width="wide">
+  {#if run}
+    <div class="text-sm max-h-[70vh] overflow-auto">
+      <Output raw_output={JSON.stringify(run, null, 2)} />
+    </div>
+  {/if}
+</Dialog>
+
+<style>
+  /* Match the Assistant chat transcript scrollbar. */
+  .chat-messages-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-thumb {
+    background-color: oklch(var(--bc) / 0.2);
+    border-radius: 3px;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(var(--bc) / 0.35);
+  }
+
+  .chat-messages-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
+  }
+</style>

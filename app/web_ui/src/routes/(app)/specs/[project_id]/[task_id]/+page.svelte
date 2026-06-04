@@ -5,7 +5,9 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
+  import type { Spec, SpecStatus, Eval, Priority, Task } from "$lib/types"
+  import { load_task } from "$lib/stores"
+  import Warning from "$lib/ui/warning.svelte"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
@@ -46,7 +48,12 @@
   let settings_error: KilnError | null = null
   let has_kiln_copilot = false
 
-  $: loading = specs_loading || evals_loading || settings_loading
+  let task: Task | null = null
+  let task_loading = true
+  $: is_multiturn = task?.turn_mode === "multiturn"
+
+  $: loading =
+    specs_loading || evals_loading || settings_loading || task_loading
   $: error = specs_error || evals_error || settings_error
 
   type TableRow =
@@ -142,6 +149,18 @@
   $: if (project_id && task_id) {
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
+    load_task_for_page(project_id, task_id)
+  }
+
+  async function load_task_for_page(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
+    task_loading = true
+    const loaded = await load_task(req_project_id, req_task_id)
+    if (req_project_id !== project_id || req_task_id !== task_id) return
+    task = loaded
+    task_loading = false
   }
 
   onMount(async () => {
@@ -738,7 +757,7 @@
   subtitle="Define the behaviours to enforce or avoid for your task, and automatically measure quality."
   sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
-  action_buttons={is_empty
+  action_buttons={is_empty || is_multiturn
     ? []
     : [
         {
@@ -754,6 +773,14 @@
     {#if loading}
       <div class="flex justify-center items-center h-full">
         <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if is_multiturn}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Warning
+          warning_message="Evals are not supported for multi-turn tasks."
+          warning_color="warning"
+          warning_icon="info"
+        />
       </div>
     {:else if error}
       <div class="text-error text-sm">

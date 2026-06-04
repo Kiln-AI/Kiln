@@ -7,14 +7,20 @@
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
   import { client } from "$lib/api_client"
-  import type { TaskRun, TaskRunConfig } from "$lib/types"
+  import type { TaskRun, TaskRunConfig, TraceMessage } from "$lib/types"
   import RunInputForm from "./run_input_form.svelte"
   import posthog from "posthog-js"
-  import { onMount, tick } from "svelte"
+  import { getContext, onDestroy, onMount, tick } from "svelte"
+  import type { Writable } from "svelte/store"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
+  import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
+  import ChatLoading from "../assistant/chat_loading.svelte"
+  import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
   import ErrorWithTraceComponent from "$lib/ui/error_with_trace.svelte"
   import type { ErrorWithTrace } from "$lib/types"
   import { is_error_with_trace } from "./error_with_trace_detection"
@@ -52,6 +58,43 @@
   $: pending_run_config_id = $page.url.searchParams.get("run_config_id")
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
+
+  // For multi-turn tasks the /run page mirrors the in-conversation chat UI:
+  // an (empty) transcript area with the composer pinned at the bottom. The
+  // first message starts a new root conversation, then we redirect to the
+  // dataset run page where the conversation continues.
+  $: is_multiturn = $current_task?.turn_mode === "multiturn"
+  const noLayoutBottomPadding = getContext<Writable<boolean> | undefined>(
+    "noLayoutBottomPadding",
+  )
+  $: noLayoutBottomPadding?.set(!!is_multiturn)
+  onDestroy(() => noLayoutBottomPadding?.set(false))
+
+  // Optimistic state for the first turn: show the just-sent message + a
+  // loading indicator while the root run is created, then redirect.
+  let mt_optimistic_message: string | null = null
+  let mt_awaiting_response = false
+  $: mt_display_trace = (
+    mt_optimistic_message === null
+      ? []
+      : [{ role: "user", content: mt_optimistic_message }]
+  ) as TraceMessage[]
+
+  function handle_mt_send_start(text: string) {
+    mt_optimistic_message = text
+    mt_awaiting_response = true
+  }
+  function handle_mt_send_settled(ok: boolean) {
+    // On error the redirect never happens, so reset; on success we navigate
+    // away and this component unmounts.
+    if (!ok) {
+      mt_optimistic_message = null
+      mt_awaiting_response = false
+    }
+  }
+  async function handle_first_turn_success(new_run_id: string) {
+    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`)
+  }
 
   onMount(() => {
     const model_override = $page.url.searchParams.get("model")
@@ -132,6 +175,10 @@
         })
       }
       response = data
+      if ($current_task?.turn_mode === "multiturn" && data?.id) {
+        await goto(`/dataset/${project_id}/${task_id}/${data.id}/run`)
+        return
+      }
     } catch (e) {
       run_error = createKilnError(e)
     } finally {
@@ -204,32 +251,80 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<!-- Multi-turn uses the full width (sidebar pinned right, chat centered);
+     single-turn keeps the capped reading width. -->
+<div class={is_multiturn ? "" : "max-w-[1400px]"}>
   <AppPage
     title="Run"
     bind:subtitle
-    action_buttons={[{ label: "Clear All", handler: clear_all }]}
+    no_y_padding={is_multiturn}
+    action_buttons={is_multiturn
+      ? []
+      : [{ label: "Clear All", handler: clear_all }]}
   >
-    <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-      <div class="grow">
-        <div class="text-xl font-bold mb-4">Input</div>
-        <FormContainer
-          submit_label="Run"
-          on:submit={run_task}
-          bind:error={run_error}
-          bind:submitting
-          bind:primary={run_focus}
-          bind:keyboard_submit={run_focus}
+    {#if is_multiturn && $current_task}
+      <!-- Multi-turn: a chat-style new conversation that mirrors the in-run
+           multiturn page. The first message starts a root run, then we
+           redirect to the dataset run page to continue the conversation. -->
+      <div
+        class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
+      >
+        <!-- Full-width column so the scrollbar sits at the right boundary;
+             content is centered inside via max-w + mx-auto. -->
+        <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
+          <div
+            class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden"
+          >
+            <div
+              class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
+            >
+              {#if mt_awaiting_response}
+                <ChatTrace
+                  trace={mt_display_trace}
+                  {project_id}
+                  show_per_message_usage={false}
+                />
+                <div data-testid="run-multiturn-pending">
+                  <ChatLoading />
+                </div>
+              {:else}
+                <div class="flex flex-1 items-center justify-center px-4 py-8">
+                  <div
+                    class="flex max-w-[340px] flex-col items-center gap-3 rounded-xl px-6 py-8 text-center"
+                  >
+                    <div class="h-10 w-10 text-gray-400"><ChatIcon /></div>
+                    <div class="text-base font-medium">
+                      Start a conversation
+                    </div>
+                    <div class="text-sm font-light text-gray-500">
+                      Send a message below to begin a multi-turn conversation
+                      for your task.
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </div>
+          <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+            <div class="mx-auto w-full max-w-3xl">
+              <MultiturnComposer
+                mode="append"
+                {project_id}
+                {task_id}
+                parent_task_run_id={null}
+                allow_root_turn={true}
+                {run_config_component}
+                busy={mt_awaiting_response}
+                on_success={handle_first_turn_success}
+                on_send_start={handle_mt_send_start}
+                on_send_settled={handle_mt_send_settled}
+              />
+            </div>
+          </div>
+        </div>
+        <div
+          class="w-72 2xl:w-96 flex-none flex flex-col gap-4 chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-6"
         >
-          <RunInputForm
-            bind:input_schema
-            bind:this={input_form}
-            onInputChange={handle_input_change}
-          />
-        </FormContainer>
-      </div>
-      {#if $current_task}
-        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
           <div class="text-xl font-bold">Options</div>
           <SavedRunConfigurationsDropdown
             {project_id}
@@ -245,7 +340,7 @@
             bind:this={run_config_component}
             {project_id}
             current_task={$current_task}
-            requires_structured_output={!!$current_task.output_json_schema}
+            requires_structured_output={false}
             bind:selected_run_config_id
             bind:set_default_error
             bind:selected_model_specific_run_config_id
@@ -254,33 +349,105 @@
             show_name_field={false}
           />
         </div>
-      {/if}
-    </div>
-    {#if $current_task && !submitting && project_id}
-      {#if error_with_trace}
-        <div class="mt-8 xl:mt-12">
-          <ErrorWithTraceComponent
-            error={error_with_trace}
-            error_title="Run Failed"
-          />
+      </div>
+    {:else}
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+        <div class="grow">
+          <div class="text-xl font-bold mb-4">Input</div>
+          <FormContainer
+            submit_label="Run"
+            on:submit={run_task}
+            bind:error={run_error}
+            bind:submitting
+            bind:primary={run_focus}
+            bind:keyboard_submit={run_focus}
+          >
+            <RunInputForm
+              bind:input_schema
+              bind:this={input_form}
+              onInputChange={handle_input_change}
+            />
+          </FormContainer>
         </div>
-      {:else if response != null}
-        <div
-          class="mt-8 xl:mt-12"
-          bind:this={output_section}
-          id="output-section"
-        >
-          <Run
-            initial_run={response}
-            task={$current_task}
-            {project_id}
-            bind:model_name
-            bind:provider
-            bind:run_complete
-            focus_repair_on_appear={true}
-          />
-        </div>
+        {#if $current_task}
+          <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
+            <div class="text-xl font-bold">Options</div>
+            <SavedRunConfigurationsDropdown
+              {project_id}
+              current_task={$current_task}
+              bind:selected_run_config_id
+              bind:save_config_error
+              bind:set_default_error
+              save_new_run_config={handle_save_new_run_config}
+              {selected_model_specific_run_config_id}
+            />
+            <RunConfigComponent
+              {model}
+              bind:this={run_config_component}
+              {project_id}
+              current_task={$current_task}
+              requires_structured_output={!!$current_task.output_json_schema}
+              bind:selected_run_config_id
+              bind:set_default_error
+              bind:selected_model_specific_run_config_id
+              {pending_tool_id}
+              {pending_run_config_id}
+              show_name_field={false}
+            />
+          </div>
+        {/if}
+      </div>
+      {#if $current_task && !submitting && project_id}
+        {#if error_with_trace}
+          <div class="mt-8 xl:mt-12">
+            <ErrorWithTraceComponent
+              error={error_with_trace}
+              error_title="Run Failed"
+            />
+          </div>
+        {:else if response != null}
+          <div
+            class="mt-8 xl:mt-12"
+            bind:this={output_section}
+            id="output-section"
+          >
+            <Run
+              initial_run={response}
+              task={$current_task}
+              {project_id}
+              bind:model_name
+              bind:provider
+              bind:run_complete
+              focus_repair_on_appear={true}
+            />
+          </div>
+        {/if}
       {/if}
     {/if}
   </AppPage>
 </div>
+
+<style>
+  /* Match the Assistant chat transcript scrollbar. */
+  .chat-messages-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-thumb {
+    background-color: oklch(var(--bc) / 0.2);
+    border-radius: 3px;
+  }
+
+  .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(var(--bc) / 0.35);
+  }
+
+  .chat-messages-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
+  }
+</style>
