@@ -17,6 +17,7 @@
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
   import ChatLoading from "../assistant/chat_loading.svelte"
+  import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
@@ -287,12 +288,17 @@
                   <ChatLoading />
                 </div>
               {:else}
-                <div class="flex flex-1 items-center justify-center">
-                  <div class="text-center max-w-md px-4">
-                    <div class="text-lg font-medium">Start a conversation</div>
-                    <div class="text-sm mt-1 text-gray-500">
-                      Send a message to begin a multi-turn conversation for your
-                      task.
+                <div class="flex flex-1 items-center justify-center px-4 py-8">
+                  <div
+                    class="flex max-w-[340px] flex-col items-center gap-3 rounded-xl px-6 py-8 text-center"
+                  >
+                    <div class="h-10 w-10 text-gray-400"><ChatIcon /></div>
+                    <div class="text-base font-medium">
+                      Start a conversation
+                    </div>
+                    <div class="text-sm font-light text-gray-500">
+                      Send a message below to begin a multi-turn conversation
+                      for your task.
                     </div>
                   </div>
                 </div>
