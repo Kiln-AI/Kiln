@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from kiln_ai.adapters.rag.progress import (
-    LogMessage,
     RagProgress,
     compute_current_progress_for_rag_config,
 )
@@ -139,42 +138,36 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
         rag_config, project = _load_rag_config(params)
         runner = await build_rag_workflow_runner(project, params.rag_config_id)
 
-        # `RagWorkflowRunner.update_workflow_progress` REPLACES `current_progress.logs`
-        # with the latest tick's batch — accumulate them ourselves so the
-        # frontend dialog sees the full log history, not just whatever the
-        # last yield happened to emit.
-        accumulated_logs: list[LogMessage] = []
-        # Carry the high-water-mark phase error count forward across ticks.
-        # Defensive: keeps us from accidentally dropping a number we saw earlier
-        # if a later yield happens to under-report.
-        max_phase_errors = 0
+        # Track how many log entries we've already forwarded to the per-run
+        # error log so we don't re-report the same error on every subsequent
+        # tick. `progress.logs` is the cumulative list — we just need a
+        # high-water-mark index.
+        forwarded_log_count = 0
 
         latest: RagProgress | None = None
         async for progress in runner.run():
             latest = progress
 
-            # Append new log entries (the per-tick batch the runner just
-            # emitted) and forward error-level ones to the per-run error log so
-            # they show up under "View Errors" in the jobs panel.
-            for log in progress.logs or []:
-                accumulated_logs.append(log)
+            # Forward any newly-arrived error-level logs to the per-run error
+            # log so they show up under "View Errors" in the jobs panel. The
+            # runner now accumulates logs on RagProgress.logs, so we slice
+            # from where we left off.
+            for log in (progress.logs or [])[forwarded_log_count:]:
                 if log.level == "error":
                     await ctx.report_error(log.message)
+            forwarded_log_count = len(progress.logs or [])
 
-            max_phase_errors = max(max_phase_errors, _aggregate_errors(progress))
+            errors = _aggregate_errors(progress)
             await ctx.report_progress(
                 success=progress.total_document_completed_count,
-                error=max_phase_errors,
+                error=errors,
                 total=progress.total_document_count,
             )
             await ctx.report_display(secondary=_rag_step_lines(progress))
             # Stamp the full RagProgress snapshot so the existing four-bar
-            # frontend dialog can keep showing per-phase percentages. We swap
-            # in the accumulated log list — `progress.logs` only holds the
-            # last tick's batch, which would clobber prior entries.
-            snapshot = progress.model_copy(update={"logs": accumulated_logs})
+            # frontend dialog can keep showing per-phase percentages.
             await ctx.report_metadata_patch(
-                {"rag_progress": snapshot.model_dump(mode="json")}
+                {"rag_progress": progress.model_dump(mode="json")}
             )
 
         if latest is None:
@@ -197,19 +190,17 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
         # finish every document."
         final_success = latest.total_document_completed_count
         final_total = latest.total_document_count
-        silent_skips = max(0, final_total - final_success - max_phase_errors)
-        final_errors = max_phase_errors + silent_skips
-        if final_errors != max_phase_errors:
+        aggregated_errors = _aggregate_errors(latest)
+        silent_skips = max(0, final_total - final_success - aggregated_errors)
+        final_errors = aggregated_errors + silent_skips
+        if silent_skips > 0:
             await ctx.report_progress(
                 success=final_success,
                 error=final_errors,
                 total=final_total,
             )
-            # Reflect the reconciled error count in the metadata snapshot too,
-            # so the dialog's per-phase view stays in sync.
-            snapshot = latest.model_copy(update={"logs": accumulated_logs})
             await ctx.report_metadata_patch(
-                {"rag_progress": snapshot.model_dump(mode="json")}
+                {"rag_progress": latest.model_dump(mode="json")}
             )
 
         return RagJobResult(

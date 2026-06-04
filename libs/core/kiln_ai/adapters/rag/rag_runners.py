@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncGenerator, Generic, Set, Tuple, TypeVar
+from typing import AsyncGenerator, ClassVar, Generic, Set, Tuple, TypeVar
 
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
 from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
@@ -36,7 +36,6 @@ from kiln_ai.datamodel.extraction import (
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.lock import shared_async_lock_manager
@@ -70,16 +69,24 @@ class EmbeddingJob:
 
 
 class RagStepRunnerProgress(BaseModel):
-    success_count: int | None = Field(
-        description="The number of items that have been processed",
-        default=None,
+    """A single tick from a step runner. Counts are absolute totals for this
+    step invocation (cumulative since the step started), not deltas. `new_logs`
+    carries any log entries that surfaced since the previous tick — the
+    workflow runner appends them onto the running list, so consumers see the
+    full log history rather than just the latest batch.
+    """
+
+    success_count: int = Field(
+        description="Items successfully processed by this step so far in this invocation.",
+        default=0,
     )
-    error_count: int | None = Field(
-        description="The number of items that have errored",
-        default=None,
+    error_count: int = Field(
+        description="Items that errored in this step so far in this invocation.",
+        default=0,
     )
-    logs: list[LogMessage] = Field(
-        description="A list of log messages to display to the user",
+    new_logs: list[LogMessage] = Field(
+        description="Log entries that appeared since the previous tick. The "
+        "workflow runner appends these to the cumulative log list.",
         default_factory=list,
     )
 
@@ -320,23 +327,24 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
 
             error_idx = 0
             async for progress in runner.run():
+                # Drain any new errors observed since the last tick. Bundled
+                # into the same yield as the counts — one tick per AsyncJobRunner
+                # progress update, instead of interleaving log-only yields.
+                new_logs: list[LogMessage] = []
+                if observer.get_error_count() > error_idx:
+                    errors, error_idx = observer.get_errors(error_idx)
+                    for job, error in errors:
+                        new_logs.append(
+                            LogMessage(
+                                level="error",
+                                message=f"Error extracting document: {job.doc.path}: {error}",
+                            )
+                        )
                 yield RagStepRunnerProgress(
                     success_count=progress.complete,
                     error_count=observer.get_error_count(),
+                    new_logs=new_logs,
                 )
-
-                # the errors are being accumulated in the observer so we need to flush them to the caller
-                if observer.get_error_count() > 0:
-                    errors, error_idx = observer.get_errors(error_idx)
-                    for job, error in errors:
-                        yield RagStepRunnerProgress(
-                            logs=[
-                                LogMessage(
-                                    level="error",
-                                    message=f"Error extracting document: {job.doc.path}: {error}",
-                                )
-                            ],
-                        )
 
 
 class RagChunkingStepRunner(AbstractRagStepRunner):
@@ -421,23 +429,21 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
 
             error_idx = 0
             async for progress in runner.run():
+                new_logs: list[LogMessage] = []
+                if observer.get_error_count() > error_idx:
+                    errors, error_idx = observer.get_errors(error_idx)
+                    for job, error in errors:
+                        new_logs.append(
+                            LogMessage(
+                                level="error",
+                                message=f"Error chunking document: {job.extraction.path}: {error}",
+                            )
+                        )
                 yield RagStepRunnerProgress(
                     success_count=progress.complete,
                     error_count=observer.get_error_count(),
+                    new_logs=new_logs,
                 )
-
-                # the errors are being accumulated in the observer so we need to flush them to the caller
-                if observer.get_error_count() > 0:
-                    errors, error_idx = observer.get_errors(error_idx)
-                    for job, error in errors:
-                        yield RagStepRunnerProgress(
-                            logs=[
-                                LogMessage(
-                                    level="error",
-                                    message=f"Error chunking document: {job.extraction.path}: {error}",
-                                )
-                            ],
-                        )
 
 
 class RagEmbeddingStepRunner(AbstractRagStepRunner):
@@ -534,23 +540,21 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
 
             error_idx = 0
             async for progress in runner.run():
+                new_logs: list[LogMessage] = []
+                if observer.get_error_count() > error_idx:
+                    errors, error_idx = observer.get_errors(error_idx)
+                    for job, error in errors:
+                        new_logs.append(
+                            LogMessage(
+                                level="error",
+                                message=f"Error embedding document: {job.chunked_document.path}: {error}",
+                            )
+                        )
                 yield RagStepRunnerProgress(
                     success_count=progress.complete,
                     error_count=observer.get_error_count(),
+                    new_logs=new_logs,
                 )
-
-                # the errors are being accumulated in the observer so we need to flush them to the caller
-                if observer.get_error_count() > 0:
-                    errors, error_idx = observer.get_errors(error_idx)
-                    for job, error in errors:
-                        yield RagStepRunnerProgress(
-                            logs=[
-                                LogMessage(
-                                    level="error",
-                                    message=f"Error embedding document: {job.chunked_document.path}: {error}",
-                                )
-                            ],
-                        )
 
 
 class RagIndexingStepRunner(AbstractRagStepRunner):
@@ -678,7 +682,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 yield RagStepRunnerProgress(
                     success_count=0,
                     error_count=0,
-                    logs=[
+                    new_logs=[
                         LogMessage(
                             level="info",
                             message="No records to index.",
@@ -701,6 +705,11 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 error_count=0,
             )
 
+            # Track cumulative counts so every yield carries the absolute total
+            # for this step invocation — uniform with the other three phases,
+            # which already yield cumulative counts from AsyncJobRunner.
+            cumulative_success = 0
+            cumulative_errors = 0
             async for doc_batch in self.collect_records(
                 batch_size=self.batch_size, document_ids=document_ids
             ):
@@ -710,17 +719,19 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
                 try:
                     await vector_store.add_chunks_with_embeddings(doc_batch)
+                    cumulative_success += batch_chunk_count
                     yield RagStepRunnerProgress(
-                        success_count=batch_chunk_count,
-                        error_count=0,
+                        success_count=cumulative_success,
+                        error_count=cumulative_errors,
                     )
                 except Exception as e:
                     error_msg = f"Error indexing document batch starting with {doc_batch[0].document_id}: {e}"
                     logger.error(error_msg, exc_info=True)
+                    cumulative_errors += batch_chunk_count
                     yield RagStepRunnerProgress(
-                        success_count=0,
-                        error_count=batch_chunk_count,
-                        logs=[
+                        success_count=cumulative_success,
+                        error_count=cumulative_errors,
+                        new_logs=[
                             LogMessage(
                                 level="error",
                                 message=error_msg,
@@ -779,73 +790,70 @@ class RagWorkflowRunner:
     def lock_key(self) -> str:
         return f"rag:run:{self.configuration.rag_config.id}"
 
+    # Per-phase mapping from step name to the RagProgress fields the step
+    # contributes to. Each step yields cumulative counts for its invocation;
+    # the workflow shifts them by the initial baseline to get overall totals.
+    # Centralising the mapping here collapses the four-arm match statement
+    # that used to live inside update_workflow_progress and makes adding a
+    # new phase a one-line change.
+    _PHASE_FIELDS: ClassVar[dict[RagWorkflowStepNames, tuple[str, str]]] = {
+        RagWorkflowStepNames.EXTRACTING: (
+            "total_document_extracted_count",
+            "total_document_extracted_error_count",
+        ),
+        RagWorkflowStepNames.CHUNKING: (
+            "total_document_chunked_count",
+            "total_document_chunked_error_count",
+        ),
+        RagWorkflowStepNames.EMBEDDING: (
+            "total_document_embedded_count",
+            "total_document_embedded_error_count",
+        ),
+        RagWorkflowStepNames.INDEXING: (
+            "total_chunks_indexed_count",
+            "total_chunks_indexed_error_count",
+        ),
+    }
+
     def update_workflow_progress(
         self, step_name: RagWorkflowStepNames, step_progress: RagStepRunnerProgress
     ) -> RagProgress:
-        # merge the simpler step-specific progress with the broader RAG progress
-        match step_name:
-            case RagWorkflowStepNames.EXTRACTING:
-                if step_progress.success_count is not None:
-                    self.current_progress.total_document_extracted_count = max(
-                        self.current_progress.total_document_extracted_count,
-                        step_progress.success_count
-                        + self.initial_progress.total_document_extracted_count,
-                    )
-                if step_progress.error_count is not None:
-                    self.current_progress.total_document_extracted_error_count = max(
-                        self.current_progress.total_document_extracted_error_count,
-                        step_progress.error_count
-                        + self.initial_progress.total_document_extracted_error_count,
-                    )
-            case RagWorkflowStepNames.CHUNKING:
-                if step_progress.success_count is not None:
-                    self.current_progress.total_document_chunked_count = max(
-                        self.current_progress.total_document_chunked_count,
-                        step_progress.success_count
-                        + self.initial_progress.total_document_chunked_count,
-                    )
-                if step_progress.error_count is not None:
-                    self.current_progress.total_document_chunked_error_count = max(
-                        self.current_progress.total_document_chunked_error_count,
-                        step_progress.error_count
-                        + self.initial_progress.total_document_chunked_error_count,
-                    )
-            case RagWorkflowStepNames.EMBEDDING:
-                if step_progress.success_count is not None:
-                    self.current_progress.total_document_embedded_count = max(
-                        self.current_progress.total_document_embedded_count,
-                        step_progress.success_count
-                        + self.initial_progress.total_document_embedded_count,
-                    )
-                if step_progress.error_count is not None:
-                    self.current_progress.total_document_embedded_error_count = max(
-                        self.current_progress.total_document_embedded_error_count,
-                        step_progress.error_count
-                        + self.initial_progress.total_document_embedded_error_count,
-                    )
-            case RagWorkflowStepNames.INDEXING:
-                if step_progress.success_count is not None:
-                    self.current_progress.total_chunks_indexed_count += (
-                        step_progress.success_count
-                    )
-                if step_progress.error_count is not None:
-                    self.current_progress.total_chunks_indexed_error_count += (
-                        step_progress.error_count
-                    )
-            case _:
-                raise_exhaustive_enum_error(step_name)
+        if step_name not in self._PHASE_FIELDS:
+            raise ValueError(f"Unhandled enum value: {step_name}")
+        success_field, error_field = self._PHASE_FIELDS[step_name]
+
+        # Step counts are absolute for THIS invocation. Add the baseline once
+        # to get the overall total. (Old code used max(current, baseline+delta)
+        # as a defensive monotonicity check, but with absolute counts from the
+        # step runner that's redundant.)
+        setattr(
+            self.current_progress,
+            success_field,
+            getattr(self.initial_progress, success_field) + step_progress.success_count,
+        )
+        setattr(
+            self.current_progress,
+            error_field,
+            getattr(self.initial_progress, error_field) + step_progress.error_count,
+        )
 
         self.current_progress.total_document_completed_count = min(
             self.current_progress.total_document_extracted_count,
             self.current_progress.total_document_chunked_count,
             self.current_progress.total_document_embedded_count,
         )
-
         self.current_progress.total_chunk_completed_count = (
             self.current_progress.total_chunks_indexed_count
         )
 
-        self.current_progress.logs = step_progress.logs
+        # Append new logs to the running list instead of replacing it. The
+        # previous "replace per yield" behavior dropped all prior entries,
+        # forcing callers to re-accumulate. Now `current_progress.logs` is
+        # the authoritative full history.
+        if step_progress.new_logs:
+            self.current_progress.logs = (
+                self.current_progress.logs or []
+            ) + step_progress.new_logs
         return self.current_progress
 
     async def run(
