@@ -104,6 +104,8 @@
       section = Section.Documents
     } else if (path_start("/models", $page.url.pathname)) {
       section = Section.Models
+    } else if (path_start("/specs_v2", $page.url.pathname)) {
+      section = Section.SpecsV2
     } else if (path_start("/specs", $page.url.pathname)) {
       section = Section.Specs
     } else if (path_start("/optimize", $page.url.pathname)) {
@@ -274,6 +276,20 @@
 
             Evals</a
           >
+        </li>
+
+        <li class="menu-sm">
+          <a
+            href={`/specs_v2/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+            class={section == Section.SpecsV2 ? "active" : ""}
+          >
+            <div class="sidebar-icon">
+              <EvalIcon />
+            </div>
+
+            Evals V2
+            <div class="badge badge-secondary badge-sm">Beta</div>
+          </a>
         </li>
 
         <li class="menu-sm">
