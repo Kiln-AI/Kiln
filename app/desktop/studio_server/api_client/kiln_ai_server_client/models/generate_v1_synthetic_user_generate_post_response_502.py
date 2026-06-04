@@ -1,48 +1,41 @@
 from __future__ import annotations
 
-import datetime
 from collections.abc import Mapping
 from typing import Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="ChatSessionListItem")
+from ..models.generate_v1_synthetic_user_generate_post_response_502_code import (
+    GenerateV1SyntheticUserGeneratePostResponse502Code,
+)
+
+T = TypeVar("T", bound="GenerateV1SyntheticUserGeneratePostResponse502")
 
 
 @_attrs_define
-class ChatSessionListItem:
-    """Session list row — metadata only, no trace.
-
-    Kept deliberately minimal so ``GET /chat/sessions`` never returns the full
-    conversation history per row. Clients fetch a specific trace via
-    ``GET /chat/sessions/{id}`` when they need it.
-
-        Attributes:
-            id (str):
-            updated_at (datetime.datetime):
-            title (str):
+class GenerateV1SyntheticUserGeneratePostResponse502:
+    """
+    Attributes:
+        message (str):
+        code (GenerateV1SyntheticUserGeneratePostResponse502Code):
     """
 
-    id: str
-    updated_at: datetime.datetime
-    title: str
+    message: str
+    code: GenerateV1SyntheticUserGeneratePostResponse502Code
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        id = self.id
+        message = self.message
 
-        updated_at = self.updated_at.isoformat()
-
-        title = self.title
+        code = self.code.value
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "id": id,
-                "updated_at": updated_at,
-                "title": title,
+                "message": message,
+                "code": code,
             }
         )
 
@@ -51,20 +44,17 @@ class ChatSessionListItem:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        id = d.pop("id")
+        message = d.pop("message")
 
-        updated_at = datetime.datetime.fromisoformat(d.pop("updated_at"))
+        code = GenerateV1SyntheticUserGeneratePostResponse502Code(d.pop("code"))
 
-        title = d.pop("title")
-
-        chat_session_list_item = cls(
-            id=id,
-            updated_at=updated_at,
-            title=title,
+        generate_v1_synthetic_user_generate_post_response_502 = cls(
+            message=message,
+            code=code,
         )
 
-        chat_session_list_item.additional_properties = d
-        return chat_session_list_item
+        generate_v1_synthetic_user_generate_post_response_502.additional_properties = d
+        return generate_v1_synthetic_user_generate_post_response_502
 
     @property
     def additional_keys(self) -> list[str]:
