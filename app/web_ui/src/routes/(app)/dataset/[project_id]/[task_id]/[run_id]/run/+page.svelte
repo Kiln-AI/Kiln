@@ -855,15 +855,16 @@
           <div
             class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
           >
-            <div
-              class="grow flex flex-col items-center min-w-0 xl:h-full xl:min-h-0"
-            >
+            <!-- The chat column is full width so its scrollbar sits at the
+                 right boundary; the conversation + composer are centered
+                 inside via max-w + mx-auto. -->
+            <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
               <div
-                class="flex w-full max-w-3xl flex-col min-w-0 xl:h-full xl:min-h-0"
+                bind:this={transcript_scroll_el}
+                class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden"
               >
                 <div
-                  bind:this={transcript_scroll_el}
-                  class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
+                  class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
                 >
                   {#if run_has_children}
                     <div role="alert" data-testid="run-has-children-banner">
@@ -911,7 +912,9 @@
                     </div>
                   {/if}
                 </div>
-                <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+              </div>
+              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+                <div class="mx-auto w-full max-w-3xl">
                   {#if fork_target}
                     <MultiturnComposer
                       bind:this={fork_composer}
@@ -939,8 +942,10 @@
                     />
                   {/if}
                 </div>
-                <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
-                <div class="xl:flex-none mt-2">
+              </div>
+              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
+              <div class="xl:flex-none mt-2">
+                <div class="mx-auto w-full max-w-3xl">
                   <button
                     class="text-xs link"
                     on:click={() => raw_data_dialog?.show()}
@@ -951,7 +956,7 @@
               </div>
             </div>
             <div
-              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto"
+              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-6"
             >
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">

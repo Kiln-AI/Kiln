@@ -268,14 +268,14 @@
       <div
         class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
       >
-        <div
-          class="grow flex flex-col items-center min-w-0 xl:h-full xl:min-h-0"
-        >
+        <!-- Full-width column so the scrollbar sits at the right boundary;
+             content is centered inside via max-w + mx-auto. -->
+        <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
           <div
-            class="flex w-full max-w-3xl flex-col min-w-0 xl:h-full xl:min-h-0"
+            class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden"
           >
             <div
-              class="chat-messages-scroll flex flex-col gap-6 min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-2"
+              class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
             >
               {#if mt_awaiting_response}
                 <ChatTrace
@@ -297,7 +297,9 @@
                 </div>
               {/if}
             </div>
-            <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+          </div>
+          <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+            <div class="mx-auto w-full max-w-3xl">
               <MultiturnComposer
                 mode="append"
                 {project_id}
@@ -314,7 +316,7 @@
           </div>
         </div>
         <div
-          class="w-72 2xl:w-96 flex-none flex flex-col gap-4 chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto"
+          class="w-72 2xl:w-96 flex-none flex flex-col gap-4 chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-6"
         >
           <div class="text-xl font-bold">Options</div>
           <SavedRunConfigurationsDropdown
