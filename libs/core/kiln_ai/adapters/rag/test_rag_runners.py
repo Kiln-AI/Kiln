@@ -1773,6 +1773,19 @@ class TestRagIndexingStepRunner:
 
 # Tests for workflow runner
 class TestRagWorkflowRunner:
+    @pytest.fixture(autouse=True)
+    def _patch_compute_current_progress(self, workflow_config):
+        # The workflow runner re-snapshots from disk after acquiring its lock
+        # (to pick up work sibling parallel runs may have completed). Tests
+        # drive a MagicMock project where the real compute helper would
+        # explode walking documents; stub it to return the test's
+        # configured initial_progress so post-lock state matches pre-lock.
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.compute_current_progress_for_rag_config",
+            new=AsyncMock(return_value=workflow_config.initial_progress),
+        ):
+            yield
+
     @pytest.fixture
     def mock_step_runner(self):
         runner = MagicMock(spec=RagExtractionStepRunner)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from kiln_ai.adapters.rag.progress import (
-    LogMessage,
     RagProgress,
     compute_current_progress_for_rag_config,
 )
@@ -182,51 +181,41 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
                 errors=0,
             )
 
-        # Final reconciliation: a doc can sit in `total_document_count` without
-        # ever reaching `extracted_count` (no original_file, filtered out by
-        # collect_jobs, etc.) — silent skips, no error_count bump. The OLD
-        # frontend flagged this as "completed_with_errors" via an implicit-fail
-        # check; we reproduce that here so the job's red badge + non-zero error
-        # count match the user's mental model of "the run didn't actually
-        # finish every document."
-        final_success = latest.total_document_completed_count
-        final_total = latest.total_document_count
-        aggregated_errors = _aggregate_errors(latest)
-        silent_skips = max(0, final_total - final_success - aggregated_errors)
-        final_errors = aggregated_errors + silent_skips
-        if silent_skips > 0:
-            # Without an explanatory entry, both "View Errors" surfaces (the
-            # RAG dialog's log list and the job-panel's per-run error log)
-            # show a red "Completed with errors" badge for an empty list,
-            # which leaves the user with no way to find out what happened.
-            skip_message = (
-                f"{silent_skips} document(s) could not be processed "
-                "(missing source file, excluded by configuration, or "
-                "otherwise unreachable). Marked as errors so the run "
-                "doesn't show as fully complete."
-            )
-            existing_logs = latest.logs or []
-            latest = latest.model_copy(
-                update={
-                    "logs": [
-                        *existing_logs,
-                        LogMessage(level="error", message=skip_message),
-                    ]
-                }
-            )
-            await ctx.report_error(skip_message)
-            await ctx.report_progress(
-                success=final_success,
-                error=final_errors,
-                total=final_total,
-            )
-            await ctx.report_metadata_patch(
-                {"rag_progress": latest.model_dump(mode="json")}
-            )
+        # Re-snapshot from on-disk reality for the final reported counts.
+        # During the run, the workflow tracks per-phase counts as
+        # baseline + step_success_count, but a sibling RAG run that shares one
+        # of our step configs (extractor / chunker / embedder) can complete
+        # work between our step's collect_jobs and the end of our run, leaving
+        # our tracked counters behind disk reality. The disk snapshot doesn't
+        # know about runtime errors (those entities aren't persisted), so we
+        # carry the workflow's per-phase error counts and accumulated logs
+        # over from `latest`.
+        disk_progress = await compute_current_progress_for_rag_config(
+            project, rag_config
+        )
+        final_progress = disk_progress.model_copy(
+            update={
+                "total_document_extracted_error_count": latest.total_document_extracted_error_count,
+                "total_document_chunked_error_count": latest.total_document_chunked_error_count,
+                "total_document_embedded_error_count": latest.total_document_embedded_error_count,
+                "total_chunks_indexed_error_count": latest.total_chunks_indexed_error_count,
+                "logs": latest.logs,
+            }
+        )
+        final_errors = _aggregate_errors(final_progress)
+        await ctx.report_progress(
+            success=final_progress.total_document_completed_count,
+            error=final_errors,
+            total=final_progress.total_document_count,
+        )
+        await ctx.report_display(secondary=_rag_step_lines(final_progress))
+        await ctx.report_metadata_patch(
+            {"rag_progress": final_progress.model_dump(mode="json")}
+        )
 
         return RagJobResult(
-            documents_total=final_total,
-            documents_completed=final_success,
-            chunks_indexed=latest.total_chunks_indexed_count,
+            documents_total=final_progress.total_document_count,
+            documents_completed=final_progress.total_document_completed_count,
+            chunks_indexed=final_progress.total_chunks_indexed_count,
             errors=final_errors,
         )

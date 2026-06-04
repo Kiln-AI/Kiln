@@ -16,7 +16,11 @@ from kiln_ai.adapters.rag.deduplication import (
     deduplicate_extractions,
     filter_documents_by_tags,
 )
-from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.rag.progress import (
+    LogMessage,
+    RagProgress,
+    compute_current_progress_for_rag_config,
+)
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     DocumentWithChunksAndEmbeddings,
 )
@@ -872,6 +876,20 @@ class RagWorkflowRunner:
         async with shared_async_lock_manager.acquire(
             self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
         ):
+            # Re-snapshot now that we hold the workflow lock. Between the
+            # caller's pre-lock snapshot (passed in via configuration) and
+            # this moment, a sibling RAG run for a config that shares one of
+            # our step configs (extractor/chunker/embedder) may have completed
+            # work this run inherits — its `collect_jobs` would then skip the
+            # already-done items, leaving our per-phase counters frozen at
+            # stale pre-lock values. Recomputing here means subsequent step
+            # ticks count against the up-to-date on-disk reality.
+            self.initial_progress = await compute_current_progress_for_rag_config(
+                self.project, self.configuration.rag_config
+            )
+            self.current_progress = self.initial_progress.model_copy()
+            yield self.current_progress
+
             for step in self.step_runners:
                 if stages_to_run is not None and step.stage() not in stages_to_run:
                     continue
