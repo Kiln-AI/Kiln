@@ -640,7 +640,7 @@ describe("ChatTrace component — usage info row", () => {
     ).not.toBeNull()
   })
 
-  it("wraps the usage button in a tooltip so users know what it does before clicking", () => {
+  it("labels the usage button so users know what it does", () => {
     const trace: TraceType = [
       assistantMsg("answer", {
         usage: { input_tokens: 10, output_tokens: 5 },
@@ -652,9 +652,8 @@ describe("ChatTrace component — usage info row", () => {
     const button = container.querySelector(
       "button[aria-label='View turn usage']",
     ) as HTMLButtonElement
-    const tooltip = button.closest(".tooltip") as HTMLElement
-    expect(tooltip).not.toBeNull()
-    expect(tooltip.getAttribute("data-tip")).toBe("View turn usage")
+    expect(button).not.toBeNull()
+    expect(button.textContent).toContain("Usage")
   })
 
   it("does not render usage button when show_per_message_usage is false", () => {
