@@ -96,8 +96,12 @@ export function back_url_for(record: JobRecord): string | null {
     case "finetune":
       return `/fine_tune/${project_id}/${tag.task_id}/fine_tune/${tag.finetune_id}`
     case "rag":
+      // Land on the configs list — that's the page that shows live progress
+      // per row. The per-config detail page doesn't surface progress, so the
+      // job-row link there would be a dead end during a run.
+      return `/docs/rag_configs/${project_id}`
     case "prompt_optimization":
-      // Placeholders for when those features start producing jobs.
+      // Placeholder for when prompt optimization starts producing jobs.
       return null
   }
 }

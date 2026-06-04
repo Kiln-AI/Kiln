@@ -87,10 +87,20 @@ describe("back_url_for", () => {
     expect(back_url_for(job)).toBe("/fine_tune/p1/t1/fine_tune/ft1")
   })
 
-  it("returns null for kinds without a canonical page yet", () => {
+  it("returns the configs list URL for a rag tag (where live progress is shown)", () => {
     const rag_job = make_job({
+      project_id: "p1",
       metadata: { tag: { kind: "rag", rag_config_id: "rcfg" } },
     })
-    expect(back_url_for(rag_job)).toBeNull()
+    expect(back_url_for(rag_job)).toBe("/docs/rag_configs/p1")
+  })
+
+  it("returns null for kinds without a canonical page yet", () => {
+    const po_job = make_job({
+      metadata: {
+        tag: { kind: "prompt_optimization", optimization_id: "opt1" },
+      },
+    })
+    expect(back_url_for(po_job)).toBeNull()
   })
 })
