@@ -263,7 +263,7 @@
 
   function build_available_model_select(
     models: FinetuneProvider[] | null,
-    _: Task | null,
+    task: Task | null,
   ) {
     if (!models) {
       return
@@ -330,40 +330,7 @@
       })
     }
 
-    const has_structured_output = !!$current_task?.output_json_schema
-
-    const download_options: Option[] = [
-      {
-        value: "download_jsonl_msg",
-        label: "OpenAI chat format (JSONL)",
-      },
-      {
-        value: "download_jsonl_json_schema_msg",
-        label: "OpenAI chat format with JSON response (JSONL)",
-      },
-      {
-        value: "download_jsonl_toolcall",
-        label: "OpenAI chat format with tool call response (JSONL)",
-      },
-      {
-        value: "download_huggingface_chat_template",
-        label: "HuggingFace chat template (JSONL)",
-      },
-      {
-        value: "download_huggingface_chat_template_toolcall",
-        label: "HuggingFace chat template with tool calls (JSONL)",
-      },
-      {
-        value: "download_vertex_gemini",
-        label: "Google Vertex-AI Gemini format (JSONL)",
-      },
-    ]
-
-    const structured_only_formats = new Set([
-      "download_jsonl_json_schema_msg",
-      "download_jsonl_toolcall",
-      "download_huggingface_chat_template_toolcall",
-    ])
+    const has_structured_output = !!task?.output_json_schema
 
     available_model_select.push({
       label: "Download Dataset",
@@ -393,6 +360,39 @@
       "huggingface_chat_template_toolcall_jsonl",
     download_vertex_gemini: "vertex_gemini",
   }
+
+  const download_options: Option[] = [
+    {
+      value: "download_jsonl_msg",
+      label: "OpenAI chat format (JSONL)",
+    },
+    {
+      value: "download_jsonl_json_schema_msg",
+      label: "OpenAI chat format with JSON response (JSONL)",
+    },
+    {
+      value: "download_jsonl_toolcall",
+      label: "OpenAI chat format with tool call response (JSONL)",
+    },
+    {
+      value: "download_huggingface_chat_template",
+      label: "HuggingFace chat template (JSONL)",
+    },
+    {
+      value: "download_huggingface_chat_template_toolcall",
+      label: "HuggingFace chat template with tool calls (JSONL)",
+    },
+    {
+      value: "download_vertex_gemini",
+      label: "Google Vertex-AI Gemini format (JSONL)",
+    },
+  ]
+
+  const structured_only_formats = new Set([
+    "download_jsonl_json_schema_msg",
+    "download_jsonl_toolcall",
+    "download_huggingface_chat_template_toolcall",
+  ])
 
   $: get_hyperparameters(provider_id)
 
