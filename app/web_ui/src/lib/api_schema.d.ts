@@ -1936,6 +1936,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/failing_train_examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Failing Train Examples
+         * @description Sample the eval's train set, run the judge, and return datapoints that fail it.
+         *
+         *     This is the building block for reflective prompt optimization: it surfaces a small batch
+         *     of training examples that the eval's judge marks as failures, together with the judge's
+         *     plaintext reasoning, so the failures can be reflected on to improve a prompt.
+         *
+         *     How it works:
+         *     1. Loads the train set, defined by the eval's `train_set_filter_id` (a dataset filter on
+         *        the task's runs), and shuffles it.
+         *     2. Judges items one batch at a time with the given eval config (`eval_config_id`), using
+         *        the existing dataset input/output (the task is not re-run).
+         *     3. An example counts as failing only when ALL of the eval's output scores are below the
+         *        pass bar — `normalize_rating(score) < threshold` on a normalized 0-1 scale, where
+         *        `threshold` defaults to 0.75 (the four-star / high-quality bar).
+         *     4. Stops as soon as it has collected `count` failing examples, or once it has judged
+         *        `max_samples` items ("oversample, return the requested amount").
+         *
+         *     Each judge result is persisted as an eval run and reused on later calls for the same
+         *     (eval config, dataset item) pair, so repeated calls don't re-pay the judge.
+         *
+         *     Returns the failing examples (`dataset_id`, `scores`, and `feedback`), plus `num_judged`
+         *     (items examined), `train_set_size` (total train items), and `hit_cap` (true when the
+         *     `max_samples` cap was reached before finding `count` failures — as opposed to simply
+         *     running out of train items).
+         *
+         *     Fails with 400 if the eval has no train set filter configured.
+         */
+        post: operations["get_failing_train_examples_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__failing_train_examples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}": {
         parameters: {
             query?: never;
@@ -6074,6 +6119,84 @@ export interface components {
             core_requirement: string;
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
+        };
+        /**
+         * FailingTrainExample
+         * @description A single train-set datapoint that failed the judge, with the judge's feedback.
+         */
+        FailingTrainExample: {
+            /**
+             * Dataset Id
+             * @description The ID of the failing dataset item.
+             */
+            dataset_id: string;
+            /**
+             * Scores
+             * @description The judge's scores for this datapoint.
+             */
+            scores: {
+                [key: string]: number;
+            };
+            /**
+             * Feedback
+             * @description The judge's plaintext reasoning for the scores, if available.
+             */
+            feedback?: string | null;
+        };
+        /**
+         * FailingTrainExamplesRequest
+         * @description Request to sample an eval's train set and return examples that fail the judge.
+         */
+        FailingTrainExamplesRequest: {
+            /**
+             * Count
+             * @description The number of failing examples to return.
+             * @default 5
+             */
+            count: number;
+            /**
+             * Max Samples
+             * @description The maximum number of train items to judge while searching for failures.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+            /**
+             * Seed
+             * @description Optional random seed for reproducible sampling.
+             */
+            seed?: number | null;
+        };
+        /**
+         * FailingTrainExamplesResponse
+         * @description The failing examples found, plus stats about the search.
+         */
+        FailingTrainExamplesResponse: {
+            /**
+             * Examples
+             * @description The failing examples found (up to the requested count).
+             */
+            examples: components["schemas"]["FailingTrainExample"][];
+            /**
+             * Num Judged
+             * @description How many train items were examined while searching for failures.
+             */
+            num_judged: number;
+            /**
+             * Train Set Size
+             * @description The total number of items in the eval's train set.
+             */
+            train_set_size: number;
+            /**
+             * Hit Cap
+             * @description True if the max_samples cap was reached before finding the requested count.
+             */
+            hit_cap: boolean;
         };
         /**
          * Feedback
@@ -15138,6 +15261,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_failing_train_examples_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__failing_train_examples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
+                eval_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FailingTrainExamplesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FailingTrainExamplesResponse"];
                 };
             };
             /** @description Validation Error */

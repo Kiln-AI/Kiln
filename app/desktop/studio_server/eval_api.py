@@ -1,10 +1,15 @@
 import json
+import random
 from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.failing_examples import (
+    DEFAULT_FAILURE_THRESHOLD,
+    find_failing_train_examples,
+)
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
@@ -38,7 +43,7 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -214,6 +219,67 @@ class RunEvalConfigRequest(BaseModel):
     """Request to run an eval with specific run configs."""
 
     run_config_ids: list[str] = Field(description="The run config IDs to evaluate.")
+
+
+class FailingTrainExamplesRequest(BaseModel):
+    """Request to sample an eval's train set and return examples that fail the judge."""
+
+    count: int = Field(
+        default=5,
+        ge=1,
+        description="The number of failing examples to return.",
+    )
+    max_samples: int = Field(
+        default=50,
+        ge=1,
+        description="The maximum number of train items to judge while searching for failures.",
+    )
+    threshold: float = Field(
+        default=DEFAULT_FAILURE_THRESHOLD,
+        ge=0.0,
+        le=1.0,
+        description="The normalized (0-1) pass bar. A score below this counts as failing.",
+    )
+    seed: int | None = Field(
+        default=None,
+        description="Optional random seed for reproducible sampling.",
+    )
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "FailingTrainExamplesRequest":
+        if self.max_samples < self.count:
+            raise ValueError("max_samples must be >= count")
+        return self
+
+
+class FailingTrainExample(BaseModel):
+    """A single train-set datapoint that failed the judge, with the judge's feedback."""
+
+    dataset_id: str = Field(description="The ID of the failing dataset item.")
+    scores: dict[str, float] = Field(
+        description="The judge's scores for this datapoint."
+    )
+    feedback: str | None = Field(
+        default=None,
+        description="The judge's plaintext reasoning for the scores, if available.",
+    )
+
+
+class FailingTrainExamplesResponse(BaseModel):
+    """The failing examples found, plus stats about the search."""
+
+    examples: list[FailingTrainExample] = Field(
+        description="The failing examples found (up to the requested count)."
+    )
+    num_judged: int = Field(
+        description="How many train items were examined while searching for failures."
+    )
+    train_set_size: int = Field(
+        description="The total number of items in the eval's train set."
+    )
+    hit_cap: bool = Field(
+        description="True if the max_samples cap was reached before finding the requested count.",
+    )
 
 
 class ScoreSummary(BaseModel):
@@ -945,6 +1011,86 @@ def connect_evals_api(app: FastAPI):
         )
 
         return await run_eval_runner_with_status(eval_runner)
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/failing_train_examples",
+        summary="Get Failing Train Examples",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    @no_write_lock
+    async def get_failing_train_examples(
+        request: Request,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        body: FailingTrainExamplesRequest,
+    ) -> FailingTrainExamplesResponse:
+        """Sample the eval's train set, run the judge, and return datapoints that fail it.
+
+        This is the building block for reflective prompt optimization: it surfaces a small batch
+        of training examples that the eval's judge marks as failures, together with the judge's
+        plaintext reasoning, so the failures can be reflected on to improve a prompt.
+
+        How it works:
+        1. Loads the train set, defined by the eval's `train_set_filter_id` (a dataset filter on
+           the task's runs), and shuffles it.
+        2. Judges items one batch at a time with the given eval config (`eval_config_id`), using
+           the existing dataset input/output (the task is not re-run).
+        3. An example counts as failing only when ALL of the eval's output scores are below the
+           pass bar — `normalize_rating(score) < threshold` on a normalized 0-1 scale, where
+           `threshold` defaults to 0.75 (the four-star / high-quality bar).
+        4. Stops as soon as it has collected `count` failing examples, or once it has judged
+           `max_samples` items ("oversample, return the requested amount").
+
+        Each judge result is persisted as an eval run and reused on later calls for the same
+        (eval config, dataset item) pair, so repeated calls don't re-pay the judge.
+
+        Returns the failing examples (`dataset_id`, `scores`, and `feedback`), plus `num_judged`
+        (items examined), `train_set_size` (total train items), and `hit_cap` (true when the
+        `max_samples` cap was reached before finding `count` failures — as opposed to simply
+        running out of train items).
+
+        Fails with 400 if the eval has no train set filter configured.
+        """
+        eval = eval_from_id(project_id, task_id, eval_id)
+        if eval.train_set_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This eval does not have a train set. Set a train set filter on the eval first.",
+            )
+        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+
+        result = await find_failing_train_examples(
+            eval_config,
+            count=body.count,
+            max_samples=body.max_samples,
+            threshold=body.threshold,
+            rng=random.Random(body.seed) if body.seed is not None else None,
+            save_context=build_save_context(request),
+        )
+
+        return FailingTrainExamplesResponse(
+            examples=[
+                FailingTrainExample(
+                    dataset_id=str(example.dataset_id),
+                    scores=example.scores,
+                    feedback=example.feedback,
+                )
+                for example in result.examples
+            ],
+            num_judged=result.num_judged,
+            train_set_size=result.train_set_size,
+            hit_cap=result.hit_cap,
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
