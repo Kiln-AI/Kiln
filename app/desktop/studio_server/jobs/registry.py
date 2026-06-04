@@ -17,6 +17,7 @@ from .models import (
     BackgroundJobStatus,
     JobContext,
     JobDerivedState,
+    JobDisplayUpdate,
     JobError,
     JobProgress,
     JobProgressUpdate,
@@ -433,7 +434,43 @@ class JobRegistry:
         async def report_error(message: str, extra: dict[str, Any]) -> None:
             error_log.append_error(run_id, {"error_message": message, **extra})
 
-        return JobContext(job_id, run_id, report_progress, report_error)
+        async def report_display(update: JobDisplayUpdate) -> None:
+            job = self._jobs.get(job_id)
+            if job is None or job.run_id != run_id:
+                return
+            # metadata is free-form; the display sub-object is the only piece
+            # the table renders. Merge in only the fields the worker provided
+            # so a worker that ticks only `secondary` doesn't blank `primary`.
+            display = dict(job.metadata.get("display") or {})
+            if update.primary is not None:
+                display["primary"] = update.primary
+            if update.secondary is not None:
+                display["secondary"] = update.secondary
+            job.metadata = {**job.metadata, "display": display}
+            self._touch(job)
+            self._emit(job)
+
+        async def report_metadata_patch(patch: dict[str, Any]) -> None:
+            job = self._jobs.get(job_id)
+            if job is None or job.run_id != run_id:
+                return
+            # Shallow merge — caller provides full sub-object values for the
+            # keys they want updated. `tag` and `display` (which carry the
+            # generic identity / row-rendering contract) are not protected
+            # here, but no worker has a reason to overwrite them; this method
+            # is for adding per-kind structured state alongside.
+            job.metadata = {**job.metadata, **patch}
+            self._touch(job)
+            self._emit(job)
+
+        return JobContext(
+            job_id,
+            run_id,
+            report_progress,
+            report_error,
+            report_display,
+            report_metadata_patch,
+        )
 
     def _finish_succeeded(self, job: JobRecord, result: BaseModel) -> None:
         job.status = BackgroundJobStatus.SUCCEEDED

@@ -3,9 +3,9 @@ import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
 import { progress_ui_state } from "./progress_ui_store"
-import { createLimiter } from "$lib/utils/limiter"
-
-const MAX_CONCURRENT_RAG_CONFIGS = 2
+import { jobs } from "./jobs_store"
+import type { JobRecord } from "./jobs_api"
+import { is_terminal } from "./job_status"
 
 export type RagConfigurationStatus =
   | "not_started"
@@ -24,10 +24,6 @@ interface RagConfigurationProgressState {
   error: KilnError | null
   last_started_rag_config_id: string | null
 }
-
-// cap concurrent EventSource connections browsers have different limits,
-// we keep the limit low enough to be safe for most browsers
-const run_rag_config_with_throttling = createLimiter(MAX_CONCURRENT_RAG_CONFIGS)
 
 function getDefaultProjectState(): RagConfigurationProgressState {
   return {
@@ -137,8 +133,8 @@ function createRagProgressStore() {
     project_id: string,
     rag_config_id: string,
   ): Promise<void> {
-    // we update the status even if waiting for slot, so that it looks
-    // like it is running to the user
+    // Optimistic UI: flip to "running" immediately so the row + global
+    // progress indicator update before the spawn round-trip returns.
     updateProjectState(project_id, (state) => ({
       ...state,
       status: { ...state.status, [rag_config_id]: "running" },
@@ -153,7 +149,6 @@ function createRagProgressStore() {
       last_started_rag_config_id: rag_config_id,
     }))
 
-    // lets us track the last started rag config progress
     progress_ui_state.set({
       title: "Processing Documents",
       body: "",
@@ -164,157 +159,91 @@ function createRagProgressStore() {
       current_step: 0,
     })
 
-    // we will send a log to say that the config is queued if we are still blocked for more than 10s
-    // otherwise, if the config starts in less than 10s, we won't show anything
-    let showed_queued_log = false
-    let wait_log_timer: ReturnType<typeof setTimeout> | null = setTimeout(
-      () => {
-        showed_queued_log = true
-        updateProjectState(project_id, (state) => ({
-          ...state,
-          logs: {
-            ...state.logs,
-            [rag_config_id]: [
-              ...(state.logs[rag_config_id] ?? []),
-              {
-                level: "info",
-                message:
-                  "Queued. Will start automatically once other runs finish.",
-              },
-            ],
-          },
-        }))
-      },
-      10_000,
-    )
-
-    await run_rag_config_with_throttling(async () => {
-      // if we got a slot within 10s, prevent the log from being added
-      if (wait_log_timer) {
-        clearTimeout(wait_log_timer)
-        wait_log_timer = null
+    // The new endpoint returns immediately with a `kiln_job_tracking_id`. We
+    // then watch the project-scoped jobs store for that specific job — the
+    // worker stamps a full RagProgress snapshot under `metadata.rag_progress`
+    // on every tick, which is what the existing four-bar dialog reads. Drops
+    // the per-RAG SSE plumbing entirely.
+    const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
+    let job_id: string
+    try {
+      const response = await fetch(run_url)
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(
+          `Failed to start RAG run: ${response.status} ${text || response.statusText}`,
+        )
       }
+      const data = (await response.json()) as { kiln_job_tracking_id: string }
+      job_id = data.kiln_job_tracking_id
+    } catch (err) {
+      console.error(
+        `Error starting RAG config ${rag_config_id}: ${String(err)}`,
+      )
+      updateProjectState(project_id, (state) => ({
+        ...state,
+        logs: {
+          ...state.logs,
+          [rag_config_id]: [
+            ...(state.logs[rag_config_id] ?? []),
+            {
+              level: "error",
+              message: `Error running RAG config: ${String(err)}`,
+            },
+          ],
+        },
+      }))
+      finalize_run(project_id, rag_config_id, "completed_with_errors")
+      return
+    }
 
-      if (showed_queued_log) {
-        updateProjectState(project_id, (state) => ({
-          ...state,
-          logs: {
-            ...state.logs,
-            [rag_config_id]: [
-              ...(state.logs[rag_config_id] ?? []),
-              { level: "info", message: "Started running" },
-            ],
-          },
-        }))
-      }
-
-      await run_rag_config_unsafe(project_id, rag_config_id)
-    })
+    await watch_rag_job(project_id, rag_config_id, job_id)
   }
 
-  function run_rag_config_unsafe(
+  // Subscribe to the jobs store and pipe the tracked job's RagProgress
+  // snapshots into our per-config state. Resolves when the job reaches a
+  // terminal status, vanishes from the store (superseded / deleted by the
+  // registry), or the subscription is torn down.
+  function watch_rag_job(
     project_id: string,
     rag_config_id: string,
+    job_id: string,
   ): Promise<void> {
-    // browsers have a limit on the number of concurrent connections, so we need to make sure
-    // we don't ever exceed that limit - you should use run_rag_config instead
-    const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
-    const eventSource = new EventSource(run_url)
-
     return new Promise<void>((resolve) => {
-      const finalize = (status: RagConfigurationStatus) => {
-        try {
-          eventSource.close()
-        } catch (error) {
-          console.error("Error closing event source", error)
-        }
-        updateProjectState(project_id, (state) => ({
-          ...state,
-          running_rag_configs: {
-            ...state.running_rag_configs,
-            [rag_config_id]: false,
-          },
-          status: { ...state.status, [rag_config_id]: status },
-        }))
-        if (
-          getProjectState(project_id).last_started_rag_config_id ===
-          rag_config_id
-        ) {
-          progress_ui_state.set({
-            title: "Processing Documents",
-            body:
-              status === "completed_with_errors"
-                ? "Completed with errors"
-                : "Completed",
-            link: `/docs/rag_configs/${project_id}`,
-            cta:
-              status === "completed_with_errors"
-                ? "View Errors"
-                : "View Results",
-            progress: 1,
-            step_count: null,
-            current_step: 0,
-          })
-        }
-
-        // we don't need to reject because we handle errors in a more complex
-        // and communicate it in the UI
-        resolve()
-      }
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (event.data === "complete") {
-            const projectState = getProjectState(project_id)
-            const prev = projectState.progress[rag_config_id]
-            // guard for undefined
-            if (!prev)
-              return finalize(
-                has_errors(rag_config_id, project_id)
-                  ? "completed_with_errors"
-                  : "complete",
-              )
-            const extraction_incomplete =
-              (prev.total_document_extracted_count ?? 0) <
-              (prev.total_document_count ?? 0)
-            const chunking_incomplete =
-              (prev.total_document_chunked_count ?? 0) <
-              (prev.total_document_count ?? 0)
-            const embedding_incomplete =
-              (prev.total_document_embedded_count ?? 0) <
-              (prev.total_document_count ?? 0)
-            const indexing_incomplete =
-              (prev.total_chunk_completed_count ?? 0) <
-              (prev.total_chunk_count ?? 0)
-
-            const failed_implicitly =
-              (prev.total_document_count ?? 0) > 0 &&
-              (extraction_incomplete ||
-                chunking_incomplete ||
-                embedding_incomplete ||
-                indexing_incomplete)
-
-            const completion_status =
-              has_errors(rag_config_id, project_id) || failed_implicitly
+      let saw_job = false
+      const unsubscribe = jobs.subscribe(($jobs: JobRecord[]) => {
+        const job = $jobs.find((j) => j.id === job_id)
+        if (!job) {
+          // The job was either pruned out from under us (supersede / clear)
+          // or hasn't been observed by the jobs SSE stream yet. Only finalize
+          // on disappearance — not on a still-empty pre-load — so we don't
+          // racefully resolve before the first event lands.
+          if (saw_job) {
+            unsubscribe()
+            finalize_run(
+              project_id,
+              rag_config_id,
+              has_errors(rag_config_id, project_id)
                 ? "completed_with_errors"
-                : "complete"
-
-            return finalize(completion_status)
+                : "complete",
+            )
+            resolve()
           }
+          return
+        }
+        saw_job = true
 
-          const payload = JSON.parse(event.data) as RagProgress
-          updateProjectState(project_id, (state) => {
-            const currentLogs = state.logs[rag_config_id] || []
-            const newLogs = payload.logs || []
-            return {
-              ...state,
-              progress: { ...state.progress, [rag_config_id]: payload },
-              logs: {
-                ...state.logs,
-                [rag_config_id]: [...currentLogs, ...newLogs],
-              },
-            }
-          })
+        const rag_progress = (
+          job.metadata as { rag_progress?: RagProgress } | null
+        )?.rag_progress
+        if (rag_progress) {
+          updateProjectState(project_id, (state) => ({
+            ...state,
+            progress: {
+              ...state.progress,
+              [rag_config_id]: rag_progress,
+            },
+          }))
 
           if (
             getProjectState(project_id).last_started_rag_config_id ===
@@ -326,65 +255,56 @@ function createRagProgressStore() {
               link: `/docs/rag_configs/${project_id}`,
               cta: "View Progress",
               progress:
-                compute_overall_completion_percentage(
-                  getProjectState(project_id).progress[rag_config_id],
-                ) / 100,
+                compute_overall_completion_percentage(rag_progress) / 100,
               step_count: null,
               current_step: null,
             })
           }
-        } catch (err) {
-          updateProjectState(project_id, (state) => ({
-            ...state,
-            logs: {
-              ...state.logs,
-              [rag_config_id]: [
-                ...(state.logs[rag_config_id] || []),
-                {
-                  level: "error",
-                  message: `Error running RAG config: ${String(err)}`,
-                },
-              ],
-            },
-          }))
-          finalize("completed_with_errors")
         }
-      }
 
-      eventSource.onerror = (error) => {
-        console.error(
-          `Error processing SSE message while running RAG config ${rag_config_id}: ${error}`,
-        )
-        updateProjectState(project_id, (state) => ({
-          ...state,
-          logs: {
-            ...state.logs,
-            [rag_config_id]: [
-              ...(state.logs[rag_config_id] || []),
-              {
-                level: "error",
-                message: `SSE connection error: ${String(error)}`,
-              },
-            ],
-          },
-        }))
-        if (
-          getProjectState(project_id).last_started_rag_config_id ===
-          rag_config_id
-        ) {
-          progress_ui_state.set({
-            title: "Processing Documents",
-            body: "Completed with errors",
-            link: `/docs/rag_configs/${project_id}`,
-            cta: "View Errors",
-            progress: null,
-            step_count: null,
-            current_step: null,
-          })
+        if (is_terminal(job.status)) {
+          unsubscribe()
+          const status: RagConfigurationStatus =
+            job.status === "succeeded" && !has_errors(rag_config_id, project_id)
+              ? "complete"
+              : "completed_with_errors"
+          finalize_run(project_id, rag_config_id, status)
+          resolve()
         }
-        finalize("completed_with_errors")
-      }
+      })
     })
+  }
+
+  function finalize_run(
+    project_id: string,
+    rag_config_id: string,
+    status: RagConfigurationStatus,
+  ): void {
+    updateProjectState(project_id, (state) => ({
+      ...state,
+      running_rag_configs: {
+        ...state.running_rag_configs,
+        [rag_config_id]: false,
+      },
+      status: { ...state.status, [rag_config_id]: status },
+    }))
+    if (
+      getProjectState(project_id).last_started_rag_config_id === rag_config_id
+    ) {
+      progress_ui_state.set({
+        title: "Processing Documents",
+        body:
+          status === "completed_with_errors"
+            ? "Completed with errors"
+            : "Completed",
+        link: `/docs/rag_configs/${project_id}`,
+        cta:
+          status === "completed_with_errors" ? "View Errors" : "View Results",
+        progress: 1,
+        step_count: null,
+        current_step: 0,
+      })
+    }
   }
 
   return {
