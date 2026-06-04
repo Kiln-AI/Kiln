@@ -243,6 +243,13 @@ function createRagProgressStore() {
               ...state.progress,
               [rag_config_id]: rag_progress,
             },
+            // The worker accumulates logs across ticks and stamps the full
+            // list into rag_progress.logs, so we replace (not append) here.
+            // No risk of duplicates on every tick — same input → same output.
+            logs: {
+              ...state.logs,
+              [rag_config_id]: rag_progress.logs ?? [],
+            },
           }))
 
           if (
