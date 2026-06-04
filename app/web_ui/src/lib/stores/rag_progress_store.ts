@@ -6,6 +6,7 @@ import { progress_ui_state } from "./progress_ui_store"
 import { jobs } from "./jobs_store"
 import type { JobRecord } from "./jobs_api"
 import { is_terminal } from "./job_status"
+import { get_tag } from "./job_tags"
 
 export type RagConfigurationStatus =
   | "not_started"
@@ -54,6 +55,84 @@ function getDefaultProjectState(): RagConfigurationProgressState {
 }
 
 export const ragProgressStore = createRagProgressStore()
+
+// Module-level reflector: any RAG-kind job in the project-scoped jobs store
+// pushes its state into the rag progress store. Lets the configs list page
+// pick up in-flight runs on refresh (and runs spawned from other sessions),
+// not just runs initiated from the current tab. Subscribes once at import
+// time and stays subscribed for the life of the SPA — there's no teardown
+// path because there's no point in disconnecting.
+function reflect_jobs_into_rag_store($jobs: JobRecord[]): void {
+  // Group RAG jobs by project so each project's state updates atomically.
+  const by_project = new Map<string, JobRecord[]>()
+  for (const job of $jobs) {
+    const tag = get_tag(job)
+    if (tag?.kind !== "rag") continue
+    if (!job.project_id) continue
+    const list = by_project.get(job.project_id) ?? []
+    list.push(job)
+    by_project.set(job.project_id, list)
+  }
+
+  for (const [project_id, project_jobs] of by_project) {
+    ragProgressStore.updateProjectState(project_id, (state) => {
+      const progress = { ...state.progress }
+      const logs = { ...state.logs }
+      const status = { ...state.status }
+      const running = { ...state.running_rag_configs }
+
+      for (const job of project_jobs) {
+        const tag = get_tag(job)
+        if (tag?.kind !== "rag") continue
+        const rag_config_id = tag.rag_config_id
+
+        // Live progress / logs come from the worker's per-tick metadata
+        // patch. Always overlay when present — the worker's snapshot is
+        // strictly fresher than whatever load_all_rag_config_progress put
+        // there at page-mount time.
+        const rag_progress = (
+          job.metadata as { rag_progress?: RagProgress } | null
+        )?.rag_progress
+        if (rag_progress) {
+          progress[rag_config_id] = rag_progress
+          logs[rag_config_id] = rag_progress.logs ?? []
+        }
+
+        if (!is_terminal(job.status)) {
+          status[rag_config_id] = "running"
+          running[rag_config_id] = true
+        } else {
+          running[rag_config_id] = false
+          if (job.status === "succeeded") {
+            const has_errs = (job.progress?.error ?? 0) > 0
+            // Re-derive from the latest progress for the "succeeded but
+            // silently incomplete" case (worker reconciles silent skips
+            // into progress.error, so has_errs catches those too).
+            const p = progress[rag_config_id]
+            status[rag_config_id] = has_errs
+              ? "completed_with_errors"
+              : p
+                ? calculateStatus(p)
+                : "complete"
+          } else {
+            // failed / cancelled
+            status[rag_config_id] = "completed_with_errors"
+          }
+        }
+      }
+
+      return {
+        ...state,
+        progress,
+        logs,
+        status,
+        running_rag_configs: running,
+      }
+    })
+  }
+}
+
+jobs.subscribe(reflect_jobs_into_rag_store)
 
 // derived store that gets project state by project ID and initializes state if does not exist yet
 export function getProjectRagStateStore(project_id: string) {
