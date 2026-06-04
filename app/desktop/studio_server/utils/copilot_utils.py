@@ -25,7 +25,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
-from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
+from kiln_ai.datamodel import Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -35,6 +35,12 @@ from kiln_ai.datamodel.task_output import (
     TaskOutputRating,
 )
 from kiln_ai.utils.config import Config
+
+# Tag prefix the multi-turn synthetic-user runner stamps on each chain's leaf
+# TaskRun — see kiln_ai.synthetic_user.runner._TAG_PREFIX_SU_BATCH. Kept in
+# sync manually; if the runner ever changes its tag scheme this constant
+# moves too.
+_TAG_PREFIX_SU_BATCH = "synthetic_user_batch:"
 
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
@@ -298,3 +304,39 @@ def create_dataset_task_runs(
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 
     return result
+
+
+def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
+    """Return the leaf TaskRuns of all chains tagged with the given batch_tag.
+
+    The multi-turn runner tags only the leaf of each chain with
+    "synthetic_user_batch:{batch_tag}". Walking parent_task_run_id from the
+    leaf reconstructs the full conversation if a caller needs it; for eval
+    purposes the leaf alone is enough because its `.trace` field already
+    holds the cumulative OpenAI-format conversation.
+    """
+    target_tag = f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"
+    return [run for run in task.runs() if target_tag in (run.tags or [])]
+
+
+def tag_multi_turn_chains_for_eval(
+    leaves: list[TaskRun],
+    eval_tag: str,
+    golden_tag: str,
+) -> None:
+    """Add eval and golden filter tags to existing chain leaves.
+
+    Tags are deduplicated. We tag every leaf with BOTH eval and golden tags
+    so the chain is part of the eval dataset AND the golden ratings set —
+    multi-turn batches are small (≤10 chains) so there's no meaningful
+    split. No train tag is applied (multi-turn evals don't have a train
+    set in MVP — see specs/projects/eval_builder_v2/design.md).
+
+    Mutates each leaf in place and persists via save_to_file.
+    """
+    for leaf in leaves:
+        tags = set(leaf.tags or [])
+        tags.add(eval_tag)
+        tags.add(golden_tag)
+        leaf.tags = sorted(tags)
+        leaf.save_to_file()

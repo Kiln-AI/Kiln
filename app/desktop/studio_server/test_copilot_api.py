@@ -14,8 +14,10 @@ from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import Project, Task, TaskRun
+from kiln_ai.datamodel.eval import EvalDataType
 from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
 
 
@@ -445,3 +447,236 @@ class TestCreateSpecWithCopilot:
         specs = task.specs()
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
+
+
+class TestClassifySpecDescription:
+    """Stub endpoint. Returns 501 until kiln_server ships the real classifier."""
+
+    def test_returns_501(self, client):
+        response = client.post(
+            "/api/copilot/classify_spec_description",
+            json={"description": "A classification request"},
+        )
+
+        assert response.status_code == 501
+
+
+class TestCreateSpecWithCopilotMultiTurn:
+    """Multi-turn save path: tag existing chain leaves instead of synthesising
+    new examples. See specs/projects/eval_builder_v2/design.md for context.
+    """
+
+    BATCH_TAG = "abc123def456"
+
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project_path = tmp_path / "test_project" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="Test Project", path=project_path)
+        project.save_to_file()
+        task = Task(
+            name="Test Task",
+            instruction="Test instruction",
+            description="Test task",
+            parent=project,
+        )
+        task.save_to_file()
+        return project, task
+
+    @pytest.fixture
+    def synthetic_chain_leaves(self, project_and_task):
+        """Persist three single-run "chains" tagged like the multi-turn runner
+        leaves them. Single TaskRuns (no actual multi-turn parents) are
+        sufficient: the endpoint only cares about the leaf tag.
+        """
+        _, task = project_and_task
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "haiku",
+                "model_provider": "openrouter",
+                "adapter_name": "kiln_synthetic_user_runner",
+            },
+        )
+        leaves = []
+        for i in range(3):
+            run = TaskRun(
+                parent=task,
+                input=f"input {i}",
+                input_source=source,
+                output=TaskOutput(output=f"output {i}", source=source),
+                tags=[
+                    "synthetic_user_case",
+                    f"synthetic_user_batch:{TestCreateSpecWithCopilotMultiTurn.BATCH_TAG}",
+                ],
+            )
+            run.save_to_file()
+            leaves.append(run)
+        return leaves
+
+    @pytest.fixture
+    def multi_turn_request_data(self):
+        step_config = {
+            "task_metadata": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+            },
+            "prompt": "Test prompt",
+        }
+        return {
+            "name": "Multi Turn Spec",
+            "definition": "The agent should not fabricate policies",
+            "properties": {
+                "spec_type": SpecType.issue.value,
+                "issue_description": "Don't make stuff up",
+            },
+            "evaluate_full_trace": True,
+            "judge_info": step_config,
+            "multi_turn": {"batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG},
+            "task_description": "Test task",
+            "task_prompt_with_example": "Test prompt",
+        }
+
+    def test_multi_turn_save_success_tags_chains_and_creates_eval(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 200, response.text
+        res = response.json()
+        assert res["name"] == "Multi Turn Spec"
+        assert res["eval_id"] is not None
+        # Multi-turn doesn't snapshot a generation config on the spec —
+        # the operational state lives on the Eval.
+        assert res["synthetic_data_generation_session_config"] is None
+
+        # Eval: full_trace data type + judge config attached.
+        # Note: train_set_filter_id is saved as None on disk but a
+        # backward-compat migration in Eval (libs/core/.../eval.py
+        # migrate_train_set_filter_id) auto-populates it to
+        # tag::train_<name> on read for legacy evals. The functional
+        # invariant for multi-turn is "no runs tagged with train_*",
+        # checked below — the field value itself is incidental.
+        evals = task.evals()
+        assert len(evals) == 1
+        eval_obj = evals[0]
+        assert eval_obj.evaluation_data_type == EvalDataType.full_trace
+        assert eval_obj.eval_set_filter_id == "tag::eval_multi_turn_spec"
+        assert eval_obj.current_config_id is not None
+
+        # Leaves got the eval + golden tags applied on top of their existing
+        # synthetic_user_* tags. No train tag (multi-turn has no train set).
+        expected_eval_tag = "eval_multi_turn_spec"
+        expected_golden_tag = "eval_golden_multi_turn_spec"
+        train_tag = "train_multi_turn_spec"
+        for leaf in task.runs():
+            assert expected_eval_tag in leaf.tags
+            assert expected_golden_tag in leaf.tags
+            assert train_tag not in leaf.tags
+            assert "synthetic_user_case" in leaf.tags
+
+    def test_multi_turn_save_404_when_batch_tag_matches_nothing(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 404
+        assert "batch_tag" in response.json()["message"]
+        # No models created when the lookup fails up front.
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_validator_rejects_both_multi_turn_and_sdg_config(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        step_config = {
+            "task_metadata": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+            },
+            "prompt": "Test prompt",
+        }
+        multi_turn_request_data["sdg_session_config"] = {
+            "topic_generation_config": step_config,
+            "input_generation_config": step_config,
+            "output_generation_config": step_config,
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        body = response.json()
+        # Pydantic surfaces the validator message somewhere in the response.
+        assert "multi_turn" in str(body) and "sdg_session_config" in str(body)
+
+    def test_validator_rejects_neither_multi_turn_nor_sdg_config(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        del multi_turn_request_data["multi_turn"]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "multi_turn" in str(response.json())
+
+    def test_validator_rejects_multi_turn_without_evaluate_full_trace(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        multi_turn_request_data["evaluate_full_trace"] = False
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "evaluate_full_trace" in str(response.json())

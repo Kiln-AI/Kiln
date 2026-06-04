@@ -44,8 +44,10 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     create_dataset_task_runs,
+    find_multi_turn_chain_leaves,
     generate_copilot_examples,
     get_copilot_api_key,
+    tag_multi_turn_chains_for_eval,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, HTTPException, Path
@@ -60,7 +62,7 @@ from kiln_ai.datamodel.spec import (
     SyntheticDataGenerationStepConfig,
     TaskSample,
 )
-from kiln_ai.datamodel.spec_properties import SpecProperties
+from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.spec_utils import (
@@ -76,25 +78,78 @@ from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     SubmitAnswersRequest,
 )
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
+
+
+class ClassifySpecDescriptionInput(BaseModel):
+    """Free-text description of an eval the user wants to build. The
+    endpoint maps it to one of the 9 spec types and pre-fills the
+    property_values for that type so the v2 builder can skip the
+    template-carousel step entirely.
+    """
+
+    description: str = Field(
+        description="Free-text description of what the eval should check."
+    )
+    task_prompt: str | None = Field(
+        default=None,
+        description="Optional task prompt for context (improves classification "
+        "accuracy when the spec relates to a specific task).",
+    )
+
+
+class ClassifySpecDescriptionOutput(BaseModel):
+    """Classified spec type + suggested name + spec_type-specific property
+    values. The `property_values` dict keys match the FieldConfig keys
+    defined for the chosen spec_type (see
+    app/web_ui/.../select_template/spec_templates.ts).
+    """
+
+    spec_type: SpecType = Field(description="The classified spec type.")
+    suggested_name: str = Field(
+        description="A filename-safe name for the new spec, derived from the description."
+    )
+    property_values: dict[str, str] = Field(
+        description="Pre-filled property values for the chosen spec_type. "
+        "Keys correspond to the field_configs of that spec_type."
+    )
+
+
+class MultiTurnSaveInfo(BaseModel):
+    """Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
+    The endpoint walks chains tagged with this batch_tag and applies eval/golden
+    filter tags instead of generating new examples.
+    """
+
+    batch_tag: str = Field(
+        description="The batch_tag emitted by the multi-turn synthetic-user runner "
+        "(see kiln_ai.synthetic_user.runner). Identifies the set of conversation "
+        "chains already persisted to disk that this Eval should evaluate."
+    )
 
 
 class CreateSpecWithCopilotRequest(BaseModel):
     """Request model for creating a spec with Kiln Copilot.
 
-    This endpoint uses Kiln Copilot to:
-    - Generate batch examples for eval, train, and golden datasets
-    - Create a judge eval config
-    - Create an eval with appropriate template/output scores
-    - Create and save the spec
+    Two synthesis paths are supported, exactly one must be set per request:
 
-    If you don't want to use copilot, use the regular POST /spec endpoint instead.
+    - **Single-turn:** caller supplies `sdg_session_config`. Endpoint calls
+      `generate_copilot_examples` for fresh I/O pairs, splits them into
+      eval/train/golden datasets, and tags new TaskRuns.
+
+    - **Multi-turn:** caller supplies `multi_turn` with a `batch_tag` pointing
+      at chains already on disk (created earlier by the synthetic-user runner).
+      Endpoint tags the existing chain leaves with eval/golden filter tags;
+      no new TaskRuns are created. `evaluate_full_trace` must be True.
+
+    If you don't want copilot at all, use POST /spec instead.
 
     The client is responsible for building:
-    - definition: The spec definition string (use buildSpecDefinition on client)
-    - properties: The spec properties object (filtered, with spec_type included)
+    - definition: the spec definition string (buildSpecDefinition on client)
+    - properties: the spec properties object (filtered, with spec_type included)
     """
 
     name: FilenameString
@@ -108,13 +163,53 @@ class CreateSpecWithCopilotRequest(BaseModel):
     evaluate_full_trace: bool = False
     reviewed_examples: list[ReviewedExample] = Field(default_factory=list)
     judge_info: SyntheticDataGenerationStepConfigApi
-    sdg_session_config: SyntheticDataGenerationSessionConfigApi
+    sdg_session_config: SyntheticDataGenerationSessionConfigApi | None = None
+    multi_turn: MultiTurnSaveInfo | None = None
     task_description: str = ""
     task_prompt_with_example: str = ""
     task_sample: TaskSample | None = None
 
+    @model_validator(mode="after")
+    def validate_synthesis_path(self) -> Self:
+        if self.multi_turn is not None and self.sdg_session_config is not None:
+            raise ValueError(
+                "Pass exactly one of `multi_turn` or `sdg_session_config` — not both."
+            )
+        if self.multi_turn is None and self.sdg_session_config is None:
+            raise ValueError(
+                "Must pass one of `multi_turn` (for multi-turn chains already on "
+                "disk) or `sdg_session_config` (for fresh single-turn synthesis)."
+            )
+        if self.multi_turn is not None and not self.evaluate_full_trace:
+            raise ValueError(
+                "Multi-turn save requires `evaluate_full_trace=True` — the eval "
+                "evaluates full conversation traces, not single I/O pairs."
+            )
+        return self
+
 
 def connect_copilot_api(app: FastAPI):
+    @app.post(
+        "/api/copilot/classify_spec_description",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval(
+            "Classify a free-text spec description?"
+        ),
+    )
+    async def classify_spec_description(
+        input: ClassifySpecDescriptionInput,
+    ) -> ClassifySpecDescriptionOutput:
+        """Classify a free-text spec description into one of the 9 spec types.
+
+        Not implemented yet — the underlying kiln_server classifier hasn't
+        shipped. Returns 501 so callers can detect this and fall back to
+        manual spec-type selection.
+        """
+        raise HTTPException(
+            status_code=501,
+            detail="Spec classification isn't implemented yet.",
+        )
+
     @app.post(
         "/api/copilot/clarify_spec",
         tags=["Copilot"],
@@ -315,10 +410,27 @@ def connect_copilot_api(app: FastAPI):
             spec_type, request.evaluate_full_trace
         )
 
+        # Multi-turn path: find existing chain leaves up front so we 404 before
+        # creating any models if the batch_tag matches nothing.
+        multi_turn_leaves: list[TaskRun] = []
+        if request.multi_turn is not None:
+            multi_turn_leaves = find_multi_turn_chain_leaves(
+                task, request.multi_turn.batch_tag
+            )
+            if not multi_turn_leaves:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        f"No multi-turn chains found for batch_tag "
+                        f"'{request.multi_turn.batch_tag}'."
+                    ),
+                )
+
         # Build models but don't save yet, collect all models first
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
 
-        # 1. Create the Eval
+        # 1. Create the Eval. Multi-turn has no train set (small datasets,
+        # not used for fine-tuning) so train_set_filter_id is None.
         eval = Eval(
             parent=task,
             name=request.name,
@@ -326,14 +438,16 @@ def connect_copilot_api(app: FastAPI):
             template=template,
             output_scores=output_scores,
             eval_set_filter_id=eval_set_filter_id,
-            train_set_filter_id=train_set_filter_id,
+            train_set_filter_id=(
+                None if request.multi_turn is not None else train_set_filter_id
+            ),
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
         )
         models_to_save.append(eval)
 
-        # 2. Create judge eval config
+        # 2. Create judge eval config (same in both paths)
         eval_config = EvalConfig(
             parent=eval,
             name=generate_memorable_name(),
@@ -350,44 +464,68 @@ def connect_copilot_api(app: FastAPI):
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id
 
-        # 3. Generate examples via copilot API
-        api_key = get_copilot_api_key()
-        task_input_schema = (
-            str(task.input_json_schema) if task.input_json_schema else ""
-        )
-        task_output_schema = (
-            str(task.output_json_schema) if task.output_json_schema else ""
-        )
-        all_examples = await generate_copilot_examples(
-            api_key=api_key,
-            target_task_info=TaskInfoApi(
-                task_prompt=request.task_prompt_with_example,
-                task_input_schema=task_input_schema,
-                task_output_schema=task_output_schema,
-            ),
-            sdg_session_config=request.sdg_session_config,
-            spec_definition=request.definition,
-        )
+        # 3+4. Single-turn: synthesise examples + create TaskRuns.
+        # Multi-turn: skipped — chains already exist on disk.
+        task_runs: list[TaskRun] = []
+        dataset_runs = None
+        sdg_session_config_for_spec: SyntheticDataGenerationSessionConfig | None = None
+        if request.multi_turn is None:
+            assert request.sdg_session_config is not None  # validator guarantees
+            api_key = get_copilot_api_key()
+            task_input_schema = (
+                str(task.input_json_schema) if task.input_json_schema else ""
+            )
+            task_output_schema = (
+                str(task.output_json_schema) if task.output_json_schema else ""
+            )
+            all_examples = await generate_copilot_examples(
+                api_key=api_key,
+                target_task_info=TaskInfoApi(
+                    task_prompt=request.task_prompt_with_example,
+                    task_input_schema=task_input_schema,
+                    task_output_schema=task_output_schema,
+                ),
+                sdg_session_config=request.sdg_session_config,
+                spec_definition=request.definition,
+            )
 
-        # 4. Create TaskRuns for eval, train, and golden datasets
-        dataset_runs = create_dataset_task_runs(
-            all_examples=all_examples,
-            reviewed_examples=request.reviewed_examples,
-            eval_tag=eval_tag,
-            train_tag=train_tag,
-            golden_tag=golden_tag,
-            spec_name=request.name,
-        )
-        task_runs = dataset_runs.task_runs
-        for run in task_runs:
-            run.parent = task
-        models_to_save.extend(task_runs)
+            dataset_runs = create_dataset_task_runs(
+                all_examples=all_examples,
+                reviewed_examples=request.reviewed_examples,
+                eval_tag=eval_tag,
+                train_tag=train_tag,
+                golden_tag=golden_tag,
+                spec_name=request.name,
+            )
+            task_runs = dataset_runs.task_runs
+            for run in task_runs:
+                run.parent = task
+            models_to_save.extend(task_runs)
 
-        # 5. Create the Spec using pre-computed definition and properties from client
-        topic_generation_config = request.sdg_session_config.topic_generation_config
-        input_generation_config = request.sdg_session_config.input_generation_config
-        output_generation_config = request.sdg_session_config.output_generation_config
+            # Snapshot the generation config on the Spec (single-turn only).
+            topic_cfg = request.sdg_session_config.topic_generation_config
+            input_cfg = request.sdg_session_config.input_generation_config
+            output_cfg = request.sdg_session_config.output_generation_config
+            sdg_session_config_for_spec = SyntheticDataGenerationSessionConfig(
+                topic_generation_config=SyntheticDataGenerationStepConfig(
+                    model_name=topic_cfg.task_metadata.model_name,
+                    provider_name=topic_cfg.task_metadata.model_provider_name,
+                    prompt=topic_cfg.prompt,
+                ),
+                input_generation_config=SyntheticDataGenerationStepConfig(
+                    model_name=input_cfg.task_metadata.model_name,
+                    provider_name=input_cfg.task_metadata.model_provider_name,
+                    prompt=input_cfg.prompt,
+                ),
+                output_generation_config=SyntheticDataGenerationStepConfig(
+                    model_name=output_cfg.task_metadata.model_name,
+                    provider_name=output_cfg.task_metadata.model_provider_name,
+                    prompt=output_cfg.prompt,
+                ),
+            )
 
+        # 5. Create the Spec. Multi-turn leaves sdg_session_config unset —
+        # the operational state lives on the Eval (full_trace + filter_ids).
         spec = Spec(
             parent=task,
             name=request.name,
@@ -398,23 +536,7 @@ def connect_copilot_api(app: FastAPI):
             tags=[],
             eval_id=eval.id,
             task_sample=request.task_sample,
-            synthetic_data_generation_session_config=SyntheticDataGenerationSessionConfig(
-                topic_generation_config=SyntheticDataGenerationStepConfig(
-                    model_name=topic_generation_config.task_metadata.model_name,
-                    provider_name=topic_generation_config.task_metadata.model_provider_name,
-                    prompt=topic_generation_config.prompt,
-                ),
-                input_generation_config=SyntheticDataGenerationStepConfig(
-                    model_name=input_generation_config.task_metadata.model_name,
-                    provider_name=input_generation_config.task_metadata.model_provider_name,
-                    prompt=input_generation_config.prompt,
-                ),
-                output_generation_config=SyntheticDataGenerationStepConfig(
-                    model_name=output_generation_config.task_metadata.model_name,
-                    provider_name=output_generation_config.task_metadata.model_provider_name,
-                    prompt=output_generation_config.prompt,
-                ),
-            ),
+            synthetic_data_generation_session_config=sdg_session_config_for_spec,
         )
         models_to_save.append(spec)
 
@@ -431,10 +553,19 @@ def connect_copilot_api(app: FastAPI):
             for run in task_runs:
                 run.save_to_file()
                 saved_models.append(run)
-                dataset_runs.save_pending_feedback(run)
+                if dataset_runs is not None:
+                    dataset_runs.save_pending_feedback(run)
 
             spec.save_to_file()
             saved_models.append(spec)
+
+            # Multi-turn: tag existing chain leaves with eval/golden filter
+            # tags AFTER spec has saved. Tag-add is idempotent (set semantics);
+            # leaves persisted to disk pick up the new tags on next read.
+            # Failure here would leave the spec without a populated dataset —
+            # surface it so the cleanup path runs.
+            if request.multi_turn is not None:
+                tag_multi_turn_chains_for_eval(multi_turn_leaves, eval_tag, golden_tag)
         except Exception:
             # Clean up any models that were successfully saved before the error
             for model in reversed(saved_models):
