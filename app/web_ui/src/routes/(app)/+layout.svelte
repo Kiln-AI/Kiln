@@ -18,6 +18,10 @@
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
   import ChatBar from "./chat_bar.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
+  import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
+  import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
+  import JobsDialog from "$lib/components/jobs_dialog.svelte"
+  import { jobs_dialog } from "$lib/stores/jobs_dialog"
   import { Section } from "$lib/ui/section"
   import Dialog from "$lib/ui/dialog.svelte"
   import SidebarRail from "./sidebar_rail.svelte"
@@ -424,6 +428,20 @@
         <li class="mt-auto pt-2 bg-transparent">
           <ProgressWidget />
         </li>
+        <li class="menu-sm">
+          <button
+            type="button"
+            class="text-xs text-base-content/60"
+            on:click={() => jobs_dialog.open()}
+            aria-label="Background jobs"
+          >
+            <div class="sidebar-icon opacity-60">
+              <JobsIcon />
+            </div>
+            In progress
+            <SidebarJobsIndicator variant="inline" />
+          </button>
+        </li>
         {#if $update_info.update_result && $update_info.update_result.has_update}
           <li class="menu-sm mt-2">
             <a
@@ -472,6 +490,8 @@
 <Dialog bind:this={taskDialog} title="Select Task" width="wide">
   <SelectTasksMenu on:dismiss={() => taskDialog?.close()} />
 </Dialog>
+
+<JobsDialog />
 
 <style>
   :global(ul > li.menu-nested) {

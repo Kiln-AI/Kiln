@@ -8,6 +8,9 @@
   import SidebarRailSettings from "./sidebar_rail_settings.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
+  import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
+  import { jobs_dialog } from "$lib/stores/jobs_dialog"
 
   export let section: Section = Section.None
   export let openTaskDialog: () => void
@@ -114,6 +117,13 @@
   <div class="flex-1"></div>
 
   <SidebarRailProgress />
+
+  <SidebarRailItem on_click={() => jobs_dialog.open()} label="In progress">
+    <div slot="icon" class="w-full h-full relative">
+      <JobsIcon />
+      <SidebarJobsIndicator variant="rail" />
+    </div>
+  </SidebarRailItem>
 
   <SidebarRailSettings active={section === Section.Settings} />
 </nav>

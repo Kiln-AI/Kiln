@@ -351,7 +351,11 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         return None
 
     def _get_manager_for_request(self, request: Request) -> GitSyncManager | None:
-        """Extract project_id from URL, resolve to path, return manager if auto-sync enabled."""
+        """Extract project_id from URL, resolve to path, return manager if auto-sync enabled.
+
+        Keep the project_id -> manager resolution below in sync with the request-free
+        copy in save_context.get_manager_for_project (used by background job workers).
+        """
         match = PROJECT_ID_PATTERN.match(request.url.path)
         if match is None:
             return None
