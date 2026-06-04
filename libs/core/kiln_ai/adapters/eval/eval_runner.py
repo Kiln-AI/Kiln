@@ -1,7 +1,6 @@
 import json
 import logging
 from dataclasses import dataclass
-from random import random
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
 import litellm
@@ -210,16 +209,9 @@ class EvalRunner:
         async for progress in runner.run():
             yield progress
 
-    def should_error_randomly(self) -> bool:
-        return random() < 0.50
-
     async def run_job(self, job: EvalJob) -> bool:
 
         try:
-            if self.should_error_randomly():
-                raise ValueError(
-                    "Evaluation failed because one of the servers in the server room is on fire. Please contact Leonard to fix it and re-run the eval once the issue is fixed."
-                )
             # Create the evaluator for this eval config/run config pair
             evaluator = eval_adapter_from_type(job.eval_config.config_type)(
                 job.eval_config,
