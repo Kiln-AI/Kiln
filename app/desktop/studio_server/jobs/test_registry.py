@@ -682,7 +682,10 @@ async def test_apply_derived_preserves_error_when_compute_state_returns_none():
                 await type(self).gate.wait()
             except asyncio.CancelledError:
                 task = asyncio.current_task()
-                if task is not None:
+                # task.uncancel() was added in Python 3.11; on 3.10 simply
+                # swallowing the CancelledError exercises the same worst-case
+                # "swallows cancel and returns normally" path.
+                if task is not None and hasattr(task, "uncancel"):
                     task.uncancel()
             return _EmptyResult()
 
