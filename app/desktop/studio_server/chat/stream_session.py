@@ -10,6 +10,7 @@ from app.desktop.studio_server.chat.constants import (
     DENIED_TOOL_OUTPUT,
     FUNCTION_NAME_TO_TOOL_ID,
     MAX_TOOL_ROUNDS,
+    SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
     SSE_TYPE_TOOL_CALLS_PENDING,
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
@@ -21,6 +22,9 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_requires_user_approval,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
+    ENABLE_AUTO_MODE_TOOL_NAME,
+)
 from kiln_ai.tools.tool_registry import tool_from_id
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -104,6 +108,30 @@ def _pending_item_from_event(event: ToolInputAvailableEvent) -> dict[str, Any]:
 def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> bytes:
     items = [_pending_item_from_event(e) for e in events]
     payload = {"type": SSE_TYPE_TOOL_CALLS_PENDING, "items": items}
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+def _format_consent_required_sse(
+    trace_id: str | None,
+    enable_tool_call_id: str,
+    reason: str | None,
+    siblings: list[ToolInputAvailableEvent],
+) -> bytes:
+    """Format the ``auto-mode-consent-required`` SSE the interactive stream emits
+    when the model calls ``enable_auto_mode``.
+
+    ``sibling_tool_calls`` carries any other (non-server) client tool calls from
+    the same round so the accept/decline paths can resolve every ``tool_call_id``
+    the backend is waiting on. The model is instructed to call ``enable_auto_mode``
+    alone, so this is normally empty.
+    """
+    payload = {
+        "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
+        "trace_id": trace_id,
+        "enable_tool_call_id": enable_tool_call_id,
+        "reason": reason,
+        "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
+    }
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
@@ -272,6 +300,31 @@ class ChatStreamSession:
                         for e in round_state.tool_input_events
                         if not tool_input_executor_is_server(e)
                     ]
+
+                    # enable_auto_mode interception (architecture §3.4): the model
+                    # asked to enable auto mode. Surface a consent request and
+                    # return WITHOUT executing it — enable_auto_mode is a signal,
+                    # never run as a tool. Accept/decline is handled out-of-band by
+                    # the auto-mode endpoints. This must run before the approval
+                    # gate so the consent UI takes precedence.
+                    enable_evt = next(
+                        (
+                            e
+                            for e in client_events
+                            if e.toolName == ENABLE_AUTO_MODE_TOOL_NAME
+                        ),
+                        None,
+                    )
+                    if enable_evt is not None:
+                        siblings = [e for e in client_events if e is not enable_evt]
+                        yield _format_consent_required_sse(
+                            trace_id=round_state.trace_id,
+                            enable_tool_call_id=enable_evt.toolCallId,
+                            reason=enable_evt.input.get("reason"),
+                            siblings=siblings,
+                        )
+                        return
+
                     needs_approval = [
                         e for e in client_events if tool_requires_user_approval(e)
                     ]

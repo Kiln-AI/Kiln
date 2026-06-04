@@ -149,7 +149,13 @@ def test_list_chat_sessions_forwards_to_kiln(
 
     assert r.status_code == 200
     assert r.json() == [
-        {"id": "trace-1", "title": "Hi", "updated_at": "2025-06-15T12:30:00Z"}
+        {
+            "id": "trace-1",
+            "title": "Hi",
+            "updated_at": "2025-06-15T12:30:00Z",
+            "auto_active": False,
+            "auto_run_id": None,
+        }
     ]
     mock_asyncio_detailed.assert_called_once()
     call_kwargs = mock_asyncio_detailed.call_args[1]

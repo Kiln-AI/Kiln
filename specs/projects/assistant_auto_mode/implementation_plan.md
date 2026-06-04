@@ -25,7 +25,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     current-turn buffer (reuse/promote `iter_with_keepalive`). Unit-tested against a fake upstream;
     explicitly assert client-disconnect does not cancel the run. (Architecture §2–§4.1, §9.)
 
-- [ ] **Phase 3 — App-server API surface + interception**
+- [x] **Phase 3 — App-server API surface + interception**
   - `enable_auto_mode` interception in `ChatStreamSession` → `auto-mode-consent-required` + return
     (Architecture §3.4). Endpoints `/api/chat/auto/{enable,decline,{run}/stop,{run}/events,sessions}`
     (§4.2). Session-list enrichment (`auto_active`/`auto_run_id`, §4.3). Register

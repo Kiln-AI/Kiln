@@ -8,7 +8,6 @@ from .registry import (
     AutoChatConcurrencyError,
     AutoChatRegistry,
     AutoChatRun,
-    AutoRunNotFoundError,
     auto_chat_registry,
 )
 from .runner import AutoChatRunner
@@ -20,7 +19,6 @@ __all__ = [
     "AutoChatRun",
     "AutoChatRunner",
     "AutoChatSeed",
-    "AutoRunNotFoundError",
     "AutoRunRecord",
     "AutoRunStatus",
     "auto_chat_registry",

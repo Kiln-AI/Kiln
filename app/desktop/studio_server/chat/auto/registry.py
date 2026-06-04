@@ -41,10 +41,6 @@ class AutoChatConcurrencyError(Exception):
     caller (Phase 3 maps it to HTTP 429)."""
 
 
-class AutoRunNotFoundError(Exception):
-    pass
-
-
 def _resolve_max_concurrent(explicit: int | None) -> int:
     if explicit is not None:
         return explicit

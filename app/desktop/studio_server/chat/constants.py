@@ -11,6 +11,7 @@ MAX_TOOL_ROUNDS = 100
 SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
 SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
+SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED = "auto-mode-consent-required"
 
 DENIED_TOOL_OUTPUT = json.dumps(
     {"error": "The user did not accept the toolcall"}, ensure_ascii=False
