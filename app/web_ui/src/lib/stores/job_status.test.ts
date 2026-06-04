@@ -124,8 +124,9 @@ describe("job_status_display / job_status_badge_class", () => {
       progress: { success: 4, error: 1, total: 5, updated_at: "now" },
     })
     expect(job_status_display(job)).toBe("Completed with errors")
-    // Warning tone, not primary — finished, but worth a look.
-    expect(job_status_badge_class(job)).toBe("badge-outline badge-warning")
+    // Error tone — matches the RAG processing-status badges' completed-with-
+    // errors color so pipeline-state surfaces look consistent.
+    expect(job_status_badge_class(job)).toBe("badge-outline badge-error")
   })
 
   it("shows plain 'Completed' for a succeeded job with no errors", () => {
@@ -139,17 +140,27 @@ describe("job_status_display / job_status_badge_class", () => {
 })
 
 describe("progress_label", () => {
-  it("shows count only when total is null", () => {
+  it("shows processed count only when total is null", () => {
     expect(progress_label({ success: 3, error: 0 })).toBe("3")
   })
 
-  it("shows success / total", () => {
+  it("shows processed / total (no errors)", () => {
     expect(progress_label({ success: 3, error: 0, total: 10 })).toBe("3 / 10")
   })
 
-  it("appends errored count when present", () => {
+  it("counts errors as part of `x` (processed = success + error)", () => {
+    // 7 succeeded + 3 errored => 10 processed of 100. NOT '7 / 100 (3 ...)'.
+    expect(progress_label({ success: 7, error: 3, total: 100 })).toBe(
+      "10 / 100 (3 errors)",
+    )
+  })
+
+  it("pluralizes 'error' / 'errors' based on count", () => {
+    expect(progress_label({ success: 3, error: 1, total: 10 })).toBe(
+      "4 / 10 (1 error)",
+    )
     expect(progress_label({ success: 3, error: 2, total: 10 })).toBe(
-      "3 / 10 (2 errored)",
+      "5 / 10 (2 errors)",
     )
   })
 

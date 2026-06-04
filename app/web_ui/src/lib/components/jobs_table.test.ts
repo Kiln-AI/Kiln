@@ -179,7 +179,10 @@ describe("JobsTable", () => {
     expect(getByText("View Errors")).not.toBeNull()
   })
 
-  it("renders the Details primary text in red when the job has errored", () => {
+  it("keeps the Details primary text neutral even when the job errored", () => {
+    // Errored jobs surface their state through the status badge (red) and the
+    // Message column — the Details column stays neutral so the row doesn't
+    // visually scream and the job identity stays readable.
     jobs.set([
       makeJob({
         id: "failed",
@@ -189,9 +192,9 @@ describe("JobsTable", () => {
     ])
     const { getByText } = render(JobsTable)
     const primary = getByText("Eval: Bad Run")
-    // Either the text node itself or an ancestor cell carries the error color.
-    const cell = primary.closest(".text-error") || primary
-    expect(cell.className).toContain("text-error")
+    expect(primary.className).not.toContain("text-error")
+    // And no ancestor wraps it in text-error either.
+    expect(primary.closest(".text-error")).toBeNull()
   })
 
   it("still renders a string display.secondary as a single line (back-compat)", () => {

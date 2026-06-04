@@ -56,8 +56,10 @@ export function job_status_display(job: JobRecord): string {
 // (table_rag_config_row.svelte). Both surfaces show pipeline state, and
 // matching them keeps the visual language consistent across pages.
 export function job_status_badge_class(job: JobRecord): string {
-  // Completed-with-errors gets the warning tone — finished, but worth a look.
-  if (succeeded_with_errors(job)) return "badge-outline badge-warning"
+  // Completed-with-errors gets the error tone — matches the RAG "Processing
+  // Status" badges' `completed_with_errors` color so the visual language is
+  // consistent across pipeline-state surfaces.
+  if (succeeded_with_errors(job)) return "badge-outline badge-error"
   switch (job.status) {
     case "running":
       return "badge-outline badge-success"
@@ -110,12 +112,20 @@ export function available_actions(job: JobRecord): JobAction[] {
   }
 }
 
+// Display rule: the first number is *processed* (success + error), not just
+// success. Errored items are still "handled" — we're not going to retry them
+// in this run — so counting them in `x` matches both the user's mental model
+// of progress and what `progress_percent` already does for the bar. The raw
+// success/error counts stay separate on the backend; this is a UI-only choice.
 export function progress_label(progress: JobProgress | undefined): string {
   const success = progress?.success ?? 0
-  const total = progress?.total
-  const base = total == null ? `${success}` : `${success} / ${total}`
   const error = progress?.error ?? 0
-  return error > 0 ? `${base} (${error} errored)` : base
+  const processed = success + error
+  const total = progress?.total
+  const base = total == null ? `${processed}` : `${processed} / ${total}`
+  return error > 0
+    ? `${base} (${error} ${error === 1 ? "error" : "errors"})`
+    : base
 }
 
 export function progress_percent(progress: JobProgress | undefined): number {

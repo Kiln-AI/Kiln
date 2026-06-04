@@ -228,17 +228,11 @@
         {#each $jobs as job (job.id)}
           {@const primary = display_primary(job) || job.name || job.id}
           {@const url = back_url_for(job)}
-          {@const errored = has_errors(job)}
           <tr>
             <td class="text-sm max-w-72">
-              <div
-                class="truncate font-medium {errored ? 'text-error' : ''}"
-                title={primary}
-              >
+              <div class="truncate font-medium" title={primary}>
                 {#if url}
-                  <a href={url} class="link {errored ? 'text-error' : ''}"
-                    >{primary}</a
-                  >
+                  <a href={url} class="link">{primary}</a>
                 {:else}
                   {primary}
                 {/if}
