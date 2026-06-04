@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ..models.chat_completion_content_part_text_param import ChatCompletionContentPartTextParam
     from ..models.chat_completion_message_function_tool_call_param import ChatCompletionMessageFunctionToolCallParam
     from ..models.function_call import FunctionCall
+    from ..models.message_usage import MessageUsage
 
 
 T = TypeVar("T", bound="ChatCompletionAssistantMessageParamWrapper")
@@ -37,6 +38,8 @@ class ChatCompletionAssistantMessageParamWrapper:
             name (str | Unset):
             refusal (None | str | Unset):
             tool_calls (list[ChatCompletionMessageFunctionToolCallParam] | Unset):
+            latency_ms (int | None | Unset):
+            usage (MessageUsage | None | Unset):
     """
 
     role: Literal["assistant"]
@@ -49,12 +52,15 @@ class ChatCompletionAssistantMessageParamWrapper:
     name: str | Unset = UNSET
     refusal: None | str | Unset = UNSET
     tool_calls: list[ChatCompletionMessageFunctionToolCallParam] | Unset = UNSET
+    latency_ms: int | None | Unset = UNSET
+    usage: MessageUsage | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.audio import Audio
         from ..models.chat_completion_content_part_text_param import ChatCompletionContentPartTextParam
         from ..models.function_call import FunctionCall
+        from ..models.message_usage import MessageUsage
 
         role = self.role
 
@@ -112,6 +118,20 @@ class ChatCompletionAssistantMessageParamWrapper:
                 tool_calls_item = tool_calls_item_data.to_dict()
                 tool_calls.append(tool_calls_item)
 
+        latency_ms: int | None | Unset
+        if isinstance(self.latency_ms, Unset):
+            latency_ms = UNSET
+        else:
+            latency_ms = self.latency_ms
+
+        usage: dict[str, Any] | None | Unset
+        if isinstance(self.usage, Unset):
+            usage = UNSET
+        elif isinstance(self.usage, MessageUsage):
+            usage = self.usage.to_dict()
+        else:
+            usage = self.usage
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -133,6 +153,10 @@ class ChatCompletionAssistantMessageParamWrapper:
             field_dict["refusal"] = refusal
         if tool_calls is not UNSET:
             field_dict["tool_calls"] = tool_calls
+        if latency_ms is not UNSET:
+            field_dict["latency_ms"] = latency_ms
+        if usage is not UNSET:
+            field_dict["usage"] = usage
 
         return field_dict
 
@@ -143,6 +167,7 @@ class ChatCompletionAssistantMessageParamWrapper:
         from ..models.chat_completion_content_part_text_param import ChatCompletionContentPartTextParam
         from ..models.chat_completion_message_function_tool_call_param import ChatCompletionMessageFunctionToolCallParam
         from ..models.function_call import FunctionCall
+        from ..models.message_usage import MessageUsage
 
         d = dict(src_dict)
         role = cast(Literal["assistant"], d.pop("role"))
@@ -257,6 +282,32 @@ class ChatCompletionAssistantMessageParamWrapper:
 
                 tool_calls.append(tool_calls_item)
 
+        def _parse_latency_ms(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        latency_ms = _parse_latency_ms(d.pop("latency_ms", UNSET))
+
+        def _parse_usage(data: object) -> MessageUsage | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                usage_type_0 = MessageUsage.from_dict(data)
+
+                return usage_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MessageUsage | None | Unset, data)
+
+        usage = _parse_usage(d.pop("usage", UNSET))
+
         chat_completion_assistant_message_param_wrapper = cls(
             role=role,
             audio=audio,
@@ -266,6 +317,8 @@ class ChatCompletionAssistantMessageParamWrapper:
             name=name,
             refusal=refusal,
             tool_calls=tool_calls,
+            latency_ms=latency_ms,
+            usage=usage,
         )
 
         chat_completion_assistant_message_param_wrapper.additional_properties = d

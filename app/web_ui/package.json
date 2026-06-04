@@ -17,7 +17,7 @@
     "format_check": "prettier --check --plugin prettier-plugin-svelte ./"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "@redocly/cli": "^2.11.1",
     "@sveltejs/adapter-static": "^3.0.2",
     "@sveltejs/kit": "^2.20.6",

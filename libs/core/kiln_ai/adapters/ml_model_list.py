@@ -142,6 +142,7 @@ class ModelName(str, Enum):
     claude_opus_4_5 = "claude_opus_4_5"
     claude_opus_4_6 = "claude_opus_4_6"
     claude_opus_4_7 = "claude_opus_4_7"
+    claude_opus_4_8 = "claude_opus_4_8"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -255,6 +256,7 @@ class ModelName(str, Enum):
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
+    minimax_m3 = "minimax_m3"
     minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
     minimax_m2_1 = "minimax_m2_1"
@@ -514,6 +516,14 @@ CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -2001,17 +2011,17 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude Opus 4.7
+    # Claude Opus 4.8
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_opus_4_7,
-        friendly_name="Claude Opus 4.7",
+        name=ModelName.claude_opus_4_8,
+        friendly_name="Claude Opus 4.8",
         featured_rank=2,
         editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="anthropic/claude-opus-4.7",
+                model_id="anthropic/claude-opus-4.8",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
@@ -2032,13 +2042,58 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-8",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Claude Opus 4.7
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_7,
+        friendly_name="Claude Opus 4.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-7",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -7529,6 +7584,39 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Minimax M3
+    # 1M context, native multimodal (text/image/video input), sparse attention
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m3,
+        friendly_name="Minimax M3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m3",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents (via PDF-as-image)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # NOTE: M3 natively supports video but OpenRouter doesn't route it correctly
+                ],
             ),
         ],
     ),
