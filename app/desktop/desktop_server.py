@@ -33,6 +33,7 @@ from app.desktop.studio_server.dev_tools import connect_dev_tools
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
+from app.desktop.studio_server.judge_job_api import connect_judge_job_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
@@ -132,6 +133,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
     connect_evals_api(app)
+    connect_judge_job_api(app)
     connect_run_config_api(app)
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
