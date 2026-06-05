@@ -3,9 +3,9 @@
 Confidence intervals (Wilson, Newcombe), bootstrap difference CIs, the McNemar test
 for paired binary outcomes, the Wilcoxon signed-rank test, and small helpers
 (inverse-normal z, percentiles). Dependency-free (no numpy/scipy) so it ships in
-kiln-core with no new requirements. These functions back the built-in statistics
-tools (stats_tools.py) that Kiln agents call instead of hand-computing standard
-errors and significance.
+kiln-server with no new requirements. These functions back the ``POST /api/statistics``
+endpoint (statistics_api.py) that Kiln agents call — via the Kiln API tool — instead of
+hand-computing standard errors and significance.
 """
 
 from __future__ import annotations

@@ -19,7 +19,6 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
-from kiln_ai.tools.built_in_tools.stats_tools import StatisticsTool
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.utils.config import Config
@@ -42,8 +41,6 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 return MultiplyTool()
             case KilnBuiltInToolId.DIVIDE_NUMBERS:
                 return DivideTool()
-            case KilnBuiltInToolId.STATISTICS:
-                return StatisticsTool()
             case KilnBuiltInToolId.CALL_KILN_API:
                 api_base_url = Config.shared().kiln_local_api_base_url()
                 if not api_base_url:

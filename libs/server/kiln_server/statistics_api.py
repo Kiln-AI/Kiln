@@ -1,9 +1,14 @@
-"""Built-in statistics tool: confidence intervals and significance tests.
+"""Statistics endpoint: confidence intervals and significance tests.
 
-One tool (``statistics``) with an ``operation`` discriminator, so a Kiln agent
-computes standard errors, confidence intervals, and significance reliably
+One route (``POST /api/statistics``) with an ``operation`` discriminator, so a Kiln
+agent computes standard errors, confidence intervals, and significance reliably
 instead of doing the arithmetic in its own reasoning. The pure math lives in
-``stats_lib.py``; this module dispatches to it per operation.
+``statistics_lib.py``; this module validates input and dispatches to it per operation.
+
+This used to be a built-in ``statistics`` tool. It was moved behind the Kiln API tool
+(``call_kiln_api``) so it stays out of the system prompt for the vast majority of
+queries that never need significance testing — it surfaces only inside eval/spec/compare
+workflows via the kiln-chat skill's api_docs.
 
 Each operation takes one natural input form (no alternative encodings):
 - "proportion_ci": a proportion + n          -> Wilson CI + standard error
@@ -12,13 +17,14 @@ Each operation takes one natural input form (no alternative encodings):
 - "compare_paired": two paired numeric arrays -> paired bootstrap + Wilcoxon
 """
 
-import json
 import math
 import statistics
+from typing import Any, Literal
 
-from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
-from kiln_ai.tools.built_in_tools.stats_lib import (
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from kiln_server.statistics_lib import (
     bootstrap_difference_ci,
     mcnemar_chi2_cc,
     mcnemar_exact_p,
@@ -29,14 +35,7 @@ from kiln_ai.tools.built_in_tools.stats_lib import (
     wilson_difference_ci,
     z_for_confidence,
 )
-
-_CONFIDENCE_SCHEMA = {
-    "type": "number",
-    "description": "Confidence level in (0,1). Default 0.95.",
-    "default": 0.95,
-    "exclusiveMinimum": 0,
-    "exclusiveMaximum": 1,
-}
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 
 _POOLING_WARNING = (
     "Do not pool the same items across multiple run configs/formats — that double-counts "
@@ -45,12 +44,81 @@ _POOLING_WARNING = (
 )
 
 
-def _error(msg: str) -> ToolCallResult:
-    return ToolCallResult(
-        output=json.dumps({"error": msg}, ensure_ascii=False),
-        is_error=True,
-        error_message=msg,
+class StatisticsRequest(BaseModel):
+    """Input for ``POST /api/statistics``. Set ``operation`` and the params it needs."""
+
+    operation: Literal[
+        "proportion_ci",
+        "compare_proportions",
+        "mcnemar_paired",
+        "compare_paired",
+    ] = Field(
+        description="Which test to run (see the per-field [operation] tags for the params each one takes).",
     )
+    confidence: float = Field(
+        default=0.95,
+        gt=0,
+        lt=1,
+        description="Confidence level in (0,1). Default 0.95.",
+    )
+    # proportion_ci
+    proportion: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="[proportion_ci] the proportion as a fraction in [0,1] (e.g. 0.85).",
+    )
+    n: int | None = Field(
+        default=None,
+        ge=1,
+        description="[proportion_ci] sample size (> 0).",
+    )
+    # compare_proportions
+    proportion_a: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="[compare_proportions] baseline proportion in [0,1].",
+    )
+    n_a: int | None = Field(
+        default=None,
+        ge=1,
+        description="[compare_proportions] baseline sample size (> 0).",
+    )
+    proportion_b: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="[compare_proportions] treatment proportion in [0,1].",
+    )
+    n_b: int | None = Field(
+        default=None,
+        ge=1,
+        description="[compare_proportions] treatment sample size (> 0).",
+    )
+    # mcnemar_paired
+    outcomes_a: list[float] | None = Field(
+        default=None,
+        description="[mcnemar_paired] per-item baseline outcomes (0=fail, 1=pass). outcomes_a[i] and outcomes_b[i] must be the SAME item.",
+    )
+    outcomes_b: list[float] | None = Field(
+        default=None,
+        description="[mcnemar_paired] per-item treatment outcomes (0/1), positionally paired with outcomes_a.",
+    )
+    # compare_paired
+    values_a: list[float | None] | None = Field(
+        default=None,
+        description="[compare_paired] per-case baseline values (null allowed — that pair is skipped). values_a[i] and values_b[i] must be the same case.",
+    )
+    values_b: list[float | None] | None = Field(
+        default=None,
+        description="[compare_paired] per-case treatment values (null allowed), positionally paired with values_a.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Input coercion helpers (raise ValueError -> 422)
+# ---------------------------------------------------------------------------
 
 
 def _successes(proportion, n: int, label: str = "proportion") -> int:
@@ -75,25 +143,79 @@ def _require_n(value, label: str) -> int:
     return n
 
 
+def _coerce_binary(values, label: str) -> list[int]:
+    out: list[int] = []
+    for x in values:
+        try:
+            v = round(float(x))
+        except (TypeError, ValueError):
+            raise ValueError(f"{label} must contain only 0/1 values (got {x!r}).")
+        if v not in (0, 1):
+            raise ValueError(f"{label} must contain only 0/1 values (got {x!r}).")
+        out.append(v)
+    return out
+
+
+def _table_from_outcomes(req: StatisticsRequest) -> tuple[int, int, int, int]:
+    """Build the (n11, n10, n01, n00) 2x2 table from two aligned 0/1 arrays."""
+    oa, ob = req.outcomes_a, req.outcomes_b
+    if not isinstance(oa, list) or not isinstance(ob, list):
+        raise ValueError("'outcomes_a' and 'outcomes_b' must be arrays of 0/1 values.")
+    if len(oa) != len(ob):
+        raise ValueError(
+            f"Paired arrays must be equal length (got {len(oa)} vs {len(ob)})."
+        )
+    if len(oa) == 0:
+        raise ValueError("Paired arrays are empty.")
+    a = _coerce_binary(oa, "outcomes_a")
+    b = _coerce_binary(ob, "outcomes_b")
+    n11 = n10 = n01 = n00 = 0
+    for x, y in zip(a, b):
+        if x == 1 and y == 1:
+            n11 += 1
+        elif x == 1 and y == 0:
+            n10 += 1
+        elif x == 0 and y == 1:
+            n01 += 1
+        else:
+            n00 += 1
+    return (n11, n10, n01, n00)
+
+
+def _clean_pairs(values_a, values_b) -> tuple[list[float], list[float]]:
+    """Drop pairs where either side is None / NaN / non-numeric. Returns (a, b)."""
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for a, b in zip(values_a, values_b):
+        if a is None or b is None:
+            continue
+        try:
+            fa, fb = float(a), float(b)
+        except (TypeError, ValueError):
+            continue
+        if fa != fa or fb != fb:  # NaN
+            continue
+        a_out.append(fa)
+        b_out.append(fb)
+    return a_out, b_out
+
+
 # ---------------------------------------------------------------------------
 # operation: proportion_ci
 # ---------------------------------------------------------------------------
 
 
-def _op_proportion_ci(kwargs) -> ToolCallResult:
-    try:
-        n = _require_n(kwargs.get("n"), "n")
-        confidence = float(kwargs.get("confidence", 0.95))
-        successes = _successes(kwargs.get("proportion"), n)
-        z = z_for_confidence(confidence)
-    except (ValueError, TypeError) as e:
-        return _error(str(e))
+def _op_proportion_ci(req: StatisticsRequest) -> dict[str, Any]:
+    n = _require_n(req.n, "n")
+    confidence = req.confidence
+    successes = _successes(req.proportion, n)
+    z = z_for_confidence(confidence)
 
     p = successes / n
     low, high = wilson_ci(successes, n, z)
     se = math.sqrt(p * (1 - p) / n)
     conf_pct = round(confidence * 100)
-    out = {
+    return {
         "operation": "proportion_ci",
         "proportion": round(p, 4),
         "percent": round(p * 100, 1),
@@ -113,7 +235,6 @@ def _op_proportion_ci(kwargs) -> ToolCallResult:
             f"Normal-approx standard error {round(se * 100, 1)}pp."
         ),
     }
-    return ToolCallResult(output=json.dumps(out, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------
@@ -121,16 +242,13 @@ def _op_proportion_ci(kwargs) -> ToolCallResult:
 # ---------------------------------------------------------------------------
 
 
-def _op_compare_proportions(kwargs) -> ToolCallResult:
-    try:
-        n_a = _require_n(kwargs.get("n_a"), "n_a")
-        n_b = _require_n(kwargs.get("n_b"), "n_b")
-        confidence = float(kwargs.get("confidence", 0.95))
-        s_a = _successes(kwargs.get("proportion_a"), n_a, "proportion_a")
-        s_b = _successes(kwargs.get("proportion_b"), n_b, "proportion_b")
-        z = z_for_confidence(confidence)
-    except (ValueError, TypeError) as e:
-        return _error(str(e))
+def _op_compare_proportions(req: StatisticsRequest) -> dict[str, Any]:
+    n_a = _require_n(req.n_a, "n_a")
+    n_b = _require_n(req.n_b, "n_b")
+    confidence = req.confidence
+    s_a = _successes(req.proportion_a, n_a, "proportion_a")
+    s_b = _successes(req.proportion_b, n_b, "proportion_b")
+    z = z_for_confidence(confidence)
 
     p_a, p_b = s_a / n_a, s_b / n_b
     newcombe = wilson_difference_ci(s_a, n_a, s_b, n_b, z)
@@ -156,7 +274,7 @@ def _op_compare_proportions(kwargs) -> ToolCallResult:
     verdict = (
         "statistically significant" if significant else "not statistically significant"
     )
-    out = {
+    return {
         "operation": "compare_proportions",
         "p_a": round(p_a, 4),
         "p_b": round(p_b, 4),
@@ -185,7 +303,6 @@ def _op_compare_proportions(kwargs) -> ToolCallResult:
             f"(unpaired test)."
         ),
     }
-    return ToolCallResult(output=json.dumps(out, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------
@@ -193,52 +310,10 @@ def _op_compare_proportions(kwargs) -> ToolCallResult:
 # ---------------------------------------------------------------------------
 
 
-def _coerce_binary(values, label: str) -> list[int]:
-    out: list[int] = []
-    for x in values:
-        try:
-            v = round(float(x))
-        except (TypeError, ValueError):
-            raise ValueError(f"{label} must contain only 0/1 values (got {x!r}).")
-        if v not in (0, 1):
-            raise ValueError(f"{label} must contain only 0/1 values (got {x!r}).")
-        out.append(v)
-    return out
-
-
-def _table_from_outcomes(kwargs) -> tuple[int, int, int, int]:
-    """Build the (n11, n10, n01, n00) 2x2 table from two aligned 0/1 arrays."""
-    oa, ob = kwargs.get("outcomes_a"), kwargs.get("outcomes_b")
-    if not isinstance(oa, list) or not isinstance(ob, list):
-        raise ValueError("'outcomes_a' and 'outcomes_b' must be arrays of 0/1 values.")
-    if len(oa) != len(ob):
-        raise ValueError(
-            f"Paired arrays must be equal length (got {len(oa)} vs {len(ob)})."
-        )
-    if len(oa) == 0:
-        raise ValueError("Paired arrays are empty.")
-    a = _coerce_binary(oa, "outcomes_a")
-    b = _coerce_binary(ob, "outcomes_b")
-    n11 = n10 = n01 = n00 = 0
-    for x, y in zip(a, b):
-        if x == 1 and y == 1:
-            n11 += 1
-        elif x == 1 and y == 0:
-            n10 += 1
-        elif x == 0 and y == 1:
-            n01 += 1
-        else:
-            n00 += 1
-    return (n11, n10, n01, n00)
-
-
-def _op_mcnemar_paired(kwargs) -> ToolCallResult:
-    try:
-        confidence = float(kwargs.get("confidence", 0.95))
-        z = z_for_confidence(confidence)
-        n11, n10, n01, n00 = _table_from_outcomes(kwargs)
-    except (ValueError, TypeError) as e:
-        return _error(str(e))
+def _op_mcnemar_paired(req: StatisticsRequest) -> dict[str, Any]:
+    confidence = req.confidence
+    z = z_for_confidence(confidence)
+    n11, n10, n01, n00 = _table_from_outcomes(req)
 
     b, c = n10, n01  # discordant: a-pass/b-fail (hurt), a-fail/b-pass (helped)
     n_pairs = n11 + n10 + n01 + n00
@@ -262,7 +337,7 @@ def _op_mcnemar_paired(kwargs) -> ToolCallResult:
     if delta is not None:
         interpretation += f" Net delta {round(delta * 100, 1):+}pp."
 
-    out = {
+    return {
         "operation": "mcnemar_paired",
         "n_pairs": n_pairs,
         "table": {"n11": n11, "n10": n10, "n01": n01, "n00": n00},
@@ -287,7 +362,6 @@ def _op_mcnemar_paired(kwargs) -> ToolCallResult:
         "pooling_warning": _POOLING_WARNING,
         "interpretation": interpretation,
     }
-    return ToolCallResult(output=json.dumps(out, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------
@@ -295,39 +369,16 @@ def _op_mcnemar_paired(kwargs) -> ToolCallResult:
 # ---------------------------------------------------------------------------
 
 
-def _clean_pairs(values_a, values_b) -> tuple[list[float], list[float]]:
-    """Drop pairs where either side is None / NaN / non-numeric. Returns (a, b)."""
-    a_out: list[float] = []
-    b_out: list[float] = []
-    for a, b in zip(values_a, values_b):
-        if a is None or b is None:
-            continue
-        try:
-            fa, fb = float(a), float(b)
-        except (TypeError, ValueError):
-            continue
-        if fa != fa or fb != fb:  # NaN
-            continue
-        a_out.append(fa)
-        b_out.append(fb)
-    return a_out, b_out
-
-
-def _op_compare_paired(kwargs) -> ToolCallResult:
-    try:
-        values_a = kwargs.get("values_a")
-        values_b = kwargs.get("values_b")
-        if not isinstance(values_a, list) or not isinstance(values_b, list):
-            raise ValueError("'values_a' and 'values_b' must be arrays.")
-        if len(values_a) != len(values_b):
-            raise ValueError(
-                f"Paired arrays must be equal length (got {len(values_a)} vs {len(values_b)})."
-            )
-        confidence = float(kwargs.get("confidence", 0.95))
-        if not (0.0 < confidence < 1.0):
-            raise ValueError(f"confidence must be in (0,1) (got {confidence}).")
-    except (ValueError, TypeError) as e:
-        return _error(str(e))
+def _op_compare_paired(req: StatisticsRequest) -> dict[str, Any]:
+    values_a = req.values_a
+    values_b = req.values_b
+    if not isinstance(values_a, list) or not isinstance(values_b, list):
+        raise ValueError("'values_a' and 'values_b' must be arrays.")
+    if len(values_a) != len(values_b):
+        raise ValueError(
+            f"Paired arrays must be equal length (got {len(values_a)} vs {len(values_b)})."
+        )
+    confidence = req.confidence
 
     n_pairs = len(values_a)
     a, b = _clean_pairs(values_a, values_b)
@@ -335,7 +386,7 @@ def _op_compare_paired(kwargs) -> ToolCallResult:
     conf_pct = round(confidence * 100)
 
     if n_used == 0:
-        out = {
+        return {
             "operation": "compare_paired",
             "n_pairs": n_pairs,
             "n_pairs_used": 0,
@@ -347,7 +398,6 @@ def _op_compare_paired(kwargs) -> ToolCallResult:
             "explanation": "No usable paired values after dropping missing/non-numeric rows.",
             "interpretation": "No usable paired values — nothing to compare.",
         }
-        return ToolCallResult(output=json.dumps(out, ensure_ascii=False))
 
     diffs = [bv - av for av, bv in zip(a, b)]
     mean_a = statistics.mean(a)
@@ -380,7 +430,7 @@ def _op_compare_paired(kwargs) -> ToolCallResult:
         + f" Shows {verdict} shift."
     )
 
-    out = {
+    return {
         "operation": "compare_paired",
         "n_pairs": n_pairs,
         "n_pairs_used": n_used,
@@ -396,12 +446,7 @@ def _op_compare_paired(kwargs) -> ToolCallResult:
         "confidence": confidence,
         "interpretation": interpretation,
     }
-    return ToolCallResult(output=json.dumps(out, ensure_ascii=False))
 
-
-# ---------------------------------------------------------------------------
-# The tool
-# ---------------------------------------------------------------------------
 
 _OPERATIONS = {
     "proportion_ci": _op_proportion_ci,
@@ -410,105 +455,29 @@ _OPERATIONS = {
     "compare_paired": _op_compare_paired,
 }
 
-_STATISTICS_DESCRIPTION = """Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand in your reasoning. Set `operation`:
+_STATISTICS_DESCRIPTION = """Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
 
 - "proportion_ci": confidence interval + standard error for ONE proportion (e.g. an "85% pass, n=200" cell). Params: `proportion` (a fraction in [0,1]) and `n`.
 - "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`, `n_a`, `proportion_b`, `n_b`.
 - "mcnemar_paired": the PAIRED test for two binary pass/fail conditions scored over the SAME items — more powerful than compare_proportions; prefer it when comparing run configs on one eval dataset. Params: `outcomes_a`, `outcomes_b` — two aligned 0/1 arrays (fetch per-item eval results and pair on dataset_id).
 - "compare_paired": paired comparison of two numeric arrays for continuous/count metrics (latency, tokens, cost) — NOT binary pass/fail. Params: `values_a`, `values_b`.
 
-Returns JSON with the statistic, a confidence interval, a boolean `significant`, and a one-sentence interpretation. `confidence` defaults to 0.95."""
-
-_PARAMETERS_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "operation": {
-            "type": "string",
-            "enum": list(_OPERATIONS.keys()),
-            "description": "Which test to run (see the tool description for the params each one takes).",
-        },
-        "confidence": _CONFIDENCE_SCHEMA,
-        # proportion_ci
-        "proportion": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "[proportion_ci] the proportion as a fraction in [0,1] (e.g. 0.85).",
-        },
-        "n": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "[proportion_ci] sample size (> 0).",
-        },
-        # compare_proportions
-        "proportion_a": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "[compare_proportions] baseline proportion in [0,1].",
-        },
-        "n_a": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "[compare_proportions] baseline sample size (> 0).",
-        },
-        "proportion_b": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "[compare_proportions] treatment proportion in [0,1].",
-        },
-        "n_b": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "[compare_proportions] treatment sample size (> 0).",
-        },
-        # mcnemar_paired
-        "outcomes_a": {
-            "type": "array",
-            "items": {"type": "number"},
-            "description": "[mcnemar_paired] per-item baseline outcomes (0=fail, 1=pass). outcomes_a[i] and outcomes_b[i] must be the SAME item.",
-        },
-        "outcomes_b": {
-            "type": "array",
-            "items": {"type": "number"},
-            "description": "[mcnemar_paired] per-item treatment outcomes (0/1), positionally paired with outcomes_a.",
-        },
-        # compare_paired
-        "values_a": {
-            "type": "array",
-            "items": {"type": ["number", "null"]},
-            "description": "[compare_paired] per-case baseline values (null allowed — that pair is skipped). values_a[i] and values_b[i] must be the same case.",
-        },
-        "values_b": {
-            "type": "array",
-            "items": {"type": ["number", "null"]},
-            "description": "[compare_paired] per-case treatment values (null allowed), positionally paired with values_a.",
-        },
-    },
-    "required": ["operation"],
-}
+Returns JSON with the statistic, a confidence interval, a boolean `significant`, and a one-sentence `interpretation`. `confidence` defaults to 0.95."""
 
 
-class StatisticsTool(KilnTool):
-    """Confidence intervals + significance tests, dispatched by an ``operation`` param."""
-
-    def __init__(self) -> None:
-        super().__init__(
-            tool_id=KilnBuiltInToolId.STATISTICS,
-            name="statistics",
-            description=_STATISTICS_DESCRIPTION,
-            parameters_schema=_PARAMETERS_SCHEMA,
-        )
-
-    async def run(
-        self, context: ToolCallContext | None = None, **kwargs
-    ) -> ToolCallResult:
-        _ = context
-        operation = kwargs.get("operation")
-        handler = _OPERATIONS.get(operation) if isinstance(operation, str) else None
-        if handler is None:
-            return _error(
-                f"'operation' must be one of {sorted(_OPERATIONS)} (got {operation!r})."
-            )
-        return handler(kwargs)
+def connect_statistics_api(app: FastAPI) -> None:
+    @app.post(
+        "/api/statistics",
+        summary="Compute Statistics",
+        description=_STATISTICS_DESCRIPTION,
+        tags=["Statistics"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def compute_statistics(
+        body: StatisticsRequest,
+    ) -> dict[str, Any]:
+        handler = _OPERATIONS[body.operation]
+        try:
+            return handler(body)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=422, detail=str(e))

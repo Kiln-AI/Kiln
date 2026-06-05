@@ -1070,6 +1070,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compute Statistics
+         * @description Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
+         *
+         *     - "proportion_ci": confidence interval + standard error for ONE proportion (e.g. an "85% pass, n=200" cell). Params: `proportion` (a fraction in [0,1]) and `n`.
+         *     - "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`, `n_a`, `proportion_b`, `n_b`.
+         *     - "mcnemar_paired": the PAIRED test for two binary pass/fail conditions scored over the SAME items — more powerful than compare_proportions; prefer it when comparing run configs on one eval dataset. Params: `outcomes_a`, `outcomes_b` — two aligned 0/1 arrays (fetch per-item eval results and pair on dataset_id).
+         *     - "compare_paired": paired comparison of two numeric arrays for continuous/count metrics (latency, tokens, cost) — NOT binary pass/fail. Params: `values_a`, `values_b`.
+         *
+         *     Returns JSON with the statistic, a confidence interval, a boolean `significant`, and a one-sentence `interpretation`. `confidence` defaults to 0.95.
+         */
+        post: operations["compute_statistics_api_statistics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -9102,6 +9129,74 @@ export interface components {
             eval_ids: string[];
         };
         /**
+         * StatisticsRequest
+         * @description Input for ``POST /api/statistics``. Set ``operation`` and the params it needs.
+         */
+        StatisticsRequest: {
+            /**
+             * Operation
+             * @description Which test to run (see the per-field [operation] tags for the params each one takes).
+             * @enum {string}
+             */
+            operation: "proportion_ci" | "compare_proportions" | "mcnemar_paired" | "compare_paired";
+            /**
+             * Confidence
+             * @description Confidence level in (0,1). Default 0.95.
+             * @default 0.95
+             */
+            confidence: number;
+            /**
+             * Proportion
+             * @description [proportion_ci] the proportion as a fraction in [0,1] (e.g. 0.85).
+             */
+            proportion?: number | null;
+            /**
+             * N
+             * @description [proportion_ci] sample size (> 0).
+             */
+            n?: number | null;
+            /**
+             * Proportion A
+             * @description [compare_proportions] baseline proportion in [0,1].
+             */
+            proportion_a?: number | null;
+            /**
+             * N A
+             * @description [compare_proportions] baseline sample size (> 0).
+             */
+            n_a?: number | null;
+            /**
+             * Proportion B
+             * @description [compare_proportions] treatment proportion in [0,1].
+             */
+            proportion_b?: number | null;
+            /**
+             * N B
+             * @description [compare_proportions] treatment sample size (> 0).
+             */
+            n_b?: number | null;
+            /**
+             * Outcomes A
+             * @description [mcnemar_paired] per-item baseline outcomes (0=fail, 1=pass). outcomes_a[i] and outcomes_b[i] must be the SAME item.
+             */
+            outcomes_a?: number[] | null;
+            /**
+             * Outcomes B
+             * @description [mcnemar_paired] per-item treatment outcomes (0/1), positionally paired with outcomes_a.
+             */
+            outcomes_b?: number[] | null;
+            /**
+             * Values A
+             * @description [compare_paired] per-case baseline values (null allowed — that pair is skipped). values_a[i] and values_b[i] must be the same case.
+             */
+            values_a?: (number | null)[] | null;
+            /**
+             * Values B
+             * @description [compare_paired] per-case treatment values (null allowed), positionally paired with values_a.
+             */
+            values_b?: (number | null)[] | null;
+        };
+        /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
          *
@@ -13153,6 +13248,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EphemeralSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compute_statistics_api_statistics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatisticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -8,7 +8,7 @@ import math
 
 import pytest
 
-from kiln_ai.tools.built_in_tools.stats_lib import (
+from kiln_server.statistics_lib import (
     bootstrap_difference_ci,
     mcnemar_chi2_cc,
     mcnemar_exact_p,

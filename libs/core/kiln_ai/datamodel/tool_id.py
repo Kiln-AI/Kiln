@@ -23,14 +23,13 @@ Tool IDs can be one of:
 
 
 class KilnBuiltInToolId(str, Enum):
-    """Built-in tool IDs for Kiln's demo and statistics tools."""
+    """Built-in tool IDs for Kiln's demo tools."""
 
     ADD_NUMBERS = "kiln_tool::add_numbers"
     SUBTRACT_NUMBERS = "kiln_tool::subtract_numbers"
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"
     DIVIDE_NUMBERS = "kiln_tool::divide_numbers"
     CALL_KILN_API = "kiln_tool::call_kiln_api"
-    STATISTICS = "kiln_tool::statistics"
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
