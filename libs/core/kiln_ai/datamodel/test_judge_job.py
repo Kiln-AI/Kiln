@@ -1,13 +1,6 @@
 import pytest
 
-from kiln_ai.datamodel import (
-    JudgeJob,
-    JudgeJobOutcome,
-    JudgeJobRun,
-    JudgeJobStatus,
-    Project,
-    Task,
-)
+from kiln_ai.datamodel import JudgeJob, JudgeJobRun, Project, Task
 
 
 @pytest.fixture
@@ -20,15 +13,11 @@ def task(tmp_path):
 
 
 def test_defaults(task):
-    job = JudgeJob(
-        name="scan", target_tags=["train"], eval_config_id="ec1", parent=task
-    )
-    assert job.latest_status == JudgeJobStatus.pending
+    job = JudgeJob(name="scan", target_tags=["train"], eval_config_id="ec1", parent=task)
     assert job.count == 5
     assert job.max_samples == 50
     assert job.threshold == 0.75
     assert job.run_config_id is None
-    assert job.outcome is None
 
 
 def test_parent_task_typing(task):
@@ -62,11 +51,6 @@ def test_create_and_roundtrip(task):
         feedback=None,
         passed=True,
     ).save_to_file()
-    job.outcome = JudgeJobOutcome(
-        train_set_size=5, num_judged=2, failing_count=1, hit_cap=False
-    )
-    job.latest_status = JudgeJobStatus.succeeded
-    job.save_to_file()
 
     # Reload through the Task accessor
     jobs = task.judge_jobs()
@@ -77,9 +61,7 @@ def test_create_and_roundtrip(task):
     assert reloaded.eval_config_id == "ec1"
     assert reloaded.run_config_id == "rc1"
     assert reloaded.count == 3
-    assert reloaded.latest_status == JudgeJobStatus.succeeded
-    assert reloaded.outcome.failing_count == 1
-    assert reloaded.outcome.train_set_size == 5
+    assert reloaded.threshold == 0.5
 
     runs = reloaded.runs()
     assert len(runs) == 2
@@ -93,7 +75,5 @@ def test_create_and_roundtrip(task):
 def test_run_parent_typing(task):
     job = JudgeJob(name="scan", target_tags=["t"], eval_config_id="ec1", parent=task)
     job.save_to_file()
-    run = JudgeJobRun(
-        parent=job, dataset_id="d1", scores={"accuracy": 1.0}, passed=True
-    )
+    run = JudgeJobRun(parent=job, dataset_id="d1", scores={"accuracy": 1.0}, passed=True)
     assert run.parent_judge_job().id == job.id

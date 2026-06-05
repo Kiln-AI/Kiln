@@ -15,7 +15,6 @@ from kiln_ai.datamodel import (
     DataSourceType,
     JudgeJob,
     JudgeJobRun,
-    JudgeJobStatus,
     Task,
     TaskOutput,
     TaskOutputRatingType,
@@ -134,8 +133,7 @@ async def run_job(judge_job, eval_config, score_fn, calls=None, seed=1, concurre
             lambda _type: scripted_evaluator_factory(score_fn, calls=calls),
         )
         runner = JudgeJobRunner(judge_job, eval_config, rng=random.Random(seed))
-        progresses = [p async for p in runner.run(concurrency=concurrency)]
-    return progresses
+        return await runner.run(concurrency=concurrency)
 
 
 # ---- Pure helper tests ----
@@ -148,6 +146,11 @@ def test_score_passes_rating_types():
     assert score_passes(0.0, TaskOutputRatingType.pass_fail, 0.75) is False
     assert score_passes(1.0, TaskOutputRatingType.pass_fail_critical, 0.75) is True
     assert score_passes(0.0, TaskOutputRatingType.pass_fail_critical, 0.75) is False
+
+
+def test_score_passes_non_numeric():
+    # A non-numeric score can't clear the bar (and must not raise).
+    assert score_passes("oops", TaskOutputRatingType.pass_fail, 0.75) is False  # type: ignore[arg-type]
 
 
 def test_example_fails_requires_all_scores_below_bar():
@@ -179,6 +182,8 @@ def test_feedback_from_intermediate_outputs():
         )
         == "r"
     )
+    # non-str values are ignored, not crashed on
+    assert feedback_from_intermediate_outputs({"reasoning": {"x": 1}}) is None  # type: ignore[dict-item]
 
 
 # ---- Runner construction ----
@@ -189,7 +194,6 @@ def test_runner_requires_parents(mock_task):
     eval_config = make_eval_config(eval)
     job = make_judge_job(mock_task, eval_config)
 
-    # eval config with no parent eval
     orphan_config = EvalConfig(
         name="c",
         model_name="gpt-4",
@@ -205,7 +209,7 @@ def test_runner_requires_parents(mock_task):
 
 
 @pytest.mark.asyncio
-async def test_persists_runs_status_and_outcome(mock_task, data_source):
+async def test_returns_failures_and_persists(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
     job = make_judge_job(mock_task, eval_config, count=2, max_samples=10)
@@ -219,19 +223,18 @@ async def test_persists_runs_status_and_outcome(mock_task, data_source):
     def score_fn(task_run):
         return {"accuracy": 0.0 if task_run.input.startswith("fail") else 1.0}
 
-    await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn)
 
-    assert job.latest_status == JudgeJobStatus.succeeded
-    assert job.outcome is not None
-    assert job.outcome.train_set_size == 6
-    assert job.outcome.failing_count == 3
-    assert job.outcome.hit_cap is False
+    assert result.train_set_size == 6
+    assert result.failing_count == 3
+    assert result.hit_cap is False
+    assert len(result.failing_runs) == 2  # trimmed to count
+    assert all(not r.passed for r in result.failing_runs)
+    assert all(r.dataset_id in fail_ids for r in result.failing_runs)
+    assert all(r.feedback for r in result.failing_runs)
 
-    runs = job.runs()
-    assert len(runs) == 6
-    failing = [r for r in runs if not r.passed]
-    assert {r.dataset_id for r in failing} == fail_ids
-    assert all(r.feedback for r in failing)
+    # All judged items persisted as children (pass and fail)
+    assert len(job.runs()) == 6
 
 
 @pytest.mark.asyncio
@@ -245,13 +248,11 @@ async def test_early_stop_limits_num_judged(mock_task, data_source):
     def score_fn(task_run):
         return {"accuracy": 0.0}
 
-    # concurrency=1 so we can stop exactly at count
-    await run_job(job, eval_config, score_fn, concurrency=1)
+    result = await run_job(job, eval_config, score_fn, concurrency=1)
 
-    assert job.latest_status == JudgeJobStatus.succeeded
-    assert job.outcome.num_judged == 2
-    assert job.outcome.failing_count == 2
-    assert job.outcome.hit_cap is False
+    assert result.num_judged == 2
+    assert result.failing_count == 2
+    assert result.hit_cap is False
     assert len(job.runs()) == 2
 
 
@@ -266,11 +267,12 @@ async def test_hit_cap_when_failures_sparse(mock_task, data_source):
     def score_fn(task_run):
         return {"accuracy": 1.0}
 
-    await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn)
 
-    assert job.outcome.num_judged == 5
-    assert job.outcome.failing_count == 0
-    assert job.outcome.hit_cap is True
+    assert result.num_judged == 5
+    assert result.failing_count == 0
+    assert result.hit_cap is True
+    assert result.failing_runs == []
 
 
 @pytest.mark.asyncio
@@ -284,17 +286,16 @@ async def test_exhausted_train_set_is_not_hit_cap(mock_task, data_source):
     def score_fn(task_run):
         return {"accuracy": 1.0}
 
-    await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn)
 
-    assert job.outcome.num_judged == 3
-    assert job.outcome.hit_cap is False
+    assert result.num_judged == 3
+    assert result.hit_cap is False
 
 
 @pytest.mark.asyncio
 async def test_tag_filtering_and_semantics(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    # require BOTH tags
     job = make_judge_job(
         mock_task, eval_config, target_tags=["train", "golden"], count=5, max_samples=10
     )
@@ -306,13 +307,12 @@ async def test_tag_filtering_and_semantics(mock_task, data_source):
     def score_fn(task_run):
         return {"accuracy": 0.0}
 
-    await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn)
 
-    assert job.outcome.train_set_size == 1
-    assert job.outcome.num_judged == 1
-    runs = job.runs()
-    assert len(runs) == 1
-    assert runs[0].dataset_id == both.id
+    assert result.train_set_size == 1
+    assert result.num_judged == 1
+    assert len(result.failing_runs) == 1
+    assert result.failing_runs[0].dataset_id == both.id
 
 
 @pytest.mark.asyncio
@@ -322,7 +322,6 @@ async def test_cache_reuse_skips_judging(mock_task, data_source):
     job = make_judge_job(mock_task, eval_config, count=1, max_samples=1)
     run = make_train_run(mock_task, data_source, "fail-0")
 
-    # Pre-seed a judged result for this item
     JudgeJobRun(
         parent=job,
         dataset_id=run.id,
@@ -336,12 +335,13 @@ async def test_cache_reuse_skips_judging(mock_task, data_source):
     def score_fn(task_run):
         return {"accuracy": 0.0}
 
-    await run_job(job, eval_config, score_fn, calls=calls)
+    result = await run_job(job, eval_config, score_fn, calls=calls)
 
     # Judge was never invoked; no duplicate run written
     assert calls == []
     assert len(job.runs()) == 1
-    assert job.outcome.failing_count == 1
+    assert result.failing_count == 1
+    assert result.failing_runs[0].feedback == "cached"
 
 
 @pytest.mark.asyncio
@@ -355,19 +355,17 @@ async def test_threshold_override_five_star(mock_task, data_source):
     def score_fn(task_run):
         return {"quality": 4.0}  # normalized 0.75
 
-    # Default bar 0.75: 0.75 >= 0.75 -> pass -> no failures
     job_pass = make_judge_job(
         mock_task, eval_config, count=1, max_samples=1, threshold=0.75
     )
-    await run_job(job_pass, eval_config, score_fn)
-    assert job_pass.outcome.failing_count == 0
+    result_pass = await run_job(job_pass, eval_config, score_fn)
+    assert result_pass.failing_count == 0
 
-    # Stricter bar 0.9: 0.75 < 0.9 -> fail
     job_fail = make_judge_job(
         mock_task, eval_config, count=1, max_samples=1, threshold=0.9
     )
-    await run_job(job_fail, eval_config, score_fn)
-    assert job_fail.outcome.failing_count == 1
+    result_fail = await run_job(job_fail, eval_config, score_fn)
+    assert result_fail.failing_count == 1
 
 
 @pytest.mark.asyncio
@@ -383,39 +381,10 @@ async def test_judge_errors_are_skipped(mock_task, data_source):
             raise RuntimeError("Judge error")
         return {"accuracy": 0.0}
 
-    await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn)
 
-    assert job.latest_status == JudgeJobStatus.succeeded
-    assert job.outcome.num_judged == 2
-    runs = job.runs()
+    assert result.num_judged == 2
     # The errored item is skipped (not persisted); only the failing item has a run
-    assert len(runs) == 1
-    assert runs[0].dataset_id == fail_run.id
-    assert runs[0].passed is False
-
-
-@pytest.mark.asyncio
-async def test_run_cancelled_sets_status(mock_task, data_source):
-    eval = make_eval(mock_task)
-    eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=2, max_samples=10)
-    for i in range(5):
-        make_train_run(mock_task, data_source, f"fail-{i}")
-
-    def score_fn(task_run):
-        return {"accuracy": 0.0}
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "kiln_ai.adapters.eval.judge_job_runner.eval_adapter_from_type",
-            lambda _type: scripted_evaluator_factory(score_fn),
-        )
-        runner = JudgeJobRunner(job, eval_config, rng=random.Random(1))
-        gen = runner.run(concurrency=1)
-        await gen.__anext__()  # first progress yield; status is now running
-        assert job.latest_status == JudgeJobStatus.running
-        await gen.aclose()  # raises GeneratorExit into the generator
-
-    assert job.latest_status == JudgeJobStatus.cancelled
-    assert job.outcome is not None
-    assert job.outcome.error == "Run cancelled"
+    assert len(job.runs()) == 1
+    assert len(result.failing_runs) == 1
+    assert result.failing_runs[0].dataset_id == fail_run.id

@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.judge_job_api import connect_judge_job_api
@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
 
+from kiln_ai.adapters.eval.judge_job_runner import JudgeJobRunResult
 from kiln_ai.datamodel import (
     JudgeJob,
     JudgeJobRun,
@@ -92,12 +93,14 @@ def saved_job(mock_task, mock_eval_config):
     return job
 
 
-def async_progress_gen(progresses):
-    async def _gen(*args, **kwargs):
-        for p in progresses:
-            yield p
-
-    return _gen()
+def patched_runner(result: JudgeJobRunResult):
+    """Patch JudgeJobRunner so the endpoint returns `result` without real judging."""
+    runner = Mock()
+    runner.run = AsyncMock(return_value=result)
+    mock_cls = patch(
+        "app.desktop.studio_server.judge_job_api.JudgeJobRunner", return_value=runner
+    )
+    return mock_cls
 
 
 def test_create_judge_job(client, mock_task, mock_task_from_id, mock_eval_config):
@@ -115,9 +118,7 @@ def test_create_judge_job(client, mock_task, mock_task_from_id, mock_eval_config
     body = resp.json()
     assert body["name"] == "scan"
     assert body["target_tags"] == ["train"]
-    assert body["latest_status"] == "pending"
     assert body["count"] == 3
-    # persisted
     assert len(mock_task.judge_jobs()) == 1
 
 
@@ -171,24 +172,34 @@ def test_create_validation(client, mock_task, mock_task_from_id, mock_eval_confi
 def test_run_judge_job(
     client, mock_task, mock_task_from_id, mock_eval_config, saved_job
 ):
-    with patch("app.desktop.studio_server.judge_job_api.JudgeJobRunner") as MockRunner:
-        runner = Mock()
-        runner.judge_job = Mock(id="jj1")
-        runner.run.return_value = async_progress_gen(
-            [
-                Mock(complete=1, total=2, errors=0),
-                Mock(complete=2, total=2, errors=0),
-            ]
-        )
-        MockRunner.return_value = runner
+    result = JudgeJobRunResult(
+        failing_runs=[
+            JudgeJobRun(
+                parent=saved_job,
+                dataset_id="d1",
+                scores={"accuracy": 0.0},
+                feedback="bad",
+                passed=False,
+            )
+        ],
+        num_judged=3,
+        failing_count=1,
+        train_set_size=10,
+        hit_cap=False,
+    )
+    with patched_runner(result):
         resp = client.post(f"{BASE}/jj1/run")
 
     assert resp.status_code == 200
-    messages = [m for m in resp.iter_lines() if m]
-    assert any("judge_job_id" in m for m in messages)
-    assert messages[-1] == "data: complete"
-    # 1 id event + 2 progress + 1 complete
-    assert len(messages) == 4
+    body = resp.json()
+    assert body["judge_job"]["id"] == "jj1"
+    assert body["num_judged"] == 3
+    assert body["failing_count"] == 1
+    assert body["train_set_size"] == 10
+    assert body["hit_cap"] is False
+    assert len(body["failing_runs"]) == 1
+    assert body["failing_runs"][0]["dataset_id"] == "d1"
+    assert body["failing_runs"][0]["feedback"] == "bad"
 
 
 def test_run_judge_job_404(client, mock_task, mock_task_from_id, mock_eval_config):
@@ -196,40 +207,22 @@ def test_run_judge_job_404(client, mock_task, mock_task_from_id, mock_eval_confi
     assert resp.status_code == 404
 
 
-def test_run_judge_job_conflict_when_running(
-    client, mock_task, mock_task_from_id, mock_eval_config
-):
-    from kiln_ai.datamodel import JudgeJobStatus
-
-    job = JudgeJob(
-        id="running1",
-        name="scan",
-        target_tags=["train"],
-        eval_config_id=mock_eval_config.id,
-        latest_status=JudgeJobStatus.running,
-        parent=mock_task,
-    )
-    job.save_to_file()
-    resp = client.post(f"{BASE}/running1/run")
-    assert resp.status_code == 409
-
-
 def test_create_and_run(client, mock_task, mock_task_from_id, mock_eval_config):
-    with patch("app.desktop.studio_server.judge_job_api.JudgeJobRunner") as MockRunner:
-        runner = Mock()
-        runner.judge_job = Mock(id="created")
-        runner.run.return_value = async_progress_gen(
-            [Mock(complete=1, total=1, errors=0)]
-        )
-        MockRunner.return_value = runner
+    result = JudgeJobRunResult(
+        failing_runs=[],
+        num_judged=0,
+        failing_count=0,
+        train_set_size=0,
+        hit_cap=False,
+    )
+    with patched_runner(result):
         resp = client.post(
             f"{BASE}/run",
             json={"target_tags": ["train"], "eval_config_id": "eval_config1"},
         )
 
     assert resp.status_code == 200
-    messages = [m for m in resp.iter_lines() if m]
-    assert any("judge_job_id" in m for m in messages)
+    assert resp.json()["judge_job"]["target_tags"] == ["train"]
     # the job was created/persisted
     assert len(mock_task.judge_jobs()) == 1
 
@@ -238,7 +231,6 @@ def test_get_judge_job(client, mock_task, mock_task_from_id, saved_job):
     resp = client.get(f"{BASE}/jj1")
     assert resp.status_code == 200
     assert resp.json()["id"] == "jj1"
-    assert resp.json()["latest_status"] == "pending"
 
 
 def test_get_judge_job_404(client, mock_task, mock_task_from_id):

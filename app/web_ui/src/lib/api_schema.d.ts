@@ -2090,7 +2090,7 @@ export interface paths {
         put?: never;
         /**
          * Create Judge Job
-         * @description Create a judge job config (status pending). Run it later with `/judge_jobs/{id}/run`.
+         * @description Create a judge job config. Run it later with `/judge_jobs/{id}/run`.
          */
         post: operations["create_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_post"];
         delete?: never;
@@ -2110,12 +2110,12 @@ export interface paths {
         put?: never;
         /**
          * Run Judge Job
-         * @description Run a judge job: sample tagged dataset items, judge them, and persist results + status.
+         * @description Run a judge job: sample tagged dataset items, judge their existing outputs, and return
+         *     the failing examples + feedback.
          *
-         *     Streams progress via SSE (first event is `{"judge_job_id": ...}`, then per-item progress,
-         *     then `data: complete`). Results are written as child runs and the job's `latest_status` /
-         *     `outcome` are updated. Poll `GET /judge_jobs/{id}` for status and `GET /judge_jobs/{id}/runs`
-         *     for the failing examples + feedback.
+         *     Runs synchronously and returns once judging completes. Each result is persisted as a child
+         *     run (fetch them later via `GET /judge_jobs/{id}/runs`); the returned counts
+         *     (num_judged, failing_count, train_set_size, hit_cap) are FYI for the caller's loop.
          */
         post: operations["run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__run_post"];
         delete?: never;
@@ -2135,8 +2135,8 @@ export interface paths {
         put?: never;
         /**
          * Create And Run Judge Job
-         * @description Create a judge job and run it immediately, streaming progress via SSE (the first event
-         *     carries the new `judge_job_id`).
+         * @description Create a judge job and run it immediately (synchronous), returning the failing examples
+         *     + feedback.
          */
         post: operations["create_and_run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_run_post"];
         delete?: never;
@@ -2154,7 +2154,7 @@ export interface paths {
         };
         /**
          * Get Judge Job
-         * @description Get a judge job, including its `latest_status` and `outcome` summary (poll this).
+         * @description Get a judge job config.
          */
         get: operations["get_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__get"];
         put?: never;
@@ -6910,11 +6910,11 @@ export interface components {
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         /**
          * JudgeJob
-         * @description A runnable job that samples dataset items by tag, judges them with an evaluator
+         * @description A reusable config that samples dataset items by tag, judges them with an evaluator
          *     (eval config), and records each item's pass/fail and the judge's feedback.
          *
-         *     Used to surface a minibatch of failing examples — with feedback — for reflective
-         *     prompt optimization. A child of a Task; a parent of JudgeJobRun results.
+         *     Used to surface a minibatch of failing examples — with feedback — for reflective prompt
+         *     optimization. A child of a Task; a parent of the JudgeJobRun results it produces.
          */
         JudgeJob: {
             /**
@@ -6987,46 +6987,8 @@ export interface components {
              * @default 0.75
              */
             threshold: number;
-            /**
-             * @description The latest known status of this judge job (pending, running, succeeded, failed, cancelled).
-             * @default pending
-             */
-            latest_status: components["schemas"]["JudgeJobStatus"];
-            /** @description A summary of the job's results, populated after a run. */
-            outcome?: components["schemas"]["JudgeJobOutcome"] | null;
             /** Model Type */
             readonly model_type: string;
-        };
-        /**
-         * JudgeJobOutcome
-         * @description A summary of a completed judge job.
-         */
-        JudgeJobOutcome: {
-            /**
-             * Train Set Size
-             * @description Total number of dataset items matching the target tags.
-             */
-            train_set_size: number;
-            /**
-             * Num Judged
-             * @description How many items were examined while searching for failures.
-             */
-            num_judged: number;
-            /**
-             * Failing Count
-             * @description How many of the judged items failed the judge.
-             */
-            failing_count: number;
-            /**
-             * Hit Cap
-             * @description True if max_samples was reached before finding the requested count of failures.
-             */
-            hit_cap: boolean;
-            /**
-             * Error
-             * @description Error message if the job failed.
-             */
-            error?: string | null;
         };
         /**
          * JudgeJobRun
@@ -7086,11 +7048,38 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * JudgeJobStatus
-         * @description The lifecycle status of a judge job.
-         * @enum {string}
+         * JudgeJobRunResponse
+         * @description The result of running a judge job. Counts are FYI for the caller; not persisted.
          */
-        JudgeJobStatus: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+        JudgeJobRunResponse: {
+            /** @description The judge job that was run. */
+            judge_job: components["schemas"]["JudgeJob"];
+            /**
+             * Failing Runs
+             * @description The failing examples found (up to the requested count), with feedback.
+             */
+            failing_runs: components["schemas"]["JudgeJobRun"][];
+            /**
+             * Num Judged
+             * @description How many items were examined while searching for failures.
+             */
+            num_judged: number;
+            /**
+             * Failing Count
+             * @description How many judged items failed the judge.
+             */
+            failing_count: number;
+            /**
+             * Train Set Size
+             * @description Total number of dataset items matching the target tags.
+             */
+            train_set_size: number;
+            /**
+             * Hit Cap
+             * @description True if max_samples was reached before finding the requested count of failures.
+             */
+            hit_cap: boolean;
+        };
         /**
          * KilnAgentRunConfigProperties
          * @description A configuration for running a task using a Kiln AI agent.
@@ -15881,7 +15870,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["JudgeJobRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15919,7 +15908,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["JudgeJobRunResponse"];
                 };
             };
             /** @description Validation Error */

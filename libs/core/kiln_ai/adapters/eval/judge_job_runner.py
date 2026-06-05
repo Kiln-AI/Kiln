@@ -1,35 +1,28 @@
-"""Execute a JudgeJob: sample dataset items by tag, judge them, persist results + status.
+"""Execute a JudgeJob: sample dataset items by tag, judge them, persist per-item results.
 
 A JudgeJob samples dataset items carrying its target tags, runs the configured judge (eval config)
 over each item's existing output, and records pass/fail + the judge's feedback as child JudgeJobRuns
 — surfacing a minibatch of failing examples for reflective prompt optimization.
 
-The runner mirrors EvalRunner (eval_runner.py): it judges in "eval_config_eval" mode (no task
-re-run), yields Progress for SSE streaming, and persists results as it goes. It also updates the
-JudgeJob's latest_status/outcome so a run is a durable, pollable record.
+The run is synchronous: it judges in "eval_config_eval" mode (no task re-run), persists each result
+as a child run, and returns a summary (the failing runs + counts). The counts are returned as FYI
+for the caller's loop decisions; the durable record is the persisted JudgeJobRun children.
 """
 
 import asyncio
 import logging
 import random
-from typing import AsyncGenerator
+from dataclasses import dataclass
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import EvalConfig, EvalOutputScore, EvalScores
-from kiln_ai.datamodel.judge_job import (
-    JudgeJob,
-    JudgeJobOutcome,
-    JudgeJobRun,
-    JudgeJobStatus,
-)
+from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.utils.async_job_runner import Progress
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
-from kiln_ai.utils.lock import shared_async_lock_manager
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +76,19 @@ def feedback_from_intermediate_outputs(
     return combined or None
 
 
+@dataclass
+class JudgeJobRunResult:
+    """The result of running a JudgeJob. Counts are FYI for the caller; not persisted."""
+
+    failing_runs: list[JudgeJobRun]
+    num_judged: int
+    failing_count: int
+    train_set_size: int
+    hit_cap: bool
+
+
 class JudgeJobRunner:
-    """Runs a JudgeJob: judges tagged dataset items and persists results + status."""
+    """Runs a JudgeJob: judges tagged dataset items and persists per-item results."""
 
     def __init__(
         self,
@@ -111,105 +115,73 @@ class JudgeJobRunner:
         # AND semantics: the item must carry every target tag.
         return set(self.judge_job.target_tags or []) <= set(task_run.tags or [])
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
-        """Run the judge job, yielding Progress updates and persisting results + status."""
+    async def run(self, concurrency: int = 25) -> JudgeJobRunResult:
+        """Judge tagged dataset items until `count` failures are found or `max_samples` are judged.
+
+        Persists each result as a JudgeJobRun child and returns the failing runs + counts.
+        """
         job = self.judge_job
-        train_set_size = 0
+
+        candidates = [
+            run for run in self.task.runs(readonly=True) if self._matches_tags(run)
+        ]
+        train_set_size = len(candidates)
+        self._rng.shuffle(candidates)
+        candidates = candidates[: job.max_samples]
+
+        # Reuse previously-judged results for this job to avoid re-paying the judge.
+        cache: dict[ID_TYPE, JudgeJobRun] = {
+            run.dataset_id: run for run in job.runs(readonly=True)
+        }
+
+        evaluator = eval_adapter_from_type(self.eval_config.config_type)(
+            self.eval_config, None
+        )
+        if not isinstance(evaluator, BaseEval):
+            raise ValueError("Not able to create evaluator from eval config")
+
+        failing_runs: list[JudgeJobRun] = []
         num_judged = 0
-        failures = 0
-        errors = 0
 
-        try:
-            await self._set_status(JudgeJobStatus.running)
-
-            candidates = [
-                run for run in self.task.runs(readonly=True) if self._matches_tags(run)
-            ]
-            train_set_size = len(candidates)
-            self._rng.shuffle(candidates)
-            candidates = candidates[: job.max_samples]
-
-            # Reuse previously-judged results for this job to avoid re-paying the judge.
-            cache: dict[ID_TYPE, JudgeJobRun] = {
-                run.dataset_id: run for run in job.runs(readonly=True)
-            }
-
-            evaluator = eval_adapter_from_type(self.eval_config.config_type)(
-                self.eval_config, None
+        # Judge in concurrent chunks so we can stop early once we have enough failures
+        # (a chunk may over-judge by up to concurrency-1 items past the stopping point).
+        for start in range(0, len(candidates), concurrency):
+            chunk = candidates[start : start + concurrency]
+            results = await asyncio.gather(
+                *(self._score_one(evaluator, task_run, cache) for task_run in chunk)
             )
-            if not isinstance(evaluator, BaseEval):
-                raise ValueError("Not able to create evaluator from eval config")
+            for scored in results:
+                num_judged += 1
+                if scored is None:
+                    continue
+                run, passed = scored
+                if not passed:
+                    failing_runs.append(run)
+            if len(failing_runs) >= job.count:
+                break
 
-            total = len(candidates)
-            yield Progress(complete=0, total=total, errors=0)
-
-            # Judge in concurrent chunks so we can stop early once we have enough failures
-            # (a chunk may over-judge by up to concurrency-1 items past the stopping point).
-            for start in range(0, len(candidates), concurrency):
-                chunk = candidates[start : start + concurrency]
-                results = await asyncio.gather(
-                    *(self._score_one(evaluator, task_run, cache) for task_run in chunk)
-                )
-                for scored in results:
-                    num_judged += 1
-                    if scored is None:
-                        errors += 1
-                    elif not scored:  # passed == False
-                        failures += 1
-                    yield Progress(complete=num_judged, total=total, errors=errors)
-                if failures >= job.count:
-                    break
-
-            hit_cap = failures < job.count and num_judged >= job.max_samples
-            await self._finish(
-                JudgeJobStatus.succeeded,
-                JudgeJobOutcome(
-                    train_set_size=train_set_size,
-                    num_judged=num_judged,
-                    failing_count=failures,
-                    hit_cap=hit_cap,
-                ),
-            )
-        except (asyncio.CancelledError, GeneratorExit):
-            # The SSE stream was cancelled (e.g. the client disconnected). Mark the job cancelled
-            # instead of leaving it stuck in `running`, then re-raise to unwind cleanly.
-            await self._finish(
-                JudgeJobStatus.cancelled,
-                JudgeJobOutcome(
-                    train_set_size=train_set_size,
-                    num_judged=num_judged,
-                    failing_count=failures,
-                    hit_cap=False,
-                    error="Run cancelled",
-                ),
-            )
-            raise
-        except Exception as e:
-            logger.error("Judge job %s failed: %s", job.id, e, exc_info=True)
-            await self._finish(
-                JudgeJobStatus.failed,
-                JudgeJobOutcome(
-                    train_set_size=train_set_size,
-                    num_judged=num_judged,
-                    failing_count=failures,
-                    hit_cap=False,
-                    error=str(e),
-                ),
-            )
+        hit_cap = len(failing_runs) < job.count and num_judged >= job.max_samples
+        return JudgeJobRunResult(
+            failing_runs=failing_runs[: job.count],
+            num_judged=num_judged,
+            failing_count=len(failing_runs),
+            train_set_size=train_set_size,
+            hit_cap=hit_cap,
+        )
 
     async def _score_one(
         self,
         evaluator: BaseEval,
         task_run: TaskRun,
         cache: dict[ID_TYPE, JudgeJobRun],
-    ) -> bool | None:
-        """Judge one item (or reuse a cached result), persist a JudgeJobRun, return `passed`.
+    ) -> tuple[JudgeJobRun, bool] | None:
+        """Judge one item (or reuse a cached result), persist a JudgeJobRun, return (run, passed).
 
         Returns None if the judge errored on this item (logged + skipped by the caller).
         """
         existing = cache.get(task_run.id)
         if existing is not None:
-            return existing.passed
+            return existing, existing.passed
 
         try:
             scores, intermediate_outputs = await evaluator.run_eval(task_run)
@@ -226,17 +198,18 @@ class JudgeJobRunner:
             scores, self.eval.output_scores, self.judge_job.threshold
         )
         feedback = feedback_from_intermediate_outputs(intermediate_outputs)
+        judge_job_run = JudgeJobRun(
+            parent=self.judge_job,
+            dataset_id=task_run.id,
+            scores=scores,
+            feedback=feedback,
+            passed=passed,
+        )
 
         # Best-effort persistence: a save failure must not crash the whole concurrent batch.
         try:
             async with self._save_context():
-                JudgeJobRun(
-                    parent=self.judge_job,
-                    dataset_id=task_run.id,
-                    scores=scores,
-                    feedback=feedback,
-                    passed=passed,
-                ).save_to_file()
+                judge_job_run.save_to_file()
         except Exception:
             logger.error(
                 "Error saving judge job run for item %s in judge job %s",
@@ -245,17 +218,4 @@ class JudgeJobRunner:
                 exc_info=True,
             )
 
-        return passed
-
-    async def _set_status(self, status: JudgeJobStatus) -> None:
-        async with shared_async_lock_manager.acquire(str(self.judge_job.id)):
-            self.judge_job.latest_status = status
-            async with self._save_context():
-                self.judge_job.save_to_file()
-
-    async def _finish(self, status: JudgeJobStatus, outcome: JudgeJobOutcome) -> None:
-        async with shared_async_lock_manager.acquire(str(self.judge_job.id)):
-            self.judge_job.latest_status = status
-            self.judge_job.outcome = outcome
-            async with self._save_context():
-                self.judge_job.save_to_file()
+        return judge_job_run, passed

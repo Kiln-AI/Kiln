@@ -1,7 +1,6 @@
-from enum import Enum
 from typing import TYPE_CHECKING, List, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -13,16 +12,6 @@ from kiln_ai.datamodel.eval import EvalScores
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
-
-
-class JudgeJobStatus(str, Enum):
-    """The lifecycle status of a judge job."""
-
-    pending = "pending"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
-    cancelled = "cancelled"
 
 
 class JudgeJobRun(KilnParentedModel):
@@ -48,38 +37,17 @@ class JudgeJobRun(KilnParentedModel):
         return self.parent  # type: ignore
 
 
-class JudgeJobOutcome(BaseModel):
-    """A summary of a completed judge job."""
-
-    train_set_size: int = Field(
-        description="Total number of dataset items matching the target tags."
-    )
-    num_judged: int = Field(
-        description="How many items were examined while searching for failures."
-    )
-    failing_count: int = Field(
-        description="How many of the judged items failed the judge."
-    )
-    hit_cap: bool = Field(
-        description="True if max_samples was reached before finding the requested count of failures.",
-    )
-    error: str | None = Field(
-        default=None,
-        description="Error message if the job failed.",
-    )
-
-
 class JudgeJob(
     KilnParentedModel,
     KilnParentModel,
     parent_of={"runs": JudgeJobRun},
 ):
     """
-    A runnable job that samples dataset items by tag, judges them with an evaluator
+    A reusable config that samples dataset items by tag, judges them with an evaluator
     (eval config), and records each item's pass/fail and the judge's feedback.
 
-    Used to surface a minibatch of failing examples — with feedback — for reflective
-    prompt optimization. A child of a Task; a parent of JudgeJobRun results.
+    Used to surface a minibatch of failing examples — with feedback — for reflective prompt
+    optimization. A child of a Task; a parent of the JudgeJobRun results it produces.
     """
 
     name: FilenameString = Field(description="The name of the judge job.")
@@ -112,14 +80,6 @@ class JudgeJob(
         ge=0.0,
         le=1.0,
         description="The normalized (0-1) pass bar. A score below this counts as failing.",
-    )
-    latest_status: JudgeJobStatus = Field(
-        default=JudgeJobStatus.pending,
-        description="The latest known status of this judge job (pending, running, succeeded, failed, cancelled).",
-    )
-    outcome: JudgeJobOutcome | None = Field(
-        default=None,
-        description="A summary of the job's results, populated after a run.",
     )
 
     def parent_task(self) -> Union["Task", None]:
