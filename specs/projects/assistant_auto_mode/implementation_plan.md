@@ -38,7 +38,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     green-dot/"Working now" grouping, interrupt-on-send; regenerate `api_schema.d.ts`. vitest
     coverage. (`ui_design.md`, Architecture §5.)
 
-- [ ] **Phase 5 — External backend wiring + end-to-end** (`/Users/leonardmarcq/Downloads/kiln_server`)
+- [x] **Phase 5 — External backend wiring + end-to-end** (`/Users/leonardmarcq/Downloads/kiln_server`)
   - Branch `leonard/kil-692-assistant-auto-mode`; repoint `kiln-ai`/`kiln-server` to local editable
     paths (`libs/core`, `libs/server`) + `uv sync`. Register `enable_auto_mode` in
     `CHAT_CLIENT_VISIBLE_TOOLS` + `get_chat_kiln_tool_ids()`; add system-prompt guidance in chat
