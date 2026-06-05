@@ -24,6 +24,7 @@
     ReviewRow,
   } from "../../../specs/[project_id]/[task_id]/spec_utils"
   import { KilnError } from "$lib/utils/error_handlers"
+  import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { build_default_judge_info } from "$lib/eval/default_judge"
   import type {
     Task,
@@ -114,9 +115,9 @@
       // Seed property_values.issue_description from the free-text description
       // up front. This is the fallback shape for the "issue" default — when
       // the classifier ships, it'll overwrite below. Done here so Step 3's
-      // Refine "Original" column reflects what the user typed in Step 1
-      // (and Step 2's refine_spec_with_question_answers has something to
-      // refine from), even if classification fails.
+      // Refine reflects what the user typed in Step 1 (and Step 2's
+      // refine_spec_with_question_answers has something to refine from),
+      // even if classification fails.
       property_values = {
         ...property_values,
         issue_description: description,
@@ -757,14 +758,67 @@
   $: if (current_step === "clarify" && !question_set && !questions_loading) {
     load_questions()
   }
+
+  // Title + subtitle per step. Lifted to AppPage so the heading lives in
+  // the page header alongside the Evals breadcrumb, matching v1.
+  function page_title_for(step: BuilderStep): string {
+    switch (step) {
+      case "describe":
+        return "Create Eval"
+      case "clarify":
+        return "Clarify Eval"
+      case "refine":
+        return "Refine Eval"
+      case "generate":
+        return is_multi_turn ? "Generate Conversations" : "Generate Examples"
+      case "review":
+        return is_multi_turn ? "Review Conversations" : "Review Examples"
+      case "save":
+        return "Creating Eval"
+      case "done":
+        return "Eval Created"
+    }
+  }
+
+  function page_subtitle_for(step: BuilderStep): string | undefined {
+    switch (step) {
+      case "describe":
+        return "Describe a behaviour to enforce or avoid for your task. We'll structure it into a spec."
+      case "clarify":
+        return "Answer a few questions to reduce ambiguity in your eval."
+      case "refine":
+        return "Review and edit the refined spec before generating examples."
+      case "generate":
+        return is_multi_turn
+          ? `Driving ${multi_turn_total} multi-turn conversations against your agent.`
+          : "Generating sample inputs and outputs based on your spec."
+      case "review":
+        return is_multi_turn
+          ? "Mark each conversation Pass or Fail."
+          : "Mark each example Pass or Fail."
+      case "save":
+        return "Persisting the spec, eval, and dataset."
+      case "done":
+        return undefined
+    }
+  }
+
+  // v1 widens the layout when there's a side-by-side comparison or table
+  // (review, refine-with-suggestions). Mirror that here so the typography
+  // and form fields aren't crammed into a 3xl box on those steps.
+  function page_max_w_for(step: BuilderStep): string {
+    if (step === "review") return "max-w-[1400px]"
+    if (step === "refine" && !is_multi_turn) return "max-w-[1400px]"
+    return "max-w-[900px]"
+  }
+
+  $: page_title = page_title_for(current_step)
+  $: page_subtitle = page_subtitle_for(current_step)
+  $: page_max_w = page_max_w_for(current_step)
 </script>
 
-<AppPage
-  title="Evals V2"
-  subtitle="A simplified eval builder — beta"
-  no_y_padding
->
-  <div class="max-w-3xl mx-auto py-6">
+<AppPage title={page_title} subtitle={page_subtitle} no_y_padding>
+  <div class="{page_max_w} mx-auto py-6">
     <!-- Step indicator -->
     <div class="text-xs text-gray-500 mb-6 flex items-center gap-2">
       <span>Step</span>
@@ -781,22 +835,14 @@
       <div class="alert alert-error">{task_error}</div>
     {:else if current_step === "describe"}
       <!-- ── Step 1 — Describe ── -->
-      <h1 class="text-2xl font-bold mb-2">What should this eval check?</h1>
-      <p class="text-sm text-gray-500 mb-4">
-        Describe in plain language. We'll structure it for you.
-      </p>
-
       <FormElement
-        label=""
+        label="What should this eval check?"
+        description="Describe in plain language. We'll structure it for you."
         id="description"
         inputType="textarea"
         height="medium"
         bind:value={description}
       />
-
-      <div class="text-xs text-gray-400 mt-2">
-        Spec name (auto-derived after Continue)
-      </div>
 
       {#if classify_error}
         <div class="alert alert-warning mt-3 text-sm">{classify_error}</div>
@@ -856,19 +902,14 @@
       {:else if is_multi_turn}
         <!-- Multi-turn variant: examples fields don't apply (real examples
              come from Step 4 synthetic chains). Just name + description. -->
-        <h1 class="text-2xl font-bold mb-2">Refine your eval</h1>
-        <p class="text-sm text-gray-500 mb-6">
-          Review the refined description below. The synthetic-user run in Step 4
-          will probe your agent against this spec.
-        </p>
-
         <div class="mb-6">
           <FormElement
             label="Eval Name"
-            description="A short name for your own reference."
+            description="A short name for your own reference (max 32 characters)."
             id="multi_turn_name"
             inputType="input"
             bind:value={name}
+            validator={filename_string_short_validator}
           />
         </div>
 
@@ -935,26 +976,6 @@
       {/if}
     {:else if current_step === "generate"}
       <!-- ── Step 4 — Generate ── -->
-      <h1 class="text-2xl font-bold mb-2">
-        {#if is_multi_turn && multi_turn_phase === "generating_cases"}
-          Generating {NUM_CASES} synthetic-user cases
-        {:else if is_multi_turn}
-          Running synthetic conversations
-        {:else}
-          Generating examples
-        {/if}
-      </h1>
-      <p class="text-sm text-gray-500 mb-6">
-        {#if is_multi_turn && multi_turn_phase === "generating_cases"}
-          Asking the copilot to author {NUM_CASES} persona-driven scenarios that
-          probe your spec.
-        {:else if is_multi_turn}
-          Driving {multi_turn_total} cases against your agent. This will take a moment.
-        {:else}
-          Generating ~10 sample inputs and outputs based on your spec.
-        {/if}
-      </p>
-
       {#if generation_loading}
         <div class="text-center py-12">
           <span class="loading loading-dots loading-lg"></span>
@@ -994,10 +1015,6 @@
     {:else if current_step === "review"}
       <!-- ── Step 5 — Review ── -->
       {#if is_multi_turn}
-        <h1 class="text-2xl font-bold mb-2">Review</h1>
-        <p class="text-sm text-gray-500 mb-6">
-          Read each conversation. Mark each chain Pass or Fail.
-        </p>
         <!-- Multi-turn: custom card stack of conversation traces.
              v1's ReviewExamples only handles single I/O pairs, so multi-turn
              keeps its own UI. -->
@@ -1009,9 +1026,6 @@
                   <div class="flex-1">
                     <div class="text-xs text-gray-500 mb-1">
                       Conversation {ci + 1} of {multi_turn_chains.length}
-                    </div>
-                    <div class="text-xs italic text-gray-500">
-                      {chain.persona_summary}
                     </div>
                   </div>
                   <div class="flex gap-1">
@@ -1112,12 +1126,7 @@
         </div>
       {/if}
     {:else if current_step === "save"}
-      <!-- ── Step 5 — Save ── -->
-      <h1 class="text-2xl font-bold mb-2">Save</h1>
-      <p class="text-sm text-gray-500 mb-6">
-        Creating the Spec, Eval, and dataset…
-      </p>
-
+      <!-- ── Step 6 — Save ── -->
       {#if saving}
         <div class="text-center py-12">
           <span class="loading loading-dots loading-lg"></span>
