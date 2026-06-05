@@ -471,6 +471,79 @@ disconnect + re-attach + completion.
 - **Single-process assumption.** In-memory registry assumes one app-server process (true for the
   desktop app). Not designed for multi-process/horizontal scaling — matches the jobs system.
 
+## 13. Revision R1 — Conversation-scoped auto-mode (inject-on-send, persist, disable tool)
+
+Supersedes the burst-only model. Changes span libs/core, app server, web UI, and the backend.
+
+### 13.1 Flag/runner decoupling (app server)
+
+- The registry entry becomes **per-conversation and persistent**: it holds the conversation's
+  **auto-mode flag**, the event bus, the current-turn buffer, the trace index entries, and a
+  handle to the *current burst task* (which may be `None` when idle). The entry survives across
+  bursts; it is removed only on explicit disable/stop (or restart/GC).
+- `AutoRunStatus` gains an **`IDLE`** state. A burst ending via assistant-asks/done, error, or
+  `MAX_TOOL_ROUNDS` now transitions the run to `IDLE` (flag still on) and publishes a new
+  **`auto-mode-idle`** control event with the burst-end `reason` — it does **not** publish
+  `auto-mode-off` and does **not** evict the entry. `auto-mode-off` is published only on explicit
+  disable (`user_stopped` via Stop, `user_disabled` via the tool).
+- `is_active_for_trace` / the session-list `auto_active` join now reflect "**flag is on**"
+  (RUNNING **or** IDLE) — so the green dot persists while idle between bursts.
+- `AutoChatRunner.run()` no longer sets terminal DONE on a plain-text handoff; it returns control
+  to the registry which marks the run `IDLE`. The `_supervise` happy-path => IDLE (not terminal).
+
+### 13.2 Message injection (app server)
+
+- `AutoChatRun` gains an **inbound message queue** (`list[user-message]`).
+- New endpoint `POST /api/chat/auto/{run_id}/message` (body: the user message + its `trace_id`):
+  - If a burst is **active**: enqueue the message. The runner, at its next round boundary (where
+    it builds the continuation body via `_build_openai_tool_continuation`), **drains the queue and
+    appends the user message(s)** to that continuation (a `role:"user"` message after the tool
+    results). The backend sees the tool results *and* the new user input on the next turn. The run
+    never stops.
+  - If the run is **IDLE**: start a new burst seeded with the queued message(s) as `extra_messages`
+    (reuse the existing `AutoChatSeed`/`_build_seed_body` path), task spawned by the registry.
+  - Emits the user message onto the run's event bus (and into the current-turn buffer) so all
+    observers — including the sender — render it immediately, consistent with re-attach/replay.
+- The web UI, when `autoModeOn`, sends via this endpoint instead of `/api/chat` (replaces the old
+  interrupt-on-send: no `stop()` call on send).
+
+### 13.3 `disable_auto_mode` (libs/core tool + interception + backend)
+
+- **libs/core:** add `DisableAutoModeTool` mirroring `EnableAutoModeTool`
+  (`KilnBuiltInToolId.DISABLE_AUTO_MODE`, registry case, signal-only `run()` returning
+  `{"status":"disabled"}`, `DISABLE_AUTO_MODE_TOOL_NAME`).
+- **App server interception:** in both `ChatStreamSession` *and* the `AutoChatRunner` round
+  handling, a tool call named `disable_auto_mode` is intercepted (never executed): clear the
+  conversation's auto-mode flag, publish `auto-mode-off(user_disabled)`, end the burst, and resolve
+  the tool result `{"status":"disabled"}` back to the backend so it continues **interactively**.
+  (It must be handled in the runner path because that's where the model runs while auto-mode is on
+  and where the user's "stop" message is processed.)
+- **Backend (kiln_server):** register `disable_auto_mode` in `CHAT_CLIENT_VISIBLE_TOOLS` +
+  `get_chat_kiln_tool_ids()` (mirrors `enable_auto_mode`); add system-prompt guidance to call it
+  (alone) when the user asks to stop auto-mode, then continue interactively. No consent needed for
+  turning off.
+
+### 13.4 Consent once per conversation (web UI)
+
+- Consent is requested only on off→on. The web UI tracks the conversation's auto-mode flag from
+  the `auto-mode-on`/`auto-mode-off` stream; while on (RUNNING or IDLE), sends go through
+  `/message` with no consent and no re-enable. The indicator + Stop bind to the flag, not to burst
+  liveness.
+
+### 13.5 Off-reason vocabulary
+
+`auto-mode-off.reason` ∈ {`user_stopped`, `user_disabled`}. New `auto-mode-idle.reason` ∈
+{`asked_user`, `done`, `error`, `max_rounds`}. Web UI clears the indicator only on `auto-mode-off`.
+
+### 13.6 Edge cases
+
+- **Inject during the final tool batch:** queued messages are drained at the *next* continuation;
+  if the burst was about to go idle (no tool calls), the runner instead continues with the queued
+  user message as a fresh turn (so a message sent the instant a burst ends is never dropped — the
+  runner checks the queue before settling to IDLE).
+- **Stop/disable with queued messages:** queue is discarded; flag cleared.
+- **Restart:** entry is in-memory; lost on restart (unchanged, §4.7) — flag included.
+
 ## 12. One-Phase Decision
 
 Single `architecture.md`; no separate `/components` docs. The pieces (registry, runner, bus, UI

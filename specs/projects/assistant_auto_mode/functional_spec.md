@@ -69,10 +69,18 @@ see §4.2):
 2. **User UI toggle.** The user clicks an "enable auto mode" control in the chat UI. Same consent
    dialog.
 
+> **Revision R1 — conversation-scoped auto-mode.** Auto-mode is no longer a single burst that
+> auto-disables when the assistant pauses. Once enabled it stays on for the **whole conversation**
+> until the user **explicitly** stops it (Stop button or a typed request the assistant honors via
+> `disable_auto_mode`). Sending a message while a run is working **injects** the message into the
+> ongoing run rather than stopping it. This revises §4.2, §4.4, §4.5, §5, and §6 below.
+
 ### 4.2 Consent
 
-- Consent is requested **every time** auto-mode would turn on (including later in the same
-  conversation after a prior auto run ended).
+- Consent is requested when auto-mode transitions **off → on** for a conversation. Because
+  auto-mode now **persists for the whole conversation** (Revision R1), this is normally **once per
+  conversation** — not once per burst and not per user message. It is requested again only if the
+  user has explicitly turned auto-mode off and it is later re-triggered.
 - The consent prompt explains the implications: auto-mode will run tool calls **without asking for
   approval**, may **kick off costly jobs** (e.g. reflective optimization), **uses tokens / incurs
   cost**, and will **keep running on the server even if you close this window**. The user can
@@ -100,23 +108,50 @@ Once on, for this conversation:
 - The conversation snapshot/`trace_id` continues to be persisted by the backend each round, so the
   conversation is always recoverable up to the last completed round.
 
+#### 4.3.1 Persistence across bursts (Revision R1)
+
+- The auto-mode **flag is conversation-scoped** and persists until explicitly stopped. It is
+  decoupled from any single "burst" of runner activity.
+- A **burst** is one stretch of runner work. When the assistant yields a plain-text turn (a
+  question for the user, or "I'm done"), the **burst ends but auto-mode stays ON**. The
+  conversation simply goes **idle** (the green indicator remains shown), waiting for the user.
+- When the user sends the next message while idle, a new burst starts **automatically in
+  auto-mode** — **no new consent prompt** (consent was already given for this conversation).
+
+#### 4.3.2 Sending a message while a run is working (Revision R1)
+
+- Sending a message **does not stop** auto-mode. The message is **injected into the ongoing run**:
+  it is queued and delivered to the assistant at the next round boundary (alongside the pending
+  tool results), so the assistant incorporates it on its next step and keeps going. The run never
+  stops on send.
+- If the conversation is idle (between bursts) when the user sends, the message starts a new burst
+  (per §4.3.1).
+
 ### 4.4 Disabling auto-mode
 
-Auto-mode turns **off** (the auto run ends) when any of:
+Under Revision R1, auto-mode turns **off** for the conversation **only on an explicit user
+action** — never just because the assistant finished a burst or asked a question:
 
-1. **Assistant asks the user / is done.** A backend handoff arrives with **no pending
-   client-visible tool calls** and a plain-text assistant turn. This is the natural stop signal.
-   The runner stops, auto-mode is set off for the conversation.
-2. **User stops it.** The user clicks **Stop auto-mode** (available whenever a run is active, even
-   after reconnecting). The runner finishes the in-flight tool batch is *not* required — it cancels
-   promptly (see §7), marks auto-mode off, and persists/keeps the last completed snapshot.
-3. **Error.** An unrecoverable error in the runner (e.g. backend unreachable) ends the run with an
-   error state. The conversation is preserved at the last persisted snapshot.
-4. **Backstop reached.** The existing `MAX_TOOL_ROUNDS` (100) app-server backstop is hit; the run
-   ends with a notice. (No additional cost/round cap beyond this — see §9.)
+1. **User clicks Stop.** The **Stop** control adjacent to the auto-mode indicator. Cancels any
+   in-flight burst promptly (see §7), clears the conversation's auto-mode flag, keeps the last
+   completed snapshot.
+2. **User explicitly asks to stop, in chat.** When the user's message asks to stop auto-mode (e.g.
+   "stop auto mode", "go back to asking me each time"), the assistant calls the **`disable_auto_mode`**
+   tool, which the app server intercepts to clear the conversation's auto-mode flag and end the
+   run. This is the reliable, symmetric counterpart to `enable_auto_mode`.
 
-After auto-mode turns off, the conversation returns to normal interactive mode. The user may send
-another message, which can re-trigger auto-mode (with a fresh consent prompt).
+The following **end the current burst but do NOT disable auto-mode** (the flag stays on; the
+conversation goes idle and resumes auto on the next message):
+
+- **Assistant asks the user / is done** (plain-text handoff with no client tool calls).
+- **Error.** An unrecoverable runner error (e.g. backend unreachable) ends the burst and is
+  surfaced; the flag remains on so the user can retry or stop. The conversation is preserved at the
+  last persisted snapshot.
+- **Backstop reached.** The `MAX_TOOL_ROUNDS` (100) per-burst backstop ends the burst with a
+  notice; the flag stays on.
+
+After auto-mode is explicitly turned off, the conversation returns to normal interactive mode (and
+could be re-enabled later with a fresh consent prompt).
 
 ### 4.5 Surviving disconnect + returning
 
@@ -165,6 +200,18 @@ another message, which can re-trigger auto-mode (with a fresh consent prompt).
 - The app server **never silently executes** `enable_auto_mode`; it always routes it through the
   consent flow. The tool's result returned to the backend is `enabled` or `declined`.
 
+### 5.1 The `disable_auto_mode` tool (Revision R1)
+
+- A second client-visible backend tool, symmetric with `enable_auto_mode`, the model calls **when
+  the user asks to stop auto-mode** (e.g. "stop auto mode", "stop doing this automatically", "ask
+  me before each step again").
+- **Schema:** minimal (no required params; an optional `reason` is fine).
+- The app server **intercepts** it (never executes it as a normal tool): it clears the
+  conversation's auto-mode flag, ends the run, and resolves the tool result so the backend
+  continues interactively. No consent prompt (turning *off* is always allowed).
+- **System-prompt guidance:** instruct the model to call `disable_auto_mode` (alone) when the user
+  signals they want auto-mode to stop, then continue interactively.
+
 ## 6. API & Contracts (app server)
 
 New/changed app-server endpoints. Exact shapes finalized in architecture; this fixes the contract
@@ -176,8 +223,13 @@ intent. All live under the chat API.
   Payload: `{ reason?: string, tool_call_id: string }`. The stream pauses awaiting the user's
   decision (analogous to the existing `tool-calls-pending` pattern).
 - `auto-mode-on` / `auto-mode-off` — state-change markers so any connected observer updates the
-  indicator. `auto-mode-off` carries a `reason` (`asked_user` | `done` | `user_stopped` | `error`
-  | `max_rounds`).
+  indicator. Under Revision R1 these track the **conversation-scoped flag**, so `auto-mode-off` is
+  emitted **only** on explicit disable: `reason` ∈ (`user_stopped` | `user_disabled`). Burst-level
+  endings that do **not** clear the flag are signalled separately:
+- `auto-mode-idle` — a burst ended (assistant asked/done, error, or backstop) but auto-mode is
+  **still on**; the conversation is idle awaiting the user. Carries a `reason`
+  (`asked_user` | `done` | `error` | `max_rounds`). The indicator stays shown (idle styling
+  optional).
 
 ### 6.2 Control endpoints
 
@@ -187,7 +239,14 @@ intent. All live under the chat API.
   runner, and begins the auto run. Returns a handle for observing the run.
 - `POST /api/chat/auto/decline` — user declined a backend-tool-triggered consent. Resolves the
   tool call as `declined` and resumes the normal stream. (UI-toggle decline needs no server call.)
-- `POST /api/chat/auto/{run}/stop` — user-initiated stop. Idempotent; returns 202.
+- `POST /api/chat/auto/{run}/stop` — user-initiated stop (Stop button). Disables the conversation's
+  auto-mode flag and cancels any in-flight burst. Idempotent; returns 202.
+- `POST /api/chat/auto/{run}/message` (Revision R1) — send a user message into an auto-mode
+  conversation **without disabling it**. If a burst is active, the message is **queued** and
+  injected at the next round boundary; if idle, it **starts a new burst** in auto-mode. Returns
+  promptly; the resulting events arrive on the run's observer stream (§6.3). The browser uses this
+  (not `/api/chat`) to send while auto-mode is on. `disable_auto_mode` is handled via interception
+  of the backend tool (no dedicated endpoint needed), the same way `enable_auto_mode` is.
 
 ### 6.3 Observation endpoints
 

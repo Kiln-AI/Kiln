@@ -65,13 +65,23 @@ the *current visible stream*. The footer **Stop** stops the *auto run* (the serv
 While auto-mode is on, both are present and both ultimately end the run; copy/tooltips clarify
 "Stop" (footer) = "Stop auto mode".
 
-## 2. Disabled input while a run drives the conversation?
+## 2. Sending a message while auto-mode is on (Revision R1 — inject, don't interrupt)
 
-No. The textarea stays usable: the user may still type. But sending a message while a run is
-active is **not** a normal flow (the assistant is mid-burst). Decision: while auto-mode is on,
-keep the input enabled but treat a user send as an implicit interrupt — it stops the run and sends
-the message interactively. (Simpler than locking; matches "user can always take back control".)
-Confirm during implementation; default to interrupt-on-send.
+The textarea stays usable, and sending a message **does not stop auto-mode**. Instead the message
+is **injected into the ongoing run** (functional spec §4.3.2): the UI routes the send through
+`POST /api/chat/auto/{run}/message` (not `/api/chat`), the assistant picks it up at its next step,
+and the green indicator stays on. If the conversation is idle between bursts, the same call starts
+a new burst in auto-mode. Auto-mode is conversation-scoped and only ends on an explicit user
+action:
+
+- the **Stop** control adjacent to the indicator, or
+- the user **asking in chat** to stop (the assistant calls `disable_auto_mode`; the indicator
+  clears when the `auto-mode-off` event arrives).
+
+So the optimistic "stop on send" behavior is removed. After sending while on, the user's message
+appears in the transcript and the run continues; the indicator remains "⏵⏵ auto mode on" (it may
+show a subtle "working…" vs "idle/waiting" sub-state, but it stays green and present until
+explicitly stopped).
 
 ## 3. Consent dialog
 
@@ -138,11 +148,15 @@ brief "Catching up…" state, then normal once the next snapshot arrives — nev
 
 ## 6. States summary
 
-| Context | Off | Consent pending | On (active) |
+| Context | Off | Consent pending | On (working or idle) |
 |---|---|---|---|
-| Footer | muted `⏵⏵ Auto mode` ghost | dialog open | green `⏵⏵ auto mode on` + Stop |
-| Input | normal | normal (dialog blocks) | enabled; send = interrupt |
-| History row | title + date | n/a | green dot + "Working…", grouped on top |
+| Footer | muted `⏵⏵ Auto mode` ghost | dialog open | green `⏵⏵ auto mode on` + Stop (stays shown while idle between bursts) |
+| Input | normal | normal (dialog blocks) | enabled; **send = inject into the run** (never stops it) |
+| History row | title + date | n/a | green dot + "Working…", grouped on top (shown whenever the flag is on, incl. idle) |
+
+The green indicator and Stop are bound to the conversation's auto-mode flag (the `auto-mode-on`
+state), **not** to whether a burst is momentarily streaming — so they persist across the assistant
+pausing for input and across user messages, until an explicit stop.
 
 ## 7. Responsive / platform
 
