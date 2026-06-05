@@ -396,10 +396,12 @@
     real_multi_turn_batch_tag = null
 
     try {
-      // 1. Resolve target_run_config from the task's default run config.
-      if (!task?.id || !task.default_run_config_id) {
-        generation_error =
-          "Task has no default run config — set one in task settings."
+      // 1. Resolve target_run_config: prefer the task's default; if none
+      // set, fall back to the first available run config so the user
+      // doesn't have to detour into task settings just to try v2. Only
+      // error when the task has zero configs (genuinely unrunnable).
+      if (!task?.id) {
+        generation_error = "Task not loaded."
         return
       }
       await load_task_run_configs(project_id, task.id)
@@ -407,17 +409,18 @@
         get(run_configs_by_task_composite_id)[
           get_task_composite_id(project_id, task.id)
         ] ?? []
-      const default_config = run_configs.find(
-        (c) => c.id === task!.default_run_config_id,
-      )
-      if (!default_config) {
-        generation_error = "Task default run config not found."
+      if (run_configs.length === 0) {
+        generation_error =
+          "Task has no run configs — create one before running multi-turn."
         return
       }
-      const rcp = default_config.run_config_properties
+      const chosen_config =
+        run_configs.find((c) => c.id === task!.default_run_config_id) ??
+        run_configs[0]
+      const rcp = chosen_config.run_config_properties
       if (!isKilnAgentRunConfig(rcp)) {
         generation_error =
-          "Multi-turn requires a Kiln Agent run config on the task default."
+          "Multi-turn requires a Kiln Agent run config; the selected one isn't."
         return
       }
       const target_run_config = {
