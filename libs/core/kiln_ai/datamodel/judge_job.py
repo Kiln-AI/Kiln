@@ -99,14 +99,18 @@ class JudgeJob(
     )
     count: int = Field(
         default=5,
+        ge=1,
         description="The number of failing examples to find before the job stops.",
     )
     max_samples: int = Field(
         default=50,
+        ge=1,
         description="The maximum number of items to judge while searching for failures.",
     )
     threshold: float = Field(
         default=0.75,
+        ge=0.0,
+        le=1.0,
         description="The normalized (0-1) pass bar. A score below this counts as failing.",
     )
     latest_status: JudgeJobStatus = Field(

@@ -392,3 +392,30 @@ async def test_judge_errors_are_skipped(mock_task, data_source):
     assert len(runs) == 1
     assert runs[0].dataset_id == fail_run.id
     assert runs[0].passed is False
+
+
+@pytest.mark.asyncio
+async def test_run_cancelled_sets_status(mock_task, data_source):
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(mock_task, eval_config, count=2, max_samples=10)
+    for i in range(5):
+        make_train_run(mock_task, data_source, f"fail-{i}")
+
+    def score_fn(task_run):
+        return {"accuracy": 0.0}
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "kiln_ai.adapters.eval.judge_job_runner.eval_adapter_from_type",
+            lambda _type: scripted_evaluator_factory(score_fn),
+        )
+        runner = JudgeJobRunner(job, eval_config, rng=random.Random(1))
+        gen = runner.run(concurrency=1)
+        await gen.__anext__()  # first progress yield; status is now running
+        assert job.latest_status == JudgeJobStatus.running
+        await gen.aclose()  # raises GeneratorExit into the generator
+
+    assert job.latest_status == JudgeJobStatus.cancelled
+    assert job.outcome is not None
+    assert job.outcome.error == "Run cancelled"

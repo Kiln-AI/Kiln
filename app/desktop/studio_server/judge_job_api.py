@@ -8,7 +8,7 @@ from kiln_ai.adapters.eval.judge_job_runner import (
     JudgeJobRunner,
 )
 from kiln_ai.datamodel.eval import EvalConfig
-from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun
+from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun, JudgeJobStatus
 from kiln_ai.datamodel.task import Task
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
@@ -39,6 +39,15 @@ def eval_config_for_id(task: Task, eval_config_id: str) -> EvalConfig:
         status_code=404,
         detail=f"Eval config not found. ID: {eval_config_id}",
     )
+
+
+def validate_run_config_id(task: Task, run_config_id: str | None) -> None:
+    """If a run_config_id is provided (metadata), confirm it is a real run config for the task."""
+    if run_config_id and not any(rc.id == run_config_id for rc in task.run_configs()):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run config not found. ID: {run_config_id}",
+        )
 
 
 class CreateJudgeJobRequest(BaseModel):
@@ -140,8 +149,9 @@ def connect_judge_job_api(app: FastAPI):
     ) -> JudgeJob:
         """Create a judge job config (status pending). Run it later with `/judge_jobs/{id}/run`."""
         task = task_from_id(project_id, task_id)
-        # Validate the judge (eval config) exists under this task.
+        # Validate the judge (eval config) and optional run config exist under this task.
         eval_config_for_id(task, request.eval_config_id)
+        validate_run_config_id(task, request.run_config_id)
         judge_job = _build_judge_job(task, request)
         judge_job.save_to_file()
         return judge_job
@@ -175,6 +185,8 @@ def connect_judge_job_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
         judge_job = judge_job_from_id(project_id, task_id, judge_job_id)
+        if judge_job.latest_status == JudgeJobStatus.running:
+            raise HTTPException(status_code=409, detail="Judge job is already running.")
         eval_config = eval_config_for_id(task, judge_job.eval_config_id)
         runner = JudgeJobRunner(
             judge_job, eval_config, save_context=build_save_context(request)
@@ -203,6 +215,7 @@ def connect_judge_job_api(app: FastAPI):
         carries the new `judge_job_id`)."""
         task = task_from_id(project_id, task_id)
         eval_config = eval_config_for_id(task, body.eval_config_id)
+        validate_run_config_id(task, body.run_config_id)
         judge_job = _build_judge_job(task, body)
         judge_job.save_to_file()
         runner = JudgeJobRunner(

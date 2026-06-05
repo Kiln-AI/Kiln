@@ -136,6 +136,20 @@ def test_create_unknown_eval_config(
     assert resp.status_code == 404
 
 
+def test_create_unknown_run_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(
+        BASE,
+        json={
+            "target_tags": ["train"],
+            "eval_config_id": "eval_config1",
+            "run_config_id": "nope",
+        },
+    )
+    assert resp.status_code == 404
+
+
 def test_create_validation(client, mock_task, mock_task_from_id, mock_eval_config):
     bad_counts = client.post(
         BASE,
@@ -180,6 +194,24 @@ def test_run_judge_job(
 def test_run_judge_job_404(client, mock_task, mock_task_from_id, mock_eval_config):
     resp = client.post(f"{BASE}/nope/run")
     assert resp.status_code == 404
+
+
+def test_run_judge_job_conflict_when_running(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    from kiln_ai.datamodel import JudgeJobStatus
+
+    job = JudgeJob(
+        id="running1",
+        name="scan",
+        target_tags=["train"],
+        eval_config_id=mock_eval_config.id,
+        latest_status=JudgeJobStatus.running,
+        parent=mock_task,
+    )
+    job.save_to_file()
+    resp = client.post(f"{BASE}/running1/run")
+    assert resp.status_code == 409
 
 
 def test_create_and_run(client, mock_task, mock_task_from_id, mock_eval_config):

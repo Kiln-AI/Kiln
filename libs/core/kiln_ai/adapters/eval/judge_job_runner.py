@@ -44,8 +44,8 @@ def score_passes(
     """Whether an eval score counts as a 'pass' (at/above the bar) on a normalized 0-1 scale."""
     try:
         normalized = normalize_rating(value, score_type)
-    except ValueError:
-        # Out-of-range or non-normalizable (e.g. custom) scores can't clear the bar.
+    except (ValueError, TypeError):
+        # Out-of-range, non-numeric, or non-normalizable (e.g. custom) scores can't clear the bar.
         return False
     return normalized >= threshold
 
@@ -73,12 +73,12 @@ def feedback_from_intermediate_outputs(
         return None
     for key in ("reasoning", "chain_of_thought"):
         value = intermediate_outputs.get(key)
-        if value and value.strip():
+        if isinstance(value, str) and value.strip():
             return value.strip()
     combined = "\n\n".join(
         f"{key}: {value}"
         for key, value in intermediate_outputs.items()
-        if value and value.strip()
+        if isinstance(value, str) and value.strip()
     )
     return combined or None
 
@@ -109,7 +109,7 @@ class JudgeJobRunner:
 
     def _matches_tags(self, task_run: TaskRun) -> bool:
         # AND semantics: the item must carry every target tag.
-        return set(self.judge_job.target_tags) <= set(task_run.tags)
+        return set(self.judge_job.target_tags or []) <= set(task_run.tags or [])
 
     async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
         """Run the judge job, yielding Progress updates and persisting results + status."""
@@ -170,6 +170,20 @@ class JudgeJobRunner:
                     hit_cap=hit_cap,
                 ),
             )
+        except (asyncio.CancelledError, GeneratorExit):
+            # The SSE stream was cancelled (e.g. the client disconnected). Mark the job cancelled
+            # instead of leaving it stuck in `running`, then re-raise to unwind cleanly.
+            await self._finish(
+                JudgeJobStatus.cancelled,
+                JudgeJobOutcome(
+                    train_set_size=train_set_size,
+                    num_judged=num_judged,
+                    failing_count=failures,
+                    hit_cap=False,
+                    error="Run cancelled",
+                ),
+            )
+            raise
         except Exception as e:
             logger.error("Judge job %s failed: %s", job.id, e, exc_info=True)
             await self._finish(
