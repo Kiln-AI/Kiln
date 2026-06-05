@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 import random
 import statistics
+import sys
 from typing import Iterable, Sequence
 
 
@@ -144,16 +145,24 @@ def bootstrap_difference_ci(
     rng = random.Random(seed)
     p_a = successes_a / total_a
     p_b = successes_b / total_b
-    # ``random.binomialvariate`` is 3.12+, but the codebase still has to
-    # run under older interpreters in CI. Sum bernoulli draws ourselves —
-    # at our N (≲200) and n_resamples=10k that's ~4M random() calls,
-    # ~150ms in CPython. Fine for a once-per-row CI computation.
-    rand = rng.random
+    # ``random.binomialvariate`` (3.12+) draws each resample in O(log n);
+    # use it when present and fall back to summing bernoulli trials on
+    # older interpreters. Both paths are seeded, so CIs stay bit-identical
+    # across processes on a given interpreter (the manual fallback is
+    # ~150ms at N≲200 / n_resamples=10k — fine for a once-per-row CI).
     deltas: list[float] = [0.0] * n_resamples
-    for i in range(n_resamples):
-        sr_a = sum(1 for _ in range(total_a) if rand() < p_a)
-        sr_b = sum(1 for _ in range(total_b) if rand() < p_b)
-        deltas[i] = sr_b / total_b - sr_a / total_a
+    if sys.version_info >= (3, 12):
+        for i in range(n_resamples):
+            deltas[i] = (
+                rng.binomialvariate(n=total_b, p=p_b) / total_b
+                - rng.binomialvariate(n=total_a, p=p_a) / total_a
+            )
+    else:
+        rand = rng.random
+        for i in range(n_resamples):
+            sr_a = sum(1 for _ in range(total_a) if rand() < p_a)
+            sr_b = sum(1 for _ in range(total_b) if rand() < p_b)
+            deltas[i] = sr_b / total_b - sr_a / total_a
     deltas.sort()
     alpha = (1.0 - confidence) / 2.0
     low_idx = math.floor(alpha * n_resamples)
@@ -238,12 +247,9 @@ def paired_bootstrap_diff_ci(
     rng = random.Random(seed_int)
 
     means: list[float] = [0.0] * n_resamples
-    rand_int = rng.randrange
+    choices = rng.choices
     for i in range(n_resamples):
-        s = 0.0
-        for _ in range(n):
-            s += diffs[rand_int(n)]
-        means[i] = s / n
+        means[i] = sum(choices(diffs, k=n)) / n
     means.sort()
     alpha = (1.0 - confidence) / 2.0
     low_idx = math.floor(alpha * n_resamples)

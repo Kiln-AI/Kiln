@@ -121,7 +121,7 @@ class StatisticsRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _successes(proportion, n: int, label: str = "proportion") -> int:
+def _successes(proportion: float | None, n: int, label: str = "proportion") -> int:
     """Integer success count from a proportion + n (rounded, clamped to [0, n])."""
     if proportion is None:
         raise ValueError(f"'{label}' is required.")
@@ -182,7 +182,9 @@ def _table_from_outcomes(req: StatisticsRequest) -> tuple[int, int, int, int]:
     return (n11, n10, n01, n00)
 
 
-def _clean_pairs(values_a, values_b) -> tuple[list[float], list[float]]:
+def _clean_pairs(
+    values_a: list[float | None], values_b: list[float | None]
+) -> tuple[list[float], list[float]]:
     """Drop pairs where either side is None / NaN / non-numeric. Returns (a, b)."""
     a_out: list[float] = []
     b_out: list[float] = []
