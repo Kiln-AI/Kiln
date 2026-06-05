@@ -110,6 +110,17 @@
     classifying = true
     classify_error = null
     try {
+      // Seed property_values.issue_description from the free-text description
+      // up front. This is the fallback shape for the "issue" default — when
+      // the classifier ships, it'll overwrite below. Done here so Step 3's
+      // Refine "Original" column reflects what the user typed in Step 1
+      // (and Step 2's refine_spec_with_question_answers has something to
+      // refine from), even if classification fails.
+      property_values = {
+        ...property_values,
+        issue_description: description,
+      }
+
       const { data, error } = await client.POST(
         "/api/copilot/classify_spec_description",
         {
@@ -253,6 +264,11 @@
   // re-analyze, it just uses whatever refined_property_values the user
   // finalized.
   function on_refine_submit() {
+    // FormContainer flips submitting=true on every submit and leaves it to
+    // the caller to reset. We dispatch the form forward immediately (no
+    // network call here), so clear the flag before advancing — otherwise
+    // RefineSpec's button stays disabled if the user navigates back.
+    refine_submitting = false
     on_advance_to_generate()
   }
 
