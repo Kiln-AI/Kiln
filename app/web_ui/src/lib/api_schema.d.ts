@@ -2115,7 +2115,9 @@ export interface paths {
          *
          *     Runs synchronously and returns once judging completes. Each result is persisted as a child
          *     run (fetch them later via `GET /judge_jobs/{id}/runs`); the returned counts
-         *     (num_judged, failing_count, train_set_size, hit_cap) are FYI for the caller's loop.
+         *     (num_judged, failing_count, train_set_size, hit_cap) and any per-item `errors` are FYI for
+         *     the caller's loop. Errors don't abort the run — partial results are still persisted, and
+         *     re-running the job retries only the un-persisted (errored or not-yet-judged) items.
          */
         post: operations["run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__run_post"];
         delete?: never;
@@ -2174,7 +2176,7 @@ export interface paths {
         };
         /**
          * Get Judge Job Runs
-         * @description Get the per-item judge results (dataset_id, scores, feedback, passed) for a judge job.
+         * @description Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge job.
          */
         get: operations["get_judge_job_runs_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__runs_get"];
         put?: never;
@@ -6991,6 +6993,22 @@ export interface components {
             readonly model_type: string;
         };
         /**
+         * JudgeJobItemError
+         * @description An error judging or persisting a single item. Surfaced so the caller can see partial failures.
+         */
+        JudgeJobItemError: {
+            /**
+             * Task Run Id
+             * @description The ID of the task run (dataset item) that errored.
+             */
+            task_run_id: string;
+            /**
+             * Error
+             * @description The error message.
+             */
+            error: string;
+        };
+        /**
          * JudgeJobRun
          * @description The judge's result for a single sampled dataset item (a child of a JudgeJob).
          */
@@ -7023,10 +7041,10 @@ export interface components {
              */
             created_by?: string;
             /**
-             * Dataset Id
-             * @description The ID of the dataset item (TaskRun) that was judged.
+             * Task Run Id
+             * @description The ID of the task run (dataset item) that was judged.
              */
-            dataset_id: string | null;
+            task_run_id: string | null;
             /**
              * Scores
              * @description The scores produced by the judge for this dataset item.
@@ -7049,7 +7067,7 @@ export interface components {
         };
         /**
          * JudgeJobRunResponse
-         * @description The result of running a judge job. Counts are FYI for the caller; not persisted.
+         * @description The result of running a judge job. Counts and errors are FYI for the caller; not persisted.
          */
         JudgeJobRunResponse: {
             /** @description The judge job that was run. */
@@ -7079,6 +7097,11 @@ export interface components {
              * @description True if max_samples was reached before finding the requested count of failures.
              */
             hit_cap: boolean;
+            /**
+             * Errors
+             * @description Per-item judge/save errors (if any). Each is skipped, not retried; re-running the job retries the un-persisted items. A non-empty list means partial success.
+             */
+            errors?: components["schemas"]["JudgeJobItemError"][];
         };
         /**
          * KilnAgentRunConfigProperties

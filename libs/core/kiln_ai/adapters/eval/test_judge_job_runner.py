@@ -230,7 +230,7 @@ async def test_returns_failures_and_persists(mock_task, data_source):
     assert result.hit_cap is False
     assert len(result.failing_runs) == 2  # trimmed to count
     assert all(not r.passed for r in result.failing_runs)
-    assert all(r.dataset_id in fail_ids for r in result.failing_runs)
+    assert all(r.task_run_id in fail_ids for r in result.failing_runs)
     assert all(r.feedback for r in result.failing_runs)
 
     # All judged items persisted as children (pass and fail)
@@ -312,7 +312,7 @@ async def test_tag_filtering_and_semantics(mock_task, data_source):
     assert result.train_set_size == 1
     assert result.num_judged == 1
     assert len(result.failing_runs) == 1
-    assert result.failing_runs[0].dataset_id == both.id
+    assert result.failing_runs[0].task_run_id == both.id
 
 
 @pytest.mark.asyncio
@@ -324,7 +324,7 @@ async def test_cache_reuse_skips_judging(mock_task, data_source):
 
     JudgeJobRun(
         parent=job,
-        dataset_id=run.id,
+        task_run_id=run.id,
         scores={"accuracy": 0.0},
         feedback="cached",
         passed=False,
@@ -369,11 +369,11 @@ async def test_threshold_override_five_star(mock_task, data_source):
 
 
 @pytest.mark.asyncio
-async def test_judge_errors_are_skipped(mock_task, data_source):
+async def test_judge_errors_are_collected_and_skipped(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
     job = make_judge_job(mock_task, eval_config, count=2, max_samples=2)
-    make_train_run(mock_task, data_source, "error-item")
+    error_run = make_train_run(mock_task, data_source, "error-item")
     fail_run = make_train_run(mock_task, data_source, "fail-item")
 
     def score_fn(task_run):
@@ -387,4 +387,36 @@ async def test_judge_errors_are_skipped(mock_task, data_source):
     # The errored item is skipped (not persisted); only the failing item has a run
     assert len(job.runs()) == 1
     assert len(result.failing_runs) == 1
-    assert result.failing_runs[0].dataset_id == fail_run.id
+    assert result.failing_runs[0].task_run_id == fail_run.id
+    # The error is collected and surfaced (not silently swallowed) so the caller sees partial failure.
+    assert len(result.errors) == 1
+    assert result.errors[0].task_run_id == error_run.id
+    assert "Judge error" in result.errors[0].error
+
+
+@pytest.mark.asyncio
+async def test_save_errors_are_collected_but_result_kept(
+    mock_task, data_source, monkeypatch
+):
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(mock_task, eval_config, count=1, max_samples=1)
+    fail_run = make_train_run(mock_task, data_source, "fail-item")
+
+    def boom(self):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(JudgeJobRun, "save_to_file", boom)
+
+    def score_fn(task_run):
+        return {"accuracy": 0.0}
+
+    result = await run_job(job, eval_config, score_fn)
+
+    # The failing example is still returned even though persistence failed...
+    assert len(result.failing_runs) == 1
+    assert result.failing_runs[0].task_run_id == fail_run.id
+    # ...and the save failure is reported so the caller knows the result wasn't durably stored.
+    assert len(result.errors) == 1
+    assert result.errors[0].task_run_id == fail_run.id
+    assert "disk full" in result.errors[0].error

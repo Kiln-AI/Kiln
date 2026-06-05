@@ -5,14 +5,18 @@ over each item's existing output, and records pass/fail + the judge's feedback a
 — surfacing a minibatch of failing examples for reflective prompt optimization.
 
 The run is synchronous: it judges in "eval_config_eval" mode (no task re-run), persists each result
-as a child run, and returns a summary (the failing runs + counts). The counts are returned as FYI
-for the caller's loop decisions; the durable record is the persisted JudgeJobRun children.
+as a child run, and returns a summary (the failing runs + counts + any per-item errors). The counts
+and errors are returned as FYI for the caller's loop decisions; the durable record is the persisted
+JudgeJobRun children. Per-item judge/save errors don't abort the run — they're collected and returned
+so the caller can see partial failures, and re-running the job retries only the un-persisted items.
 """
 
 import asyncio
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
@@ -76,15 +80,35 @@ def feedback_from_intermediate_outputs(
     return combined or None
 
 
+class JudgeJobItemError(BaseModel):
+    """An error judging or persisting a single item. Surfaced so the caller can see partial failures."""
+
+    task_run_id: str = Field(
+        description="The ID of the task run (dataset item) that errored."
+    )
+    error: str = Field(description="The error message.")
+
+
 @dataclass
 class JudgeJobRunResult:
-    """The result of running a JudgeJob. Counts are FYI for the caller; not persisted."""
+    """The result of running a JudgeJob. Counts and errors are FYI for the caller; not persisted."""
 
     failing_runs: list[JudgeJobRun]
     num_judged: int
     failing_count: int
     train_set_size: int
     hit_cap: bool
+    errors: list[JudgeJobItemError] = field(default_factory=list)
+
+
+@dataclass
+class _ScoredItem:
+    """The outcome of judging a single item: a run (unless the judge errored), pass/fail, and an
+    optional error (judge or save failure) to surface to the caller."""
+
+    run: JudgeJobRun | None = None
+    passed: bool = False
+    error: JudgeJobItemError | None = None
 
 
 class JudgeJobRunner:
@@ -118,7 +142,9 @@ class JudgeJobRunner:
     async def run(self, concurrency: int = 25) -> JudgeJobRunResult:
         """Judge tagged dataset items until `count` failures are found or `max_samples` are judged.
 
-        Persists each result as a JudgeJobRun child and returns the failing runs + counts.
+        Persists each result as a JudgeJobRun child and returns the failing runs + counts + any
+        per-item errors. Per-item errors are collected (not raised), so one bad item never aborts
+        the run; the item is left un-persisted and a later re-run will retry it.
         """
         job = self.judge_job
 
@@ -131,7 +157,7 @@ class JudgeJobRunner:
 
         # Reuse previously-judged results for this job to avoid re-paying the judge.
         cache: dict[ID_TYPE, JudgeJobRun] = {
-            run.dataset_id: run for run in job.runs(readonly=True)
+            run.task_run_id: run for run in job.runs(readonly=True)
         }
 
         evaluator = eval_adapter_from_type(self.eval_config.config_type)(
@@ -141,6 +167,7 @@ class JudgeJobRunner:
             raise ValueError("Not able to create evaluator from eval config")
 
         failing_runs: list[JudgeJobRun] = []
+        errors: list[JudgeJobItemError] = []
         num_judged = 0
 
         # Judge in concurrent chunks so we can stop early once we have enough failures
@@ -152,11 +179,10 @@ class JudgeJobRunner:
             )
             for scored in results:
                 num_judged += 1
-                if scored is None:
-                    continue
-                run, passed = scored
-                if not passed:
-                    failing_runs.append(run)
+                if scored.error is not None:
+                    errors.append(scored.error)
+                if scored.run is not None and not scored.passed:
+                    failing_runs.append(scored.run)
             if len(failing_runs) >= job.count:
                 break
 
@@ -167,6 +193,7 @@ class JudgeJobRunner:
             failing_count=len(failing_runs),
             train_set_size=train_set_size,
             hit_cap=hit_cap,
+            errors=errors,
         )
 
     async def _score_one(
@@ -174,25 +201,32 @@ class JudgeJobRunner:
         evaluator: BaseEval,
         task_run: TaskRun,
         cache: dict[ID_TYPE, JudgeJobRun],
-    ) -> tuple[JudgeJobRun, bool] | None:
-        """Judge one item (or reuse a cached result), persist a JudgeJobRun, return (run, passed).
+    ) -> _ScoredItem:
+        """Judge one item (or reuse a cached result) and persist a JudgeJobRun.
 
-        Returns None if the judge errored on this item (logged + skipped by the caller).
+        Never raises: a judge or save failure is logged and returned as an error on the result so the
+        caller can surface it. A judge error yields no run (the item is skipped and left un-persisted,
+        so a later re-run retries it); a save error still returns the in-memory run and pass/fail.
         """
         existing = cache.get(task_run.id)
         if existing is not None:
-            return existing, existing.passed
+            return _ScoredItem(run=existing, passed=existing.passed)
 
         try:
             scores, intermediate_outputs = await evaluator.run_eval(task_run)
-        except Exception:
+        except Exception as e:
             logger.error(
                 "Error judging item %s for judge job %s",
                 task_run.id,
                 self.judge_job.id,
                 exc_info=True,
             )
-            return None
+            return _ScoredItem(
+                error=JudgeJobItemError(
+                    task_run_id=str(task_run.id),
+                    error=f"Error judging item: {e}",
+                )
+            )
 
         passed = not example_fails(
             scores, self.eval.output_scores, self.judge_job.threshold
@@ -200,22 +234,28 @@ class JudgeJobRunner:
         feedback = feedback_from_intermediate_outputs(intermediate_outputs)
         judge_job_run = JudgeJobRun(
             parent=self.judge_job,
-            dataset_id=task_run.id,
+            task_run_id=task_run.id,
             scores=scores,
             feedback=feedback,
             passed=passed,
         )
 
-        # Best-effort persistence: a save failure must not crash the whole concurrent batch.
+        # Best-effort persistence: a save failure must not crash the whole concurrent batch. We keep
+        # the in-memory result (so the failing example is still returned) but report the save error.
+        save_error: JudgeJobItemError | None = None
         try:
             async with self._save_context():
                 judge_job_run.save_to_file()
-        except Exception:
+        except Exception as e:
             logger.error(
                 "Error saving judge job run for item %s in judge job %s",
                 task_run.id,
                 self.judge_job.id,
                 exc_info=True,
             )
+            save_error = JudgeJobItemError(
+                task_run_id=str(task_run.id),
+                error=f"Error saving judge result: {e}",
+            )
 
-        return judge_job_run, passed
+        return _ScoredItem(run=judge_job_run, passed=passed, error=save_error)

@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 class JudgeJobRun(KilnParentedModel):
     """The judge's result for a single sampled dataset item (a child of a JudgeJob)."""
 
-    dataset_id: ID_TYPE = Field(
-        description="The ID of the dataset item (TaskRun) that was judged."
+    task_run_id: ID_TYPE = Field(
+        description="The ID of the task run (dataset item) that was judged."
     )
     scores: EvalScores = Field(
         description="The scores produced by the judge for this dataset item."

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
 
-from kiln_ai.adapters.eval.judge_job_runner import JudgeJobRunResult
+from kiln_ai.adapters.eval.judge_job_runner import JudgeJobItemError, JudgeJobRunResult
 from kiln_ai.datamodel import (
     JudgeJob,
     JudgeJobRun,
@@ -176,7 +176,7 @@ def test_run_judge_job(
         failing_runs=[
             JudgeJobRun(
                 parent=saved_job,
-                dataset_id="d1",
+                task_run_id="d1",
                 scores={"accuracy": 0.0},
                 feedback="bad",
                 passed=False,
@@ -186,6 +186,7 @@ def test_run_judge_job(
         failing_count=1,
         train_set_size=10,
         hit_cap=False,
+        errors=[JudgeJobItemError(task_run_id="d2", error="Error judging item: boom")],
     )
     with patched_runner(result):
         resp = client.post(f"{BASE}/jj1/run")
@@ -198,8 +199,12 @@ def test_run_judge_job(
     assert body["train_set_size"] == 10
     assert body["hit_cap"] is False
     assert len(body["failing_runs"]) == 1
-    assert body["failing_runs"][0]["dataset_id"] == "d1"
+    assert body["failing_runs"][0]["task_run_id"] == "d1"
     assert body["failing_runs"][0]["feedback"] == "bad"
+    # Per-item errors are surfaced so the caller can see partial failures.
+    assert body["errors"] == [
+        {"task_run_id": "d2", "error": "Error judging item: boom"}
+    ]
 
 
 def test_run_judge_job_404(client, mock_task, mock_task_from_id, mock_eval_config):
@@ -241,13 +246,13 @@ def test_get_judge_job_404(client, mock_task, mock_task_from_id):
 def test_get_judge_job_runs(client, mock_task, mock_task_from_id, saved_job):
     JudgeJobRun(
         parent=saved_job,
-        dataset_id="d1",
+        task_run_id="d1",
         scores={"accuracy": 0.0},
         feedback="bad",
         passed=False,
     ).save_to_file()
     JudgeJobRun(
-        parent=saved_job, dataset_id="d2", scores={"accuracy": 1.0}, passed=True
+        parent=saved_job, task_run_id="d2", scores={"accuracy": 1.0}, passed=True
     ).save_to_file()
 
     resp = client.get(f"{BASE}/jj1/runs")
@@ -258,7 +263,7 @@ def test_get_judge_job_runs(client, mock_task, mock_task_from_id, saved_job):
     assert failing.status_code == 200
     body = failing.json()
     assert len(body) == 1
-    assert body[0]["dataset_id"] == "d1"
+    assert body[0]["task_run_id"] == "d1"
     assert body[0]["feedback"] == "bad"
 
 

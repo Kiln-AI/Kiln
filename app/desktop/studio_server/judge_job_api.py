@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from kiln_ai.adapters.eval.judge_job_runner import (
     DEFAULT_FAILURE_THRESHOLD,
+    JudgeJobItemError,
     JudgeJobRunner,
 )
 from kiln_ai.datamodel.eval import EvalConfig
@@ -92,7 +93,7 @@ class CreateJudgeJobRequest(BaseModel):
 
 
 class JudgeJobRunResponse(BaseModel):
-    """The result of running a judge job. Counts are FYI for the caller; not persisted."""
+    """The result of running a judge job. Counts and errors are FYI for the caller; not persisted."""
 
     judge_job: JudgeJob = Field(description="The judge job that was run.")
     failing_runs: list[JudgeJobRun] = Field(
@@ -107,6 +108,11 @@ class JudgeJobRunResponse(BaseModel):
     )
     hit_cap: bool = Field(
         description="True if max_samples was reached before finding the requested count of failures.",
+    )
+    errors: list[JudgeJobItemError] = Field(
+        default_factory=list,
+        description="Per-item judge/save errors (if any). Each is skipped, not retried; re-running "
+        "the job retries the un-persisted items. A non-empty list means partial success.",
     )
 
 
@@ -138,6 +144,7 @@ async def _run_judge_job(
         failing_count=result.failing_count,
         train_set_size=result.train_set_size,
         hit_cap=result.hit_cap,
+        errors=result.errors,
     )
 
 
@@ -192,7 +199,9 @@ def connect_judge_job_api(app: FastAPI):
 
         Runs synchronously and returns once judging completes. Each result is persisted as a child
         run (fetch them later via `GET /judge_jobs/{id}/runs`); the returned counts
-        (num_judged, failing_count, train_set_size, hit_cap) are FYI for the caller's loop.
+        (num_judged, failing_count, train_set_size, hit_cap) and any per-item `errors` are FYI for
+        the caller's loop. Errors don't abort the run — partial results are still persisted, and
+        re-running the job retries only the un-persisted (errored or not-yet-judged) items.
         """
         task = task_from_id(project_id, task_id)
         judge_job = judge_job_from_id(project_id, task_id, judge_job_id)
@@ -287,7 +296,7 @@ def connect_judge_job_api(app: FastAPI):
             Query(description="Return only the items that failed the judge."),
         ] = False,
     ) -> list[JudgeJobRun]:
-        """Get the per-item judge results (dataset_id, scores, feedback, passed) for a judge job."""
+        """Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge job."""
         judge_job = judge_job_from_id(project_id, task_id, judge_job_id)
         runs = judge_job.runs()
         if failing_only:

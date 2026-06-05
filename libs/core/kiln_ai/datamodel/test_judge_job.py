@@ -13,7 +13,9 @@ def task(tmp_path):
 
 
 def test_defaults(task):
-    job = JudgeJob(name="scan", target_tags=["train"], eval_config_id="ec1", parent=task)
+    job = JudgeJob(
+        name="scan", target_tags=["train"], eval_config_id="ec1", parent=task
+    )
     assert job.count == 5
     assert job.max_samples == 50
     assert job.threshold == 0.75
@@ -39,14 +41,14 @@ def test_create_and_roundtrip(task):
     job.save_to_file()
     JudgeJobRun(
         parent=job,
-        dataset_id="d1",
+        task_run_id="d1",
         scores={"accuracy": 0.0},
         feedback="bad",
         passed=False,
     ).save_to_file()
     JudgeJobRun(
         parent=job,
-        dataset_id="d2",
+        task_run_id="d2",
         scores={"accuracy": 1.0},
         feedback=None,
         passed=True,
@@ -67,7 +69,7 @@ def test_create_and_roundtrip(task):
     assert len(runs) == 2
     failing = [r for r in runs if not r.passed]
     assert len(failing) == 1
-    assert failing[0].dataset_id == "d1"
+    assert failing[0].task_run_id == "d1"
     assert failing[0].feedback == "bad"
     assert failing[0].scores == {"accuracy": 0.0}
 
@@ -75,5 +77,7 @@ def test_create_and_roundtrip(task):
 def test_run_parent_typing(task):
     job = JudgeJob(name="scan", target_tags=["t"], eval_config_id="ec1", parent=task)
     job.save_to_file()
-    run = JudgeJobRun(parent=job, dataset_id="d1", scores={"accuracy": 1.0}, passed=True)
+    run = JudgeJobRun(
+        parent=job, task_run_id="d1", scores={"accuracy": 1.0}, passed=True
+    )
     assert run.parent_judge_job().id == job.id
