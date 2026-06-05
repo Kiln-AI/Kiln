@@ -617,6 +617,12 @@
     chain_verdicts.length !== multi_turn_chains.length
       ? multi_turn_chains.map(() => ({ verdict: null, feedback: "" }))
       : chain_verdicts
+  // True only when every multi-turn chain has been marked pass or fail.
+  // Save button is disabled until then so the golden ratings are complete.
+  $: all_chains_reviewed =
+    multi_turn_chains.length > 0 &&
+    chain_verdicts.length === multi_turn_chains.length &&
+    chain_verdicts.every((v) => v.verdict !== null)
 
   // ── Step 6 state — save
   let saving = false
@@ -1095,9 +1101,20 @@
             class="btn btn-ghost"
             on:click={() => (current_step = "generate")}>← Back</button
           >
-          <button class="btn btn-primary" on:click={on_advance_to_save}>
-            Save →
-          </button>
+          <div
+            class="tooltip tooltip-top"
+            data-tip={all_chains_reviewed
+              ? null
+              : "Mark each conversation pass or fail before saving."}
+          >
+            <button
+              class="btn btn-primary"
+              on:click={on_advance_to_save}
+              disabled={!all_chains_reviewed}
+            >
+              Save →
+            </button>
+          </div>
         </div>
       {:else}
         <!-- Single-turn: reuse v1's ReviewExamples component. Both submit
