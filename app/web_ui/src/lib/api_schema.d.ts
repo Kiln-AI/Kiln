@@ -1936,51 +1936,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/failing_train_examples": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get Failing Train Examples
-         * @description Sample the eval's train set, run the judge, and return datapoints that fail it.
-         *
-         *     This is the building block for reflective prompt optimization: it surfaces a small batch
-         *     of training examples that the eval's judge marks as failures, together with the judge's
-         *     plaintext reasoning, so the failures can be reflected on to improve a prompt.
-         *
-         *     How it works:
-         *     1. Loads the train set, defined by the eval's `train_set_filter_id` (a dataset filter on
-         *        the task's runs), and shuffles it.
-         *     2. Judges items one batch at a time with the given eval config (`eval_config_id`), using
-         *        the existing dataset input/output (the task is not re-run).
-         *     3. An example counts as failing only when ALL of the eval's output scores are below the
-         *        pass bar — `normalize_rating(score) < threshold` on a normalized 0-1 scale, where
-         *        `threshold` defaults to 0.75 (the four-star / high-quality bar).
-         *     4. Stops as soon as it has collected `count` failing examples, or once it has judged
-         *        `max_samples` items ("oversample, return the requested amount").
-         *
-         *     Each judge result is persisted as an eval run and reused on later calls for the same
-         *     (eval config, dataset item) pair, so repeated calls don't re-pay the judge.
-         *
-         *     Returns the failing examples (`dataset_id`, `scores`, and `feedback`), plus `num_judged`
-         *     (items examined), `train_set_size` (total train items), and `hit_cap` (true when the
-         *     `max_samples` cap was reached before finding `count` failures — as opposed to simply
-         *     running out of train items).
-         *
-         *     Fails with 400 if the eval has no train set filter configured.
-         */
-        post: operations["get_failing_train_examples_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__failing_train_examples_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}": {
         parameters: {
             query?: never;
@@ -2112,6 +2067,116 @@ export interface paths {
         };
         /** Get Run Config Eval Scores */
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Judge Jobs
+         * @description List all judge jobs for a task.
+         */
+        get: operations["list_judge_jobs_api_projects__project_id__tasks__task_id__judge_jobs_get"];
+        put?: never;
+        /**
+         * Create Judge Job
+         * @description Create a judge job config (status pending). Run it later with `/judge_jobs/{id}/run`.
+         */
+        post: operations["create_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Judge Job
+         * @description Run a judge job: sample tagged dataset items, judge them, and persist results + status.
+         *
+         *     Streams progress via SSE (first event is `{"judge_job_id": ...}`, then per-item progress,
+         *     then `data: complete`). Results are written as child runs and the job's `latest_status` /
+         *     `outcome` are updated. Poll `GET /judge_jobs/{id}` for status and `GET /judge_jobs/{id}/runs`
+         *     for the failing examples + feedback.
+         */
+        post: operations["run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create And Run Judge Job
+         * @description Create a judge job and run it immediately, streaming progress via SSE (the first event
+         *     carries the new `judge_job_id`).
+         */
+        post: operations["create_and_run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Judge Job
+         * @description Get a judge job, including its `latest_status` and `outcome` summary (poll this).
+         */
+        get: operations["get_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Judge Job Runs
+         * @description Get the per-item judge results (dataset_id, scores, feedback, passed) for a judge job.
+         */
+        get: operations["get_judge_job_runs_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__runs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4393,6 +4458,55 @@ export interface components {
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
+        /**
+         * CreateJudgeJobRequest
+         * @description Request to create a judge job.
+         */
+        CreateJudgeJobRequest: {
+            /**
+             * Name
+             * @description The name of the judge job. A memorable name is generated if omitted.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description A description of the judge job.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled. At least one required.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config whose outputs are being judged (metadata only).
+             */
+            run_config_id?: string | null;
+            /**
+             * Count
+             * @description The number of failing examples to find.
+             * @default 5
+             */
+            count: number;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge while searching for failures.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+        };
         /** CreateKilnCopilotApiKeyRequest */
         CreateKilnCopilotApiKeyRequest: {
             /**
@@ -6121,84 +6235,6 @@ export interface components {
             factually_inaccurate_examples: string;
         };
         /**
-         * FailingTrainExample
-         * @description A single train-set datapoint that failed the judge, with the judge's feedback.
-         */
-        FailingTrainExample: {
-            /**
-             * Dataset Id
-             * @description The ID of the failing dataset item.
-             */
-            dataset_id: string;
-            /**
-             * Scores
-             * @description The judge's scores for this datapoint.
-             */
-            scores: {
-                [key: string]: number;
-            };
-            /**
-             * Feedback
-             * @description The judge's plaintext reasoning for the scores, if available.
-             */
-            feedback?: string | null;
-        };
-        /**
-         * FailingTrainExamplesRequest
-         * @description Request to sample an eval's train set and return examples that fail the judge.
-         */
-        FailingTrainExamplesRequest: {
-            /**
-             * Count
-             * @description The number of failing examples to return.
-             * @default 5
-             */
-            count: number;
-            /**
-             * Max Samples
-             * @description The maximum number of train items to judge while searching for failures.
-             * @default 50
-             */
-            max_samples: number;
-            /**
-             * Threshold
-             * @description The normalized (0-1) pass bar. A score below this counts as failing.
-             * @default 0.75
-             */
-            threshold: number;
-            /**
-             * Seed
-             * @description Optional random seed for reproducible sampling.
-             */
-            seed?: number | null;
-        };
-        /**
-         * FailingTrainExamplesResponse
-         * @description The failing examples found, plus stats about the search.
-         */
-        FailingTrainExamplesResponse: {
-            /**
-             * Examples
-             * @description The failing examples found (up to the requested count).
-             */
-            examples: components["schemas"]["FailingTrainExample"][];
-            /**
-             * Num Judged
-             * @description How many train items were examined while searching for failures.
-             */
-            num_judged: number;
-            /**
-             * Train Set Size
-             * @description The total number of items in the eval's train set.
-             */
-            train_set_size: number;
-            /**
-             * Hit Cap
-             * @description True if the max_samples cap was reached before finding the requested count.
-             */
-            hit_cap: boolean;
-        };
-        /**
          * Feedback
          * @description Feedback on a task run.
          *
@@ -6872,6 +6908,189 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
+        /**
+         * JudgeJob
+         * @description A runnable job that samples dataset items by tag, judges them with an evaluator
+         *     (eval config), and records each item's pass/fail and the judge's feedback.
+         *
+         *     Used to surface a minibatch of failing examples — with feedback — for reflective
+         *     prompt optimization. A child of a Task; a parent of JudgeJobRun results.
+         */
+        JudgeJob: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the judge job.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the judge job for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled for this job.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score the sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config whose outputs are being judged. Metadata only; the existing dataset outputs are judged (the task is not re-run).
+             */
+            run_config_id?: string | null;
+            /**
+             * Count
+             * @description The number of failing examples to find before the job stops.
+             * @default 5
+             */
+            count: number;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge while searching for failures.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+            /**
+             * @description The latest known status of this judge job (pending, running, succeeded, failed, cancelled).
+             * @default pending
+             */
+            latest_status: components["schemas"]["JudgeJobStatus"];
+            /** @description A summary of the job's results, populated after a run. */
+            outcome?: components["schemas"]["JudgeJobOutcome"] | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * JudgeJobOutcome
+         * @description A summary of a completed judge job.
+         */
+        JudgeJobOutcome: {
+            /**
+             * Train Set Size
+             * @description Total number of dataset items matching the target tags.
+             */
+            train_set_size: number;
+            /**
+             * Num Judged
+             * @description How many items were examined while searching for failures.
+             */
+            num_judged: number;
+            /**
+             * Failing Count
+             * @description How many of the judged items failed the judge.
+             */
+            failing_count: number;
+            /**
+             * Hit Cap
+             * @description True if max_samples was reached before finding the requested count of failures.
+             */
+            hit_cap: boolean;
+            /**
+             * Error
+             * @description Error message if the job failed.
+             */
+            error?: string | null;
+        };
+        /**
+         * JudgeJobRun
+         * @description The judge's result for a single sampled dataset item (a child of a JudgeJob).
+         */
+        JudgeJobRun: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Dataset Id
+             * @description The ID of the dataset item (TaskRun) that was judged.
+             */
+            dataset_id: string | null;
+            /**
+             * Scores
+             * @description The scores produced by the judge for this dataset item.
+             */
+            scores: {
+                [key: string]: number;
+            };
+            /**
+             * Feedback
+             * @description The judge's plaintext reasoning for the scores, if available.
+             */
+            feedback?: string | null;
+            /**
+             * Passed
+             * @description Whether this item passed the judge (i.e. it is not a failing example).
+             */
+            passed: boolean;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * JudgeJobStatus
+         * @description The lifecycle status of a judge job.
+         * @enum {string}
+         */
+        JudgeJobStatus: "pending" | "running" | "succeeded" | "failed" | "cancelled";
         /**
          * KilnAgentRunConfigProperties
          * @description A configuration for running a task using a Kiln AI agent.
@@ -15274,48 +15493,6 @@ export interface operations {
             };
         };
     };
-    get_failing_train_examples_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__failing_train_examples_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-                /** @description The unique identifier of the eval. */
-                eval_id: string;
-                /** @description The unique identifier of the eval configuration. */
-                eval_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FailingTrainExamplesRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FailingTrainExamplesResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     set_default_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__set_current_eval_config__eval_config_id__post: {
         parameters: {
             query?: never;
@@ -15597,6 +15774,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_judge_jobs_api_projects__project_id__tasks__task_id__judge_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeJob"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJudgeJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge job. */
+                judge_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_and_run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJudgeJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge job. */
+                judge_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_judge_job_runs_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__runs_get: {
+        parameters: {
+            query?: {
+                /** @description Return only the items that failed the judge. */
+                failing_only?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge job. */
+                judge_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeJobRun"][];
                 };
             };
             /** @description Validation Error */

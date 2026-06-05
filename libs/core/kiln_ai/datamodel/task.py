@@ -25,6 +25,7 @@ from kiln_ai.datamodel.json_schema import (
     JsonSchema,
     schema_from_json_str,
 )
+from kiln_ai.datamodel.judge_job import JudgeJob
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.run_config import RunConfigProperties
@@ -131,6 +132,7 @@ class Task(
         "_runs": ParentOfRelationship(model=TaskRun, filesystem_name="runs"),
         "dataset_splits": DatasetSplit,
         "finetunes": Finetune,
+        "judge_jobs": JudgeJob,
         "prompt_optimization_jobs": PromptOptimizationJob,
         "prompts": Prompt,
         "evals": Eval,
@@ -251,6 +253,9 @@ class Task(
         self, readonly: bool = False
     ) -> list[PromptOptimizationJob]:
         return super().prompt_optimization_jobs(readonly=readonly)  # type: ignore
+
+    def judge_jobs(self, readonly: bool = False) -> list[JudgeJob]:
+        return super().judge_jobs(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:
