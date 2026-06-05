@@ -8,7 +8,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from .models import AutoChatSeed, AutoRunStatus
+from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .runner import MAX_TOOL_ROUNDS_MESSAGE, AutoChatRunner
 from .test_fakes import (
     FakeUpstreamClient,
@@ -23,12 +23,25 @@ from .test_fakes import (
 SERVER_META = {"executor": "server"}
 
 
-def _runner(client: FakeUpstreamClient, seed: AutoChatSeed | None = None):
+def _runner(
+    client: FakeUpstreamClient,
+    seed: AutoChatSeed | None = None,
+    inbound: list | None = None,
+):
     emitted: list[bytes] = []
     traces: list[str] = []
 
     async def on_trace(tid: str) -> None:
         traces.append(tid)
+
+    # Mirror AutoChatRun.drain_inbound: atomically take and clear the queue.
+    queue = inbound if inbound is not None else []
+
+    def drain_inbound():
+        nonlocal queue
+        taken = queue
+        queue = []
+        return taken
 
     runner = AutoChatRunner(
         run_id="ar_test",
@@ -37,6 +50,7 @@ def _runner(client: FakeUpstreamClient, seed: AutoChatSeed | None = None):
         headers={},
         emit=emitted.append,
         on_trace=on_trace,
+        drain_inbound=drain_inbound,
     )
     return runner, emitted, traces
 
@@ -45,9 +59,20 @@ def _decoded(emitted: list[bytes]) -> str:
     return b"".join(emitted).decode()
 
 
+def _events(emitted: list[bytes]) -> list[dict]:
+    events: list[dict] = []
+    for line in _decoded(emitted).split("\n"):
+        if line.startswith("data: "):
+            payload = line[6:].strip()
+            if payload and payload != "[DONE]":
+                events.append(json.loads(payload))
+    return events
+
+
 @pytest.mark.asyncio
-async def test_text_only_round_finishes_done():
-    # A plain text turn (no tool calls) finishes the run immediately as DONE.
+async def test_text_only_round_settles_idle():
+    # Revision R1: a plain text turn (no tool calls) settles the burst to IDLE —
+    # the conversation flag stays on, the runner does not go terminal.
     round1 = [text_delta("All done"), trace("tr-1"), finish("stop")]
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
     runner, emitted, traces = _runner(client)
@@ -55,7 +80,7 @@ async def test_text_only_round_finishes_done():
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    assert runner.status == AutoRunStatus.DONE
+    assert runner.status == AutoRunStatus.IDLE
     decoded = _decoded(emitted)
     assert '"type": "auto-mode-on"' in decoded
     assert "All done" in decoded
@@ -78,7 +103,7 @@ async def test_server_tool_only_round_finishes_done():
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    assert runner.status == AutoRunStatus.DONE
+    assert runner.status == AutoRunStatus.IDLE
     decoded = _decoded(emitted)
     # exec start/end with zero client tools, no pending approval prompt.
     assert '"tool_count": 0' in decoded
@@ -102,7 +127,7 @@ async def test_multi_round_auto_executes_client_tool():
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    assert runner.status == AutoRunStatus.DONE
+    assert runner.status == AutoRunStatus.IDLE
     decoded = _decoded(emitted)
     assert '"type": "kiln-tool-execution-start"' in decoded
     assert '"output": "15"' in decoded
@@ -121,8 +146,8 @@ async def test_finish_with_text_only_is_asked_user():
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    assert runner.status == AutoRunStatus.DONE
-    assert runner.done_reason == "asked_user"
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "asked_user"
 
 
 @pytest.mark.asyncio
@@ -151,7 +176,7 @@ async def test_auto_approve_executes_tool_requiring_approval_with_no_pending_eve
     decoded = _decoded(emitted)
     assert '"type": "tool-calls-pending"' not in decoded
     assert '"output": "42"' in decoded
-    assert runner.status == AutoRunStatus.DONE
+    assert runner.status == AutoRunStatus.IDLE
 
 
 @pytest.mark.asyncio
@@ -176,7 +201,10 @@ async def test_max_rounds_backstop_emits_error():
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    assert runner.status == AutoRunStatus.MAX_ROUNDS
+    # Revision R1: the backstop ends the burst but the flag stays on (IDLE,
+    # reason "max_rounds").
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "max_rounds"
     assert MAX_TOOL_ROUNDS_MESSAGE in _decoded(emitted)
 
 
@@ -190,7 +218,10 @@ async def test_upstream_error_sets_error_status():
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    assert runner.status == AutoRunStatus.ERROR
+    # Revision R1: an unrecoverable upstream error ends the burst but the flag
+    # stays on (IDLE, reason "error").
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "error"
     assert "boom" in _decoded(emitted)
 
 
@@ -241,3 +272,158 @@ class TestSeedBody:
         roles = [(m["tool_call_id"], m["content"]) for m in body["messages"]]
         assert ("enable-1", json.dumps({"status": "enabled"})) in roles
         assert ("sib1", "3") in roles
+
+
+# ── Revision R1: message injection ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_injected_message_appended_to_continuation():
+    # A message queued while a tool round is in flight is drained at the next
+    # round boundary and appended (role:"user") to the continuation body — the
+    # backend sees the tool result AND the new user input on the next turn.
+    inbound = [InboundMessage(content="also do X")]
+    round1 = [
+        tool_input_available("tc1", "add", {"a": 1, "b": 1}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+    runner, emitted, _ = _runner(client, inbound=inbound)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    # The second upstream body carries the tool result then the injected user
+    # message (appended last).
+    second_body = client.bodies[1]
+    assert second_body["trace_id"] == "tr-1"
+    user_messages = [m for m in second_body["messages"] if m.get("role") == "user"]
+    assert user_messages == [{"role": "user", "content": "also do X"}]
+    # The runner does NOT echo on drain — the registry already echoed the message
+    # onto the bus/buffer at enqueue time (CR Moderate 1). Double-echo would
+    # render the message twice; the combined registry+runner echo-once behaviour
+    # is asserted in test_registry.py.
+    assert '"type": "user-message"' not in _decoded(emitted)
+
+
+@pytest.mark.asyncio
+async def test_drain_before_idle_continues_with_queued_message():
+    # A message queued exactly as the burst would settle (a plain-text handoff
+    # with no tool calls) must not be dropped — the runner continues with it as a
+    # fresh user turn instead of going idle.
+    inbound = [InboundMessage(content="keep going")]
+    round1 = [text_delta("Anything else?"), trace("tr-1"), finish("stop")]
+    round2 = [text_delta("done now"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+    runner, emitted, _ = _runner(client, inbound=inbound)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    # It did NOT stop after round1 — a second upstream round ran, seeded with the
+    # queued user message as a fresh turn.
+    assert len(client.bodies) == 2
+    assert client.bodies[1]["messages"] == [{"role": "user", "content": "keep going"}]
+    # Eventually settled IDLE once the queue was empty.
+    assert runner.status == AutoRunStatus.IDLE
+
+
+@pytest.mark.asyncio
+async def test_no_queued_message_settles_idle():
+    # Control: with an empty queue, a plain-text handoff settles IDLE (one round).
+    round1 = [text_delta("Anything else?"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    runner, _, _ = _runner(client, inbound=[])
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.IDLE
+    assert len(client.bodies) == 1
+
+
+# ── Revision R1: disable_auto_mode interception ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_disable_auto_mode_intercepted_not_executed():
+    # The model calls disable_auto_mode mid-burst → the runner intercepts it
+    # (never executes), records USER_DISABLED, resolves the call as disabled, and
+    # ends the burst.
+    round1 = [
+        text_delta("turning off auto mode"),
+        tool_input_available("tc_disable", "disable_auto_mode", input={}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    # The runner resolves the disable call back to the backend (CR Moderate 3),
+    # so a final continuation round runs and the backend persists a clean
+    # snapshot (no dangling tool call).
+    round2 = [text_delta("okay, auto mode off"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.execute_tool"
+    ) as execute_tool_mock:
+        with patch.object(httpx, "AsyncClient", return_value=client):
+            await runner.run()
+
+    assert runner.status == AutoRunStatus.USER_DISABLED
+    # Never executed as a tool.
+    execute_tool_mock.assert_not_called()
+    # The disabled result is resolved onto the stream (as a tool-output event
+    # whose JSON-string output is {"status":"disabled"}).
+    outputs = [
+        json.loads(e["output"])
+        for e in _events(emitted)
+        if e.get("type") == "tool-output-available"
+    ]
+    assert {"status": "disabled"} in outputs
+
+
+@pytest.mark.asyncio
+async def test_disable_auto_mode_resolves_tool_result_to_backend():
+    # CR Moderate 3: the intercepted disable_auto_mode call must be resolved back
+    # to the backend so the persisted trace has no dangling tool call. Assert a
+    # second (continuation) upstream body is sent carrying the disable
+    # tool_call_id resolved as {"status":"disabled"}.
+    round1 = [
+        text_delta("turning off auto mode"),
+        tool_input_available("tc_disable", "disable_auto_mode", input={}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("okay, auto mode off"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+    runner, _, traces = _runner(client)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    # A continuation was sent to the backend (two upstream bodies).
+    assert len(client.bodies) == 2
+    continuation = client.bodies[1]
+    # It continues from the trace the disable turn was persisted on.
+    assert continuation["trace_id"] == "tr-1"
+    # It resolves the disable tool call as {"status":"disabled"}.
+    disable_tool_msgs = [
+        m
+        for m in continuation["messages"]
+        if m.get("role") == "tool" and m.get("tool_call_id") == "tc_disable"
+    ]
+    assert len(disable_tool_msgs) == 1
+    assert json.loads(disable_tool_msgs[0]["content"]) == {"status": "disabled"}
+    # The trace from the clean snapshot is observed/indexed.
+    assert runner.disable_trace_id == "tr-2"
+    assert "tr-2" in traces

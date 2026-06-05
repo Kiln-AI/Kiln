@@ -49,6 +49,9 @@ from kiln_server.custom_errors import connect_custom_errors
 # fully-qualified dotted paths the endpoints actually resolve against.
 _API_REGISTRY = "app.desktop.studio_server.chat.auto.api.auto_chat_registry"
 _ROUTES_REGISTRY = "app.desktop.studio_server.chat.routes.auto_chat_registry"
+# stream_session resolves the singleton lazily off the registry module (to break
+# a circular import), so the disable-interception path reads it from here.
+_MODULE_REGISTRY = "app.desktop.studio_server.chat.auto.registry.auto_chat_registry"
 _KEEPALIVE = "app.desktop.studio_server.chat.auto.api.KEEPALIVE_SECONDS"
 
 
@@ -58,6 +61,7 @@ def registry(monkeypatch):
     reg = AutoChatRegistry()
     monkeypatch.setattr(_API_REGISTRY, reg)
     monkeypatch.setattr(_ROUTES_REGISTRY, reg)
+    monkeypatch.setattr(_MODULE_REGISTRY, reg)
     return reg
 
 
@@ -97,6 +101,46 @@ def mock_api_key():
         yield mock_config
 
 
+class _GatedResponse:
+    """One round that streams a trace, blocks until released, then a plain-text
+    finish — lets a test observe a RUNNING burst before it settles."""
+
+    def __init__(self, release: asyncio.Event) -> None:
+        self.status_code = 200
+        self._release = release
+
+    async def aread(self) -> bytes:
+        return b""
+
+    async def aiter_bytes(self):
+        yield trace("t1")
+        await self._release.wait()
+        yield text_delta("settled")
+        yield finish("stop")
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+class _GatedClient:
+    def __init__(self, release: asyncio.Event) -> None:
+        self._release = release
+        self.bodies: list = []
+
+    def stream(self, method, url, *, content, headers):
+        self.bodies.append(json.loads(content.decode()))
+        return _GatedResponse(self._release)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
 def _parse_sse_events(content: bytes) -> list[dict]:
     events: list[dict] = []
     for line in content.decode().split("\n"):
@@ -114,20 +158,23 @@ def _parse_sse_events(content: bytes) -> list[dict]:
     return events
 
 
-async def _wait_terminal(
+async def _wait_settled(
     registry: AutoChatRegistry, run_id: str, timeout: float = 3.0
 ) -> None:
+    """Wait until a burst settles — the run leaves RUNNING (→ IDLE or off)."""
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         run = registry.get(run_id)
-        if run is not None and run.record.status.is_terminal:
+        if run is None or run.record.status != AutoRunStatus.RUNNING:
             return
         await asyncio.sleep(0.01)
     run = registry.get(run_id)
     actual = run.record.status if run else "missing"
-    raise AssertionError(
-        f"Auto run {run_id} did not reach a terminal status; was {actual}"
-    )
+    raise AssertionError(f"Auto run {run_id} did not settle; was {actual}")
+
+
+# Back-compat alias: legacy tests wait for the burst to settle (IDLE under R1).
+_wait_terminal = _wait_settled
 
 
 # ── enable ───────────────────────────────────────────────────────────────────
@@ -251,6 +298,40 @@ async def test_stop_returns_202_and_is_idempotent(client, registry, mock_api_key
     assert stop_unknown.status_code == 202
 
 
+@pytest.mark.asyncio
+async def test_stop_clears_flag_with_user_stopped(client, registry, mock_api_key):
+    # /stop clears the conversation flag (USER_STOPPED) and publishes
+    # auto-mode-off(user_stopped) — distinct from the burst-level idle endings.
+    release = asyncio.Event()
+    gated = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=gated):
+        run_id = (
+            await client.post(
+                "/api/chat/auto/enable",
+                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+            )
+        ).json()["run_id"]
+        await asyncio.sleep(0.05)
+        run = registry.get(run_id)
+        received: list[bytes] = []
+
+        async def _drain():
+            async for b in run.bus.subscribe():
+                received.append(b)
+
+        drain_task = asyncio.create_task(_drain())
+        await asyncio.sleep(0.02)
+        r = await client.post(f"/api/chat/auto/{run_id}/stop")
+        assert r.status_code == 202
+        await asyncio.sleep(0.02)
+        drain_task.cancel()
+
+    assert run.record.status == AutoRunStatus.USER_STOPPED
+    decoded = b"".join(received).decode()
+    assert '"type": "auto-mode-off"' in decoded
+    assert '"reason": "user_stopped"' in decoded
+
+
 # ── events ───────────────────────────────────────────────────────────────────
 
 
@@ -261,9 +342,14 @@ async def test_events_404_unknown_run(client, registry, mock_api_key):
 
 
 @pytest.mark.asyncio
-async def test_events_streams_terminal_off_marker(
-    client, registry, mock_api_key, fast_keepalive
+async def test_idle_run_not_evicted_and_remains_attachable(
+    client, registry, mock_api_key
 ):
+    # Revision R1: a settled burst goes IDLE (flag on) and the entry is NOT
+    # evicted — the run stays registered (so /events can re-attach, 404 only once
+    # GC'd). The idle-vs-off marker the bus emits on subscribe is unit-tested at
+    # the registry level; the infinite idle SSE stream is not exercised over
+    # ASGITransport (it never terminates).
     round1 = [text_delta("hello from auto"), trace("t1"), finish("stop")]
     fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
 
@@ -274,13 +360,38 @@ async def test_events_streams_terminal_off_marker(
                 json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
             )
         ).json()["run_id"]
-        # Let the run finish so attaching gets the terminal marker and ends.
-        await _wait_terminal(registry, run_id)
+        await _wait_settled(registry, run_id)
+
+    run = registry.get(run_id)
+    assert run is not None
+    assert run.record.status == AutoRunStatus.IDLE
+    # Still active for the session-list join (green dot persists while idle).
+    active, rid = registry.is_active_for_trace("t1")
+    assert active and rid == run_id
+
+
+@pytest.mark.asyncio
+async def test_events_streams_off_marker_after_stop(
+    client, registry, mock_api_key, fast_keepalive
+):
+    # An explicitly stopped run is off (terminal) — a late attach gets exactly
+    # the off marker and the stream ends.
+    round1 = [text_delta("hello from auto"), trace("t1"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        run_id = (
+            await client.post(
+                "/api/chat/auto/enable",
+                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+            )
+        ).json()["run_id"]
+        await _wait_settled(registry, run_id)
+        await client.post(f"/api/chat/auto/{run_id}/stop")
 
         r = await client.get(f"/api/chat/auto/{run_id}/events")
 
     assert r.status_code == 200
-    assert r.headers["content-type"].startswith("text/event-stream")
     types = [e.get("type") for e in _parse_sse_events(r.content)]
     assert "auto-mode-off" in types
 
@@ -386,6 +497,239 @@ async def test_enable_auto_mode_carries_sibling_tool_calls(
     assert sibling_ids == {"tc_sib"}
 
 
+# ── disable_auto_mode interception (interactive /api/chat) ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_disable_auto_mode_intercepted_and_continues_interactively(
+    client, registry, mock_api_key
+):
+    # The model calls disable_auto_mode on the interactive stream → it is
+    # intercepted (never executed), the conversation flag is cleared with
+    # auto-mode-off(user_disabled), the call is resolved {"status":"disabled"},
+    # and the stream continues interactively (a second upstream round runs).
+    round1 = [
+        trace("t1"),
+        text_delta("turning auto mode off"),
+        tool_input_available("tc_disable", "disable_auto_mode", input={}),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("back to interactive"), finish("stop")]
+    fake = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+
+    # Seed a live IDLE run indexed under t1 so disable_for_trace has a flag to
+    # clear and an observer bus to publish auto-mode-off onto.
+    record = AutoRunRecord(
+        run_id="ar_live",
+        status=AutoRunStatus.IDLE,
+        current_trace_id="t1",
+        seen_trace_ids=["t1"],
+    )
+    real_run = _make_idle_run(record)
+    registry._runs["ar_live"] = real_run
+    registry._trace_index["t1"] = "ar_live"
+
+    execute_tool_mock = AsyncMock()
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.execute_tool",
+            execute_tool_mock,
+        ):
+            r = await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "stop auto mode"}]},
+            )
+
+    assert r.status_code == 200
+    events = _parse_sse_events(r.content)
+    # disable_auto_mode is never executed.
+    execute_tool_mock.assert_not_called()
+    # The flag was cleared on the live run.
+    assert real_run.record.status == AutoRunStatus.USER_DISABLED
+    # The interactive stream resolved the call as disabled (tool-output event).
+    disabled_outputs = [
+        json.loads(e["output"])
+        for e in events
+        if e.get("type") == "tool-output-available"
+        and e.get("toolCallId") == "tc_disable"
+    ]
+    assert disabled_outputs == [{"status": "disabled"}]
+    # ...and continued interactively.
+    assert any(
+        e.get("type") == "text-delta" and e.get("delta") == "back to interactive"
+        for e in events
+    )
+    # Two upstream rounds: the continuation carried the resolved tool result.
+    assert len(fake.bodies) == 2
+    continuation_msgs = fake.bodies[1]["messages"]
+    disabled = [
+        m
+        for m in continuation_msgs
+        if m.get("role") == "tool" and m.get("tool_call_id") == "tc_disable"
+    ]
+    assert disabled and json.loads(disabled[0]["content"]) == {"status": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_disable_auto_mode_interactive_sibling_requiring_approval_is_denied(
+    client, registry, mock_api_key
+):
+    # CR Mild: on the INTERACTIVE disable path, a sibling bundled in the same turn
+    # as disable_auto_mode must go through the normal approval gate, NOT be
+    # auto-approved. A sibling that requires approval (with no decision available
+    # on this path) is therefore denied — its tool execution never runs and the
+    # resolved result is DENIED_TOOL_OUTPUT. (Auto-approval is the runner's job.)
+    from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+
+    round1 = [
+        trace("t1"),
+        tool_input_available("tc_disable", "disable_auto_mode", input={}),
+        tool_input_available(
+            "tc_sibling",
+            "call_kiln_api",
+            input={"x": 1},
+            kiln_metadata={"requires_approval": True},
+        ),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("back to interactive"), finish("stop")]
+    fake = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+
+    record = AutoRunRecord(
+        run_id="ar_live",
+        status=AutoRunStatus.IDLE,
+        current_trace_id="t1",
+        seen_trace_ids=["t1"],
+    )
+    real_run = _make_idle_run(record)
+    registry._runs["ar_live"] = real_run
+    registry._trace_index["t1"] = "ar_live"
+
+    execute_tool_mock = AsyncMock()
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.execute_tool",
+            execute_tool_mock,
+        ):
+            r = await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "stop auto mode"}]},
+            )
+
+    assert r.status_code == 200
+    events = _parse_sse_events(r.content)
+    # The approval-gated sibling was NOT executed (denied, not auto-approved).
+    execute_tool_mock.assert_not_called()
+    sibling_outputs = [
+        e["output"]
+        for e in events
+        if e.get("type") == "tool-output-available"
+        and e.get("toolCallId") == "tc_sibling"
+    ]
+    assert sibling_outputs == [DENIED_TOOL_OUTPUT]
+    # The disable call itself is still resolved as disabled.
+    disabled_outputs = [
+        json.loads(e["output"])
+        for e in events
+        if e.get("type") == "tool-output-available"
+        and e.get("toolCallId") == "tc_disable"
+    ]
+    assert disabled_outputs == [{"status": "disabled"}]
+
+
+def _make_idle_run(record: AutoRunRecord):
+    """Build a real AutoChatRun (with bus + buffer) parked at IDLE for the
+    disable-interception test, without a supervising task."""
+    from app.desktop.studio_server.chat.auto.models import AutoChatSeed
+    from app.desktop.studio_server.chat.auto.registry import AutoChatRun
+
+    return AutoChatRun(
+        record=record,
+        seed=AutoChatSeed(trace_id=record.current_trace_id),
+        upstream_url="https://example.test/v1/chat",
+        headers={},
+        on_trace=None,
+    )
+
+
+# ── message injection endpoint (Revision R1) ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_message_endpoint_404_when_unknown(client, registry, mock_api_key):
+    r = await client.post("/api/chat/auto/ar_unknown/message", json={"content": "hi"})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_message_endpoint_starts_new_burst_when_idle(
+    client, registry, mock_api_key
+):
+    burst1 = [text_delta("first"), trace("t1"), finish("stop")]
+    burst2 = [text_delta("second"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=burst1), FakeUpstreamResponse(chunks=burst2)]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        run_id = (
+            await client.post(
+                "/api/chat/auto/enable",
+                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+            )
+        ).json()["run_id"]
+        await _wait_settled(registry, run_id)
+        assert registry.get(run_id).record.status == AutoRunStatus.IDLE
+
+        r = await client.post(
+            f"/api/chat/auto/{run_id}/message",
+            json={"content": "do more", "trace_id": "t1"},
+        )
+        assert r.status_code == 202
+        await _wait_settled(registry, run_id)
+
+    # The second upstream body was seeded with the injected user message.
+    assert fake.bodies[1]["messages"] == [{"role": "user", "content": "do more"}]
+
+
+@pytest.mark.asyncio
+async def test_message_endpoint_enqueues_into_active_burst(
+    client, registry, mock_api_key
+):
+    # While a burst is RUNNING, /message enqueues the user message (drained by
+    # the runner at the next round boundary) and echoes it onto the bus — it does
+    # NOT start a new burst. Deterministic via a gated client that holds the
+    # first round open.
+    release = asyncio.Event()
+    gated = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=gated):
+        run_id = (
+            await client.post(
+                "/api/chat/auto/enable",
+                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+            )
+        ).json()["run_id"]
+        await asyncio.sleep(0.05)  # let the burst reach RUNNING
+        assert registry.get(run_id).record.status == AutoRunStatus.RUNNING
+
+        r = await client.post(
+            f"/api/chat/auto/{run_id}/message",
+            json={"content": "inject"},
+        )
+        assert r.status_code == 202
+
+        run = registry.get(run_id)
+        # Queued for drain at the next boundary; echoed for observers.
+        assert [m.content for m in run.inbound] == ["inject"]
+        assert b"inject" in b"".join(run.buffer)
+
+        release.set()
+        await _wait_settled(registry, run_id)
+
+
 # ── session-list join ─────────────────────────────────────────────────────────
 
 
@@ -445,6 +789,7 @@ async def test_session_list_auto_active_join(
         ("/api/chat/auto/enable", "POST"),
         ("/api/chat/auto/decline", "POST"),
         ("/api/chat/auto/{run_id}/stop", "POST"),
+        ("/api/chat/auto/{run_id}/message", "POST"),
     ],
 )
 def test_mutating_auto_endpoints_have_no_write_lock(app, path, method):

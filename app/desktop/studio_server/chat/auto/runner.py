@@ -14,8 +14,11 @@ from app.desktop.studio_server.chat.stream_session import (
     iter_upstream_round,
 )
 from app.desktop.studio_server.chat.tool_metadata import tool_input_executor_is_server
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
+    DISABLE_AUTO_MODE_TOOL_NAME,
+)
 
-from .models import AutoChatSeed, AutoRunStatus
+from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .sse import (
     format_auto_mode_on,
     format_error,
@@ -28,11 +31,18 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS_MESSAGE = "Maximum tool rounds exceeded. Please start a new message."
 
+# The tool result the app server resolves an intercepted disable_auto_mode call
+# to, fed back to the backend so it continues interactively.
+DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
+
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
 # bus. It also detects kiln_chat_trace boundaries (buffer reset + index update).
 EmitCallback = Callable[[bytes], None]
 # Callback invoked with each observed leaf trace id (registry index update).
 OnTraceCallback = Callable[[str], Awaitable[None]]
+# Callback the runner invokes at each round boundary to atomically take (and
+# clear) any user messages queued via /message since the last drain.
+DrainInboundCallback = Callable[[], list[InboundMessage]]
 
 
 class AutoChatRunner:
@@ -58,6 +68,7 @@ class AutoChatRunner:
         headers: dict[str, str],
         emit: EmitCallback,
         on_trace: OnTraceCallback | None = None,
+        drain_inbound: DrainInboundCallback | None = None,
     ) -> None:
         self.run_id = run_id
         self._seed = seed
@@ -65,11 +76,20 @@ class AutoChatRunner:
         self._headers = headers
         self._emit = emit
         self._on_trace = on_trace
+        self._drain_inbound = drain_inbound
         self.status: AutoRunStatus = AutoRunStatus.RUNNING
-        # Finer-grained reason for the DONE status, surfaced as auto-mode-off's
-        # reason: "asked_user" when the run ended on a plain-text assistant turn
-        # (a question / wrap-up handing control back), else "done".
-        self.done_reason: str = "done"
+        # Revision R1: the burst-end reason carried on the auto-mode-idle event
+        # the supervisor publishes. "asked_user" when the burst ended on a
+        # plain-text assistant turn, "done" when a tool batch produced no
+        # results, "error"/"max_rounds" for the backstops.
+        self.idle_reason: str = "done"
+        # Set when a disable_auto_mode call is intercepted mid-burst and resolved.
+        # The runner answers the intercepted call itself (in _resolve_disable) and
+        # signals the disable purely via status == USER_DISABLED; the supervisor
+        # reads that status to clear the conversation flag. disable_trace_id is
+        # self-consumed: _resolve_disable re-sets it to the resolving
+        # continuation's trace id and passes it to on_trace.
+        self.disable_trace_id: str | None = None
 
     async def run(self) -> None:
         self._emit(format_auto_mode_on(self.run_id))
@@ -90,7 +110,11 @@ class AutoChatRunner:
                     await self._on_trace(round_state.trace_id)
 
                 if round_state.is_terminal_upstream_error:
-                    self.status = AutoRunStatus.ERROR
+                    # An unrecoverable upstream error ends the burst, but the
+                    # conversation flag stays on (the supervisor routes this to
+                    # IDLE with reason "error" so the user can retry or stop).
+                    self.idle_reason = "error"
+                    self.status = AutoRunStatus.IDLE
                     return
 
                 if round_state.trace_id:
@@ -101,10 +125,19 @@ class AutoChatRunner:
                     }
 
                 if not round_state.finish_tool_calls:
-                    # Assistant emitted only text (a question or a wrap-up) — the
-                    # turn is complete and control is back with the user.
-                    self.done_reason = "asked_user"
-                    self.status = AutoRunStatus.DONE
+                    # Assistant emitted only text (a question or a wrap-up).
+                    # Drain-before-idle (architecture §13.6): a message sent the
+                    # instant the burst would settle must not be dropped — if one
+                    # is queued, continue with it as a fresh user turn instead of
+                    # going idle.
+                    injected = self._drain()
+                    if injected:
+                        body = self._continue_with_user_messages(body, injected)
+                        continue
+                    # Nothing queued — the burst settles. The supervisor marks the
+                    # run IDLE (flag stays on) and emits auto-mode-idle.
+                    self.idle_reason = "asked_user"
+                    self.status = AutoRunStatus.IDLE
                     return
 
                 client_events = [
@@ -112,6 +145,28 @@ class AutoChatRunner:
                     for e in round_state.tool_input_events
                     if not tool_input_executor_is_server(e)
                 ]
+
+                # disable_auto_mode interception (architecture §13.3): never
+                # execute it. Clear the conversation flag, resolve the call as
+                # disabled so the backend continues interactively, and end the
+                # burst as USER_DISABLED (the supervisor publishes
+                # auto-mode-off(user_disabled)).
+                disable_evt = next(
+                    (
+                        e
+                        for e in client_events
+                        if e.toolName == DISABLE_AUTO_MODE_TOOL_NAME
+                    ),
+                    None,
+                )
+                if disable_evt is not None:
+                    self.disable_trace_id = round_state.trace_id or trace_id_for_error
+                    await self._resolve_disable(
+                        client, body, round_state, disable_evt, client_events
+                    )
+                    self.status = AutoRunStatus.USER_DISABLED
+                    return
+
                 # AUTO-APPROVE: requires_approval=False makes execute_tool_batch
                 # skip the gate and run every client tool unattended.
                 tool_calls = [
@@ -131,7 +186,14 @@ class AutoChatRunner:
                 self._emit(format_tool_exec_end(len(results)))
 
                 if not results:
-                    self.status = AutoRunStatus.DONE
+                    # No client tool results to feed back (e.g. server-only tool
+                    # batch). Same drain-before-idle check applies.
+                    injected = self._drain()
+                    if injected:
+                        body = self._continue_with_user_messages(body, injected)
+                        continue
+                    self.idle_reason = "done"
+                    self.status = AutoRunStatus.IDLE
                     return
 
                 body = _build_openai_tool_continuation(
@@ -140,10 +202,115 @@ class AutoChatRunner:
                     round_state.tool_input_events,
                     results,
                 )
+                # Inject any messages queued during this round alongside the tool
+                # results so the backend sees both on the next turn (§13.2).
+                injected = self._drain()
+                if injected:
+                    body = self._append_user_messages(body, injected)
 
-        # Loop exhausted MAX_TOOL_ROUNDS without a natural exit.
+        # Loop exhausted MAX_TOOL_ROUNDS without a natural exit. The burst ends
+        # but the conversation flag stays on (→ IDLE, reason "max_rounds").
         self._emit(format_error(MAX_TOOL_ROUNDS_MESSAGE, trace_id_for_error))
-        self.status = AutoRunStatus.MAX_ROUNDS
+        self.idle_reason = "max_rounds"
+        self.status = AutoRunStatus.IDLE
+
+    async def _resolve_disable(
+        self,
+        client: httpx.AsyncClient,
+        body: dict[str, Any],
+        round_state: RoundState,
+        disable_evt: Any,
+        client_events: list[Any],
+    ) -> None:
+        """Resolve an intercepted ``disable_auto_mode`` call back to the backend
+        (architecture §13.3, CR Moderate 3).
+
+        The backend persisted an assistant turn carrying the ``disable_auto_mode``
+        tool call; if that call is never answered the next interactive
+        ``/api/chat`` turn on this trace has a dangling, unanswered tool call (the
+        provider requires every tool call be answered before a new user message)
+        and can error. So we resolve the call as ``{"status":"disabled"}`` — and
+        execute any siblings in the same turn — then send one final continuation
+        to the backend so it persists a clean snapshot before auto mode goes off.
+        The model's reply to that continuation is forwarded to observers, but the
+        burst does NOT continue past it: this is the terminal round."""
+        # Execute any sibling client tools in the same turn (mirrors the
+        # interactive disable path), so every tool_call_id is answered.
+        siblings = [e for e in client_events if e is not disable_evt]
+        sibling_results = (
+            await execute_tool_batch(
+                [
+                    ToolCallInfo(
+                        toolCallId=e.toolCallId,
+                        toolName=e.toolName,
+                        input=e.input,
+                        requiresApproval=False,
+                    )
+                    for e in siblings
+                ],
+                {},
+            )
+            if siblings
+            else {}
+        )
+        tool_results = {
+            disable_evt.toolCallId: DISABLE_AUTO_MODE_RESULT,
+            **sibling_results,
+        }
+        # Surface the resolved results to observers so the UI sees them.
+        self._emit(format_tool_exec_start(len(tool_results)))
+        for tc_id, output in tool_results.items():
+            self._emit(format_tool_output(tc_id, output))
+        self._emit(format_tool_exec_end(len(tool_results)))
+
+        # Send the resolving continuation to the backend so the persisted trace
+        # has no dangling tool call. This is terminal — forward the backend's
+        # reply to observers but do not loop.
+        continuation = _build_openai_tool_continuation(
+            body,
+            round_state.assistant_text,
+            round_state.tool_input_events,
+            tool_results,
+        )
+        final_state = RoundState(trace_id_for_error=round_state.trace_id_for_error)
+        async for payload in iter_upstream_round(
+            client, self._url, self._headers, continuation, final_state
+        ):
+            self._emit(payload)
+        if final_state.trace_id is not None:
+            self.disable_trace_id = final_state.trace_id
+            if self._on_trace is not None:
+                await self._on_trace(final_state.trace_id)
+
+    def _drain(self) -> list[InboundMessage]:
+        # The registry already echoes every message onto the bus + buffer at
+        # enqueue time (registry.send_message → run.echo_user_message), and the
+        # runner is only ever fed via that enqueue path. Echoing again here would
+        # render the injected message twice to all observers, so drain only takes
+        # the queued messages and does NOT re-echo (CR Moderate 1).
+        if self._drain_inbound is None:
+            return []
+        return self._drain_inbound()
+
+    @staticmethod
+    def _append_user_messages(
+        body: dict[str, Any], messages: list[InboundMessage]
+    ) -> dict[str, Any]:
+        """Append injected user messages after the tool results in a continuation
+        body (they come last so the backend reads them as the latest input)."""
+        existing = list(body.get("messages", []))
+        existing.extend(m.as_chat_message() for m in messages)
+        return {**body, "messages": existing}
+
+    def _continue_with_user_messages(
+        self, body: dict[str, Any], messages: list[InboundMessage]
+    ) -> dict[str, Any]:
+        """Build a fresh-turn continuation seeded only with injected user messages
+        (the trace advanced, no pending tool results to carry)."""
+        return {
+            **body,
+            "messages": [m.as_chat_message() for m in messages],
+        }
 
     async def _build_seed_body(self) -> dict[str, Any]:
         """Construct the first upstream continuation body from the seed (§3.5).

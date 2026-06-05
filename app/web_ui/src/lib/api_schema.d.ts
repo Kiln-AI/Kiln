@@ -3131,6 +3131,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/auto/{run_id}/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a user message into an auto-mode conversation
+         * @description Inject a user message without disabling auto mode (Revision R1).
+         *
+         *     If a burst is active the message is queued and delivered at the next round
+         *     boundary; if the conversation is idle a new burst is started seeded with
+         *     the message. The echoed message and resulting events arrive on the run's
+         *     observer stream. 404 if the run is unknown or its flag is already off.
+         */
+        post: operations["send_auto_message_api_chat_auto__run_id__message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/auto/{run_id}/events": {
         parameters: {
             query?: never;
@@ -3811,7 +3836,7 @@ export interface components {
          * AutoRunStatus
          * @enum {string}
          */
-        AutoRunStatus: "running" | "done" | "stopped" | "error" | "max_rounds";
+        AutoRunStatus: "running" | "idle" | "stopped" | "disabled";
         /** AutoSessionItem */
         AutoSessionItem: {
             /** Run Id */
@@ -9356,6 +9381,17 @@ export interface components {
              * @description The breakpoint percentile threshold to use for the chunker.
              */
             breakpoint_percentile_threshold: number;
+        };
+        /**
+         * SendMessageRequest
+         * @description A user message sent into an auto-mode conversation via ``/message``
+         *     (Revision R1) — injected into the active burst or starts a new one if idle.
+         */
+        SendMessageRequest: {
+            /** Content */
+            content: string;
+            /** Trace Id */
+            trace_id?: string | null;
         };
         /**
          * SkillContentResponse
@@ -18073,6 +18109,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_auto_message_api_chat_auto__run_id__message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The auto run id to message. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

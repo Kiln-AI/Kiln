@@ -23,15 +23,45 @@ def _new_run_id() -> str:
 
 
 class AutoRunStatus(str, Enum):
-    RUNNING = "running"
-    DONE = "done"  # assistant asked the user / finished naturally
-    USER_STOPPED = "stopped"  # user hit Stop
-    ERROR = "error"  # unrecoverable runner/upstream error
-    MAX_ROUNDS = "max_rounds"
+    RUNNING = "running"  # a burst is actively driving the loop
+    # Revision R1: a burst settled but the conversation auto-mode flag stays ON
+    # (the entry is not evicted). The conversation is idle awaiting the user.
+    IDLE = "idle"
+    USER_STOPPED = "stopped"  # user hit Stop — flag off
+    USER_DISABLED = "disabled"  # disable_auto_mode tool intercepted — flag off
 
     @property
     def is_terminal(self) -> bool:
-        return self is not AutoRunStatus.RUNNING
+        """Terminal == the conversation auto-mode flag is OFF and the entry is
+        slated for GC. Under Revision R1 a settled burst goes IDLE (flag still
+        on), so IDLE is NOT terminal."""
+        return self in _OFF_STATUSES
+
+    @property
+    def flag_on(self) -> bool:
+        """Whether the conversation-scoped auto-mode flag is on (RUNNING or
+        IDLE). Drives the green-dot/auto_active join, which must persist while a
+        run is idle between bursts."""
+        return self in _FLAG_ON_STATUSES
+
+
+_FLAG_ON_STATUSES = frozenset({AutoRunStatus.RUNNING, AutoRunStatus.IDLE})
+_OFF_STATUSES = frozenset({AutoRunStatus.USER_STOPPED, AutoRunStatus.USER_DISABLED})
+
+
+class InboundMessage(BaseModel):
+    """A user message sent into an auto-mode conversation via ``/message``.
+
+    When a burst is active it is queued and drained at the next round boundary
+    (appended to the continuation as a ``role:"user"`` message); when the run is
+    idle it seeds a fresh burst."""
+
+    role: str = "user"
+    content: str
+    trace_id: str | None = None
+
+    def as_chat_message(self) -> dict[str, Any]:
+        return {"role": self.role, "content": self.content}
 
 
 class AutoChatSeed(BaseModel):

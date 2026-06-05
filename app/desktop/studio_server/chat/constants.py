@@ -12,6 +12,9 @@ SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
 SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
 SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED = "auto-mode-consent-required"
+# Revision R1: a burst settled but the conversation auto-mode flag stays on. This
+# is distinct from auto-mode-off (which is published only on explicit disable).
+SSE_TYPE_AUTO_MODE_IDLE = "auto-mode-idle"
 
 DENIED_TOOL_OUTPUT = json.dumps(
     {"error": "The user did not accept the toolcall"}, ensure_ascii=False

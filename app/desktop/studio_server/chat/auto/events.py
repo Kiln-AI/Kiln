@@ -11,6 +11,8 @@ from app.desktop.studio_server.jobs.events import (
     iter_with_keepalive,
 )
 
+from .models import AutoRunStatus
+
 if TYPE_CHECKING:
     from .registry import AutoChatRun
 
@@ -58,11 +60,17 @@ class AutoChatEventBus:
             # Replay the in-progress turn (everything since the last snapshot).
             for payload in list(self._run.buffer):
                 yield payload
-            # Already finished → emit the terminal marker and stop. (A live run
-            # will publish its own auto-mode-off through the queue.)
-            if self._run.record.status.is_terminal:
+            status = self._run.record.status
+            # Already off (explicit disable/stop) → emit the terminal marker and
+            # stop. (A live run will publish its own auto-mode-off via the queue.)
+            if status.is_terminal:
                 yield self._run.terminal_off_bytes()
                 return
+            # Idle between bursts: the flag is still on. Emit the idle marker so a
+            # re-attaching observer renders the persistent indicator, then stay
+            # subscribed for the next burst (started via /message).
+            if status == AutoRunStatus.IDLE:
+                yield self._run.idle_marker_bytes()
             while True:
                 yield await subscriber.queue.get()
         finally:

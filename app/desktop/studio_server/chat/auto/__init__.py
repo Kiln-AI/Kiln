@@ -3,6 +3,7 @@ from .models import (
     AutoChatSeed,
     AutoRunRecord,
     AutoRunStatus,
+    InboundMessage,
 )
 from .registry import (
     AutoChatConcurrencyError,
@@ -21,5 +22,6 @@ __all__ = [
     "AutoChatSeed",
     "AutoRunRecord",
     "AutoRunStatus",
+    "InboundMessage",
     "auto_chat_registry",
 ]

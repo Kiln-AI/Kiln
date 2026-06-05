@@ -12,11 +12,16 @@ from .models import (
     AutoChatSeed,
     AutoRunRecord,
     AutoRunStatus,
+    InboundMessage,
     _new_run_id,
     _utc_now,
 )
 from .runner import AutoChatRunner
-from .sse import format_auto_mode_off
+from .sse import (
+    format_auto_mode_idle,
+    format_auto_mode_off,
+    format_user_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +30,12 @@ MAX_CONCURRENT_ENV_VAR = "KILN_CHAT_AUTO_MAX_CONCURRENT"
 # How long a terminal run lingers so a late re-attach still gets auto-mode-off.
 TERMINAL_TTL_SECONDS = 300.0
 
-# Map terminal statuses to the auto-mode-off reason. DONE is special-cased off
-# the runner's finer-grained done_reason (done vs asked_user).
+# Map off statuses to the auto-mode-off reason. Revision R1: auto-mode-off is
+# published ONLY on explicit disable (Stop or the disable_auto_mode tool); all
+# burst-level endings go IDLE instead (see _supervise / format_auto_mode_idle).
 _OFF_REASON = {
     AutoRunStatus.USER_STOPPED: "user_stopped",
-    AutoRunStatus.ERROR: "error",
-    AutoRunStatus.MAX_ROUNDS: "max_rounds",
+    AutoRunStatus.USER_DISABLED: "user_disabled",
 }
 
 
@@ -87,13 +92,15 @@ def _extract_trace_id(payload: bytes) -> str | None:
 
 
 class AutoChatRun:
-    """Live in-memory machinery for one auto run.
+    """Live in-memory machinery for one conversation's auto mode.
 
-    Holds the serializable ``AutoRunRecord``, the per-run ``AutoChatEventBus``,
-    the current-turn byte ``buffer`` (everything since the last persisted
-    snapshot, for gapless re-attach), and the ``AutoChatRunner``. The supervising
-    ``asyncio.Task`` is owned by the registry, not here, so it survives client
-    disconnects.
+    Revision R1: the entry is **per-conversation and persistent**. It holds the
+    conversation auto-mode flag (via ``record.status``: RUNNING/IDLE = on), the
+    per-run ``AutoChatEventBus``, the current-turn byte ``buffer`` (everything
+    since the last persisted snapshot, for gapless re-attach), an inbound message
+    queue, and the **current burst's** ``AutoChatRunner`` (rebuilt per burst).
+    The supervising ``asyncio.Task`` is owned by the registry, not here, so it
+    survives client disconnects.
     """
 
     def __init__(
@@ -107,14 +114,42 @@ class AutoChatRun:
         self.record = record
         self.buffer: list[bytes] = []
         self.bus = AutoChatEventBus(self)
-        self.runner = AutoChatRunner(
-            run_id=record.run_id,
+        self._upstream_url = upstream_url
+        self._headers = headers
+        self._on_trace = on_trace
+        # Messages sent via /message while a burst is active, drained by the
+        # runner at the next round boundary. Idle sends start a new burst instead.
+        self.inbound: list[InboundMessage] = []
+        self.runner = self._new_runner(seed)
+
+    def _new_runner(self, seed: AutoChatSeed) -> AutoChatRunner:
+        return AutoChatRunner(
+            run_id=self.record.run_id,
             seed=seed,
-            upstream_url=upstream_url,
-            headers=headers,
+            upstream_url=self._upstream_url,
+            headers=self._headers,
             emit=self.emit,
-            on_trace=on_trace,
+            on_trace=self._on_trace,
+            drain_inbound=self.drain_inbound,
         )
+
+    def start_burst(self, seed: AutoChatSeed) -> AutoChatRunner:
+        """Rebuild the runner for a fresh burst (idle → running)."""
+        self.runner = self._new_runner(seed)
+        return self.runner
+
+    def enqueue(self, message: InboundMessage) -> None:
+        self.inbound.append(message)
+
+    def drain_inbound(self) -> list[InboundMessage]:
+        messages = self.inbound
+        self.inbound = []
+        return messages
+
+    def echo_user_message(self, message: InboundMessage) -> None:
+        """Echo a user message onto the bus + current-turn buffer so observers
+        (including the sender) render it immediately, consistent with replay."""
+        self.emit(format_user_message(message.content))
 
     def emit(self, payload: bytes) -> None:
         """Append to the current-turn buffer and publish to subscribers.
@@ -131,14 +166,15 @@ class AutoChatRun:
 
     def terminal_off_bytes(self) -> bytes:
         return format_auto_mode_off(
-            self.record.run_id, _off_reason_for(self.record.status, self.runner)
+            self.record.run_id, _off_reason_for(self.record.status)
         )
 
+    def idle_marker_bytes(self) -> bytes:
+        return format_auto_mode_idle(self.record.run_id, self.runner.idle_reason)
 
-def _off_reason_for(status: AutoRunStatus, runner: AutoChatRunner) -> str:
-    if status == AutoRunStatus.DONE:
-        return runner.done_reason
-    return _OFF_REASON.get(status, "done")
+
+def _off_reason_for(status: AutoRunStatus) -> str:
+    return _OFF_REASON.get(status, "user_stopped")
 
 
 class AutoChatRegistry:
@@ -164,19 +200,17 @@ class AutoChatRegistry:
         return self._runs.get(run_id)
 
     def list_active(self) -> list[AutoRunRecord]:
-        return [
-            run.record
-            for run in self._runs.values()
-            if run.record.status == AutoRunStatus.RUNNING
-        ]
+        """Runs whose conversation auto-mode flag is on (RUNNING or IDLE)."""
+        return [run.record for run in self._runs.values() if run.record.status.flag_on]
 
     def run_id_for_trace(self, trace_id: str) -> str | None:
-        """run_id for a trace, limited to active runs."""
+        """run_id for a trace, limited to runs whose flag is on (RUNNING or
+        IDLE) — so the green dot persists while idle between bursts."""
         run_id = self._trace_index.get(trace_id)
         if run_id is None:
             return None
         run = self._runs.get(run_id)
-        if run is None or run.record.status != AutoRunStatus.RUNNING:
+        if run is None or not run.record.status.flag_on:
             return None
         return run_id
 
@@ -194,9 +228,9 @@ class AutoChatRegistry:
         upstream_url: str,
         headers: dict[str, str],
     ) -> AutoRunRecord:
-        active = sum(
-            1 for r in self._runs.values() if r.record.status == AutoRunStatus.RUNNING
-        )
+        # Cap counts flag-on conversations (RUNNING or IDLE): each is a live
+        # auto-mode conversation holding a registry entry.
+        active = sum(1 for r in self._runs.values() if r.record.status.flag_on)
         if active >= self._max_concurrent:
             raise AutoChatConcurrencyError(
                 f"Too many concurrent auto runs (max {self._max_concurrent}). "
@@ -234,39 +268,154 @@ class AutoChatRegistry:
             run_id = _new_run_id()
         return run_id
 
+    # -- inbound message injection (Revision R1) -----------------------------
+
+    def send_message(self, run_id: str, message: InboundMessage) -> bool:
+        """Send a user message into an auto-mode conversation without disabling it.
+
+        - If a burst is **active** (RUNNING): enqueue the message; the runner
+          drains it at the next round boundary and appends it to the continuation.
+        - If the run is **IDLE**: start a fresh burst seeded with the message.
+
+        Echoes the message onto the run's bus + current-turn buffer so all
+        observers (including the sender) render it immediately. Returns False if
+        the run is unknown or its flag is off (caller maps to 404/409)."""
+        run = self._runs.get(run_id)
+        if run is None or not run.record.status.flag_on:
+            return False
+
+        run.echo_user_message(message)
+
+        if run.record.status == AutoRunStatus.RUNNING:
+            run.enqueue(message)
+            return True
+
+        # IDLE → start a new burst seeded with the queued message(s).
+        seed = AutoChatSeed(
+            trace_id=message.trace_id or run.record.current_trace_id,
+            extra_messages=[message.as_chat_message()],
+        )
+        run.record.status = AutoRunStatus.RUNNING
+        run.start_burst(seed)
+        self._cancel_gc(run_id)
+        self._tasks[run_id] = asyncio.create_task(self._supervise(run))
+        self._touch(run)
+        logger.info("Resumed auto run %s from idle via /message", run_id)
+        return True
+
+    async def disable(self, run_id: str) -> bool:
+        """Clear the conversation flag in response to the disable_auto_mode tool.
+
+        Used by the interactive (ChatStreamSession) interception path. The flag
+        must be cleared even mid-burst: if a burst is RUNNING we mark the run
+        USER_DISABLED and cancel its task (mirroring stop()), so _supervise's
+        CancelledError handler tears the burst down WITHOUT re-settling to IDLE
+        (CR Moderate 2 — otherwise the idle settle would clobber USER_DISABLED
+        and re-enable the flag). If there's no live burst, clear the flag
+        directly. Publishes auto-mode-off(user_disabled). Returns False if the
+        run is unknown."""
+        run = self._runs.get(run_id)
+        if run is None:
+            return False
+
+        # Mark USER_DISABLED first so a cancelled burst's CancelledError handler
+        # preserves it (rather than forcing USER_STOPPED) and publishes the
+        # correct off-reason.
+        if run.record.status.is_terminal:
+            return True
+        run.record.status = AutoRunStatus.USER_DISABLED
+
+        task = self._tasks.get(run_id)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug(
+                    "Auto run %s raised during disable await", run_id, exc_info=True
+                )
+            return True
+
+        # No live burst (idle). Clear the flag directly.
+        run.inbound.clear()
+        self._publish_off(run)
+        self._touch(run)
+        self._schedule_gc(run_id)
+        return True
+
+    async def disable_for_trace(self, trace_id: str) -> bool:
+        run_id = self._trace_index.get(trace_id)
+        if run_id is None:
+            return False
+        return await self.disable(run_id)
+
     # -- supervision ---------------------------------------------------------
 
     async def _supervise(self, run: AutoChatRun) -> None:
-        """Own the run's whole lifetime, decoupled from any HTTP request — like
-        ``JobRegistry._supervise``. Run the runner, translate the outcome to a
-        terminal status, publish ``auto-mode-off``, and schedule terminal GC."""
+        """Own one burst's lifetime, decoupled from any HTTP request — like
+        ``JobRegistry._supervise``.
+
+        Revision R1: a settled burst transitions the run to IDLE (the
+        conversation auto-mode flag stays on, the entry is NOT evicted) and
+        publishes ``auto-mode-idle``. ``auto-mode-off`` + terminal GC happen only
+        on explicit disable — user Stop (cancel → USER_STOPPED) or the
+        ``disable_auto_mode`` tool (USER_DISABLED)."""
         run_id = run.record.run_id
         try:
             try:
                 await run.runner.run()
-                run.record.status = run.runner.status
             except asyncio.CancelledError:
-                run.record.status = AutoRunStatus.USER_STOPPED
+                # A cancel from stop() leaves the flag at its pre-cancel value
+                # (RUNNING/IDLE) → USER_STOPPED. A cancel from disable() has
+                # already set USER_DISABLED; preserve any already-off status so
+                # we publish the correct off-reason (CR Moderate 2).
+                if not run.record.status.is_terminal:
+                    run.record.status = AutoRunStatus.USER_STOPPED
+                run.inbound.clear()
                 self._publish_off(run)
                 self._touch(run)
                 raise
             except Exception:
-                logger.exception("Auto run %s failed", run_id)
-                run.record.status = AutoRunStatus.ERROR
-            self._publish_off(run)
+                # An unrecoverable burst error ends the burst but leaves the flag
+                # on so the user can retry or stop (functional spec §4.4).
+                logger.exception("Auto run %s burst failed", run_id)
+                run.runner.idle_reason = "error"
+                run.record.status = AutoRunStatus.IDLE
+            else:
+                # If the flag was already cleared off-band (e.g. disable() raced
+                # in just as the burst returned), don't resurrect it — leave the
+                # terminal status as-is. Otherwise adopt the runner's status.
+                if not run.record.status.is_terminal:
+                    run.record.status = run.runner.status
+
+            if run.record.status.is_terminal:
+                # Explicitly disabled (or otherwise off): publish off, GC handled
+                # in finally. Do NOT settle to IDLE (that would re-enable the
+                # flag and republish the idle marker — CR Moderate 2).
+                run.inbound.clear()
+                self._publish_off(run)
+            else:
+                # Settled burst → IDLE; the flag stays on, entry not evicted.
+                run.record.status = AutoRunStatus.IDLE
+                run.bus.publish(run.idle_marker_bytes())
             self._touch(run)
             logger.info(
-                "Auto run %s finished (status=%s)", run_id, run.record.status.value
+                "Auto run %s burst ended (status=%s)",
+                run_id,
+                run.record.status.value,
             )
         finally:
             self._tasks.pop(run_id, None)
-            self._schedule_gc(run_id)
+            # Only off (explicitly-disabled) runs are GC'd; IDLE runs persist
+            # until the user stops/disables them (or restart/eviction).
+            if run.record.status.is_terminal:
+                self._schedule_gc(run_id)
 
     def _publish_off(self, run: AutoChatRun) -> None:
         run.bus.publish(
-            format_auto_mode_off(
-                run.record.run_id, _off_reason_for(run.record.status, run.runner)
-            )
+            format_auto_mode_off(run.record.run_id, _off_reason_for(run.record.status))
         )
 
     # -- trace index ---------------------------------------------------------
@@ -287,18 +436,34 @@ class AutoChatRegistry:
     # -- stop ----------------------------------------------------------------
 
     async def stop(self, run_id: str) -> None:
-        """Cancel the run cooperatively. Idempotent. The supervising task's
-        CancelledError handler sets USER_STOPPED and publishes auto-mode-off."""
+        """Stop auto mode for the conversation (Stop button). Clears the flag
+        (USER_STOPPED), cancelling any in-flight burst. Idempotent.
+
+        Revision R1: a RUNNING burst is cancelled — its task's CancelledError
+        handler sets USER_STOPPED and publishes auto-mode-off. An IDLE run has no
+        burst task, so the flag is cleared here directly."""
         task = self._tasks.get(run_id)
-        if task is None:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug(
+                    "Auto run %s raised during stop await", run_id, exc_info=True
+                )
             return
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.debug("Auto run %s raised during stop await", run_id, exc_info=True)
+
+        # No live burst (idle or already off). If the flag is still on, clear it.
+        run = self._runs.get(run_id)
+        if run is None or run.record.status.is_terminal:
+            return
+        run.record.status = AutoRunStatus.USER_STOPPED
+        run.inbound.clear()
+        self._publish_off(run)
+        self._touch(run)
+        self._schedule_gc(run_id)
 
     # -- terminal GC ---------------------------------------------------------
 
@@ -307,6 +472,14 @@ class AutoChatRegistry:
         if existing is not None and not existing.done():
             return
         self._gc_tasks[run_id] = asyncio.create_task(self._gc_after_ttl(run_id))
+
+    def _cancel_gc(self, run_id: str) -> None:
+        """Defensive: a fresh burst should never start on a GC-scheduled run
+        (only off runs are GC'd, and a new burst only starts from IDLE), but
+        cancel any pending GC if one exists."""
+        gc_task = self._gc_tasks.pop(run_id, None)
+        if gc_task is not None:
+            gc_task.cancel()
 
     async def _gc_after_ttl(self, run_id: str) -> None:
         try:

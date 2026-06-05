@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from app.desktop.studio_server.chat.constants import (
+    SSE_TYPE_AUTO_MODE_IDLE,
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
 )
@@ -23,8 +24,22 @@ def format_auto_mode_on(run_id: str) -> bytes:
 
 
 def format_auto_mode_off(run_id: str, reason: str) -> bytes:
-    """reason ∈ {done, asked_user, user_stopped, error, max_rounds}."""
+    """Published only on explicit disable. reason ∈ {user_stopped, user_disabled}."""
     return _encode({"type": SSE_TYPE_AUTO_MODE_OFF, "run_id": run_id, "reason": reason})
+
+
+def format_auto_mode_idle(run_id: str, reason: str) -> bytes:
+    """Revision R1: a burst settled but the conversation flag stays on.
+    reason ∈ {asked_user, done, error, max_rounds}."""
+    return _encode(
+        {"type": SSE_TYPE_AUTO_MODE_IDLE, "run_id": run_id, "reason": reason}
+    )
+
+
+def format_user_message(content: str) -> bytes:
+    """Echo a user message onto the run stream so observers (including the
+    sender) render it immediately, consistent with re-attach/replay."""
+    return _encode({"type": "user-message", "content": content})
 
 
 def format_tool_exec_start(tool_count: int) -> bytes:

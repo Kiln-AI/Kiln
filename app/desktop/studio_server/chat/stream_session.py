@@ -22,11 +22,18 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_requires_user_approval,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
+    DISABLE_AUTO_MODE_TOOL_NAME,
+)
 from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
     ENABLE_AUTO_MODE_TOOL_NAME,
 )
 from kiln_ai.tools.tool_registry import tool_from_id
 from pydantic import BaseModel, ConfigDict, Field
+
+# The tool result the app server resolves an intercepted disable_auto_mode call
+# to, fed back to the backend so it continues interactively.
+DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +332,60 @@ class ChatStreamSession:
                         )
                         return
 
+                    # disable_auto_mode interception (architecture §13.3): never
+                    # execute it. Clear the conversation auto-mode flag (publishing
+                    # auto-mode-off(user_disabled) to any observer), resolve the
+                    # call as {"status":"disabled"}, and CONTINUE streaming
+                    # interactively so the backend proceeds without auto mode. Any
+                    # siblings in the same turn are executed through the normal
+                    # approval gate (requiresApproval per tool) — on this
+                    # interactive path consent still applies. The model is
+                    # instructed to call disable_auto_mode alone so siblings are
+                    # normally empty.
+                    disable_evt = next(
+                        (
+                            e
+                            for e in client_events
+                            if e.toolName == DISABLE_AUTO_MODE_TOOL_NAME
+                        ),
+                        None,
+                    )
+                    if disable_evt is not None:
+                        await self._clear_auto_mode_flag(round_state.trace_id)
+                        non_disable = [e for e in client_events if e is not disable_evt]
+                        # Interactive path: gate siblings normally. A sibling that
+                        # requires approval is denied here (no decisions passed, so
+                        # execute_tool_batch returns DENIED_TOOL_OUTPUT) rather than
+                        # run without consent. Auto-mode auto-approval is the
+                        # runner's job, not this path's.
+                        sibling_results = await execute_tool_batch(
+                            [
+                                ToolCallInfo(
+                                    toolCallId=e.toolCallId,
+                                    toolName=e.toolName,
+                                    input=e.input,
+                                    requiresApproval=tool_requires_user_approval(e),
+                                )
+                                for e in non_disable
+                            ],
+                            {},
+                        )
+                        tool_results = {
+                            disable_evt.toolCallId: DISABLE_AUTO_MODE_RESULT,
+                            **sibling_results,
+                        }
+                        yield self._format_tool_exec_start(len(tool_results))
+                        for tc_id, output in tool_results.items():
+                            yield self._format_tool_output(tc_id, output)
+                        yield self._format_tool_exec_end(len(tool_results))
+                        self._body = _build_openai_tool_continuation(
+                            self._body,
+                            round_state.assistant_text,
+                            round_state.tool_input_events,
+                            tool_results,
+                        )
+                        continue
+
                     needs_approval = [
                         e for e in client_events if tool_requires_user_approval(e)
                     ]
@@ -384,6 +445,17 @@ class ChatStreamSession:
                 )
             )
         return await execute_tool_batch(tool_calls, approval_decisions or {})
+
+    @staticmethod
+    async def _clear_auto_mode_flag(trace_id: str | None) -> None:
+        """Clear the conversation's auto-mode flag for an intercepted
+        disable_auto_mode call. Imported lazily to avoid a circular import
+        (the auto registry depends on this module's round mechanics)."""
+        if not trace_id:
+            return
+        from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
+
+        await auto_chat_registry.disable_for_trace(trace_id)
 
     @staticmethod
     def _format_tool_output(tc_id: str, output: str) -> bytes:

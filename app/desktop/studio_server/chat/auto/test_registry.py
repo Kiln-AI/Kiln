@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import patch
 
 import httpx
@@ -10,13 +11,15 @@ import pytest
 
 from . import registry as registry_mod
 from .events import KeepalivePing, iter_with_keepalive
-from .models import AutoChatSeed, AutoRunRecord, AutoRunStatus
+from .models import AutoChatSeed, AutoRunRecord, AutoRunStatus, InboundMessage
 from .registry import AutoChatConcurrencyError, AutoChatRegistry, AutoChatRun
 from .test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
     finish,
+    finish_tool_calls,
     text_delta,
+    tool_input_available,
     trace,
 )
 
@@ -36,6 +39,24 @@ async def _wait_terminal(reg: AutoChatRegistry, run_id: str, timeout: float = 2.
             await asyncio.sleep(0.01)
 
     await asyncio.wait_for(_poll(), timeout)
+
+
+async def _wait_settled(reg: AutoChatRegistry, run_id: str, timeout: float = 2.0):
+    """Wait until a burst settles — the run leaves RUNNING (→ IDLE or off)."""
+
+    async def _poll():
+        while True:
+            run = reg.get(run_id)
+            if run is None or run.record.status != AutoRunStatus.RUNNING:
+                return
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_poll(), timeout)
+
+
+# Back-compat alias: most legacy tests wait for the burst to settle, which under
+# Revision R1 is IDLE (flag on) rather than a terminal status.
+_wait_idle = _wait_settled
 
 
 class _GatedClient:
@@ -89,12 +110,17 @@ async def test_cap_enforced():
         with pytest.raises(AutoChatConcurrencyError):
             reg.start(_seed("c"), reason=None, upstream_url=URL, headers={})
         assert len(reg.list_active()) == 2
-        # Let the two runs finish, freeing slots; a new start now succeeds.
+        # Revision R1: settling to IDLE keeps the conversation flag on, so the
+        # slots stay taken — the cap counts flag-on (RUNNING or IDLE) runs.
         release.set()
-        await _wait_terminal(reg, rec_a.run_id)
-        await _wait_terminal(reg, rec_b.run_id)
+        await _wait_settled(reg, rec_a.run_id)
+        await _wait_settled(reg, rec_b.run_id)
+        with pytest.raises(AutoChatConcurrencyError):
+            reg.start(_seed("c"), reason=None, upstream_url=URL, headers={})
+        # Explicitly stopping one frees its slot; a new start then succeeds.
+        await reg.stop(rec_a.run_id)
         rec_c = reg.start(_seed("c"), reason=None, upstream_url=URL, headers={})
-        await _wait_terminal(reg, rec_c.run_id)
+        await _wait_settled(reg, rec_c.run_id)
 
 
 @pytest.mark.asyncio
@@ -104,7 +130,7 @@ async def test_on_trace_updates_index_and_record():
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
     with patch.object(httpx, "AsyncClient", return_value=client):
         rec = reg.start(_seed("tr-0"), reason="why", upstream_url=URL, headers={})
-        await _wait_terminal(reg, rec.run_id)
+        await _wait_settled(reg, rec.run_id)
 
     run = reg.get(rec.run_id)
     assert run is not None
@@ -112,13 +138,14 @@ async def test_on_trace_updates_index_and_record():
     assert "tr-0" in run.record.seen_trace_ids
     assert "tr-1" in run.record.seen_trace_ids
     assert run.record.current_trace_id == "tr-1"
-    # Index keeps both ids → the run (terminal now, so run_id_for_trace is None
-    # but the raw index still maps until GC).
+    # Index keeps both ids; the run is now IDLE (flag on), so run_id_for_trace
+    # still resolves both leaves to the live run.
     assert reg._trace_index["tr-1"] == rec.run_id
+    assert reg.run_id_for_trace("tr-1") == rec.run_id
 
 
 @pytest.mark.asyncio
-async def test_is_active_for_trace_true_while_running_false_when_terminal():
+async def test_is_active_for_trace_true_while_running_and_idle_false_when_off():
     reg = AutoChatRegistry()
     release = asyncio.Event()
     client = _GatedClient(release)
@@ -128,7 +155,17 @@ async def test_is_active_for_trace_true_while_running_false_when_terminal():
         active, rid = reg.is_active_for_trace("tr-0")
         assert active and rid == rec.run_id
         release.set()
-        await _wait_terminal(reg, rec.run_id)
+        await _wait_settled(reg, rec.run_id)
+
+        # Revision R1: still active while IDLE (flag on) — the green dot persists.
+        run = reg.get(rec.run_id)
+        assert run is not None and run.record.status == AutoRunStatus.IDLE
+        active, rid = reg.is_active_for_trace("tr-0")
+        assert active and rid == rec.run_id
+        assert len(reg.list_active()) == 1
+
+        # Explicit stop clears the flag → no longer active.
+        await reg.stop(rec.run_id)
 
     active, rid = reg.is_active_for_trace("tr-0")
     assert active is False and rid is None
@@ -180,27 +217,282 @@ async def test_client_disconnect_does_not_cancel_run():
         await sub.aclose()  # client disconnect
         assert run.record.status == AutoRunStatus.RUNNING
 
-        # The run keeps advancing to terminal despite the dropped subscriber.
+        # The run keeps advancing despite the dropped subscriber.
         release.set()
-        await _wait_terminal(reg, rec.run_id)
+        await _wait_idle(reg, rec.run_id)
 
-    assert run.record.status == AutoRunStatus.DONE
+    assert run.record.status == AutoRunStatus.IDLE
 
 
 @pytest.mark.asyncio
-async def test_terminal_ttl_gc_evicts_run_and_index(monkeypatch):
+async def test_terminal_ttl_gc_evicts_only_off_runs(monkeypatch):
     monkeypatch.setattr(registry_mod, "TERMINAL_TTL_SECONDS", 0.05)
     reg = AutoChatRegistry()
     round1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
     with patch.object(httpx, "AsyncClient", return_value=client):
         rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
-        await _wait_terminal(reg, rec.run_id)
+        await _wait_settled(reg, rec.run_id)
+        # Revision R1: an IDLE run (flag on) is NOT GC'd — it persists.
+        await asyncio.sleep(0.15)
+        assert reg.get(rec.run_id) is not None
+        assert reg._trace_index["tr-1"] == rec.run_id
+
+        # Explicitly stopping it (flag off) schedules terminal GC.
+        await reg.stop(rec.run_id)
         await asyncio.sleep(0.15)  # let GC fire
 
     assert reg.get(rec.run_id) is None
     assert "tr-0" not in reg._trace_index
     assert "tr-1" not in reg._trace_index
+
+
+# ── Revision R1: send_message / disable ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_send_message_while_running_enqueues():
+    reg = AutoChatRegistry()
+    release = asyncio.Event()  # keep the burst RUNNING
+    client = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        run = reg.get(rec.run_id)
+        assert run is not None
+        await asyncio.sleep(0.02)
+        assert run.record.status == AutoRunStatus.RUNNING
+
+        accepted = reg.send_message(rec.run_id, InboundMessage(content="inject me"))
+        assert accepted is True
+        # Queued for drain at the next round boundary; no new burst started.
+        assert [m.content for m in run.inbound] == ["inject me"]
+        # Echoed onto the bus/buffer for observers.
+        assert b"inject me" in b"".join(run.buffer)
+
+        await reg.stop(rec.run_id)
+
+
+@pytest.mark.asyncio
+async def test_send_message_while_idle_starts_new_burst():
+    reg = AutoChatRegistry()
+    # First burst settles IDLE; second burst (from /message) runs to settle too.
+    burst1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
+    burst2 = [trace("tr-2"), text_delta("resumed"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=burst1), FakeUpstreamResponse(chunks=burst2)]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        await _wait_settled(reg, rec.run_id)
+        run = reg.get(rec.run_id)
+        assert run is not None and run.record.status == AutoRunStatus.IDLE
+
+        accepted = reg.send_message(
+            rec.run_id, InboundMessage(content="resume please", trace_id="tr-1")
+        )
+        assert accepted is True
+        # A fresh burst is running.
+        assert run.record.status == AutoRunStatus.RUNNING
+        await _wait_settled(reg, rec.run_id)
+
+    # The second burst was seeded with the queued user message.
+    second_body = client.bodies[1]
+    assert second_body["messages"] == [{"role": "user", "content": "resume please"}]
+
+
+@pytest.mark.asyncio
+async def test_send_message_unknown_or_off_returns_false():
+    reg = AutoChatRegistry()
+    assert reg.send_message("ar_nope", InboundMessage(content="x")) is False
+
+
+@pytest.mark.asyncio
+async def test_disable_for_trace_clears_idle_flag_and_publishes_off():
+    # The interactive disable path: the conversation has settled IDLE and the
+    # model called disable_auto_mode. disable_for_trace clears the flag
+    # (USER_DISABLED) and publishes auto-mode-off(user_disabled).
+    reg = AutoChatRegistry()
+    burst1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=burst1)])
+    received: list[bytes] = []
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        await _wait_settled(reg, rec.run_id)
+        run = reg.get(rec.run_id)
+        assert run is not None and run.record.status == AutoRunStatus.IDLE
+
+        async def _drain():
+            async for b in run.bus.subscribe():
+                received.append(b)
+
+        drain_task = asyncio.create_task(_drain())
+        await asyncio.sleep(0.02)
+
+        # tr-1 was indexed via on_trace during the first burst.
+        assert await reg.disable_for_trace("tr-1") is True
+        await asyncio.sleep(0.02)
+        drain_task.cancel()
+
+    assert run.record.status == AutoRunStatus.USER_DISABLED
+    decoded = b"".join(received).decode()
+    assert '"reason": "user_disabled"' in decoded
+
+
+@pytest.mark.asyncio
+async def test_disable_for_trace_unknown_returns_false():
+    reg = AutoChatRegistry()
+    assert await reg.disable_for_trace("tr-nope") is False
+
+
+class _GatedToolClient:
+    """Fake client driving two rounds: round 1 is a (server-resolved) tool call
+    whose first chunk blocks until ``release`` is set — letting a test inject a
+    message into the ACTIVE burst before the round boundary drain — then round 2
+    is a plain text turn that settles the burst."""
+
+    def __init__(self, release: asyncio.Event) -> None:
+        self._release = release
+        self.bodies: list = []
+        self._round = 0
+
+    def stream(self, method, url, *, content, headers):
+        self.bodies.append(json.loads(content.decode()))
+        self._round += 1
+        if self._round == 1:
+            return _GatedToolResponse(self._release)
+        return _GatedToolResponse(None, text=True)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+class _GatedToolResponse:
+    def __init__(self, release: asyncio.Event | None, text: bool = False) -> None:
+        self.status_code = 200
+        self._release = release
+        self._text = text
+
+    async def aread(self):
+        return b""
+
+    async def aiter_bytes(self):
+        if self._text:
+            yield trace("tr-2")
+            yield text_delta("done")
+            yield finish("stop")
+            return
+        # Round 1: a tool call. Block before the round completes so a test can
+        # inject a message into the still-RUNNING burst.
+        if self._release is not None:
+            await self._release.wait()
+        yield tool_input_available("tc1", "add", {"a": 1, "b": 1})
+        yield trace("tr-1")
+        yield finish_tool_calls()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_inject_during_active_burst_echoes_message_exactly_once():
+    # CR Moderate 1: the COMBINED registry+runner path. A message injected into an
+    # active (RUNNING) burst is echoed by the registry on enqueue; the runner must
+    # NOT echo it again at drain time. Assert the user-message echo appears exactly
+    # once across the whole stream.
+    reg = AutoChatRegistry()
+    release = asyncio.Event()
+    client = _GatedToolClient(release)
+    received: list[bytes] = []
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        run = reg.get(rec.run_id)
+        assert run is not None
+
+        async def _drain():
+            async for b in run.bus.subscribe():
+                received.append(b)
+
+        drain_task = asyncio.create_task(_drain())
+        await asyncio.sleep(0.02)
+        assert run.record.status == AutoRunStatus.RUNNING
+
+        # Inject while the burst is RUNNING (round 1 is gated). The runner drains
+        # this at the round boundary and appends it to the continuation.
+        accepted = reg.send_message(rec.run_id, InboundMessage(content="inject me"))
+        assert accepted is True
+
+        release.set()  # let round 1 complete → tool runs → drain → round 2
+        await _wait_settled(reg, rec.run_id)
+        await asyncio.sleep(0.02)
+        drain_task.cancel()
+
+    # The message was appended to the round-2 continuation (drained by the runner).
+    second_body = client.bodies[1]
+    user_messages = [m for m in second_body["messages"] if m.get("role") == "user"]
+    assert user_messages == [{"role": "user", "content": "inject me"}]
+
+    # The user-message echo appears EXACTLY ONCE across the whole observer stream
+    # (registry echoes on enqueue; the runner must not re-echo on drain).
+    user_message_events = [
+        e
+        for e in (
+            json.loads(line[6:].strip())
+            for chunk in received
+            for line in chunk.decode().split("\n")
+            if line.startswith("data: ") and line[6:].strip()
+        )
+        if isinstance(e, dict)
+        and e.get("type") == "user-message"
+        and e.get("content") == "inject me"
+    ]
+    assert len(user_message_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_disable_while_burst_running_ends_off_not_idle():
+    # CR Moderate 2: disable() while a burst is RUNNING must cancel it and leave
+    # the run OFF (USER_DISABLED) — _supervise must NOT re-settle it to IDLE (which
+    # would re-enable the flag and republish the idle marker).
+    reg = AutoChatRegistry()
+    release = asyncio.Event()  # never set → the burst stays RUNNING
+    client = _GatedClient(release)
+    received: list[bytes] = []
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        run = reg.get(rec.run_id)
+        assert run is not None
+
+        async def _drain():
+            async for b in run.bus.subscribe():
+                received.append(b)
+
+        drain_task = asyncio.create_task(_drain())
+        await asyncio.sleep(0.05)  # let the burst start (tr-0 indexed at start())
+        assert run.record.status == AutoRunStatus.RUNNING
+
+        # Disable mid-burst (the interactive disable_auto_mode path). tr-0 is
+        # indexed at start(); the gated round never completes so tr-1 isn't.
+        assert await reg.disable_for_trace("tr-0") is True
+        await asyncio.sleep(0.05)
+        drain_task.cancel()
+
+    # Ended OFF (user_disabled), NOT re-enabled to IDLE.
+    assert run.record.status == AutoRunStatus.USER_DISABLED
+    assert run.record.status.is_terminal is True
+    assert run.record.status.flag_on is False
+    assert reg.is_active_for_trace("tr-0") == (False, None)
+
+    decoded = b"".join(received).decode()
+    assert '"type": "auto-mode-off"' in decoded
+    assert '"reason": "user_disabled"' in decoded
+    # The idle marker must NOT have been republished (would re-enable the flag).
+    assert '"type": "auto-mode-idle"' not in decoded
 
 
 class TestBusAndBuffer:
@@ -228,14 +520,17 @@ class TestBusAndBuffer:
             drain_task = asyncio.create_task(_drain())
             await asyncio.sleep(0.02)
             release.set()
-            await _wait_terminal(reg, rec.run_id)
+            await _wait_settled(reg, rec.run_id)
             await asyncio.sleep(0.02)
             drain_task.cancel()
 
         decoded = b"".join(received).decode()
         assert "done" in decoded  # live text delivered after subscribe
-        # Ended on a plain-text turn → asked_user; auto-mode-off delivered live.
+        # Revision R1: ended on a plain-text turn → IDLE; auto-mode-idle(asked_user)
+        # is delivered live (NOT auto-mode-off — the flag stays on).
+        assert '"type": "auto-mode-idle"' in decoded
         assert '"reason": "asked_user"' in decoded
+        assert '"type": "auto-mode-off"' not in decoded
 
     @pytest.mark.asyncio
     async def test_buffer_resets_on_kiln_chat_trace(self):
@@ -266,20 +561,49 @@ class TestBusAndBuffer:
         assert run.buffer == [text_delta("next-turn")]
 
     @pytest.mark.asyncio
-    async def test_terminal_run_yields_off_immediately(self):
+    async def test_off_run_yields_off_marker_immediately(self):
+        # A run whose flag was explicitly cleared (stopped) is terminal — a late
+        # subscriber gets exactly the off marker and the stream ends.
         reg = AutoChatRegistry()
-        round1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
-        client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+        release = asyncio.Event()  # never set → hangs until stopped
+        client = _GatedClient(release)
         with patch.object(httpx, "AsyncClient", return_value=client):
             rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
-            await _wait_terminal(reg, rec.run_id)
+            await asyncio.sleep(0.02)
+            await reg.stop(rec.run_id)
             run = reg.get(rec.run_id)
             assert run is not None
             received = [b async for b in run.bus.subscribe()]
 
-        # A late subscriber to a terminal run gets exactly the off marker.
         decoded = b"".join(received).decode()
         assert '"type": "auto-mode-off"' in decoded
+
+    @pytest.mark.asyncio
+    async def test_idle_run_yields_idle_marker_on_subscribe(self):
+        # Revision R1: a settled IDLE run (flag on) is not terminal — a late
+        # subscriber gets the idle marker then stays subscribed for the next
+        # burst. Collect only the replay + marker, then cancel.
+        reg = AutoChatRegistry()
+        round1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
+        client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+        received: list[bytes] = []
+        with patch.object(httpx, "AsyncClient", return_value=client):
+            rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+            await _wait_settled(reg, rec.run_id)
+            run = reg.get(rec.run_id)
+            assert run is not None and run.record.status == AutoRunStatus.IDLE
+
+            async def _drain():
+                async for b in run.bus.subscribe():
+                    received.append(b)
+
+            drain_task = asyncio.create_task(_drain())
+            await asyncio.sleep(0.02)
+            drain_task.cancel()
+
+        decoded = b"".join(received).decode()
+        assert '"type": "auto-mode-idle"' in decoded
+        assert '"type": "auto-mode-off"' not in decoded
 
     @pytest.mark.asyncio
     async def test_keepalive_injects_pings(self):
@@ -300,6 +624,6 @@ class TestBusAndBuffer:
                     break
             await it.aclose()
             release.set()
-            await _wait_terminal(reg, rec.run_id)
+            await _wait_settled(reg, rec.run_id)
 
         assert saw_ping

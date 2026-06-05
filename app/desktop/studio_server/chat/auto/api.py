@@ -20,7 +20,7 @@ from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel, Field
 
 from .events import KeepalivePing, iter_with_keepalive
-from .models import AutoChatSeed, AutoRunStatus
+from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .registry import AutoChatConcurrencyError, auto_chat_registry
 
 # Quiet-window keepalive for the per-run events stream (mirrors jobs/api.py).
@@ -44,6 +44,14 @@ class DeclineAutoRequest(BaseModel):
     # for. Normally empty (the model is instructed to call enable_auto_mode alone);
     # each is resolved as denied so the conversation can continue interactively.
     siblings: list[ToolCallInfo] = Field(default_factory=list)
+
+
+class SendMessageRequest(BaseModel):
+    """A user message sent into an auto-mode conversation via ``/message``
+    (Revision R1) — injected into the active burst or starts a new one if idle."""
+
+    content: str
+    trace_id: str | None = None
 
 
 class AutoSessionItem(BaseModel):
@@ -149,6 +157,33 @@ def connect_chat_auto_api(app: FastAPI) -> None:
         """Cooperatively cancel the run. Idempotent — stopping an unknown or
         already-terminal run is a no-op."""
         await auto_chat_registry.stop(run_id)
+        return Response(status_code=202)
+
+    @app.post(
+        "/api/chat/auto/{run_id}/message",
+        summary="Send a user message into an auto-mode conversation",
+        tags=["Copilot"],
+        status_code=202,
+        openapi_extra=DENY_AGENT,
+    )
+    @no_write_lock
+    async def send_auto_message(
+        run_id: Annotated[str, Path(description="The auto run id to message.")],
+        body: SendMessageRequest,
+    ) -> Response:
+        """Inject a user message without disabling auto mode (Revision R1).
+
+        If a burst is active the message is queued and delivered at the next round
+        boundary; if the conversation is idle a new burst is started seeded with
+        the message. The echoed message and resulting events arrive on the run's
+        observer stream. 404 if the run is unknown or its flag is already off."""
+        message = InboundMessage(content=body.content, trace_id=body.trace_id)
+        accepted = auto_chat_registry.send_message(run_id, message)
+        if not accepted:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Auto run not found or no longer active: {run_id}",
+            )
         return Response(status_code=202)
 
     @app.get(

@@ -48,7 +48,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
 
 ### Revision R1 — Conversation-scoped auto-mode (inject-on-send, persist, disable)
 
-- [ ] **Phase 6 — Engine: persistence + injection + `disable_auto_mode`** (libs/core + app server)
+- [x] **Phase 6 — Engine: persistence + injection + `disable_auto_mode`** (libs/core + app server)
   - libs/core: `DisableAutoModeTool` (`KilnBuiltInToolId.DISABLE_AUTO_MODE`, registry case,
     signal-only `run()`, `DISABLE_AUTO_MODE_TOOL_NAME`), mirroring `enable_auto_mode`; tests.
   - App server (`chat/auto/` + `stream_session.py`): decouple the conversation-scoped auto-mode
