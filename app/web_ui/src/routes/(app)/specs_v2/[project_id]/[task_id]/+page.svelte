@@ -862,13 +862,71 @@
         </div>
       {/if}
     {:else if current_step === "refine"}
-      <!-- ── Step 3 — Refine (uses v1's RefineSpec component) ── -->
+      <!-- ── Step 3 — Refine ── -->
       {#if refined_preview_loading}
         <div class="text-center py-12">
           <span class="loading loading-dots loading-lg"></span>
           <div class="text-sm mt-4 text-gray-500">Refining your eval…</div>
         </div>
+      {:else if is_multi_turn}
+        <!-- Multi-turn variant: examples fields don't apply (real examples
+             come from Step 4 synthetic chains). Just name + description. -->
+        <h1 class="text-2xl font-bold mb-2">Refine your eval</h1>
+        <p class="text-sm text-gray-500 mb-6">
+          Review the refined description below. The synthetic-user run in Step 4
+          will probe your agent against this spec.
+        </p>
+
+        <div class="mb-6">
+          <FormElement
+            label="Eval Name"
+            description="A short name for your own reference."
+            id="multi_turn_name"
+            inputType="input"
+            bind:value={name}
+          />
+        </div>
+
+        <div class="mb-4">
+          <FormElement
+            label="Issue Description"
+            description="What the agent must avoid doing."
+            id="multi_turn_issue_description"
+            inputType="textarea"
+            height="large"
+            bind:value={refined_property_values.issue_description}
+          />
+          {#if suggested_edits.issue_description?.reason_for_edit}
+            <div class="text-xs text-gray-500 italic mt-2">
+              Refinement: {suggested_edits.issue_description.reason_for_edit}
+            </div>
+          {/if}
+        </div>
+
+        {#if not_incorporated_feedback}
+          <div class="alert alert-info text-sm mb-4">
+            <span class="font-medium">Unincorporated feedback:</span>
+            {not_incorporated_feedback}
+          </div>
+        {/if}
+
+        <div class="flex justify-between mt-8">
+          <button
+            class="btn btn-ghost btn-sm"
+            on:click={() => (current_step = "clarify")}>← Back</button
+          >
+          <button
+            class="btn btn-primary"
+            on:click={on_refine_submit}
+            disabled={!name.trim() ||
+              !(refined_property_values.issue_description ?? "").trim()}
+          >
+            Generate conversations →
+          </button>
+        </div>
       {:else}
+        <!-- Single-turn variant: keep v1's RefineSpec component (handles
+             examples, two-column diff, restore-suggestion buttons). -->
         <RefineSpec
           bind:name
           original_property_values={property_values}
