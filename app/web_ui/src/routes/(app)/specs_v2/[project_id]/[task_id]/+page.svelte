@@ -24,6 +24,7 @@
     ReviewRow,
   } from "../../../specs/[project_id]/[task_id]/spec_utils"
   import { KilnError } from "$lib/utils/error_handlers"
+  import { build_default_judge_info } from "$lib/eval/default_judge"
   import type {
     Task,
     QuestionSet,
@@ -628,32 +629,6 @@
   let saving = false
   let save_error: string | null = null
 
-  // Fetch a default judge_info via clarify_spec for the multi-turn save
-  // path. The clarify_spec response also includes single-turn examples and
-  // sdg_session_config which we ignore — multi-turn save uses neither.
-  // Stopgap until a dedicated "default judge config" endpoint ships.
-  // clarify_spec is single-turn-specific but its response includes a
-  // judge_result that's reusable as the multi-turn save's judge_info.
-  async function fetch_judge_info_via_clarify_spec() {
-    const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-      body: {
-        target_task_info: {
-          task_prompt: task?.instruction ?? "",
-          task_input_schema: "",
-          task_output_schema: "",
-        },
-        target_specification: description,
-        num_samples_per_topic: 10,
-        num_topics: 10,
-        providers: ["openrouter"],
-        num_exemplars: 10,
-      },
-    })
-    if (error || !data) return false
-    judge_info = data.judge_result ?? null
-    return judge_info !== null
-  }
-
   async function on_save() {
     saving = true
     save_error = null
@@ -680,20 +655,16 @@
       }
 
       // Multi-turn save: tag the chains produced by run_cases_batch.
-      // judge_info isn't carried through the multi-turn pipeline so we
-      // fetch one via clarify_spec — wasteful but works until a dedicated
-      // "default judge config" endpoint ships.
+      // Synthesize the judge_info locally rather than calling clarify_spec
+      // (which runs full topic/input/output gen, takes 5-10 minutes).
       if (is_multi_turn) {
         if (real_multi_turn_batch_tag === null) {
           save_error =
             "No multi-turn chains were generated — go back to Step 4."
           return
         }
-        const ok = await fetch_judge_info_via_clarify_spec()
-        if (!ok || !judge_info) {
-          save_error = "Save failed — couldn't fetch judge config."
-          return
-        }
+        const multi_turn_judge_info =
+          build_default_judge_info(issue_description)
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
           {
@@ -704,7 +675,7 @@
               properties: spec_properties,
               evaluate_full_trace: true,
               reviewed_examples: [],
-              judge_info,
+              judge_info: multi_turn_judge_info,
               multi_turn: { batch_tag: real_multi_turn_batch_tag },
               task_description: "",
               task_prompt_with_example: task?.instruction ?? "",
