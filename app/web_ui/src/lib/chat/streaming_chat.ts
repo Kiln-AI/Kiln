@@ -65,7 +65,7 @@ function toBackendMessage(m: ChatMessage): BackendChatRequest["messages"][0] {
 }
 
 /** SSE event from backend (AI SDK stream event shape) */
-interface StreamEvent {
+export interface StreamEvent {
   type: string
   delta?: string
   id?: string
@@ -82,6 +82,12 @@ interface StreamEvent {
   messageMetadata?: { finishReason?: string; usage?: unknown }
   items?: ToolCallsPendingItem[]
   tool_count?: number
+  /** ``auto-mode-consent-required`` carries the enable call + siblings */
+  enable_tool_call_id?: string
+  reason?: string | null
+  sibling_tool_calls?: ToolCallsPendingItem[]
+  /** ``auto-mode-on`` / ``auto-mode-off`` carry the run id (and off reason) */
+  run_id?: string
 }
 
 export interface ToolCallsPendingItem {
@@ -95,6 +101,18 @@ export interface ToolCallsPendingItem {
 
 export interface ToolCallsPendingPayload {
   items: ToolCallsPendingItem[]
+}
+
+/**
+ * Payload of the ``auto-mode-consent-required`` event. The interactive stream
+ * emits this (then ends) when the model calls ``enable_auto_mode``; the UI must
+ * gate auto-mode behind explicit consent.
+ */
+export interface AutoModeConsentRequiredPayload {
+  traceId: string | null
+  enableToolCallId: string
+  reason: string | null
+  siblingToolCalls: ToolCallsPendingItem[]
 }
 
 export interface StreamChatOptions {
@@ -117,6 +135,14 @@ export interface StreamChatOptions {
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
   onShowActivityIndicator?: (show: boolean) => void
+  /**
+   * After ``auto-mode-consent-required`` the stream ends; the handler decides
+   * whether to enable auto mode (accept) or resume interactively (decline).
+   * Both outcomes are handled outside this stream, so it simply returns.
+   */
+  onAutoModeConsentRequired?: (
+    payload: AutoModeConsentRequiredPayload,
+  ) => void | Promise<void>
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -150,7 +176,16 @@ type PartSlot =
   | { kind: "reasoning"; id: string }
   | { kind: "tool"; id: string }
 
-class StreamEventProcessor {
+export interface StreamEventProcessorOptions {
+  onAssistantMessage: (update: (draft: ChatMessage) => void) => void
+  onChatTrace?: (traceId: string) => void
+  onInlineError?: (message: string, traceId?: string, code?: string) => void
+  onToolExecutionStart?: (toolCount: number) => void
+  onToolExecutionEnd?: (toolCount: number) => void
+  onShowActivityIndicator?: (show: boolean) => void
+}
+
+export class StreamEventProcessor {
   private partOrder: PartSlot[] = []
   private textBlocks = new Map<string, string>()
   private reasoningBlocks = new Map<string, string>()
@@ -182,14 +217,7 @@ class StreamEventProcessor {
 
   private HANDLERS: Record<string, (event: StreamEvent) => void>
 
-  constructor(opts: {
-    onAssistantMessage: (update: (draft: ChatMessage) => void) => void
-    onChatTrace?: (traceId: string) => void
-    onInlineError?: (message: string, traceId?: string, code?: string) => void
-    onToolExecutionStart?: (toolCount: number) => void
-    onToolExecutionEnd?: (toolCount: number) => void
-    onShowActivityIndicator?: (show: boolean) => void
-  }) {
+  constructor(opts: StreamEventProcessorOptions) {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
     this.onInlineError = opts.onInlineError
@@ -436,6 +464,56 @@ function toolInputAsRecord(input: unknown): Record<string, unknown> {
   return {}
 }
 
+/** Map a raw ``auto-mode-consent-required`` event to its typed payload. */
+export function autoModeConsentPayloadFromEvent(
+  event: StreamEvent,
+): AutoModeConsentRequiredPayload {
+  return {
+    traceId: event.trace_id ?? null,
+    enableToolCallId: event.enable_tool_call_id ?? "",
+    reason: event.reason ?? null,
+    siblingToolCalls: Array.isArray(event.sibling_tool_calls)
+      ? event.sibling_tool_calls
+      : [],
+  }
+}
+
+/**
+ * Read an SSE byte stream, JSON-parse ``data:`` lines, and dispatch each event.
+ * ``onControlEvent`` is consulted first; if it returns ``true`` the event is
+ * considered handled and not forwarded to the processor. Used by the auto-run
+ * decline-resume path (interactive stream) and shareable by any reader-based
+ * SSE consumer. Resolves when the stream ends (``done``).
+ */
+export async function consumeSseStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  processor: StreamEventProcessor,
+  onControlEvent?: (event: StreamEvent) => boolean,
+): Promise<void> {
+  const decoder = new TextDecoder()
+  let buffer = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue
+      const payload = line.slice(6).trim()
+      if (payload === "[DONE]" || payload === "") continue
+      let event: StreamEvent
+      try {
+        event = JSON.parse(payload) as StreamEvent
+      } catch {
+        continue
+      }
+      if (onControlEvent?.(event)) continue
+      processor.handleEvent(event)
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // streamChat
 // ---------------------------------------------------------------------------
@@ -456,6 +534,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onToolExecutionStart,
     onToolExecutionEnd,
     onShowActivityIndicator,
+    onAutoModeConsentRequired,
     onFinish,
     onError,
     signal,
@@ -551,6 +630,17 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
               event = JSON.parse(payload) as StreamEvent
             } catch {
               continue
+            }
+            if (event.type === "auto-mode-consent-required") {
+              // The interactive stream ends here; consent (accept → enable,
+              // decline → resume) is handled by the caller outside this stream.
+              if (onAutoModeConsentRequired) {
+                await onAutoModeConsentRequired(
+                  autoModeConsentPayloadFromEvent(event),
+                )
+              }
+              onFinish()
+              return
             }
             if (event.type === "tool-calls-pending") {
               const items = event.items

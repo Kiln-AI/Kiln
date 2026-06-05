@@ -32,7 +32,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     `connect_chat_auto_api` in `desktop_server.py`. FastAPI `TestClient` tests incl. decline →
     interactive resume.
 
-- [ ] **Phase 4 — Web UI**
+- [x] **Phase 4 — Web UI**
   - `auto_run_store.ts` (enable/decline/stop/attach; feed per-run SSE into existing
     `StreamEventProcessor`). Consent dialog, footer indicator/toggle/Stop, history
     green-dot/"Working now" grouping, interrupt-on-send; regenerate `api_schema.d.ts`. vitest

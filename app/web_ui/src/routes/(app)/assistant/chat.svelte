@@ -13,8 +13,11 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
+  import { auto_run_store } from "$lib/chat/auto_run_store"
+  import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
+  import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
@@ -25,6 +28,32 @@
 
   let costDisclaimer: ChatCostDisclaimer
   $: store.onConsentNeeded = () => costDisclaimer.prompt()
+  let consentDialog: AutoModeConsentDialog
+  // The store asks here when the model requests auto mode; we just decide
+  // accept/decline via the dialog. The store handles enable/decline + handoff.
+  $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
+
+  const autoModeOn = auto_run_store.autoModeOn
+
+  async function openManualAutoMode() {
+    const traceId = traceIdForNextChatRequest(messages)
+    if (!traceId) return
+    const accepted = await consentDialog.prompt(null)
+    if (!accepted) return
+    // Surface enable failures (e.g. 429 "Too many auto runs") instead of
+    // silently swallowing them — the dialog has already closed.
+    const result = await auto_run_store.requestEnable({ trace_id: traceId })
+    if (!result.ok) {
+      store.pushInlineError(
+        `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+      )
+    }
+  }
+
+  async function stopAutoMode() {
+    await auto_run_store.stop()
+  }
+
   let chatHistory: { open: () => void }
   let input = ""
   let messagesContainer: HTMLDivElement | null = null
@@ -1068,10 +1097,46 @@
         </button>
       {/if}
     </form>
+
+    <div
+      class="flex-none flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 px-1 text-xs"
+    >
+      {#if $autoModeOn}
+        <div class="flex items-center gap-2">
+          <span
+            class="inline-flex items-center gap-1.5 font-medium text-success"
+          >
+            <span class="auto-pulse" aria-hidden="true">⏵⏵</span>
+            <span>auto mode on</span>
+          </span>
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs text-error/80 hover:text-error hover:bg-error/10"
+            on:click={stopAutoMode}
+            title="Stop auto mode"
+            aria-label="Stop auto mode"
+          >
+            ▸ Stop
+          </button>
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content/80 disabled:bg-transparent disabled:text-base-content/25"
+          on:click={openManualAutoMode}
+          disabled={isLoading || !hasMessages}
+          title="Let the assistant run steps automatically without asking for approval."
+        >
+          <span aria-hidden="true">⏵⏵</span>
+          Auto mode
+        </button>
+      {/if}
+    </div>
   </div>
 </div>
 
 <ChatCostDisclaimer bind:this={costDisclaimer} />
+<AutoModeConsentDialog bind:this={consentDialog} />
 
 <style>
   .chat-messages-scroll::-webkit-scrollbar {
@@ -1094,5 +1159,25 @@
   .chat-messages-scroll {
     scrollbar-width: thin;
     scrollbar-color: oklch(var(--bc) / 0.2) transparent;
+  }
+
+  .auto-pulse {
+    animation: auto-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes auto-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .auto-pulse {
+      animation: none;
+    }
   }
 </style>

@@ -7,6 +7,13 @@ import {
   type ChatMessage,
   type ToolCallsPendingPayload,
 } from "./streaming_chat"
+import {
+  auto_run_store,
+  type AutoRunStore,
+  type EnableAutoRequest,
+  type DeclineAutoRequest,
+} from "./auto_run_store"
+import type { AutoModeConsentRequiredPayload } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
 import { base_url } from "$lib/api_client"
 import {
@@ -38,6 +45,14 @@ export interface ChatSessionState extends PersistedChatSession {
   showActivityIndicator: boolean
 }
 
+/**
+ * Asked of the UI when the model requests auto mode. Returns ``true`` to enable
+ * (accept) or ``false`` to decline; the store then drives the auto-run store.
+ */
+export type AutoModeConsentDecision = (
+  payload: AutoModeConsentRequiredPayload,
+) => Promise<boolean>
+
 export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendMessage(text: string): Promise<boolean>
   stop(): void
@@ -45,9 +60,12 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   reset(): void
   loadSession(messages: ChatMessage[], continuationTraceId: string): void
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
+  /** Surface an inline chat error (e.g. a failed manual auto-mode enable). */
+  pushInlineError(message: string): void
   applyToolApprovalRun(toolCallId: string): void
   applyToolApprovalSkip(toolCallId: string): void
   onConsentNeeded: (() => Promise<boolean>) | null
+  onAutoModeConsentNeeded: AutoModeConsentDecision | null
 }
 
 const EMPTY_PERSISTED: PersistedChatSession = {
@@ -58,6 +76,7 @@ const EMPTY_PERSISTED: PersistedChatSession = {
 
 export function createChatSessionStore(
   sessionStorageKey?: string,
+  autoRunStore: AutoRunStore = auto_run_store,
 ): ChatSessionStore {
   const persisted = sessionStorageKey
     ? sessionStorageStore<PersistedChatSession>(sessionStorageKey, {
@@ -134,6 +153,76 @@ export function createChatSessionStore(
       messages: p.messages.filter((m) => m.role !== "error"),
     }))
   }
+
+  // Append an inline error message — the single error-surfacing mechanism shared
+  // by the interactive stream, the auto-run observer, and the enable-failure
+  // paths (so a failed enable, e.g. 429, is never silently dropped).
+  function pushInlineError(
+    message: string,
+    traceId?: string,
+    code?: string,
+  ): void {
+    const errorMsg: ChatMessage = {
+      id: chatGenerateId(),
+      role: "error",
+      content: message,
+      traceId,
+      errorCode: code,
+    }
+    updateMessages((msgs) => [...msgs, errorMsg])
+  }
+
+  function setLastAssistantTraceId(traceId: string) {
+    persisted.update((p) => {
+      const msgs = p.messages
+      const last = msgs[msgs.length - 1]
+      if (last?.role === "assistant") {
+        return {
+          ...p,
+          messages: [...msgs.slice(0, -1), { ...last, traceId }],
+        }
+      }
+      return p
+    })
+  }
+
+  // Append a fresh empty assistant message so the next streamed burst (auto run
+  // or declined-resume) renders into a new turn rather than the prior one.
+  function beginAssistantTurn() {
+    removeErrors()
+    updateMessages((msgs) => [
+      ...msgs,
+      { id: chatGenerateId(), role: "assistant", parts: [] },
+    ])
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+      showActivityIndicator: false,
+    }))
+  }
+
+  // Wire the auto-run store to drive the same conversation as the interactive
+  // stream. The auto runner is server-owned and survives reloads/re-attach; here
+  // we only render what it streams (and the on/off indicator state it reports).
+  autoRunStore.bind({
+    beginAssistantTurn,
+    onAssistantMessage: updateLastAssistant,
+    onChatTrace: setLastAssistantTraceId,
+    onInlineError: (message, traceId, code) =>
+      pushInlineError(message, traceId, code),
+    onToolExecutionStart: () =>
+      combined.update((s) => ({ ...s, toolExecuting: true })),
+    onToolExecutionEnd: () =>
+      combined.update((s) => ({ ...s, toolExecuting: false })),
+    onShowActivityIndicator: (show) =>
+      combined.update((s) => ({ ...s, showActivityIndicator: show })),
+    onAutoModeOff: () =>
+      combined.update((s) => ({
+        ...s,
+        toolExecuting: false,
+        showActivityIndicator: false,
+      })),
+  })
 
   function beginStreaming(text: string, isRetry = false) {
     removeErrors()
@@ -227,17 +316,11 @@ export function createChatSessionStore(
       },
       onChatTrace: (traceId) => {
         if (isStale()) return
-        persisted.update((p) => {
-          const msgs = p.messages
-          const last = msgs[msgs.length - 1]
-          if (last?.role === "assistant") {
-            return {
-              ...p,
-              messages: [...msgs.slice(0, -1), { ...last, traceId }],
-            }
-          }
-          return p
-        })
+        setLastAssistantTraceId(traceId)
+      },
+      onAutoModeConsentRequired: async (payload) => {
+        if (isStale()) return
+        await handleAutoModeConsent(payload)
       },
       onInlineError: (message, traceId, code) => {
         if (isStale()) return
@@ -280,6 +363,53 @@ export function createChatSessionStore(
   }
 
   let onConsentNeeded: (() => Promise<boolean>) | null = null
+  let onAutoModeConsentNeeded: AutoModeConsentDecision | null = null
+
+  // The interactive stream ended on ``auto-mode-consent-required``. Ask the UI;
+  // accept hands off to the server-owned auto runner, decline resumes the normal
+  // interactive stream with the enable call resolved as declined.
+  async function handleAutoModeConsent(
+    payload: AutoModeConsentRequiredPayload,
+  ): Promise<void> {
+    const traceId = payload.traceId ?? continuationTraceId
+    if (!traceId) return
+    const accepted = onAutoModeConsentNeeded
+      ? await onAutoModeConsentNeeded(payload)
+      : false
+    const siblings = payload.siblingToolCalls.map((s) => ({
+      toolCallId: s.toolCallId,
+      toolName: s.toolName,
+      input:
+        s.input && typeof s.input === "object" && !Array.isArray(s.input)
+          ? (s.input as Record<string, unknown>)
+          : {},
+      requiresApproval: Boolean(s.requiresApproval),
+    }))
+    if (accepted) {
+      const seed: EnableAutoRequest = {
+        trace_id: traceId,
+        enable_tool_call_id: payload.enableToolCallId,
+        pending_tool_calls: siblings,
+        reason: payload.reason,
+      }
+      // Surface enable failures (e.g. 429 "Too many auto runs") instead of
+      // silently dropping them — the dialog has already closed, so the inline
+      // chat error is the only signal the user gets.
+      const result = await autoRunStore.requestEnable(seed)
+      if (!result.ok) {
+        pushInlineError(
+          `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+        )
+      }
+    } else {
+      const req: DeclineAutoRequest = {
+        trace_id: traceId,
+        enable_tool_call_id: payload.enableToolCallId,
+        siblings,
+      }
+      await autoRunStore.decline(req)
+    }
+  }
 
   async function sendMessage(text: string): Promise<boolean> {
     const trimmed = text.trim()
@@ -288,6 +418,12 @@ export function createChatSessionStore(
       if (!onConsentNeeded) return false
       const approved = await onConsentNeeded()
       if (!approved || status !== "ready") return false
+    }
+    // Interrupt-on-send: a user message while auto mode is running is an
+    // implicit "take back control" — stop the run, then send interactively
+    // (ui_design §2). The run's auto-mode-off clears the indicator.
+    if (get(autoRunStore.autoModeOn)) {
+      await autoRunStore.stop()
     }
     beginStreaming(trimmed)
     return true
@@ -324,6 +460,9 @@ export function createChatSessionStore(
     if (abortController) {
       abortController.abort()
     }
+    // Stop observing any active auto run (the run survives server-side; the user
+    // is starting a new conversation). Clears the stale "on" indicator.
+    autoRunStore.detach()
     clearToolApprovalState()
     continuationTraceId = undefined
     persisted.set({
@@ -343,6 +482,10 @@ export function createChatSessionStore(
     if (abortController) {
       abortController.abort()
     }
+    // Detach any prior run's observer before hydrating a different conversation.
+    // If the loaded conversation is itself auto-active, the caller re-attaches
+    // right after (chat_history.selectSession), which happens after this.
+    autoRunStore.detach()
     clearToolApprovalState()
     continuationTraceId = traceId
     persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
@@ -448,6 +591,7 @@ export function createChatSessionStore(
     reset,
     loadSession,
     togglePartCollapsed,
+    pushInlineError: (message: string) => pushInlineError(message),
     applyToolApprovalRun,
     applyToolApprovalSkip,
     get onConsentNeeded() {
@@ -455,6 +599,12 @@ export function createChatSessionStore(
     },
     set onConsentNeeded(fn: (() => Promise<boolean>) | null) {
       onConsentNeeded = fn
+    },
+    get onAutoModeConsentNeeded() {
+      return onAutoModeConsentNeeded
+    },
+    set onAutoModeConsentNeeded(fn: AutoModeConsentDecision | null) {
+      onAutoModeConsentNeeded = fn
     },
   }
 }

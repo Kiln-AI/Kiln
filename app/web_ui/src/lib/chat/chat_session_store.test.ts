@@ -327,6 +327,51 @@ describe("createChatSessionStore", () => {
       expect(streamChatMock).not.toHaveBeenCalled()
     })
 
+    it("surfaces an inline error when enabling auto mode fails (429)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+
+      // Fake auto-run store whose enable fails like a 429 "Too many auto runs".
+      const requestEnable = vi.fn().mockResolvedValue({
+        ok: false,
+        error: "Too many auto runs",
+      })
+      const fakeAutoRun = {
+        autoModeOn: writable(false),
+        runId: writable(null),
+        offReason: writable(null),
+        connection: writable("idle"),
+        bind: vi.fn(),
+        requestEnable,
+        decline: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        attach: vi.fn(),
+        detach: vi.fn(),
+        _close: vi.fn(),
+      } as unknown as Parameters<typeof createChatSessionStore>[1]
+
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+      store.onAutoModeConsentNeeded = () => Promise.resolve(true)
+
+      await store.sendMessage("hi")
+      // Drive the consent path the interactive stream hands off to.
+      await capture.options!.onAutoModeConsentRequired!({
+        traceId: "trace-1",
+        enableToolCallId: "call_1",
+        reason: null,
+        siblingToolCalls: [],
+      })
+
+      expect(requestEnable).toHaveBeenCalledTimes(1)
+      const errorMsg = get(store).messages.find((m) => m.role === "error")
+      expect(errorMsg).toBeDefined()
+      expect(errorMsg?.content).toBe(
+        "Couldn't start auto mode: Too many auto runs",
+      )
+    })
+
     it("skips consent prompt when already acknowledged", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
