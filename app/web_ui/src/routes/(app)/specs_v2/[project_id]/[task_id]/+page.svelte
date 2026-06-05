@@ -294,6 +294,11 @@
   let multi_turn_chains: Chain[] = []
   let multi_turn_progress = 0 // 0..N as cases complete
   const multi_turn_total = NUM_CASES
+  // Sub-phase for the Step 4 UI: distinguishes the up-front LLM call
+  // (generate_cases) from the longer batch-run stream so the user sees
+  // distinct progress instead of one ambiguous spinner.
+  type MultiTurnPhase = "idle" | "generating_cases" | "running_batch"
+  let multi_turn_phase: MultiTurnPhase = "idle"
   // Real batch_tag from run_cases_batch's BatchStartedEvent. The on_save
   // multi-turn branch uses this to tell the backend which chains to tag
   // for the eval dataset.
@@ -394,6 +399,7 @@
     multi_turn_progress = 0
     multi_turn_chains = []
     real_multi_turn_batch_tag = null
+    multi_turn_phase = "idle"
 
     try {
       // 1. Resolve target_run_config: prefer the task's default; if none
@@ -430,6 +436,7 @@
       }
 
       // 2. Generate synthetic-user cases via copilot.
+      multi_turn_phase = "generating_cases"
       const refined_description =
         (refined_property_values.issue_description as string | null) ??
         description
@@ -451,6 +458,7 @@
       // 3. Stream run_cases_batch. The endpoint is POST so we can't use
       // EventSource (which is GET-only). Manual fetch + ReadableStream +
       // SSE line parsing — same pattern as streaming_chat.ts.
+      multi_turn_phase = "running_batch"
       const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/multiturn_sdg/run_cases_batch`
       const response = await fetch(url, {
         method: "POST",
@@ -951,14 +959,19 @@
     {:else if current_step === "generate"}
       <!-- ── Step 4 — Generate ── -->
       <h1 class="text-2xl font-bold mb-2">
-        {#if is_multi_turn}
+        {#if is_multi_turn && multi_turn_phase === "generating_cases"}
+          Generating {NUM_CASES} synthetic-user cases
+        {:else if is_multi_turn}
           Running synthetic conversations
         {:else}
           Generating examples
         {/if}
       </h1>
       <p class="text-sm text-gray-500 mb-6">
-        {#if is_multi_turn}
+        {#if is_multi_turn && multi_turn_phase === "generating_cases"}
+          Asking the copilot to author {NUM_CASES} persona-driven scenarios that
+          probe your spec.
+        {:else if is_multi_turn}
           Driving {multi_turn_total} cases against your agent. This will take a moment.
         {:else}
           Generating ~10 sample inputs and outputs based on your spec.
@@ -968,7 +981,11 @@
       {#if generation_loading}
         <div class="text-center py-12">
           <span class="loading loading-dots loading-lg"></span>
-          {#if is_multi_turn}
+          {#if is_multi_turn && multi_turn_phase === "generating_cases"}
+            <div class="text-sm mt-4 text-gray-500">
+              Generating {NUM_CASES} cases…
+            </div>
+          {:else if is_multi_turn}
             <div class="text-sm mt-4 text-gray-500">
               {multi_turn_progress} of {multi_turn_total} ready
             </div>
