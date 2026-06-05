@@ -2075,6 +2075,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/validate_input_transform_template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Input Transform Template */
+        post: operations["validate_input_transform_template_api_validate_input_transform_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks_compatible_with_tool": {
         parameters: {
             query?: never;
@@ -3721,38 +3738,7 @@ export interface components {
          *
          *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
-        "ChatCompletionAssistantMessageParamWrapper-Input": {
-            /**
-             * Role
-             * @constant
-             */
-            role: "assistant";
-            audio?: components["schemas"]["Audio"] | null;
-            /** Content */
-            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
-            /** Reasoning Content */
-            reasoning_content?: string | null;
-            function_call?: components["schemas"]["FunctionCall"] | null;
-            /** Name */
-            name?: string;
-            /** Refusal */
-            refusal?: string | null;
-            /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
-            /** Latency Ms */
-            latency_ms?: number | null;
-            usage?: components["schemas"]["MessageUsage"] | null;
-        };
-        /**
-         * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
-         *
-         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
-         *
-         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
-         */
-        "ChatCompletionAssistantMessageParamWrapper-Output": {
+        ChatCompletionAssistantMessageParamWrapper: {
             /**
              * Role
              * @constant
@@ -3878,19 +3864,7 @@ export interface components {
             error_message?: string | null;
         };
         /** ChatCompletionUserMessageParam */
-        "ChatCompletionUserMessageParam-Input": {
-            /** Content */
-            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
-            /**
-             * Role
-             * @constant
-             */
-            role: "user";
-            /** Name */
-            name?: string;
-        };
-        /** ChatCompletionUserMessageParam */
-        "ChatCompletionUserMessageParam-Output": {
+        ChatCompletionUserMessageParam: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
             /**
@@ -4047,8 +4021,8 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
         };
         /**
          * CloneRequest
@@ -4498,8 +4472,8 @@ export interface components {
             evaluate_full_trace: boolean;
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
-            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
             /**
              * Task Description
              * @default
@@ -4818,32 +4792,7 @@ export interface components {
          *     model information, for human sources this includes creator information, for file imports
          *     this includes file information.
          */
-        "DataSource-Input": {
-            /** @description The type of data source. */
-            type: components["schemas"]["DataSourceType"];
-            /**
-             * Properties
-             * @description Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.
-             * @default {}
-             */
-            properties: {
-                [key: string]: string | number;
-            };
-            /**
-             * Run Config
-             * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
-             */
-            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
-        };
-        /**
-         * DataSource
-         * @description Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
-         *
-         *     Properties vary based on the source type - for synthetic/tool_call sources this includes
-         *     model information, for human sources this includes creator information, for file imports
-         *     this includes file information.
-         */
-        "DataSource-Output": {
+        DataSource: {
             /** @description The type of data source. */
             type: components["schemas"]["DataSourceType"];
             /**
@@ -5212,7 +5161,7 @@ export interface components {
             /** Error Type */
             error_type: string;
             /** Trace */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * Eval
@@ -6547,7 +6496,7 @@ export interface components {
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
         };
         /**
          * GenerateBatchApiOutput
@@ -6745,6 +6694,25 @@ export interface components {
             jailbroken_examples: string;
         };
         /**
+         * JinjaInputTransform
+         * @description Render the task input via a Jinja2 template, producing the first user
+         *     message sent to the model. See specs/projects/templates/functional_spec.md
+         *     for the full contract.
+         */
+        JinjaInputTransform: {
+            /**
+             * Type
+             * @default jinja
+             * @constant
+             */
+            type: "jinja";
+            /**
+             * Template
+             * @description Jinja2 template source. Validated at save time.
+             */
+            template: string;
+        };
+        /**
          * JobStatus
          * @enum {string}
          */
@@ -6795,6 +6763,11 @@ export interface components {
             thinking_level?: string | null;
             /** @description The tools config to use for this run config, defining which tools are available to the model. */
             tools_config?: components["schemas"]["ToolsRunConfig"] | null;
+            /**
+             * Input Transform
+             * @description Optional transform applied to the task input at run time, producing the first user message sent to the model. Default None preserves the identity path.
+             */
+            input_transform?: components["schemas"]["JinjaInputTransform"] | null;
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -9165,19 +9138,10 @@ export interface components {
          * SyntheticDataGenerationSessionConfigApi
          * @description Configuration for a synthetic data generation session
          */
-        "SyntheticDataGenerationSessionConfigApi-Input": {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-        };
-        /**
-         * SyntheticDataGenerationSessionConfigApi
-         * @description Configuration for a synthetic data generation session
-         */
-        "SyntheticDataGenerationSessionConfigApi-Output": {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+        SyntheticDataGenerationSessionConfigApi: {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
         };
         /**
          * SyntheticDataGenerationStepConfig
@@ -9204,16 +9168,7 @@ export interface components {
          * SyntheticDataGenerationStepConfigApi
          * @description Configuration for a synthetic data generation step.
          */
-        "SyntheticDataGenerationStepConfigApi-Input": {
-            task_metadata: components["schemas"]["TaskMetadataApi"];
-            /** Prompt */
-            prompt: string;
-        };
-        /**
-         * SyntheticDataGenerationStepConfigApi
-         * @description Configuration for a synthetic data generation step.
-         */
-        "SyntheticDataGenerationStepConfigApi-Output": {
+        SyntheticDataGenerationStepConfigApi: {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
@@ -9384,7 +9339,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource-Input"] | null;
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
         };
@@ -9429,7 +9384,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource-Output"] | null;
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /** Model Type */
@@ -9642,7 +9597,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource-Input"] | null;
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Input"];
             /**
@@ -9673,7 +9628,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -9721,7 +9676,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource-Output"] | null;
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Output"];
             /**
@@ -9752,7 +9707,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -10333,6 +10288,27 @@ export interface components {
             } | null;
             /** Id */
             id?: string;
+        };
+        /** ValidateInputTransformTemplateRequest */
+        ValidateInputTransformTemplateRequest: {
+            /**
+             * Template
+             * @description The Jinja2 template source to validate.
+             */
+            template: string;
+        };
+        /** ValidateInputTransformTemplateResponse */
+        ValidateInputTransformTemplateResponse: {
+            /**
+             * Valid
+             * @description Whether the template is valid Jinja2.
+             */
+            valid: boolean;
+            /**
+             * Error
+             * @description The compile error message, if invalid.
+             */
+            error?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -15432,6 +15408,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_input_transform_template_api_validate_input_transform_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidateInputTransformTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidateInputTransformTemplateResponse"];
                 };
             };
             /** @description Validation Error */
