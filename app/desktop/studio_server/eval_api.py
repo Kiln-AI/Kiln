@@ -219,7 +219,15 @@ class RunEvalConfigRequest(BaseModel):
 class ScoreSummary(BaseModel):
     """Summary of scores for an eval run."""
 
-    mean_score: float = Field(description="The mean score across all runs.")
+    mean_score: float | None = Field(
+        description="The mean score across all used runs. None when n_used == 0."
+    )
+    n_used: int = Field(
+        description="Number of EvalRuns with all expected scores and not skipped."
+    )
+    n_excluded: int = Field(
+        description="Number of EvalRuns excluded due to skipped_reason."
+    )
 
 
 class MeanUsage(BaseModel):
@@ -375,6 +383,10 @@ class EvalConfigResult(BaseModel):
         description="Scores keyed by output_score_id. None when no data."
     )
     percent_complete: float = Field(description="Percent of the dataset processed.")
+    n_excluded: int = Field(
+        default=0,
+        description="Number of EvalRuns excluded due to skipped_reason.",
+    )
 
 
 class RunConfigEvalResult(BaseModel):
@@ -515,6 +527,7 @@ def compute_score_summary(
         lambda: defaultdict(float)
     )
     score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    excluded_counts: Dict[ID_TYPE, int] = defaultdict(int)
 
     for eval_run in eval_config.runs(readonly=True):
         if eval_run.task_run_config_id is None:
@@ -527,6 +540,11 @@ def compute_score_summary(
             continue
         else:
             remaining_expected_dataset_ids[run_config_id].remove(eval_run.dataset_id)
+
+        if eval_run.skipped_reason is not None:
+            excluded_counts[run_config_id] += 1
+            _ = total_scores[run_config_id]
+            continue
 
         incomplete = False
         # Ensure this run_config_id has an entry even if no scores match
@@ -542,23 +560,31 @@ def compute_score_summary(
         if incomplete:
             partial_incomplete_counts[run_config_id] += 1
 
+    all_score_keys = [os.json_key() for os in eval.output_scores]
+
     results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = {}
     for run_config_id, output_scores in total_scores.items():
         results[run_config_id] = {}
-        for output_score_id, score in output_scores.items():
-            count = score_counts[run_config_id][output_score_id]
-            if count > 0:
-                results[run_config_id][output_score_id] = ScoreSummary(
-                    mean_score=score / count
+        n_excluded = excluded_counts[run_config_id]
+        for score_key in all_score_keys:
+            count = score_counts[run_config_id][score_key]
+            total = output_scores.get(score_key, 0.0)
+            if count > 0 or n_excluded > 0:
+                results[run_config_id][score_key] = ScoreSummary(
+                    mean_score=total / count if count > 0 else None,
+                    n_used=count,
+                    n_excluded=n_excluded,
                 )
 
     run_config_percent_complete: Dict[ID_TYPE, float] = {}
     for run_config in task_run_configs:
+        n_excluded = excluded_counts[run_config.id]
         incomplete_count = partial_incomplete_counts[run_config.id] + len(
             remaining_expected_dataset_ids[run_config.id]
         )
-        percent_incomplete = incomplete_count / len(expected_dataset_ids)
-        run_config_percent_complete[run_config.id] = 1 - percent_incomplete
+        n_processed = len(expected_dataset_ids) - incomplete_count
+        percent_complete = (n_processed) / len(expected_dataset_ids)
+        run_config_percent_complete[run_config.id] = percent_complete
 
     return EvalResultSummary(
         results=results,
@@ -1233,7 +1259,11 @@ def connect_evals_api(app: FastAPI):
             )
 
             for rc_id, scores_dict in summary.results.items():
-                mean_scores = {key: s.mean_score for key, s in scores_dict.items()}
+                mean_scores = {
+                    key: s.mean_score
+                    for key, s in scores_dict.items()
+                    if s.mean_score is not None
+                }
                 percent_complete = summary.run_config_percent_complete.get(rc_id, 0.0)
                 cell = EvalResultsSummaryResultCell(
                     mean_scores=mean_scores,
@@ -1494,6 +1524,7 @@ def connect_evals_api(app: FastAPI):
             # Track which dataset items we've seen for this eval_config
             remaining_expected_dataset_ids = set(expected_dataset_ids)
             partial_incomplete_count = 0
+            eval_config_n_excluded = 0
 
             # output_score_json_key -> score/total for calculating the mean score
             total_scores: Dict[str, float] = {}
@@ -1509,6 +1540,10 @@ def connect_evals_api(app: FastAPI):
                     continue
                 else:
                     remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+
+                if eval_run.skipped_reason is not None:
+                    eval_config_n_excluded += 1
+                    continue
 
                 total_eval_runs += 1
 
@@ -1548,17 +1583,19 @@ def connect_evals_api(app: FastAPI):
                 if incomplete:
                     partial_incomplete_count += 1
 
-            # Initialize results with all expected score keys as None
             results: Dict[str, ScoreSummary | None] = {}
             for output_score in eval.output_scores:
                 score_key = output_score.json_key()
-                results[score_key] = None
-
-            # Convert to score summaries where we have data
-            for output_score_id, score in total_scores.items():
-                count = score_counts[output_score_id]
-                if count > 0:
-                    results[output_score_id] = ScoreSummary(mean_score=score / count)
+                count = score_counts.get(score_key, 0)
+                total = total_scores.get(score_key, 0.0)
+                if count > 0 or eval_config_n_excluded > 0:
+                    results[score_key] = ScoreSummary(
+                        mean_score=total / count if count > 0 else None,
+                        n_used=count,
+                        n_excluded=eval_config_n_excluded,
+                    )
+                else:
+                    results[score_key] = None
 
             # Calculate the percent of the dataset that has been processed
             incomplete_count = partial_incomplete_count + len(
@@ -1581,6 +1618,7 @@ def connect_evals_api(app: FastAPI):
                         eval_config_id=eval_config.id,
                         results=results,
                         percent_complete=percent_complete,
+                        n_excluded=eval_config_n_excluded,
                     ),
                 )
             )

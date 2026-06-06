@@ -5431,6 +5431,12 @@ export interface components {
              * @description Percent of the dataset processed.
              */
             percent_complete: number;
+            /**
+             * N Excluded
+             * @description Number of EvalRuns excluded due to skipped_reason.
+             * @default 0
+             */
+            n_excluded: number;
         };
         /**
          * EvalConfigType
@@ -8869,9 +8875,19 @@ export interface components {
         ScoreSummary: {
             /**
              * Mean Score
-             * @description The mean score across all runs.
+             * @description The mean score across all used runs. None when n_used == 0.
              */
-            mean_score: number;
+            mean_score: number | null;
+            /**
+             * N Used
+             * @description Number of EvalRuns with all expected scores and not skipped.
+             */
+            n_used: number;
+            /**
+             * N Excluded
+             * @description Number of EvalRuns excluded due to skipped_reason.
+             */
+            n_excluded: number;
         };
         /** SearchResult */
         SearchResult: {

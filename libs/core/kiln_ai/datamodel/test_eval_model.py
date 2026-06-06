@@ -11,6 +11,7 @@ from kiln_ai.datamodel.eval import (
     EvalInput,
     EvalOutputScore,
     EvalRun,
+    EvalTaskInput,
     EvalTemplateId,
     ExactMatchProperties,
     LlmJudgeProperties,
@@ -2415,3 +2416,195 @@ def test_eval_input_persists_under_task(mock_task, tmp_path):
     assert inputs[0].data.user_message.text == "Persist me"
     assert inputs[0].reference == {"key": "val"}
     assert inputs[0].tags == ["t1"]
+
+
+# ── EvalTaskInput Tests ──────────────────────────────────────────────────
+
+
+class TestEvalTaskInput:
+    def test_minimal(self):
+        """Only final_message is required."""
+        eti = EvalTaskInput(final_message="Hello world")
+        assert eti.final_message == "Hello world"
+        assert eti.trace is None
+        assert eti.reference_data is None
+        assert eti.task_input is None
+
+    def test_all_fields(self):
+        """All fields populated."""
+        trace = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hey"},
+        ]
+        ref = {"expected": "42", "source": "textbook"}
+        eti = EvalTaskInput(
+            final_message="hey",
+            trace=trace,
+            reference_data=ref,
+            task_input="hi",
+        )
+        assert eti.final_message == "hey"
+        assert eti.trace == trace
+        assert eti.reference_data == ref
+        assert eti.task_input == "hi"
+
+    def test_round_trip(self):
+        """model_dump / model_validate round-trip preserves all data."""
+        eti = EvalTaskInput(
+            final_message="answer",
+            trace=[{"role": "user", "content": "q"}],
+            reference_data={"k": 1},
+            task_input="q",
+        )
+        data = eti.model_dump()
+        rebuilt = EvalTaskInput.model_validate(data)
+        assert rebuilt == eti
+
+    def test_missing_final_message_raises(self):
+        """final_message is required; omitting it raises ValidationError."""
+        with pytest.raises(ValidationError, match="final_message"):
+            EvalTaskInput()  # type: ignore[call-arg]
+
+
+# ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───
+
+
+def _make_v2_eval_config(**kwargs) -> EvalConfig:
+    """Helper to build a V2 EvalConfig with minimal ceremony."""
+    return EvalConfig(name="V2 Test", config_type=EvalConfigType.v2, **kwargs)
+
+
+class TestV2TemplateValidation:
+    def test_valid_prompt_template(self):
+        """A prompt_template with a Jinja expression passes validation."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="Evaluate: {{ final_message }}",
+            ),
+        )
+        assert cfg.properties.prompt_template == "Evaluate: {{ final_message }}"
+
+    def test_invalid_prompt_template_syntax(self):
+        """Broken Jinja syntax in prompt_template is rejected."""
+        with pytest.raises(ValidationError, match="Invalid Jinja2 template"):
+            _make_v2_eval_config(
+                properties=LlmJudgeProperties(
+                    model_name="m",
+                    model_provider="p",
+                    prompt_template="Hello {{ broken",
+                ),
+            )
+
+    def test_static_prompt_template_rejected(self):
+        """A prompt_template with no Jinja expressions is rejected."""
+        with pytest.raises(ValidationError, match="no Jinja2 expressions"):
+            _make_v2_eval_config(
+                properties=LlmJudgeProperties(
+                    model_name="m",
+                    model_provider="p",
+                    prompt_template="Just plain text, nothing dynamic.",
+                ),
+            )
+
+    def test_comment_only_prompt_template_rejected(self):
+        """A prompt_template with only Jinja comments is effectively static and rejected."""
+        with pytest.raises(ValidationError, match="no Jinja2 expressions"):
+            _make_v2_eval_config(
+                properties=LlmJudgeProperties(
+                    model_name="m",
+                    model_provider="p",
+                    prompt_template="{# This is just a comment #} plain text",
+                ),
+            )
+
+    def test_prompt_template_with_block_passes(self):
+        """A prompt_template using {%% blocks is not static."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="{% if trace %}has trace{% endif %}",
+            ),
+        )
+        assert cfg is not None
+
+    def test_valid_value_expression(self):
+        """A valid value_expression compiles without error."""
+        cfg = _make_v2_eval_config(
+            properties=ExactMatchProperties(
+                expected_value="yes",
+                value_expression="final_message.strip()",
+            ),
+        )
+        assert cfg.properties.value_expression == "final_message.strip()"
+
+    def test_invalid_value_expression(self):
+        """Bad Jinja syntax in value_expression is rejected."""
+        with pytest.raises(ValidationError, match="Invalid Jinja2 expression"):
+            _make_v2_eval_config(
+                properties=ExactMatchProperties(
+                    expected_value="yes",
+                    value_expression="final_message[",
+                ),
+            )
+
+    def test_none_value_expression_skipped(self):
+        """value_expression=None (default) should not be validated."""
+        cfg = _make_v2_eval_config(
+            properties=ExactMatchProperties(expected_value="yes"),
+        )
+        assert isinstance(cfg.properties, ExactMatchProperties)
+        assert cfg.properties.value_expression is None
+
+    def test_valid_required_var(self):
+        """Valid required_var expressions compile without error."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="{{ final_message }}",
+                required_var=["reference_data.expected", "task_input"],
+            ),
+        )
+        assert isinstance(cfg.properties, LlmJudgeProperties)
+        assert cfg.properties.required_var == ["reference_data.expected", "task_input"]
+
+    def test_invalid_required_var(self):
+        """Bad Jinja syntax in a required_var entry is rejected."""
+        with pytest.raises(ValidationError, match="Invalid Jinja2 expression"):
+            _make_v2_eval_config(
+                properties=LlmJudgeProperties(
+                    model_name="m",
+                    model_provider="p",
+                    prompt_template="{{ final_message }}",
+                    required_var=["valid_var", "bad["],
+                ),
+            )
+
+    def test_legacy_config_skips_jinja_validation(self):
+        """Legacy (g_eval) configs bypass Jinja validation entirely."""
+        cfg = EvalConfig(
+            name="Legacy",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            model_name="gpt-4",
+            model_provider="openai",
+        )
+        assert cfg.config_type == EvalConfigType.g_eval
+
+    @pytest.mark.parametrize(
+        "props",
+        [
+            PatternMatchProperties(pattern="ok", value_expression="final_message"),
+            ContainsProperties(substring="yes", value_expression="final_message"),
+            SetCheckProperties(expected_set=["a"], value_expression="final_message"),
+        ],
+        ids=["pattern_match", "contains", "set_check"],
+    )
+    def test_value_expression_across_property_types(self, props):
+        """value_expression validation works for all property types that support it."""
+        cfg = _make_v2_eval_config(properties=props)
+        assert hasattr(cfg.properties, "value_expression")
+        assert cfg.properties.value_expression == "final_message"  # type: ignore[union-attr]

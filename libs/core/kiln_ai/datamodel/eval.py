@@ -253,6 +253,29 @@ class EvalInput(KilnParentedModel):
     )
 
 
+class EvalTaskInput(BaseModel):
+    """The runtime data bundle passed to V2 evaluators.
+
+    Assembled by the eval runner from an EvalInput and a task run result.
+    """
+
+    final_message: str = Field(
+        description="The final model output (task output text).",
+    )
+    trace: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="The full conversation trace, if available.",
+    )
+    reference_data: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="Reference/ground-truth data from EvalInput.reference.",
+    )
+    task_input: str | None = Field(
+        default=None,
+        description="The original task input text.",
+    )
+
+
 class EvalOutputScore(BaseModel):
     """
     A definition of a score that an evaluator will produce.
@@ -562,6 +585,45 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             return self
         else:
             raise ValueError(f"Invalid eval config type: {self.config_type}")
+
+    @model_validator(mode="after")
+    def validate_v2_templates_and_expressions(self) -> Self:
+        if self.config_type != EvalConfigType.v2 or not isinstance(
+            self.properties, BaseModel
+        ):
+            return self
+
+        from kiln_ai.utils.jinja_engine import (
+            compile_expression_or_raise,
+            compile_template_or_raise,
+        )
+
+        props = self.properties
+        if isinstance(props, LlmJudgeProperties):
+            compile_template_or_raise(props.prompt_template)
+            tmpl_source = props.prompt_template.strip()
+            if "{{" not in tmpl_source and "{%" not in tmpl_source:
+                raise ValueError(
+                    "prompt_template contains no Jinja2 expressions or blocks -- "
+                    "it would produce the same output for every input. "
+                    "Use {{ final_message }} or similar."
+                )
+            for var in props.required_var:
+                compile_expression_or_raise(var)
+
+        if isinstance(
+            props,
+            (
+                ExactMatchProperties,
+                PatternMatchProperties,
+                ContainsProperties,
+                SetCheckProperties,
+            ),
+        ):
+            if props.value_expression is not None:
+                compile_expression_or_raise(props.value_expression)
+
+        return self
 
     @model_validator(mode="after")
     def validate_json_serializable(self) -> "EvalConfig":

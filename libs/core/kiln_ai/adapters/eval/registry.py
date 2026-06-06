@@ -1,16 +1,42 @@
 from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.base_v2_eval import _V2_PROPERTY_TYPES, BaseV2Eval
 from kiln_ai.adapters.eval.g_eval import GEval
-from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType
+from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, V2EvalType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+_V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2Eval]] = {}
 
 
 def eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
+    """Legacy dispatch -- returns a BaseEval subclass for g_eval/llm_as_judge.
+
+    For v2, raises NotImplementedError (v2 adapters use v2_eval_adapter_from_config).
+    """
     match eval_config.config_type:
         case EvalConfigType.g_eval:
             return GEval
         case EvalConfigType.llm_as_judge:
             return GEval
         case EvalConfigType.v2:
-            raise NotImplementedError("V2 eval adapters are not yet implemented.")
+            raise NotImplementedError(
+                "V2 eval configs use v2_eval_adapter_from_config(), not eval_adapter_from_type()"
+            )
         case _:
             raise_exhaustive_enum_error(eval_config.config_type)
+
+
+def v2_eval_adapter_from_config(eval_config: EvalConfig) -> BaseV2Eval:
+    """V2 dispatch -- reads properties.type and looks up the adapter in _V2_ADAPTER_MAP.
+
+    Returns an instantiated adapter, or raises NotImplementedError if the
+    V2 type has no registered adapter (type_not_available skip path).
+    """
+    if eval_config.config_type != EvalConfigType.v2:
+        raise ValueError("v2_eval_adapter_from_config only accepts V2 configs")
+    if not isinstance(eval_config.properties, _V2_PROPERTY_TYPES):
+        raise ValueError("V2 config must have typed properties")
+    v2_type = eval_config.properties.type  # type: ignore[union-attr]
+    adapter_cls = _V2_ADAPTER_MAP.get(v2_type)
+    if adapter_cls is None:
+        raise NotImplementedError(f"V2 eval type '{v2_type}' is not yet implemented")
+    return adapter_cls(eval_config)

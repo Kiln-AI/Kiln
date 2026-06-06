@@ -7,6 +7,7 @@ import pytest
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    compute_score_summary,
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
@@ -897,11 +898,15 @@ async def test_get_eval_config_score_summary(
 
         # Check average scores for run1
         assert results["run1"]["accuracy"]["mean_score"] == 0.7  # (0.8 + 0.6) / 2
+        assert results["run1"]["accuracy"]["n_used"] == 2
+        assert results["run1"]["accuracy"]["n_excluded"] == 0
         assert results["run1"]["relevance"]["mean_score"] == 0.8  # Only one valid score
         assert run_config_percent_complete["run1"] == 1.0
 
         # Check average scores for run2
         assert results["run2"]["accuracy"]["mean_score"] == 0.9
+        assert results["run2"]["accuracy"]["n_used"] == 1
+        assert results["run2"]["accuracy"]["n_excluded"] == 0
         assert results["run2"]["relevance"]["mean_score"] == 0.85
         assert run_config_percent_complete["run2"] == 0.5
 
@@ -911,11 +916,15 @@ async def test_get_eval_config_score_summary(
 
         # run 4 has no scores
         assert results["run4"]["accuracy"]["mean_score"] == 0.5
+        assert results["run4"]["accuracy"]["n_used"] == 1
+        assert results["run4"]["accuracy"]["n_excluded"] == 0
         assert "relevance" not in results["run4"]
         assert run_config_percent_complete["run4"] == 0.0
 
         # Check average scores for run5 - duplicate dataset_id not double counted
         assert results["run5"]["accuracy"]["mean_score"] == 0.7  # (0.8 + 0.6) / 2
+        assert results["run5"]["accuracy"]["n_used"] == 2
+        assert results["run5"]["accuracy"]["n_excluded"] == 0
         assert results["run5"]["relevance"]["mean_score"] == 0.8  # Only one valid score
         assert run_config_percent_complete["run5"] == 1.0
 
@@ -928,6 +937,94 @@ async def test_get_eval_config_score_summary(
         mock_dataset_ids_in_filter.assert_called_once_with(
             mock_task, "tag::eval_set", readonly=True
         )
+
+
+def test_score_summary_n_used_n_excluded(mock_eval_for_score_summary):
+    eval = mock_eval_for_score_summary
+    config = Mock(spec=EvalConfig)
+
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8, "relevance": 0.9},
+            input="input",
+            output="output",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={},
+            input="input",
+            output="output",
+            dataset_id="ds2",
+            skipped_reason="missing_reference_key",
+            skipped_detail="key foo",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6, "relevance": 0.7},
+            input="input",
+            output="output",
+            dataset_id="ds3",
+        ),
+    ]
+    config.runs.return_value = runs
+
+    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+    expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2", "ds3"}
+
+    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+
+    assert result.dataset_size == 3
+    scores = result.results["rc1"]
+    assert scores["accuracy"].mean_score == pytest.approx(0.7)
+    assert scores["accuracy"].n_used == 2
+    assert scores["accuracy"].n_excluded == 1
+    assert scores["relevance"].mean_score == pytest.approx(0.8)
+    assert scores["relevance"].n_used == 2
+    assert scores["relevance"].n_excluded == 1
+    assert result.run_config_percent_complete["rc1"] == 1.0
+
+
+def test_score_summary_all_skipped(mock_eval_for_score_summary):
+    eval = mock_eval_for_score_summary
+    config = Mock(spec=EvalConfig)
+
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={},
+            input="input",
+            output="output",
+            dataset_id="ds1",
+            skipped_reason="extraction_failed",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={},
+            input="input",
+            output="output",
+            dataset_id="ds2",
+            skipped_reason="missing_trace",
+        ),
+    ]
+    config.runs.return_value = runs
+
+    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+    expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
+
+    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+
+    assert result.dataset_size == 2
+    scores = result.results["rc1"]
+    assert len(scores) == 2
+    assert scores["accuracy"].mean_score is None
+    assert scores["accuracy"].n_used == 0
+    assert scores["accuracy"].n_excluded == 2
+    assert scores["relevance"].mean_score is None
+    assert scores["relevance"].n_used == 0
+    assert scores["relevance"].n_excluded == 2
+    assert result.run_config_percent_complete["rc1"] == 1.0
 
 
 @pytest.mark.asyncio
@@ -2357,6 +2454,188 @@ async def test_get_run_config_eval_scores_latency_below_threshold(
     assert mean_usage["mean_cost"] is not None
     # Latency should be None (only 1/3 = 33% < 50% threshold)
     assert mean_usage["mean_total_llm_latency_ms"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_inline_aggregation(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Verify the inline aggregation path returns correct n_used, n_excluded, and percent_complete."""
+    mock_task_from_id.return_value = mock_task
+
+    task_runs = []
+    for i in range(3):
+        tr = TaskRun(
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "test",
+                },
+            ),
+            output=TaskOutput(output=f"output {i}"),
+            parent=mock_task,
+        )
+        tr.save_to_file()
+        task_runs.append(tr)
+
+    scored_run = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 3.0, "overall_rating": 4.0},
+        input="input 0",
+        output="output 0",
+        dataset_id=task_runs[0].id,
+        parent=mock_eval_config,
+    )
+    scored_run.save_to_file()
+
+    skipped_run = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={},
+        input="input 1",
+        output="output 1",
+        dataset_id=task_runs[1].id,
+        skipped_reason="extraction_failed",
+        parent=mock_eval_config,
+    )
+    skipped_run.save_to_file()
+
+    mock_task_api = MagicMock()
+    mock_task_api.runs.return_value = task_runs
+    mock_task_api.evals.return_value = [mock_eval]
+    mock_task_api.specs.return_value = []
+
+    mock_ec_api = MagicMock()
+    mock_ec_api.runs.return_value = [scored_run, skipped_run]
+    mock_ec_api.id = mock_eval_config.id
+
+    mock_eval_api = MagicMock()
+    mock_eval_api.configs.return_value = [mock_ec_api]
+    mock_eval_api.id = mock_eval.id
+    mock_eval_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_api.output_scores = mock_eval.output_scores
+    mock_eval_api.name = mock_eval.name
+
+    mock_eval.current_config_id = mock_eval_config.id
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as p_eval,
+        patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
+        patch("app.desktop.studio_server.eval_api.dataset_ids_in_filter") as p_ds,
+    ):
+        p_task.return_value = mock_task_api
+        p_eval.return_value = mock_eval_api
+        p_rc.return_value = mock_run_config
+        p_ds.return_value = {tr.id for tr in task_runs}
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    er = data["eval_results"][0]
+    ecr = er["eval_config_result"]
+
+    assert ecr["n_excluded"] == 1
+    assert ecr["results"]["score1"]["n_used"] == 1
+    assert ecr["results"]["score1"]["n_excluded"] == 1
+    assert ecr["results"]["score1"]["mean_score"] == 3.0
+    assert ecr["results"]["overall_rating"]["n_used"] == 1
+    assert ecr["results"]["overall_rating"]["n_excluded"] == 1
+    assert ecr["results"]["overall_rating"]["mean_score"] == 4.0
+    assert ecr["percent_complete"] == pytest.approx(2.0 / 3.0)
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_all_skipped(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """When every EvalRun is skipped, mean_score should be None and n_used == 0."""
+    mock_task_from_id.return_value = mock_task
+
+    task_runs = []
+    for i in range(2):
+        tr = TaskRun(
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "test",
+                },
+            ),
+            output=TaskOutput(output=f"output {i}"),
+            parent=mock_task,
+        )
+        tr.save_to_file()
+        task_runs.append(tr)
+
+    skipped_runs = [
+        EvalRun(
+            task_run_config_id=mock_run_config.id,
+            scores={},
+            input=f"input {i}",
+            output=f"output {i}",
+            dataset_id=task_runs[i].id,
+            skipped_reason="incompatible_input_shape",
+            parent=mock_eval_config,
+        )
+        for i in range(2)
+    ]
+    for sr in skipped_runs:
+        sr.save_to_file()
+
+    mock_task_api = MagicMock()
+    mock_task_api.runs.return_value = task_runs
+    mock_task_api.evals.return_value = [mock_eval]
+    mock_task_api.specs.return_value = []
+
+    mock_ec_api = MagicMock()
+    mock_ec_api.runs.return_value = skipped_runs
+    mock_ec_api.id = mock_eval_config.id
+
+    mock_eval_api = MagicMock()
+    mock_eval_api.configs.return_value = [mock_ec_api]
+    mock_eval_api.id = mock_eval.id
+    mock_eval_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_api.output_scores = mock_eval.output_scores
+    mock_eval_api.name = mock_eval.name
+
+    mock_eval.current_config_id = mock_eval_config.id
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as p_eval,
+        patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
+        patch("app.desktop.studio_server.eval_api.dataset_ids_in_filter") as p_ds,
+    ):
+        p_task.return_value = mock_task_api
+        p_eval.return_value = mock_eval_api
+        p_rc.return_value = mock_run_config
+        p_ds.return_value = {tr.id for tr in task_runs}
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    er = data["eval_results"][0]
+    ecr = er["eval_config_result"]
+
+    assert ecr["n_excluded"] == 2
+    assert ecr["results"]["score1"]["n_used"] == 0
+    assert ecr["results"]["score1"]["n_excluded"] == 2
+    assert ecr["results"]["score1"]["mean_score"] is None
+    assert ecr["results"]["overall_rating"]["n_used"] == 0
+    assert ecr["results"]["overall_rating"]["n_excluded"] == 2
+    assert ecr["results"]["overall_rating"]["mean_score"] is None
+    assert ecr["percent_complete"] == 1.0
 
 
 def test_get_eval_configs_score_summary_no_filter_id(

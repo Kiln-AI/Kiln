@@ -332,19 +332,11 @@ This is the full conversation history for the task run:
         """
         Build the LLM as Judge score for the given run and run output.
         """
-        # Convert the output format we asked for (discrete values) to our float scores
-        scores: EvalScores = {}
-        if not isinstance(run_output.output, dict):
-            raise ValueError("LLM as Judge output must be a dictionary")
+        from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
+            build_llm_as_judge_score,
+        )
 
-        for metric, score in run_output.output.items():
-            token_score = self.score_from_token_string(f"{score}")
-            if token_score is None:
-                raise ValueError(
-                    f"No score found for metric: {metric}. The LLM failed to follow the scoring rubric/instructions/schema."
-                )
-            scores[metric] = token_score
-        return scores
+        return build_llm_as_judge_score(run_output, self.score_from_token_string)
 
     def build_g_eval_score(self, run_output: RunOutput) -> EvalScores:
         """
@@ -362,29 +354,16 @@ This is the full conversation history for the task run:
             url={https://arxiv.org/abs/2303.16634},
         }
         """
-        # We use structured output
-        outputs = run_output.output
-        assert isinstance(outputs, dict)
+        from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
+            build_g_eval_score,
+        )
 
-        # Build raw string output from the logprobs, which is easier to work with than Dict for the next bit
-        raw_output = self.raw_output_from_logprobs(run_output)
-
-        # find the offset the start of each metric in the raw output json
-        metrics: List[str] = list(outputs.keys())
-        metric_offsets = self.metric_offsets(raw_output, metrics)
-
-        final_scores: EvalScores = {}
-        for metric in metrics:
-            score = self.g_eval_single_metric(
-                run_output, metric, metric_offsets, raw_output
-            )
-            if score is None:
-                raise ValueError(
-                    f"No score found for metric: {metric}. The LLM failed to follow the scoring rubric/instructions/schema."
-                )
-            final_scores[metric] = score
-
-        return final_scores
+        return build_g_eval_score(
+            run_output,
+            self.raw_output_from_logprobs,
+            self.metric_offsets,
+            self.g_eval_single_metric,
+        )
 
     def g_eval_single_metric(
         self,
