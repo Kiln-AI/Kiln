@@ -83,12 +83,12 @@ export function formatSize(byteSize: number | undefined | null): string {
 export function eval_config_to_ui_name(
   eval_config_type: EvalConfigType,
 ): string {
-  return (
-    {
-      g_eval: "G-Eval",
-      llm_as_judge: "LLM as Judge",
-    }[eval_config_type] || eval_config_type
-  )
+  const names = {
+    g_eval: "G-Eval",
+    llm_as_judge: "LLM as Judge",
+    v2: "V2",
+  } satisfies Record<EvalConfigType, string>
+  return names[eval_config_type] || eval_config_type
 }
 
 export function data_strategy_name(data_strategy: string): string {
@@ -317,12 +317,15 @@ export function formatEvalConfigName(
   model_info: ProviderModels | null,
   compact: boolean = false,
 ): string {
-  const model_name_value = model_name(eval_config.model_name, model_info)
+  const model_name_value = model_name(
+    eval_config.model_name ?? undefined,
+    model_info,
+  )
   const parts = compact
     ? [model_name_value]
     : [
         eval_config_to_ui_name(eval_config.config_type),
-        `${model_name_value} (${provider_name_from_id(eval_config.model_provider)})`,
+        `${model_name_value} (${provider_name_from_id(eval_config.model_provider ?? "")})`,
       ]
   return eval_config.name + " — " + parts.join(", ")
 }

@@ -3,13 +3,24 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.eval import (
+    ContainsProperties,
     Eval,
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    ExactMatchProperties,
+    LlmJudgeProperties,
+    MultiTurnSyntheticEvalInputData,
+    PatternMatchProperties,
+    SetCheckProperties,
+    SingleTurnEvalInputData,
+    SkippedReason,
+    StepCountCheckProperties,
+    UserMessage,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
@@ -1261,13 +1272,8 @@ def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():
             True,
             "eval_configs_filter_id is required for all templates except 'rag'",
         ),
-        # None template also requires eval_configs_filter_id
-        (
-            None,
-            None,
-            True,
-            "eval_configs_filter_id is required for all templates except 'rag'",
-        ),
+        # None template skips template-specific validation
+        (None, None, False, None),
         # Valid cases with eval_configs_filter_id provided
         (EvalTemplateId.issue, "tag::tag2", False, None),
         (EvalTemplateId.tool_call, "tag::tag2", False, None),
@@ -1941,3 +1947,471 @@ def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
         config2.path.unlink()
     loaded_eval = Eval.load_from_file(str(eval.path))
     assert loaded_eval.current_config_id is None  # No configs to set
+
+
+# ── V1 Characterization Tests ──────────────────────────────────────────
+
+
+def test_v1_eval_config_loads_from_disk(mock_task, tmp_path):
+    """Characterization: V1 g_eval config round-trips through disk without corruption."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Chartest",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(
+        name="GEval Config",
+        parent=eval,
+        config_type=EvalConfigType.g_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1", "step2"], "task_description": "desc"},
+    )
+    config.save_to_file()
+
+    loaded = EvalConfig.load_from_file(str(config.path))
+    assert loaded.config_type == EvalConfigType.g_eval
+    assert loaded.model_name == "gpt-4"
+    assert loaded.model_provider == "openai"
+    assert isinstance(loaded.properties, dict)
+    assert loaded.properties["eval_steps"] == ["step1", "step2"]
+
+
+def test_v1_eval_run_with_reference_answer(mock_task, tmp_path):
+    """Characterization: V1 eval run with a reference_answer saves and loads."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="RefAnswer Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        evaluation_data_type=EvalDataType.reference_answer,
+        output_scores=[
+            EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(
+        name="Ref Config",
+        parent=eval,
+        config_type=EvalConfigType.g_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["check ref"]},
+    )
+    config.save_to_file()
+
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        task_run_config_id="rc1",
+        input="What?",
+        output="Answer",
+        reference_answer="Gold answer",
+        scores={"score": 0.9},
+    )
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.reference_answer == "Gold answer"
+    assert loaded.scores == {"score": 0.9}
+    assert loaded.dataset_id == "ds1"
+
+
+# ── V2 EvalConfig Tests ────────────────────────────────────────────────
+
+
+def test_v2_eval_config_valid():
+    """V2 config with typed LlmJudgeProperties is accepted."""
+    config = EvalConfig(
+        name="V2 Config",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{output}}",
+        ),
+    )
+    assert config.config_type == EvalConfigType.v2
+    assert isinstance(config.properties, LlmJudgeProperties)
+    assert config.model_name is None
+    assert config.model_provider is None
+
+
+def test_v2_eval_config_rejects_root_model_fields():
+    """V2 config must NOT set root-level model_name / model_provider."""
+    with pytest.raises(ValueError, match="must not set root-level model_name"):
+        EvalConfig(
+            name="Bad V2",
+            config_type=EvalConfigType.v2,
+            model_name="gpt-4o",
+            model_provider="openai",
+            properties=LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="t",
+            ),
+        )
+
+
+def test_v2_eval_config_requires_typed_properties():
+    """V2 config rejects a raw dict for properties."""
+    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+        EvalConfig(
+            name="Bad V2",
+            config_type=EvalConfigType.v2,
+            properties={"eval_steps": ["step"]},
+        )
+
+
+def test_legacy_config_unchanged():
+    """Legacy g_eval config still validates the same as before."""
+    config = EvalConfig(
+        name="Legacy",
+        config_type=EvalConfigType.g_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["s1"]},
+    )
+    assert isinstance(config.properties, dict)
+
+
+def test_legacy_config_requires_model_fields():
+    """Legacy config rejects missing model_name / model_provider."""
+    with pytest.raises(ValueError, match="model_name and model_provider are required"):
+        EvalConfig(
+            name="Legacy Missing",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["s1"]},
+        )
+
+
+def test_v2_json_serializable_bypass():
+    """V2 bypass of validate_json_serializable (which would fail for typed props)."""
+    config = EvalConfig(
+        name="V2 Bypass",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="hello"),
+    )
+    assert config.config_type == EvalConfigType.v2
+
+
+def test_v2_eval_config_discriminated_union_dispatch():
+    """V2 properties discriminated union dispatches by type field."""
+    config = EvalConfig(
+        name="Pattern",
+        config_type=EvalConfigType.v2,
+        properties=PatternMatchProperties(pattern=r"\\d+"),
+    )
+    assert isinstance(config.properties, PatternMatchProperties)
+
+    config2 = EvalConfig(
+        name="Contains",
+        config_type=EvalConfigType.v2,
+        properties=ContainsProperties(substring="hello"),
+    )
+    assert isinstance(config2.properties, ContainsProperties)
+
+
+# ── V2 EvalConfig Properties Validators ────────────────────────────────
+
+
+def test_exact_match_xor_validator():
+    """ExactMatchProperties requires exactly one of expected_value/reference_key."""
+    with pytest.raises(
+        ValueError, match="Exactly one of expected_value or reference_key"
+    ):
+        ExactMatchProperties(expected_value="a", reference_key="b")
+    with pytest.raises(
+        ValueError, match="Exactly one of expected_value or reference_key"
+    ):
+        ExactMatchProperties()
+
+    assert ExactMatchProperties(expected_value="hello").expected_value == "hello"
+    assert ExactMatchProperties(reference_key="key1").reference_key == "key1"
+
+
+def test_contains_xor_validator():
+    """ContainsProperties requires exactly one of substring/reference_key."""
+    with pytest.raises(ValueError, match="Exactly one of substring or reference_key"):
+        ContainsProperties(substring="a", reference_key="b")
+    with pytest.raises(ValueError, match="Exactly one of substring or reference_key"):
+        ContainsProperties()
+
+
+def test_set_check_xor_validator():
+    """SetCheckProperties requires exactly one of expected_set/reference_key."""
+    with pytest.raises(
+        ValueError, match="Exactly one of expected_set or reference_key"
+    ):
+        SetCheckProperties(expected_set=["a"], reference_key="b")
+    with pytest.raises(
+        ValueError, match="Exactly one of expected_set or reference_key"
+    ):
+        SetCheckProperties()
+
+    assert SetCheckProperties(expected_set=["x"]).expected_set == ["x"]
+
+
+def test_step_count_check_bounds():
+    """StepCountCheckProperties requires at least one of min/max, min <= max."""
+    with pytest.raises(ValueError, match="at least one of min_count"):
+        StepCountCheckProperties(count_type="tool_calls")
+    with pytest.raises(ValueError, match="min_count must be <= max_count"):
+        StepCountCheckProperties(count_type="turns", min_count=5, max_count=2)
+
+    ok = StepCountCheckProperties(count_type="model_responses", min_count=1)
+    assert ok.min_count == 1
+    assert ok.max_count is None
+
+
+# ── V2 Eval Tests ──────────────────────────────────────────────────────
+
+
+def test_eval_v2_with_eval_input_filter():
+    """Eval with eval_input_filter_id (V2 path) validates correctly."""
+    eval = Eval(
+        name="V2 Eval",
+        eval_input_filter_id="all",
+        eval_configs_filter_id="tag::cfg",
+        output_scores=[
+            EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    assert eval.eval_input_filter_id == "all"
+    assert eval.eval_set_filter_id is None
+
+
+def test_eval_filter_mutual_exclusivity():
+    """Setting both eval_set_filter_id and eval_input_filter_id raises."""
+    with pytest.raises(
+        ValueError, match="Exactly one of eval_set_filter_id or eval_input_filter_id"
+    ):
+        Eval(
+            name="Both",
+            eval_set_filter_id="tag::tag1",
+            eval_input_filter_id="all",
+            eval_configs_filter_id="tag::cfg",
+            output_scores=[
+                EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+
+    with pytest.raises(
+        ValueError, match="Exactly one of eval_set_filter_id or eval_input_filter_id"
+    ):
+        Eval(
+            name="Neither",
+            eval_configs_filter_id="tag::cfg",
+            output_scores=[
+                EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+
+
+def test_eval_optional_evaluation_data_type():
+    """evaluation_data_type defaults to final_answer."""
+    eval = Eval(
+        name="Default DT",
+        eval_set_filter_id="tag::t",
+        eval_configs_filter_id="tag::t2",
+        output_scores=[EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)],
+    )
+    assert eval.evaluation_data_type == EvalDataType.final_answer
+
+
+def test_validate_template_properties_none_template():
+    """When template is None, validate_template_properties returns early."""
+    eval = Eval(
+        name="No Template",
+        eval_set_filter_id="tag::t",
+        eval_configs_filter_id="tag::t2",
+        template=None,
+        output_scores=[EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)],
+    )
+    assert eval.template is None
+
+
+# ── V2 EvalRun Tests ───────────────────────────────────────────────────
+
+
+def test_eval_run_v2_with_eval_input_id():
+    """V2 eval run uses eval_input_id instead of dataset_id."""
+    run = EvalRun(
+        eval_input_id="ei_123",
+        task_run_config_id="rc1",
+        input="hi",
+        output="hello",
+        scores={"s": 1.0},
+    )
+    assert run.eval_input_id == "ei_123"
+    assert run.dataset_id is None
+
+
+def test_eval_run_input_source_xor():
+    """Exactly one of dataset_id / eval_input_id must be set."""
+    with pytest.raises(ValueError, match="Exactly one of dataset_id or eval_input_id"):
+        EvalRun(
+            dataset_id="d1",
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            input="i",
+            output="o",
+            scores={"s": 1.0},
+        )
+    with pytest.raises(ValueError, match="Exactly one of dataset_id or eval_input_id"):
+        EvalRun(
+            task_run_config_id="rc1",
+            input="i",
+            output="o",
+            scores={"s": 1.0},
+        )
+
+
+def test_eval_run_skipped_allows_empty_scores():
+    """When skipped_reason is set, empty scores are allowed."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="i",
+        output="o",
+        skipped_reason=SkippedReason.missing_reference_key.value,
+        skipped_detail="key 'expected' not found",
+        scores={},
+    )
+    assert run.skipped_reason == "missing_reference_key"
+    assert run.scores == {}
+
+
+def test_eval_run_skipped_allows_none_output():
+    """Skipped runs can have None output."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="i",
+        output=None,
+        skipped_reason=SkippedReason.extraction_failed.value,
+        scores={},
+    )
+    assert run.output is None
+
+
+def test_eval_run_v2_bypass_output_fields():
+    """V2 config_type bypasses validate_output_fields and validate_reference_answer."""
+    eval = Eval(
+        name="V2 Parent",
+        eval_input_filter_id="all",
+        eval_configs_filter_id="tag::cfg",
+        evaluation_data_type=EvalDataType.final_answer,
+        output_scores=[
+            EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    config = EvalConfig(
+        name="V2 Config",
+        parent=eval,
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="hello"),
+    )
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="i",
+        output="hello",
+        reference_answer="should be accepted in v2",
+        scores={"score": 1.0},
+    )
+    assert run.reference_answer == "should be accepted in v2"
+
+
+def test_eval_run_not_skipped_requires_scores():
+    """Non-skipped runs with empty scores raise ValueError."""
+    with pytest.raises(ValueError, match="scores are required"):
+        EvalRun(
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            input="i",
+            output="o",
+            scores={},
+        )
+
+
+# ── EvalInput Tests ────────────────────────────────────────────────────
+
+
+def test_eval_input_single_turn():
+    """EvalInput with single_turn data."""
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="What is 2+2?")),
+    )
+    assert ei.data.type == "single_turn"
+    assert ei.data.user_message.text == "What is 2+2?"
+
+
+def test_eval_input_multi_turn():
+    """EvalInput with multi_turn_synthetic data."""
+    ei = EvalInput(
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="Hello"),
+            synthetic_user_info={"persona": "student"},
+        ),
+    )
+    assert ei.data.type == "multi_turn_synthetic"
+    assert ei.data.first_message.text == "Hello"
+    assert ei.data.synthetic_user_info == {"persona": "student"}
+
+
+def test_eval_input_with_reference():
+    """EvalInput with reference data."""
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+        reference={"expected_answer": "A", "source": "textbook"},
+    )
+    assert ei.reference == {"expected_answer": "A", "source": "textbook"}
+
+
+def test_eval_input_with_tags():
+    """EvalInput with tags."""
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+        tags=["math", "easy"],
+    )
+    assert ei.tags == ["math", "easy"]
+
+
+def test_eval_input_persists_under_task(mock_task, tmp_path):
+    """EvalInput saves as a child of Task and loads back."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    ei = EvalInput(
+        parent=mock_task,
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="Persist me")),
+        reference={"key": "val"},
+        tags=["t1"],
+    )
+    ei.save_to_file()
+
+    loaded_task = Task.load_from_file(str(task_path))
+    inputs = loaded_task.eval_inputs(readonly=True)
+    assert len(inputs) == 1
+    assert inputs[0].data.type == "single_turn"
+    assert inputs[0].data.user_message.text == "Persist me"
+    assert inputs[0].reference == {"key": "val"}
+    assert inputs[0].tags == ["t1"]

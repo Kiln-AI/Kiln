@@ -15,7 +15,7 @@ The phasing is derived from the V2 design's Stage-6 roadmap. Data model first (e
 
 ## Phases
 
-- [ ] **Phase 1 — Prereqs + additive schema foundation.**
+- [x] **Phase 1 — Prereqs + additive schema foundation.**
   (a) Fix the V1 `validate_template_properties` bug per `components/15 §4.3` (V2 can't create non-template Evals until this lands). (b) Add the opt-in `forward_thinking_instructions` to `SingleTurnR1ThinkingFormatter` per `components/05` (standalone; V2 `llm_judge` uses it in Phase 4; V1 default unchanged). (c) Additive schema per `components/10` + `components/15`: `EvalConfig` v2 enum + typed `V2EvalConfigProperties` union + `mode="before"` parsing validator + `validate_properties` v2 branch; `Eval.eval_input_filter_id` (+ mutual-exclusivity, optional `eval_set_filter_id`); `EvalRun` additive fields (`eval_input_id`, `reference_data`, `skipped_reason`) + relaxed score/output validators when skipped + `validate_output_fields` v2 bypass (C.runner.2); new `EvalInput` `KilnParentedModel` + `Task.parent_of`; `EvalInputFilter` protocol/registry; `legacy_model_fields` helper extraction + `eval_adapter_from_type(EvalConfig)` dispatch refactor. Characterization tests for the existing `GEval` ref-answer path first. Code-grounded line-level plan: `reference/backwards_compat_plan_grounded.md`.
 
 - [ ] **Phase 2 — Template + extraction layer + V2 runner backbone.**

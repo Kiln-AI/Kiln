@@ -319,8 +319,8 @@
       properties.push({
         name: "Judge Model",
         value: getDetailedModelNameFromParts(
-          eval_progress.current_eval_method.model_name,
-          eval_progress.current_eval_method.model_provider,
+          eval_progress.current_eval_method.model_name ?? "",
+          eval_progress.current_eval_method.model_provider ?? "",
           modelInfo,
         ),
         tooltip: "The model used by your selected judge.",
@@ -774,7 +774,8 @@
                           You selected the judge '{eval_config_to_ui_name(
                             eval_progress.current_eval_method.config_type,
                           )}' using the model '{model_name(
-                            eval_progress.current_eval_method.model_name,
+                            eval_progress.current_eval_method.model_name ??
+                              undefined,
                             $model_info,
                           )}'.
                         {:else}

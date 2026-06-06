@@ -661,7 +661,9 @@
       `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
     )
 
-    const eval_tag = tagFromFilterId(evalData.eval_set_filter_id)
+    const eval_tag = evalData.eval_set_filter_id
+      ? tagFromFilterId(evalData.eval_set_filter_id)
+      : undefined
     if (evalData.template === "rag") {
       if (eval_tag) {
         params.set("splits", `${eval_tag}:1.0`)

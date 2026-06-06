@@ -142,6 +142,8 @@ class EvalRunner:
         - should be in the eval set filter
         - should not have already been run for this eval config + run config + dataset item
         """
+        if self.eval.eval_set_filter_id is None:
+            raise ValueError("eval_set_filter_id is required for task_run_eval mode")
         filter = dataset_filter_from_id(self.eval.eval_set_filter_id)
 
         # already_run[eval_config_id][run_config_id][dataset_id]
@@ -201,7 +203,7 @@ class EvalRunner:
     async def run_job(self, job: EvalJob) -> bool:
         try:
             # Create the evaluator for this eval config/run config pair
-            evaluator = eval_adapter_from_type(job.eval_config.config_type)(
+            evaluator = eval_adapter_from_type(job.eval_config)(
                 job.eval_config,
                 job.task_run_config.run_config_properties
                 if job.task_run_config

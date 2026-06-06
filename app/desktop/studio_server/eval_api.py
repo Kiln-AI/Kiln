@@ -1080,6 +1080,11 @@ def connect_evals_api(app: FastAPI):
     ) -> EvalProgress:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
+        if eval.eval_set_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This eval does not have a V1 eval set filter.",
+            )
         dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
@@ -1146,6 +1151,11 @@ def connect_evals_api(app: FastAPI):
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
 
+        if eval.eval_set_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This eval does not have a V1 eval set filter.",
+            )
         expected_dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
@@ -1188,6 +1198,8 @@ def connect_evals_api(app: FastAPI):
 
         for eval in task.evals(readonly=True):
             filter_id = eval.eval_set_filter_id
+            if filter_id is None:
+                continue
             if filter_id not in dataset_ids_cache:
                 dataset_ids_cache[filter_id] = dataset_ids_in_filter(
                     task, filter_id, readonly=True
@@ -1441,6 +1453,8 @@ def connect_evals_api(app: FastAPI):
                 continue
 
             # Get the dataset size for this eval
+            if eval.eval_set_filter_id is None:
+                continue
             expected_dataset_ids = dataset_ids_in_filter(
                 task, eval.eval_set_filter_id, readonly=True
             )

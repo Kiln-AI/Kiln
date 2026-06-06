@@ -144,9 +144,11 @@
     if (!run_config || !evaluator) {
       return {}
     }
-    const base = {
+    const base: Record<string, string> = {
       "Run Configuration Name": run_config.name,
-      "Task Inputs From Dataset": evaluator.eval_set_filter_id,
+    }
+    if (evaluator.eval_set_filter_id) {
+      base["Task Inputs From Dataset"] = evaluator.eval_set_filter_id
     }
     if (!isKilnAgentRunConfig(run_config.run_config_properties)) {
       return {
@@ -183,8 +185,11 @@
     return {
       "Judge Name": eval_config.name,
       "Judge Algorithm": eval_config_to_ui_name(eval_config.config_type),
-      "Judge Model": model_name(eval_config.model_name, $model_info),
-      "Model Provider": provider_name_from_id(eval_config.model_provider),
+      "Judge Model": model_name(
+        eval_config.model_name ?? undefined,
+        $model_info,
+      ),
+      "Model Provider": provider_name_from_id(eval_config.model_provider ?? ""),
     }
   }
 </script>

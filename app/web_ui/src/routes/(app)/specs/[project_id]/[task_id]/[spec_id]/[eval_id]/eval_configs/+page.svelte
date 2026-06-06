@@ -732,14 +732,17 @@
                 <tr>
                   <td class="max-w-[400px]">
                     <div class="font-medium">
-                      {model_name(eval_config?.model_name, $model_info)}
+                      {model_name(
+                        eval_config?.model_name ?? undefined,
+                        $model_info,
+                      )}
                     </div>
                     <div class="text-sm text-gray-500">
                       Method: {eval_config_to_ui_name(eval_config.config_type)}
                     </div>
                     <div class="text-sm text-gray-500">
                       Provider: {provider_name_from_id(
-                        eval_config?.model_provider,
+                        eval_config?.model_provider ?? "",
                       )}
                     </div>
                     <div class="text-sm text-gray-500">

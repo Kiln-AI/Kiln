@@ -11,6 +11,29 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskOutputRatingType, Ta
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
+def model_and_provider_from_config(
+    eval_config: EvalConfig,
+) -> tuple[str, ModelProviderName]:
+    """Extract and validate model name and provider from an EvalConfig.
+
+    Standalone helper so that V2 non-LLM adapters can skip calling it.
+    """
+    model_name = eval_config.model_name
+    provider = eval_config.model_provider
+    if (
+        not model_name
+        or not provider
+        or not isinstance(model_name, str)
+        or not isinstance(provider, str)
+        or provider not in ModelProviderName.__members__
+    ):
+        raise ValueError(
+            "Model name and provider must be set in the eval config model properties"
+        )
+
+    return model_name, ModelProviderName(provider)
+
+
 class BaseEval:
     """
     Base class for all evals/evaluators.
@@ -38,20 +61,7 @@ class BaseEval:
         self.skills = skills
 
     def model_and_provider(self) -> tuple[str, ModelProviderName]:
-        model_name = self.eval_config.model_name
-        provider = self.eval_config.model_provider
-        if (
-            not model_name
-            or not provider
-            or not isinstance(model_name, str)
-            or not isinstance(provider, str)
-            or provider not in ModelProviderName.__members__
-        ):
-            raise ValueError(
-                "Model name and provider must be set in the eval config model properties"
-            )
-
-        return model_name, ModelProviderName(provider)
+        return model_and_provider_from_config(self.eval_config)
 
     async def run_task_and_eval(
         self, eval_job_item: TaskRun

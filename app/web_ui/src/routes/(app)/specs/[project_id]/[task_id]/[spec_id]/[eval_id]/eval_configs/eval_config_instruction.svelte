@@ -3,13 +3,19 @@
 
   export let eval_config: EvalConfig | null = null
 
-  // Function to fix type errors
   function get_eval_steps(eval_config: EvalConfig): string[] | undefined {
     if (!eval_config) return undefined
     if (!eval_config.properties) return undefined
-    if (!eval_config.properties["eval_steps"]) return undefined
-    if (!Array.isArray(eval_config.properties["eval_steps"])) return undefined
-    return eval_config.properties["eval_steps"] as string[]
+    const props = eval_config.properties as Record<string, unknown>
+    if (!props["eval_steps"]) return undefined
+    if (!Array.isArray(props["eval_steps"])) return undefined
+    return props["eval_steps"] as string[]
+  }
+
+  function get_task_description(eval_config: EvalConfig): string {
+    if (!eval_config?.properties) return "No description provided."
+    const props = eval_config.properties as Record<string, unknown>
+    return (props["task_description"] as string) || "No description provided."
   }
 </script>
 
@@ -17,7 +23,7 @@
   {@const eval_steps = get_eval_steps(eval_config)}
   <div class="text-sm mb-4">
     <div class="font-medium mb-2">Task Description:</div>
-    {eval_config.properties["task_description"] || "No description provided."}
+    {get_task_description(eval_config)}
   </div>
   {#if eval_steps}
     <div class="text-sm">
