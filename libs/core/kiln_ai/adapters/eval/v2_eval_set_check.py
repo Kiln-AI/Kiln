@@ -26,7 +26,7 @@ class SetCheckEval(BaseV2Eval):
     - Any other type: wrap as a single-element set via ``{str(value)}``.
     """
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         props = self.properties

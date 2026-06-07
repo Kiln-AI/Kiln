@@ -42,72 +42,83 @@ def _inp(**overrides) -> EvalTaskInput:
 
 
 class TestSetCheckSubset:
-    def test_pass_subset(self):
+    @pytest.mark.asyncio
+    async def test_pass_subset(self):
         cfg = _make_config(
             SetCheckProperties(expected_set=["a", "b", "c"], mode="subset")
         )
-        scores, skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail_subset(self):
+    @pytest.mark.asyncio
+    async def test_fail_subset(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="subset"))
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 0.0}
 
-    def test_equal_sets_pass_subset(self):
+    @pytest.mark.asyncio
+    async def test_equal_sets_pass_subset(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="subset"))
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 1.0}
 
 
 class TestSetCheckSuperset:
-    def test_pass_superset(self):
+    @pytest.mark.asyncio
+    async def test_pass_superset(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="superset"))
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 1.0}
 
-    def test_fail_superset(self):
+    @pytest.mark.asyncio
+    async def test_fail_superset(self):
         cfg = _make_config(
             SetCheckProperties(expected_set=["a", "b", "c"], mode="superset")
         )
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 0.0}
 
 
 class TestSetCheckEqual:
-    def test_pass_equal(self):
+    @pytest.mark.asyncio
+    async def test_pass_equal(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="equal"))
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 1.0}
 
-    def test_fail_equal_extra(self):
+    @pytest.mark.asyncio
+    async def test_fail_equal_extra(self):
         cfg = _make_config(
             SetCheckProperties(expected_set=["a", "b", "c"], mode="equal")
         )
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 0.0}
 
-    def test_fail_equal_missing(self):
+    @pytest.mark.asyncio
+    async def test_fail_equal_missing(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="equal"))
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {"score_a": 0.0}
 
 
 class TestSetCheckCoercion:
-    def test_string_json_list(self):
+    @pytest.mark.asyncio
+    async def test_string_json_list(self):
         cfg = _make_config(SetCheckProperties(expected_set=["x", "y"], mode="equal"))
         inp = _inp(final_message='["x", "y"]')
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
 
-    def test_string_non_json_becomes_single_element(self):
+    @pytest.mark.asyncio
+    async def test_string_non_json_becomes_single_element(self):
         cfg = _make_config(SetCheckProperties(expected_set=["hello"], mode="equal"))
         inp = _inp(final_message="hello")
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
 
-    def test_dict_keys(self):
+    @pytest.mark.asyncio
+    async def test_dict_keys(self):
         cfg = _make_config(
             SetCheckProperties(
                 expected_set=["a", "b"],
@@ -116,10 +127,11 @@ class TestSetCheckCoercion:
             )
         )
         inp = _inp(reference_data={"a": 1, "b": 2})
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
 
-    def test_list_value_via_expression(self):
+    @pytest.mark.asyncio
+    async def test_list_value_via_expression(self):
         cfg = _make_config(
             SetCheckProperties(
                 expected_set=["x", "y"],
@@ -128,42 +140,47 @@ class TestSetCheckCoercion:
             )
         )
         inp = _inp(trace=[{"elements": ["x", "y"]}])
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
 
-    def test_numeric_list_stringified(self):
+    @pytest.mark.asyncio
+    async def test_numeric_list_stringified(self):
         cfg = _make_config(SetCheckProperties(expected_set=["1", "2"], mode="equal"))
         inp = _inp(final_message="[1, 2]")
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
 
 
 class TestSetCheckReferenceKey:
-    def test_pass_with_reference_key(self):
+    @pytest.mark.asyncio
+    async def test_pass_with_reference_key(self):
         cfg = _make_config(SetCheckProperties(reference_key="expected", mode="equal"))
         inp = _inp(
             final_message='["a", "b"]',
             reference_data={"expected": ["a", "b"]},
         )
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
 
-    def test_missing_reference_data(self):
+    @pytest.mark.asyncio
+    async def test_missing_reference_data(self):
         cfg = _make_config(SetCheckProperties(reference_key="expected", mode="equal"))
-        scores, skip, _detail = SetCheckEval(cfg).evaluate(_inp())
+        scores, skip, _detail = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {}
         assert skip == SkippedReason.missing_reference_key
 
-    def test_missing_reference_key_in_data(self):
+    @pytest.mark.asyncio
+    async def test_missing_reference_key_in_data(self):
         cfg = _make_config(SetCheckProperties(reference_key="expected", mode="equal"))
         inp = _inp(reference_data={"other": "val"})
-        scores, skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {}
         assert skip == SkippedReason.missing_reference_key
 
 
 class TestSetCheckExpression:
-    def test_undefined_expression_skips(self):
+    @pytest.mark.asyncio
+    async def test_undefined_expression_skips(self):
         cfg = _make_config(
             SetCheckProperties(
                 expected_set=["a"],
@@ -171,45 +188,50 @@ class TestSetCheckExpression:
                 mode="equal",
             )
         )
-        scores, skip, _detail = SetCheckEval(cfg).evaluate(_inp())
+        scores, skip, _detail = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {}
         assert skip == SkippedReason.extraction_failed
 
 
 class TestSetCheckNoScores:
-    def test_no_parent_eval_returns_empty(self):
+    @pytest.mark.asyncio
+    async def test_no_parent_eval_returns_empty(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="equal"))
         cfg.parent_eval.return_value = None
-        scores, skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        scores, skip, _ = await SetCheckEval(cfg).evaluate(_inp())
         assert scores == {}
         assert skip is None
 
 
 class TestSetCheckEmptySet:
-    def test_empty_subset_passes(self):
+    @pytest.mark.asyncio
+    async def test_empty_subset_passes(self):
         cfg = _make_config(SetCheckProperties(expected_set=[], mode="subset"))
         inp = _inp(final_message="[]")
-        scores, skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_empty_superset_of_nonempty_fails(self):
+    @pytest.mark.asyncio
+    async def test_empty_superset_of_nonempty_fails(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="superset"))
         inp = _inp(final_message="[]")
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 0.0}
 
-    def test_empty_equal_to_empty(self):
+    @pytest.mark.asyncio
+    async def test_empty_equal_to_empty(self):
         cfg = _make_config(SetCheckProperties(expected_set=[], mode="equal"))
         inp = _inp(final_message="[]")
-        scores, skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_empty_not_equal_to_nonempty(self):
+    @pytest.mark.asyncio
+    async def test_empty_not_equal_to_nonempty(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="equal"))
         inp = _inp(final_message="[]")
-        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        scores, _skip, _ = await SetCheckEval(cfg).evaluate(inp)
         assert scores == {"score_a": 0.0}
 
 

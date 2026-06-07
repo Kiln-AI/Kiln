@@ -25,8 +25,8 @@ from kiln_ai.datamodel.eval import (
 
 _V2_TYPE_TO_PROPS = {
     V2EvalType.llm_judge: LlmJudgeProperties(
-        model_name="m",
-        model_provider="p",
+        model_name="gpt-4o",
+        model_provider="openai",
         prompt_template="{{ final_message }}",
     ),
     V2EvalType.exact_match: ExactMatchProperties(expected_value="test"),
@@ -86,7 +86,6 @@ class TestEvalAdapterFromType:
 
 class TestV2EvalAdapterFromConfig:
     _UNIMPLEMENTED_V2_TYPES: ClassVar[list[V2EvalType]] = [
-        V2EvalType.llm_judge,
         V2EvalType.code_eval,
     ]
 
@@ -97,6 +96,7 @@ class TestV2EvalAdapterFromConfig:
         V2EvalType.set_check,
         V2EvalType.tool_call_check,
         V2EvalType.step_count_check,
+        V2EvalType.llm_judge,
     ]
 
     @pytest.mark.parametrize("v2_type", _UNIMPLEMENTED_V2_TYPES)

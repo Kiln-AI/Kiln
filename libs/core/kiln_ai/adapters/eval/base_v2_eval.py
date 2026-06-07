@@ -29,7 +29,7 @@ class BaseV2Eval(ABC):
         self.properties = eval_config.properties
 
     @abstractmethod
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         """Run the eval on the given input.

@@ -24,7 +24,7 @@ The phasing is derived from the V2 design's Stage-6 roadmap. Data model first (e
 - [x] **Phase 3 — Deterministic + agent eval types.**
   The six config-driven types per `components/22`: `exact_match`, `pattern_match`, `contains`, `set_check`, `tool_call_check` (J.37 expanded shape), `step_count_check` (J.38). Each as a V2 adapter plugged into the Phase-2 dispatch, consuming the `extract()` layer. Detail for the agent types: `reference/batch_agent_eval_expansion.md`.
 
-- [ ] **Phase 4 — Enhanced `llm_judge` + RAG judge templates.**
+- [x] **Phase 4 — Enhanced `llm_judge` + RAG judge templates.**
   Enhanced `llm_judge` per `components/21`: per-criterion pass/fail, trace condensation, reference-data templating, `g_eval` toggle, structured output. **Wire it to the fixed `SingleTurnR1ThinkingFormatter`** (`forward_thinking_instructions=True`) from Phase 1; add coverage proving reasoning-model judges receive the criteria. Then the 6 first-party RAG `llm_judge` templates per `components/29` (pure content over the reference-key contract — faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness).
 
 - [ ] **Phase 5 — `code_eval` (Beta).**

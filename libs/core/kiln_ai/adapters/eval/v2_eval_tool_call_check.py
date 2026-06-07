@@ -17,7 +17,7 @@ from kiln_ai.datamodel.eval import (
 class ToolCallCheckEval(BaseV2Eval):
     """V2 adapter for tool_call_check: validates tool calls in the trace."""
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         props = self.properties

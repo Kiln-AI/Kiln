@@ -1112,7 +1112,7 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
 class StubV2Eval(BaseV2Eval):
     """Stub that returns a passing score."""
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         return {"accuracy": 1.0}, None, None
@@ -1121,7 +1121,7 @@ class StubV2Eval(BaseV2Eval):
 class SkippingStubV2Eval(BaseV2Eval):
     """Stub that returns a skip."""
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         return {}, SkippedReason.extraction_failed, "test skip detail"

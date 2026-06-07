@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
@@ -63,105 +65,117 @@ def _multi_turn_trace(
 
 
 class TestStepCountToolCalls:
-    def test_within_range_pass(self):
+    @pytest.mark.asyncio
+    async def test_within_range_pass(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", min_count=1, max_count=4)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2, tools_per_assistant=2)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_below_min_fail(self):
+    @pytest.mark.asyncio
+    async def test_below_min_fail(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", min_count=5)
         )
         trace = _multi_turn_trace(n_user=1, n_assistant=1, tools_per_assistant=2)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
-    def test_above_max_fail(self):
+    @pytest.mark.asyncio
+    async def test_above_max_fail(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", max_count=1)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2, tools_per_assistant=2)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestStepCountModelResponses:
-    def test_pass(self):
+    @pytest.mark.asyncio
+    async def test_pass(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="model_responses", min_count=2)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="model_responses", min_count=5)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestStepCountTurns:
-    def test_pass(self):
+    @pytest.mark.asyncio
+    async def test_pass(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="turns", min_count=1, max_count=3)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(StepCountCheckProperties(count_type="turns", max_count=1))
         trace = _multi_turn_trace(n_user=3, n_assistant=3)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestStepCountEdgeCases:
-    def test_missing_trace_skips(self):
+    @pytest.mark.asyncio
+    async def test_missing_trace_skips(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", min_count=1)
         )
-        scores, skip, detail = StepCountCheckEval(cfg).evaluate(_inp(trace=None))
+        scores, skip, detail = await StepCountCheckEval(cfg).evaluate(_inp(trace=None))
         assert scores == {}
         assert skip == SkippedReason.missing_trace
         assert detail is not None
 
-    def test_empty_trace(self):
+    @pytest.mark.asyncio
+    async def test_empty_trace(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", min_count=0, max_count=0)
         )
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=[]))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=[]))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_only_min_bound(self):
+    @pytest.mark.asyncio
+    async def test_only_min_bound(self):
         cfg = _make_config(StepCountCheckProperties(count_type="turns", min_count=1))
         trace = _multi_turn_trace(n_user=10, n_assistant=10)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_only_max_bound(self):
+    @pytest.mark.asyncio
+    async def test_only_max_bound(self):
         cfg = _make_config(StepCountCheckProperties(count_type="turns", max_count=5))
         trace = _multi_turn_trace(n_user=3, n_assistant=3)
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_tool_call_only_assistant_counted_as_model_response(self):
+    @pytest.mark.asyncio
+    async def test_tool_call_only_assistant_counted_as_model_response(self):
         """A tool-call-only assistant message (no content) must count as a model_response."""
         trace = [
             {"role": "user", "content": "do something"},
@@ -181,6 +195,6 @@ class TestStepCountEdgeCases:
                 count_type="model_responses", min_count=1, max_count=1
             )
         )
-        scores, skip, _ = StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None

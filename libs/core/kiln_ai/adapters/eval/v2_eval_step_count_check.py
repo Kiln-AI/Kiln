@@ -19,7 +19,7 @@ class StepCountCheckEval(BaseV2Eval):
     - "turns": number of distinct user/assistant turn pairs (count of user messages)
     """
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         props = self.properties

@@ -40,14 +40,14 @@ from kiln_ai.datamodel.eval import (
 # Stub V2 adapter (test-only, never registered in prod)
 # ---------------------------------------------------------------------------
 class StubV2Eval(BaseV2Eval):
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         return {"stub_score": 1.0}, None, None
 
 
 class SkippingStubV2Eval(BaseV2Eval):
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         return {}, SkippedReason.extraction_failed, "test skip"
@@ -73,8 +73,8 @@ def _props_for_type(v2_type: V2EvalType):  # type: ignore[no-untyped-def]
             return StepCountCheckProperties(count_type="turns", min_count=1)
         case V2EvalType.llm_judge:
             return LlmJudgeProperties(
-                model_name="test-model",
-                model_provider="test-provider",
+                model_name="gpt-4o",
+                model_provider="openai",
                 prompt_template="test template",
             )
         case V2EvalType.code_eval:
@@ -120,15 +120,17 @@ class TestBaseV2EvalContract:
         with pytest.raises(TypeError, match="abstract"):
             BaseV2Eval(cfg)  # type: ignore[abstract]
 
-    def test_stub_evaluate(self):
+    @pytest.mark.asyncio
+    async def test_stub_evaluate(self):
         cfg = _mock_v2_eval_config()
         adapter = StubV2Eval(cfg)
-        scores, skip, detail = adapter.evaluate(_sample_eval_input())
+        scores, skip, detail = await adapter.evaluate(_sample_eval_input())
         assert scores == {"stub_score": 1.0}
         assert skip is None
         assert detail is None
 
-    def test_stub_receives_eval_task_input(self):
+    @pytest.mark.asyncio
+    async def test_stub_receives_eval_task_input(self):
         cfg = _mock_v2_eval_config()
         adapter = StubV2Eval(cfg)
         inp = _sample_eval_input(
@@ -137,7 +139,7 @@ class TestBaseV2EvalContract:
             reference_data={"key": "val"},
             task_input="some input",
         )
-        scores, skip, _detail = adapter.evaluate(inp)
+        scores, skip, _detail = await adapter.evaluate(inp)
         assert scores == {"stub_score": 1.0}
         assert skip is None
 
@@ -155,10 +157,11 @@ class TestBaseV2EvalContract:
         with pytest.raises(ValueError, match="V2 eval requires typed V2 properties"):
             StubV2Eval(cfg)
 
-    def test_skipping_stub_returns_skip(self):
+    @pytest.mark.asyncio
+    async def test_skipping_stub_returns_skip(self):
         cfg = _mock_v2_eval_config()
         adapter = SkippingStubV2Eval(cfg)
-        scores, skip, detail = adapter.evaluate(_sample_eval_input())
+        scores, skip, detail = await adapter.evaluate(_sample_eval_input())
         assert scores == {}
         assert skip == SkippedReason.extraction_failed
         assert detail == "test skip"
@@ -171,6 +174,7 @@ class TestV2Dispatch:
     def test_dispatch_all_registered_types(self):
         from kiln_ai.adapters.eval.v2_eval_contains import ContainsEval
         from kiln_ai.adapters.eval.v2_eval_exact_match import ExactMatchEval
+        from kiln_ai.adapters.eval.v2_eval_llm_judge import LlmJudgeEval
         from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
         from kiln_ai.adapters.eval.v2_eval_set_check import SetCheckEval
         from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
@@ -183,6 +187,7 @@ class TestV2Dispatch:
             V2EvalType.set_check: SetCheckEval,
             V2EvalType.tool_call_check: ToolCallCheckEval,
             V2EvalType.step_count_check: StepCountCheckEval,
+            V2EvalType.llm_judge: LlmJudgeEval,
         }
         for v2_type, expected_cls in expected_map.items():
             cfg = _mock_v2_eval_config(v2_type)
@@ -192,7 +197,7 @@ class TestV2Dispatch:
             )
 
     def test_dispatch_unregistered_types_raise(self):
-        for v2_type in (V2EvalType.llm_judge, V2EvalType.code_eval):
+        for v2_type in (V2EvalType.code_eval,):
             cfg = _mock_v2_eval_config(v2_type)
             with pytest.raises(NotImplementedError, match="not yet implemented"):
                 v2_eval_adapter_from_config(cfg)

@@ -16,7 +16,7 @@ from kiln_ai.datamodel.eval import (
 class PatternMatchEval(BaseV2Eval):
     """V2 adapter for pattern_match: tests an extracted value against a regex pattern."""
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         props = self.properties

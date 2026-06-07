@@ -422,7 +422,9 @@ class EvalRunner:
             task_input_str = eval_task_input.task_input or ""
             task_output = job.stored_output
 
-        scores, skipped_reason, skipped_detail = evaluator.evaluate(eval_task_input)
+        scores, skipped_reason, skipped_detail = await evaluator.evaluate(
+            eval_task_input
+        )
 
         async with self._save_context():
             eval_run = EvalRun(

@@ -3,6 +3,7 @@ from kiln_ai.adapters.eval.base_v2_eval import _V2_PROPERTY_TYPES, BaseV2Eval
 from kiln_ai.adapters.eval.g_eval import GEval
 from kiln_ai.adapters.eval.v2_eval_contains import ContainsEval
 from kiln_ai.adapters.eval.v2_eval_exact_match import ExactMatchEval
+from kiln_ai.adapters.eval.v2_eval_llm_judge import LlmJudgeEval
 from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
 from kiln_ai.adapters.eval.v2_eval_set_check import SetCheckEval
 from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
@@ -17,6 +18,7 @@ _V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2Eval]] = {
     V2EvalType.set_check: SetCheckEval,
     V2EvalType.tool_call_check: ToolCallCheckEval,
     V2EvalType.step_count_check: StepCountCheckEval,
+    V2EvalType.llm_judge: LlmJudgeEval,
 }
 
 

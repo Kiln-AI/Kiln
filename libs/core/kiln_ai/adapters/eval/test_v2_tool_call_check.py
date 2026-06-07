@@ -63,18 +63,20 @@ def _trace_with_tool_calls(
 
 
 class TestToolCallCheckAllMode:
-    def test_pass(self):
+    @pytest.mark.asyncio
+    async def test_pass(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="search")],
             )
         )
         trace = _trace_with_tool_calls(("search", {"q": "hi"}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -84,13 +86,14 @@ class TestToolCallCheckAllMode:
             )
         )
         trace = _trace_with_tool_calls(("search", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestToolCallCheckAnyMode:
-    def test_pass(self):
+    @pytest.mark.asyncio
+    async def test_pass(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -101,11 +104,12 @@ class TestToolCallCheckAnyMode:
             )
         )
         trace = _trace_with_tool_calls(("search", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -116,13 +120,14 @@ class TestToolCallCheckAnyMode:
             )
         )
         trace = _trace_with_tool_calls(("unrelated", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestToolCallCheckOrderedMode:
-    def test_pass(self):
+    @pytest.mark.asyncio
+    async def test_pass(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -133,11 +138,12 @@ class TestToolCallCheckOrderedMode:
             )
         )
         trace = _trace_with_tool_calls(("search", {}), ("other", {}), ("fetch", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -148,13 +154,14 @@ class TestToolCallCheckOrderedMode:
             )
         )
         trace = _trace_with_tool_calls(("fetch", {}), ("search", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestToolCallCheckNeverMode:
-    def test_pass(self):
+    @pytest.mark.asyncio
+    async def test_pass(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="delete")],
@@ -162,11 +169,12 @@ class TestToolCallCheckNeverMode:
             )
         )
         trace = _trace_with_tool_calls(("search", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="delete")],
@@ -174,13 +182,14 @@ class TestToolCallCheckNeverMode:
             )
         )
         trace = _trace_with_tool_calls(("delete", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
 
 class TestToolCallCheckUnexpectedTools:
-    def test_on_unexpected_fail(self):
+    @pytest.mark.asyncio
+    async def test_on_unexpected_fail(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="search")],
@@ -188,11 +197,12 @@ class TestToolCallCheckUnexpectedTools:
             )
         )
         trace = _trace_with_tool_calls(("search", {}), ("other", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
-    def test_on_unexpected_ignore(self):
+    @pytest.mark.asyncio
+    async def test_on_unexpected_ignore(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="search")],
@@ -200,13 +210,14 @@ class TestToolCallCheckUnexpectedTools:
             )
         )
         trace = _trace_with_tool_calls(("search", {}), ("other", {}))
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
 
 class TestToolCallCheckArgMatch:
-    def test_exact(self):
+    @pytest.mark.asyncio
+    async def test_exact(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -218,10 +229,11 @@ class TestToolCallCheckArgMatch:
             )
         )
         trace = _trace_with_tool_calls(("search", {"query": "test"}))
-        scores, _skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, _skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
 
-    def test_contains(self):
+    @pytest.mark.asyncio
+    async def test_contains(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -235,10 +247,11 @@ class TestToolCallCheckArgMatch:
             )
         )
         trace = _trace_with_tool_calls(("search", {"query": "this is a test query"}))
-        scores, _skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, _skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
 
-    def test_regex(self):
+    @pytest.mark.asyncio
+    async def test_regex(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -252,10 +265,11 @@ class TestToolCallCheckArgMatch:
             )
         )
         trace = _trace_with_tool_calls(("search", {"query": "item 42"}))
-        scores, _skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, _skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
 
-    def test_fail(self):
+    @pytest.mark.asyncio
+    async def test_fail(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -267,33 +281,36 @@ class TestToolCallCheckArgMatch:
             )
         )
         trace = _trace_with_tool_calls(("search", {"query": "other"}))
-        scores, _skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, _skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
 
 
 class TestToolCallCheckEdgeCases:
-    def test_missing_trace_skips(self):
+    @pytest.mark.asyncio
+    async def test_missing_trace_skips(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="search")],
             )
         )
-        scores, skip, detail = ToolCallCheckEval(cfg).evaluate(_inp(trace=None))
+        scores, skip, detail = await ToolCallCheckEval(cfg).evaluate(_inp(trace=None))
         assert scores == {}
         assert skip == SkippedReason.missing_trace
         assert detail is not None
 
-    def test_empty_trace(self):
+    @pytest.mark.asyncio
+    async def test_empty_trace(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="search")],
             )
         )
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=[]))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=[]))
         assert scores == {"score_a": 0.0}
         assert skip is None
 
-    def test_multiple_assistant_messages(self):
+    @pytest.mark.asyncio
+    async def test_multiple_assistant_messages(self):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[
@@ -332,16 +349,17 @@ class TestToolCallCheckEdgeCases:
                 ],
             },
         ]
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "args_str",
         ["not valid json", "", None],
         ids=["invalid_json", "empty_string", "none"],
     )
-    def test_malformed_arguments_handled(self, args_str: str | None):
+    async def test_malformed_arguments_handled(self, args_str: str | None):
         cfg = _make_config(
             ToolCallCheckProperties(
                 expected_tools=[ToolCallSpec(tool_name="search")],
@@ -360,6 +378,6 @@ class TestToolCallCheckEdgeCases:
                 ],
             },
         ]
-        scores, skip, _ = ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 1.0}
         assert skip is None

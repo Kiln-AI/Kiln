@@ -15,7 +15,7 @@ from kiln_ai.datamodel.eval import (
 class ContainsEval(BaseV2Eval):
     """V2 adapter for contains: checks whether the extracted value contains a substring."""
 
-    def evaluate(
+    async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         props = self.properties
