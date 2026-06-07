@@ -78,7 +78,9 @@ def _props_for_type(v2_type: V2EvalType):  # type: ignore[no-untyped-def]
                 prompt_template="test template",
             )
         case V2EvalType.code_eval:
-            return CodeEvalProperties(code="pass")
+            return CodeEvalProperties(
+                code="def score(output, trace, reference_data, task_input, kiln):\n    return {'score': 1.0}\n"
+            )
         case _:
             return ExactMatchProperties(expected_value="test")
 
@@ -172,6 +174,7 @@ class TestBaseV2EvalContract:
 # ===================================================================
 class TestV2Dispatch:
     def test_dispatch_all_registered_types(self):
+        from kiln_ai.adapters.eval.v2_eval_code_eval import CodeEvalAdapter
         from kiln_ai.adapters.eval.v2_eval_contains import ContainsEval
         from kiln_ai.adapters.eval.v2_eval_exact_match import ExactMatchEval
         from kiln_ai.adapters.eval.v2_eval_llm_judge import LlmJudgeEval
@@ -188,6 +191,7 @@ class TestV2Dispatch:
             V2EvalType.tool_call_check: ToolCallCheckEval,
             V2EvalType.step_count_check: StepCountCheckEval,
             V2EvalType.llm_judge: LlmJudgeEval,
+            V2EvalType.code_eval: CodeEvalAdapter,
         }
         for v2_type, expected_cls in expected_map.items():
             cfg = _mock_v2_eval_config(v2_type)
@@ -195,12 +199,6 @@ class TestV2Dispatch:
             assert isinstance(adapter, expected_cls), (
                 f"Expected {expected_cls.__name__} for {v2_type}, got {type(adapter).__name__}"
             )
-
-    def test_dispatch_unregistered_types_raise(self):
-        for v2_type in (V2EvalType.code_eval,):
-            cfg = _mock_v2_eval_config(v2_type)
-            with pytest.raises(NotImplementedError, match="not yet implemented"):
-                v2_eval_adapter_from_config(cfg)
 
     def test_with_monkeypatched_stub(self, monkeypatch):
         monkeypatch.setitem(_V2_ADAPTER_MAP, V2EvalType.exact_match, StubV2Eval)

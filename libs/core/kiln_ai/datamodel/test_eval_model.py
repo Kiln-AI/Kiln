@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.eval import (
+    CodeEvalProperties,
     ContainsProperties,
     Eval,
     EvalConfig,
@@ -2608,3 +2609,52 @@ class TestV2TemplateValidation:
         cfg = _make_v2_eval_config(properties=props)
         assert hasattr(cfg.properties, "value_expression")
         assert cfg.properties.value_expression == "final_message"  # type: ignore[union-attr]
+
+
+class TestCodeEvalPropertiesValidation:
+    VALID_CODE = "def score(output, trace, reference_data, task_input, helpers):\n    return {'accuracy': 1.0}\n"
+
+    def test_valid_code(self):
+        props = CodeEvalProperties(code=self.VALID_CODE)
+        assert props.code == self.VALID_CODE
+        assert props.timeout_seconds == 30
+
+    def test_custom_timeout(self):
+        props = CodeEvalProperties(code=self.VALID_CODE, timeout_seconds=120)
+        assert props.timeout_seconds == 120
+
+    def test_timeout_min_boundary(self):
+        with pytest.raises(ValidationError):
+            CodeEvalProperties(code=self.VALID_CODE, timeout_seconds=0)
+
+    def test_timeout_max_boundary(self):
+        with pytest.raises(ValidationError):
+            CodeEvalProperties(code=self.VALID_CODE, timeout_seconds=301)
+
+    def test_syntax_error_rejected(self):
+        with pytest.raises(ValidationError, match="syntax error"):
+            CodeEvalProperties(code="def score(:\n")
+
+    def test_missing_score_function_rejected(self):
+        with pytest.raises(ValidationError, match="module-level 'score' function"):
+            CodeEvalProperties(code="def not_score(output):\n    return {}\n")
+
+    def test_code_too_large(self):
+        big_code = (
+            "def score(output, trace, reference_data, task_input, helpers):\n    return {'x': 1.0}\n"
+            + ("# padding\n" * 10000)
+        )
+        if len(big_code.encode("utf-8")) <= 64 * 1024:
+            big_code = big_code + " " * (64 * 1024 + 1)
+        with pytest.raises(ValidationError, match="too large"):
+            CodeEvalProperties(code=big_code)
+
+    def test_nested_score_function_rejected(self):
+        code = "def wrapper():\n    def score(output, trace, reference_data, task_input, helpers):\n        return {}\n"
+        with pytest.raises(ValidationError, match="module-level 'score' function"):
+            CodeEvalProperties(code=code)
+
+    def test_async_score_function_accepted(self):
+        code = "async def score(output, trace, reference_data, task_input, helpers):\n    return {'accuracy': 1.0}\n"
+        props = CodeEvalProperties(code=code)
+        assert props.code == code

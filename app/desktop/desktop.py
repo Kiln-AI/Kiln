@@ -181,6 +181,11 @@ def desktop_release_name() -> str:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+    multiprocessing.set_start_method("spawn", force=True)
+
     # Sentry is gated on DSN presence: CI bakes it into _sentry_config.py for
     # release builds, dev/test builds leave it None and init is skipped.
     if SENTRY_DSN:

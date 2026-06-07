@@ -27,7 +27,7 @@ The phasing is derived from the V2 design's Stage-6 roadmap. Data model first (e
 - [x] **Phase 4 — Enhanced `llm_judge` + RAG judge templates.**
   Enhanced `llm_judge` per `components/21`: per-criterion pass/fail, trace condensation, reference-data templating, `g_eval` toggle, structured output. **Wire it to the fixed `SingleTurnR1ThinkingFormatter`** (`forward_thinking_instructions=True`) from Phase 1; add coverage proving reasoning-model judges receive the criteria. Then the 6 first-party RAG `llm_judge` templates per `components/29` (pure content over the reference-key contract — faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness).
 
-- [ ] **Phase 5 — `code_eval` (Beta).**
+- [x] **Phase 5 — `code_eval` (Beta).**
   Per `components/27` (B.13): `sandbox_worker.py` (`_execute_scorer` + `run_scorer`) in a `multiprocessing` spawn worker with `freeze_support()`; `CodeEvalAdapter` through the V2 registry; scorer contract (`def score(output, trace, reference_data, task_input, kiln) -> dict[str, float]`) + helper library; return-shape validation; wall-clock timeout (`p.join`/`p.kill`); optional `setrlimit` (P2, cut if complex); trust-gate enforcement (`CodeEvalNotTrustedError`); documented limitations (network/FS open, trust-gate-only). Include the cold-start spike on the real bundle.
 
 - [ ] **Phase 6 — Create + view UI.**

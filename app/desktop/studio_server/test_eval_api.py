@@ -3518,3 +3518,44 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
 
     assert response.status_code == 200
     assert runs_call_count == 1
+
+
+class TestCodeEvalTrustEndpoints:
+    @pytest.fixture(autouse=True)
+    def _clear_trust(self):
+        from kiln_ai.adapters.eval.v2_eval_code_eval import _trusted_projects
+
+        _trusted_projects.clear()
+        yield
+        _trusted_projects.clear()
+
+    def test_grant_trust(self, client):
+        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+            mock_proj.return_value = Mock()
+            response = client.post("/api/projects/proj-1/grant_code_eval_trust")
+
+        assert response.status_code == 200
+        assert response.json() == {"trusted": True}
+
+    def test_grant_trust_invalid_project(self, client):
+        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+            mock_proj.side_effect = HTTPException(status_code=404, detail="Not found")
+            response = client.post("/api/projects/bad-id/grant_code_eval_trust")
+
+        assert response.status_code == 404
+
+    def test_check_trust_untrusted(self, client):
+        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+            mock_proj.return_value = Mock()
+            response = client.get("/api/projects/proj-1/code_eval_trust")
+        assert response.status_code == 200
+        assert response.json() == {"trusted": False}
+
+    def test_check_trust_after_grant(self, client):
+        mock_project = Mock()
+        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+            mock_proj.return_value = mock_project
+            client.post("/api/projects/proj-1/grant_code_eval_trust")
+            response = client.get("/api/projects/proj-1/code_eval_trust")
+        assert response.status_code == 200
+        assert response.json() == {"trusted": True}

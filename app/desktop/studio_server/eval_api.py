@@ -1647,3 +1647,40 @@ def connect_evals_api(app: FastAPI):
             eval_results=eval_results,
             mean_usage=mean_usage,
         )
+
+    @app.post(
+        "/api/projects/{project_id}/grant_code_eval_trust",
+        summary="Grant code eval trust for a project",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def grant_code_eval_trust_endpoint(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> dict[str, bool]:
+        from kiln_server.project_api import project_from_id
+
+        project = project_from_id(project_id)
+        from kiln_ai.adapters.eval.v2_eval_code_eval import grant_code_eval_trust
+
+        grant_code_eval_trust(str(project.path))
+        return {"trusted": True}
+
+    @app.get(
+        "/api/projects/{project_id}/code_eval_trust",
+        summary="Check code eval trust for a project",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def check_code_eval_trust_endpoint(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> dict[str, bool]:
+        from kiln_server.project_api import project_from_id
+
+        project = project_from_id(project_id)
+        from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
+
+        return {"trusted": is_code_eval_trusted(str(project.path))}

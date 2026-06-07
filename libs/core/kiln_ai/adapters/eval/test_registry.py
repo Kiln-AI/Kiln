@@ -39,7 +39,9 @@ _V2_TYPE_TO_PROPS = {
     V2EvalType.step_count_check: StepCountCheckProperties(
         count_type="tool_calls", min_count=1
     ),
-    V2EvalType.code_eval: CodeEvalProperties(code="pass"),
+    V2EvalType.code_eval: CodeEvalProperties(
+        code="def score(output, trace, reference_data, task_input, kiln):\n    return {'score': 1.0}\n"
+    ),
 }
 
 
@@ -85,10 +87,6 @@ class TestEvalAdapterFromType:
 
 
 class TestV2EvalAdapterFromConfig:
-    _UNIMPLEMENTED_V2_TYPES: ClassVar[list[V2EvalType]] = [
-        V2EvalType.code_eval,
-    ]
-
     _IMPLEMENTED_V2_TYPES: ClassVar[list[V2EvalType]] = [
         V2EvalType.exact_match,
         V2EvalType.pattern_match,
@@ -97,13 +95,8 @@ class TestV2EvalAdapterFromConfig:
         V2EvalType.tool_call_check,
         V2EvalType.step_count_check,
         V2EvalType.llm_judge,
+        V2EvalType.code_eval,
     ]
-
-    @pytest.mark.parametrize("v2_type", _UNIMPLEMENTED_V2_TYPES)
-    def test_v2_dispatch_unimplemented_types(self, v2_type: V2EvalType):
-        cfg = _mock_v2_eval_config(v2_type)
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            v2_eval_adapter_from_config(cfg)
 
     @pytest.mark.parametrize("v2_type", _IMPLEMENTED_V2_TYPES)
     def test_v2_dispatch_implemented_types(self, v2_type: V2EvalType):

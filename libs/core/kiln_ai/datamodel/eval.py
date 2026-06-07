@@ -191,6 +191,38 @@ class StepCountCheckProperties(BaseModel):
 class CodeEvalProperties(BaseModel):
     type: Literal[V2EvalType.code_eval] = V2EvalType.code_eval
     code: str
+    timeout_seconds: int = Field(default=30, ge=1, le=300)
+
+    @model_validator(mode="after")
+    def validate_code(self) -> Self:
+        code_bytes = self.code.encode("utf-8")
+        if len(code_bytes) > 64 * 1024:
+            raise ValueError(
+                f"Code is too large ({len(code_bytes)} bytes). Maximum size is 64KB."
+            )
+
+        try:
+            compile(self.code, "<code_eval>", "exec")
+        except SyntaxError as e:
+            raise ValueError(f"Code has a syntax error: {e}") from e
+
+        import ast
+
+        try:
+            tree = ast.parse(self.code)
+            has_score_fn = any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "score"
+                for node in ast.iter_child_nodes(tree)
+            )
+            if not has_score_fn:
+                raise ValueError(
+                    "Code must define a module-level 'score' function (def score(...))."
+                )
+        except SyntaxError:
+            pass
+
+        return self
 
 
 V2EvalConfigProperties = Annotated[
