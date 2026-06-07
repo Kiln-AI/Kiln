@@ -21,7 +21,7 @@ The phasing is derived from the V2 design's Stage-6 roadmap. Data model first (e
 - [x] **Phase 2 — Template + extraction layer + V2 runner backbone.**
   Eval consumer over the landed `input_transform` infra per `components/40`: `EvalTaskInput` assembly, `extract()` usage, `required_var` skip-with-reason pre-check, save-time template/expression compilation. V2 runner per `components/45`: EvalInput flow, two-level adapter dispatch (`config_type` → `properties.type`), multi-config orchestration, missing-reference skip handling, `EvalRunner.__init__` source branching (C.runner.3), TaskRun→EvalInput runtime translation (B2.1). Per-type adapter contract scaffolding per `components/20`. Reference-data consumption per `components/50`. Score provenance / skip records per `components/85`.
 
-- [ ] **Phase 3 — Deterministic + agent eval types.**
+- [x] **Phase 3 — Deterministic + agent eval types.**
   The six config-driven types per `components/22`: `exact_match`, `pattern_match`, `contains`, `set_check`, `tool_call_check` (J.37 expanded shape), `step_count_check` (J.38). Each as a V2 adapter plugged into the Phase-2 dispatch, consuming the `extract()` layer. Detail for the agent types: `reference/batch_agent_eval_expansion.md`.
 
 - [ ] **Phase 4 — Enhanced `llm_judge` + RAG judge templates.**

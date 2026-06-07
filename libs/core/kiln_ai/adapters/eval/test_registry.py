@@ -1,3 +1,4 @@
+from typing import ClassVar
 from unittest.mock import Mock
 
 import pytest
@@ -84,11 +85,31 @@ class TestEvalAdapterFromType:
 
 
 class TestV2EvalAdapterFromConfig:
-    @pytest.mark.parametrize("v2_type", list(V2EvalType))
-    def test_v2_dispatch_all_types_unimplemented(self, v2_type: V2EvalType):
+    _UNIMPLEMENTED_V2_TYPES: ClassVar[list[V2EvalType]] = [
+        V2EvalType.llm_judge,
+        V2EvalType.code_eval,
+    ]
+
+    _IMPLEMENTED_V2_TYPES: ClassVar[list[V2EvalType]] = [
+        V2EvalType.exact_match,
+        V2EvalType.pattern_match,
+        V2EvalType.contains,
+        V2EvalType.set_check,
+        V2EvalType.tool_call_check,
+        V2EvalType.step_count_check,
+    ]
+
+    @pytest.mark.parametrize("v2_type", _UNIMPLEMENTED_V2_TYPES)
+    def test_v2_dispatch_unimplemented_types(self, v2_type: V2EvalType):
         cfg = _mock_v2_eval_config(v2_type)
         with pytest.raises(NotImplementedError, match="not yet implemented"):
             v2_eval_adapter_from_config(cfg)
+
+    @pytest.mark.parametrize("v2_type", _IMPLEMENTED_V2_TYPES)
+    def test_v2_dispatch_implemented_types(self, v2_type: V2EvalType):
+        cfg = _mock_v2_eval_config(v2_type)
+        adapter = v2_eval_adapter_from_config(cfg)
+        assert adapter is not None
 
     def test_v2_dispatch_rejects_legacy_config(self):
         cfg = _mock_eval_config(EvalConfigType.g_eval)

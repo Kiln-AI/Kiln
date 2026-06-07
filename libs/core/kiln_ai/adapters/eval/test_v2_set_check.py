@@ -1,0 +1,230 @@
+"""Tests for SetCheckEval adapter."""
+
+from unittest.mock import Mock
+
+import pytest
+
+from kiln_ai.adapters.eval.v2_eval_set_check import SetCheckEval
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    EvalConfig,
+    EvalConfigType,
+    EvalOutputScore,
+    EvalTaskInput,
+    SetCheckProperties,
+    SkippedReason,
+)
+
+
+def _make_config(props: SetCheckProperties) -> EvalConfig:
+    parent = Mock()
+    parent.output_scores = [
+        EvalOutputScore(
+            name="score_a", instruction="a", type=TaskOutputRatingType.pass_fail
+        ),
+    ]
+    cfg = Mock(spec=EvalConfig)
+    cfg.config_type = EvalConfigType.v2
+    cfg.properties = props
+    cfg.parent_eval.return_value = parent
+    return cfg
+
+
+def _inp(**overrides) -> EvalTaskInput:
+    defaults: dict = {
+        "final_message": '["a", "b"]',
+        "trace": None,
+        "reference_data": None,
+        "task_input": None,
+    }
+    defaults.update(overrides)
+    return EvalTaskInput(**defaults)
+
+
+class TestSetCheckSubset:
+    def test_pass_subset(self):
+        cfg = _make_config(
+            SetCheckProperties(expected_set=["a", "b", "c"], mode="subset")
+        )
+        scores, skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 1.0}
+        assert skip is None
+
+    def test_fail_subset(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="subset"))
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 0.0}
+
+    def test_equal_sets_pass_subset(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="subset"))
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 1.0}
+
+
+class TestSetCheckSuperset:
+    def test_pass_superset(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="superset"))
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 1.0}
+
+    def test_fail_superset(self):
+        cfg = _make_config(
+            SetCheckProperties(expected_set=["a", "b", "c"], mode="superset")
+        )
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 0.0}
+
+
+class TestSetCheckEqual:
+    def test_pass_equal(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="equal"))
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 1.0}
+
+    def test_fail_equal_extra(self):
+        cfg = _make_config(
+            SetCheckProperties(expected_set=["a", "b", "c"], mode="equal")
+        )
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 0.0}
+
+    def test_fail_equal_missing(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="equal"))
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {"score_a": 0.0}
+
+
+class TestSetCheckCoercion:
+    def test_string_json_list(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["x", "y"], mode="equal"))
+        inp = _inp(final_message='["x", "y"]')
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+
+    def test_string_non_json_becomes_single_element(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["hello"], mode="equal"))
+        inp = _inp(final_message="hello")
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+
+    def test_dict_keys(self):
+        cfg = _make_config(
+            SetCheckProperties(
+                expected_set=["a", "b"],
+                mode="equal",
+                value_expression="reference_data",
+            )
+        )
+        inp = _inp(reference_data={"a": 1, "b": 2})
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+
+    def test_list_value_via_expression(self):
+        cfg = _make_config(
+            SetCheckProperties(
+                expected_set=["x", "y"],
+                mode="equal",
+                value_expression="trace[0].elements",
+            )
+        )
+        inp = _inp(trace=[{"elements": ["x", "y"]}])
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+
+    def test_numeric_list_stringified(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["1", "2"], mode="equal"))
+        inp = _inp(final_message="[1, 2]")
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+
+
+class TestSetCheckReferenceKey:
+    def test_pass_with_reference_key(self):
+        cfg = _make_config(SetCheckProperties(reference_key="expected", mode="equal"))
+        inp = _inp(
+            final_message='["a", "b"]',
+            reference_data={"expected": ["a", "b"]},
+        )
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+
+    def test_missing_reference_data(self):
+        cfg = _make_config(SetCheckProperties(reference_key="expected", mode="equal"))
+        scores, skip, _detail = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {}
+        assert skip == SkippedReason.missing_reference_key
+
+    def test_missing_reference_key_in_data(self):
+        cfg = _make_config(SetCheckProperties(reference_key="expected", mode="equal"))
+        inp = _inp(reference_data={"other": "val"})
+        scores, skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {}
+        assert skip == SkippedReason.missing_reference_key
+
+
+class TestSetCheckExpression:
+    def test_undefined_expression_skips(self):
+        cfg = _make_config(
+            SetCheckProperties(
+                expected_set=["a"],
+                value_expression="nonexistent_field",
+                mode="equal",
+            )
+        )
+        scores, skip, _detail = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {}
+        assert skip == SkippedReason.extraction_failed
+
+
+class TestSetCheckNoScores:
+    def test_no_parent_eval_returns_empty(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="equal"))
+        cfg.parent_eval.return_value = None
+        scores, skip, _ = SetCheckEval(cfg).evaluate(_inp())
+        assert scores == {}
+        assert skip is None
+
+
+class TestSetCheckEmptySet:
+    def test_empty_subset_passes(self):
+        cfg = _make_config(SetCheckProperties(expected_set=[], mode="subset"))
+        inp = _inp(final_message="[]")
+        scores, skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+        assert skip is None
+
+    def test_empty_superset_of_nonempty_fails(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="superset"))
+        inp = _inp(final_message="[]")
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 0.0}
+
+    def test_empty_equal_to_empty(self):
+        cfg = _make_config(SetCheckProperties(expected_set=[], mode="equal"))
+        inp = _inp(final_message="[]")
+        scores, skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 1.0}
+        assert skip is None
+
+    def test_empty_not_equal_to_nonempty(self):
+        cfg = _make_config(SetCheckProperties(expected_set=["a"], mode="equal"))
+        inp = _inp(final_message="[]")
+        scores, _skip, _ = SetCheckEval(cfg).evaluate(inp)
+        assert scores == {"score_a": 0.0}
+
+
+class TestCoerceToSetStatic:
+    @pytest.mark.parametrize(
+        "input_val, expected",
+        [
+            (["a", "b"], {"a", "b"}),
+            ({"x": 1, "y": 2}, {"x", "y"}),
+            ('["a", "b"]', {"a", "b"}),
+            ("plain", {"plain"}),
+            ([1, 2, 3], {"1", "2", "3"}),
+            (42, {"42"}),
+            (set(["a", "b"]), {"a", "b"}),
+        ],
+    )
+    def test_coerce(self, input_val, expected):
+        assert SetCheckEval._coerce_to_set(input_val) == expected

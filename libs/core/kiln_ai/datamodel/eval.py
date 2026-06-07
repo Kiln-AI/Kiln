@@ -110,6 +110,16 @@ class PatternMatchProperties(BaseModel):
     pattern: str
     mode: Literal["must_match", "must_not_match"] = "must_match"
 
+    @model_validator(mode="after")
+    def validate_pattern(self) -> Self:
+        import re
+
+        try:
+            re.compile(self.pattern)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern '{self.pattern}': {e}") from e
+        return self
+
 
 class ContainsProperties(BaseModel):
     type: Literal[V2EvalType.contains] = V2EvalType.contains

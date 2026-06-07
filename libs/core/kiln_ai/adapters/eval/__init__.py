@@ -15,14 +15,28 @@ The datamodel for Evals is in the `kiln_ai.datamodel.eval` module.
 
 from . import (
     base_eval,
+    base_v2_eval,
     eval_runner,
     g_eval,
     registry,
+    v2_eval_contains,
+    v2_eval_exact_match,
+    v2_eval_pattern_match,
+    v2_eval_set_check,
+    v2_eval_step_count_check,
+    v2_eval_tool_call_check,
 )
 
 __all__ = [
     "base_eval",
+    "base_v2_eval",
     "eval_runner",
     "g_eval",
     "registry",
+    "v2_eval_contains",
+    "v2_eval_exact_match",
+    "v2_eval_pattern_match",
+    "v2_eval_set_check",
+    "v2_eval_step_count_check",
+    "v2_eval_tool_call_check",
 ]

@@ -16,13 +16,22 @@ from kiln_ai.adapters.eval.registry import (
     eval_adapter_from_type,
     v2_eval_adapter_from_config,
 )
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
+    CodeEvalProperties,
+    ContainsProperties,
     EvalConfig,
     EvalConfigType,
+    EvalOutputScore,
     EvalScores,
     EvalTaskInput,
     ExactMatchProperties,
+    LlmJudgeProperties,
+    PatternMatchProperties,
+    SetCheckProperties,
     SkippedReason,
+    StepCountCheckProperties,
+    ToolCallCheckProperties,
     V2EvalType,
 )
 
@@ -47,11 +56,47 @@ class SkippingStubV2Eval(BaseV2Eval):
 # ---------------------------------------------------------------------------
 # Helpers for building mock configs
 # ---------------------------------------------------------------------------
+def _props_for_type(v2_type: V2EvalType):  # type: ignore[no-untyped-def]
+    """Return minimal valid properties for a given V2EvalType."""
+    match v2_type:
+        case V2EvalType.exact_match:
+            return ExactMatchProperties(expected_value="test")
+        case V2EvalType.pattern_match:
+            return PatternMatchProperties(pattern=".*")
+        case V2EvalType.contains:
+            return ContainsProperties(substring="test")
+        case V2EvalType.set_check:
+            return SetCheckProperties(expected_set=["a"], mode="equal")
+        case V2EvalType.tool_call_check:
+            return ToolCallCheckProperties(expected_tools=[])
+        case V2EvalType.step_count_check:
+            return StepCountCheckProperties(count_type="turns", min_count=1)
+        case V2EvalType.llm_judge:
+            return LlmJudgeProperties(
+                model_name="test-model",
+                model_provider="test-provider",
+                prompt_template="test template",
+            )
+        case V2EvalType.code_eval:
+            return CodeEvalProperties(code="pass")
+        case _:
+            return ExactMatchProperties(expected_value="test")
+
+
 def _mock_v2_eval_config(v2_type: V2EvalType = V2EvalType.exact_match) -> EvalConfig:
-    props = ExactMatchProperties(expected_value="test")
+    props = _props_for_type(v2_type)
     cfg = Mock(spec=EvalConfig)
     cfg.config_type = EvalConfigType.v2
     cfg.properties = props
+    cfg.parent_eval.return_value = Mock(
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                instruction="s",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ]
+    )
     return cfg
 
 
@@ -123,10 +168,34 @@ class TestBaseV2EvalContract:
 # Dispatch tests
 # ===================================================================
 class TestV2Dispatch:
-    def test_empty_map_raises(self):
-        cfg = _mock_v2_eval_config(V2EvalType.exact_match)
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            v2_eval_adapter_from_config(cfg)
+    def test_dispatch_all_registered_types(self):
+        from kiln_ai.adapters.eval.v2_eval_contains import ContainsEval
+        from kiln_ai.adapters.eval.v2_eval_exact_match import ExactMatchEval
+        from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
+        from kiln_ai.adapters.eval.v2_eval_set_check import SetCheckEval
+        from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
+        from kiln_ai.adapters.eval.v2_eval_tool_call_check import ToolCallCheckEval
+
+        expected_map: dict[V2EvalType, type[BaseV2Eval]] = {
+            V2EvalType.exact_match: ExactMatchEval,
+            V2EvalType.pattern_match: PatternMatchEval,
+            V2EvalType.contains: ContainsEval,
+            V2EvalType.set_check: SetCheckEval,
+            V2EvalType.tool_call_check: ToolCallCheckEval,
+            V2EvalType.step_count_check: StepCountCheckEval,
+        }
+        for v2_type, expected_cls in expected_map.items():
+            cfg = _mock_v2_eval_config(v2_type)
+            adapter = v2_eval_adapter_from_config(cfg)
+            assert isinstance(adapter, expected_cls), (
+                f"Expected {expected_cls.__name__} for {v2_type}, got {type(adapter).__name__}"
+            )
+
+    def test_dispatch_unregistered_types_raise(self):
+        for v2_type in (V2EvalType.llm_judge, V2EvalType.code_eval):
+            cfg = _mock_v2_eval_config(v2_type)
+            with pytest.raises(NotImplementedError, match="not yet implemented"):
+                v2_eval_adapter_from_config(cfg)
 
     def test_with_monkeypatched_stub(self, monkeypatch):
         monkeypatch.setitem(_V2_ADAPTER_MAP, V2EvalType.exact_match, StubV2Eval)

@@ -1,10 +1,23 @@
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.base_v2_eval import _V2_PROPERTY_TYPES, BaseV2Eval
 from kiln_ai.adapters.eval.g_eval import GEval
+from kiln_ai.adapters.eval.v2_eval_contains import ContainsEval
+from kiln_ai.adapters.eval.v2_eval_exact_match import ExactMatchEval
+from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
+from kiln_ai.adapters.eval.v2_eval_set_check import SetCheckEval
+from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
+from kiln_ai.adapters.eval.v2_eval_tool_call_check import ToolCallCheckEval
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, V2EvalType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
-_V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2Eval]] = {}
+_V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2Eval]] = {
+    V2EvalType.exact_match: ExactMatchEval,
+    V2EvalType.pattern_match: PatternMatchEval,
+    V2EvalType.contains: ContainsEval,
+    V2EvalType.set_check: SetCheckEval,
+    V2EvalType.tool_call_check: ToolCallCheckEval,
+    V2EvalType.step_count_check: StepCountCheckEval,
+}
 
 
 def eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
