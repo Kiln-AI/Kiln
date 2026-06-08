@@ -187,6 +187,68 @@ class TestToolCallCheckNeverMode:
         assert skip is None
 
 
+class TestToolCallCheckNeverModeWithArgs:
+    @pytest.mark.asyncio
+    async def test_never_with_matching_args_fails(self):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[
+                    ToolCallSpec(
+                        tool_name="delete_database",
+                        expected_args={
+                            "force": ArgMatch(value=True, match_mode="exact")
+                        },
+                    )
+                ],
+                match_mode="never",
+            )
+        )
+        trace = _trace_with_tool_calls(("delete_database", {"force": True}))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert scores == {"score_a": 0.0}
+        assert skip is None
+
+    @pytest.mark.asyncio
+    async def test_never_with_non_matching_args_passes(self):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[
+                    ToolCallSpec(
+                        tool_name="delete_database",
+                        expected_args={
+                            "force": ArgMatch(value=True, match_mode="exact")
+                        },
+                    )
+                ],
+                match_mode="never",
+            )
+        )
+        trace = _trace_with_tool_calls(("delete_database", {"force": False}))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert scores == {"score_a": 1.0}
+        assert skip is None
+
+    @pytest.mark.asyncio
+    async def test_never_with_args_different_tool_passes(self):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[
+                    ToolCallSpec(
+                        tool_name="delete_database",
+                        expected_args={
+                            "force": ArgMatch(value=True, match_mode="exact")
+                        },
+                    )
+                ],
+                match_mode="never",
+            )
+        )
+        trace = _trace_with_tool_calls(("search", {"q": "hi"}))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert scores == {"score_a": 1.0}
+        assert skip is None
+
+
 class TestToolCallCheckUnexpectedTools:
     @pytest.mark.asyncio
     async def test_on_unexpected_fail(self):
@@ -199,6 +261,48 @@ class TestToolCallCheckUnexpectedTools:
         trace = _trace_with_tool_calls(("search", {}), ("other", {}))
         scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
         assert scores == {"score_a": 0.0}
+        assert skip is None
+
+    @pytest.mark.asyncio
+    async def test_on_unexpected_fail_with_args_mismatch(self):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[
+                    ToolCallSpec(
+                        tool_name="search",
+                        expected_args={
+                            "query": ArgMatch(value="foo", match_mode="exact")
+                        },
+                    )
+                ],
+                on_unexpected_tools="fail",
+            )
+        )
+        trace = _trace_with_tool_calls(
+            ("search", {"query": "foo"}), ("search", {"query": "bar"})
+        )
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert scores == {"score_a": 0.0}
+        assert skip is None
+
+    @pytest.mark.asyncio
+    async def test_on_unexpected_fail_all_args_match(self):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[
+                    ToolCallSpec(
+                        tool_name="search",
+                        expected_args={
+                            "query": ArgMatch(value="foo", match_mode="exact")
+                        },
+                    )
+                ],
+                on_unexpected_tools="fail",
+            )
+        )
+        trace = _trace_with_tool_calls(("search", {"query": "foo"}))
+        scores, skip, _ = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert scores == {"score_a": 1.0}
         assert skip is None
 
     @pytest.mark.asyncio

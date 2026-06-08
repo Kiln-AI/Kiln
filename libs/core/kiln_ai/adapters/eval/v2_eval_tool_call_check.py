@@ -77,10 +77,10 @@ class ToolCallCheckEval(BaseV2Eval):
         Returns (passed, unexpected_fail).
         """
         if match_mode == "never":
-            expected_names = {spec.tool_name for spec in expected_tools}
-            for call in actual_calls:
-                if call["name"] in expected_names:
-                    return False, False
+            for spec in expected_tools:
+                for call in actual_calls:
+                    if self._call_matches_spec(call, spec):
+                        return False, False
             return True, False
 
         if match_mode == "any":
@@ -111,9 +111,10 @@ class ToolCallCheckEval(BaseV2Eval):
 
         unexpected_fail = False
         if passed and on_unexpected == "fail":
-            expected_names = {spec.tool_name for spec in expected_tools}
             for call in actual_calls:
-                if call["name"] not in expected_names:
+                if not any(
+                    self._call_matches_spec(call, spec) for spec in expected_tools
+                ):
                     passed = False
                     unexpected_fail = True
                     break
