@@ -54,6 +54,10 @@ export type McpRunConfigProperties =
 export type RunConfigProperties =
   | KilnAgentRunConfigProperties
   | McpRunConfigProperties
+export type JinjaInputTransform = components["schemas"]["JinjaInputTransform"]
+export type InputTransform = NonNullable<
+  KilnAgentRunConfigProperties["input_transform"]
+>
 export type EvalResultSummary = components["schemas"]["EvalResultSummary"]
 export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
