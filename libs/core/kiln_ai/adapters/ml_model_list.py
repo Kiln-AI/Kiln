@@ -158,6 +158,7 @@ class ModelName(str, Enum):
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3_ultra = "nemotron_3_ultra"
     nemotron_3_super = "nemotron_3_super"
     nemotron_3_nano = "nemotron_3_nano"
     mixtral_8x7b = "mixtral_8x7b"
@@ -267,6 +268,7 @@ class ModelName(str, Enum):
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
+    stepfun_step3_7_flash = "stepfun_step3_7_flash"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
     mimo_v2_flash = "mimo_v2_flash"
@@ -3100,6 +3102,27 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=False,
+            ),
+        ],
+    ),
+    # Nemotron 3 Ultra
+    KilnModel(
+        family=ModelFamily.nemotron,
+        name=ModelName.nemotron_3_ultra,
+        friendly_name="Nemotron 3 Ultra",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3-ultra-550b-a55b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="nvidia/nemotron-3-ultra-550b-a55b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
             ),
         ],
     ),
@@ -7863,7 +7886,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # StepFun
+    # StepFun Step 3.7 Flash
+    KilnModel(
+        family=ModelFamily.stepfun,
+        name=ModelName.stepfun_step3_7_flash,
+        friendly_name="StepFun Step 3.7 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="stepfun/step-3.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_vision=True,
+            ),
+        ],
+    ),
+    # StepFun Step3 (deprecated)
     KilnModel(
         family=ModelFamily.stepfun,
         name=ModelName.stepfun_step3,
