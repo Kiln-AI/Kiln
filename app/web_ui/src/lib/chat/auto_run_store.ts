@@ -20,10 +20,12 @@ import {
   consumeSseStream,
   type ChatMessage,
   type StreamEvent,
+  type ToolCallsPendingItem,
 } from "./streaming_chat"
 
 export type EnableAutoRequest = components["schemas"]["EnableAutoRequest"]
 export type DeclineAutoRequest = components["schemas"]["DeclineAutoRequest"]
+export type ResolveAutoResponse = components["schemas"]["ResolveAutoResponse"]
 
 const AUTO_BASE_URL = `${base_url}/api/chat/auto`
 
@@ -45,12 +47,37 @@ export interface AutoRunChatSink {
   onToolExecutionStart: (toolCount: number) => void
   onToolExecutionEnd: (toolCount: number) => void
   onShowActivityIndicator: (show: boolean) => void
-  /** Auto mode turned off (done / asked_user / user_stopped / error / max_rounds). */
+  /**
+   * A burst started / is live (RUNNING). Lets the chat view drive the SAME
+   * loading affordances (thinking dots, animated icon) as interactive
+   * streaming while the runner works between events. ``false`` on burst end.
+   */
+  onWorkingChange: (working: boolean) => void
+  /** The runner echoed an injected user message; render it as a new user turn. */
+  onUserMessage: (content: string) => void
+  /**
+   * A burst ended but auto mode stays ON (asked_user / done / error /
+   * max_rounds). The indicator persists; only the working sub-state clears.
+   */
+  onAutoModeIdle: (reason: string | null) => void
+  /** Auto mode turned off for the conversation (user_stopped / user_disabled). */
   onAutoModeOff: (reason: string | null) => void
+  /**
+   * Graceful stop (functional spec §4.4(1)): the runner finished the in-flight
+   * turn and surfaced its client tool calls for approval instead of
+   * auto-executing them. Hand off to the EXISTING normal approval +
+   * /api/chat/execute-tools flow (the conversation is now in normal mode). The
+   * runner publishes auto-mode-off(user_stopped) alongside this, so the
+   * indicator clears on its own.
+   */
+  onToolCallsPending: (items: ToolCallsPendingItem[]) => void
 }
 
 export interface AutoRunStore {
+  /** Conversation auto-mode flag: ON across RUNNING and IDLE bursts. */
   autoModeOn: Readable<boolean>
+  /** Burst sub-state: a burst is actively running (vs idle, flag still on). */
+  working: Readable<boolean>
   runId: Readable<string | null>
   offReason: Readable<string | null>
   connection: Readable<AutoConnection>
@@ -59,7 +86,25 @@ export interface AutoRunStore {
     seed: EnableAutoRequest,
   ): Promise<{ ok: boolean; error?: string }>
   decline(req: DeclineAutoRequest): Promise<void>
+  /**
+   * Inject a user message into the live conversation WITHOUT disabling auto
+   * mode (Revision R1). Routes to ``POST /api/chat/auto/{run_id}/message``; the
+   * runner echoes the message + streams the resulting burst on the observer
+   * stream. Never stops the run.
+   */
+  sendMessage(
+    text: string,
+    traceId?: string,
+  ): Promise<{ ok: boolean; error?: string }>
   stop(): Promise<void>
+  /**
+   * Resolve a (possibly stale) trace id to the conversation's active auto run.
+   * Used to resync after a hard refresh: returns the run id plus the run's
+   * CURRENT leaf trace id so the caller can hydrate the rounds completed while
+   * the tab was gone, then ``attach``. ``null`` when no active run owns the
+   * trace (404) or the request fails — the caller leaves the restored state.
+   */
+  resolve(traceId: string): Promise<ResolveAutoResponse | null>
   attach(runId: string): void
   /** Stop observing + clear the indicator without ending the run (navigation). */
   detach(): void
@@ -69,9 +114,15 @@ export interface AutoRunStore {
 
 export function createAutoRunStore(): AutoRunStore {
   const autoModeOn = writable<boolean>(false)
+  const working = writable<boolean>(false)
   const runId = writable<string | null>(null)
   const offReason = writable<string | null>(null)
   const connection = writable<AutoConnection>("idle")
+
+  function setWorking(next: boolean): void {
+    working.set(next)
+    sink?.onWorkingChange(next)
+  }
 
   let sink: AutoRunChatSink | null = null
   let eventSource: EventSource | null = null
@@ -102,6 +153,7 @@ export function createAutoRunStore(): AutoRunStore {
   function clearToOff(reason: string | null): void {
     closeSource()
     autoModeOn.set(false)
+    setWorking(false)
     runId.set(null)
     offReason.set(reason)
     connection.set("closed")
@@ -114,6 +166,7 @@ export function createAutoRunStore(): AutoRunStore {
   function detach(): void {
     closeSource()
     autoModeOn.set(false)
+    setWorking(false)
     runId.set(null)
     offReason.set(null)
     connection.set("idle")
@@ -121,17 +174,46 @@ export function createAutoRunStore(): AutoRunStore {
 
   // --- Control-event handling on the per-run stream ---------------------------
   // Returns true when it claims the event (so it isn't forwarded to the
-  // processor). The control vocabulary is auto-mode-on / auto-mode-off; every
-  // other event is normal chat SSE and flows to the processor unchanged.
+  // processor). The control vocabulary is auto-mode-on / auto-mode-idle /
+  // auto-mode-off / user-message; every other event is normal chat SSE and
+  // flows to the processor unchanged.
   function handleControlEvent(event: StreamEvent): boolean {
     if (event.type === "auto-mode-on") {
+      // The conversation flag is on AND a burst is now running.
       autoModeOn.set(true)
+      setWorking(true)
       if (event.run_id) runId.set(event.run_id)
       offReason.set(null)
       return true
     }
+    if (event.type === "auto-mode-idle") {
+      // A burst ended but the flag STAYS on (Revision R1). Keep the indicator;
+      // only clear the working sub-state so the thinking dots stop.
+      autoModeOn.set(true)
+      setWorking(false)
+      sink?.onAutoModeIdle(event.reason ?? null)
+      return true
+    }
     if (event.type === "auto-mode-off") {
       clearToOff(event.reason ?? null)
+      return true
+    }
+    if (event.type === "user-message") {
+      // The runner echoed an injected user message. Render it as a fresh user
+      // turn (then a new assistant turn for the burst it triggers) so every
+      // observer — including the sender — sees it, consistent with replay.
+      setWorking(true)
+      sink?.onUserMessage(event.content ?? "")
+      return true
+    }
+    if (event.type === "tool-calls-pending") {
+      // Graceful stop (functional spec §4.4(1)): the runner surfaced the final
+      // turn's client tool calls for approval instead of auto-executing them.
+      // Hand off to the EXISTING normal approval + execute-tools flow. The
+      // accompanying auto-mode-off(user_stopped) clears the indicator; here we
+      // only stop the working sub-state and delegate the pending calls.
+      setWorking(false)
+      sink?.onToolCallsPending(Array.isArray(event.items) ? event.items : [])
       return true
     }
     return false
@@ -144,6 +226,9 @@ export function createAutoRunStore(): AutoRunStore {
 
     runId.set(newRunId)
     autoModeOn.set(true)
+    // Presume a live burst on attach; if the run is actually idle the replayed
+    // auto-mode-idle marker clears the working sub-state with no visible gap.
+    setWorking(true)
     offReason.set(null)
     connection.set("connecting")
 
@@ -219,8 +304,20 @@ export function createAutoRunStore(): AutoRunStore {
     if (!data.run_id) {
       return { ok: false, error: "Enable auto mode did not return a run id." }
     }
-    // A fresh assistant turn renders the runner's first burst.
-    sink?.beginAssistantTurn()
+    // Manual enable (Revision R1, functional spec §4.1(2)) only ARMS the
+    // conversation: the server creates the run IDLE without starting an empty
+    // upstream burst, so there's no immediate assistant turn — the indicator
+    // just turns on ("waiting for you") and the next user message starts the
+    // first burst via the /message inject path. The backend-tool path (an
+    // ``enable_tool_call_id`` is present) DOES start a burst immediately, so we
+    // open a fresh assistant turn to render it.
+    const armingOnly =
+      !seed.enable_tool_call_id &&
+      !(seed.pending_tool_calls && seed.pending_tool_calls.length > 0)
+    if (!armingOnly) {
+      // A fresh assistant turn renders the runner's first burst.
+      sink?.beginAssistantTurn()
+    }
     attach(data.run_id)
     return { ok: true }
   }
@@ -261,6 +358,67 @@ export function createAutoRunStore(): AutoRunStore {
     }
   }
 
+  async function sendMessage(
+    text: string,
+    traceId?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const id = get(runId)
+    if (!id) {
+      return { ok: false, error: "No active auto run to send the message to." }
+    }
+    // Optimistically reflect that a burst is (re)starting so the indicator
+    // shows immediately; the echoed user-message + burst events confirm it.
+    setWorking(true)
+    let response: Response
+    try {
+      response = await fetch(
+        `${AUTO_BASE_URL}/${encodeURIComponent(id)}/message`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: text, trace_id: traceId ?? null }),
+        },
+      )
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+    if (!response.ok) {
+      let message = `Could not send the message (${response.status}).`
+      try {
+        const parsed = (await response.json()) as { detail?: string }
+        if (parsed?.detail) message = parsed.detail
+      } catch {
+        /* keep default */
+      }
+      return { ok: false, error: message }
+    }
+    return { ok: true }
+  }
+
+  async function resolve(traceId: string): Promise<ResolveAutoResponse | null> {
+    let response: Response
+    try {
+      response = await fetch(
+        `${AUTO_BASE_URL}/resolve?trace_id=${encodeURIComponent(traceId)}`,
+      )
+    } catch {
+      // Network error — treat as "no active run"; the restored state stands.
+      return null
+    }
+    // 404 (no active run) or any non-OK status: leave the restored state as-is.
+    if (!response.ok) return null
+    try {
+      const data = (await response.json()) as ResolveAutoResponse
+      if (!data?.run_id || !data?.current_trace_id) return null
+      return data
+    } catch {
+      return null
+    }
+  }
+
   async function stop(): Promise<void> {
     const id = get(runId)
     if (!id) return
@@ -277,13 +435,16 @@ export function createAutoRunStore(): AutoRunStore {
 
   return {
     autoModeOn: { subscribe: autoModeOn.subscribe },
+    working: { subscribe: working.subscribe },
     runId: { subscribe: runId.subscribe },
     offReason: { subscribe: offReason.subscribe },
     connection: { subscribe: connection.subscribe },
     bind,
     requestEnable,
     decline,
+    sendMessage,
     stop,
+    resolve,
     attach,
     detach,
     _close: closeSource,

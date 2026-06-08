@@ -10,6 +10,7 @@ from app.desktop.studio_server.chat.stream_session import (
     RoundState,
     ToolCallInfo,
     _build_openai_tool_continuation,
+    _format_tool_calls_pending_sse,
     execute_tool_batch,
     iter_upstream_round,
 )
@@ -90,6 +91,20 @@ class AutoChatRunner:
         # self-consumed: _resolve_disable re-sets it to the resolving
         # continuation's trace id and passes it to on_trace.
         self.disable_trace_id: str | None = None
+        # Graceful stop intent (Stop button, functional spec §4.4(1)). The
+        # registry sets this instead of cancelling the task, so the in-flight
+        # upstream round finishes streaming (no cut-off). At the round boundary
+        # the runner stops WITHOUT starting a new round and WITHOUT auto-executing
+        # this round's client tool calls: it surfaces them for normal approval via
+        # tool-calls-pending, then ends the burst USER_STOPPED so the supervisor
+        # publishes auto-mode-off(user_stopped) and the conversation returns to
+        # normal mode.
+        self.stop_requested: bool = False
+
+    def request_stop(self) -> None:
+        """Mark a graceful stop. The current round finishes; the loop then ends
+        at the next boundary (no cancel, no cut-off)."""
+        self.stop_requested = True
 
     async def run(self) -> None:
         self._emit(format_auto_mode_on(self.run_id))
@@ -125,6 +140,15 @@ class AutoChatRunner:
                     }
 
                 if not round_state.finish_tool_calls:
+                    # Graceful stop (functional spec §4.4(1)): the final round was
+                    # plain text — nothing to approve. Finish what was streamed,
+                    # then disable auto mode. Drop any queued inbound (we do NOT
+                    # start a new burst on stop). The supervisor publishes
+                    # auto-mode-off(user_stopped) and the conversation returns to
+                    # normal mode.
+                    if self.stop_requested:
+                        self.status = AutoRunStatus.USER_STOPPED
+                        return
                     # Assistant emitted only text (a question or a wrap-up).
                     # Drain-before-idle (architecture §13.6): a message sent the
                     # instant the burst would settle must not be dropped — if one
@@ -167,6 +191,23 @@ class AutoChatRunner:
                     self.status = AutoRunStatus.USER_DISABLED
                     return
 
+                # Graceful stop (functional spec §4.4(1)): the in-flight round
+                # finished streaming (no cut-off). Do NOT auto-execute this round's
+                # client tool calls and do NOT start a new round — instead surface
+                # them for normal approval via the EXISTING tool-calls-pending
+                # mechanism (everything after the stop is subject to approval), then
+                # end the burst USER_STOPPED. The browser resolves the surfaced
+                # tools via the normal /api/chat/execute-tools approval flow, so the
+                # persisted trace gets a clean continuation (no dangling tool calls
+                # left by the runner). If the round had no client tool calls this
+                # branch is skipped (finish_tool_calls with only server tools is
+                # rare); a truly empty client batch just disables below via the
+                # no-results path.
+                if self.stop_requested and client_events:
+                    self._emit(_format_tool_calls_pending_sse(client_events))
+                    self.status = AutoRunStatus.USER_STOPPED
+                    return
+
                 # AUTO-APPROVE: requires_approval=False makes execute_tool_batch
                 # skip the gate and run every client tool unattended.
                 tool_calls = [
@@ -187,7 +228,12 @@ class AutoChatRunner:
 
                 if not results:
                     # No client tool results to feed back (e.g. server-only tool
-                    # batch). Same drain-before-idle check applies.
+                    # batch with no client tools to approve). On graceful stop just
+                    # disable — there's nothing to surface for approval.
+                    if self.stop_requested:
+                        self.status = AutoRunStatus.USER_STOPPED
+                        return
+                    # Same drain-before-idle check applies.
                     injected = self._drain()
                     if injected:
                         body = self._continue_with_user_messages(body, injected)
@@ -202,6 +248,12 @@ class AutoChatRunner:
                     round_state.tool_input_events,
                     results,
                 )
+                # Graceful stop after a fully auto-executed round: don't start a new
+                # round. The tool results were fed back so the trace stays clean;
+                # disable auto mode (the supervisor publishes auto-mode-off).
+                if self.stop_requested:
+                    self.status = AutoRunStatus.USER_STOPPED
+                    return
                 # Inject any messages queued during this round alongside the tool
                 # results so the backend sees both on the next turn (§13.2).
                 injected = self._drain()

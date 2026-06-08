@@ -2,9 +2,11 @@ import { writable, get, type Readable } from "svelte/store"
 import posthog from "posthog-js"
 import {
   streamChat,
+  resumePendingToolCalls,
   chatGenerateId,
   traceIdForNextChatRequest,
   type ChatMessage,
+  type ToolCallsPendingItem,
   type ToolCallsPendingPayload,
 } from "./streaming_chat"
 import {
@@ -15,7 +17,8 @@ import {
 } from "./auto_run_store"
 import type { AutoModeConsentRequiredPayload } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
-import { base_url } from "$lib/api_client"
+import { hydrateSessionFromSnapshot } from "./session_messages"
+import { base_url, client } from "$lib/api_client"
 import {
   getCurrentAppState,
   buildContextHeader,
@@ -43,6 +46,13 @@ export interface ChatSessionState extends PersistedChatSession {
   toolApprovalPicks: Record<string, boolean | undefined>
   toolExecuting: boolean
   showActivityIndicator: boolean
+  /**
+   * A server-owned auto-mode burst is actively running. Decoupled from
+   * ``status`` (which tracks the interactive client stream) so the chat view
+   * can drive the SAME loading affordances during auto bursts while keeping the
+   * input usable for inject-on-send.
+   */
+  autoWorking: boolean
 }
 
 /**
@@ -59,6 +69,15 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   retryLastRequest(): void
   reset(): void
   loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  /**
+   * Resync the restored-from-sessionStorage conversation back to its true
+   * auto-mode state after a hard refresh. If the conversation has an active
+   * server-owned auto run, hydrate from the run's CURRENT leaf (catching up on
+   * rounds completed while the tab was gone) and re-attach the live observer —
+   * mirroring the History → Chat History restore path. No-op when there is no
+   * stored trace id or no active run. Idempotent / safe to call on every load.
+   */
+  resyncOnLoad(): Promise<void>
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
   /** Surface an inline chat error (e.g. a failed manual auto-mode enable). */
   pushInlineError(message: string): void
@@ -100,6 +119,7 @@ export function createChatSessionStore(
     toolApprovalPicks: {},
     toolExecuting: false,
     showActivityIndicator: false,
+    autoWorking: false,
   })
 
   // Intentionally never unsubscribed — this store is a module-level singleton
@@ -201,6 +221,18 @@ export function createChatSessionStore(
     }))
   }
 
+  // Append an echoed (injected) user message, then a fresh assistant turn so the
+  // burst it triggers renders into a new turn — mirrors the server's
+  // render-immediately + replay model for inject-on-send (functional spec §4.3.2).
+  function appendEchoedUserMessage(content: string) {
+    removeErrors()
+    updateMessages((msgs) => [
+      ...msgs,
+      { id: chatGenerateId(), role: "user", content },
+    ])
+    beginAssistantTurn()
+  }
+
   // Wire the auto-run store to drive the same conversation as the interactive
   // stream. The auto runner is server-owned and survives reloads/re-attach; here
   // we only render what it streams (and the on/off indicator state it reports).
@@ -216,13 +248,101 @@ export function createChatSessionStore(
       combined.update((s) => ({ ...s, toolExecuting: false })),
     onShowActivityIndicator: (show) =>
       combined.update((s) => ({ ...s, showActivityIndicator: show })),
+    // Burst liveness drives the same thinking-dots/animated-icon path as the
+    // interactive stream (the loading-indicator fix); the input stays usable.
+    onWorkingChange: (working) =>
+      combined.update((s) => ({ ...s, autoWorking: working })),
+    onUserMessage: appendEchoedUserMessage,
+    // Idle: a burst ended but the flag stays on. Stop the working affordances;
+    // the green indicator persists (it binds to autoModeOn, not autoWorking).
+    onAutoModeIdle: () =>
+      combined.update((s) => ({
+        ...s,
+        toolExecuting: false,
+        showActivityIndicator: false,
+        autoWorking: false,
+      })),
     onAutoModeOff: () =>
       combined.update((s) => ({
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
+        autoWorking: false,
       })),
+    onToolCallsPending: handleAutoToolCallsPending,
   })
+
+  // Graceful-stop handoff (functional spec §4.4(1)): the runner finished the
+  // in-flight turn and surfaced its client tool calls instead of auto-executing
+  // them. Auto mode is now off (the observer published auto-mode-off), so the
+  // conversation is back in NORMAL mode — drive the EXISTING approval gate
+  // (handleToolCallsPending → the same toolApprovalWaiter UI) and the EXISTING
+  // /api/chat/execute-tools continuation (resumePendingToolCalls). No parallel
+  // approval UI; reuse the interactive machinery.
+  function handleAutoToolCallsPending(items: ToolCallsPendingItem[]): void {
+    if (!Array.isArray(items) || items.length === 0) return
+    const traceId = traceIdForNextChatRequest(get(persisted).messages)
+    if (!traceId) {
+      pushInlineError(
+        "Couldn't resume after stopping auto mode: missing conversation id.",
+      )
+      return
+    }
+    // A fresh assistant turn renders the approved tools' continuation.
+    beginAssistantTurn()
+    const thisGeneration = ++generation
+    const isStale = () => thisGeneration !== generation
+    void resumePendingToolCalls({
+      apiUrl: CHAT_API_URL,
+      traceId,
+      items,
+      onToolCallsPending: (payload) => {
+        if (isStale()) return Promise.resolve({})
+        return handleToolCallsPending(payload)
+      },
+      onAssistantMessage: (update) => {
+        if (isStale()) return
+        updateLastAssistant(update)
+      },
+      onChatTrace: (tid) => {
+        if (isStale()) return
+        setLastAssistantTraceId(tid)
+      },
+      onInlineError: (message, traceId, code) => {
+        if (isStale()) return
+        pushInlineError(message, traceId, code)
+      },
+      onToolExecutionStart: () => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, toolExecuting: true }))
+      },
+      onToolExecutionEnd: () => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, toolExecuting: false }))
+      },
+      onShowActivityIndicator: (show) => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, showActivityIndicator: show }))
+      },
+      onFinish: () => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+      },
+      onError: (err) => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+        pushInlineError(err.message)
+      },
+    })
+  }
 
   function beginStreaming(text: string, isRetry = false) {
     removeErrors()
@@ -413,17 +533,32 @@ export function createChatSessionStore(
 
   async function sendMessage(text: string): Promise<boolean> {
     const trimmed = text.trim()
-    if (!trimmed || status !== "ready") return false
+    if (!trimmed) return false
+    const autoOn = get(autoRunStore.autoModeOn)
+    // The interactive path requires an idle client stream; the auto-inject path
+    // does not (auto bursts run server-side, leaving the local status "ready").
+    if (!autoOn && status !== "ready") return false
     if (!get(chat_cost_disclaimer_acknowledged)) {
       if (!onConsentNeeded) return false
       const approved = await onConsentNeeded()
-      if (!approved || status !== "ready") return false
+      if (!approved) return false
+      if (!autoOn && status !== "ready") return false
     }
-    // Interrupt-on-send: a user message while auto mode is running is an
-    // implicit "take back control" — stop the run, then send interactively
-    // (ui_design §2). The run's auto-mode-off clears the indicator.
-    if (get(autoRunStore.autoModeOn)) {
-      await autoRunStore.stop()
+    // Inject-on-send (Revision R1): while the conversation's auto-mode flag is on
+    // (RUNNING or IDLE) a user message is injected into the server-owned run, not
+    // sent interactively — it never stops auto mode and triggers no new auto-mode
+    // consent. The runner echoes the message + streams the burst on the observer
+    // stream (ui_design §2; architecture §13.2/§13.4).
+    if (autoOn) {
+      const traceId = traceIdForNextChatRequest(get(persisted).messages)
+      const result = await autoRunStore.sendMessage(trimmed, traceId)
+      if (!result.ok) {
+        pushInlineError(
+          `Couldn't send the message: ${result.error ?? "unknown error"}`,
+        )
+        return false
+      }
+      return true
     }
     beginStreaming(trimmed)
     return true
@@ -495,6 +630,53 @@ export function createChatSessionStore(
       showActivityIndicator: false,
     }))
     setRuntimeState("ready", null)
+  }
+
+  // Resync after a hard refresh. The page restored stale messages from
+  // sessionStorage but never re-attached, so an auto-mode conversation looks
+  // dead (no indicator, no live events). Resolve the stored (possibly stale)
+  // leaf trace id to an active run via the registry's whole-chain index; if one
+  // exists, hydrate from the run's CURRENT leaf and attach — the EXACT
+  // hydrate+attach the History restore path uses (loadSession + attach).
+  async function resyncOnLoad(): Promise<void> {
+    // The stored continuation trace id is the last assistant message's traceId
+    // restored from sessionStorage (continuationTraceId is a fresh closure var
+    // after a reload, so derive it from the persisted messages).
+    const storedTraceId =
+      traceIdForNextChatRequest(get(persisted).messages) ?? continuationTraceId
+    if (!storedTraceId) return
+
+    const resolved = await autoRunStore.resolve(storedTraceId)
+    // Not active (404 / error): leave the normal restored-from-sessionStorage
+    // state untouched.
+    if (!resolved) return
+
+    // Hydrate from the run's CURRENT leaf so the user catches up on rounds that
+    // completed while the tab was gone, then attach for live events + buffer
+    // replay + the indicator/working state.
+    try {
+      const { data: snapshot, error } = await client.GET(
+        "/api/chat/sessions/{session_id}",
+        { params: { path: { session_id: resolved.current_trace_id } } },
+      )
+      // A structured error / empty snapshot must NOT short-circuit the attach:
+      // resolve() already proved the run is live, so fall through to attach on
+      // the restored (stale) view — same as the thrown-exception fallback below.
+      // Returning here would leave the conversation looking dead (no indicator,
+      // no live stream) in the snapshot-error case while the throw case
+      // correctly re-attaches.
+      if (!error && snapshot) {
+        const { messages, continuationTraceId: traceId } =
+          hydrateSessionFromSnapshot(snapshot)
+        // loadSession detaches any prior observer, sets the messages + trace id,
+        // and resets runtime state — identical to the history-restore apply path.
+        loadSession(messages, traceId)
+      }
+    } catch {
+      // Hydration failed (network/parse). Fall back: still attach so the user at
+      // least gets the live indicator + events on the restored (stale) view.
+    }
+    autoRunStore.attach(resolved.run_id)
   }
 
   function handleToolCallsPending(
@@ -590,6 +772,7 @@ export function createChatSessionStore(
     retryLastRequest,
     reset,
     loadSession,
+    resyncOnLoad,
     togglePartCollapsed,
     pushInlineError: (message: string) => pushInlineError(message),
     applyToolApprovalRun,

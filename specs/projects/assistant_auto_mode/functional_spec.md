@@ -67,7 +67,11 @@ see §4.2):
    app server intercepts it and, instead of executing it silently, emits a **consent-required**
    event to the browser.
 2. **User UI toggle.** The user clicks an "enable auto mode" control in the chat UI. Same consent
-   dialog.
+   dialog. **Manual enable only *arms* the conversation's auto-mode flag — it does NOT fire an
+   empty turn** (sending an empty message set errors at the backend with "No messages were sent").
+   The indicator turns on; the **next message the user sends** starts the first auto burst (via the
+   inject/`/message` path, §4.3.2). If a turn is already in flight when enabled, it simply continues
+   under auto-mode.
 
 > **Revision R1 — conversation-scoped auto-mode.** Auto-mode is no longer a single burst that
 > auto-disables when the assistant pauses. Once enabled it stays on for the **whole conversation**
@@ -132,9 +136,14 @@ Once on, for this conversation:
 Under Revision R1, auto-mode turns **off** for the conversation **only on an explicit user
 action** — never just because the assistant finished a burst or asked a question:
 
-1. **User clicks Stop.** The **Stop** control adjacent to the auto-mode indicator. Cancels any
-   in-flight burst promptly (see §7), clears the conversation's auto-mode flag, keeps the last
-   completed snapshot.
+1. **User clicks Stop (graceful).** The **Stop** control adjacent to the auto-mode indicator does
+   **not** hard-cancel / cut off the in-flight output. It lets the **current turn finish**
+   streaming, then clears the conversation's auto-mode flag and returns to **normal mode**. Any
+   tool calls from that final turn (and everything after) are then **subject to the normal approval
+   policy** — i.e. if the final turn requested client tool calls, they are surfaced for approval
+   (the existing `tool-calls-pending` flow) instead of being auto-executed. Net effect: "finish
+   what you're saying, then go back to asking me." (This replaces the earlier prompt-cancel
+   behavior.)
 2. **User explicitly asks to stop, in chat.** When the user's message asks to stop auto-mode (e.g.
    "stop auto mode", "go back to asking me each time"), the assistant calls the **`disable_auto_mode`**
    tool, which the app server intercepts to clear the conversation's auto-mode flag and end the

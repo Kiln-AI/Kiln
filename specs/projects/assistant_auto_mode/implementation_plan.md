@@ -62,7 +62,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     (incl. inject-at-boundary, idle persistence, disable interception, drain-before-idle edge).
     (Architecture §13.1–§13.3, §13.5–§13.6.)
 
-- [ ] **Phase 7 — Web UI: inject-on-send + persistent flag** (app/web_ui)
+- [x] **Phase 7 — Web UI: inject-on-send + persistent flag** (app/web_ui)
   - Send while `autoModeOn` → `POST /api/chat/auto/{run_id}/message` (remove the interrupt/stop-on-send).
     Bind the indicator + Stop to the conversation auto-mode flag (persist across IDLE bursts);
     handle `auto-mode-idle` (stay on, optional working/idle sub-state) vs `auto-mode-off` (clear).

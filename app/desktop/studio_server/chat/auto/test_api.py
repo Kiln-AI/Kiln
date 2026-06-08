@@ -300,8 +300,10 @@ async def test_stop_returns_202_and_is_idempotent(client, registry, mock_api_key
 
 @pytest.mark.asyncio
 async def test_stop_clears_flag_with_user_stopped(client, registry, mock_api_key):
-    # /stop clears the conversation flag (USER_STOPPED) and publishes
-    # auto-mode-off(user_stopped) — distinct from the burst-level idle endings.
+    # /stop is graceful (functional spec §4.4(1)): it returns 202 promptly and
+    # sets a stop intent WITHOUT cutting off the in-flight round. The flag clears
+    # (USER_STOPPED) + auto-mode-off(user_stopped) is published only once the
+    # current round finishes.
     release = asyncio.Event()
     gated = _GatedClient(release)
     with patch.object(httpx, "AsyncClient", return_value=gated):
@@ -323,6 +325,12 @@ async def test_stop_clears_flag_with_user_stopped(client, registry, mock_api_key
         await asyncio.sleep(0.02)
         r = await client.post(f"/api/chat/auto/{run_id}/stop")
         assert r.status_code == 202
+        # Not cut off: still RUNNING until the in-flight round finishes.
+        await asyncio.sleep(0.02)
+        assert run.record.status == AutoRunStatus.RUNNING
+        # Let the round finish; the burst now winds down to off.
+        release.set()
+        await _wait_terminal(registry, run_id)
         await asyncio.sleep(0.02)
         drain_task.cancel()
 
@@ -418,6 +426,58 @@ async def test_sessions_lists_active_runs(client, registry, mock_api_key):
             "reason": "doing work",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_resolve_active_returns_run_and_current_trace(
+    client, registry, mock_api_key
+):
+    """A live run resolves its seed (stale) leaf to {run_id, current_trace_id}."""
+    release = asyncio.Event()
+    upstream = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=upstream):
+        enable = await client.post(
+            "/api/chat/auto/enable",
+            json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+        )
+        assert enable.status_code == 200
+        run_id = enable.json()["run_id"]
+
+        r = await client.get("/api/chat/auto/resolve", params={"trace_id": "t1"})
+        assert r.status_code == 200
+        assert r.json() == {"run_id": run_id, "current_trace_id": "t1"}
+
+        release.set()
+        await _wait_settled(registry, run_id)
+
+
+@pytest.mark.asyncio
+async def test_resolve_stale_trace_in_chain_returns_current_leaf(
+    client, registry, mock_api_key
+):
+    """The seed leaf is stale after the run advances; resolve still matches it via
+    the whole-chain index and returns the run's CURRENT leaf (so the hard-refresh
+    client hydrates the rounds it missed)."""
+    round1 = [trace("t2"), text_delta("hi"), finish("stop")]
+    upstream = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    with patch.object(httpx, "AsyncClient", return_value=upstream):
+        enable = await client.post(
+            "/api/chat/auto/enable",
+            json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+        )
+        run_id = enable.json()["run_id"]
+        await _wait_settled(registry, run_id)
+
+        # Stale seed leaf t1 resolves to the run, current leaf is now t2.
+        r = await client.get("/api/chat/auto/resolve", params={"trace_id": "t1"})
+        assert r.status_code == 200
+        assert r.json() == {"run_id": run_id, "current_trace_id": "t2"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_unknown_trace_returns_404(client, registry, mock_api_key):
+    r = await client.get("/api/chat/auto/resolve", params={"trace_id": "never-seen"})
+    assert r.status_code == HTTPStatus.NOT_FOUND
 
 
 # ── interception (interactive /api/chat) ──────────────────────────────────────

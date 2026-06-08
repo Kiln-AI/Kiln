@@ -86,8 +86,10 @@ export interface StreamEvent {
   enable_tool_call_id?: string
   reason?: string | null
   sibling_tool_calls?: ToolCallsPendingItem[]
-  /** ``auto-mode-on`` / ``auto-mode-off`` carry the run id (and off reason) */
+  /** ``auto-mode-on`` / ``auto-mode-off`` / ``auto-mode-idle`` carry the run id (and reason) */
   run_id?: string
+  /** ``user-message`` echo carries the injected user message content */
+  content?: string
 }
 
 export interface ToolCallsPendingItem {
@@ -735,6 +737,163 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       onFinish()
       return
     }
+    onError(err instanceof Error ? err : new Error(String(err)))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// resumePendingToolCalls — graceful-stop handoff
+// ---------------------------------------------------------------------------
+
+export interface ResumePendingToolCallsOptions {
+  /** ``POST /api/chat`` base URL (execute-tools URL is derived from it). */
+  apiUrl: string
+  /** Trace id of the conversation the surfaced tool calls belong to. */
+  traceId: string
+  /** The tool calls surfaced for approval (from a ``tool-calls-pending`` event). */
+  items: ToolCallsPendingItem[]
+  /** Reuses the normal approval gate: toolCallId → allowed. */
+  onToolCallsPending: (
+    payload: ToolCallsPendingPayload,
+  ) => Promise<Record<string, boolean>>
+  onAssistantMessage: (update: (draft: ChatMessage) => void) => void
+  onChatTrace?: (traceId: string) => void
+  onInlineError?: (message: string, traceId?: string, code?: string) => void
+  onToolExecutionStart?: (toolCount: number) => void
+  onToolExecutionEnd?: (toolCount: number) => void
+  onShowActivityIndicator?: (show: boolean) => void
+  onFinish: () => void
+  onError: (error: Error) => void
+}
+
+/**
+ * Resume a conversation that has pending client tool calls awaiting approval,
+ * using the EXISTING execute-tools approval contract — NOT a parallel approval
+ * UI. Used for the graceful-stop handoff (functional spec §4.4(1)): when the
+ * server-owned auto runner surfaces ``tool-calls-pending`` on the observer
+ * stream after a Stop, the browser drives the same approve → POST
+ * /api/chat/execute-tools → stream-continuation loop the interactive
+ * ``streamChat`` path uses, now in normal (approval) mode. Handles only the
+ * ``tool-calls-pending`` approval/continuation loop: each subsequent
+ * ``tool-calls-pending`` re-prompts via the same gate (multi-round approval).
+ * NOTE: a re-``enable_auto_mode`` during a graceful-stop continuation is NOT
+ * re-prompted here — its control loop intercepts only ``tool-calls-pending``,
+ * and the shared ``StreamEventProcessor`` has no ``auto-mode-consent-required``
+ * handler (known minor follow-up).
+ */
+export async function resumePendingToolCalls(
+  options: ResumePendingToolCallsOptions,
+): Promise<void> {
+  const {
+    apiUrl,
+    traceId,
+    items,
+    onToolCallsPending,
+    onAssistantMessage,
+    onChatTrace,
+    onInlineError,
+    onToolExecutionStart,
+    onToolExecutionEnd,
+    onShowActivityIndicator,
+    onFinish,
+    onError,
+  } = options
+
+  const executeToolsUrl = chatExecuteToolsUrl(apiUrl)
+  let currentTraceId = traceId
+
+  const processor = new StreamEventProcessor({
+    onAssistantMessage,
+    onChatTrace: (tid) => {
+      currentTraceId = tid
+      onChatTrace?.(tid)
+    },
+    onInlineError,
+    onToolExecutionStart,
+    onToolExecutionEnd,
+    onShowActivityIndicator,
+  })
+
+  // POST one execute-tools round for the given pending items; returns the
+  // continuation reader. Mirrors the inline logic in ``streamChat``.
+  async function executeRound(
+    pendingItems: ToolCallsPendingItem[],
+  ): Promise<ReadableStreamDefaultReader<Uint8Array> | null> {
+    if (!Array.isArray(pendingItems) || pendingItems.length === 0) {
+      onError(new Error("Invalid tool-calls-pending event from server"))
+      return null
+    }
+    if (!currentTraceId) {
+      onError(
+        new Error(
+          "Missing trace id for tool execution; wait for chat trace before tools.",
+        ),
+      )
+      return null
+    }
+    const decisions = await onToolCallsPending({ items: pendingItems })
+    const decisionsPayload: Record<string, boolean> = {}
+    for (const it of pendingItems) {
+      if (it.requiresApproval && typeof it.toolCallId === "string") {
+        decisionsPayload[it.toolCallId] = decisions[it.toolCallId] ?? false
+      }
+    }
+    const toolCallsPayload = pendingItems.map((it) => ({
+      toolCallId: it.toolCallId,
+      toolName: it.toolName,
+      input: toolInputAsRecord(it.input),
+      requiresApproval: Boolean(it.requiresApproval),
+    }))
+    let postRes: Response
+    try {
+      postRes = await fetch(executeToolsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trace_id: currentTraceId,
+          tool_calls: toolCallsPayload,
+          decisions: decisionsPayload,
+        }),
+      })
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)))
+      return null
+    }
+    if (!postRes.ok) {
+      const text = await postRes.text()
+      onError(
+        new Error(
+          `Tool execute API error ${postRes.status}: ${text || postRes.statusText}`,
+        ),
+      )
+      return null
+    }
+    const nextReader = postRes.body?.getReader()
+    if (!nextReader) {
+      onError(new Error("No response body from execute-tools"))
+      return null
+    }
+    return nextReader
+  }
+
+  try {
+    let reader = await executeRound(items)
+    while (reader) {
+      // Drive one continuation stream. A nested ``tool-calls-pending`` ends this
+      // stream and seeds the next execute-tools round (multi-round approval).
+      let nextItems: ToolCallsPendingItem[] | null = null
+      await consumeSseStream(reader, processor, (event) => {
+        if (event.type === "tool-calls-pending") {
+          nextItems = Array.isArray(event.items) ? event.items : []
+          return true
+        }
+        return false
+      })
+      if (!nextItems) break
+      reader = await executeRound(nextItems)
+    }
+    onFinish()
+  } catch (err) {
     onError(err instanceof Error ? err : new Error(String(err)))
   }
 }

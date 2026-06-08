@@ -145,6 +145,47 @@ async def test_on_trace_updates_index_and_record():
 
 
 @pytest.mark.asyncio
+async def test_resolve_trace_stale_in_chain_returns_run_and_current_leaf():
+    """A hard-refresh tab holds the STALE seed leaf (tr-0); the run advanced to
+    tr-1 while it was gone. resolve_trace matches via the whole-chain index and
+    returns the run id + the run's CURRENT leaf so the client can catch up."""
+    reg = AutoChatRegistry()
+    round1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        await _wait_settled(reg, rec.run_id)
+
+    # Stale leaf (tr-0) still resolves to the active run, current leaf is tr-1.
+    assert reg.resolve_trace("tr-0") == (rec.run_id, "tr-1")
+    # Current leaf resolves too.
+    assert reg.resolve_trace("tr-1") == (rec.run_id, "tr-1")
+
+
+@pytest.mark.asyncio
+async def test_resolve_trace_unknown_returns_none():
+    reg = AutoChatRegistry()
+    assert reg.resolve_trace("never-seen") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_trace_none_when_flag_off():
+    """Once auto mode is off for the conversation the trace no longer resolves to
+    an active run (resync should fall back to the normal restored state)."""
+    reg = AutoChatRegistry()
+    release = asyncio.Event()
+    client = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        assert reg.resolve_trace("tr-0") == (rec.run_id, "tr-0")
+        release.set()
+        await _wait_settled(reg, rec.run_id)
+        await reg.stop(rec.run_id)
+
+    assert reg.resolve_trace("tr-0") is None
+
+
+@pytest.mark.asyncio
 async def test_is_active_for_trace_true_while_running_and_idle_false_when_off():
     reg = AutoChatRegistry()
     release = asyncio.Event()
@@ -173,15 +214,19 @@ async def test_is_active_for_trace_true_while_running_and_idle_false_when_off():
 
 
 @pytest.mark.asyncio
-async def test_stop_cancels_to_user_stopped_and_publishes_off():
+async def test_stop_is_graceful_finishes_round_then_publishes_off():
+    # Graceful stop (functional spec §4.4(1)): Stop must NOT hard-cancel / cut off
+    # the in-flight output. It sets a stop intent; the current round finishes
+    # streaming, and only at the round boundary does the burst end USER_STOPPED.
     reg = AutoChatRegistry()
-    release = asyncio.Event()  # never set → run hangs until stopped
+    release = asyncio.Event()  # the in-flight round blocks until released
     client = _GatedClient(release)
     with patch.object(httpx, "AsyncClient", return_value=client):
         rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
         run = reg.get(rec.run_id)
         assert run is not None
-        # Subscribe so we can confirm auto-mode-off(user_stopped) is published.
+        # Subscribe so we can confirm the current turn's output is NOT cut off and
+        # auto-mode-off(user_stopped) is published.
         sub = run.bus.subscribe()
         received: list[bytes] = []
 
@@ -191,12 +236,21 @@ async def test_stop_cancels_to_user_stopped_and_publishes_off():
 
         drain_task = asyncio.create_task(_drain())
         await asyncio.sleep(0.05)  # let the run start + buffer replay
+        # Request stop while the round is still streaming. The run must NOT end
+        # yet — the round hasn't finished.
         await reg.stop(rec.run_id)
         await asyncio.sleep(0.05)
+        assert run.record.status == AutoRunStatus.RUNNING
+        # Let the in-flight round finish; the burst should now wind down to off.
+        release.set()
+        await _wait_terminal(reg, rec.run_id)
+        await asyncio.sleep(0.02)
         drain_task.cancel()
 
     assert run.record.status == AutoRunStatus.USER_STOPPED
     decoded = b"".join(received).decode()
+    # The current turn's text was delivered (not cut off) before going off.
+    assert "done" in decoded
     assert '"type": "auto-mode-off"' in decoded
     assert '"reason": "user_stopped"' in decoded
 
@@ -269,7 +323,10 @@ async def test_send_message_while_running_enqueues():
         # Echoed onto the bus/buffer for observers.
         assert b"inject me" in b"".join(run.buffer)
 
+        # Graceful stop: release the round so the burst winds down cleanly.
         await reg.stop(rec.run_id)
+        release.set()
+        await _wait_terminal(reg, rec.run_id)
 
 
 @pytest.mark.asyncio
@@ -304,6 +361,51 @@ async def test_send_message_while_idle_starts_new_burst():
 async def test_send_message_unknown_or_off_returns_false():
     reg = AutoChatRegistry()
     assert reg.send_message("ar_nope", InboundMessage(content="x")) is False
+
+
+@pytest.mark.asyncio
+async def test_manual_enable_arms_without_empty_upstream_turn():
+    # Manual enable (functional spec §4.1(2)): a seed with no enable_tool_call_id,
+    # no pending tool calls, and no extra messages only ARMS the conversation. The
+    # registry must NOT start a burst (an empty upstream POST errors at the
+    # backend) — the run is created IDLE (flag on, indicator shown) with no task.
+    reg = AutoChatRegistry()
+    client = FakeUpstreamClient([])  # any upstream POST would raise (no responses)
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(
+            AutoChatSeed(trace_id="tr-0"),
+            reason=None,
+            upstream_url=URL,
+            headers={},
+        )
+        await asyncio.sleep(0.02)
+        run = reg.get(rec.run_id)
+        assert run is not None
+        # Armed: IDLE, flag on, no supervising task, NO upstream POST.
+        assert run.record.status == AutoRunStatus.IDLE
+        assert run.record.status.flag_on is True
+        assert rec.run_id not in reg._tasks
+        assert client.bodies == []
+        # The on→idle markers are buffered so a connecting observer lands on
+        # flag-on/idle (waiting for you).
+        buffered = b"".join(run.buffer).decode()
+        assert '"type": "auto-mode-on"' in buffered
+        assert '"type": "auto-mode-idle"' in buffered
+        assert '"reason": "armed"' in buffered
+
+        # The FIRST /message starts the burst (IDLE → RUNNING), now WITH content.
+        burst = [trace("tr-1"), text_delta("on it"), finish("stop")]
+        client._responses.append(FakeUpstreamResponse(chunks=burst))
+        accepted = reg.send_message(
+            rec.run_id, InboundMessage(content="please start", trace_id="tr-0")
+        )
+        assert accepted is True
+        assert run.record.status == AutoRunStatus.RUNNING
+        await _wait_settled(reg, rec.run_id)
+
+    # The first (and only) upstream body carried the user message — never empty.
+    assert len(client.bodies) == 1
+    assert client.bodies[0]["messages"] == [{"role": "user", "content": "please start"}]
 
 
 @pytest.mark.asyncio
@@ -563,14 +665,18 @@ class TestBusAndBuffer:
     @pytest.mark.asyncio
     async def test_off_run_yields_off_marker_immediately(self):
         # A run whose flag was explicitly cleared (stopped) is terminal — a late
-        # subscriber gets exactly the off marker and the stream ends.
+        # subscriber gets exactly the off marker and the stream ends. Graceful
+        # stop: request stop, then let the in-flight round finish so the burst
+        # winds down to USER_STOPPED before the late subscribe.
         reg = AutoChatRegistry()
-        release = asyncio.Event()  # never set → hangs until stopped
+        release = asyncio.Event()
         client = _GatedClient(release)
         with patch.object(httpx, "AsyncClient", return_value=client):
             rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
             await asyncio.sleep(0.02)
             await reg.stop(rec.run_id)
+            release.set()
+            await _wait_terminal(reg, rec.run_id)
             run = reg.get(rec.run_id)
             assert run is not None
             received = [b async for b in run.bus.subscribe()]

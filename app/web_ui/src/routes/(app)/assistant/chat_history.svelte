@@ -171,7 +171,7 @@
         sessionDetailLoading !== null || deletingSessionId !== null}
       {#if activeRows.length > 0}
         <div
-          class="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-wide text-success/90"
+          class="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-wide text-primary/90"
         >
           Working now
         </div>

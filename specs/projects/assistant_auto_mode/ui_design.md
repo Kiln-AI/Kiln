@@ -10,6 +10,11 @@ footer auto-mode control + indicator, a Stop affordance, and a "working" treatme
 History dialog. Everything follows existing DaisyUI/Tailwind patterns already in `chat.svelte`,
 `tool_approval_box.svelte`, and `chat_history.svelte`.
 
+> **Revision R1 — color.** The auto-mode accent is **blue primary** (`text-primary` / `bg-primary`
+> / DaisyUI `primary`), **not green**. Everywhere this doc says "green" for the indicator, dot, or
+> "auto mode on" treatment, use primary blue instead. State is still conveyed by text too, not
+> color alone.
+
 ## UX Principles
 
 - **Consent is the gate, and it must be impossible to miss.** A blocking modal, not a toast.

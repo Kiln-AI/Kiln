@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 import {
   streamChat,
+  resumePendingToolCalls,
   chatExecuteToolsUrl,
   traceIdForNextChatRequest,
   type ChatMessage,
@@ -192,6 +193,82 @@ describe("streamChat", () => {
 
     expect(errorSpy).toHaveBeenCalledOnce()
     expect(inlineErrorSpy).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+  })
+})
+
+describe("resumePendingToolCalls (graceful-stop handoff)", () => {
+  it("approves surfaced tools and POSTs execute-tools, streaming the continuation", async () => {
+    // The continuation stream the backend returns after execute-tools.
+    const contLines = [
+      'data: {"type":"text-start","id":"x"}\n\n',
+      'data: {"type":"text-delta","delta":"resumed"}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        expect(url).toBe("https://example.test/api/chat/execute-tools")
+        expect(init?.method).toBe("POST")
+        const body = JSON.parse(init?.body as string) as {
+          trace_id: string
+          tool_calls: Array<{ toolCallId: string }>
+          decisions: Record<string, boolean>
+        }
+        expect(body.trace_id).toBe("trace-stop")
+        expect(body.tool_calls[0].toolCallId).toBe("tc1")
+        expect(body.decisions).toEqual({ tc1: true })
+        return Promise.resolve({
+          ok: true,
+          body: {
+            getReader: () => ({
+              read: () => {
+                if (i >= contLines.length) {
+                  return Promise.resolve({ done: true, value: undefined })
+                }
+                const enc = new TextEncoder()
+                const line = contLines[i]
+                i += 1
+                return Promise.resolve({ done: false, value: enc.encode(line) })
+              },
+            }),
+          },
+        })
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const approvalSpy = vi.fn(async () => ({ tc1: true }))
+    const finishSpy = vi.fn()
+    let assistantText = ""
+
+    await resumePendingToolCalls({
+      apiUrl: "https://example.test/api/chat",
+      traceId: "trace-stop",
+      items: [
+        {
+          toolCallId: "tc1",
+          toolName: "call_kiln_api",
+          input: { path: "/x" },
+          requiresApproval: true,
+        },
+      ],
+      onToolCallsPending: approvalSpy,
+      onAssistantMessage: (update) => {
+        const draft: ChatMessage = { id: "a", role: "assistant", parts: [] }
+        update(draft)
+        const part = draft.parts?.[0]
+        if (part && part.type === "text") assistantText = part.text
+      },
+      onFinish: finishSpy,
+      onError: () => {},
+    })
+
+    // The existing approval gate was used (no parallel approval UI).
+    expect(approvalSpy).toHaveBeenCalledOnce()
+    // The continuation streamed into the conversation.
+    expect(assistantText).toBe("resumed")
+    expect(finishSpy).toHaveBeenCalledOnce()
 
     vi.unstubAllGlobals()
   })

@@ -34,6 +34,14 @@
   $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
 
   const autoModeOn = auto_run_store.autoModeOn
+  const autoModeWorking = auto_run_store.working
+
+  // Manual enable arms a server-owned run keyed by the conversation's trace id
+  // (functional spec §4.1(2)). A run can't exist without a trace id, so manual
+  // enable becomes available only after the first completed exchange. The footer
+  // control is disabled until then (see the disabled binding below) so it's never
+  // a dead click on a brand-new empty chat.
+  $: manualAutoModeAvailable = !!traceIdForNextChatRequest(messages)
 
   async function openManualAutoMode() {
     const traceId = traceIdForNextChatRequest(messages)
@@ -66,6 +74,10 @@
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
   $: showActivityIndicator = $store.showActivityIndicator
+  // A server-owned auto burst is running. Drives the SAME in-transcript loading
+  // affordances (thinking dots / animated icon) as interactive streaming, while
+  // leaving the input usable for inject-on-send.
+  $: autoWorking = $store.autoWorking
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -88,6 +100,11 @@
   }
 
   $: isLoading = status === "submitted" || status === "streaming"
+  // The transcript's loading affordances (thinking dots, animated icon, active
+  // tool lines) show for BOTH the interactive client stream and a live auto
+  // burst. The input/send/Stop controls stay bound to ``isLoading`` only, so the
+  // textarea remains usable for inject-on-send while auto mode works.
+  $: transcriptLoading = isLoading || autoWorking
   $: inputDisabled = isLoading
 
   let prevIsLoading = false
@@ -104,11 +121,13 @@
   $: lastParts = lastMessage?.parts ?? []
 
   $: showStreamingCursor =
-    isLoading && lastMessage?.role === "assistant" && lastParts.length === 0
+    transcriptLoading &&
+    lastMessage?.role === "assistant" &&
+    lastParts.length === 0
 
   function isMessageVisible(message: ChatMessage): boolean {
     if (message.role !== "assistant") return true
-    if (isLoading && message.id === lastMessage?.id) return true
+    if (transcriptLoading && message.id === lastMessage?.id) return true
     const parts = message.parts ?? []
     if (parts.length === 0 && !message.content) return false
     return true
@@ -233,7 +252,7 @@
     groupSegment: RenderSegment & { kind: "step-group" },
     allSegments: RenderSegment[],
   ): boolean {
-    if (!(isLoading && message.id === lastMessage?.id)) return false
+    if (!(transcriptLoading && message.id === lastMessage?.id)) return false
 
     const groupIdx = allSegments.indexOf(groupSegment)
     const hasTextAfter = allSegments
@@ -405,6 +424,10 @@
     tick().then(() => {
       textareaRef?.focus({ preventScroll: true })
     })
+    // Resync after a hard refresh: if the restored conversation has an active
+    // server-owned auto run, hydrate from its current leaf and re-attach so the
+    // indicator + live events come back (mirrors the History restore path).
+    void store.resyncOnLoad()
   })
 
   onDestroy(() => {
@@ -726,7 +749,8 @@
                                     ? `(${method} ${urlPath})`
                                     : ""}
                                 {@const isActiveMessage =
-                                  isLoading && message.id === lastMessage?.id}
+                                  transcriptLoading &&
+                                  message.id === lastMessage?.id}
                                 {@const effectivelyComplete =
                                   hasOutput || !isActiveMessage}
                                 {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
@@ -771,7 +795,7 @@
                               {#if !hasVisibleApproval}
                                 <ChatStatusSteps
                                   parts={message.parts ?? []}
-                                  isLoading={isLoading &&
+                                  isLoading={transcriptLoading &&
                                     message.id === lastMessage?.id}
                                   isLastMessage={message.id === lastMessage?.id}
                                   {showActivityIndicator}
@@ -797,7 +821,7 @@
                               toolApprovalPicks[i.toolCallId] === undefined,
                           )}
                         {@const isActiveMessage =
-                          isLoading && message.id === lastMessage?.id}
+                          transcriptLoading && message.id === lastMessage?.id}
                         {#if !hasVisibleApproval}
                           {#if isActiveMessage && showActivityIndicator}
                             <div class="flex items-start gap-3">
@@ -1104,10 +1128,15 @@
       {#if $autoModeOn}
         <div class="flex items-center gap-2">
           <span
-            class="inline-flex items-center gap-1.5 font-medium text-success"
+            class="inline-flex items-center gap-1.5 font-medium text-primary"
           >
-            <span class="auto-pulse" aria-hidden="true">⏵⏵</span>
+            <span class:auto-pulse={$autoModeWorking} aria-hidden="true"
+              >⏵⏵</span
+            >
             <span>auto mode on</span>
+            {#if !$autoModeWorking}
+              <span class="font-normal text-primary/70">· waiting for you</span>
+            {/if}
           </span>
           <button
             type="button"
@@ -1124,7 +1153,7 @@
           type="button"
           class="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content/80 disabled:bg-transparent disabled:text-base-content/25"
           on:click={openManualAutoMode}
-          disabled={isLoading || !hasMessages}
+          disabled={isLoading || !manualAutoModeAvailable}
           title="Let the assistant run steps automatically without asking for approval."
         >
           <span aria-hidden="true">⏵⏵</span>

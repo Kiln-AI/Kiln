@@ -13,7 +13,7 @@ from app.desktop.studio_server.chat.stream_session import (
     ToolCallInfo,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Response
+from fastapi import FastAPI, HTTPException, Path, Query, Response
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
@@ -59,6 +59,13 @@ class AutoSessionItem(BaseModel):
     current_trace_id: str
     status: AutoRunStatus
     reason: str | None = None
+
+
+class ResolveAutoResponse(BaseModel):
+    """Result of resolving a (possibly stale) trace id to an active auto run."""
+
+    run_id: str
+    current_trace_id: str
 
 
 async def _events_stream(run) -> AsyncGenerator[bytes, None]:
@@ -203,6 +210,37 @@ def connect_chat_auto_api(app: FastAPI) -> None:
             content=_events_stream(run),
             media_type="text/event-stream",
         )
+
+    @app.get(
+        "/api/chat/auto/resolve",
+        summary="Resolve a trace id to an active auto run",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def resolve_auto_run(
+        trace_id: Annotated[
+            str,
+            Query(description="A trace id from the conversation (may be stale)."),
+        ],
+    ) -> ResolveAutoResponse:
+        """Resolve a (possibly stale) trace id to the active auto run for its
+        conversation, returning the run id and the run's CURRENT leaf trace id.
+
+        Used by the web UI to resync after a hard refresh: the stored trace id is
+        the leaf the tab last saw, but the server-owned run advances the leaf each
+        round while the tab is gone. The registry's whole-chain trace index (every
+        seen trace id → run) matches the stale id anyway, and the returned
+        ``current_trace_id`` lets the client hydrate the rounds it missed before
+        attaching to the live events stream. 404 if no active run owns the
+        trace."""
+        resolved = auto_chat_registry.resolve_trace(trace_id)
+        if resolved is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No active auto run for trace: {trace_id}",
+            )
+        run_id, current_trace_id = resolved
+        return ResolveAutoResponse(run_id=run_id, current_trace_id=current_trace_id)
 
     @app.get(
         "/api/chat/auto/sessions",

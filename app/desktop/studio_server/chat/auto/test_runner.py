@@ -427,3 +427,74 @@ async def test_disable_auto_mode_resolves_tool_result_to_backend():
     # The trace from the clean snapshot is observed/indexed.
     assert runner.disable_trace_id == "tr-2"
     assert "tr-2" in traces
+
+
+# ── Graceful stop (functional spec §4.4(1)) ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_graceful_stop_surfaces_tool_calls_for_approval_not_executed():
+    # The in-flight round finishes streaming (no cut-off); then at the round
+    # boundary, because stop was requested, the round's client tool calls are
+    # surfaced via tool-calls-pending for normal approval instead of being
+    # auto-executed. The burst ends USER_STOPPED and no continuation is sent.
+    round1 = [
+        text_delta("on it"),
+        tool_input_available("tc1", "add", {"a": 1, "b": 2}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    runner, emitted, _ = _runner(client)
+    runner.stop_requested = True
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.USER_STOPPED
+    decoded = _decoded(emitted)
+    # The current turn's output was delivered (not cut off).
+    assert "on it" in decoded
+    # The tool calls were surfaced for approval, NOT auto-executed.
+    assert '"type": "tool-calls-pending"' in decoded
+    assert '"output": "3"' not in decoded
+    assert '"type": "kiln-tool-execution-start"' not in decoded
+    # No second upstream round was started.
+    assert len(client.bodies) == 1
+
+
+@pytest.mark.asyncio
+async def test_graceful_stop_plain_text_final_round_just_disables():
+    # A plain-text final round on graceful stop: finish what was streamed, then
+    # disable — nothing to approve, no tool-calls-pending.
+    round1 = [text_delta("Here is the summary."), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    runner, emitted, _ = _runner(client)
+    runner.stop_requested = True
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.USER_STOPPED
+    decoded = _decoded(emitted)
+    assert "Here is the summary." in decoded
+    assert '"type": "tool-calls-pending"' not in decoded
+    assert len(client.bodies) == 1
+
+
+@pytest.mark.asyncio
+async def test_graceful_stop_drops_queued_inbound_on_plain_text():
+    # Stop must not start a new burst: a queued inbound message is dropped (we do
+    # NOT continue with it) when stop is requested on a plain-text boundary.
+    inbound = [InboundMessage(content="keep going")]
+    round1 = [text_delta("Anything else?"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    runner, _, _ = _runner(client, inbound=inbound)
+    runner.stop_requested = True
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.USER_STOPPED
+    # No second round despite the queued message.
+    assert len(client.bodies) == 1

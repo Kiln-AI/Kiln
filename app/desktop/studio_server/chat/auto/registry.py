@@ -20,6 +20,7 @@ from .runner import AutoChatRunner
 from .sse import (
     format_auto_mode_idle,
     format_auto_mode_off,
+    format_auto_mode_on,
     format_user_message,
 )
 
@@ -218,6 +219,24 @@ class AutoChatRegistry:
         run_id = self.run_id_for_trace(trace_id)
         return (run_id is not None, run_id)
 
+    def resolve_trace(self, trace_id: str) -> tuple[str, str] | None:
+        """Resolve a (possibly stale) trace id to an active run.
+
+        A tab that was gone while the server-owned run advanced holds a STALE
+        leaf trace id — the run's current leaf has moved on. The whole-chain
+        ``_trace_index`` (every seen trace id → run) lets us match anyway, so a
+        hard refresh can resync. Returns ``(run_id, current_trace_id)`` for runs
+        whose flag is on (RUNNING or IDLE), or ``None`` if there's no active run
+        for the trace. The returned ``current_trace_id`` is the run's CURRENT
+        leaf so the caller can hydrate the rounds completed while it was away."""
+        run_id = self.run_id_for_trace(trace_id)
+        if run_id is None:
+            return None
+        run = self._runs.get(run_id)
+        if run is None:
+            return None
+        return (run_id, run.record.current_trace_id)
+
     # -- start ---------------------------------------------------------------
 
     def start(
@@ -238,9 +257,22 @@ class AutoChatRegistry:
             )
 
         run_id = self._fresh_run_id()
+        # Manual enable (Revision R1, functional spec §4.1(2)): when the seed has
+        # nothing to send upstream — no enable_auto_mode call to resolve, no
+        # pending sibling tool calls, and no extra messages — the conversation is
+        # merely ARMED. Starting a burst here would POST an empty turn upstream,
+        # which the backend rejects ("No messages were sent to the server").
+        # Instead create the run IDLE (flag on, indicator shown) and do NOT
+        # supervise; the first /message starts the burst via send_message().
+        is_armed_only = (
+            not seed.enable_tool_call_id
+            and not seed.pending_tool_calls
+            and not seed.extra_messages
+        )
+
         record = AutoRunRecord(
             run_id=run_id,
-            status=AutoRunStatus.RUNNING,
+            status=AutoRunStatus.IDLE if is_armed_only else AutoRunStatus.RUNNING,
             current_trace_id=seed.trace_id,
             seen_trace_ids=[seed.trace_id],
             reason=reason,
@@ -258,6 +290,16 @@ class AutoChatRegistry:
         )
         self._runs[run_id] = run
         self._trace_index[seed.trace_id] = run_id
+        if is_armed_only:
+            # Buffer the on→idle markers so a connecting observer immediately
+            # lands on "flag on, idle (waiting for you)" with no live burst —
+            # the indicator shows without an empty upstream POST. The first
+            # /message starts the real burst (send_message, IDLE → RUNNING).
+            run.runner.idle_reason = "armed"
+            run.emit(format_auto_mode_on(run_id))
+            run.emit(run.idle_marker_bytes())
+            logger.info("Armed auto run %s (trace_id=%s)", run_id, seed.trace_id)
+            return record
         self._tasks[run_id] = asyncio.create_task(self._supervise(run))
         logger.info("Started auto run %s (trace_id=%s)", run_id, seed.trace_id)
         return record
@@ -436,27 +478,25 @@ class AutoChatRegistry:
     # -- stop ----------------------------------------------------------------
 
     async def stop(self, run_id: str) -> None:
-        """Stop auto mode for the conversation (Stop button). Clears the flag
-        (USER_STOPPED), cancelling any in-flight burst. Idempotent.
+        """Stop auto mode for the conversation (Stop button). Idempotent.
 
-        Revision R1: a RUNNING burst is cancelled — its task's CancelledError
-        handler sets USER_STOPPED and publishes auto-mode-off. An IDLE run has no
-        burst task, so the flag is cleared here directly."""
+        Revision R1 + graceful stop (functional spec §4.4(1)): Stop is NOT a hard
+        cancel. A RUNNING burst is asked to stop **gracefully** — the runner
+        finishes the in-flight upstream round (no cut-off), then at the round
+        boundary surfaces any pending client tool calls for normal approval
+        (tool-calls-pending) and ends the burst USER_STOPPED. We only set the stop
+        intent here and return promptly (the endpoint replies 202): the
+        supervising task winds the burst down and publishes auto-mode-off on its
+        own, so observers see the off marker when the round actually ends. An IDLE
+        run has no burst task, so the flag is cleared here directly."""
+        run = self._runs.get(run_id)
         task = self._tasks.get(run_id)
         if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.debug(
-                    "Auto run %s raised during stop await", run_id, exc_info=True
-                )
+            if run is not None:
+                run.runner.request_stop()
             return
 
         # No live burst (idle or already off). If the flag is still on, clear it.
-        run = self._runs.get(run_id)
         if run is None or run.record.status.is_terminal:
             return
         run.record.status = AutoRunStatus.USER_STOPPED

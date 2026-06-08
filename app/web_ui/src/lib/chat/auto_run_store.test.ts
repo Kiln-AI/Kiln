@@ -6,7 +6,7 @@ import {
   type AutoRunChatSink,
   type AutoRunStore,
 } from "./auto_run_store"
-import type { ChatMessage } from "./streaming_chat"
+import type { ChatMessage, ToolCallsPendingItem } from "./streaming_chat"
 
 vi.mock("$lib/api_client", () => ({
   base_url: "http://localhost:8757",
@@ -68,7 +68,11 @@ interface SinkCalls {
   toolStart: number[]
   toolEnd: number[]
   activity: boolean[]
+  working: boolean[]
+  userMessages: string[]
+  idleReasons: (string | null)[]
   offReasons: (string | null)[]
+  pendingToolCalls: ToolCallsPendingItem[][]
 }
 
 function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
@@ -80,7 +84,11 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     toolStart: [],
     toolEnd: [],
     activity: [],
+    working: [],
+    userMessages: [],
+    idleReasons: [],
     offReasons: [],
+    pendingToolCalls: [],
   }
   const sink: AutoRunChatSink = {
     beginAssistantTurn: () => {
@@ -96,7 +104,11 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     onToolExecutionStart: (n) => calls.toolStart.push(n),
     onToolExecutionEnd: (n) => calls.toolEnd.push(n),
     onShowActivityIndicator: (s) => calls.activity.push(s),
+    onWorkingChange: (w) => calls.working.push(w),
+    onUserMessage: (c) => calls.userMessages.push(c),
+    onAutoModeIdle: (r) => calls.idleReasons.push(r),
     onAutoModeOff: (r) => calls.offReasons.push(r),
+    onToolCallsPending: (items) => calls.pendingToolCalls.push(items),
   }
   return { sink, calls }
 }
@@ -145,7 +157,12 @@ describe("auto_run_store", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const result = await store.requestEnable({ trace_id: "t1" })
+    // Backend-tool path (an enable_tool_call_id is present): a burst starts
+    // immediately, so a fresh assistant turn is opened to render it.
+    const result = await store.requestEnable({
+      trace_id: "t1",
+      enable_tool_call_id: "call_enable",
+    })
     expect(result.ok).toBe(true)
 
     // Enable POST went out with the seed body.
@@ -154,6 +171,7 @@ describe("auto_run_store", () => {
     expect(url).toBe("http://localhost:8757/api/chat/auto/enable")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       trace_id: "t1",
+      enable_tool_call_id: "call_enable",
     })
 
     // A fresh assistant turn was started and the events stream opened.
@@ -172,6 +190,74 @@ describe("auto_run_store", () => {
     expect(calls.assistantUpdates.length).toBeGreaterThan(0)
     const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
     expect(last.parts?.[0]).toEqual({ type: "text", text: "Hello" })
+  })
+
+  it("manual arm (no enable_tool_call_id) does NOT begin an assistant turn but still attaches", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_arm" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    // Manual enable only arms the conversation (functional spec §4.1(2)): the
+    // server creates the run IDLE without an empty upstream burst, so there's no
+    // immediate assistant turn to open — the indicator just turns on.
+    const result = await store.requestEnable({ trace_id: "t1" })
+    expect(result.ok).toBe(true)
+    expect(calls.beginAssistantTurn).toBe(0)
+
+    // The events stream still opens so the indicator + future bursts render.
+    const source = FakeEventSource.latest()
+    expect(source.url).toBe("http://localhost:8757/api/chat/auto/ar_arm/events")
+    // The server buffers on→idle markers; replaying them lands on flag-on/idle.
+    source.message({ type: "auto-mode-on", run_id: "ar_arm" })
+    source.message({
+      type: "auto-mode-idle",
+      run_id: "ar_arm",
+      reason: "armed",
+    })
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(false)
+  })
+
+  it("tool-calls-pending on the observer stream hands off to the approval sink (graceful stop)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_stop" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    await store.requestEnable({
+      trace_id: "t1",
+      enable_tool_call_id: "call_enable",
+    })
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_stop" })
+
+    // Graceful stop: the runner surfaces the final turn's client tool calls.
+    const items = [
+      {
+        toolCallId: "tc1",
+        toolName: "call_kiln_api",
+        input: { path: "/x" },
+        requiresApproval: true,
+      },
+    ]
+    source.message({ type: "tool-calls-pending", items })
+    // Handed off to the existing approval machinery (not auto-executed).
+    expect(calls.pendingToolCalls.length).toBe(1)
+    expect(calls.pendingToolCalls[0]).toEqual(items)
+    // Working sub-state cleared; the tool-calls-pending event is NOT forwarded to
+    // the processor as a normal chat event.
+    expect(get(store.working)).toBe(false)
+
+    // The accompanying auto-mode-off clears the indicator (normal mode again).
+    source.message({
+      type: "auto-mode-off",
+      run_id: "ar_stop",
+      reason: "user_stopped",
+    })
+    expect(get(store.autoModeOn)).toBe(false)
+    expect(calls.offReasons).toContain("user_stopped")
   })
 
   it("auto-mode-off clears state and closes the stream", async () => {
@@ -311,6 +397,147 @@ describe("auto_run_store", () => {
     expect(source.closed).toBe(true)
     // Navigation, not an off-event: the sink is not told the run ended.
     expect(calls.offReasons).toEqual([])
+  })
+
+  it("auto-mode-idle keeps the flag ON and only clears the working sub-state", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_idle" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    await store.requestEnable({ trace_id: "t" })
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_idle" })
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(true)
+
+    source.message({
+      type: "auto-mode-idle",
+      run_id: "ar_idle",
+      reason: "asked_user",
+    })
+    // Flag persists (Revision R1); only working clears. Stream stays open.
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(false)
+    expect(get(store.runId)).toBe("ar_idle")
+    expect(source.closed).toBe(false)
+    expect(calls.idleReasons).toEqual(["asked_user"])
+    // Idle is NOT an off-event: the conversation flag is unchanged.
+    expect(calls.offReasons).toEqual([])
+    // working timeline: on (enable attach) → on (auto-mode-on) → off (idle).
+    expect(calls.working).toEqual([true, true, false])
+  })
+
+  it("only auto-mode-off clears the indicator after an idle burst", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_io" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    await store.requestEnable({ trace_id: "t" })
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_io" })
+    source.message({ type: "auto-mode-idle", run_id: "ar_io", reason: "done" })
+    expect(get(store.autoModeOn)).toBe(true)
+
+    source.message({
+      type: "auto-mode-off",
+      run_id: "ar_io",
+      reason: "user_stopped",
+    })
+    expect(get(store.autoModeOn)).toBe(false)
+    expect(get(store.working)).toBe(false)
+    expect(get(store.runId)).toBeNull()
+    expect(source.closed).toBe(true)
+    expect(calls.offReasons).toEqual(["user_stopped"])
+  })
+
+  it("sendMessage injects via /message, never posting stop", async () => {
+    const enableFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_inj" }),
+    })
+    vi.stubGlobal("fetch", enableFetch)
+    await store.requestEnable({ trace_id: "t" })
+    FakeEventSource.latest().message({ type: "auto-mode-on", run_id: "ar_inj" })
+
+    const messageFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", messageFetch)
+    const result = await store.sendMessage("keep going", "trace-9")
+
+    expect(result.ok).toBe(true)
+    expect(messageFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = messageFetch.mock.calls[0]
+    expect(url).toBe("http://localhost:8757/api/chat/auto/ar_inj/message")
+    expect((init as RequestInit).method).toBe("POST")
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      content: "keep going",
+      trace_id: "trace-9",
+    })
+    // Inject never stops: no /stop call, flag stays on, working set.
+    expect(
+      messageFetch.mock.calls.some((c) => String(c[0]).endsWith("/stop")),
+    ).toBe(false)
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(true)
+  })
+
+  it("sendMessage with no active run returns an error and posts nothing", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await store.sendMessage("hi")
+    expect(result.ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("a user-message echo renders a fresh user turn and marks working", async () => {
+    store.attach("ar_echo")
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_echo" })
+    // Simulate going idle then injecting: the echo arrives on the stream.
+    source.message({
+      type: "auto-mode-idle",
+      run_id: "ar_echo",
+      reason: "done",
+    })
+    expect(get(store.working)).toBe(false)
+
+    source.message({ type: "user-message", content: "do the next thing" })
+    expect(calls.userMessages).toEqual(["do the next thing"])
+    expect(get(store.working)).toBe(true)
+    expect(get(store.autoModeOn)).toBe(true)
+  })
+
+  it("resolve returns {run_id, current_trace_id} for an active run", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ run_id: "ar_r", current_trace_id: "t_now" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await store.resolve("t_stale")
+    expect(result).toEqual({ run_id: "ar_r", current_trace_id: "t_now" })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(
+      "http://localhost:8757/api/chat/auto/resolve?trace_id=t_stale",
+    )
+  })
+
+  it("resolve returns null on 404 (no active run)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ detail: "no active run" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await store.resolve("t_stale")).toBeNull()
+  })
+
+  it("resolve returns null on network error", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("boom"))
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await store.resolve("t")).toBeNull()
   })
 
   it("is a pure observer: an off event never posts stop", async () => {

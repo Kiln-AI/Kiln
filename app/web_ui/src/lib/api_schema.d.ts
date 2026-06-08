@@ -3176,6 +3176,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/auto/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve a trace id to an active auto run
+         * @description Resolve a (possibly stale) trace id to the active auto run for its
+         *     conversation, returning the run id and the run's CURRENT leaf trace id.
+         *
+         *     Used by the web UI to resync after a hard refresh: the stored trace id is
+         *     the leaf the tab last saw, but the server-owned run advances the leaf each
+         *     round while the tab is gone. The registry's whole-chain trace index (every
+         *     seen trace id → run) matches the stale id anyway, and the returned
+         *     ``current_trace_id`` lets the client hydrate the rounds it missed before
+         *     attaching to the live events stream. 404 if no active run owns the
+         *     trace.
+         */
+        get: operations["resolve_auto_run_api_chat_auto_resolve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/auto/sessions": {
         parameters: {
             query?: never;
@@ -9012,6 +9041,16 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["RerankerModelDetails"][];
+        };
+        /**
+         * ResolveAutoResponse
+         * @description Result of resolving a (possibly stale) trace id to an active auto run.
+         */
+        ResolveAutoResponse: {
+            /** Run Id */
+            run_id: string;
+            /** Current Trace Id */
+            current_trace_id: string;
         };
         /**
          * ReviewedExample
@@ -18185,6 +18224,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_auto_run_api_chat_auto_resolve_get: {
+        parameters: {
+            query: {
+                /** @description A trace id from the conversation (may be stale). */
+                trace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolveAutoResponse"];
                 };
             };
             /** @description Validation Error */
