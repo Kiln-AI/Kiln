@@ -18,13 +18,16 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import _is_retryable_error
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
+from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import EvalConfig, EvalOutputScore, EvalScores
 from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
@@ -141,11 +144,27 @@ class JudgeJobRunner:
         self._max_retries = max_retries
         self._retry_delay = retry_delay
 
+        # In generate mode we run a candidate config to produce the output before judging it, so we
+        # resolve its RunConfigProperties (the evaluator's 2nd arg) and preload its skills.
+        self._run_config_properties: RunConfigProperties | None = None
+        self._skills: SkillsDict = {}
+        if judge_job.generate_outputs:
+            run_config = next(
+                (rc for rc in task.run_configs() if rc.id == judge_job.run_config_id),
+                None,
+            )
+            if run_config is None:
+                raise ValueError(
+                    f"Run config not found for generate mode: {judge_job.run_config_id}"
+                )
+            self._run_config_properties = run_config.run_config_properties
+            self._skills = load_skills_for_task(task, run_config.run_config_properties)
+
     def _matches_tags(self, task_run: TaskRun) -> bool:
         # AND semantics: the item must carry every target tag.
         return set(self.judge_job.target_tags or []) <= set(task_run.tags or [])
 
-    async def run(self, concurrency: int = 25) -> JudgeJobRunResult:
+    async def run(self, concurrency: int | None = None) -> JudgeJobRunResult:
         """Judge tagged dataset items and persist each result as a JudgeJobRun child.
 
         Two modes, set by `stop_after_failures`:
@@ -159,6 +178,10 @@ class JudgeJobRunner:
         """
         job = self.judge_job
         stop_after = job.stop_after_failures
+        # Generating runs a model per item (heavier than judging an existing output), so default to
+        # a smaller concurrency in that mode.
+        if concurrency is None:
+            concurrency = 5 if job.generate_outputs else 25
 
         candidates = [
             run for run in self.task.runs(readonly=True) if self._matches_tags(run)
@@ -167,13 +190,16 @@ class JudgeJobRunner:
         self._rng.shuffle(candidates)
         candidates = candidates[: job.max_samples]
 
-        # Reuse previously-judged results for this job to avoid re-paying the judge.
-        cache: dict[ID_TYPE, JudgeJobRun] = {
-            run.task_run_id: run for run in job.runs(readonly=True)
-        }
+        # Reuse previously-judged results to avoid re-paying the judge — but only when judging
+        # existing outputs. Generation is non-deterministic, so a cached result would be stale.
+        cache: dict[ID_TYPE, JudgeJobRun] = (
+            {}
+            if job.generate_outputs
+            else {run.task_run_id: run for run in job.runs(readonly=True)}
+        )
 
         evaluator = eval_adapter_from_type(self.eval_config.config_type)(
-            self.eval_config, None
+            self.eval_config, self._run_config_properties, skills=self._skills
         )
         if not isinstance(evaluator, BaseEval):
             raise ValueError("Not able to create evaluator from eval config")
@@ -262,6 +288,11 @@ class JudgeJobRunner:
         judge_job_run = JudgeJobRun(
             parent=self.judge_job,
             task_run_id=task_run.id,
+            run_config_id=(
+                self.judge_job.run_config_id
+                if self.judge_job.generate_outputs
+                else None
+            ),
             scores=scores,
             feedback=feedback,
             passed=passed,
@@ -300,6 +331,16 @@ class JudgeJobRunner:
         last_error: Exception | None = None
         for attempt in range(1 + self._max_retries):
             try:
+                if self.judge_job.generate_outputs:
+                    # Run the candidate config to produce a fresh output, then judge it. The fresh
+                    # TaskRun is returned un-saved (allow_saving=False) and intentionally discarded
+                    # here — we keep only the JudgeJobRun, never polluting the dataset.
+                    (
+                        _fresh_run,
+                        scores,
+                        intermediate,
+                    ) = await evaluator.run_task_and_eval(task_run)
+                    return scores, intermediate
                 return await evaluator.run_eval(task_run)
             except Exception as e:
                 last_error = e

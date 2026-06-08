@@ -4487,9 +4487,15 @@ export interface components {
             eval_config_id: string;
             /**
              * Run Config Id
-             * @description The ID of the run config whose outputs are being judged (metadata only).
+             * @description The ID of the run config. Metadata when judging existing outputs; required and run on each item when generate_outputs=true.
              */
             run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run run_config_id on each sampled item to generate a fresh output and judge that (gate a candidate, scoped to the tagged items). If false, judge existing outputs.
+             * @default false
+             */
+            generate_outputs: boolean;
             /**
              * Stop After Failures
              * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
@@ -6967,9 +6973,15 @@ export interface components {
             eval_config_id: string;
             /**
              * Run Config Id
-             * @description The ID of the run config whose outputs are being judged. Metadata only; the existing dataset outputs are judged (the task is not re-run).
+             * @description The ID of the run config. With generate_outputs=false it's metadata (the existing dataset output is judged). With generate_outputs=true it's run on each sampled item to produce the output that is judged.
              */
             run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run `run_config_id` on each sampled item to generate a fresh output and judge that (gate a candidate config, scoped to the tagged items). If false (default), judge each item's existing dataset output (the task is not re-run).
+             * @default false
+             */
+            generate_outputs: boolean;
             /**
              * Stop After Failures
              * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
@@ -7060,6 +7072,11 @@ export interface components {
              * @description Whether this item passed the judge (i.e. it is not a failing example).
              */
             passed: boolean;
+            /**
+             * Run Config Id
+             * @description If the judged output was generated (generate_outputs), the run config that produced it. None when the item's existing dataset output was judged.
+             */
+            run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };

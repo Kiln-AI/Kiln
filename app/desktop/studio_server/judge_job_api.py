@@ -66,7 +66,13 @@ class CreateJudgeJobRequest(BaseModel):
     )
     run_config_id: str | None = Field(
         default=None,
-        description="The ID of the run config whose outputs are being judged (metadata only).",
+        description="The ID of the run config. Metadata when judging existing outputs; required and "
+        "run on each item when generate_outputs=true.",
+    )
+    generate_outputs: bool = Field(
+        default=False,
+        description="If true, run run_config_id on each sampled item to generate a fresh output and "
+        "judge that (gate a candidate, scoped to the tagged items). If false, judge existing outputs.",
     )
     stop_after_failures: int | None = Field(
         default=None,
@@ -96,6 +102,8 @@ class CreateJudgeJobRequest(BaseModel):
             raise ValueError("max_samples must be >= stop_after_failures")
         if not self.target_tags or any(not t.strip() for t in self.target_tags):
             raise ValueError("target_tags must be a non-empty list of non-empty tags")
+        if self.generate_outputs and not self.run_config_id:
+            raise ValueError("run_config_id is required when generate_outputs is true")
         return self
 
 
@@ -136,6 +144,7 @@ def _build_judge_job(task: Task, request: CreateJudgeJobRequest) -> JudgeJob:
         target_tags=request.target_tags,
         eval_config_id=request.eval_config_id,
         run_config_id=request.run_config_id,
+        generate_outputs=request.generate_outputs,
         stop_after_failures=request.stop_after_failures,
         max_samples=request.max_samples,
         threshold=request.threshold,

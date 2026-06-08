@@ -30,6 +30,11 @@ class JudgeJobRun(KilnParentedModel):
     passed: bool = Field(
         description="Whether this item passed the judge (i.e. it is not a failing example)."
     )
+    run_config_id: str | None = Field(
+        default=None,
+        description="If the judged output was generated (generate_outputs), the run config that "
+        "produced it. None when the item's existing dataset output was judged.",
+    )
 
     def parent_judge_job(self) -> Union["JudgeJob", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "JudgeJob":
@@ -63,7 +68,15 @@ class JudgeJob(
     )
     run_config_id: str | None = Field(
         default=None,
-        description="The ID of the run config whose outputs are being judged. Metadata only; the existing dataset outputs are judged (the task is not re-run).",
+        description="The ID of the run config. With generate_outputs=false it's metadata (the "
+        "existing dataset output is judged). With generate_outputs=true it's run on each sampled "
+        "item to produce the output that is judged.",
+    )
+    generate_outputs: bool = Field(
+        default=False,
+        description="If true, run `run_config_id` on each sampled item to generate a fresh output "
+        "and judge that (gate a candidate config, scoped to the tagged items). If false (default), "
+        "judge each item's existing dataset output (the task is not re-run).",
     )
     stop_after_failures: int | None = Field(
         default=None,

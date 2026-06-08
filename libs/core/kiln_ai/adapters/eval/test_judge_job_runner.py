@@ -10,6 +10,7 @@ from kiln_ai.adapters.eval.judge_job_runner import (
     feedback_from_intermediate_outputs,
     score_passes,
 )
+from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -27,6 +28,8 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalScores,
 )
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 
 
 @pytest.fixture
@@ -98,6 +101,22 @@ def make_judge_job(
     return job
 
 
+def make_run_config(task):
+    rc = TaskRunConfig(
+        name="candidate",
+        description="candidate",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    rc.save_to_file()
+    return rc
+
+
 def make_train_run(task, data_source, input_text, tags=None):
     run = TaskRun(
         parent=task,
@@ -114,19 +133,30 @@ def scripted_evaluator_factory(
     score_fn: Callable[[TaskRun], EvalScores],
     calls: list[str] | None = None,
     feedback: Dict[str, str] | None = None,
+    generate: bool = False,
 ):
+    def _feedback(task_run):
+        return (
+            feedback
+            if feedback is not None
+            else {"chain_of_thought": f"reasoning for {task_run.input}"}
+        )
+
     class ScriptedEvaluator(BaseEval):
         async def run_eval(self, task_run, eval_job_item=None):
+            # In generate mode the runner must call run_task_and_eval, never run_eval directly.
+            assert not generate, "run_eval should not be called in generate mode"
             if calls is not None:
                 calls.append(task_run.id)
-            return score_fn(task_run), (
-                feedback
-                if feedback is not None
-                else {"chain_of_thought": f"reasoning for {task_run.input}"}
-            )
+            return score_fn(task_run), _feedback(task_run)
 
         async def run_task_and_eval(self, eval_job_item):
-            raise AssertionError("run_task_and_eval should not be called")
+            assert generate, "run_task_and_eval should not be called"
+            if calls is not None:
+                calls.append(eval_job_item.id)
+            # Stand in for "ran the config to produce a fresh output, then judged it." The fresh
+            # TaskRun is discarded by the runner, so a placeholder is fine here.
+            return eval_job_item, score_fn(eval_job_item), _feedback(eval_job_item)
 
     return lambda *args, **kwargs: ScriptedEvaluator(*args, **kwargs)
 
@@ -137,7 +167,9 @@ async def run_job(
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
             "kiln_ai.adapters.eval.judge_job_runner.eval_adapter_from_type",
-            lambda _type: scripted_evaluator_factory(score_fn, calls=calls),
+            lambda _type: scripted_evaluator_factory(
+                score_fn, calls=calls, generate=judge_job.generate_outputs
+            ),
         )
         runner = JudgeJobRunner(
             judge_job, eval_config, rng=random.Random(seed), retry_delay=retry_delay
@@ -518,3 +550,48 @@ async def test_non_transient_error_not_retried(mock_task, data_source):
     assert len(result.judged_runs) == 0
     assert len(result.errors) == 1
     assert "hard failure" in result.errors[0].error
+
+
+@pytest.mark.asyncio
+async def test_generate_mode_runs_config_and_judges_fresh_output(
+    mock_task, data_source
+):
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    run_config = make_run_config(mock_task)
+
+    # Tagged val items (should be run through the candidate) + a non-val item (should be ignored).
+    val_ids = {
+        make_train_run(mock_task, data_source, f"val-{i}", tags=["val"]).id
+        for i in range(2)
+    }
+    make_train_run(mock_task, data_source, "other", tags=["train"])
+    runs_before = len(mock_task.runs())
+
+    job = JudgeJob(
+        name="gate",
+        target_tags=["val"],
+        eval_config_id=eval_config.id,
+        run_config_id=run_config.id,
+        generate_outputs=True,
+        stop_after_failures=None,
+        max_samples=10,
+        parent=mock_task,
+    )
+    job.save_to_file()
+
+    calls: list[str] = []
+
+    def score_fn(task_run):
+        return {"accuracy": 0.0}  # every generated output fails
+
+    result = await run_job(job, eval_config, score_fn, calls=calls)
+
+    # Only the tagged val items were run through the candidate config; full coverage, no early-stop.
+    assert set(calls) == val_ids
+    assert result.num_judged == 2
+    assert {r.task_run_id for r in result.judged_runs} == val_ids
+    # Provenance: each judged run records the config that produced the output.
+    assert all(r.run_config_id == run_config.id for r in result.judged_runs)
+    # The generated outputs are ephemeral — no new dataset TaskRuns were created.
+    assert len(mock_task.runs()) == runs_before

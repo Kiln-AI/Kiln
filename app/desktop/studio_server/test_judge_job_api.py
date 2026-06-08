@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
 
 from kiln_ai.adapters.eval.judge_job_runner import JudgeJobItemError, JudgeJobRunResult
+from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     JudgeJob,
     JudgeJobRun,
@@ -15,6 +16,8 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, EvalOutputScore
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 
 BASE = "/api/projects/project1/tasks/task1/judge_jobs"
 
@@ -93,6 +96,24 @@ def saved_job(mock_task, mock_eval_config):
     return job
 
 
+@pytest.fixture
+def mock_run_config(mock_task):
+    rc = TaskRunConfig(
+        id="run_config1",
+        name="candidate",
+        description="candidate",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=mock_task,
+    )
+    rc.save_to_file()
+    return rc
+
+
 def patched_runner(result: JudgeJobRunResult):
     """Patch JudgeJobRunner so the endpoint returns `result` without real judging."""
     runner = Mock()
@@ -167,6 +188,65 @@ def test_create_validation(client, mock_task, mock_task_from_id, mock_eval_confi
         BASE, json={"target_tags": [], "eval_config_id": "eval_config1"}
     )
     assert empty_tags.status_code == 422
+
+
+def test_create_generate_requires_run_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    # generate_outputs needs a config to run — reject when run_config_id is missing.
+    resp = client.post(
+        BASE,
+        json={
+            "target_tags": ["val"],
+            "eval_config_id": "eval_config1",
+            "generate_outputs": True,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_create_generate_unknown_run_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(
+        BASE,
+        json={
+            "target_tags": ["val"],
+            "eval_config_id": "eval_config1",
+            "generate_outputs": True,
+            "run_config_id": "nope",
+        },
+    )
+    assert resp.status_code == 404
+
+
+def test_create_and_run_generate(
+    client, mock_task, mock_task_from_id, mock_eval_config, mock_run_config
+):
+    result = JudgeJobRunResult(
+        failing_runs=[],
+        judged_runs=[],
+        num_judged=0,
+        failing_count=0,
+        train_set_size=0,
+        hit_cap=False,
+    )
+    with patched_runner(result):
+        resp = client.post(
+            f"{BASE}/run",
+            json={
+                "target_tags": ["val"],
+                "eval_config_id": "eval_config1",
+                "run_config_id": "run_config1",
+                "generate_outputs": True,
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.json()["judge_job"]["generate_outputs"] is True
+    jobs = mock_task.judge_jobs()
+    assert len(jobs) == 1
+    assert jobs[0].generate_outputs is True
+    assert jobs[0].run_config_id == "run_config1"
 
 
 def test_run_judge_job(
