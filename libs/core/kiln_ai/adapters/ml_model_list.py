@@ -273,6 +273,8 @@ class ModelName(str, Enum):
     mimo_v2_pro = "mimo_v2_pro"
     mimo_v2_flash = "mimo_v2_flash"
     mimo_v2_omni = "mimo_v2_omni"
+    mimo_v2_5 = "mimo_v2_5"
+    mimo_v2_5_pro = "mimo_v2_5_pro"
 
 
 class ModelParserID(str, Enum):
@@ -8005,6 +8007,40 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    # MiMo-V2.5
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_5,
+        friendly_name="MiMo-V2.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.5",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # MiMo-V2.5-Pro
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_5_pro,
+        friendly_name="MiMo-V2.5-Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.5-pro",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
             ),
         ],
     ),
