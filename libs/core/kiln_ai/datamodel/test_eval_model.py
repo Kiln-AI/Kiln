@@ -2658,3 +2658,154 @@ class TestCodeEvalPropertiesValidation:
         code = "async def score(output, trace, reference_data, task_input, helpers):\n    return {'accuracy': 1.0}\n"
         props = CodeEvalProperties(code=code)
         assert props.code == code
+
+
+# ── V1 Coexistence Regression Guards ─────────────────────────────────
+
+
+class TestV1EvalRunCoexistence:
+    def test_v1_eval_run_new_optional_fields_default_to_none(self):
+        run = EvalRun(
+            dataset_id="ds1",
+            task_run_config_id="rc1",
+            input="What is 2+2?",
+            output="4",
+            scores={"accuracy": 1.0},
+        )
+        assert run.eval_input_id is None
+        assert run.reference_data is None
+        assert run.skipped_reason is None
+        assert run.skipped_detail is None
+
+    def test_v1_eval_run_round_trip_preserves_none_defaults(self, mock_task, tmp_path):
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        eval_obj = Eval(
+            name="V1 Compat Eval",
+            parent=mock_task,
+            eval_set_filter_id="tag::v1set",
+            eval_configs_filter_id="tag::golden",
+            output_scores=[
+                EvalOutputScore(name="acc", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval_obj.save_to_file()
+
+        config = EvalConfig(
+            name="V1 Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["check"]},
+        )
+        config.save_to_file()
+
+        run = EvalRun(
+            parent=config,
+            dataset_id="ds1",
+            task_run_config_id="rc1",
+            input="hello",
+            output="world",
+            scores={"acc": 0.8},
+        )
+        run.save_to_file()
+
+        loaded = EvalRun.load_from_file(str(run.path))
+        assert loaded.dataset_id == "ds1"
+        assert loaded.eval_input_id is None
+        assert loaded.reference_data is None
+        assert loaded.skipped_reason is None
+        assert loaded.skipped_detail is None
+        assert loaded.scores == {"acc": 0.8}
+
+
+class TestV1EvalConfigCoexistence:
+    def test_v1_config_with_default_config_type(self):
+        config = EvalConfig(
+            name="Legacy Default",
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["step1"]},
+        )
+        assert config.config_type == EvalConfigType.g_eval
+        assert isinstance(config.properties, dict)
+
+    def test_v1_config_from_dict_without_config_type_key(self):
+        raw = {
+            "name": "From Disk V1",
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "properties": {"eval_steps": ["step1", "step2"]},
+        }
+        config = EvalConfig.model_validate(raw)
+        assert config.config_type == EvalConfigType.g_eval
+        assert isinstance(config.properties, dict)
+        assert config.properties["eval_steps"] == ["step1", "step2"]
+
+    def test_v1_properties_with_type_key_not_misrouted(self):
+        raw = {
+            "name": "Type Key Collision",
+            "config_type": "g_eval",
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "properties": {
+                "eval_steps": ["step1"],
+                "type": "exact_match",
+            },
+        }
+        config = EvalConfig.model_validate(raw)
+        assert config.config_type == EvalConfigType.g_eval
+        assert isinstance(config.properties, dict)
+        assert config.properties["type"] == "exact_match"
+        assert config.properties["eval_steps"] == ["step1"]
+
+    def test_v1_llm_as_judge_config_type_preserved(self):
+        config = EvalConfig(
+            name="LLM Judge V1",
+            config_type=EvalConfigType.llm_as_judge,
+            model_name="gpt-4o",
+            model_provider="openai",
+            properties={"eval_steps": ["judge it"]},
+        )
+        assert config.config_type == EvalConfigType.llm_as_judge
+        assert isinstance(config.properties, dict)
+
+    def test_v1_config_round_trip_with_type_key_in_properties(
+        self, mock_task, tmp_path
+    ):
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        eval_obj = Eval(
+            name="Type Key Eval",
+            parent=mock_task,
+            eval_set_filter_id="tag::s",
+            eval_configs_filter_id="tag::g",
+            output_scores=[
+                EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval_obj.save_to_file()
+
+        config = EvalConfig(
+            name="Type Key Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={
+                "eval_steps": ["s1"],
+                "type": "some_value",
+            },
+        )
+        config.save_to_file()
+
+        loaded = EvalConfig.load_from_file(str(config.path))
+        assert loaded.config_type == EvalConfigType.g_eval
+        assert isinstance(loaded.properties, dict)
+        assert loaded.properties["type"] == "some_value"
+        assert loaded.properties["eval_steps"] == ["s1"]

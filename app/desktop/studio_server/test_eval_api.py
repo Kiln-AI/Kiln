@@ -3776,3 +3776,184 @@ class TestTestV2Eval:
                 json=self._exact_match_payload(),
             )
         assert response.status_code == 404
+
+
+class TestV1CoexistenceAPI:
+    """V1 coexistence regression guards at the API layer.
+
+    Ensures that V1 g_eval / llm_as_judge configs and their runs continue to
+    work through score-summary and eval-results endpoints after V2 additions.
+    """
+
+    def test_v1_g_eval_score_summary(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        run = EvalRun(
+            parent=mock_eval_config,
+            dataset_id="dataset_id1",
+            task_run_config_id="run_config1",
+            input="test input",
+            output="test output",
+            scores={"score1": 4.0, "overall_rating": 3.0},
+        )
+        run.save_to_file()
+
+        run2 = EvalRun(
+            parent=mock_eval_config,
+            dataset_id="dataset_id2",
+            task_run_config_id="run_config1",
+            input="test input 2",
+            output="test output 2",
+            scores={"score1": 2.0, "overall_rating": 5.0},
+        )
+        run2.save_to_file()
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+            ) as mock_ds_filter,
+        ):
+            mock_ds_filter.return_value = {"dataset_id1", "dataset_id2"}
+
+            response = client.get(
+                "/api/projects/project1/tasks/task1/evals/eval1"
+                "/eval_config/eval_config1/score_summary"
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "results" in body
+        assert "dataset_size" in body
+        assert body["dataset_size"] == 2
+
+        scores = body["results"]["run_config1"]
+        assert scores["score1"]["mean_score"] == pytest.approx(3.0)
+        assert scores["score1"]["n_used"] == 2
+        assert scores["score1"]["n_excluded"] == 0
+        assert scores["overall_rating"]["mean_score"] == pytest.approx(4.0)
+
+        assert body["run_config_percent_complete"]["run_config1"] == 1.0
+
+    def test_v1_g_eval_run_results(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        run = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.5, "overall_rating": 4.0},
+            input="hello",
+            output="world",
+            dataset_id="ds1",
+        )
+        run.save_to_file()
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1"
+            "/eval_config/eval_config1/run_config/run_config1/results"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "results" in data
+        assert "eval" in data
+        assert "eval_config" in data
+        assert "run_config" in data
+
+        assert len(data["results"]) == 1
+        result = data["results"][0]
+        assert result["scores"] == {"score1": 3.5, "overall_rating": 4.0}
+        assert result["dataset_id"] == "ds1"
+        assert result["task_run_config_id"] == "run_config1"
+        assert result["input"] == "hello"
+        assert result["output"] == "world"
+
+        for v2_field in (
+            "eval_input_id",
+            "reference_data",
+            "skipped_reason",
+            "skipped_detail",
+        ):
+            assert v2_field in result
+            assert result[v2_field] is None
+
+    def test_v1_llm_as_judge_config_accepted(
+        self,
+        mock_eval,
+    ):
+        config = EvalConfig(
+            name="LLM Judge V1",
+            config_type=EvalConfigType.llm_as_judge,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["judge step"]},
+            parent=mock_eval,
+        )
+        config.save_to_file()
+
+        loaded = EvalConfig.load_from_file(str(config.path))
+        assert loaded.config_type == EvalConfigType.llm_as_judge
+        assert isinstance(loaded.properties, dict)
+        assert loaded.properties["eval_steps"] == ["judge step"]
+        assert loaded.model_name == "gpt-4"
+        assert loaded.model_provider == "openai"
+
+    def test_v1_score_summary_with_v2_optional_fields_on_runs(
+        self,
+        mock_eval_for_score_summary,
+    ):
+        config = Mock(spec=EvalConfig)
+
+        runs = [
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": 0.9, "relevance": 0.8},
+                input="input1",
+                output="output1",
+                dataset_id="ds1",
+            ),
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": 0.7, "relevance": 0.6},
+                input="input2",
+                output="output2",
+                dataset_id="ds2",
+            ),
+        ]
+        for r in runs:
+            assert r.eval_input_id is None
+            assert r.reference_data is None
+            assert r.skipped_reason is None
+
+        config.runs.return_value = runs
+
+        task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+        expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
+
+        result = compute_score_summary(
+            mock_eval_for_score_summary, config, task_run_configs, expected_dataset_ids
+        )
+
+        assert result.dataset_size == 2
+        scores = result.results["rc1"]
+        assert scores["accuracy"].mean_score == pytest.approx(0.8)
+        assert scores["accuracy"].n_used == 2
+        assert scores["accuracy"].n_excluded == 0
+        assert scores["relevance"].mean_score == pytest.approx(0.7)
+        assert scores["relevance"].n_used == 2
+        assert scores["relevance"].n_excluded == 0
