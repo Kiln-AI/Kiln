@@ -4491,14 +4491,13 @@ export interface components {
              */
             run_config_id?: string | null;
             /**
-             * Count
-             * @description The number of failing examples to find.
-             * @default 5
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
              */
-            count: number;
+            stop_after_failures?: number | null;
             /**
              * Max Samples
-             * @description The maximum number of items to judge while searching for failures.
+             * @description The maximum number of items to judge.
              * @default 50
              */
             max_samples: number;
@@ -6972,14 +6971,13 @@ export interface components {
              */
             run_config_id?: string | null;
             /**
-             * Count
-             * @description The number of failing examples to find before the job stops.
-             * @default 5
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
              */
-            count: number;
+            stop_after_failures?: number | null;
             /**
              * Max Samples
-             * @description The maximum number of items to judge while searching for failures.
+             * @description The maximum number of items to judge.
              * @default 50
              */
             max_samples: number;
@@ -7074,9 +7072,14 @@ export interface components {
             judge_job: components["schemas"]["JudgeJob"];
             /**
              * Failing Runs
-             * @description The failing examples found (up to the requested count), with feedback.
+             * @description The failing examples found (up to stop_after_failures, if set), with feedback.
              */
             failing_runs: components["schemas"]["JudgeJobRun"][];
+            /**
+             * Judged Runs
+             * @description Every item judged this run (pass and fail), each keyed by task_run_id. Pair these across two runs by task_run_id to gate a candidate vs baseline on the same items.
+             */
+            judged_runs: components["schemas"]["JudgeJobRun"][];
             /**
              * Num Judged
              * @description How many items were examined while searching for failures.
@@ -7094,7 +7097,7 @@ export interface components {
             train_set_size: number;
             /**
              * Hit Cap
-             * @description True if max_samples was reached before finding the requested count of failures.
+             * @description True if coverage was capped: max_samples reached before stop_after_failures (train signal), or the matching set exceeded max_samples (gate).
              */
             hit_cap: boolean;
             /**

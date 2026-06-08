@@ -65,15 +65,19 @@ class JudgeJob(
         default=None,
         description="The ID of the run config whose outputs are being judged. Metadata only; the existing dataset outputs are judged (the task is not re-run).",
     )
-    count: int = Field(
-        default=5,
+    stop_after_failures: int | None = Field(
+        default=None,
         ge=1,
-        description="The number of failing examples to find before the job stops.",
+        description=(
+            "If set, stop once this many failing examples are found (a cheap minibatch for the "
+            "train signal). If null (default), judge the whole matching set up to max_samples "
+            "(full coverage — required for a val gate paired by task_run_id)."
+        ),
     )
     max_samples: int = Field(
         default=50,
         ge=1,
-        description="The maximum number of items to judge while searching for failures.",
+        description="The maximum number of items to judge.",
     )
     threshold: float = Field(
         default=0.75,

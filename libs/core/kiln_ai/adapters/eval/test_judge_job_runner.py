@@ -78,13 +78,18 @@ def make_eval_config(eval):
 
 
 def make_judge_job(
-    task, eval_config, target_tags=None, count=2, max_samples=10, threshold=0.75
+    task,
+    eval_config,
+    target_tags=None,
+    stop_after_failures=2,
+    max_samples=10,
+    threshold=0.75,
 ):
     job = JudgeJob(
         name="scan",
         target_tags=target_tags if target_tags is not None else ["train"],
         eval_config_id=eval_config.id,
-        count=count,
+        stop_after_failures=stop_after_failures,
         max_samples=max_samples,
         threshold=threshold,
         parent=task,
@@ -209,10 +214,14 @@ def test_runner_requires_parents(mock_task):
 
 
 @pytest.mark.asyncio
-async def test_returns_failures_and_persists(mock_task, data_source):
+async def test_full_coverage_returns_all_judged_runs(mock_task, data_source):
+    # Default (stop_after_failures=None) is a gate: judge the WHOLE matching set, return every
+    # judged item keyed by task_run_id so the caller can pair against another run.
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=2, max_samples=10)
+    job = make_judge_job(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
 
     fail_ids = {
         make_train_run(mock_task, data_source, f"fail-{i}").id for i in range(3)
@@ -226,22 +235,54 @@ async def test_returns_failures_and_persists(mock_task, data_source):
     result = await run_job(job, eval_config, score_fn)
 
     assert result.train_set_size == 6
+    assert result.num_judged == 6
     assert result.failing_count == 3
     assert result.hit_cap is False
-    assert len(result.failing_runs) == 2  # trimmed to count
+    # No early-stop, no trim: every failure is returned...
+    assert len(result.failing_runs) == 3
     assert all(not r.passed for r in result.failing_runs)
     assert all(r.task_run_id in fail_ids for r in result.failing_runs)
     assert all(r.feedback for r in result.failing_runs)
+    # ...and judged_runs holds all 6 (pass and fail), keyed by task_run_id.
+    assert len(result.judged_runs) == 6
+    assert sum(1 for r in result.judged_runs if r.passed) == 3
+    assert {r.task_run_id for r in result.judged_runs} == {
+        r.id for r in mock_task.runs()
+    }
 
     # All judged items persisted as children (pass and fail)
     assert len(job.runs()) == 6
 
 
 @pytest.mark.asyncio
+async def test_stop_after_failures_trims_minibatch(mock_task, data_source):
+    # Train-signal mode: stop_after_failures caps the returned minibatch; judged_runs still holds
+    # everything judged this chunk.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=10)
+
+    for i in range(3):
+        make_train_run(mock_task, data_source, f"fail-{i}")
+    for i in range(3):
+        make_train_run(mock_task, data_source, f"pass-{i}")
+
+    def score_fn(task_run):
+        return {"accuracy": 0.0 if task_run.input.startswith("fail") else 1.0}
+
+    # concurrency 25 judges all 6 in one chunk, so all failures are found before the early-stop check
+    result = await run_job(job, eval_config, score_fn)
+
+    assert result.failing_count == 3
+    assert len(result.failing_runs) == 2  # trimmed to stop_after_failures
+    assert len(result.judged_runs) == 6
+
+
+@pytest.mark.asyncio
 async def test_early_stop_limits_num_judged(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=2, max_samples=10)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=10)
     for i in range(10):
         make_train_run(mock_task, data_source, f"fail-{i}")
 
@@ -260,7 +301,7 @@ async def test_early_stop_limits_num_judged(mock_task, data_source):
 async def test_hit_cap_when_failures_sparse(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=2, max_samples=5)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=5)
     for i in range(5):
         make_train_run(mock_task, data_source, f"pass-{i}")
 
@@ -279,7 +320,7 @@ async def test_hit_cap_when_failures_sparse(mock_task, data_source):
 async def test_exhausted_train_set_is_not_hit_cap(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=2, max_samples=10)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=10)
     for i in range(3):
         make_train_run(mock_task, data_source, f"pass-{i}")
 
@@ -297,7 +338,11 @@ async def test_tag_filtering_and_semantics(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
     job = make_judge_job(
-        mock_task, eval_config, target_tags=["train", "golden"], count=5, max_samples=10
+        mock_task,
+        eval_config,
+        target_tags=["train", "golden"],
+        stop_after_failures=5,
+        max_samples=10,
     )
 
     both = make_train_run(mock_task, data_source, "both", tags=["train", "golden"])
@@ -319,7 +364,7 @@ async def test_tag_filtering_and_semantics(mock_task, data_source):
 async def test_cache_reuse_skips_judging(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=1, max_samples=1)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
     run = make_train_run(mock_task, data_source, "fail-0")
 
     JudgeJobRun(
@@ -356,13 +401,13 @@ async def test_threshold_override_five_star(mock_task, data_source):
         return {"quality": 4.0}  # normalized 0.75
 
     job_pass = make_judge_job(
-        mock_task, eval_config, count=1, max_samples=1, threshold=0.75
+        mock_task, eval_config, stop_after_failures=1, max_samples=1, threshold=0.75
     )
     result_pass = await run_job(job_pass, eval_config, score_fn)
     assert result_pass.failing_count == 0
 
     job_fail = make_judge_job(
-        mock_task, eval_config, count=1, max_samples=1, threshold=0.9
+        mock_task, eval_config, stop_after_failures=1, max_samples=1, threshold=0.9
     )
     result_fail = await run_job(job_fail, eval_config, score_fn)
     assert result_fail.failing_count == 1
@@ -372,7 +417,7 @@ async def test_threshold_override_five_star(mock_task, data_source):
 async def test_judge_errors_are_collected_and_skipped(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=2, max_samples=2)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=2)
     error_run = make_train_run(mock_task, data_source, "error-item")
     fail_run = make_train_run(mock_task, data_source, "fail-item")
 
@@ -384,8 +429,10 @@ async def test_judge_errors_are_collected_and_skipped(mock_task, data_source):
     result = await run_job(job, eval_config, score_fn)
 
     assert result.num_judged == 2
-    # The errored item is skipped (not persisted); only the failing item has a run
+    # The errored item is skipped (not persisted, not in judged_runs); only the failing item has a run
     assert len(job.runs()) == 1
+    assert len(result.judged_runs) == 1
+    assert result.judged_runs[0].task_run_id == fail_run.id
     assert len(result.failing_runs) == 1
     assert result.failing_runs[0].task_run_id == fail_run.id
     # The error is collected and surfaced (not silently swallowed) so the caller sees partial failure.
@@ -400,7 +447,7 @@ async def test_save_errors_are_collected_but_result_kept(
 ):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, count=1, max_samples=1)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
     fail_run = make_train_run(mock_task, data_source, "fail-item")
 
     def boom(self):

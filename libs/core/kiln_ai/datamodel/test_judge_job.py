@@ -16,7 +16,7 @@ def test_defaults(task):
     job = JudgeJob(
         name="scan", target_tags=["train"], eval_config_id="ec1", parent=task
     )
-    assert job.count == 5
+    assert job.stop_after_failures is None
     assert job.max_samples == 50
     assert job.threshold == 0.75
     assert job.run_config_id is None
@@ -33,7 +33,7 @@ def test_create_and_roundtrip(task):
         target_tags=["train"],
         eval_config_id="ec1",
         run_config_id="rc1",
-        count=3,
+        stop_after_failures=3,
         max_samples=20,
         threshold=0.5,
         parent=task,
@@ -62,7 +62,7 @@ def test_create_and_roundtrip(task):
     assert reloaded.target_tags == ["train"]
     assert reloaded.eval_config_id == "ec1"
     assert reloaded.run_config_id == "rc1"
-    assert reloaded.count == 3
+    assert reloaded.stop_after_failures == 3
     assert reloaded.threshold == 0.5
 
     runs = reloaded.runs()

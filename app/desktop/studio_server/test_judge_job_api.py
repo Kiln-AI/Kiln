@@ -110,7 +110,7 @@ def test_create_judge_job(client, mock_task, mock_task_from_id, mock_eval_config
             "name": "scan",
             "target_tags": ["train"],
             "eval_config_id": "eval_config1",
-            "count": 3,
+            "stop_after_failures": 3,
             "max_samples": 10,
         },
     )
@@ -118,7 +118,7 @@ def test_create_judge_job(client, mock_task, mock_task_from_id, mock_eval_config
     body = resp.json()
     assert body["name"] == "scan"
     assert body["target_tags"] == ["train"]
-    assert body["count"] == 3
+    assert body["stop_after_failures"] == 3
     assert len(mock_task.judge_jobs()) == 1
 
 
@@ -157,7 +157,7 @@ def test_create_validation(client, mock_task, mock_task_from_id, mock_eval_confi
         json={
             "target_tags": ["train"],
             "eval_config_id": "eval_config1",
-            "count": 5,
+            "stop_after_failures": 5,
             "max_samples": 2,
         },
     )
@@ -172,16 +172,22 @@ def test_create_validation(client, mock_task, mock_task_from_id, mock_eval_confi
 def test_run_judge_job(
     client, mock_task, mock_task_from_id, mock_eval_config, saved_job
 ):
+    failing_run = JudgeJobRun(
+        parent=saved_job,
+        task_run_id="d1",
+        scores={"accuracy": 0.0},
+        feedback="bad",
+        passed=False,
+    )
+    passing_run = JudgeJobRun(
+        parent=saved_job,
+        task_run_id="d3",
+        scores={"accuracy": 1.0},
+        passed=True,
+    )
     result = JudgeJobRunResult(
-        failing_runs=[
-            JudgeJobRun(
-                parent=saved_job,
-                task_run_id="d1",
-                scores={"accuracy": 0.0},
-                feedback="bad",
-                passed=False,
-            )
-        ],
+        failing_runs=[failing_run],
+        judged_runs=[failing_run, passing_run],
         num_judged=3,
         failing_count=1,
         train_set_size=10,
@@ -201,6 +207,11 @@ def test_run_judge_job(
     assert len(body["failing_runs"]) == 1
     assert body["failing_runs"][0]["task_run_id"] == "d1"
     assert body["failing_runs"][0]["feedback"] == "bad"
+    # judged_runs carries every judged item (pass and fail), keyed by task_run_id, for pairing.
+    assert {(r["task_run_id"], r["passed"]) for r in body["judged_runs"]} == {
+        ("d1", False),
+        ("d3", True),
+    }
     # Per-item errors are surfaced so the caller can see partial failures.
     assert body["errors"] == [
         {"task_run_id": "d2", "error": "Error judging item: boom"}
@@ -215,6 +226,7 @@ def test_run_judge_job_404(client, mock_task, mock_task_from_id, mock_eval_confi
 def test_create_and_run(client, mock_task, mock_task_from_id, mock_eval_config):
     result = JudgeJobRunResult(
         failing_runs=[],
+        judged_runs=[],
         num_judged=0,
         failing_count=0,
         train_set_size=0,

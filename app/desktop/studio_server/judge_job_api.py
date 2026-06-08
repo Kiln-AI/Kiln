@@ -68,13 +68,17 @@ class CreateJudgeJobRequest(BaseModel):
         default=None,
         description="The ID of the run config whose outputs are being judged (metadata only).",
     )
-    count: int = Field(
-        default=5, ge=1, description="The number of failing examples to find."
+    stop_after_failures: int | None = Field(
+        default=None,
+        ge=1,
+        description="If set, stop once this many failing examples are found (a cheap minibatch for "
+        "the train signal). If null (default), judge the whole matching set up to max_samples (full "
+        "coverage — required for a val gate paired by task_run_id).",
     )
     max_samples: int = Field(
         default=50,
         ge=1,
-        description="The maximum number of items to judge while searching for failures.",
+        description="The maximum number of items to judge.",
     )
     threshold: float = Field(
         default=DEFAULT_FAILURE_THRESHOLD,
@@ -85,8 +89,11 @@ class CreateJudgeJobRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_request(self) -> "CreateJudgeJobRequest":
-        if self.max_samples < self.count:
-            raise ValueError("max_samples must be >= count")
+        if (
+            self.stop_after_failures is not None
+            and self.max_samples < self.stop_after_failures
+        ):
+            raise ValueError("max_samples must be >= stop_after_failures")
         if not self.target_tags or any(not t.strip() for t in self.target_tags):
             raise ValueError("target_tags must be a non-empty list of non-empty tags")
         return self
@@ -97,7 +104,11 @@ class JudgeJobRunResponse(BaseModel):
 
     judge_job: JudgeJob = Field(description="The judge job that was run.")
     failing_runs: list[JudgeJobRun] = Field(
-        description="The failing examples found (up to the requested count), with feedback."
+        description="The failing examples found (up to stop_after_failures, if set), with feedback."
+    )
+    judged_runs: list[JudgeJobRun] = Field(
+        description="Every item judged this run (pass and fail), each keyed by task_run_id. Pair "
+        "these across two runs by task_run_id to gate a candidate vs baseline on the same items.",
     )
     num_judged: int = Field(
         description="How many items were examined while searching for failures."
@@ -107,7 +118,8 @@ class JudgeJobRunResponse(BaseModel):
         description="Total number of dataset items matching the target tags."
     )
     hit_cap: bool = Field(
-        description="True if max_samples was reached before finding the requested count of failures.",
+        description="True if coverage was capped: max_samples reached before stop_after_failures "
+        "(train signal), or the matching set exceeded max_samples (gate).",
     )
     errors: list[JudgeJobItemError] = Field(
         default_factory=list,
@@ -124,7 +136,7 @@ def _build_judge_job(task: Task, request: CreateJudgeJobRequest) -> JudgeJob:
         target_tags=request.target_tags,
         eval_config_id=request.eval_config_id,
         run_config_id=request.run_config_id,
-        count=request.count,
+        stop_after_failures=request.stop_after_failures,
         max_samples=request.max_samples,
         threshold=request.threshold,
     )
@@ -140,6 +152,7 @@ async def _run_judge_job(
     return JudgeJobRunResponse(
         judge_job=judge_job,
         failing_runs=result.failing_runs,
+        judged_runs=result.judged_runs,
         num_judged=result.num_judged,
         failing_count=result.failing_count,
         train_set_size=result.train_set_size,

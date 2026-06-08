@@ -94,6 +94,7 @@ class JudgeJobRunResult:
     """The result of running a JudgeJob. Counts and errors are FYI for the caller; not persisted."""
 
     failing_runs: list[JudgeJobRun]
+    judged_runs: list[JudgeJobRun]
     num_judged: int
     failing_count: int
     train_set_size: int
@@ -140,13 +141,19 @@ class JudgeJobRunner:
         return set(self.judge_job.target_tags or []) <= set(task_run.tags or [])
 
     async def run(self, concurrency: int = 25) -> JudgeJobRunResult:
-        """Judge tagged dataset items until `count` failures are found or `max_samples` are judged.
+        """Judge tagged dataset items and persist each result as a JudgeJobRun child.
 
-        Persists each result as a JudgeJobRun child and returns the failing runs + counts + any
-        per-item errors. Per-item errors are collected (not raised), so one bad item never aborts
-        the run; the item is left un-persisted and a later re-run will retry it.
+        Two modes, set by `stop_after_failures`:
+        - None (gate): judge the WHOLE matching set up to `max_samples` — full coverage, so the
+          caller can pair `judged_runs` by task_run_id against another run.
+        - set (train signal): stop early once that many failures are found (a cheap minibatch).
+
+        Returns the failing runs, all judged runs, counts, and any per-item errors. Per-item errors
+        are collected (not raised), so one bad item never aborts the run; the item is left
+        un-persisted and a later re-run will retry it.
         """
         job = self.judge_job
+        stop_after = job.stop_after_failures
 
         candidates = [
             run for run in self.task.runs(readonly=True) if self._matches_tags(run)
@@ -167,11 +174,12 @@ class JudgeJobRunner:
             raise ValueError("Not able to create evaluator from eval config")
 
         failing_runs: list[JudgeJobRun] = []
+        judged_runs: list[JudgeJobRun] = []
         errors: list[JudgeJobItemError] = []
         num_judged = 0
 
-        # Judge in concurrent chunks so we can stop early once we have enough failures
-        # (a chunk may over-judge by up to concurrency-1 items past the stopping point).
+        # Judge in concurrent chunks. In train-signal mode we can stop early once we have enough
+        # failures (a chunk may over-judge by up to concurrency-1 items past the stopping point).
         for start in range(0, len(candidates), concurrency):
             chunk = candidates[start : start + concurrency]
             results = await asyncio.gather(
@@ -181,16 +189,28 @@ class JudgeJobRunner:
                 num_judged += 1
                 if scored.error is not None:
                     errors.append(scored.error)
-                if scored.run is not None and not scored.passed:
-                    failing_runs.append(scored.run)
-            if len(failing_runs) >= job.count:
+                if scored.run is not None:
+                    judged_runs.append(scored.run)
+                    if not scored.passed:
+                        failing_runs.append(scored.run)
+            # Gate mode (stop_after is None) judges the whole set; only the train signal stops early.
+            if stop_after is not None and len(failing_runs) >= stop_after:
                 break
 
-        hit_cap = len(failing_runs) < job.count and num_judged >= job.max_samples
+        failing_count = len(failing_runs)
+        if stop_after is not None:
+            returned_failing = failing_runs[:stop_after]
+            hit_cap = failing_count < stop_after and num_judged >= job.max_samples
+        else:
+            returned_failing = failing_runs
+            # In gate mode we judge everything; "capped" means the matching set exceeded max_samples.
+            hit_cap = train_set_size > job.max_samples
+
         return JudgeJobRunResult(
-            failing_runs=failing_runs[: job.count],
+            failing_runs=returned_failing,
+            judged_runs=judged_runs,
             num_judged=num_judged,
-            failing_count=len(failing_runs),
+            failing_count=failing_count,
             train_set_size=train_set_size,
             hit_cap=hit_cap,
             errors=errors,
