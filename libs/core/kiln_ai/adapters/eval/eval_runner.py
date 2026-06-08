@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
 import litellm
+from pydantic_core import to_json
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
@@ -246,8 +247,6 @@ class EvalRunner:
                 # crashing the whole eval job.
                 if result_task_run.trace:
                     try:
-                        from pydantic_core import to_json
-
                         trace = to_json(result_task_run.trace, indent=2).decode()
                     except Exception as e:
                         # Broad catch: pydantic_core.to_json can raise

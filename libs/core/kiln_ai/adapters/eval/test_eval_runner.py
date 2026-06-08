@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Dict
@@ -5,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import litellm
 import pytest
+from pydantic_core import to_json
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner, _is_retryable_error
@@ -27,6 +29,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -793,6 +796,85 @@ async def test_run_job_with_final_answer_evaluation_data_type(
 
     parsed_trace = json.loads(saved_run.task_run_trace)
     assert parsed_trace == mock_trace
+
+
+@pytest.mark.asyncio
+async def test_run_job_serializes_pydantic_objects_in_trace(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    """A freshly-run trace can carry pydantic models (e.g. MessageUsage attached
+    to assistant messages by the adapter). Serialization must handle these —
+    plain json.dumps would raise TypeError, so the runner uses pydantic_core's
+    to_json. This guards against a regression back to a stdlib encoder.
+    """
+    mock_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+    mock_eval_config.parent.save_to_file()
+
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    mock_scores = {"accuracy": 0.95}
+    mock_trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "test"},
+        {
+            "role": "assistant",
+            "content": "response",
+            "usage": MessageUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+        },
+    ]
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
+            result_task_run = TaskRun(
+                input=eval_job_item.input,
+                input_source=data_source,
+                output=TaskOutput(output="evaluated output"),
+                intermediate_outputs={"intermediate_output": "intermediate output"},
+                trace=mock_trace,
+            )
+            return (
+                result_task_run,
+                mock_scores,
+                {"intermediate_output": "intermediate output"},
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
+    ):
+        success = await mock_eval_runner.run_job(job)
+
+    assert success is True
+
+    eval_runs = mock_eval_config.runs()
+    assert len(eval_runs) == 1
+    saved_run = eval_runs[0]
+    assert saved_run.task_run_trace is not None
+    assert isinstance(saved_run.task_run_trace, str)
+
+    # The pydantic MessageUsage round-trips to a plain JSON object, so compare
+    # against the serialized form rather than the raw (model-containing) trace.
+    parsed_trace = json.loads(saved_run.task_run_trace)
+    assert parsed_trace == json.loads(to_json(mock_trace).decode())
+    assert parsed_trace[1]["usage"] == {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+        "cost": None,
+        "cached_tokens": None,
+    }
 
 
 @pytest.mark.asyncio
