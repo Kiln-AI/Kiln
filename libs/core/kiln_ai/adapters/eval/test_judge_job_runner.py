@@ -131,13 +131,17 @@ def scripted_evaluator_factory(
     return lambda *args, **kwargs: ScriptedEvaluator(*args, **kwargs)
 
 
-async def run_job(judge_job, eval_config, score_fn, calls=None, seed=1, concurrency=25):
+async def run_job(
+    judge_job, eval_config, score_fn, calls=None, seed=1, concurrency=25, retry_delay=0
+):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
             "kiln_ai.adapters.eval.judge_job_runner.eval_adapter_from_type",
             lambda _type: scripted_evaluator_factory(score_fn, calls=calls),
         )
-        runner = JudgeJobRunner(judge_job, eval_config, rng=random.Random(seed))
+        runner = JudgeJobRunner(
+            judge_job, eval_config, rng=random.Random(seed), retry_delay=retry_delay
+        )
         return await runner.run(concurrency=concurrency)
 
 
@@ -467,3 +471,50 @@ async def test_save_errors_are_collected_but_result_kept(
     assert len(result.errors) == 1
     assert result.errors[0].task_run_id == fail_run.id
     assert "disk full" in result.errors[0].error
+
+
+@pytest.mark.asyncio
+async def test_transient_error_retries_then_succeeds(mock_task, data_source):
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
+    make_train_run(mock_task, data_source, "fail-item")
+
+    attempts = {"n": 0}
+
+    def score_fn(task_run):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            # Classified as transient by the eval runner's retry predicate.
+            raise ValueError("This task requires a specific output schema")
+        return {"accuracy": 0.0}
+
+    result = await run_job(job, eval_config, score_fn)
+
+    # Retried once then succeeded — the item is judged, no error surfaced.
+    assert attempts["n"] == 2
+    assert len(result.errors) == 0
+    assert len(result.judged_runs) == 1
+    assert result.failing_count == 1
+
+
+@pytest.mark.asyncio
+async def test_non_transient_error_not_retried(mock_task, data_source):
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
+    make_train_run(mock_task, data_source, "err-item")
+
+    attempts = {"n": 0}
+
+    def score_fn(task_run):
+        attempts["n"] += 1
+        raise RuntimeError("hard failure")
+
+    result = await run_job(job, eval_config, score_fn)
+
+    # A non-transient error is collected once, not retried.
+    assert attempts["n"] == 1
+    assert len(result.judged_runs) == 0
+    assert len(result.errors) == 1
+    assert "hard failure" in result.errors[0].error

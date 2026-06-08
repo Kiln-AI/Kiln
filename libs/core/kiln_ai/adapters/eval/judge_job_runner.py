@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.eval_runner import _is_retryable_error
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -121,6 +122,8 @@ class JudgeJobRunner:
         eval_config: EvalConfig,
         save_context: SaveContext | None = None,
         rng: random.Random | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0,
     ):
         task = judge_job.parent_task()
         if task is None:
@@ -135,6 +138,8 @@ class JudgeJobRunner:
         self.eval = eval
         self._save_context: SaveContext = save_context or default_save_context
         self._rng = rng or random.Random()
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
 
     def _matches_tags(self, task_run: TaskRun) -> bool:
         # AND semantics: the item must carry every target tag.
@@ -233,7 +238,9 @@ class JudgeJobRunner:
             return _ScoredItem(run=existing, passed=existing.passed)
 
         try:
-            scores, intermediate_outputs = await evaluator.run_eval(task_run)
+            scores, intermediate_outputs = await self._judge_with_retry(
+                evaluator, task_run
+            )
         except Exception as e:
             logger.error(
                 "Error judging item %s for judge job %s",
@@ -279,3 +286,25 @@ class JudgeJobRunner:
             )
 
         return _ScoredItem(run=judge_job_run, passed=passed, error=save_error)
+
+    async def _judge_with_retry(
+        self, evaluator: BaseEval, task_run: TaskRun
+    ) -> tuple[EvalScores, dict[str, str] | None]:
+        """Judge one item, retrying transient (rate-limit / connection) errors.
+
+        Generating or judging invokes a model, so transient failures are expected; without a retry
+        they'd be collected as per-item errors and silently shrink coverage (skewing a gate). Reuses
+        the eval runner's transient-error classification. Raises on a non-transient error or once
+        retries are exhausted — the caller turns that into a collected JudgeJobItemError.
+        """
+        last_error: Exception | None = None
+        for attempt in range(1 + self._max_retries):
+            try:
+                return await evaluator.run_eval(task_run)
+            except Exception as e:
+                last_error = e
+                if not (_is_retryable_error(e) and attempt < self._max_retries):
+                    break
+                await asyncio.sleep(self._retry_delay)
+        assert last_error is not None  # the loop runs at least once
+        raise last_error
