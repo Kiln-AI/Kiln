@@ -1,27 +1,36 @@
 <script lang="ts">
   import AppPage from "../../../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
-  import FormList from "$lib/utils/form_list.svelte"
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import Warning from "$lib/ui/warning.svelte"
-  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import type { Eval, Task, EvalConfigType, Spec } from "$lib/types"
+  import type { components } from "$lib/api_schema"
   import { tick } from "svelte"
-  import { load_task } from "$lib/stores"
+  import { load_task, load_available_models } from "$lib/stores"
   import { goto } from "$app/navigation"
-  import { get_eval_steps } from "./eval_steps_utils"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import type { AvailableModels } from "$lib/types"
-  import { available_models, load_available_models } from "$lib/stores"
-  import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
-
   import { agentInfo } from "$lib/agent"
+  import LlmJudgeForm from "$lib/components/eval_types/llm_judge_form.svelte"
+  import {
+    ALL_V2_EVAL_TYPES,
+    getV2EvalTypeMetadata,
+    type V2EvalType,
+  } from "$lib/utils/eval_types/registry"
+  import {
+    createEvalConfig,
+    testV2Eval,
+    checkCodeEvalTrust,
+    grantCodeEvalTrust,
+    type EvalTaskInput,
+    type TestV2EvalResponse,
+    type V2EvalConfigProperties,
+  } from "$lib/api/v2_eval_api"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
+
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: eval_id = $page.params.eval_id!
@@ -35,33 +44,33 @@
   let spec_loading = true
   let spec_error: KilnError | null = null
 
-  let combined_model_name: string | undefined = undefined
-  let model_name: string | undefined = undefined
-  let provider_name: string | undefined = undefined
-  let task_description: string = ""
-  let eval_steps: string[] = []
-
   let evaluator: Eval | undefined = undefined
   let task: Task | null = null
 
-  // Loading
   let loading_eval = true
   let loading_eval_error: KilnError | undefined = undefined
   let loading_task = true
   let loading_task_error: KilnError | undefined = undefined
   $: loading = loading_eval || loading_task || spec_loading
   $: loading_error = loading_eval_error || loading_task_error || spec_error
+
   onMount(async () => {
-    // tick: need to wait for the page params to be available
     await tick()
+
+    const config_type_param = $page.url.searchParams.get("config_type")
+    if (
+      config_type_param === "g_eval" ||
+      config_type_param === "llm_as_judge"
+    ) {
+      selected_v2_type = "llm_judge"
+    } else if (ALL_V2_EVAL_TYPES.includes(config_type_param as V2EvalType)) {
+      selected_v2_type = config_type_param as V2EvalType
+    }
+
     await load_eval()
     await get_spec()
     await load_task_local()
     await load_available_models()
-    // Force these back to undefined -- we don't want to take the last-used model from the available model dropdown
-    model_name = undefined
-    provider_name = undefined
-    combined_model_name = undefined
   })
 
   async function get_spec() {
@@ -108,23 +117,6 @@
       if (!task) {
         throw new Error("Task not found")
       }
-
-      // Setup the evaluator template for a task requirements (if template is task requirements)
-      if (evaluator.template === "kiln_requirements") {
-        eval_steps = []
-        for (const requirement of task.requirements) {
-          eval_steps.push(
-            `Does the model's output align to the following requirement: ${requirement.name}\nRequirement Instruction: ${requirement.instruction}\nRequirement Priority (0 is highest, 3 is lowest): ${requirement.priority}`,
-          )
-        }
-        eval_steps.push(
-          "Given prior thinking and priorities, what would be an appropriate overall score for this task, from 1 to 5, with 1 being the worst and 5 being the best?",
-        )
-      }
-      eval_steps = get_eval_steps(evaluator.template, task, evaluator, spec)
-
-      // Use the task instruction as the task description starter point
-      task_description = task.instruction
     } catch (e) {
       loading_task_error = createKilnError(e)
     } finally {
@@ -158,73 +150,230 @@
     }
   }
 
-  let selected_algo: EvalConfigType | undefined = undefined
+  // V2 eval type picker
+  let selected_v2_type: V2EvalType | null = null
+  $: selected_metadata = selected_v2_type
+    ? getV2EvalTypeMetadata(selected_v2_type)
+    : null
 
-  const evaluator_algorithms: {
-    id: EvalConfigType
-    name: string
-    description: string
-  }[] = [
-    {
-      id: "llm_as_judge",
-      name: "LLM as Judge",
-      description:
-        "The model selected above will be asked to judge task outputs.",
-    },
-    {
-      id: "g_eval",
-      name: "G-Eval Judge",
-      description:
-        "A more advanced LLM-as-Judge method which considers token probabilities for more precise scores.",
-    },
-  ]
-
-  function select_evaluator(algo: EvalConfigType) {
-    selected_algo = algo
+  function select_v2_type(type: V2EvalType) {
+    selected_v2_type = type
   }
 
+  function go_back_to_type_picker() {
+    selected_v2_type = null
+  }
+
+  // LLM judge form bindings
+  let llm_model_name: string | undefined = undefined
+  let llm_provider_name: string | undefined = undefined
+  let llm_combined_model_name: string | undefined = undefined
+  let llm_selected_algo: EvalConfigType | undefined = undefined
+
+  // Form component references
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let v2FormComponent: any
+  let llmJudgeFormComponent: LlmJudgeForm
+
+  // Save state
   let create_evaluator_error: KilnError | null = null
   let create_evaluator_loading = false
   let complete = false
-  async function create_evaluator() {
-    try {
-      if (!selected_algo) {
-        throw new Error("No evaluator algorithm selected")
-      }
-      if (!model_name || !provider_name) {
-        throw new Error("No model selected")
-      }
-      create_evaluator_loading = true
 
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              eval_id,
-            },
-          },
-          body: {
-            type: selected_algo,
-            model_name: model_name,
-            // @ts-expect-error provider is not typed, but server will validate
-            provider: provider_name,
-            properties: {
-              eval_steps: eval_steps,
-              task_description: task_description,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
+  // Test-run panel state
+  let test_final_message = ""
+  let test_trace = ""
+  let test_reference_data = ""
+  let test_task_input = ""
+  let test_loading = false
+  let test_error: KilnError | null = null
+  let test_result: TestV2EvalResponse | null = null
+  let test_has_run = false
+  let test_abort_controller: AbortController | null = null
+
+  // Trust and confirm modal refs
+  let trust_dialog: Dialog
+  let confirm_save_dialog: Dialog
+
+  // Pending action after trust grant: "test" or "save"
+  let pending_trust_action: "test" | "save" | null = null
+
+  $: is_llm_judge = selected_v2_type === "llm_judge"
+  $: can_submit_v2 = selected_v2_type && !is_llm_judge
+  $: can_submit_llm =
+    is_llm_judge && llm_selected_algo && llm_combined_model_name
+
+  async function run_test() {
+    if (!selected_v2_type || !v2FormComponent) return
+
+    if (typeof v2FormComponent.validate === "function") {
+      const validation_error = v2FormComponent.validate()
+      if (validation_error) {
+        test_error = createKilnError(new Error(validation_error))
+        return
       }
+    }
+
+    const properties = v2FormComponent.getProperties() as V2EvalConfigProperties
+
+    const eval_input: EvalTaskInput = {
+      final_message: test_final_message,
+    }
+    if (test_trace.trim()) {
+      try {
+        eval_input.trace = JSON.parse(test_trace.trim())
+      } catch {
+        test_error = createKilnError(
+          new Error("Trace must be valid JSON (array of objects)."),
+        )
+        return
+      }
+    }
+    if (test_reference_data.trim()) {
+      try {
+        eval_input.reference_data = JSON.parse(test_reference_data.trim())
+      } catch {
+        test_error = createKilnError(
+          new Error("Reference data must be valid JSON (object)."),
+        )
+        return
+      }
+    }
+    if (test_task_input.trim()) {
+      eval_input.task_input = test_task_input.trim()
+    }
+
+    try {
+      test_loading = true
+      test_error = null
+      test_result = null
+      test_abort_controller = new AbortController()
+
+      const result = await testV2Eval(
+        project_id,
+        task_id,
+        eval_id,
+        {
+          properties,
+          eval_input,
+        },
+        test_abort_controller.signal,
+      )
+
+      if (
+        result.skipped_reason === "code_eval_not_trusted" &&
+        selected_metadata?.requiresTrust
+      ) {
+        pending_trust_action = "test"
+        trust_dialog.show()
+        test_loading = false
+        return
+      }
+
+      test_result = result
+      test_has_run = true
+    } catch (e) {
+      test_error = createKilnError(e)
+    } finally {
+      test_loading = false
+      test_abort_controller = null
+    }
+  }
+
+  function cancel_test() {
+    if (test_abort_controller) {
+      test_abort_controller.abort()
+      test_abort_controller = null
+    }
+    test_loading = false
+  }
+
+  async function grant_trust_and_retry(): Promise<boolean> {
+    try {
+      await grantCodeEvalTrust(project_id)
+    } catch (e) {
+      test_error = createKilnError(e)
+      return false
+    }
+    const action = pending_trust_action
+    pending_trust_action = null
+    if (action === "test") {
+      await run_test()
+    } else if (action === "save") {
+      await do_save()
+    }
+    return true
+  }
+
+  async function handle_submit() {
+    // Trust gate: if type requires trust, check before saving
+    if (selected_metadata?.requiresTrust) {
+      try {
+        const trust_response = await checkCodeEvalTrust(project_id)
+        if (!trust_response.trusted) {
+          pending_trust_action = "save"
+          trust_dialog.show()
+          return
+        }
+      } catch (e) {
+        create_evaluator_error = createKilnError(e)
+        return
+      }
+    }
+
+    // Save-without-testing gate: if V2 type and hasn't run test, confirm
+    if (can_submit_v2 && !test_has_run) {
+      confirm_save_dialog.show()
+      return
+    }
+
+    await do_save()
+  }
+
+  async function do_save() {
+    try {
+      create_evaluator_loading = true
+      create_evaluator_error = null
+
+      let config_type: EvalConfigType
+      let properties: Record<string, unknown>
+      let model_name: string | undefined
+      let provider: string | undefined
+
+      if (is_llm_judge && llmJudgeFormComponent) {
+        config_type = llmJudgeFormComponent.getConfigType() ?? "llm_as_judge"
+        properties = llmJudgeFormComponent.getProperties()
+        model_name = llm_model_name
+        provider = llm_provider_name
+        if (!model_name || !provider) {
+          throw new Error("No model selected")
+        }
+      } else if (selected_v2_type && v2FormComponent) {
+        if (typeof v2FormComponent.validate === "function") {
+          const validation_error = v2FormComponent.validate()
+          if (validation_error) {
+            throw new Error(validation_error)
+          }
+        }
+        config_type = "v2"
+        properties = v2FormComponent.getProperties() as Record<string, unknown>
+      } else {
+        throw new Error("No eval type selected")
+      }
+
+      const data = await createEvalConfig(project_id, task_id, eval_id, {
+        type: config_type,
+        properties,
+        model_name: model_name ?? null,
+        provider:
+          (provider as components["schemas"]["ModelProviderName"]) ?? null,
+      })
+
       posthog.capture("create_eval_config", {
-        algo: selected_algo,
+        config_type,
+        v2_type: selected_v2_type,
         model_name: model_name,
-        provider_name: provider_name,
+        provider_name: provider,
       })
 
       const save_as_default = $page.url.searchParams.get("save_as_default")
@@ -260,113 +409,6 @@
       create_evaluator_error = createKilnError(e)
     } finally {
       create_evaluator_loading = false
-    }
-  }
-
-  type SuggestedModel = {
-    model_name: string
-    provider_name: string
-    model_id: string
-    provider_id: string
-  }
-
-  const provider_id_preferred_order = [
-    "openai",
-    "gemini_api",
-    "vertex",
-    "anthropic",
-    "groq",
-    "openrouter",
-    "ollama",
-  ]
-
-  function build_suggested_models(
-    providers: AvailableModels[],
-  ): SuggestedModel[] {
-    const suggested: SuggestedModel[] = []
-
-    for (const provider of providers) {
-      for (const model of provider.models) {
-        if (model.suggested_for_evals) {
-          const existing_model_index = suggested.findIndex(
-            (s) => s.model_id === model.id,
-          )
-
-          if (existing_model_index !== -1) {
-            // Found a duplicate model_id, check provider preference
-            const existing_model = suggested[existing_model_index]
-            const current_provider_preference =
-              provider_id_preferred_order.indexOf(provider.provider_id)
-            const existing_provider_preference =
-              provider_id_preferred_order.indexOf(existing_model.provider_id)
-
-            // If current provider is more preferred (lower index), replace the existing model
-            // Handle case where provider is not in preference list (treat as lowest priority)
-            const current_priority =
-              current_provider_preference === -1
-                ? Infinity
-                : current_provider_preference
-            const existing_priority =
-              existing_provider_preference === -1
-                ? Infinity
-                : existing_provider_preference
-
-            if (current_priority < existing_priority) {
-              suggested[existing_model_index] = {
-                model_name: model.name,
-                model_id: model.id,
-                provider_id: provider.provider_id,
-                provider_name: provider.provider_name,
-              }
-            }
-            // If existing provider is more preferred, continue to next model
-          } else {
-            // No duplicate found, add the model
-            suggested.push({
-              model_name: model.name,
-              model_id: model.id,
-              provider_id: provider.provider_id,
-              provider_name: provider.provider_name,
-            })
-          }
-        }
-      }
-    }
-
-    return suggested
-  }
-  $: suggested_models = build_suggested_models($available_models || [])
-  let force_select_dropdown = false
-
-  $: unsupported_algos = update_unsupported_algos_and_default_algo(
-    $available_models,
-    model_name,
-    provider_name,
-  )
-  function update_unsupported_algos_and_default_algo(
-    available_models: AvailableModels[],
-    model_name: string | undefined,
-    provider_name: string | undefined,
-  ): Record<string, string> {
-    const model_info = available_models
-      .find((m) => m.provider_id === provider_name)
-      ?.models.find((m) => m.id === model_name)
-    if (!model_info) {
-      selected_algo = undefined
-      return {}
-    }
-
-    // Select G-Eval if the model supports logprobs
-    if (model_info.supports_logprobs) {
-      selected_algo = "g_eval"
-      return {}
-    }
-
-    // Otherwise, default to LLM as Judge
-    selected_algo = "llm_as_judge"
-    return {
-      g_eval:
-        "G-Eval requires logprobs which do not work with this model or provider.",
     }
   }
 
@@ -429,195 +471,277 @@
           {loading_error?.getMessage() || "An unknown error occurred"}
         </div>
       </div>
-    {:else}
-      <FormContainer
-        submit_visible={!!(selected_algo && combined_model_name)}
-        submit_label="Create Judge"
-        on:submit={create_evaluator}
-        bind:error={create_evaluator_error}
-        bind:submitting={create_evaluator_loading}
-        warn_before_unload={!complete && !!selected_algo}
-      >
-        <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-          <div class="text-xl font-bold" id="requirements_part">
-            Step 1: Select Judge Model
-          </div>
-          <div class="text-xs text-gray-500">
-            Specify which model will be used for the judge. This is not
-            necessarily the model that will be used to run the task.
-          </div>
+    {:else if !selected_v2_type}
+      <div class="pt-6">
+        <div class="text-xl font-bold mb-2">Select Eval Type</div>
+        <div class="text-xs text-gray-500 mb-6">
+          Choose the type of evaluator to create. Different types are suited for
+          different evaluation needs.
         </div>
 
-        {#if !model_name && !force_select_dropdown && suggested_models.length > 0}
-          <div>
-            <div class="font-light text-lg text-gray-500 mb-2">
-              Recommended Models:
-            </div>
-            <div class="flex flex-wrap flex-row gap-4">
-              {#each suggested_models as model}
-                {@const provider_image = get_provider_image(model.provider_id)}
-                <button
-                  class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[200px] aspect-[5/6] p-4 flex flex-col justify-center items-center text-center group cursor-pointer"
-                  on:click={() => {
-                    model_name = model.model_name
-                    provider_name = model.provider_name
-                    combined_model_name = `${model.provider_id}/${model.model_id}`
-                  }}
-                >
-                  <div class="flex flex-col gap-3 items-center">
-                    <img
-                      src={provider_image}
-                      class="w-10 h-10"
-                      alt={model.provider_name}
-                    />
-                    <div class="flex flex-col gap-1">
-                      <div class="font-medium text-sm leading-tight">
-                        {model.model_name}
-                      </div>
-                      <div class="text-xs text-gray-500">
-                        {model.provider_name}
-                      </div>
-                    </div>
+        <div class="flex flex-wrap gap-4">
+          {#each ALL_V2_EVAL_TYPES as evalType}
+            {@const metadata = getV2EvalTypeMetadata(evalType)}
+            <button
+              class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[220px] p-5 flex flex-col items-center text-center group cursor-pointer"
+              on:click={() => select_v2_type(evalType)}
+            >
+              <div class="flex flex-col gap-3 items-center">
+                <i
+                  class="{metadata.icon} text-2xl text-primary group-hover:scale-110 transition-transform"
+                ></i>
+                <div class="flex flex-col gap-1">
+                  <div class="font-medium text-sm leading-tight">
+                    {metadata.label}
                   </div>
-                </button>
-              {/each}
+                  <div class="text-xs text-gray-500">
+                    {metadata.description}
+                  </div>
+                </div>
+              </div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {:else}
+      <FormContainer
+        submit_visible={!!(can_submit_v2 || can_submit_llm)}
+        submit_label="Create Judge"
+        on:submit={handle_submit}
+        bind:error={create_evaluator_error}
+        bind:submitting={create_evaluator_loading}
+        warn_before_unload={!complete && !!selected_v2_type}
+      >
+        <div class="flex items-center gap-2 pt-4 mb-2">
+          <button
+            class="btn btn-ghost btn-sm"
+            type="button"
+            on:click={go_back_to_type_picker}
+          >
+            <i class="bi bi-arrow-left"></i>
+            Back
+          </button>
+          {#if selected_metadata}
+            <div class="flex items-center gap-2">
+              <i class="{selected_metadata.icon} text-lg text-primary"></i>
+              <span class="text-lg font-bold">{selected_metadata.label}</span>
             </div>
-            <div class="font-light text-lg text-gray-500 mt-8 mb-2">
-              Other Available Models:
-            </div>
-            <div class="flex flex-row gap-2">
-              <button
-                class="btn btn-outline btn-wide"
-                on:click={() => (force_select_dropdown = true)}
-              >
-                Browse All Models
-              </button>
-            </div>
-          </div>
-        {:else}
-          <AvailableModelsDropdown
+          {/if}
+        </div>
+
+        {#if is_llm_judge && evaluator && task}
+          <LlmJudgeForm
+            bind:this={llmJudgeFormComponent}
+            {evaluator}
+            {task}
+            {spec}
             {task_id}
-            bind:model={combined_model_name}
-            bind:model_name
-            bind:provider_name
-            settings={{
-              requires_structured_output: selected_algo !== "g_eval",
-              requires_logprobs: selected_algo === "g_eval",
-              suggested_mode: "evals",
-            }}
+            bind:model_name={llm_model_name}
+            bind:provider_name={llm_provider_name}
+            bind:combined_model_name={llm_combined_model_name}
+            bind:selected_algo={llm_selected_algo}
+          />
+        {:else if selected_metadata}
+          <svelte:component
+            this={selected_metadata.createFormComponent}
+            bind:this={v2FormComponent}
           />
         {/if}
 
-        {#if model_name}
-          <div>
-            <div class="text-xl font-bold mt-6 mb-2">
-              Step 2: Select Judge Algorithm
-            </div>
+        {#if can_submit_v2}
+          <div class="divider"></div>
+          <Collapse
+            title="Test Your Judge"
+            description="Run a quick test to verify your evaluator works as expected before saving."
+            open={false}
+          >
+            <div class="flex flex-col gap-4 pt-2">
+              <div class="form-control">
+                <label for="test_final_message" class="label">
+                  <span class="label-text font-medium"
+                    >Final Message <span class="text-error">*</span></span
+                  >
+                </label>
+                <textarea
+                  id="test_final_message"
+                  class="textarea textarea-bordered w-full"
+                  rows="3"
+                  placeholder="The model's final output to evaluate..."
+                  bind:value={test_final_message}
+                ></textarea>
+              </div>
 
-            <div class="form-control flex flex-row gap-4 flex-wrap">
-              {#each evaluator_algorithms as evaluator}
-                {@const is_unsupported = !!unsupported_algos[evaluator.id]}
-                {#if !is_unsupported}
-                  <label class="label cursor-pointer">
-                    <div
-                      class="card card-bordered border-base-300 shadow-md flex flex-col gap-2 p-6 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[260px] aspect-[5/6]"
-                    >
-                      <div class="flex flex-col gap-2 text-center items-center">
-                        <input
-                          type="radio"
-                          name="radio-evaluator"
-                          class="radio checked:bg-primary mx-auto my-8"
-                          checked={selected_algo === evaluator.id}
-                          disabled={is_unsupported}
-                          on:change={() => select_evaluator(evaluator.id)}
-                        />
-                        <div class="font-medium text-lg">
-                          {evaluator.name}
-                        </div>
-                        <div class="text-sm font-light text-gray-500">
-                          {evaluator.description}
-                        </div>
+              <div class="form-control">
+                <label for="test_task_input" class="label">
+                  <span class="label-text">Task Input</span>
+                  <span class="label-text-alt text-gray-400">Optional</span>
+                </label>
+                <input
+                  id="test_task_input"
+                  type="text"
+                  class="input input-bordered w-full"
+                  placeholder="The original task input..."
+                  bind:value={test_task_input}
+                />
+              </div>
+
+              <div class="form-control">
+                <label for="test_trace" class="label">
+                  <span class="label-text">Trace</span>
+                  <span class="label-text-alt text-gray-400"
+                    >Optional JSON array</span
+                  >
+                </label>
+                <textarea
+                  id="test_trace"
+                  class="textarea textarea-bordered w-full font-mono text-sm"
+                  rows="2"
+                  placeholder={'[{"role": "user", "content": "..."}, ...]'}
+                  bind:value={test_trace}
+                ></textarea>
+              </div>
+
+              <div class="form-control">
+                <label for="test_reference_data" class="label">
+                  <span class="label-text">Reference Data</span>
+                  <span class="label-text-alt text-gray-400"
+                    >Optional JSON object</span
+                  >
+                </label>
+                <textarea
+                  id="test_reference_data"
+                  class="textarea textarea-bordered w-full font-mono text-sm"
+                  rows="2"
+                  placeholder={'{"expected_answer": "..."}'}
+                  bind:value={test_reference_data}
+                ></textarea>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  disabled={!test_final_message.trim() || test_loading}
+                  on:click={run_test}
+                >
+                  {#if test_loading}
+                    <span class="loading loading-spinner loading-xs"></span>
+                    Running...
+                  {:else}
+                    <i class="bi bi-play-fill"></i>
+                    Try It
+                  {/if}
+                </button>
+                {#if test_loading}
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    on:click={cancel_test}
+                  >
+                    Cancel
+                  </button>
+                {/if}
+              </div>
+
+              {#if test_error}
+                <div class="alert alert-error text-sm">
+                  <i class="bi bi-exclamation-triangle-fill"></i>
+                  <span>{test_error.getMessage()}</span>
+                </div>
+              {/if}
+
+              {#if test_result}
+                {#if test_result.skipped_reason}
+                  <div class="alert alert-warning text-sm">
+                    <i class="bi bi-skip-forward-fill"></i>
+                    <div>
+                      <div class="font-medium">Skipped</div>
+                      <div>
+                        {test_result.skipped_detail ||
+                          test_result.skipped_reason}
                       </div>
                     </div>
-                  </label>
+                  </div>
+                {:else if test_result.scores}
+                  <div class="alert alert-success text-sm">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <div>
+                      <div class="font-medium mb-1">Scores</div>
+                      <div
+                        class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs"
+                      >
+                        {#each Object.entries(test_result.scores) as [name, value]}
+                          <span class="font-mono font-medium">{name}</span>
+                          <span>{value}</span>
+                        {/each}
+                      </div>
+                    </div>
+                  </div>
                 {/if}
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        {#if selected_algo && combined_model_name}
-          <div class="mt-2"></div>
-          <Collapse title="Advanced: Prompts and Instructions" small={false}>
-            <div>
-              <Warning
-                warning_message="Customizing the prompts and thinking steps used by the evaluator can improve the quality of the eval. We've pre-populated steps based on your task and eval."
-                warning_color="success"
-                warning_icon="info"
-              />
-            </div>
-            <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-              <div class="text-xl font-bold" id="requirements_part">
-                Step 3: Task Description
-              </div>
-              <div class="text-xs text-gray-500">
-                <div>
-                  Include a short description of what this task does. The
-                  evaluator will use this for context. Keep it short, ideally
-                  one or two sentences. Include requirements for the eval below,
-                  not in this description.
-                </div>
-              </div>
-            </div>
-            <FormElement
-              label=""
-              inputType="textarea"
-              id="task_description"
-              optional={true}
-              bind:value={task_description}
-            />
-
-            <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-              <div class="text-xl font-bold" id="requirements_part">
-                Step 4: Evaluation Instructions
-              </div>
-              <div class="text-xs text-gray-500">
-                This is a list of instructions to be used by the evaluator's
-                model. It will 'think' through each of these steps in order
-                before generating final scores.
-              </div>
-              {#if evaluator?.template}
-                <div class="text-xs text-gray-500">
-                  We've pre-populated the evaluation steps for you based on the
-                  template you selected ({evaluator.template}). Feel free to
-                  edit.
-                </div>
-              {/if}
-              {#if spec}
-                <div class="text-xs text-gray-500">
-                  We've pre-populated the evaluation steps for you based on the
-                  eval you selected ({spec.name}). Feel free to edit.
-                </div>
               {/if}
             </div>
-
-            <FormList
-              bind:content={eval_steps}
-              content_label="Evaluation Step"
-              empty_content={""}
-              let:item_index
-            >
-              <FormElement
-                label=""
-                aria_label="Model Instructions"
-                inputType="textarea"
-                id="eval_step_{item_index}"
-                bind:value={eval_steps[item_index]}
-              />
-            </FormList>
           </Collapse>
         {/if}
       </FormContainer>
     {/if}
   </AppPage>
 </div>
+
+<Dialog
+  bind:this={trust_dialog}
+  title="Allow Code Execution"
+  action_buttons={[
+    {
+      label: "Cancel",
+      isCancel: true,
+    },
+    {
+      label: "I Understand, Allow Execution",
+      isWarning: true,
+      asyncAction: grant_trust_and_retry,
+    },
+  ]}
+>
+  <div class="flex flex-col gap-3">
+    <div class="alert alert-warning text-sm">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span
+        >This eval runs arbitrary Python code on your machine. Only proceed if
+        you trust the code.</span
+      >
+    </div>
+    <p class="text-sm text-gray-600">
+      Code evals execute Python in a sandboxed subprocess. While basic
+      safeguards are in place, malicious code could still pose risks. Review the
+      score function carefully before granting trust.
+    </p>
+    <p class="text-sm text-gray-600">
+      Trust is granted for this session only and applies to all code evals in
+      this project.
+    </p>
+  </div>
+</Dialog>
+
+<Dialog
+  bind:this={confirm_save_dialog}
+  title="Save Without Testing?"
+  action_buttons={[
+    {
+      label: "Cancel",
+      isCancel: true,
+    },
+    {
+      label: "Save Anyway",
+      isError: true,
+      asyncAction: async () => {
+        await do_save()
+        return true
+      },
+    },
+  ]}
+>
+  <p class="text-sm text-gray-600">
+    You haven't tested this judge yet. Running a quick test helps catch issues
+    before saving. Are you sure you want to save without testing?
+  </p>
+</Dialog>

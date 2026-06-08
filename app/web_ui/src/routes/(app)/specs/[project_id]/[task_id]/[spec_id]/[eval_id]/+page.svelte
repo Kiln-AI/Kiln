@@ -7,7 +7,10 @@
   import { page } from "$app/stores"
   import type { EvalProgress } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    eval_config_to_detailed_ui_name,
+  } from "$lib/utils/formatters"
   import {
     model_info,
     load_model_info,
@@ -309,22 +312,32 @@
     }
 
     if (eval_progress?.current_eval_method) {
-      properties.push({
-        name: "Judge Algorithm",
-        value: eval_config_to_ui_name(
-          eval_progress.current_eval_method.config_type,
-        ),
-        tooltip: "The evaluation algorithm used by your selected judge.",
-      })
-      properties.push({
-        name: "Judge Model",
-        value: getDetailedModelNameFromParts(
-          eval_progress.current_eval_method.model_name ?? "",
-          eval_progress.current_eval_method.model_provider ?? "",
-          modelInfo,
-        ),
-        tooltip: "The model used by your selected judge.",
-      })
+      if (eval_progress.current_eval_method.config_type === "v2") {
+        properties.push({
+          name: "Judge Type",
+          value: eval_config_to_detailed_ui_name(
+            eval_progress.current_eval_method,
+          ),
+          tooltip: "The type of judge used for evaluation.",
+        })
+      } else {
+        properties.push({
+          name: "Judge Algorithm",
+          value: eval_config_to_ui_name(
+            eval_progress.current_eval_method.config_type,
+          ),
+          tooltip: "The evaluation algorithm used by your selected judge.",
+        })
+        properties.push({
+          name: "Judge Model",
+          value: getDetailedModelNameFromParts(
+            eval_progress.current_eval_method.model_name ?? "",
+            eval_progress.current_eval_method.model_provider ?? "",
+            modelInfo,
+          ),
+          tooltip: "The model used by your selected judge.",
+        })
+      }
     }
 
     return properties
@@ -771,13 +784,13 @@
                     {:else if step_id == "compare_judges"}
                       <div class="mb-1">
                         {#if eval_progress?.current_eval_method}
-                          You selected the judge '{eval_config_to_ui_name(
-                            eval_progress.current_eval_method.config_type,
-                          )}' using the model '{model_name(
-                            eval_progress.current_eval_method.model_name ??
-                              undefined,
-                            $model_info,
-                          )}'.
+                          You selected the judge '{eval_config_to_detailed_ui_name(
+                            eval_progress.current_eval_method,
+                          )}'{#if eval_progress.current_eval_method.model_name}
+                            using the model '{model_name(
+                              eval_progress.current_eval_method.model_name,
+                              $model_info,
+                            )}'{/if}.
                         {:else}
                           Compare automated evals to find one that aligns with
                           your human preferences.

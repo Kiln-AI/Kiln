@@ -30,7 +30,7 @@ The phasing is derived from the V2 design's Stage-6 roadmap. Data model first (e
 - [x] **Phase 5 — `code_eval` (Beta).**
   Per `components/27` (B.13): `sandbox_worker.py` (`_execute_scorer` + `run_scorer`) in a `multiprocessing` spawn worker with `freeze_support()`; `CodeEvalAdapter` through the V2 registry; scorer contract (`def score(output, trace, reference_data, task_input, kiln) -> dict[str, float]`) + helper library; return-shape validation; wall-clock timeout (`p.join`/`p.kill`); optional `setrlimit` (P2, cut if complex); trust-gate enforcement (`CodeEvalNotTrustedError`); documented limitations (network/FS open, trust-gate-only). Include the cold-start spike on the real bundle.
 
-- [ ] **Phase 6 — Create + view UI.**
+- [x] **Phase 6 — Create + view UI.**
   Per `components/70`: pluggable per-type create container (generic test-run + save + clone-not-edit, G.1); code-eval create UI (CodeMirror 6 lazy-loaded, sandboxed preview via Phase-5 worker, ephemeral trust gate, Beta, G.2); per-type renderer registry keyed on `properties.type`, exhaustive over `V2EvalType` (G.3); deterministic-type forms (§3.1). **Per-type result rendering is intentionally not pinned** — build it from each type's available data using the UI-design skill; `components/70 §4.1` is illustrative guidance, not a binding layout. View surfaces to integrate: `components/70 §4.2`.
 
 ## Not in this build (out of scope — do NOT implement)

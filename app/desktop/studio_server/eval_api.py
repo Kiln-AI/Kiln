@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
+from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
@@ -15,6 +16,7 @@ from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -22,7 +24,10 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalOutputScore,
     EvalRun,
+    EvalScores,
+    EvalTaskInput,
     EvalTemplateId,
+    V2EvalConfigProperties,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
@@ -180,10 +185,31 @@ class CreateEvalConfigRequest(BaseModel):
     properties: dict[str, Any] = Field(
         description="Properties for the eval config, specific to the type."
     )
-    model_name: str = Field(description="The model to use for evaluation.")
-    provider: ModelProviderName = Field(
-        description="The provider of the evaluation model."
+    model_name: str | None = Field(
+        default=None,
+        description="The model to use for evaluation. Required for LLM-based eval types.",
     )
+    provider: ModelProviderName | None = Field(
+        default=None,
+        description="The provider of the evaluation model. Required for LLM-based eval types.",
+    )
+
+
+class TestV2EvalRequest(BaseModel):
+    """Request to test-run a V2 eval config without persisting."""
+
+    properties: V2EvalConfigProperties = Field(
+        description="The V2 eval config properties to test."
+    )
+    eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+
+
+class TestV2EvalResponse(BaseModel):
+    """Response from a test-run of a V2 eval."""
+
+    scores: EvalScores = Field(default_factory=dict)
+    skipped_reason: str | None = None
+    skipped_detail: str | None = None
 
 
 class CreateTaskRunConfigRequest(BaseModel):
@@ -898,19 +924,69 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: CreateEvalConfigRequest,
     ) -> EvalConfig:
+        if request.type in (EvalConfigType.g_eval, EvalConfigType.llm_as_judge):
+            if not request.model_name or not request.provider:
+                raise HTTPException(
+                    status_code=400,
+                    detail="model_name and provider are required for LLM-based eval types.",
+                )
+
         eval = eval_from_id(project_id, task_id, eval_id)
         name = request.name or generate_memorable_name()
 
-        eval_config = EvalConfig(
-            name=name,
-            config_type=request.type,
-            properties=request.properties,
-            model_name=request.model_name,
-            model_provider=request.provider,
-            parent=eval,
-        )
+        try:
+            eval_config = EvalConfig(
+                name=name,
+                config_type=request.type,
+                properties=request.properties,
+                model_name=request.model_name,
+                model_provider=request.provider,
+                parent=eval,
+            )
+        except (ValueError, ValidationError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e),
+            )
         eval_config.save_to_file()
         return eval_config
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval",
+        summary="Test V2 Eval Config",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def test_v2_eval(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        request: TestV2EvalRequest,
+    ) -> TestV2EvalResponse:
+        try:
+            eval_obj = eval_from_id(project_id, task_id, eval_id)
+            transient_config = EvalConfig(
+                name="test_run",
+                config_type=EvalConfigType.v2,
+                properties=request.properties,
+                parent=eval_obj,
+            )
+            adapter = v2_eval_adapter_from_config(transient_config)
+            scores, skipped_reason, skipped_detail = await adapter.evaluate(
+                request.eval_input
+            )
+            return TestV2EvalResponse(
+                scores=scores,
+                skipped_reason=skipped_reason.value if skipped_reason else None,
+                skipped_detail=skipped_detail,
+            )
+        except (ValueError, NotImplementedError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(

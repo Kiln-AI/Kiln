@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.eval_api import (
@@ -51,6 +51,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import Usage
 
 
@@ -393,6 +394,53 @@ async def test_create_eval_config(
     assert config.model_provider == valid_eval_config_request.provider
     assert config.properties["eval_steps"][0] == "step1"
     assert config.properties["eval_steps"][1] == "step2"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_missing_model_for_llm_type(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Config",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": None,
+                "provider": None,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "model_name and provider are required" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_invalid_properties(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Config",
+                "type": "g_eval",
+                "properties": {"not_a_valid_field": True},
+                "model_name": "gpt-4",
+                "provider": "openai",
+            },
+        )
+
+    assert response.status_code == 400
 
 
 def test_get_eval_config(
@@ -3559,3 +3607,172 @@ class TestCodeEvalTrustEndpoints:
             response = client.get("/api/projects/proj-1/code_eval_trust")
         assert response.status_code == 200
         assert response.json() == {"trusted": True}
+
+
+@pytest.fixture
+def mock_v2_eval(mock_task):
+    eval = Eval(
+        id="eval_v2",
+        name="V2 Test Eval",
+        description="V2 eval for testing",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Is the answer accurate?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        eval_input_filter_id="tag::v2_eval_set",
+        evaluation_data_type=None,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
+class TestTestV2Eval:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
+
+    def _exact_match_payload(self) -> dict:
+        return {
+            "properties": {
+                "type": "exact_match",
+                "expected_value": "hello",
+            },
+            "eval_input": {
+                "final_message": "hello",
+            },
+        }
+
+    def test_exact_match_pass(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["skipped_reason"] is None
+        assert body["skipped_detail"] is None
+
+    def test_exact_match_fail(self, client, mock_v2_eval):
+        payload = self._exact_match_payload()
+        payload["eval_input"]["final_message"] = "world"
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 0.0
+        assert body["skipped_reason"] is None
+
+    def test_code_eval_untrusted_skip(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"] == {}
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+        assert body["skipped_detail"] == "Project not trusted for code eval execution."
+
+    def test_code_eval_trusted_execution(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
+                return_value={"ok": {"accuracy": 0.75}},
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 0.75
+        assert body["skipped_reason"] is None
+
+    def test_llm_judge_with_mocked_model(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "prompt_template": "Is this correct? Output: {{ final_message }}",
+            },
+            "eval_input": {
+                "final_message": "test output",
+            },
+        }
+        mock_run_output = RunOutput(
+            output={"accuracy": 5},
+            intermediate_outputs=None,
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(None, mock_run_output)
+        )
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+                return_value=mock_adapter,
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert "accuracy" in body["scores"]
+        assert body["skipped_reason"] is None
+
+    def test_nothing_persisted(self, client, mock_v2_eval, tmp_path):
+        files_before = set()
+        for f in tmp_path.rglob("*"):
+            files_before.add(str(f))
+
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            client.post(self._url(), json=self._exact_match_payload())
+
+        files_after = set()
+        for f in tmp_path.rglob("*"):
+            files_after.add(str(f))
+
+        new_files = files_after - files_before
+        assert len(new_files) == 0, f"Unexpected new files created: {new_files}"
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.post(
+                self._url("bad_id"),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 404
