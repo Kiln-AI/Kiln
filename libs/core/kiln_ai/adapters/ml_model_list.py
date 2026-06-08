@@ -8024,8 +8024,16 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
+                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
             ),
         ],
