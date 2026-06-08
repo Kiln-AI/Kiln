@@ -23,9 +23,13 @@
   // Document IDs already added as entries; filtered out so the user can't
   // double-add the same doc.
   export let existing_document_ids: string[] = []
-  // Tags applied to picked documents (so the inline extraction run, scoped by
-  // these tags, catches them) and used to scope that run.
+  // Tags applied to picked documents so a later extraction run, scoped by these
+  // tags, catches them. Applied whether or not extraction happens in-dialog.
   export let auto_tags: string[] = []
+  // When true (default), the dialog runs extraction inline before closing. When
+  // false, picks are added (and tagged) and the dialog closes immediately —
+  // extraction is deferred to the caller (e.g. the data guide's Continue step).
+  export let extract_after_pick: boolean = true
 
   let dialog: Dialog | null = null
   let selector: TagFirstSelector
@@ -134,9 +138,37 @@
     dispatch("extraction_complete", event.detail)
     close()
   }
+
+  // Deferred-extraction path (extract_after_pick = false): add the picks as
+  // text-less entries, tag them so the caller's later run catches them, then
+  // signal the dialog to close. Extraction is the caller's responsibility.
+  async function handle_add_without_extraction(): Promise<boolean> {
+    const picks = build_picks()
+    if (picks.length === 0) return false
+    dispatch("add", { picks })
+    await tag_documents(picks.map((p) => p.document_id))
+    return true
+  }
 </script>
 
-<Dialog bind:this={dialog} width="wide" title="Select from Document Library">
+<Dialog
+  bind:this={dialog}
+  width="wide"
+  title="Select from Document Library"
+  action_buttons={extract_after_pick
+    ? []
+    : [
+        {
+          label:
+            selected_ids.length > 1
+              ? `Add ${selected_ids.length} Documents`
+              : "Add",
+          asyncAction: handle_add_without_extraction,
+          disabled: selected_ids.length === 0,
+          isPrimary: true,
+        },
+      ]}
+>
   <p slot="subtitle" class="text-sm font-light">
     Add examples from your
     <a
@@ -183,7 +215,7 @@
       />
     {/if}
 
-    {#if selected_ids.length > 0}
+    {#if extract_after_pick && selected_ids.length > 0}
       <div class="mt-6">
         <ExtractorPicker
           bind:this={extractor_picker}

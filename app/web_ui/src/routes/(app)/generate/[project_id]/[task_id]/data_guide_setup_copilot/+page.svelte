@@ -183,23 +183,13 @@
   }
 
   let extraction_dialog: Dialog | null = null
-  // What to do once the extraction popup completes. "analyze" = continue to
-  // the analyze API (Continue button path). "refresh" = just hydrate entry
-  // text and stay in create state (auto-trigger after upload/library pick).
-  let extraction_next_step: "analyze" | "refresh" = "refresh"
-
-  // The document dialogs now run extraction inline and report completion here.
-  // Hydrate the matching entries' text and stay in the create state.
-  async function handle_inline_extraction_complete(
-    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
-  ) {
-    error = null
-    try {
-      await refresh_extractions(event.detail?.extractor_config_id)
-    } catch (e) {
-      error = createKilnError(e)
-    }
-  }
+  // True while the Continue-triggered extraction run is live. Bound from
+  // ExtractionDialog so the Continue button can show progress and See All can
+  // mark rows "Extracting…" after the user dismisses the run dialog.
+  let extraction_running = false
+  // Keep the Continue button spinning while a run is in flight, even after the
+  // run dialog is dismissed.
+  $: if (extraction_running) submitting = true
 
   async function handle_analyze() {
     error = null
@@ -216,13 +206,13 @@
     }
     captured_input_run_config = rc
 
-    // Fallback: if there's still a pending document at Continue time (user
-    // cancelled the auto-trigger popup), reopen it before analyze.
+    // Document entries are added without text — extraction is deferred to here.
+    // If any are still pending, open the extractor picker; the run drives the
+    // rest of the flow (hydrate text, then analyze) via handle_extraction_complete.
     const pending = entries.some(
       (e) => e.source === "document" && !e.text && !!e.document_id,
     )
     if (pending) {
-      extraction_next_step = "analyze"
       extraction_dialog?.show()
       return
     }
@@ -277,44 +267,54 @@
     return updated
   }
 
+  // The run finished (the dialog may already be closed). Hydrate the freshly
+  // extracted entries; if any document still has no text it failed extraction —
+  // surface a retryable error and stay in create rather than dropping it.
+  // Otherwise continue straight into analyze.
   async function handle_extraction_complete(
     event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
   ) {
     error = null
     const extractor_config_id = event.detail?.extractor_config_id
-    if (extraction_next_step === "refresh") {
-      // Auto-trigger flow (after upload / library pick). Hydrate entry text
-      // and stay in the create state.
-      try {
-        await refresh_extractions(extractor_config_id)
-      } catch (e) {
-        error = createKilnError(e)
-      }
-      return
-    }
-
-    // Continue-button flow: hydrate, then run analyze.
-    submitting = true
-    current_state = "analyzing"
     try {
       const updated = await refresh_extractions(extractor_config_id)
-      const ready_entries = updated.filter((e) => !!e.text)
-      const still_missing = updated.length - ready_entries.length
-      if (ready_entries.length === 0) {
-        throw new KilnError(
-          "Extraction produced no usable text for any selected document.",
+      const still_pending = updated.filter(
+        (e) => e.source === "document" && !e.text && !!e.document_id,
+      )
+      if (still_pending.length > 0) {
+        submitting = false
+        const n = still_pending.length
+        error = new KilnError(
+          `${n} document${n === 1 ? "" : "s"} couldn't be extracted. ` +
+            `Click Continue to retry, or remove ${n === 1 ? "it" : "them"} from See All.`,
         )
+        return
       }
-      if (still_missing > 0) {
-        console.warn(
-          `${still_missing} document entries skipped — extraction empty.`,
-        )
-      }
-      await run_analyze(ready_entries)
+      await run_analyze(updated.filter((e) => !!e.text))
     } catch (e) {
       error = createKilnError(e)
       current_state = "create"
-    } finally {
+      submitting = false
+    }
+  }
+
+  // The run errored before completing (e.g. SSE stream failure). Mirror it onto
+  // the Continue button so the user can retry — clicking Continue reopens the
+  // picker and re-extracts only the still-pending docs.
+  function handle_extraction_failed(
+    event: CustomEvent<{ error: KilnError | null }>,
+  ) {
+    submitting = false
+    error =
+      event.detail?.error ??
+      new KilnError("Document extraction failed. Click Continue to retry.")
+  }
+
+  // The run dialog was dismissed. If no run is live and we're still gathering
+  // inputs, release the Continue button so the user can act again. (When a run
+  // is live, or we've already advanced to analyze, leave state untouched.)
+  function handle_extraction_dialog_closed() {
+    if (!extraction_running && current_state === "create") {
       submitting = false
     }
   }
@@ -526,10 +526,11 @@
     {:else if current_state === "create"}
       <FormContainer
         submit_label="Continue"
+        submitting_status={extraction_running ? "Extracting documents…" : ""}
         on:submit={handle_analyze}
         bind:error
         bind:submitting
-        submit_disabled={!has_entries}
+        submit_disabled={!has_entries || extraction_running}
         compact_button={true}
         warn_before_unload={has_entries}
         submit_visible={has_entries}
@@ -539,8 +540,8 @@
           {task_id}
           {task}
           {entries}
+          extraction_in_progress={extraction_running}
           on:change={handle_entries_change}
-          on:extraction_complete={handle_inline_extraction_complete}
         />
 
         <RunOptionsTiles
@@ -602,7 +603,10 @@
 
 <ExtractionDialog
   bind:dialog={extraction_dialog}
+  bind:extracting={extraction_running}
   target_tags={[DATA_GUIDE_DOC_TAG]}
   preselect_default_extractor={true}
   on:extraction_complete={handle_extraction_complete}
+  on:extraction_failed={handle_extraction_failed}
+  on:close={handle_extraction_dialog_closed}
 />

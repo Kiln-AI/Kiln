@@ -57,6 +57,9 @@
   export let task_id: string
   export let task: Task | null = null
   export let entries: InputExampleEntry[] = []
+  // True while a Continue-triggered extraction run is live; forwarded to the
+  // See All dialog so pending document rows read "Extracting…".
+  export let extraction_in_progress: boolean = false
 
   let add_samples_picker: AddSamplesPickerDialog
   let all_samples_dialog: AllSamplesDialog
@@ -75,14 +78,7 @@
 
   const dispatch = createEventDispatcher<{
     change: { entries: InputExampleEntry[] }
-    extraction_complete: { extractor_config_id: string; error_count: number }
   }>()
-
-  function forward_extraction_complete(
-    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
-  ) {
-    dispatch("extraction_complete", event.detail)
-  }
 
   // Plaintext tasks (no input JSON schema) lean on document uploads as the
   // primary input source. Structured-input tasks expose a structured manual
@@ -168,8 +164,8 @@
   }
 
   // Uploads run inside the reused upload dialog (it tags files with
-  // DATA_GUIDE_DOC_TAG). Turn the created docs into document entries; the upload
-  // dialog then runs the inline extraction step before it closes.
+  // DATA_GUIDE_DOC_TAG). Turn the created docs into document entries with
+  // empty text; extraction runs later from Continue.
   function handle_documents_uploaded(
     result: BulkCreateDocumentsResponse | null,
   ) {
@@ -411,12 +407,8 @@
   bind:this={upload_file_dialog}
   auto_tags={[DATA_GUIDE_DOC_TAG]}
   close_on_success={true}
-  extract_after_upload={true}
-  extract_tags={[DATA_GUIDE_DOC_TAG]}
   subtitle="Add files to use as example inputs for your data guide."
   onUploadCompleted={handle_documents_uploaded}
-  onExtractionComplete={(extractor_config_id, error_count) =>
-    dispatch("extraction_complete", { extractor_config_id, error_count })}
 />
 
 <AllSamplesDialog
@@ -424,6 +416,7 @@
   {project_id}
   {task_id}
   {entries}
+  {extraction_in_progress}
   initial_filter={initial_all_samples_filter}
   on:remove={handle_all_samples_remove}
   on:add={open_source_picker}
@@ -434,8 +427,8 @@
   {project_id}
   {existing_document_ids}
   auto_tags={[DATA_GUIDE_DOC_TAG]}
+  extract_after_pick={false}
   on:add={handle_library_add}
-  on:extraction_complete={forward_extraction_complete}
 />
 
 <ExistingRunPickerDialog

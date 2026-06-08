@@ -13,15 +13,19 @@
   // extractor so the common case is one click. Off by default to leave other
   // callers' behavior unchanged.
   export let preselect_default_extractor: boolean = false
+  // Bindable: true while an SSE extraction run is in flight. Hosts read this to
+  // reflect progress in their own UI (e.g. a spinner on their Continue button)
+  // after the user dismisses this dialog mid-run.
+  export let extracting = false
 
   const dispatch = createEventDispatcher<{
     extractor_config_selected: { extractor_config_id: string }
     extraction_complete: { extractor_config_id: string; error_count: number }
+    extraction_failed: { error: KilnError | null }
     close: void
   }>()
 
   let picker: ExtractorPicker
-  let extracting = false
   let error: KilnError | null = null
 
   function handle_complete(
@@ -37,6 +41,18 @@
   title="Document Extraction"
   sub_subtitle="Documents like PDFs, images and videos need to be converted into text before they can be used as example inputs."
   width="normal"
+  on:close={() => {
+    // Native close (X / Esc / backdrop). Don't reset while a run is live — that
+    // would close the EventSource and cancel the extraction. The user can
+    // dismiss this dialog and the run keeps going, still firing
+    // extraction_complete. Hosts listen to `close` to release their own
+    // controls when the user abandons before running.
+    if (!extracting) {
+      picker?.reset()
+      error = null
+    }
+    dispatch("close")
+  }}
 >
   <FormContainer
     submit_visible={!extracting}
@@ -49,13 +65,10 @@
       try {
         await picker.run_extraction()
       } catch {
-        // Surfaced via the bound `error`.
+        // Also surfaced inline via the bound `error`; forward so a host can
+        // mirror it (e.g. on its Continue button) after this dialog closes.
+        dispatch("extraction_failed", { error })
       }
-    }}
-    on:close={() => {
-      picker?.reset()
-      error = null
-      dispatch("close")
     }}
   >
     <ExtractorPicker
