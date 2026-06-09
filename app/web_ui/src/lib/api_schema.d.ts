@@ -2644,6 +2644,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/copilot/classify_spec_description": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Classify Spec Description
+         * @description Stub for spec classification — kiln_server classifier hasn't
+         *     shipped. Returns 501 so callers can fall back to manual selection.
+         */
+        post: operations["classify_spec_description_api_copilot_classify_spec_description_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/copilot/clarify_spec": {
         parameters: {
             query?: never;
@@ -2742,11 +2763,14 @@ export interface paths {
          * Create Spec With Copilot
          * @description Create a spec using Kiln Copilot.
          *
-         *     This endpoint uses Kiln Copilot to create a spec with:
-         *     1. An eval for the spec with appropriate template
-         *     2. Batch examples via copilot API for eval, train, and golden datasets
-         *     3. A judge eval config (if judge_info provided)
-         *     4. The spec itself
+         *     This endpoint uses Kiln Copilot to create:
+         *     1. An Eval for the spec with the appropriate template
+         *     2. A judge EvalConfig (LLM-as-judge)
+         *     3. Single-turn only: batch examples via copilot API for the eval +
+         *        golden datasets, persisted as TaskRuns
+         *     4. The Spec itself
+         *     Plus, for multi-turn: tag existing chain leaves with the eval/golden
+         *     filter tags so the saved Eval picks them up as its dataset.
          *
          *     If you don't need copilot, use POST /spec instead.
          *
@@ -4107,6 +4131,48 @@ export interface components {
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
         };
         /**
+         * ClassifySpecDescriptionInput
+         * @description Free-text description of an eval the user wants to build. The
+         *     endpoint maps it to a `SpecType` and pre-fills the property_values for
+         *     that type so the v2 builder can skip the template-carousel step
+         *     entirely.
+         */
+        ClassifySpecDescriptionInput: {
+            /**
+             * Description
+             * @description Free-text description of what the eval should check.
+             */
+            description: string;
+            /**
+             * Task Prompt
+             * @description Optional task prompt for context (improves classification accuracy when the spec relates to a specific task).
+             */
+            task_prompt?: string | null;
+        };
+        /**
+         * ClassifySpecDescriptionOutput
+         * @description Classified spec type + suggested name + spec_type-specific property
+         *     values. Keys in `property_values` correspond to `FieldConfig.key`
+         *     entries in `spec_field_configs[spec_type]` (see
+         *     app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
+         */
+        ClassifySpecDescriptionOutput: {
+            /** @description The classified spec type. */
+            spec_type: components["schemas"]["SpecType"];
+            /**
+             * Suggested Name
+             * @description A filename-safe name for the new spec, derived from the description.
+             */
+            suggested_name: string;
+            /**
+             * Property Values
+             * @description Pre-filled property values for the chosen spec_type. Keys correspond to the field_configs of that spec_type.
+             */
+            property_values: {
+                [key: string]: string;
+            };
+        };
+        /**
          * CloneRequest
          * @description Request to clone a git repository into a temporary directory.
          */
@@ -4522,17 +4588,22 @@ export interface components {
          * CreateSpecWithCopilotRequest
          * @description Request model for creating a spec with Kiln Copilot.
          *
-         *     This endpoint uses Kiln Copilot to:
-         *     - Generate batch examples for eval, train, and golden datasets
-         *     - Create a judge eval config
-         *     - Create an eval with appropriate template/output scores
-         *     - Create and save the spec
+         *     Two synthesis paths are supported, exactly one must be set per request:
          *
-         *     If you don't want to use copilot, use the regular POST /spec endpoint instead.
+         *     - **Single-turn:** caller supplies `sdg_session_config`. Endpoint calls
+         *       `generate_copilot_examples` for fresh I/O pairs, splits them into
+         *       eval/train/golden datasets, and tags new TaskRuns.
+         *
+         *     - **Multi-turn:** caller supplies `multi_turn` with a `batch_tag` pointing
+         *       at chains already on disk (created earlier by the synthetic-user runner).
+         *       Endpoint tags the existing chain leaves with eval/golden filter tags;
+         *       no new TaskRuns are created. `evaluate_full_trace` must be True.
+         *
+         *     If you don't want copilot at all, use POST /spec instead.
          *
          *     The client is responsible for building:
-         *     - definition: The spec definition string (use buildSpecDefinition on client)
-         *     - properties: The spec properties object (filtered, with spec_type included)
+         *     - definition: the spec definition string (buildSpecDefinition on client)
+         *     - properties: the spec properties object (filtered, with spec_type included)
          */
         CreateSpecWithCopilotRequest: {
             /** Name */
@@ -4555,7 +4626,8 @@ export interface components {
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
             judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            sdg_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"] | null;
+            multi_turn?: components["schemas"]["MultiTurnSaveInfo"] | null;
             /**
              * Task Description
              * @default
@@ -7431,6 +7503,19 @@ export interface components {
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
         /**
+         * MultiTurnSaveInfo
+         * @description Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
+         *     The endpoint walks chains tagged with this batch_tag and applies eval/golden
+         *     filter tags instead of generating new examples.
+         */
+        MultiTurnSaveInfo: {
+            /**
+             * Batch Tag
+             * @description The batch_tag emitted by the multi-turn synthetic-user runner (see kiln_ai.synthetic_user.runner). Identifies the set of conversation chains already persisted to disk that this Eval should evaluate.
+             */
+            batch_tag: string;
+        };
+        /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
          */
@@ -9216,6 +9301,12 @@ export interface components {
          * @enum {string}
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
+        /**
+         * SpecType
+         * @description Defines the type of spec.
+         * @enum {string}
+         */
+        SpecType: "desired_behaviour" | "issue" | "tone" | "formatting" | "localization" | "appropriate_tool_use" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /**
          * SpecificationInput
          * @description The specification to refine.
@@ -16822,6 +16913,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    classify_spec_description_api_copilot_classify_spec_description_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassifySpecDescriptionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassifySpecDescriptionOutput"];
                 };
             };
             /** @description Validation Error */
