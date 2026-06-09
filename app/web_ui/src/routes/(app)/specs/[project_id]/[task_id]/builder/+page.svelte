@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
+  import { onMount, onDestroy } from "svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
   import { client, base_url } from "$lib/api_client"
@@ -28,6 +28,7 @@
     initCopilotConnectionStore,
   } from "$lib/stores/copilot_connection_store"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import type {
     Task,
     QuestionSet,
@@ -82,6 +83,28 @@
     done: 6,
   }
 
+  // AbortController for in-flight Copilot requests. Mirrors v1 spec_builder:
+  // starting a new request implicitly cancels any prior one (no stale
+  // responses overwriting newer state), and Back buttons call
+  // abort_copilot_request() so cancelling out of a loading step also kills
+  // the request instead of leaving it running in the background.
+  let copilot_abort_controller: AbortController | null = null
+
+  function abort_copilot_request() {
+    copilot_abort_controller?.abort()
+    copilot_abort_controller = null
+  }
+
+  function new_copilot_abort_signal(): AbortSignal {
+    abort_copilot_request()
+    copilot_abort_controller = new AbortController()
+    return copilot_abort_controller.signal
+  }
+
+  function is_abort_error(error: unknown): boolean {
+    return error instanceof DOMException && error.name === "AbortError"
+  }
+
   // ── Task (drives is_multi_turn, which branches Step 3 onward)
   let task: Task | null = null
   let task_loading = true
@@ -100,6 +123,10 @@
     } finally {
       task_loading = false
     }
+  })
+
+  onDestroy(() => {
+    abort_copilot_request()
   })
 
   // ── Step 1 state
@@ -145,6 +172,7 @@
             description,
             task_prompt: task?.instruction ?? null,
           },
+          signal: new_copilot_abort_signal(),
         },
       )
       if (error || !data) {
@@ -161,6 +189,7 @@
       property_values = data.property_values as Record<string, string | null>
       current_step = "clarify"
     } catch (e) {
+      if (is_abort_error(e)) return
       classify_error =
         e instanceof Error ? e.message : "Couldn't classify your description."
     } finally {
@@ -192,6 +221,7 @@
           },
           target_specification: description,
         },
+        signal: new_copilot_abort_signal(),
       })
       if (error || !data) {
         questions_error = "Failed to load clarifying questions."
@@ -201,6 +231,7 @@
       selections = question_set.questions.map(() => null)
       other_texts = question_set.questions.map(() => "")
     } catch (e) {
+      if (is_abort_error(e)) return
       questions_error =
         e instanceof Error ? e.message : "Failed to load questions."
     } finally {
@@ -240,6 +271,7 @@
             specification: { spec_fields, spec_field_current_values },
             questions_and_answers,
           },
+          signal: new_copilot_abort_signal(),
         },
       )
       if (error || !data) return
@@ -341,6 +373,7 @@
           providers: ["openrouter"],
           num_exemplars: 10,
         },
+        signal: new_copilot_abort_signal(),
       })
       if (error || !data) {
         generation_error = "Failed to generate examples."
@@ -351,6 +384,7 @@
       judge_info = data.judge_result ?? null
       current_step = "review"
     } catch (e) {
+      if (is_abort_error(e)) return
       generation_error = e instanceof Error ? e.message : "Generation failed."
     } finally {
       generation_loading = false
@@ -472,6 +506,7 @@
             target_specification: refined_description,
             num_cases: NUM_CASES,
           },
+          signal: new_copilot_abort_signal(),
         },
       )
       if (cases_resp.error || !cases_resp.data) {
@@ -496,6 +531,7 @@
           target_run_config,
           su_driver: SU_DRIVER_DEFAULT,
         }),
+        signal: new_copilot_abort_signal(),
       })
 
       if (!response.ok || !response.body) {
@@ -579,6 +615,7 @@
 
       current_step = "review"
     } catch (e) {
+      if (is_abort_error(e)) return
       generation_error =
         e instanceof Error ? e.message : "Multi-turn generation failed."
     } finally {
@@ -703,6 +740,7 @@
               task_description: "",
               task_prompt_with_example: task?.instruction ?? "",
             },
+            signal: new_copilot_abort_signal(),
           },
         )
         if (error || !data) {
@@ -758,6 +796,7 @@
             task_description: "",
             task_prompt_with_example: task?.instruction ?? "",
           },
+          signal: new_copilot_abort_signal(),
         },
       )
       if (error || !data) {
@@ -781,6 +820,7 @@
         current_step = "done"
       }
     } catch (e) {
+      if (is_abort_error(e)) return
       save_error = e instanceof Error ? e.message : "Save failed."
     } finally {
       saving = false
@@ -855,374 +895,421 @@
   $: page_max_w = page_max_w_for(current_step)
 </script>
 
-<AppPage title={page_title} subtitle={page_subtitle} no_y_padding>
-  {#if $kilnCopilotConnected === null}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if $kilnCopilotConnected === false}
-    <CopilotRequiredCard
-      title="Evals Builder"
-      description_markdown="The new evals builder uses Kiln Copilot to generate cases and judges from a plain-text spec description."
-      auth_href={`/specs/pro_auth?success_redirect_url=${encodeURIComponent(
-        `/specs/${project_id}/${task_id}/builder`,
-      )}`}
-      connect_button_label="Connect Kiln Pro"
-    />
-  {:else}
-    <div class="{page_max_w} mx-auto py-6">
-      <!-- Step indicator -->
-      <div class="text-xs text-gray-500 mb-6 flex items-center gap-2">
-        <span>Step</span>
-        <span class="font-medium">{STEP_INDEX[current_step]}</span>
-        <span>of {TOTAL_STEPS}</span>
-        {#if is_multi_turn}
-          <span class="badge badge-secondary badge-sm ml-2">multi-turn</span>
-        {/if}
+<!-- Constrain AppPage (title + body) to page_max_w, matching v1 spec_builder.
+     Centring v1's inner content is handled by AppPage's own header/slot
+     layout, so no mx-auto here. -->
+<div class={page_max_w}>
+  <AppPage title={page_title} subtitle={page_subtitle} no_y_padding>
+    {#if $kilnCopilotConnected === null}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-
-      {#if task_loading}
-        <div class="text-center text-gray-500 py-12">Loading task…</div>
-      {:else if task_error}
-        <div class="alert alert-error">{task_error}</div>
-      {:else if current_step === "describe"}
-        <!-- ── Step 1 — Describe ── -->
-        <FormElement
-          label="What should this eval check?"
-          description="Describe in plain language. We'll structure it for you."
-          id="description"
-          inputType="textarea"
-          height="medium"
-          bind:value={description}
-        />
-
-        <p class="text-xs text-gray-500 mt-2">
-          Beta: every spec is treated as an Issue eval. Other spec types are
-          coming soon.
-        </p>
-
-        {#if classify_error}
-          <div class="alert alert-warning mt-3 text-sm">{classify_error}</div>
-        {/if}
-
-        <div class="flex justify-between mt-8">
-          <button class="btn btn-ghost" on:click={back_to_task}>← Cancel</button
-          >
-          <button
-            class="btn btn-primary"
-            on:click={classify_then_continue}
-            disabled={!description.trim() || classifying}
-          >
-            {#if classifying}
-              <span class="loading loading-dots loading-sm"></span>
-              Classifying…
-            {:else}
-              Continue →
-            {/if}
-          </button>
+    {:else if $kilnCopilotConnected === false}
+      <CopilotRequiredCard
+        title="Evals Builder"
+        description_markdown="The new evals builder uses Kiln Copilot to generate cases and judges from a plain-text spec description."
+        auth_href={`/specs/pro_auth?success_redirect_url=${encodeURIComponent(
+          `/specs/${project_id}/${task_id}/builder`,
+        )}`}
+        connect_button_label="Connect Kiln Pro"
+      />
+    {:else}
+      <div class="py-6">
+        <!-- Step indicator -->
+        <div class="text-sm text-gray-500 mb-6 flex items-center gap-2">
+          <span>Step</span>
+          <span class="font-medium">{STEP_INDEX[current_step]}</span>
+          <span>of {TOTAL_STEPS}</span>
+          {#if is_multi_turn}
+            <span class="badge badge-secondary badge-sm ml-2">multi-turn</span>
+          {/if}
         </div>
-      {:else if current_step === "clarify"}
-        <!-- ── Step 2 — Clarify (uses v1's Questions component) ── -->
-        {#if questions_loading}
-          <div class="text-center text-gray-500 py-8">
-            <span class="loading loading-dots loading-md"></span>
-            <div class="text-xs mt-2">Generating clarifying questions…</div>
-          </div>
-        {:else if questions_error}
-          <div class="alert alert-error">{questions_error}</div>
-        {:else if question_set}
-          <Questions
-            {name}
-            {spec_type}
-            {property_values}
-            {question_set}
-            bind:selections
-            bind:other_texts
-            on_submit={on_continue_from_clarify}
-            bind:error={questions_form_error}
-            bind:submitting={questions_submitting}
-            warn_before_unload={false}
+
+        {#if task_loading}
+          <div class="text-center text-gray-500 py-12">Loading task…</div>
+        {:else if task_error}
+          <Warning warning_color="error" warning_message={task_error} />
+        {:else if current_step === "describe"}
+          <!-- ── Step 1 — Describe ── -->
+          <FormElement
+            label="What should this eval check?"
+            description="Describe in plain language. We'll structure it for you."
+            id="description"
+            inputType="textarea"
+            height="medium"
+            bind:value={description}
+            error_message={classify_error}
           />
-          <div class="mt-4">
-            <button
-              class="btn btn-ghost btn-sm"
-              on:click={() => (current_step = "describe")}>← Back</button
+
+          <div class="flex justify-between mt-8">
+            <button class="btn btn-ghost btn-sm" on:click={back_to_task}
+              >← Cancel</button
             >
+            <button
+              class="btn btn-primary"
+              on:click={classify_then_continue}
+              disabled={!description.trim() || classifying}
+            >
+              {#if classifying}
+                <span class="loading loading-dots loading-sm"></span>
+                Classifying…
+              {:else}
+                Continue →
+              {/if}
+            </button>
           </div>
-        {/if}
-      {:else if current_step === "refine"}
-        <!-- ── Step 3 — Refine ── -->
-        {#if refined_preview_loading}
-          <div class="text-center py-12">
-            <span class="loading loading-dots loading-lg"></span>
-            <div class="text-sm mt-4 text-gray-500">Refining your eval…</div>
-          </div>
-        {:else if is_multi_turn}
-          <!-- Multi-turn variant: examples fields don't apply (real examples
+        {:else if current_step === "clarify"}
+          <!-- ── Step 2 — Clarify (uses v1's Questions component) ── -->
+          {#if questions_loading}
+            <div class="text-center text-gray-500 py-8">
+              <span class="loading loading-dots loading-md"></span>
+              <div class="text-sm mt-2">Generating clarifying questions…</div>
+            </div>
+            <div class="mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "describe"
+                }}>← Back</button
+              >
+            </div>
+          {:else if questions_error}
+            <Warning warning_color="error" warning_message={questions_error} />
+            <div class="mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "describe"
+                }}>← Back</button
+              >
+            </div>
+          {:else if question_set}
+            <Questions
+              {name}
+              {spec_type}
+              {property_values}
+              {question_set}
+              bind:selections
+              bind:other_texts
+              on_submit={on_continue_from_clarify}
+              bind:error={questions_form_error}
+              bind:submitting={questions_submitting}
+              warn_before_unload={false}
+            />
+            <div class="mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "describe"
+                }}>← Back</button
+              >
+            </div>
+          {/if}
+        {:else if current_step === "refine"}
+          <!-- ── Step 3 — Refine ── -->
+          {#if refined_preview_loading}
+            <div class="text-center py-12">
+              <span class="loading loading-dots loading-lg"></span>
+              <div class="text-sm mt-4 text-gray-500">Refining your eval…</div>
+            </div>
+            <div class="mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "clarify"
+                }}>← Back</button
+              >
+            </div>
+          {:else if is_multi_turn}
+            <!-- Multi-turn variant: examples fields don't apply (real examples
              come from Step 4 synthetic chains). Just name + description. -->
-          <div class="mb-6">
-            <FormElement
-              label="Eval Name"
-              description="A short name for your own reference (max 32 characters)."
-              id="multi_turn_name"
-              inputType="input"
-              bind:value={name}
-              validator={filename_string_short_validator}
-            />
-          </div>
+            <div class="mb-6">
+              <FormElement
+                label="Eval Name"
+                description="A short name for your own reference (max 32 characters)."
+                id="multi_turn_name"
+                inputType="input"
+                bind:value={name}
+                validator={filename_string_short_validator}
+              />
+            </div>
 
-          <div class="mb-4">
-            <FormElement
-              label="Issue Description"
-              description="What the agent must avoid doing."
-              id="multi_turn_issue_description"
-              inputType="textarea"
-              height="large"
-              bind:value={refined_property_values.issue_description}
-            />
-            {#if suggested_edits.issue_description?.reason_for_edit}
-              <div class="text-xs text-gray-500 italic mt-2">
-                Refinement: {suggested_edits.issue_description.reason_for_edit}
-              </div>
+            <div class="mb-4">
+              <FormElement
+                label="Issue Description"
+                description="What the agent must avoid doing."
+                id="multi_turn_issue_description"
+                inputType="textarea"
+                height="large"
+                bind:value={refined_property_values.issue_description}
+              />
+              {#if suggested_edits.issue_description?.reason_for_edit}
+                <div class="text-xs text-gray-500 italic mt-2">
+                  Refinement: {suggested_edits.issue_description
+                    .reason_for_edit}
+                </div>
+              {/if}
+            </div>
+
+            {#if not_incorporated_feedback}
+              <Warning
+                warning_color="primary"
+                warning_icon="info"
+                warning_message={`Unincorporated feedback: ${not_incorporated_feedback}`}
+              />
             {/if}
-          </div>
 
-          {#if not_incorporated_feedback}
-            <div class="alert alert-info text-sm mb-4">
-              <span class="font-medium">Unincorporated feedback:</span>
+            <div class="flex justify-between mt-8">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "clarify"
+                }}>← Back</button
+              >
+              <button
+                class="btn btn-primary"
+                on:click={on_refine_submit}
+                disabled={!name.trim() ||
+                  !(refined_property_values.issue_description ?? "").trim()}
+              >
+                Generate conversations →
+              </button>
+            </div>
+          {:else}
+            <!-- Single-turn variant: keep v1's RefineSpec component (handles
+             examples, two-column diff, restore-suggestion buttons). -->
+            <RefineSpec
+              bind:name
+              original_property_values={property_values}
+              bind:refined_property_values
+              {suggested_edits}
               {not_incorporated_feedback}
+              {field_configs}
+              bind:error={refine_form_error}
+              bind:submitting={refine_submitting}
+              warn_before_unload={false}
+              hide_secondary_button={true}
+              on:analyze_refined={on_refine_submit}
+              on:create_spec={on_refine_submit}
+            />
+            <div class="mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "clarify"
+                }}>← Back</button
+              >
+            </div>
+          {/if}
+        {:else if current_step === "generate"}
+          <!-- ── Step 4 — Generate ── -->
+          {#if is_multi_turn && multi_turn_fallback_run_config_name}
+            <Warning
+              warning_color="primary"
+              warning_icon="info"
+              warning_message={`Using run config ${multi_turn_fallback_run_config_name} — set a default in task settings to silence this notice.`}
+            />
+          {/if}
+          {#if generation_loading}
+            <div class="text-center py-12">
+              <span class="loading loading-dots loading-lg"></span>
+              {#if is_multi_turn && multi_turn_phase === "generating_cases"}
+                <div class="text-sm mt-4 text-gray-500">
+                  Generating {NUM_CASES} cases…
+                </div>
+              {:else if is_multi_turn}
+                <div class="text-sm mt-4 text-gray-500">
+                  {multi_turn_progress} of {multi_turn_total} ready
+                </div>
+              {:else}
+                <div class="text-sm mt-4 text-gray-500">
+                  Generating examples…
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          {#if generation_error}
+            <Warning warning_color="error" warning_message={generation_error} />
+            <div class="text-center py-4">
+              <button
+                class="btn btn-primary"
+                on:click={on_continue_from_generate_step}
+              >
+                Retry →
+              </button>
             </div>
           {/if}
 
           <div class="flex justify-between mt-8">
             <button
               class="btn btn-ghost btn-sm"
-              on:click={() => (current_step = "clarify")}>← Back</button
-            >
-            <button
-              class="btn btn-primary"
-              on:click={on_refine_submit}
-              disabled={!name.trim() ||
-                !(refined_property_values.issue_description ?? "").trim()}
-            >
-              Generate conversations →
-            </button>
-          </div>
-        {:else}
-          <!-- Single-turn variant: keep v1's RefineSpec component (handles
-             examples, two-column diff, restore-suggestion buttons). -->
-          <RefineSpec
-            bind:name
-            original_property_values={property_values}
-            bind:refined_property_values
-            {suggested_edits}
-            {not_incorporated_feedback}
-            {field_configs}
-            bind:error={refine_form_error}
-            bind:submitting={refine_submitting}
-            warn_before_unload={false}
-            hide_secondary_button={true}
-            on:analyze_refined={on_refine_submit}
-            on:create_spec={on_refine_submit}
-          />
-          <div class="mt-4">
-            <button
-              class="btn btn-ghost btn-sm"
-              on:click={() => (current_step = "clarify")}>← Back</button
+              on:click={() => {
+                abort_copilot_request()
+                current_step = "clarify"
+              }}>← Back</button
             >
           </div>
-        {/if}
-      {:else if current_step === "generate"}
-        <!-- ── Step 4 — Generate ── -->
-        {#if is_multi_turn && multi_turn_fallback_run_config_name}
-          <div class="alert alert-info text-sm mb-4">
-            Using run config <span class="font-medium"
-              >{multi_turn_fallback_run_config_name}</span
-            > — set a default in task settings to silence this notice.
-          </div>
-        {/if}
-        {#if generation_loading}
-          <div class="text-center py-12">
-            <span class="loading loading-dots loading-lg"></span>
-            {#if is_multi_turn && multi_turn_phase === "generating_cases"}
-              <div class="text-sm mt-4 text-gray-500">
-                Generating {NUM_CASES} cases…
-              </div>
-            {:else if is_multi_turn}
-              <div class="text-sm mt-4 text-gray-500">
-                {multi_turn_progress} of {multi_turn_total} ready
-              </div>
-            {:else}
-              <div class="text-sm mt-4 text-gray-500">Generating examples…</div>
-            {/if}
-          </div>
-        {/if}
-
-        {#if generation_error}
-          <div class="alert alert-error mt-4">{generation_error}</div>
-          <div class="text-center py-4">
-            <button
-              class="btn btn-primary"
-              on:click={on_continue_from_generate_step}
-            >
-              Retry →
-            </button>
-          </div>
-        {/if}
-
-        <div class="flex justify-between mt-8">
-          <button
-            class="btn btn-ghost"
-            on:click={() => (current_step = "clarify")}
-            disabled={generation_loading}>← Back</button
-          >
-        </div>
-      {:else if current_step === "review"}
-        <!-- ── Step 5 — Review ── -->
-        {#if is_multi_turn}
-          <!-- Multi-turn: custom card stack of conversation traces.
+        {:else if current_step === "review"}
+          <!-- ── Step 5 — Review ── -->
+          {#if is_multi_turn}
+            <!-- Multi-turn: custom card stack of conversation traces.
              v1's ReviewExamples only handles single I/O pairs, so multi-turn
              keeps its own UI. -->
-          <div class="space-y-4">
-            {#each multi_turn_chains as chain, ci}
-              <div class="card bg-base-200 shadow-sm">
-                <div class="card-body p-4">
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="flex-1">
-                      <div class="text-xs text-gray-500 mb-1">
-                        Conversation {ci + 1} of {multi_turn_chains.length}
-                      </div>
-                    </div>
-                    <div class="flex gap-1">
-                      <button
-                        class="btn btn-xs {chain_verdicts[ci]?.verdict ===
-                        'fail'
-                          ? 'btn-error'
-                          : 'btn-outline'}"
-                        on:click={() => {
-                          chain_verdicts[ci].verdict = "fail"
-                          chain_verdicts = [...chain_verdicts]
-                        }}
-                      >
-                        ✗ Fail
-                      </button>
-                      <button
-                        class="btn btn-xs {chain_verdicts[ci]?.verdict ===
-                        'pass'
-                          ? 'btn-success'
-                          : 'btn-outline'}"
-                        on:click={() => {
-                          chain_verdicts[ci].verdict = "pass"
-                          chain_verdicts = [...chain_verdicts]
-                        }}
-                      >
-                        ✓ Pass
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="mt-3 space-y-2 text-sm">
-                    {#each chain.trace as turn}
-                      <div
-                        class="rounded px-3 py-2 {turn.role === 'user'
-                          ? 'bg-base-100'
-                          : 'bg-primary/10'}"
-                      >
+            <div class="space-y-4">
+              {#each multi_turn_chains as chain, ci}
+                <div class="card bg-base-200 shadow-sm">
+                  <div class="card-body p-4">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="flex-1">
                         <div class="text-xs text-gray-500 mb-1">
-                          {turn.role}
+                          Conversation {ci + 1} of {multi_turn_chains.length}
                         </div>
-                        <div class="whitespace-pre-wrap">{turn.content}</div>
                       </div>
-                    {/each}
-                  </div>
+                      <div class="flex gap-1">
+                        <button
+                          class="btn btn-xs {chain_verdicts[ci]?.verdict ===
+                          'fail'
+                            ? 'btn-error'
+                            : 'btn-outline'}"
+                          on:click={() => {
+                            chain_verdicts[ci].verdict = "fail"
+                            chain_verdicts = [...chain_verdicts]
+                          }}
+                        >
+                          ✗ Fail
+                        </button>
+                        <button
+                          class="btn btn-xs {chain_verdicts[ci]?.verdict ===
+                          'pass'
+                            ? 'btn-success'
+                            : 'btn-outline'}"
+                          on:click={() => {
+                            chain_verdicts[ci].verdict = "pass"
+                            chain_verdicts = [...chain_verdicts]
+                          }}
+                        >
+                          ✓ Pass
+                        </button>
+                      </div>
+                    </div>
 
-                  {#if chain_verdicts[ci]?.verdict !== null}
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm mt-3"
-                      placeholder="Feedback (optional)"
-                      bind:value={chain_verdicts[ci].feedback}
-                    />
-                  {/if}
+                    <div class="mt-3 space-y-2 text-sm">
+                      {#each chain.trace as turn}
+                        <div
+                          class="rounded px-3 py-2 {turn.role === 'user'
+                            ? 'bg-base-100'
+                            : 'bg-primary/10'}"
+                        >
+                          <div class="text-xs text-gray-500 mb-1">
+                            {turn.role}
+                          </div>
+                          <div class="whitespace-pre-wrap">{turn.content}</div>
+                        </div>
+                      {/each}
+                    </div>
+
+                    {#if chain_verdicts[ci]?.verdict !== null}
+                      <input
+                        type="text"
+                        class="input input-bordered input-sm mt-3"
+                        placeholder="Feedback (optional)"
+                        bind:value={chain_verdicts[ci].feedback}
+                      />
+                    {/if}
+                  </div>
                 </div>
-              </div>
-            {/each}
-          </div>
-          <div class="flex justify-between mt-8">
-            <button
-              class="btn btn-ghost"
-              on:click={() => (current_step = "generate")}>← Back</button
-            >
-            <div
-              class="tooltip tooltip-top"
-              data-tip={all_chains_reviewed
-                ? null
-                : "Mark each conversation pass or fail before saving."}
-            >
-              <button
-                class="btn btn-primary"
-                on:click={on_advance_to_save}
-                disabled={!all_chains_reviewed}
-              >
-                Save →
-              </button>
+              {/each}
             </div>
-          </div>
-        {:else}
-          <!-- Single-turn: reuse v1's ReviewExamples component. Both submit
+            <div class="flex justify-between mt-8">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "generate"
+                }}>← Back</button
+              >
+              <div
+                class="tooltip tooltip-top"
+                data-tip={all_chains_reviewed
+                  ? null
+                  : "Mark each conversation pass or fail before saving."}
+              >
+                <button
+                  class="btn btn-primary"
+                  on:click={on_advance_to_save}
+                  disabled={!all_chains_reviewed}
+                >
+                  Save →
+                </button>
+              </div>
+            </div>
+          {:else}
+            <!-- Single-turn: reuse v1's ReviewExamples component. Both submit
              events (create_spec when feedback aligns, continue_to_refine
              when it doesn't) advance to Save in v2 — we don't re-loop
              through refine after review. -->
-          <ReviewExamples
-            {name}
-            {spec_type}
-            {property_values}
-            bind:review_rows
-            bind:error={review_form_error}
-            bind:submitting={review_submitting}
-            warn_before_unload={false}
-            on:create_spec={on_advance_to_save}
-            on:continue_to_refine={on_advance_to_save}
-            on:create_spec_secondary={on_advance_to_save}
-          />
-          <div class="mt-4">
+            <ReviewExamples
+              {name}
+              {spec_type}
+              {property_values}
+              bind:review_rows
+              bind:error={review_form_error}
+              bind:submitting={review_submitting}
+              warn_before_unload={false}
+              on:create_spec={on_advance_to_save}
+              on:continue_to_refine={on_advance_to_save}
+              on:create_spec_secondary={on_advance_to_save}
+            />
+            <div class="mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => {
+                  abort_copilot_request()
+                  current_step = "generate"
+                }}>← Back</button
+              >
+            </div>
+          {/if}
+        {:else if current_step === "save"}
+          <!-- ── Step 6 — Save ── -->
+          {#if saving}
+            <div class="text-center py-12">
+              <span class="loading loading-dots loading-lg"></span>
+              <div class="text-sm mt-4 text-gray-500">Saving…</div>
+            </div>
+          {:else if save_error}
+            <Warning warning_color="error" warning_message={save_error} />
+            <div class="text-center py-4">
+              <button class="btn btn-primary" on:click={on_save}>Retry →</button
+              >
+            </div>
+          {/if}
+
+          <div class="flex justify-between mt-8">
             <button
               class="btn btn-ghost btn-sm"
-              on:click={() => (current_step = "generate")}>← Back</button
+              on:click={() => (current_step = "review")}
+              disabled={saving}>← Back</button
             >
           </div>
-        {/if}
-      {:else if current_step === "save"}
-        <!-- ── Step 6 — Save ── -->
-        {#if saving}
+        {:else if current_step === "done"}
+          <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to. -->
           <div class="text-center py-12">
-            <span class="loading loading-dots loading-lg"></span>
-            <div class="text-sm mt-4 text-gray-500">Saving…</div>
-          </div>
-        {:else if save_error}
-          <div class="alert alert-error">{save_error}</div>
-          <div class="text-center py-4">
-            <button class="btn btn-primary" on:click={on_save}>Retry →</button>
+            <div class="text-4xl mb-4">✓</div>
+            <h1 class="text-2xl font-bold mb-2">Spec saved</h1>
+            <button class="btn btn-primary" on:click={back_to_task}>
+              Back to evals
+            </button>
           </div>
         {/if}
-
-        <div class="flex justify-between mt-8">
-          <button
-            class="btn btn-ghost"
-            on:click={() => (current_step = "review")}
-            disabled={saving}>← Back</button
-          >
-        </div>
-      {:else if current_step === "done"}
-        <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to. -->
-        <div class="text-center py-12">
-          <div class="text-4xl mb-4">✓</div>
-          <h1 class="text-2xl font-bold mb-2">Spec saved</h1>
-          <button class="btn btn-primary" on:click={back_to_task}>
-            Back to evals
-          </button>
-        </div>
-      {/if}
-    </div>
-  {/if}
-</AppPage>
+      </div>
+    {/if}
+  </AppPage>
+</div>
