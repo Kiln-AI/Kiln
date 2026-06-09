@@ -683,3 +683,28 @@ async def test_unexpected_error_does_not_abort_batch(
     assert len(result.errors) == 1
     assert result.errors[0].task_run_id == boom.id
     assert "kaboom" in result.errors[0].error
+
+
+@pytest.mark.asyncio
+async def test_mean_normalized_scores_are_continuous(mock_task, data_source):
+    # The continuous signal the binary pass/fail discards: a five-star eval with items at different
+    # stars yields a fractional per-dimension mean, not just a failure count.
+    eval = make_eval(
+        mock_task, score_type=TaskOutputRatingType.five_star, name="Quality"
+    )
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
+    make_train_run(mock_task, data_source, "a")
+    make_train_run(mock_task, data_source, "b")
+
+    stars = {"a": 3.0, "b": 5.0}  # five_star normalizes (s-1)/4 -> 0.5 and 1.0
+
+    def score_fn(task_run):
+        return {"quality": stars[task_run.input]}
+
+    result = await run_job(job, eval_config, score_fn)
+
+    assert result.mean_normalized_scores["quality"] == pytest.approx(0.75)
+    assert result.mean_normalized_score == pytest.approx(0.75)

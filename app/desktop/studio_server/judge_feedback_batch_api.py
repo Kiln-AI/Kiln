@@ -163,6 +163,16 @@ class JudgeFeedbackBatchRunResponse(BaseModel):
         description="Per-item judge/save errors (if any). Each is skipped, not retried; re-running "
         "the job retries the un-persisted items. A non-empty list means partial success.",
     )
+    mean_normalized_scores: dict[str, float] = Field(
+        default_factory=dict,
+        description="Mean normalized (0-1, higher = better) score per output-score dimension over "
+        "judged_runs — the continuous signal the pass/fail bit discards. Use it as a gate/loss "
+        "metric (compare a candidate's mean vs the baseline's) instead of just the failure count.",
+    )
+    mean_normalized_score: float | None = Field(
+        default=None,
+        description="Mean of mean_normalized_scores across dimensions (null if nothing was judged).",
+    )
 
 
 def _build_judge_feedback_batch(
@@ -198,6 +208,8 @@ async def _run_judge_feedback_batch(
         train_set_size=result.train_set_size,
         hit_cap=result.hit_cap,
         errors=result.errors,
+        mean_normalized_scores=result.mean_normalized_scores,
+        mean_normalized_score=result.mean_normalized_score,
     )
 
 

@@ -323,6 +323,8 @@ def test_run_judge_feedback_batch(
                 task_run_id="d2", error="Error judging item: boom"
             )
         ],
+        mean_normalized_scores={"accuracy": 0.5},
+        mean_normalized_score=0.5,
     )
     with patched_runner(result):
         resp = client.post(f"{BASE}/jj1/run")
@@ -346,6 +348,9 @@ def test_run_judge_feedback_batch(
     assert body["errors"] == [
         {"task_run_id": "d2", "error": "Error judging item: boom"}
     ]
+    # Continuous loss signal (P1) flows through for gating.
+    assert body["mean_normalized_scores"] == {"accuracy": 0.5}
+    assert body["mean_normalized_score"] == 0.5
 
 
 def test_run_judge_feedback_batch_404(

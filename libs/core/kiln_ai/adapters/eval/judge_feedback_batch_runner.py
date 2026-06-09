@@ -74,6 +74,34 @@ def example_fails(
     return True
 
 
+def aggregate_normalized_scores(
+    runs: list[JudgeFeedbackBatchRun], output_scores: list[EvalOutputScore]
+) -> dict[str, float]:
+    """Mean normalized (0-1, higher = better) score per non-custom dimension over the judged runs.
+
+    This is the continuous signal that the binary pass/fail collapses away — usable directly as a
+    gate / loss metric (e.g. compare a candidate's mean against the baseline's) instead of just a
+    failure count, so a 2★→3★ improvement is visible rather than reading as zero gradient.
+    """
+    aggregated: dict[str, float] = {}
+    for score in output_scores:
+        if score.type == TaskOutputRatingType.custom:
+            continue
+        key = score.json_key()
+        values: list[float] = []
+        for run in runs:
+            value = run.scores.get(key)
+            if value is None:
+                continue
+            try:
+                values.append(normalize_rating(value, score.type))
+            except (ValueError, TypeError):
+                continue
+        if values:
+            aggregated[key] = sum(values) / len(values)
+    return aggregated
+
+
 def feedback_from_intermediate_outputs(
     intermediate_outputs: dict[str, str] | None,
 ) -> str | None:
@@ -112,6 +140,9 @@ class JudgeFeedbackBatchRunResult:
     train_set_size: int
     hit_cap: bool
     errors: list[JudgeFeedbackBatchItemError] = field(default_factory=list)
+    # Continuous signal (P1): mean normalized score per dimension over judged_runs, and overall.
+    mean_normalized_scores: dict[str, float] = field(default_factory=dict)
+    mean_normalized_score: float | None = None
 
 
 @dataclass
@@ -281,6 +312,13 @@ class JudgeFeedbackBatchRunner:
             # In gate mode we judge everything; "capped" means the matching set exceeded max_samples.
             hit_cap = train_set_size > job.max_samples
 
+        per_dimension = aggregate_normalized_scores(
+            judged_runs, self.eval.output_scores
+        )
+        overall = (
+            sum(per_dimension.values()) / len(per_dimension) if per_dimension else None
+        )
+
         return JudgeFeedbackBatchRunResult(
             failing_runs=returned_failing,
             judged_runs=judged_runs,
@@ -289,6 +327,8 @@ class JudgeFeedbackBatchRunner:
             train_set_size=train_set_size,
             hit_cap=hit_cap,
             errors=errors,
+            mean_normalized_scores=per_dimension,
+            mean_normalized_score=overall,
         )
 
     async def _score_one(

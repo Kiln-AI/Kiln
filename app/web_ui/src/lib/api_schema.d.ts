@@ -7122,6 +7122,18 @@ export interface components {
              * @description Per-item judge/save errors (if any). Each is skipped, not retried; re-running the job retries the un-persisted items. A non-empty list means partial success.
              */
             errors?: components["schemas"]["JudgeFeedbackBatchItemError"][];
+            /**
+             * Mean Normalized Scores
+             * @description Mean normalized (0-1, higher = better) score per output-score dimension over judged_runs — the continuous signal the pass/fail bit discards. Use it as a gate/loss metric (compare a candidate's mean vs the baseline's) instead of just the failure count.
+             */
+            mean_normalized_scores?: {
+                [key: string]: number;
+            };
+            /**
+             * Mean Normalized Score
+             * @description Mean of mean_normalized_scores across dimensions (null if nothing was judged).
+             */
+            mean_normalized_score?: number | null;
         };
         /**
          * KilnAgentRunConfigProperties
