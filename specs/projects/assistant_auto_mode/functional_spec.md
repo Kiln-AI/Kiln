@@ -67,11 +67,19 @@ see §4.2):
    app server intercepts it and, instead of executing it silently, emits a **consent-required**
    event to the browser.
 2. **User UI toggle.** The user clicks an "enable auto mode" control in the chat UI. Same consent
-   dialog. **Manual enable only *arms* the conversation's auto-mode flag — it does NOT fire an
-   empty turn** (sending an empty message set errors at the backend with "No messages were sent").
-   The indicator turns on; the **next message the user sends** starts the first auto burst (via the
-   inject/`/message` path, §4.3.2). If a turn is already in flight when enabled, it simply continues
-   under auto-mode.
+   dialog. **Manual enable only *arms* auto-mode — it does NOT fire an empty turn** (sending an
+   empty message set errors at the backend with "No messages were sent"). The indicator turns on;
+   the **next message the user sends** starts the first auto burst.
+   - **The toggle is always available, including on a brand-new conversation with no messages yet**
+     (Revision R2). On a fresh conversation there is no `trace_id` to key a server run, so enable
+     **arms client-side** (indicator on, no server call). When the user sends their **first**
+     message, it creates the auto run **seeded with that message** (enable with `extra_messages`
+     and **no `trace_id`** — the backend starts a fresh conversation and assigns the `trace_id` on
+     the first turn), so the very first turn runs in auto-mode. No empty turn is ever sent.
+   - On an existing conversation that already has a `trace_id`, enable creates/arms the run as
+     before (§4.3.1); the next message runs via the inject/`/message` path (§4.3.2).
+   - If a turn is already in flight when enabled, it simply continues under auto-mode. If the user
+     disables/declines before sending the first message, the client-armed state is cleared.
 
 > **Revision R1 — conversation-scoped auto-mode.** Auto-mode is no longer a single burst that
 > auto-disables when the assistant pauses. Once enabled it stays on for the **whole conversation**

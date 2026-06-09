@@ -81,3 +81,17 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     history-restore), cleared once attach is established; on attach show the thinking indicator if
     working or "· waiting for you" if idle, driven by the surfaced state. Reuse existing
     indicator/working machinery. Tests. (Architecture §13.)
+
+### Revision R2 — Enable auto-mode before sending any message
+
+- [ ] **Phase 10 — Enable on a brand-new conversation** (app server + web UI)
+  - App server: make `AutoChatSeed.trace_id` optional; `_build_seed_body` omits `trace_id` when
+    absent (fresh conversation); `registry.start` accepts a no-trace seed (run reachable by
+    `run_id`; trace index populated on first `kiln_chat_trace`); the no-trace seed carries the first
+    user message so it starts RUNNING (no empty turn). `POST /api/chat/auto/enable` accepts no
+    `trace_id`. Tests.
+  - Web UI: the footer "Auto mode" toggle is always clickable (not disabled on empty chat). On a
+    conversation with no `trace_id`, accept → client-armed (indicator on, no server call); the first
+    `sendMessage` while armed creates the run via enable with `extra_messages=[first message]` + no
+    `trace_id`, then attach; disable/decline before first send clears armed state. Existing-trace
+    behavior unchanged. Tests. (Architecture §14, functional_spec §4.1(2).)

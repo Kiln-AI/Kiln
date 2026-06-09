@@ -544,6 +544,26 @@ Supersedes the burst-only model. Changes span libs/core, app server, web UI, and
 - **Stop/disable with queued messages:** queue is discarded; flag cleared.
 - **Restart:** entry is in-memory; lost on restart (unchanged, §4.7) — flag included.
 
+## 14. Revision R2 — Enable auto-mode on a brand-new conversation (no trace yet)
+
+The footer "Auto mode" toggle must be usable **before any message is sent**.
+
+- **`AutoChatSeed.trace_id` becomes optional.** When absent, `_build_seed_body` builds a body with
+  the seed's `extra_messages` and **no `trace_id`** — i.e. a fresh conversation. The backend starts
+  a new conversation and emits the first `kiln_chat_trace`; `_on_trace` then populates the registry
+  trace index (none exists at start). The run is created RUNNING (it has a real first message to
+  run) rather than IDLE/armed. `registry.start` must accept a no-trace seed (no initial
+  `_trace_index` entry; the run is reachable by `run_id` until the first trace arrives).
+- **Web UI client-arm.** The toggle is always enabled (except while consent is pending or already
+  on). On a conversation with **no `trace_id`**, accepting consent sets a **client-armed** state
+  (indicator on, no server call). The first `sendMessage` while armed-without-run calls
+  `POST /api/chat/auto/enable` with `extra_messages=[first message]` and no `trace_id`, gets a
+  `run_id`, attaches, and clears the armed state. Disable/decline before the first send clears the
+  armed state. On an existing conversation (has `trace_id`) behavior is unchanged (§13.1/§13.2).
+- Brand-new-conversation enable is the one case where `/api/chat/auto/enable` legitimately starts a
+  RUNNING burst immediately (because it carries the first user message) — distinct from the empty
+  arming-only IDLE case in §13 (manual enable on an existing idle conversation).
+
 ## 12. One-Phase Decision
 
 Single `architecture.md`; no separate `/components` docs. The pieces (registry, runner, bus, UI
