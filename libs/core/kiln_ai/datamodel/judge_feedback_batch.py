@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
 
-class JudgeJobRun(KilnParentedModel):
-    """The judge's result for a single sampled dataset item (a child of a JudgeJob)."""
+class JudgeFeedbackBatchRun(KilnParentedModel):
+    """The judge's result for a single sampled dataset item (a child of a JudgeFeedbackBatch)."""
 
     task_run_id: ID_TYPE = Field(
         description="The ID of the task run (dataset item) that was judged."
@@ -36,29 +36,32 @@ class JudgeJobRun(KilnParentedModel):
         "produced it. None when the item's existing dataset output was judged.",
     )
 
-    def parent_judge_job(self) -> Union["JudgeJob", None]:
-        if self.parent is not None and self.parent.__class__.__name__ != "JudgeJob":
-            raise ValueError("parent must be a JudgeJob")
+    def parent_judge_feedback_batch(self) -> Union["JudgeFeedbackBatch", None]:
+        if (
+            self.parent is not None
+            and self.parent.__class__.__name__ != "JudgeFeedbackBatch"
+        ):
+            raise ValueError("parent must be a JudgeFeedbackBatch")
         return self.parent  # type: ignore
 
 
-class JudgeJob(
+class JudgeFeedbackBatch(
     KilnParentedModel,
     KilnParentModel,
-    parent_of={"runs": JudgeJobRun},
+    parent_of={"runs": JudgeFeedbackBatchRun},
 ):
     """
     A reusable config that samples dataset items by tag, judges them with an evaluator
     (eval config), and records each item's pass/fail and the judge's feedback.
 
     Used to surface a minibatch of failing examples — with feedback — for reflective prompt
-    optimization. A child of a Task; a parent of the JudgeJobRun results it produces.
+    optimization. A child of a Task; a parent of the JudgeFeedbackBatchRun results it produces.
     """
 
-    name: FilenameString = Field(description="The name of the judge job.")
+    name: FilenameString = Field(description="The name of the judge feedback batch.")
     description: str | None = Field(
         default=None,
-        description="A description of the judge job for you and your team.",
+        description="A description of the judge feedback batch for you and your team.",
     )
     target_tags: List[str] = Field(
         description="Dataset items must carry all of these tags to be sampled for this job."
@@ -104,5 +107,5 @@ class JudgeJob(
             raise ValueError("parent must be a Task")
         return self.parent  # type: ignore
 
-    def runs(self, readonly: bool = False) -> list[JudgeJobRun]:
+    def runs(self, readonly: bool = False) -> list[JudgeFeedbackBatchRun]:
         return super().runs(readonly=readonly)  # type: ignore

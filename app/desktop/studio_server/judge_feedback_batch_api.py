@@ -1,13 +1,16 @@
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
-from kiln_ai.adapters.eval.judge_job_runner import (
+from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
     DEFAULT_FAILURE_THRESHOLD,
-    JudgeJobItemError,
-    JudgeJobRunner,
+    JudgeFeedbackBatchItemError,
+    JudgeFeedbackBatchRunner,
 )
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType
-from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun
+from kiln_ai.datamodel.judge_feedback_batch import (
+    JudgeFeedbackBatch,
+    JudgeFeedbackBatchRun,
+)
 from kiln_ai.datamodel.task import Task
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
@@ -19,15 +22,19 @@ from kiln_server.utils.agent_checks.policy import (
 from pydantic import BaseModel, Field, model_validator
 
 
-def judge_job_from_id(project_id: str, task_id: str, judge_job_id: str) -> JudgeJob:
+def judge_feedback_batch_from_id(
+    project_id: str, task_id: str, judge_feedback_batch_id: str
+) -> JudgeFeedbackBatch:
     task = task_from_id(project_id, task_id)
-    judge_job = JudgeJob.from_id_and_parent_path(judge_job_id, task.path)
-    if judge_job is None:
+    judge_feedback_batch = JudgeFeedbackBatch.from_id_and_parent_path(
+        judge_feedback_batch_id, task.path
+    )
+    if judge_feedback_batch is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Judge job not found. ID: {judge_job_id}",
+            detail=f"Judge job not found. ID: {judge_feedback_batch_id}",
         )
-    return judge_job
+    return judge_feedback_batch
 
 
 def eval_config_from_id(task: Task, eval_config_id: str) -> EvalConfig:
@@ -68,15 +75,15 @@ def validate_judge_eval(eval_config: EvalConfig, generate_outputs: bool) -> None
         )
 
 
-class CreateJudgeJobRequest(BaseModel):
-    """Request to create a judge job."""
+class CreateJudgeFeedbackBatchRequest(BaseModel):
+    """Request to create a judge feedback batch."""
 
     name: str | None = Field(
         default=None,
-        description="The name of the judge job. A memorable name is generated if omitted.",
+        description="The name of the judge feedback batch. A memorable name is generated if omitted.",
     )
     description: str | None = Field(
-        default=None, description="A description of the judge job."
+        default=None, description="A description of the judge feedback batch."
     )
     target_tags: list[str] = Field(
         description="Dataset items must carry all of these tags to be sampled. At least one required.",
@@ -114,7 +121,7 @@ class CreateJudgeJobRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_request(self) -> "CreateJudgeJobRequest":
+    def validate_request(self) -> "CreateJudgeFeedbackBatchRequest":
         if (
             self.stop_after_failures is not None
             and self.max_samples < self.stop_after_failures
@@ -127,14 +134,16 @@ class CreateJudgeJobRequest(BaseModel):
         return self
 
 
-class JudgeJobRunResponse(BaseModel):
-    """The result of running a judge job. Counts and errors are FYI for the caller; not persisted."""
+class JudgeFeedbackBatchRunResponse(BaseModel):
+    """The result of running a judge feedback batch. Counts and errors are FYI for the caller; not persisted."""
 
-    judge_job: JudgeJob = Field(description="The judge job that was run.")
-    failing_runs: list[JudgeJobRun] = Field(
+    judge_feedback_batch: JudgeFeedbackBatch = Field(
+        description="The judge feedback batch that was run."
+    )
+    failing_runs: list[JudgeFeedbackBatchRun] = Field(
         description="The failing examples found (up to stop_after_failures, if set), with feedback."
     )
-    judged_runs: list[JudgeJobRun] = Field(
+    judged_runs: list[JudgeFeedbackBatchRun] = Field(
         description="Every item judged this run (pass and fail), each keyed by task_run_id. Pair "
         "these across two runs by task_run_id to gate a candidate vs baseline on the same items.",
     )
@@ -149,15 +158,17 @@ class JudgeJobRunResponse(BaseModel):
         description="True if coverage was capped: max_samples reached before stop_after_failures "
         "(train signal), or the matching set exceeded max_samples (gate).",
     )
-    errors: list[JudgeJobItemError] = Field(
+    errors: list[JudgeFeedbackBatchItemError] = Field(
         default_factory=list,
         description="Per-item judge/save errors (if any). Each is skipped, not retried; re-running "
         "the job retries the un-persisted items. A non-empty list means partial success.",
     )
 
 
-def _build_judge_job(task: Task, request: CreateJudgeJobRequest) -> JudgeJob:
-    return JudgeJob(
+def _build_judge_feedback_batch(
+    task: Task, request: CreateJudgeFeedbackBatchRequest
+) -> JudgeFeedbackBatch:
+    return JudgeFeedbackBatch(
         parent=task,
         name=request.name or generate_memorable_name(),
         description=request.description,
@@ -171,15 +182,15 @@ def _build_judge_job(task: Task, request: CreateJudgeJobRequest) -> JudgeJob:
     )
 
 
-async def _run_judge_job(
-    judge_job: JudgeJob, eval_config: EvalConfig, request: Request
-) -> JudgeJobRunResponse:
-    runner = JudgeJobRunner(
-        judge_job, eval_config, save_context=build_save_context(request)
+async def _run_judge_feedback_batch(
+    judge_feedback_batch: JudgeFeedbackBatch, eval_config: EvalConfig, request: Request
+) -> JudgeFeedbackBatchRunResponse:
+    runner = JudgeFeedbackBatchRunner(
+        judge_feedback_batch, eval_config, save_context=build_save_context(request)
     )
     result = await runner.run()
-    return JudgeJobRunResponse(
-        judge_job=judge_job,
+    return JudgeFeedbackBatchRunResponse(
+        judge_feedback_batch=judge_feedback_batch,
         failing_runs=result.failing_runs,
         judged_runs=result.judged_runs,
         num_judged=result.num_judged,
@@ -190,14 +201,14 @@ async def _run_judge_job(
     )
 
 
-def connect_judge_job_api(app: FastAPI):
+def connect_judge_feedback_batch_api(app: FastAPI):
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/judge_jobs",
-        summary="Create Judge Job",
-        tags=["Judge Jobs"],
+        "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches",
+        summary="Create Judge Feedback Batch",
+        tags=["Judge Feedback Batches"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def create_judge_job(
+    async def create_judge_feedback_batch(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -205,28 +216,28 @@ def connect_judge_job_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-        request: CreateJudgeJobRequest,
-    ) -> JudgeJob:
-        """Create a judge job config. Run it later with `/judge_jobs/{id}/run`."""
+        request: CreateJudgeFeedbackBatchRequest,
+    ) -> JudgeFeedbackBatch:
+        """Create a judge feedback batch config. Run it later with `/judge_feedback_batches/{id}/run`."""
         task = task_from_id(project_id, task_id)
         # Validate the judge (eval config) and optional run config exist under this task.
         eval_config = eval_config_from_id(task, request.eval_config_id)
         validate_judge_eval(eval_config, request.generate_outputs)
         validate_run_config_id(task, request.run_config_id)
-        judge_job = _build_judge_job(task, request)
-        judge_job.save_to_file()
-        return judge_job
+        judge_feedback_batch = _build_judge_feedback_batch(task, request)
+        judge_feedback_batch.save_to_file()
+        return judge_feedback_batch
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/run",
-        summary="Run Judge Job",
-        tags=["Judge Jobs"],
+        "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/run",
+        summary="Run Judge Feedback Batch",
+        tags=["Judge Feedback Batches"],
         openapi_extra=agent_policy_require_approval(
-            "Run judge job? It makes model calls over the sampled dataset items."
+            "Run judge feedback batch? It makes model calls over the sampled dataset items."
         ),
     )
     @no_write_lock
-    async def run_judge_job(
+    async def run_judge_feedback_batch(
         request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -235,35 +246,39 @@ def connect_judge_job_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-        judge_job_id: Annotated[
-            str, Path(description="The unique identifier of the judge job.")
+        judge_feedback_batch_id: Annotated[
+            str, Path(description="The unique identifier of the judge feedback batch.")
         ],
-    ) -> JudgeJobRunResponse:
-        """Run a judge job: sample tagged dataset items, judge their existing outputs, and return
+    ) -> JudgeFeedbackBatchRunResponse:
+        """Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
         the failing examples + feedback.
 
         Runs synchronously and returns once judging completes. Each result is persisted as a child
-        run (fetch them later via `GET /judge_jobs/{id}/runs`); the returned counts
+        run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
         (num_judged, failing_count, train_set_size, hit_cap) and any per-item `errors` are FYI for
         the caller's loop. Errors don't abort the run — partial results are still persisted, and
         re-running the job retries only the un-persisted (errored or not-yet-judged) items.
         """
         task = task_from_id(project_id, task_id)
-        judge_job = judge_job_from_id(project_id, task_id, judge_job_id)
-        eval_config = eval_config_from_id(task, judge_job.eval_config_id)
-        validate_judge_eval(eval_config, judge_job.generate_outputs)
-        return await _run_judge_job(judge_job, eval_config, request)
+        judge_feedback_batch = judge_feedback_batch_from_id(
+            project_id, task_id, judge_feedback_batch_id
+        )
+        eval_config = eval_config_from_id(task, judge_feedback_batch.eval_config_id)
+        validate_judge_eval(eval_config, judge_feedback_batch.generate_outputs)
+        return await _run_judge_feedback_batch(
+            judge_feedback_batch, eval_config, request
+        )
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/run",
-        summary="Create And Run Judge Job",
-        tags=["Judge Jobs"],
+        "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/run",
+        summary="Create And Run Judge Feedback Batch",
+        tags=["Judge Feedback Batches"],
         openapi_extra=agent_policy_require_approval(
-            "Create and run judge job? It makes model calls over the sampled dataset items."
+            "Create and run judge feedback batch? It makes model calls over the sampled dataset items."
         ),
     )
     @no_write_lock
-    async def create_and_run_judge_job(
+    async def create_and_run_judge_feedback_batch(
         request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -272,25 +287,27 @@ def connect_judge_job_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-        body: CreateJudgeJobRequest,
-    ) -> JudgeJobRunResponse:
-        """Create a judge job and run it immediately (synchronous), returning the failing examples
+        body: CreateJudgeFeedbackBatchRequest,
+    ) -> JudgeFeedbackBatchRunResponse:
+        """Create a judge feedback batch and run it immediately (synchronous), returning the failing examples
         + feedback."""
         task = task_from_id(project_id, task_id)
         eval_config = eval_config_from_id(task, body.eval_config_id)
         validate_judge_eval(eval_config, body.generate_outputs)
         validate_run_config_id(task, body.run_config_id)
-        judge_job = _build_judge_job(task, body)
-        judge_job.save_to_file()
-        return await _run_judge_job(judge_job, eval_config, request)
+        judge_feedback_batch = _build_judge_feedback_batch(task, body)
+        judge_feedback_batch.save_to_file()
+        return await _run_judge_feedback_batch(
+            judge_feedback_batch, eval_config, request
+        )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/judge_jobs",
-        summary="List Judge Jobs",
-        tags=["Judge Jobs"],
+        "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches",
+        summary="List Judge Feedback Batches",
+        tags=["Judge Feedback Batches"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def list_judge_jobs(
+    async def list_judge_feedback_batches(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -298,17 +315,17 @@ def connect_judge_job_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-    ) -> list[JudgeJob]:
-        """List all judge jobs for a task."""
-        return task_from_id(project_id, task_id).judge_jobs()
+    ) -> list[JudgeFeedbackBatch]:
+        """List all judge feedback batches for a task."""
+        return task_from_id(project_id, task_id).judge_feedback_batches()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}",
-        summary="Get Judge Job",
-        tags=["Judge Jobs"],
+        "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}",
+        summary="Get Judge Feedback Batch",
+        tags=["Judge Feedback Batches"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_judge_job(
+    async def get_judge_feedback_batch(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -316,20 +333,22 @@ def connect_judge_job_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-        judge_job_id: Annotated[
-            str, Path(description="The unique identifier of the judge job.")
+        judge_feedback_batch_id: Annotated[
+            str, Path(description="The unique identifier of the judge feedback batch.")
         ],
-    ) -> JudgeJob:
-        """Get a judge job config."""
-        return judge_job_from_id(project_id, task_id, judge_job_id)
+    ) -> JudgeFeedbackBatch:
+        """Get a judge feedback batch config."""
+        return judge_feedback_batch_from_id(
+            project_id, task_id, judge_feedback_batch_id
+        )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/runs",
-        summary="Get Judge Job Runs",
-        tags=["Judge Jobs"],
+        "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/runs",
+        summary="Get Judge Feedback Batch Runs",
+        tags=["Judge Feedback Batches"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_judge_job_runs(
+    async def get_judge_feedback_batch_runs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -337,17 +356,19 @@ def connect_judge_job_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-        judge_job_id: Annotated[
-            str, Path(description="The unique identifier of the judge job.")
+        judge_feedback_batch_id: Annotated[
+            str, Path(description="The unique identifier of the judge feedback batch.")
         ],
         failing_only: Annotated[
             bool,
             Query(description="Return only the items that failed the judge."),
         ] = False,
-    ) -> list[JudgeJobRun]:
-        """Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge job."""
-        judge_job = judge_job_from_id(project_id, task_id, judge_job_id)
-        runs = judge_job.runs()
+    ) -> list[JudgeFeedbackBatchRun]:
+        """Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge feedback batch."""
+        judge_feedback_batch = judge_feedback_batch_from_id(
+            project_id, task_id, judge_feedback_batch_id
+        )
+        runs = judge_feedback_batch.runs()
         if failing_only:
             runs = [run for run in runs if not run.passed]
         return runs

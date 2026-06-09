@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/runs",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

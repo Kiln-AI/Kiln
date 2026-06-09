@@ -1,6 +1,6 @@
 import pytest
 
-from kiln_ai.datamodel import JudgeJob, JudgeJobRun, Project, Task
+from kiln_ai.datamodel import JudgeFeedbackBatch, JudgeFeedbackBatchRun, Project, Task
 
 
 @pytest.fixture
@@ -13,7 +13,7 @@ def task(tmp_path):
 
 
 def test_defaults(task):
-    job = JudgeJob(
+    job = JudgeFeedbackBatch(
         name="scan", target_tags=["train"], eval_config_id="ec1", parent=task
     )
     assert job.stop_after_failures is None
@@ -23,12 +23,14 @@ def test_defaults(task):
 
 
 def test_parent_task_typing(task):
-    job = JudgeJob(name="scan", target_tags=["t"], eval_config_id="ec1", parent=task)
+    job = JudgeFeedbackBatch(
+        name="scan", target_tags=["t"], eval_config_id="ec1", parent=task
+    )
     assert job.parent_task().id == task.id
 
 
 def test_create_and_roundtrip(task):
-    job = JudgeJob(
+    job = JudgeFeedbackBatch(
         name="scan",
         target_tags=["train"],
         eval_config_id="ec1",
@@ -39,14 +41,14 @@ def test_create_and_roundtrip(task):
         parent=task,
     )
     job.save_to_file()
-    JudgeJobRun(
+    JudgeFeedbackBatchRun(
         parent=job,
         task_run_id="d1",
         scores={"accuracy": 0.0},
         feedback="bad",
         passed=False,
     ).save_to_file()
-    JudgeJobRun(
+    JudgeFeedbackBatchRun(
         parent=job,
         task_run_id="d2",
         scores={"accuracy": 1.0},
@@ -55,7 +57,7 @@ def test_create_and_roundtrip(task):
     ).save_to_file()
 
     # Reload through the Task accessor
-    jobs = task.judge_jobs()
+    jobs = task.judge_feedback_batches()
     assert len(jobs) == 1
     reloaded = jobs[0]
     assert reloaded.name == "scan"
@@ -75,9 +77,11 @@ def test_create_and_roundtrip(task):
 
 
 def test_run_parent_typing(task):
-    job = JudgeJob(name="scan", target_tags=["t"], eval_config_id="ec1", parent=task)
+    job = JudgeFeedbackBatch(
+        name="scan", target_tags=["t"], eval_config_id="ec1", parent=task
+    )
     job.save_to_file()
-    run = JudgeJobRun(
+    run = JudgeFeedbackBatchRun(
         parent=job, task_run_id="d1", scores={"accuracy": 1.0}, passed=True
     )
-    assert run.parent_judge_job().id == job.id
+    assert run.parent_judge_feedback_batch().id == job.id

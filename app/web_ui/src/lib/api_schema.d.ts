@@ -2075,7 +2075,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs": {
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches": {
         parameters: {
             query?: never;
             header?: never;
@@ -2083,23 +2083,23 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Judge Jobs
-         * @description List all judge jobs for a task.
+         * List Judge Feedback Batches
+         * @description List all judge feedback batches for a task.
          */
-        get: operations["list_judge_jobs_api_projects__project_id__tasks__task_id__judge_jobs_get"];
+        get: operations["list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get"];
         put?: never;
         /**
-         * Create Judge Job
-         * @description Create a judge job config. Run it later with `/judge_jobs/{id}/run`.
+         * Create Judge Feedback Batch
+         * @description Create a judge feedback batch config. Run it later with `/judge_feedback_batches/{id}/run`.
          */
-        post: operations["create_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_post"];
+        post: operations["create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/run": {
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -2109,24 +2109,24 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Run Judge Job
-         * @description Run a judge job: sample tagged dataset items, judge their existing outputs, and return
+         * Run Judge Feedback Batch
+         * @description Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
          *     the failing examples + feedback.
          *
          *     Runs synchronously and returns once judging completes. Each result is persisted as a child
-         *     run (fetch them later via `GET /judge_jobs/{id}/runs`); the returned counts
+         *     run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
          *     (num_judged, failing_count, train_set_size, hit_cap) and any per-item `errors` are FYI for
          *     the caller's loop. Errors don't abort the run — partial results are still persisted, and
          *     re-running the job retries only the un-persisted (errored or not-yet-judged) items.
          */
-        post: operations["run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__run_post"];
+        post: operations["run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__run_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/run": {
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -2136,18 +2136,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create And Run Judge Job
-         * @description Create a judge job and run it immediately (synchronous), returning the failing examples
+         * Create And Run Judge Feedback Batch
+         * @description Create a judge feedback batch and run it immediately (synchronous), returning the failing examples
          *     + feedback.
          */
-        post: operations["create_and_run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_run_post"];
+        post: operations["create_and_run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_run_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}": {
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2155,10 +2155,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Judge Job
-         * @description Get a judge job config.
+         * Get Judge Feedback Batch
+         * @description Get a judge feedback batch config.
          */
-        get: operations["get_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__get"];
+        get: operations["get_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2167,7 +2167,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/runs": {
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/runs": {
         parameters: {
             query?: never;
             header?: never;
@@ -2175,10 +2175,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Judge Job Runs
-         * @description Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge job.
+         * Get Judge Feedback Batch Runs
+         * @description Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge feedback batch.
          */
-        get: operations["get_judge_job_runs_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__runs_get"];
+        get: operations["get_judge_feedback_batch_runs_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__runs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4461,18 +4461,18 @@ export interface components {
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
         /**
-         * CreateJudgeJobRequest
-         * @description Request to create a judge job.
+         * CreateJudgeFeedbackBatchRequest
+         * @description Request to create a judge feedback batch.
          */
-        CreateJudgeJobRequest: {
+        CreateJudgeFeedbackBatchRequest: {
             /**
              * Name
-             * @description The name of the judge job. A memorable name is generated if omitted.
+             * @description The name of the judge feedback batch. A memorable name is generated if omitted.
              */
             name?: string | null;
             /**
              * Description
-             * @description A description of the judge job.
+             * @description A description of the judge feedback batch.
              */
             description?: string | null;
             /**
@@ -6916,14 +6916,14 @@ export interface components {
          */
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         /**
-         * JudgeJob
+         * JudgeFeedbackBatch
          * @description A reusable config that samples dataset items by tag, judges them with an evaluator
          *     (eval config), and records each item's pass/fail and the judge's feedback.
          *
          *     Used to surface a minibatch of failing examples — with feedback — for reflective prompt
-         *     optimization. A child of a Task; a parent of the JudgeJobRun results it produces.
+         *     optimization. A child of a Task; a parent of the JudgeFeedbackBatchRun results it produces.
          */
-        JudgeJob: {
+        JudgeFeedbackBatch: {
             /**
              * V
              * @description Schema version for migration support.
@@ -6953,12 +6953,12 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description The name of the judge job.
+             * @description The name of the judge feedback batch.
              */
             name: string;
             /**
              * Description
-             * @description A description of the judge job for you and your team.
+             * @description A description of the judge feedback batch for you and your team.
              */
             description?: string | null;
             /**
@@ -7003,10 +7003,10 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * JudgeJobItemError
+         * JudgeFeedbackBatchItemError
          * @description An error judging or persisting a single item. Surfaced so the caller can see partial failures.
          */
-        JudgeJobItemError: {
+        JudgeFeedbackBatchItemError: {
             /**
              * Task Run Id
              * @description The ID of the task run (dataset item) that errored.
@@ -7019,10 +7019,10 @@ export interface components {
             error: string;
         };
         /**
-         * JudgeJobRun
-         * @description The judge's result for a single sampled dataset item (a child of a JudgeJob).
+         * JudgeFeedbackBatchRun
+         * @description The judge's result for a single sampled dataset item (a child of a JudgeFeedbackBatch).
          */
-        JudgeJobRun: {
+        JudgeFeedbackBatchRun: {
             /**
              * V
              * @description Schema version for migration support.
@@ -7081,22 +7081,22 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * JudgeJobRunResponse
-         * @description The result of running a judge job. Counts and errors are FYI for the caller; not persisted.
+         * JudgeFeedbackBatchRunResponse
+         * @description The result of running a judge feedback batch. Counts and errors are FYI for the caller; not persisted.
          */
-        JudgeJobRunResponse: {
-            /** @description The judge job that was run. */
-            judge_job: components["schemas"]["JudgeJob"];
+        JudgeFeedbackBatchRunResponse: {
+            /** @description The judge feedback batch that was run. */
+            judge_feedback_batch: components["schemas"]["JudgeFeedbackBatch"];
             /**
              * Failing Runs
              * @description The failing examples found (up to stop_after_failures, if set), with feedback.
              */
-            failing_runs: components["schemas"]["JudgeJobRun"][];
+            failing_runs: components["schemas"]["JudgeFeedbackBatchRun"][];
             /**
              * Judged Runs
              * @description Every item judged this run (pass and fail), each keyed by task_run_id. Pair these across two runs by task_run_id to gate a candidate vs baseline on the same items.
              */
-            judged_runs: components["schemas"]["JudgeJobRun"][];
+            judged_runs: components["schemas"]["JudgeFeedbackBatchRun"][];
             /**
              * Num Judged
              * @description How many items were examined while searching for failures.
@@ -7121,7 +7121,7 @@ export interface components {
              * Errors
              * @description Per-item judge/save errors (if any). Each is skipped, not retried; re-running the job retries the un-persisted items. A non-empty list means partial success.
              */
-            errors?: components["schemas"]["JudgeJobItemError"][];
+            errors?: components["schemas"]["JudgeFeedbackBatchItemError"][];
         };
         /**
          * KilnAgentRunConfigProperties
@@ -15819,7 +15819,7 @@ export interface operations {
             };
         };
     };
-    list_judge_jobs_api_projects__project_id__tasks__task_id__judge_jobs_get: {
+    list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -15839,7 +15839,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JudgeJob"][];
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"][];
                 };
             };
             /** @description Validation Error */
@@ -15853,7 +15853,7 @@ export interface operations {
             };
         };
     };
-    create_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_post: {
+    create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15867,7 +15867,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateJudgeJobRequest"];
+                "application/json": components["schemas"]["CreateJudgeFeedbackBatchRequest"];
             };
         };
         responses: {
@@ -15877,7 +15877,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JudgeJob"];
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"];
                 };
             };
             /** @description Validation Error */
@@ -15891,7 +15891,7 @@ export interface operations {
             };
         };
     };
-    run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__run_post: {
+    run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__run_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15900,8 +15900,8 @@ export interface operations {
                 project_id: string;
                 /** @description The unique identifier of the task within the project. */
                 task_id: string;
-                /** @description The unique identifier of the judge job. */
-                judge_job_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
             };
             cookie?: never;
         };
@@ -15913,7 +15913,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JudgeJobRunResponse"];
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15927,7 +15927,7 @@ export interface operations {
             };
         };
     };
-    create_and_run_judge_job_api_projects__project_id__tasks__task_id__judge_jobs_run_post: {
+    create_and_run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_run_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15941,7 +15941,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateJudgeJobRequest"];
+                "application/json": components["schemas"]["CreateJudgeFeedbackBatchRequest"];
             };
         };
         responses: {
@@ -15951,7 +15951,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JudgeJobRunResponse"];
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15965,7 +15965,7 @@ export interface operations {
             };
         };
     };
-    get_judge_job_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__get: {
+    get_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -15974,8 +15974,8 @@ export interface operations {
                 project_id: string;
                 /** @description The unique identifier of the task within the project. */
                 task_id: string;
-                /** @description The unique identifier of the judge job. */
-                judge_job_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
             };
             cookie?: never;
         };
@@ -15987,7 +15987,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JudgeJob"];
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"];
                 };
             };
             /** @description Validation Error */
@@ -16001,7 +16001,7 @@ export interface operations {
             };
         };
     };
-    get_judge_job_runs_api_projects__project_id__tasks__task_id__judge_jobs__judge_job_id__runs_get: {
+    get_judge_feedback_batch_runs_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__runs_get: {
         parameters: {
             query?: {
                 /** @description Return only the items that failed the judge. */
@@ -16013,8 +16013,8 @@ export interface operations {
                 project_id: string;
                 /** @description The unique identifier of the task within the project. */
                 task_id: string;
-                /** @description The unique identifier of the judge job. */
-                judge_job_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
             };
             cookie?: never;
         };
@@ -16026,7 +16026,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JudgeJobRun"][];
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRun"][];
                 };
             };
             /** @description Validation Error */

@@ -1,9 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/run",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Create and run judge job? It makes model calls over the sampled dataset items."
-  }
-}

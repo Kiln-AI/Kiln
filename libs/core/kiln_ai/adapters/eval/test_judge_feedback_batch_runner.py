@@ -3,10 +3,10 @@ from typing import Callable, Dict
 
 import pytest
 
-from kiln_ai.adapters.eval import judge_job_runner
+from kiln_ai.adapters.eval import judge_feedback_batch_runner
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.judge_job_runner import (
-    JudgeJobRunner,
+from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
+    JudgeFeedbackBatchRunner,
     example_fails,
     feedback_from_intermediate_outputs,
     score_passes,
@@ -15,8 +15,8 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
-    JudgeJob,
-    JudgeJobRun,
+    JudgeFeedbackBatch,
+    JudgeFeedbackBatchRun,
     Task,
     TaskOutput,
     TaskOutputRatingType,
@@ -82,7 +82,7 @@ def make_eval_config(eval):
     return eval_config
 
 
-def make_judge_job(
+def make_judge_feedback_batch(
     task,
     eval_config,
     target_tags=None,
@@ -90,7 +90,7 @@ def make_judge_job(
     max_samples=10,
     threshold=0.75,
 ):
-    job = JudgeJob(
+    job = JudgeFeedbackBatch(
         name="scan",
         target_tags=target_tags if target_tags is not None else ["train"],
         eval_config_id=eval_config.id,
@@ -164,17 +164,26 @@ def scripted_evaluator_factory(
 
 
 async def run_job(
-    judge_job, eval_config, score_fn, calls=None, seed=1, concurrency=25, retry_delay=0
+    judge_feedback_batch,
+    eval_config,
+    score_fn,
+    calls=None,
+    seed=1,
+    concurrency=25,
+    retry_delay=0,
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "kiln_ai.adapters.eval.judge_job_runner.eval_adapter_from_type",
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
             lambda _type: scripted_evaluator_factory(
-                score_fn, calls=calls, generate=judge_job.generate_outputs
+                score_fn, calls=calls, generate=judge_feedback_batch.generate_outputs
             ),
         )
-        runner = JudgeJobRunner(
-            judge_job, eval_config, rng=random.Random(seed), retry_delay=retry_delay
+        runner = JudgeFeedbackBatchRunner(
+            judge_feedback_batch,
+            eval_config,
+            rng=random.Random(seed),
+            retry_delay=retry_delay,
         )
         return await runner.run(concurrency=concurrency)
 
@@ -235,7 +244,7 @@ def test_feedback_from_intermediate_outputs():
 def test_runner_requires_parents(mock_task):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config)
+    job = make_judge_feedback_batch(mock_task, eval_config)
 
     orphan_config = EvalConfig(
         name="c",
@@ -245,7 +254,7 @@ def test_runner_requires_parents(mock_task):
         properties={"eval_steps": ["s"]},
     )
     with pytest.raises(ValueError, match="parent eval"):
-        JudgeJobRunner(job, orphan_config)
+        JudgeFeedbackBatchRunner(job, orphan_config)
 
 
 # ---- Orchestration ----
@@ -257,7 +266,7 @@ async def test_full_coverage_returns_all_judged_runs(mock_task, data_source):
     # judged item keyed by task_run_id so the caller can pair against another run.
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(
+    job = make_judge_feedback_batch(
         mock_task, eval_config, stop_after_failures=None, max_samples=10
     )
 
@@ -298,7 +307,9 @@ async def test_stop_after_failures_trims_minibatch(mock_task, data_source):
     # everything judged this chunk.
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=10)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=2, max_samples=10
+    )
 
     for i in range(3):
         make_train_run(mock_task, data_source, f"fail-{i}")
@@ -320,7 +331,9 @@ async def test_stop_after_failures_trims_minibatch(mock_task, data_source):
 async def test_early_stop_limits_num_judged(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=10)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=2, max_samples=10
+    )
     for i in range(10):
         make_train_run(mock_task, data_source, f"fail-{i}")
 
@@ -339,7 +352,9 @@ async def test_early_stop_limits_num_judged(mock_task, data_source):
 async def test_hit_cap_when_failures_sparse(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=5)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=2, max_samples=5
+    )
     for i in range(5):
         make_train_run(mock_task, data_source, f"pass-{i}")
 
@@ -358,7 +373,9 @@ async def test_hit_cap_when_failures_sparse(mock_task, data_source):
 async def test_exhausted_train_set_is_not_hit_cap(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=10)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=2, max_samples=10
+    )
     for i in range(3):
         make_train_run(mock_task, data_source, f"pass-{i}")
 
@@ -375,7 +392,7 @@ async def test_exhausted_train_set_is_not_hit_cap(mock_task, data_source):
 async def test_tag_filtering_and_semantics(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(
+    job = make_judge_feedback_batch(
         mock_task,
         eval_config,
         target_tags=["train", "golden"],
@@ -402,10 +419,12 @@ async def test_tag_filtering_and_semantics(mock_task, data_source):
 async def test_cache_reuse_skips_judging(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=1, max_samples=1
+    )
     run = make_train_run(mock_task, data_source, "fail-0")
 
-    JudgeJobRun(
+    JudgeFeedbackBatchRun(
         parent=job,
         task_run_id=run.id,
         scores={"accuracy": 0.0},
@@ -438,13 +457,13 @@ async def test_threshold_override_five_star(mock_task, data_source):
     def score_fn(task_run):
         return {"quality": 4.0}  # normalized 0.75
 
-    job_pass = make_judge_job(
+    job_pass = make_judge_feedback_batch(
         mock_task, eval_config, stop_after_failures=1, max_samples=1, threshold=0.75
     )
     result_pass = await run_job(job_pass, eval_config, score_fn)
     assert result_pass.failing_count == 0
 
-    job_fail = make_judge_job(
+    job_fail = make_judge_feedback_batch(
         mock_task, eval_config, stop_after_failures=1, max_samples=1, threshold=0.9
     )
     result_fail = await run_job(job_fail, eval_config, score_fn)
@@ -455,7 +474,9 @@ async def test_threshold_override_five_star(mock_task, data_source):
 async def test_judge_errors_are_collected_and_skipped(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=2, max_samples=2)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=2, max_samples=2
+    )
     error_run = make_train_run(mock_task, data_source, "error-item")
     fail_run = make_train_run(mock_task, data_source, "fail-item")
 
@@ -485,13 +506,15 @@ async def test_save_errors_are_collected_but_result_kept(
 ):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=1, max_samples=1
+    )
     fail_run = make_train_run(mock_task, data_source, "fail-item")
 
     def boom(self):
         raise RuntimeError("disk full")
 
-    monkeypatch.setattr(JudgeJobRun, "save_to_file", boom)
+    monkeypatch.setattr(JudgeFeedbackBatchRun, "save_to_file", boom)
 
     def score_fn(task_run):
         return {"accuracy": 0.0}
@@ -511,7 +534,9 @@ async def test_save_errors_are_collected_but_result_kept(
 async def test_transient_error_retries_then_succeeds(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=1, max_samples=1
+    )
     make_train_run(mock_task, data_source, "fail-item")
 
     attempts = {"n": 0}
@@ -536,7 +561,9 @@ async def test_transient_error_retries_then_succeeds(mock_task, data_source):
 async def test_non_transient_error_not_retried(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config, stop_after_failures=1, max_samples=1)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=1, max_samples=1
+    )
     make_train_run(mock_task, data_source, "err-item")
 
     attempts = {"n": 0}
@@ -570,7 +597,7 @@ async def test_generate_mode_runs_config_and_judges_fresh_output(
     make_train_run(mock_task, data_source, "other", tags=["train"])
     runs_before = len(mock_task.runs())
 
-    job = JudgeJob(
+    job = JudgeFeedbackBatch(
         name="gate",
         target_tags=["val"],
         eval_config_id=eval_config.id,
@@ -614,10 +641,12 @@ def test_reference_answer_eval_rejected_for_existing_outputs(mock_task):
     )
     eval.save_to_file()
     eval_config = make_eval_config(eval)
-    job = make_judge_job(mock_task, eval_config)  # generate_outputs defaults to False
+    job = make_judge_feedback_batch(
+        mock_task, eval_config
+    )  # generate_outputs defaults to False
 
     with pytest.raises(ValueError, match="Reference-answer"):
-        JudgeJobRunner(job, eval_config)
+        JudgeFeedbackBatchRunner(job, eval_config)
 
 
 @pytest.mark.asyncio
@@ -627,20 +656,22 @@ async def test_unexpected_error_does_not_abort_batch(
     # An unexpected throw in one item's post-judge processing must not discard the rest of the chunk.
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)
-    job = make_judge_job(
+    job = make_judge_feedback_batch(
         mock_task, eval_config, stop_after_failures=None, max_samples=10
     )
     good = make_train_run(mock_task, data_source, "good")
     boom = make_train_run(mock_task, data_source, "boom")
 
-    real_example_fails = judge_job_runner.example_fails
+    real_example_fails = judge_feedback_batch_runner.example_fails
 
     def flaky_example_fails(scores, output_scores, threshold):
         if scores.get("accuracy") == 0.123:
             raise RuntimeError("kaboom")
         return real_example_fails(scores, output_scores, threshold)
 
-    monkeypatch.setattr(judge_job_runner, "example_fails", flaky_example_fails)
+    monkeypatch.setattr(
+        judge_feedback_batch_runner, "example_fails", flaky_example_fails
+    )
 
     def score_fn(task_run):
         return {"accuracy": 0.123 if task_run.input == "boom" else 1.0}

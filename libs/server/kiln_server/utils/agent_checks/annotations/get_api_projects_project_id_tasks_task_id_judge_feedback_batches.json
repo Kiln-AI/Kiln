@@ -1,6 +1,6 @@
 {
   "method": "get",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/runs",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches",
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
