@@ -7718,7 +7718,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
-                    # NOTE: M3 natively supports video but OpenRouter doesn't route it correctly
                     # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
