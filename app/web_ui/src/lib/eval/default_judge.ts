@@ -10,9 +10,9 @@
 // When kiln_server adds a "generate judge config" endpoint OR the UI
 // gains a judge-model picker, both should fall back to these defaults.
 //
-// Steve's constraint (server-generated judge configs can't use the
-// user's local/custom models) means this kind of default belongs on the
-// client side of the network boundary, not kiln_server.
+// Server-generated judge configs can't use the user's local/custom
+// models, so this kind of default belongs on the client side of the
+// network boundary, not kiln_server.
 
 import type { SyntheticDataGenerationStepConfigApi } from "$lib/types"
 

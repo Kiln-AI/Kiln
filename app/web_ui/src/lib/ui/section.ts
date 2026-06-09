@@ -4,7 +4,6 @@ export enum Section {
   Settings,
   Prompts,
   Specs,
-  SpecsV2,
   Generate,
   Run,
   FineTune,

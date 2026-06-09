@@ -104,8 +104,6 @@
       section = Section.Documents
     } else if (path_start("/models", $page.url.pathname)) {
       section = Section.Models
-    } else if (path_start("/specs_v2", $page.url.pathname)) {
-      section = Section.SpecsV2
     } else if (path_start("/specs", $page.url.pathname)) {
       section = Section.Specs
     } else if (path_start("/optimize", $page.url.pathname)) {
@@ -278,21 +276,19 @@
           >
         </li>
 
-        <!-- Evals V2 (Beta) — runs alongside the v1 "Evals" entry above for
-             team comparison and review. Once v2 ships GA, the v1 entry +
-             the entire /specs route should be removed and this entry
-             renamed to "Evals". Tracked: eventually-replace-v1-eval-tab. -->
+        <!-- TODO(eval-v2): remove this "Evals Legacy" entry and the v1
+             builder routes (/specs/.../spec_builder, /select_workflow,
+             /select_template) once the v2 builder ships GA. Temporary
+             during bug bash so testers can compare v2 vs v1 side-by-side. -->
         <li class="menu-sm">
           <a
-            href={`/specs_v2/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-            class={section == Section.SpecsV2 ? "active" : ""}
+            href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}/select_workflow`}
           >
             <div class="sidebar-icon">
               <EvalIcon />
             </div>
 
-            Evals V2
-            <div class="badge badge-secondary badge-sm">Beta</div>
+            Evals Legacy
           </a>
         </li>
 

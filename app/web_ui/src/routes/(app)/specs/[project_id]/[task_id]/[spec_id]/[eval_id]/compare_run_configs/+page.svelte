@@ -471,6 +471,13 @@
         ]}
     action_buttons={action_buttons(evaluator)}
   >
+    {#if evaluator?.evaluation_data_type === "full_trace"}
+      <div class="alert alert-warning mb-4">
+        Multi-turn run-configuration comparison is coming soon. Single-model
+        scoring works today via "Run Eval"; the table below assumes single-turn
+        re-drive and won't produce meaningful results for multi-turn evals.
+      </div>
+    {/if}
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>

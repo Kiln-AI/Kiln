@@ -48,6 +48,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     generate_copilot_examples,
     get_copilot_api_key,
     tag_multi_turn_chains_for_eval,
+    untag_multi_turn_chains_for_eval,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, HTTPException, Path
@@ -86,9 +87,9 @@ logger = logging.getLogger(__name__)
 
 class ClassifySpecDescriptionInput(BaseModel):
     """Free-text description of an eval the user wants to build. The
-    endpoint maps it to one of the 9 spec types and pre-fills the
-    property_values for that type so the v2 builder can skip the
-    template-carousel step entirely.
+    endpoint maps it to a `SpecType` and pre-fills the property_values for
+    that type so the v2 builder can skip the template-carousel step
+    entirely.
     """
 
     description: str = Field(
@@ -103,9 +104,9 @@ class ClassifySpecDescriptionInput(BaseModel):
 
 class ClassifySpecDescriptionOutput(BaseModel):
     """Classified spec type + suggested name + spec_type-specific property
-    values. The `property_values` dict keys match the FieldConfig keys
-    defined for the chosen spec_type (see
-    app/web_ui/.../select_template/spec_templates.ts).
+    values. Keys in `property_values` correspond to `FieldConfig.key`
+    entries in `spec_field_configs[spec_type]` (see
+    app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
     """
 
     spec_type: SpecType = Field(description="The classified spec type.")
@@ -199,11 +200,8 @@ def connect_copilot_api(app: FastAPI):
     async def classify_spec_description(
         input: ClassifySpecDescriptionInput,
     ) -> ClassifySpecDescriptionOutput:
-        """Classify a free-text spec description into one of the 9 spec types.
-
-        Not implemented yet — the underlying kiln_server classifier hasn't
-        shipped. Returns 501 so callers can detect this and fall back to
-        manual spec-type selection.
+        """Stub for spec classification — kiln_server classifier hasn't
+        shipped. Returns 501 so callers can fall back to manual selection.
         """
         raise HTTPException(
             status_code=501,
@@ -381,11 +379,14 @@ def connect_copilot_api(app: FastAPI):
     ) -> Spec:
         """Create a spec using Kiln Copilot.
 
-        This endpoint uses Kiln Copilot to create a spec with:
-        1. An eval for the spec with appropriate template
-        2. Batch examples via copilot API for eval, train, and golden datasets
-        3. A judge eval config (if judge_info provided)
-        4. The spec itself
+        This endpoint uses Kiln Copilot to create:
+        1. An Eval for the spec with the appropriate template
+        2. A judge EvalConfig (LLM-as-judge)
+        3. Single-turn only: batch examples via copilot API for the eval +
+           golden datasets, persisted as TaskRuns
+        4. The Spec itself
+        Plus, for multi-turn: tag existing chain leaves with the eval/golden
+        filter tags so the saved Eval picks them up as its dataset.
 
         If you don't need copilot, use POST /spec instead.
 
@@ -429,8 +430,8 @@ def connect_copilot_api(app: FastAPI):
         # Build models but don't save yet, collect all models first
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
 
-        # 1. Create the Eval. Multi-turn has no train set (small datasets,
-        # not used for fine-tuning) so train_set_filter_id is None.
+        # 1. Create the Eval. Multi-turn has no train set in MVP
+        # (see specs/projects/eval_builder_v2/design.md).
         eval = Eval(
             parent=task,
             name=request.name,
@@ -447,7 +448,7 @@ def connect_copilot_api(app: FastAPI):
         )
         models_to_save.append(eval)
 
-        # 2. Create judge eval config (same in both paths)
+        # 2. Create judge eval config
         eval_config = EvalConfig(
             parent=eval,
             name=generate_memorable_name(),
@@ -464,8 +465,8 @@ def connect_copilot_api(app: FastAPI):
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id
 
-        # 3+4. Single-turn: synthesise examples + create TaskRuns.
-        # Multi-turn: skipped — chains already exist on disk.
+        # 3. Single-turn: synthesise examples + create TaskRuns.
+        #    Multi-turn: skipped — chains already exist on disk.
         task_runs: list[TaskRun] = []
         dataset_runs = None
         sdg_session_config_for_spec: SyntheticDataGenerationSessionConfig | None = None
@@ -524,7 +525,7 @@ def connect_copilot_api(app: FastAPI):
                 ),
             )
 
-        # 5. Create the Spec. Multi-turn leaves sdg_session_config unset —
+        # 4. Create the Spec. Multi-turn leaves sdg_session_config unset —
         # the operational state lives on the Eval (full_trace + filter_ids).
         spec = Spec(
             parent=task,
@@ -543,6 +544,7 @@ def connect_copilot_api(app: FastAPI):
         # All models are now created and validated via Pydantic.
         # Save everything, with cleanup on failure.
         saved_models: list[Eval | EvalConfig | TaskRun | Spec] = []
+        tagged_leaves: list[tuple[TaskRun, set[str]]] = []
         try:
             eval.save_to_file()
             saved_models.append(eval)
@@ -560,14 +562,23 @@ def connect_copilot_api(app: FastAPI):
             saved_models.append(spec)
 
             # Multi-turn: tag existing chain leaves with eval/golden filter
-            # tags AFTER spec has saved. Tag-add is idempotent (set semantics);
-            # leaves persisted to disk pick up the new tags on next read.
-            # Failure here would leave the spec without a populated dataset —
-            # surface it so the cleanup path runs.
+            # tags AFTER spec has saved, so a failure here triggers the
+            # rollback path below. tagged_leaves captures only the tags
+            # this call added (not pre-existing ones), so untagging on
+            # rollback preserves any tags the leaf had before.
             if request.multi_turn is not None:
-                tag_multi_turn_chains_for_eval(multi_turn_leaves, eval_tag, golden_tag)
+                tag_multi_turn_chains_for_eval(
+                    multi_turn_leaves,
+                    eval_tag,
+                    golden_tag,
+                    tagged_out=tagged_leaves,
+                )
         except Exception:
-            # Clean up any models that were successfully saved before the error
+            # Reverse any leaf tags we added in this run before deleting the
+            # saved models, so a failed multi-turn save doesn't leave orphan
+            # tags pointing at a now-deleted eval.
+            if tagged_leaves:
+                untag_multi_turn_chains_for_eval(tagged_leaves)
             for model in reversed(saved_models):
                 try:
                     model.delete()

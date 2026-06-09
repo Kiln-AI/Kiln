@@ -2655,11 +2655,8 @@ export interface paths {
         put?: never;
         /**
          * Classify Spec Description
-         * @description Classify a free-text spec description into one of the 9 spec types.
-         *
-         *     Not implemented yet — the underlying kiln_server classifier hasn't
-         *     shipped. Returns 501 so callers can detect this and fall back to
-         *     manual spec-type selection.
+         * @description Stub for spec classification — kiln_server classifier hasn't
+         *     shipped. Returns 501 so callers can fall back to manual selection.
          */
         post: operations["classify_spec_description_api_copilot_classify_spec_description_post"];
         delete?: never;
@@ -2766,11 +2763,14 @@ export interface paths {
          * Create Spec With Copilot
          * @description Create a spec using Kiln Copilot.
          *
-         *     This endpoint uses Kiln Copilot to create a spec with:
-         *     1. An eval for the spec with appropriate template
-         *     2. Batch examples via copilot API for eval, train, and golden datasets
-         *     3. A judge eval config (if judge_info provided)
-         *     4. The spec itself
+         *     This endpoint uses Kiln Copilot to create:
+         *     1. An Eval for the spec with the appropriate template
+         *     2. A judge EvalConfig (LLM-as-judge)
+         *     3. Single-turn only: batch examples via copilot API for the eval +
+         *        golden datasets, persisted as TaskRuns
+         *     4. The Spec itself
+         *     Plus, for multi-turn: tag existing chain leaves with the eval/golden
+         *     filter tags so the saved Eval picks them up as its dataset.
          *
          *     If you don't need copilot, use POST /spec instead.
          *
@@ -4133,9 +4133,9 @@ export interface components {
         /**
          * ClassifySpecDescriptionInput
          * @description Free-text description of an eval the user wants to build. The
-         *     endpoint maps it to one of the 9 spec types and pre-fills the
-         *     property_values for that type so the v2 builder can skip the
-         *     template-carousel step entirely.
+         *     endpoint maps it to a `SpecType` and pre-fills the property_values for
+         *     that type so the v2 builder can skip the template-carousel step
+         *     entirely.
          */
         ClassifySpecDescriptionInput: {
             /**
@@ -4152,9 +4152,9 @@ export interface components {
         /**
          * ClassifySpecDescriptionOutput
          * @description Classified spec type + suggested name + spec_type-specific property
-         *     values. The `property_values` dict keys match the FieldConfig keys
-         *     defined for the chosen spec_type (see
-         *     app/web_ui/.../select_template/spec_templates.ts).
+         *     values. Keys in `property_values` correspond to `FieldConfig.key`
+         *     entries in `spec_field_configs[spec_type]` (see
+         *     app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
          */
         ClassifySpecDescriptionOutput: {
             /** @description The classified spec type. */
