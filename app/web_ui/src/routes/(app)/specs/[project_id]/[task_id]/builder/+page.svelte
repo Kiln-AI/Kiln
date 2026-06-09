@@ -18,6 +18,7 @@
   import Questions from "../spec_builder/questions.svelte"
   import RefineSpec from "../spec_builder/refine_spec.svelte"
   import ReviewExamples from "../spec_builder/review_examples.svelte"
+  import MultiTurnReviewPaginator from "./multi_turn_review_paginator.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import type { SuggestedEdit, ReviewRow } from "../spec_utils"
   import { KilnError } from "$lib/utils/error_handlers"
@@ -678,12 +679,17 @@
     chain_verdicts.length !== multi_turn_chains.length
       ? multi_turn_chains.map(() => ({ verdict: null, feedback: "" }))
       : chain_verdicts
-  // True only when every multi-turn chain has been marked pass or fail.
-  // Save button is disabled until then so the golden ratings are complete.
+  // Save is disabled until every chain has a verdict AND every fail-
+  // verdict has a non-empty reason. Pass-without-feedback is fine — the
+  // judge prompt only needs the WHY when something went wrong.
   $: all_chains_reviewed =
     multi_turn_chains.length > 0 &&
     chain_verdicts.length === multi_turn_chains.length &&
-    chain_verdicts.every((v) => v.verdict !== null)
+    chain_verdicts.every(
+      (v) =>
+        v.verdict !== null &&
+        (v.verdict !== "fail" || v.feedback.trim().length > 0),
+    )
 
   // ── Step 6 state — save
   let saving = false
@@ -1159,97 +1165,19 @@
         {:else if current_step === "review"}
           <!-- ── Step 5 — Review ── -->
           {#if is_multi_turn}
-            <!-- Multi-turn: custom card stack of conversation traces.
-             v1's ReviewExamples only handles single I/O pairs, so multi-turn
-             keeps its own UI. -->
-            <div class="space-y-4">
-              {#each multi_turn_chains as chain, ci}
-                <div class="card bg-base-200 shadow-sm">
-                  <div class="card-body p-4">
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="flex-1">
-                        <div class="text-xs text-gray-500 mb-1">
-                          Conversation {ci + 1} of {multi_turn_chains.length}
-                        </div>
-                      </div>
-                      <div class="flex gap-1">
-                        <button
-                          class="btn btn-xs {chain_verdicts[ci]?.verdict ===
-                          'fail'
-                            ? 'btn-error'
-                            : 'btn-outline'}"
-                          on:click={() => {
-                            chain_verdicts[ci].verdict = "fail"
-                            chain_verdicts = [...chain_verdicts]
-                          }}
-                        >
-                          ✗ Fail
-                        </button>
-                        <button
-                          class="btn btn-xs {chain_verdicts[ci]?.verdict ===
-                          'pass'
-                            ? 'btn-success'
-                            : 'btn-outline'}"
-                          on:click={() => {
-                            chain_verdicts[ci].verdict = "pass"
-                            chain_verdicts = [...chain_verdicts]
-                          }}
-                        >
-                          ✓ Pass
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="mt-3 space-y-2 text-sm">
-                      {#each chain.trace as turn}
-                        <div
-                          class="rounded px-3 py-2 {turn.role === 'user'
-                            ? 'bg-base-100'
-                            : 'bg-primary/10'}"
-                        >
-                          <div class="text-xs text-gray-500 mb-1">
-                            {turn.role}
-                          </div>
-                          <div class="whitespace-pre-wrap">{turn.content}</div>
-                        </div>
-                      {/each}
-                    </div>
-
-                    {#if chain_verdicts[ci]?.verdict !== null}
-                      <input
-                        type="text"
-                        class="input input-bordered input-sm mt-3"
-                        placeholder="Feedback (optional)"
-                        bind:value={chain_verdicts[ci].feedback}
-                      />
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-            </div>
-            <div class="flex justify-between mt-8">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "generate"
-                }}>← Back</button
-              >
-              <div
-                class="tooltip tooltip-top"
-                data-tip={all_chains_reviewed
-                  ? null
-                  : "Mark each conversation pass or fail before saving."}
-              >
-                <button
-                  class="btn btn-primary"
-                  on:click={on_advance_to_save}
-                  disabled={!all_chains_reviewed}
-                >
-                  Save →
-                </button>
-              </div>
-            </div>
+            <MultiTurnReviewPaginator
+              chains={multi_turn_chains}
+              bind:verdicts={chain_verdicts}
+              on_back={() => {
+                abort_copilot_request()
+                current_step = "generate"
+              }}
+              on_save={on_advance_to_save}
+              save_disabled={!all_chains_reviewed}
+              save_disabled_tooltip={all_chains_reviewed
+                ? null
+                : "Mark each conversation pass or fail; failed conversations need a reason."}
+            />
           {:else}
             <!-- Single-turn: reuse v1's ReviewExamples component. Both submit
              events (create_spec when feedback aligns, continue_to_refine
