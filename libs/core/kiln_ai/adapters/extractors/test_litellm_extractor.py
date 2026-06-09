@@ -6,7 +6,7 @@ import pytest
 from litellm.types.utils import Choices, ModelResponse
 
 from kiln_ai.adapters.extractors.base_extractor import ExtractionInput, OutputFormat
-from kiln_ai.adapters.extractors.encoding import to_base64_url
+from kiln_ai.adapters.extractors.encoding import to_base64, to_base64_url
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.litellm_extractor import (
     ExtractorConfig,
@@ -539,30 +539,95 @@ def paid_litellm_extractor(model_name: str, provider_name: str):
 
 
 @pytest.mark.parametrize(
-    "mime_type, expected_encoding",
+    "provider_name, mime_type, expected_encoding",
     [
+        # Non-OpenRouter providers (e.g. Gemini) use the generic `file` block for
+        # documents, audio and video; images get the dedicated `image_url` block.
         # documents
-        (MockFileFactoryMimeType.PDF, "generic_file_data"),
-        (MockFileFactoryMimeType.TXT, "generic_file_data"),
-        (MockFileFactoryMimeType.MD, "generic_file_data"),
-        (MockFileFactoryMimeType.HTML, "generic_file_data"),
-        (MockFileFactoryMimeType.CSV, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.PDF,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.TXT,
+            "generic_file_data",
+        ),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.MD, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.HTML,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.CSV,
+            "generic_file_data",
+        ),
         # images
-        (MockFileFactoryMimeType.PNG, "image_data"),
-        (MockFileFactoryMimeType.JPEG, "image_data"),
-        (MockFileFactoryMimeType.JPG, "image_data"),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.PNG, "image_data"),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.JPEG, "image_data"),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.JPG, "image_data"),
         # videos
-        (MockFileFactoryMimeType.MP4, "generic_file_data"),
-        (MockFileFactoryMimeType.MOV, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.MP4,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.MOV,
+            "generic_file_data",
+        ),
         # audio
-        (MockFileFactoryMimeType.MP3, "generic_file_data"),
-        (MockFileFactoryMimeType.OGG, "generic_file_data"),
-        (MockFileFactoryMimeType.WAV, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.MP3,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.OGG,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.WAV,
+            "generic_file_data",
+        ),
+        # OpenRouter rejects the generic `file` block for audio/video, so we use the
+        # OpenAI-style `input_audio` block and a `video_url` block instead. Documents
+        # and images are unchanged.
+        # documents
+        (
+            ModelProviderName.openrouter,
+            MockFileFactoryMimeType.PDF,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.openrouter,
+            MockFileFactoryMimeType.CSV,
+            "generic_file_data",
+        ),
+        # images
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.PNG, "image_data"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.JPEG, "image_data"),
+        # videos
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.MP4, "video_url"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.MOV, "video_url"),
+        # audio
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.MP3, "input_audio_mp3"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.OGG, "input_audio_ogg"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.WAV, "input_audio_wav"),
     ],
 )
-def test_encode_file_litellm_format(mock_file_factory, mime_type, expected_encoding):
+def test_encode_file_litellm_format(
+    mock_file_factory, provider_name, mime_type, expected_encoding
+):
     test_file = mock_file_factory(mime_type)
-    encoded = encode_file_litellm_format(Path(test_file), mime_type)
+    encoded = encode_file_litellm_format(Path(test_file), mime_type, provider_name)
+    file_bytes = Path(test_file).read_bytes()
 
     # there are two types of ways of including files, image_url is a special case
     # and it also works with the generic file_data encoding, but LiteLLM docs are
@@ -571,14 +636,29 @@ def test_encode_file_litellm_format(mock_file_factory, mime_type, expected_encod
         assert encoded == {
             "type": "image_url",
             "image_url": {
-                "url": to_base64_url(mime_type, Path(test_file).read_bytes()),
+                "url": to_base64_url(mime_type, file_bytes),
             },
         }
     elif expected_encoding == "generic_file_data":
         assert encoded == {
             "type": "file",
             "file": {
-                "file_data": to_base64_url(mime_type, Path(test_file).read_bytes()),
+                "file_data": to_base64_url(mime_type, file_bytes),
+            },
+        }
+    elif expected_encoding == "video_url":
+        assert encoded == {
+            "type": "video_url",
+            "video_url": {
+                "url": to_base64_url(mime_type, file_bytes),
+            },
+        }
+    elif expected_encoding.startswith("input_audio_"):
+        assert encoded == {
+            "type": "input_audio",
+            "input_audio": {
+                "data": to_base64(file_bytes),
+                "format": expected_encoding.removeprefix("input_audio_"),
             },
         }
     else:
