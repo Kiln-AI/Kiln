@@ -2261,6 +2261,13 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
                 gemini_reasoning_enabled=True,
@@ -2332,6 +2339,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -2422,6 +2436,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -2574,6 +2595,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2674,6 +2702,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2744,6 +2779,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2810,6 +2852,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2874,6 +2923,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -5525,6 +5581,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5579,6 +5638,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5606,6 +5668,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5632,6 +5697,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5665,6 +5733,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5693,6 +5764,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -6960,6 +7034,9 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -7078,6 +7155,9 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -7639,6 +7719,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                     # NOTE: M3 natively supports video but OpenRouter doesn't route it correctly
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
             ),
         ],
@@ -7905,6 +7988,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
