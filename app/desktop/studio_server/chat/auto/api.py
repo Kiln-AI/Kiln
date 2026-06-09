@@ -66,6 +66,11 @@ class ResolveAutoResponse(BaseModel):
 
     run_id: str
     current_trace_id: str
+    # Phase 9: the run's current lifecycle status (running | idle) so the web UI
+    # can choose the right post-resync state — show the thinking indicator
+    # immediately when running, or "· waiting for you" when idle — without
+    # waiting for the events stream to surface liveness.
+    status: AutoRunStatus
 
 
 async def _events_stream(run) -> AsyncGenerator[bytes, None]:
@@ -239,8 +244,10 @@ def connect_chat_auto_api(app: FastAPI) -> None:
                 status_code=404,
                 detail=f"No active auto run for trace: {trace_id}",
             )
-        run_id, current_trace_id = resolved
-        return ResolveAutoResponse(run_id=run_id, current_trace_id=current_trace_id)
+        run_id, current_trace_id, status = resolved
+        return ResolveAutoResponse(
+            run_id=run_id, current_trace_id=current_trace_id, status=status
+        )
 
     @app.get(
         "/api/chat/auto/sessions",

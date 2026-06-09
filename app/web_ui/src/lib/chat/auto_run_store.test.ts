@@ -508,16 +508,24 @@ describe("auto_run_store", () => {
     expect(get(store.autoModeOn)).toBe(true)
   })
 
-  it("resolve returns {run_id, current_trace_id} for an active run", async () => {
+  it("resolve returns {run_id, current_trace_id, status} for an active run", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve({ run_id: "ar_r", current_trace_id: "t_now" }),
+        Promise.resolve({
+          run_id: "ar_r",
+          current_trace_id: "t_now",
+          status: "running",
+        }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
     const result = await store.resolve("t_stale")
-    expect(result).toEqual({ run_id: "ar_r", current_trace_id: "t_now" })
+    expect(result).toEqual({
+      run_id: "ar_r",
+      current_trace_id: "t_now",
+      status: "running",
+    })
     const [url] = fetchMock.mock.calls[0]
     expect(url).toBe(
       "http://localhost:8757/api/chat/auto/resolve?trace_id=t_stale",
@@ -538,6 +546,103 @@ describe("auto_run_store", () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("boom"))
     vi.stubGlobal("fetch", fetchMock)
     expect(await store.resolve("t")).toBeNull()
+  })
+
+  // ── Phase 9: reconnecting affordance + on-attach liveness ──────────────────
+
+  it("beginReconnect sets the reconnecting affordance; attach clears it on open", () => {
+    expect(get(store.reconnecting)).toBe(false)
+    store.beginReconnect()
+    expect(get(store.reconnecting)).toBe(true)
+
+    store.attach("ar_rc")
+    // Still reconnecting through the connecting window (no stream established).
+    expect(get(store.reconnecting)).toBe(true)
+
+    const source = FakeEventSource.latest()
+    source.open()
+    // Attach established → the affordance clears (can't get stuck on).
+    expect(get(store.reconnecting)).toBe(false)
+  })
+
+  it("attach clears reconnecting on the first event even without onopen", () => {
+    store.beginReconnect()
+    store.attach("ar_rc2")
+    expect(get(store.reconnecting)).toBe(true)
+
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-state", run_id: "ar_rc2", working: true })
+    expect(get(store.reconnecting)).toBe(false)
+  })
+
+  it("attach with initialWorking drives the thinking indicator immediately", () => {
+    // Phase 9: a RUNNING run (from resolve status) shows working before any event.
+    store.beginReconnect()
+    store.attach("ar_work", true)
+    expect(get(store.working)).toBe(true)
+    expect(get(store.autoModeOn)).toBe(true)
+
+    // An IDLE run (initialWorking=false) shows "· waiting for you" immediately.
+    store.detach()
+    store.beginReconnect()
+    store.attach("ar_wait", false)
+    expect(get(store.working)).toBe(false)
+    expect(get(store.autoModeOn)).toBe(true)
+  })
+
+  it("auto-mode-state snapshot sets working + flag and clears reconnecting", () => {
+    store.beginReconnect()
+    store.attach("ar_state")
+    const source = FakeEventSource.latest()
+
+    // Working snapshot → thinking indicator on, reconnecting cleared.
+    source.message({
+      type: "auto-mode-state",
+      run_id: "ar_state",
+      flag_on: true,
+      working: true,
+    })
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(true)
+    expect(get(store.reconnecting)).toBe(false)
+
+    // Idle snapshot → working off, flag stays on.
+    source.message({
+      type: "auto-mode-state",
+      run_id: "ar_state",
+      flag_on: true,
+      working: false,
+    })
+    expect(get(store.working)).toBe(false)
+    expect(get(store.autoModeOn)).toBe(true)
+  })
+
+  it("reconnecting clears on error (404) so the affordance can't get stuck", () => {
+    store.beginReconnect()
+    store.attach("ar_rc_gone")
+    expect(get(store.reconnecting)).toBe(true)
+
+    const source = FakeEventSource.latest()
+    source.fail() // events 404 / connection failure before opening
+    expect(get(store.reconnecting)).toBe(false)
+    expect(get(store.autoModeOn)).toBe(false)
+  })
+
+  it("reconnecting clears on auto-mode-off and on detach", () => {
+    store.beginReconnect()
+    store.attach("ar_rc_off")
+    const source = FakeEventSource.latest()
+    source.message({
+      type: "auto-mode-off",
+      run_id: "ar_rc_off",
+      reason: "user_stopped",
+    })
+    expect(get(store.reconnecting)).toBe(false)
+
+    store.beginReconnect()
+    expect(get(store.reconnecting)).toBe(true)
+    store.detach()
+    expect(get(store.reconnecting)).toBe(false)
   })
 
   it("is a pure observer: an off event never posts stop", async () => {

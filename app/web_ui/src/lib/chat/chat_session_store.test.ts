@@ -78,11 +78,13 @@ function makeFakeAutoRun(
     stop: ReturnType<typeof vi.fn>
     resolve: ReturnType<typeof vi.fn>
     attach: ReturnType<typeof vi.fn>
+    beginReconnect: ReturnType<typeof vi.fn>
   }> = {},
 ) {
   return {
     autoModeOn: writable(overrides.autoModeOn ?? false),
     working: writable(false),
+    reconnecting: writable(false),
     runId: writable(overrides.autoModeOn ? "ar_test" : null),
     offReason: writable(null),
     connection: writable("idle"),
@@ -94,6 +96,7 @@ function makeFakeAutoRun(
       overrides.sendMessage ?? vi.fn().mockResolvedValue({ ok: true }),
     stop: overrides.stop ?? vi.fn().mockResolvedValue(undefined),
     resolve: overrides.resolve ?? vi.fn().mockResolvedValue(null),
+    beginReconnect: overrides.beginReconnect ?? vi.fn(),
     attach: overrides.attach ?? vi.fn(),
     detach: vi.fn(),
     _close: vi.fn(),
@@ -1234,12 +1237,16 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     const streaming = await import("./streaming_chat")
     vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
 
-    // The server resolves it to the active run whose current leaf is t_now.
-    const resolve = vi
-      .fn()
-      .mockResolvedValue({ run_id: "ar_live", current_trace_id: "t_now" })
+    // The server resolves it to the active run whose current leaf is t_now and
+    // whose burst is RUNNING (Phase 9).
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "running",
+    })
     const attach = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach })
+    const beginReconnect = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
 
     // Hydration from the current leaf returns caught-up messages.
     const hydratedMessages: ChatMessage[] = [
@@ -1264,7 +1271,10 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
       "/api/chat/sessions/{session_id}",
       { params: { path: { session_id: "t_now" } } },
     )
-    expect(attach).toHaveBeenCalledWith("ar_live")
+    // Phase 9: attach is driven by the resolved liveness (RUNNING → working) and
+    // the reconnecting affordance is shown for the connecting window.
+    expect(beginReconnect).toHaveBeenCalled()
+    expect(attach).toHaveBeenCalledWith("ar_live", true)
     // The caught-up messages replaced the stale restored view.
     expect(get(store).messages).toEqual(hydratedMessages)
   })
@@ -1280,9 +1290,11 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     const streaming = await import("./streaming_chat")
     vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
 
-    const resolve = vi
-      .fn()
-      .mockResolvedValue({ run_id: "ar_live", current_trace_id: "t_now" })
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "idle",
+    })
     const attach = vi.fn()
     const auto = makeFakeAutoRun({ resolve, attach })
 
@@ -1298,8 +1310,9 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     expect(resolve).toHaveBeenCalledWith("t_stale")
     // Hydration did not happen (no messages to apply)...
     expect(mockHydrate).not.toHaveBeenCalled()
-    // ...but we STILL attach so the conversation isn't left looking dead.
-    expect(attach).toHaveBeenCalledWith("ar_live")
+    // ...but we STILL attach so the conversation isn't left looking dead (IDLE
+    // status → not working).
+    expect(attach).toHaveBeenCalledWith("ar_live", false)
   })
 
   it("inactive conversation (resolve 404) leaves the restored state and never attaches", async () => {
@@ -1312,7 +1325,8 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
 
     const resolve = vi.fn().mockResolvedValue(null)
     const attach = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach })
+    const beginReconnect = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
 
     const store = createChatSessionStore("resync_inactive", auto)
     await store.resyncOnLoad()
@@ -1320,6 +1334,8 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     expect(resolve).toHaveBeenCalledWith("t_stale")
     expect(mockClientGet).not.toHaveBeenCalled()
     expect(attach).not.toHaveBeenCalled()
+    // Phase 9: no reconnecting affordance when there's no active run to attach to.
+    expect(beginReconnect).not.toHaveBeenCalled()
   })
 
   it("no stored trace id is a no-op (does not call resolve)", async () => {

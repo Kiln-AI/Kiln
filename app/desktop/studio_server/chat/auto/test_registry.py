@@ -156,10 +156,11 @@ async def test_resolve_trace_stale_in_chain_returns_run_and_current_leaf():
         rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
         await _wait_settled(reg, rec.run_id)
 
-    # Stale leaf (tr-0) still resolves to the active run, current leaf is tr-1.
-    assert reg.resolve_trace("tr-0") == (rec.run_id, "tr-1")
+    # Stale leaf (tr-0) still resolves to the active run, current leaf is tr-1,
+    # and the run's status is surfaced (settled → IDLE).
+    assert reg.resolve_trace("tr-0") == (rec.run_id, "tr-1", AutoRunStatus.IDLE)
     # Current leaf resolves too.
-    assert reg.resolve_trace("tr-1") == (rec.run_id, "tr-1")
+    assert reg.resolve_trace("tr-1") == (rec.run_id, "tr-1", AutoRunStatus.IDLE)
 
 
 @pytest.mark.asyncio
@@ -177,7 +178,9 @@ async def test_resolve_trace_none_when_flag_off():
     client = _GatedClient(release)
     with patch.object(httpx, "AsyncClient", return_value=client):
         rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
-        assert reg.resolve_trace("tr-0") == (rec.run_id, "tr-0")
+        # While the burst is in-flight resolve reports RUNNING (the gated client
+        # blocks the round open) so a resyncing client shows the thinking state.
+        assert reg.resolve_trace("tr-0") == (rec.run_id, "tr-0", AutoRunStatus.RUNNING)
         release.set()
         await _wait_settled(reg, rec.run_id)
         await reg.stop(rec.run_id)
@@ -276,6 +279,102 @@ async def test_client_disconnect_does_not_cancel_run():
         await _wait_idle(reg, rec.run_id)
 
     assert run.record.status == AutoRunStatus.IDLE
+
+
+async def _subscribe_replay(run, *, settle: float = 0.05) -> str:
+    """Subscribe to a run's bus and collect the on-subscribe replay (buffer +
+    current-state marker) as a decoded string, then disconnect. Reads until the
+    subscriber's queue is momentarily empty (the replay is yielded eagerly before
+    the live ``await queue.get()``)."""
+    sub = run.bus.subscribe()
+    received: list[bytes] = []
+
+    async def _drain():
+        async for b in sub:
+            received.append(b)
+
+    task = asyncio.create_task(_drain())
+    await asyncio.sleep(settle)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    await sub.aclose()
+    return b"".join(received).decode()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_emits_working_state_marker_for_running_mid_think():
+    """Phase 9: a RUNNING burst momentarily between events (the trace boundary
+    cleared the buffer, the model is thinking server-side) must still tell a
+    re-attaching observer it is WORKING — otherwise the transcript looks done
+    until the next event lands."""
+    reg = AutoChatRegistry()
+    release = asyncio.Event()
+    client = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        run = reg.get(rec.run_id)
+        assert run is not None
+        # Let the round open (trace("tr-1") clears the buffer) and block before
+        # the next event: RUNNING with an empty current-turn buffer.
+        await asyncio.sleep(0.05)
+        assert run.record.status == AutoRunStatus.RUNNING
+        assert run.buffer == []
+
+        replay = await _subscribe_replay(run)
+        # The on-subscribe state marker reports working so the client shows the
+        # thinking indicator immediately, with no preceding event.
+        assert '"type": "auto-mode-state"' in replay
+        assert '"working": true' in replay
+        assert '"flag_on": true' in replay
+
+        release.set()
+        await _wait_settled(reg, rec.run_id)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_emits_idle_marker_for_idle_run():
+    """Phase 9: an IDLE run (flag on, burst settled) tells a re-attaching observer
+    it is idle/armed (working off → "· waiting for you")."""
+    reg = AutoChatRegistry()
+    round1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        await _wait_settled(reg, rec.run_id)
+        run = reg.get(rec.run_id)
+        assert run is not None
+        assert run.record.status == AutoRunStatus.IDLE
+
+        replay = await _subscribe_replay(run)
+        # Idle marker conveys working-off; no working state marker (which would
+        # double-fire confusingly).
+        assert '"type": "auto-mode-idle"' in replay
+        assert '"type": "auto-mode-state"' not in replay
+
+
+@pytest.mark.asyncio
+async def test_subscribe_emits_idle_marker_for_armed_run():
+    """Phase 9: a manually-armed run (created IDLE, never ran a burst) is idle —
+    the re-attaching observer sees the idle marker (waiting for you)."""
+    reg = AutoChatRegistry()
+    client = FakeUpstreamClient([])
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(
+            AutoChatSeed(trace_id="tr-0"), reason=None, upstream_url=URL, headers={}
+        )
+        await asyncio.sleep(0.02)
+        run = reg.get(rec.run_id)
+        assert run is not None
+        assert run.record.status == AutoRunStatus.IDLE
+
+        replay = await _subscribe_replay(run)
+        # The armed run's buffered on→idle markers replay, conveying flag-on/idle.
+        assert '"type": "auto-mode-idle"' in replay
+        assert '"reason": "armed"' in replay
+        assert '"type": "auto-mode-state"' not in replay
 
 
 @pytest.mark.asyncio

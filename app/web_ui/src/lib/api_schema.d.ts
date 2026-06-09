@@ -9051,6 +9051,7 @@ export interface components {
             run_id: string;
             /** Current Trace Id */
             current_trace_id: string;
+            status: components["schemas"]["AutoRunStatus"];
         };
         /**
          * ReviewedExample

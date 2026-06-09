@@ -72,3 +72,12 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
   - Register `disable_auto_mode` in `CHAT_CLIENT_VISIBLE_TOOLS` + `get_chat_kiln_tool_ids()`
     (mirror enable); add system-prompt guidance: call `disable_auto_mode` (alone) when the user
     asks to stop auto-mode, then continue interactively. Verify. (Architecture §13.3.)
+
+- [x] **Phase 9 — Reattach loading state + live working/idle on attach** (app server + web UI)
+  - Surface the run's current **working/idle** liveness on attach so reattach reflects true state
+    immediately (no "looks done until next event"): the per-run `AutoChatEventBus` emits the current
+    working/idle marker on subscribe, and `GET /api/chat/auto/resolve` also returns the run status.
+    Web UI: a transient "reconnecting…" loading state during resolve→hydrate→attach (resyncOnLoad +
+    history-restore), cleared once attach is established; on attach show the thinking indicator if
+    working or "· waiting for you" if idle, driven by the surfaced state. Reuse existing
+    indicator/working machinery. Tests. (Architecture §13.)

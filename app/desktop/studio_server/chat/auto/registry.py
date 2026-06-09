@@ -21,6 +21,7 @@ from .sse import (
     format_auto_mode_idle,
     format_auto_mode_off,
     format_auto_mode_on,
+    format_auto_mode_state,
     format_user_message,
 )
 
@@ -173,6 +174,15 @@ class AutoChatRun:
     def idle_marker_bytes(self) -> bytes:
         return format_auto_mode_idle(self.record.run_id, self.runner.idle_reason)
 
+    def state_marker_bytes(self) -> bytes:
+        """Phase 9: snapshot of the run's CURRENT liveness for an attaching
+        observer. ``working`` iff a burst is actively running (RUNNING)."""
+        return format_auto_mode_state(
+            self.record.run_id,
+            flag_on=self.record.status.flag_on,
+            working=self.record.status == AutoRunStatus.RUNNING,
+        )
+
 
 def _off_reason_for(status: AutoRunStatus) -> str:
     return _OFF_REASON.get(status, "user_stopped")
@@ -219,23 +229,25 @@ class AutoChatRegistry:
         run_id = self.run_id_for_trace(trace_id)
         return (run_id is not None, run_id)
 
-    def resolve_trace(self, trace_id: str) -> tuple[str, str] | None:
+    def resolve_trace(self, trace_id: str) -> tuple[str, str, AutoRunStatus] | None:
         """Resolve a (possibly stale) trace id to an active run.
 
         A tab that was gone while the server-owned run advanced holds a STALE
         leaf trace id — the run's current leaf has moved on. The whole-chain
         ``_trace_index`` (every seen trace id → run) lets us match anyway, so a
-        hard refresh can resync. Returns ``(run_id, current_trace_id)`` for runs
-        whose flag is on (RUNNING or IDLE), or ``None`` if there's no active run
-        for the trace. The returned ``current_trace_id`` is the run's CURRENT
-        leaf so the caller can hydrate the rounds completed while it was away."""
+        hard refresh can resync. Returns ``(run_id, current_trace_id, status)``
+        for runs whose flag is on (RUNNING or IDLE), or ``None`` if there's no
+        active run for the trace. The returned ``current_trace_id`` is the run's
+        CURRENT leaf so the caller can hydrate the rounds completed while it was
+        away; ``status`` (RUNNING/IDLE) lets the caller reflect the run's true
+        working-vs-idle state immediately on resync (Phase 9)."""
         run_id = self.run_id_for_trace(trace_id)
         if run_id is None:
             return None
         run = self._runs.get(run_id)
         if run is None:
             return None
-        return (run_id, run.record.current_trace_id)
+        return (run_id, run.record.current_trace_id, run.record.status)
 
     # -- start ---------------------------------------------------------------
 

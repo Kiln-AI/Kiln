@@ -651,6 +651,12 @@ export function createChatSessionStore(
     // state untouched.
     if (!resolved) return
 
+    // We now know it's an active run. Show a transient "reconnecting…" affordance
+    // while we hydrate → attach so the transcript doesn't look done/idle before
+    // liveness is known. attach() keeps it on through the connecting phase and
+    // clears it once the stream is established; off/idle/error paths also clear it.
+    autoRunStore.beginReconnect()
+
     // Hydrate from the run's CURRENT leaf so the user catches up on rounds that
     // completed while the tab was gone, then attach for live events + buffer
     // replay + the indicator/working state.
@@ -676,7 +682,14 @@ export function createChatSessionStore(
       // Hydration failed (network/parse). Fall back: still attach so the user at
       // least gets the live indicator + events on the restored (stale) view.
     }
-    autoRunStore.attach(resolved.run_id)
+    // Re-assert reconnecting: loadSession() detaches the prior observer, which
+    // clears the flag, so re-mark it for the brief connecting window. attach()
+    // clears it on open / first event / off.
+    autoRunStore.beginReconnect()
+    // Drive the working sub-state from the resolved status so the thinking
+    // indicator shows immediately when the run is RUNNING (no wait for the first
+    // event); the on-subscribe state marker confirms / corrects it.
+    autoRunStore.attach(resolved.run_id, resolved.status === "running")
   }
 
   function handleToolCallsPending(

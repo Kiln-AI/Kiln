@@ -90,6 +90,9 @@ export interface StreamEvent {
   run_id?: string
   /** ``user-message`` echo carries the injected user message content */
   content?: string
+  /** ``auto-mode-state`` (Phase 9) on-subscribe liveness snapshot */
+  flag_on?: boolean
+  working?: boolean
 }
 
 export interface ToolCallsPendingItem {

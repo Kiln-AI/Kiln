@@ -21,6 +21,7 @@
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
+  import BrailleSpinner from "./braille_spinner.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
   import { env } from "$env/dynamic/public"
 
@@ -35,6 +36,9 @@
 
   const autoModeOn = auto_run_store.autoModeOn
   const autoModeWorking = auto_run_store.working
+  // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
+  // History restore) resolves → hydrates → attaches the live observer (Phase 9).
+  const autoReconnecting = auto_run_store.reconnecting
 
   // Manual enable arms a server-owned run keyed by the conversation's trace id
   // (functional spec §4.1(2)). A run can't exist without a trace id, so manual
@@ -102,9 +106,11 @@
   $: isLoading = status === "submitted" || status === "streaming"
   // The transcript's loading affordances (thinking dots, animated icon, active
   // tool lines) show for BOTH the interactive client stream and a live auto
-  // burst. The input/send/Stop controls stay bound to ``isLoading`` only, so the
+  // burst, AND during a re-attach's brief "reconnecting…" window (Phase 9) so a
+  // reattaching conversation doesn't look done/idle before liveness is known.
+  // The input/send/Stop controls stay bound to ``isLoading`` only, so the
   // textarea remains usable for inject-on-send while auto mode works.
-  $: transcriptLoading = isLoading || autoWorking
+  $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
   $: inputDisabled = isLoading
 
   let prevIsLoading = false
@@ -1079,6 +1085,19 @@
           </div>
         {/if}
       {/each}
+      {#if $autoReconnecting}
+        <!-- Transient re-attach affordance (Phase 9): shown while a hard-refresh
+             resync or History restore resolves → hydrates → attaches the live
+             observer, so the transcript doesn't look done/idle before liveness
+             is known. Clears the instant the events stream is established. -->
+        <div
+          class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
+          role="status"
+        >
+          <BrailleSpinner />
+          <span>Reconnecting…</span>
+        </div>
+      {/if}
       <div
         bind:this={messagesEndRef}
         class="shrink-0 min-w-[24px] min-h-[24px]"

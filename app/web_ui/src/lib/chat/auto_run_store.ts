@@ -78,6 +78,15 @@ export interface AutoRunStore {
   autoModeOn: Readable<boolean>
   /** Burst sub-state: a burst is actively running (vs idle, flag still on). */
   working: Readable<boolean>
+  /**
+   * A transient "reconnecting…" window while a re-attach (hard-refresh resync or
+   * History restore) resolves → hydrates → attaches the live observer. Drives a
+   * brief loading affordance in the transcript so a reattaching conversation
+   * doesn't look done/idle before liveness is known. Cleared once the events
+   * stream is established (or on error / off / idle). Always false in the
+   * normal (non-reattach) enable flow.
+   */
+  reconnecting: Readable<boolean>
   runId: Readable<string | null>
   offReason: Readable<string | null>
   connection: Readable<AutoConnection>
@@ -105,7 +114,20 @@ export interface AutoRunStore {
    * trace (404) or the request fails — the caller leaves the restored state.
    */
   resolve(traceId: string): Promise<ResolveAutoResponse | null>
-  attach(runId: string): void
+  /**
+   * Mark the start of a re-attach (after we know it's an active run) so the
+   * transcript shows a transient "reconnecting…" affordance during the
+   * resolve→hydrate→attach window. ``attach`` keeps it on through the connecting
+   * phase and clears it once the stream is established. Safe no-op clear paths
+   * (error / off / idle) guarantee it can't get stuck on.
+   */
+  beginReconnect(): void
+  /**
+   * Open the per-run events SSE and re-attach. ``initialWorking`` (from the
+   * resolve response status) drives the thinking indicator immediately on
+   * attach; omit it when the liveness isn't known up front (History restore).
+   */
+  attach(runId: string, initialWorking?: boolean): void
   /** Stop observing + clear the indicator without ending the run (navigation). */
   detach(): void
   /** Exposed for tests / explicit teardown; not part of normal usage. */
@@ -115,6 +137,7 @@ export interface AutoRunStore {
 export function createAutoRunStore(): AutoRunStore {
   const autoModeOn = writable<boolean>(false)
   const working = writable<boolean>(false)
+  const reconnecting = writable<boolean>(false)
   const runId = writable<string | null>(null)
   const offReason = writable<string | null>(null)
   const connection = writable<AutoConnection>("idle")
@@ -154,6 +177,7 @@ export function createAutoRunStore(): AutoRunStore {
     closeSource()
     autoModeOn.set(false)
     setWorking(false)
+    reconnecting.set(false)
     runId.set(null)
     offReason.set(reason)
     connection.set("closed")
@@ -167,9 +191,17 @@ export function createAutoRunStore(): AutoRunStore {
     closeSource()
     autoModeOn.set(false)
     setWorking(false)
+    reconnecting.set(false)
     runId.set(null)
     offReason.set(null)
     connection.set("idle")
+  }
+
+  // Mark the start of a re-attach (resolve→hydrate→attach). attach() keeps this
+  // on through the connecting phase and clears it once the stream is established;
+  // all off/idle/error paths also clear it so it can never get stuck on.
+  function beginReconnect(): void {
+    reconnecting.set(true)
   }
 
   // --- Control-event handling on the per-run stream ---------------------------
@@ -178,19 +210,35 @@ export function createAutoRunStore(): AutoRunStore {
   // auto-mode-off / user-message; every other event is normal chat SSE and
   // flows to the processor unchanged.
   function handleControlEvent(event: StreamEvent): boolean {
+    if (event.type === "auto-mode-state") {
+      // Phase 9: on-subscribe liveness snapshot. The run published its CURRENT
+      // working/idle state the instant we attached, so reflect it immediately
+      // (show the thinking indicator if working, "· waiting for you" if idle)
+      // instead of looking idle until the next event lands. Attach is now
+      // established → clear the transient reconnecting affordance.
+      autoModeOn.set(!!event.flag_on)
+      setWorking(!!event.working)
+      reconnecting.set(false)
+      if (event.run_id) runId.set(event.run_id)
+      offReason.set(null)
+      return true
+    }
     if (event.type === "auto-mode-on") {
       // The conversation flag is on AND a burst is now running.
       autoModeOn.set(true)
       setWorking(true)
+      reconnecting.set(false)
       if (event.run_id) runId.set(event.run_id)
       offReason.set(null)
       return true
     }
     if (event.type === "auto-mode-idle") {
       // A burst ended but the flag STAYS on (Revision R1). Keep the indicator;
-      // only clear the working sub-state so the thinking dots stop.
+      // only clear the working sub-state so the thinking dots stop. An idle
+      // marker on attach also means we're established → clear reconnecting.
       autoModeOn.set(true)
       setWorking(false)
+      reconnecting.set(false)
       sink?.onAutoModeIdle(event.reason ?? null)
       return true
     }
@@ -219,16 +267,22 @@ export function createAutoRunStore(): AutoRunStore {
     return false
   }
 
-  function attach(newRunId: string): void {
+  function attach(newRunId: string, initialWorking?: boolean): void {
     const EventSourceCtor = globalThis.EventSource
-    if (!EventSourceCtor) return
+    if (!EventSourceCtor) {
+      // No SSE support: don't leave a "reconnecting…" affordance stuck on.
+      reconnecting.set(false)
+      return
+    }
     closeSource()
 
     runId.set(newRunId)
     autoModeOn.set(true)
-    // Presume a live burst on attach; if the run is actually idle the replayed
-    // auto-mode-idle marker clears the working sub-state with no visible gap.
-    setWorking(true)
+    // Drive the working sub-state from the surfaced liveness when known
+    // (Phase 9: the resolve response carries the run's status). When unknown
+    // (History restore, which has no status), presume a live burst — the buffer
+    // replay + on-subscribe state marker correct it with no visible gap.
+    setWorking(initialWorking ?? true)
     offReason.set(null)
     connection.set("connecting")
 
@@ -241,10 +295,17 @@ export function createAutoRunStore(): AutoRunStore {
     source.onopen = () => {
       if (eventSource !== source) return
       connection.set("open")
+      // Attach is established (resolve→hydrate→attach complete). Clear the
+      // transient reconnecting affordance; the run's liveness now arrives via the
+      // buffer replay + on-subscribe state marker.
+      reconnecting.set(false)
     }
 
     source.onmessage = (e: MessageEvent) => {
       if (eventSource !== source) return
+      // First byte over the stream also means we're established — clear the
+      // reconnecting affordance even if onopen didn't fire (test environments).
+      reconnecting.set(false)
       const data = typeof e.data === "string" ? e.data.trim() : ""
       if (!data || data === "[DONE]") return
       let event: StreamEvent
@@ -436,6 +497,7 @@ export function createAutoRunStore(): AutoRunStore {
   return {
     autoModeOn: { subscribe: autoModeOn.subscribe },
     working: { subscribe: working.subscribe },
+    reconnecting: { subscribe: reconnecting.subscribe },
     runId: { subscribe: runId.subscribe },
     offReason: { subscribe: offReason.subscribe },
     connection: { subscribe: connection.subscribe },
@@ -445,6 +507,7 @@ export function createAutoRunStore(): AutoRunStore {
     sendMessage,
     stop,
     resolve,
+    beginReconnect,
     attach,
     detach,
     _close: closeSource,

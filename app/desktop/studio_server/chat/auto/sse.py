@@ -4,6 +4,7 @@ import json
 
 from app.desktop.studio_server.chat.constants import (
     SSE_TYPE_AUTO_MODE_IDLE,
+    SSE_TYPE_AUTO_MODE_STATE,
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
 )
@@ -33,6 +34,25 @@ def format_auto_mode_idle(run_id: str, reason: str) -> bytes:
     reason ∈ {asked_user, done, error, max_rounds}."""
     return _encode(
         {"type": SSE_TYPE_AUTO_MODE_IDLE, "run_id": run_id, "reason": reason}
+    )
+
+
+def format_auto_mode_state(run_id: str, *, flag_on: bool, working: bool) -> bytes:
+    """Phase 9: on-subscribe snapshot of the run's CURRENT liveness.
+
+    Emitted once when an observer subscribes (after the buffer replay) so a
+    re-attaching client immediately reflects working-vs-idle — instead of looking
+    fully loaded/idle until the next event happens to arrive. ``working`` is true
+    iff a burst is actively running (status RUNNING); ``flag_on`` carries the
+    conversation auto-mode flag. Uses the existing on/idle/off vocabulary by
+    semantics (working ⇒ thinking indicator, idle ⇒ "· waiting for you")."""
+    return _encode(
+        {
+            "type": SSE_TYPE_AUTO_MODE_STATE,
+            "run_id": run_id,
+            "flag_on": flag_on,
+            "working": working,
+        }
     )
 
 

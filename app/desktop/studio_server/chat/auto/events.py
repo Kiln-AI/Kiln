@@ -67,10 +67,20 @@ class AutoChatEventBus:
                 yield self._run.terminal_off_bytes()
                 return
             # Idle between bursts: the flag is still on. Emit the idle marker so a
-            # re-attaching observer renders the persistent indicator, then stay
-            # subscribed for the next burst (started via /message).
+            # re-attaching observer renders the persistent indicator (working
+            # off → "· waiting for you"), then stay subscribed for the next burst
+            # (started via /message).
             if status == AutoRunStatus.IDLE:
                 yield self._run.idle_marker_bytes()
+            # RUNNING: a burst is actively working. The replayed buffer may be
+            # empty (the model is thinking server-side between events, just after
+            # a snapshot cleared the buffer), so without this an attaching client
+            # would look idle/done until the next event lands. Emit a current-
+            # liveness snapshot (Phase 9) so the client shows the thinking
+            # indicator immediately on attach. (Re-emitting working state is
+            # idempotent if the buffer already carried auto-mode-on.)
+            elif status == AutoRunStatus.RUNNING:
+                yield self._run.state_marker_bytes()
             while True:
                 yield await subscriber.queue.get()
         finally:

@@ -87,8 +87,11 @@
       // Re-attach the live auto run after hydrating completed history. The
       // runner replays the in-progress turn so there is no visible gap; if it
       // has finished or is gone, the events stream lands cleanly in the "off"
-      // state (ui_design §5).
+      // state (ui_design §5). Show a transient "reconnecting…" affordance during
+      // the connecting window (Phase 9); attach clears it once established, and
+      // the on-subscribe state marker reflects working-vs-idle immediately.
       if (row.auto_active && row.auto_run_id) {
+        auto_run_store.beginReconnect()
         auto_run_store.attach(row.auto_run_id)
       }
       close()

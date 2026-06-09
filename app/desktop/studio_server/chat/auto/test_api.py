@@ -445,7 +445,13 @@ async def test_resolve_active_returns_run_and_current_trace(
 
         r = await client.get("/api/chat/auto/resolve", params={"trace_id": "t1"})
         assert r.status_code == 200
-        assert r.json() == {"run_id": run_id, "current_trace_id": "t1"}
+        # The burst is in-flight (gated round held open), so status is RUNNING —
+        # the resyncing client can show the thinking state immediately (Phase 9).
+        assert r.json() == {
+            "run_id": run_id,
+            "current_trace_id": "t1",
+            "status": "running",
+        }
 
         release.set()
         await _wait_settled(registry, run_id)
@@ -468,10 +474,15 @@ async def test_resolve_stale_trace_in_chain_returns_current_leaf(
         run_id = enable.json()["run_id"]
         await _wait_settled(registry, run_id)
 
-        # Stale seed leaf t1 resolves to the run, current leaf is now t2.
+        # Stale seed leaf t1 resolves to the run, current leaf is now t2, and the
+        # settled burst surfaces status IDLE (resync shows "· waiting for you").
         r = await client.get("/api/chat/auto/resolve", params={"trace_id": "t1"})
         assert r.status_code == 200
-        assert r.json() == {"run_id": run_id, "current_trace_id": "t2"}
+        assert r.json() == {
+            "run_id": run_id,
+            "current_trace_id": "t2",
+            "status": "idle",
+        }
 
 
 @pytest.mark.asyncio
