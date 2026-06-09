@@ -3,6 +3,7 @@ from typing import Callable, Dict
 
 import pytest
 
+from kiln_ai.adapters.eval import judge_job_runner
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.judge_job_runner import (
     JudgeJobRunner,
@@ -25,6 +26,7 @@ from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalOutputScore,
     EvalScores,
 )
@@ -595,3 +597,58 @@ async def test_generate_mode_runs_config_and_judges_fresh_output(
     assert all(r.run_config_id == run_config.id for r in result.judged_runs)
     # The generated outputs are ephemeral — no new dataset TaskRuns were created.
     assert len(mock_task.runs()) == runs_before
+
+
+def test_reference_answer_eval_rejected_for_existing_outputs(mock_task):
+    # Reference-answer evals need something to compare against; judging an existing output (no
+    # generation) has no reference, so the runner rejects the combination up front.
+    eval = Eval(
+        name="ref",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(name="Accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=EvalDataType.reference_answer,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(mock_task, eval_config)  # generate_outputs defaults to False
+
+    with pytest.raises(ValueError, match="Reference-answer"):
+        JudgeJobRunner(job, eval_config)
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_does_not_abort_batch(
+    mock_task, data_source, monkeypatch
+):
+    # An unexpected throw in one item's post-judge processing must not discard the rest of the chunk.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_job(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
+    good = make_train_run(mock_task, data_source, "good")
+    boom = make_train_run(mock_task, data_source, "boom")
+
+    real_example_fails = judge_job_runner.example_fails
+
+    def flaky_example_fails(scores, output_scores, threshold):
+        if scores.get("accuracy") == 0.123:
+            raise RuntimeError("kaboom")
+        return real_example_fails(scores, output_scores, threshold)
+
+    monkeypatch.setattr(judge_job_runner, "example_fails", flaky_example_fails)
+
+    def score_fn(task_run):
+        return {"accuracy": 0.123 if task_run.input == "boom" else 1.0}
+
+    result = await run_job(job, eval_config, score_fn)
+
+    # The good item still succeeded; the throwing item is collected as an error, batch not aborted.
+    assert {r.task_run_id for r in result.judged_runs} == {good.id}
+    assert len(result.errors) == 1
+    assert result.errors[0].task_run_id == boom.id
+    assert "kaboom" in result.errors[0].error

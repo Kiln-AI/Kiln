@@ -6,13 +6,16 @@ from kiln_ai.adapters.eval.judge_job_runner import (
     JudgeJobItemError,
     JudgeJobRunner,
 )
-from kiln_ai.datamodel.eval import EvalConfig
+from kiln_ai.datamodel.eval import EvalConfig, EvalDataType
 from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun
 from kiln_ai.datamodel.task import Task
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -27,7 +30,7 @@ def judge_job_from_id(project_id: str, task_id: str, judge_job_id: str) -> Judge
     return judge_job
 
 
-def eval_config_for_id(task: Task, eval_config_id: str) -> EvalConfig:
+def eval_config_from_id(task: Task, eval_config_id: str) -> EvalConfig:
     """Resolve an eval config by ID across all of the task's evals (the judge)."""
     for eval in task.evals():
         for config in eval.configs():
@@ -45,6 +48,23 @@ def validate_run_config_id(task: Task, run_config_id: str | None) -> None:
         raise HTTPException(
             status_code=404,
             detail=f"Run config not found. ID: {run_config_id}",
+        )
+
+
+def validate_judge_eval(eval_config: EvalConfig, generate_outputs: bool) -> None:
+    """Reference-answer evals score a candidate output against the dataset's reference answer, which
+    only makes sense when generating a fresh output. Judging an existing output gives nothing to
+    compare against, so reject that combination (the judge would otherwise error on every item)."""
+    eval = eval_config.parent_eval()
+    if (
+        eval is not None
+        and eval.evaluation_data_type == EvalDataType.reference_answer
+        and not generate_outputs
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Reference-answer evals require generate_outputs=true; there is no reference to "
+            "compare a pre-existing output against.",
         )
 
 
@@ -190,7 +210,8 @@ def connect_judge_job_api(app: FastAPI):
         """Create a judge job config. Run it later with `/judge_jobs/{id}/run`."""
         task = task_from_id(project_id, task_id)
         # Validate the judge (eval config) and optional run config exist under this task.
-        eval_config_for_id(task, request.eval_config_id)
+        eval_config = eval_config_from_id(task, request.eval_config_id)
+        validate_judge_eval(eval_config, request.generate_outputs)
         validate_run_config_id(task, request.run_config_id)
         judge_job = _build_judge_job(task, request)
         judge_job.save_to_file()
@@ -200,7 +221,9 @@ def connect_judge_job_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/{judge_job_id}/run",
         summary="Run Judge Job",
         tags=["Judge Jobs"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run judge job? It makes model calls over the sampled dataset items."
+        ),
     )
     @no_write_lock
     async def run_judge_job(
@@ -227,14 +250,17 @@ def connect_judge_job_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
         judge_job = judge_job_from_id(project_id, task_id, judge_job_id)
-        eval_config = eval_config_for_id(task, judge_job.eval_config_id)
+        eval_config = eval_config_from_id(task, judge_job.eval_config_id)
+        validate_judge_eval(eval_config, judge_job.generate_outputs)
         return await _run_judge_job(judge_job, eval_config, request)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/judge_jobs/run",
         summary="Create And Run Judge Job",
         tags=["Judge Jobs"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Create and run judge job? It makes model calls over the sampled dataset items."
+        ),
     )
     @no_write_lock
     async def create_and_run_judge_job(
@@ -251,7 +277,8 @@ def connect_judge_job_api(app: FastAPI):
         """Create a judge job and run it immediately (synchronous), returning the failing examples
         + feedback."""
         task = task_from_id(project_id, task_id)
-        eval_config = eval_config_for_id(task, body.eval_config_id)
+        eval_config = eval_config_from_id(task, body.eval_config_id)
+        validate_judge_eval(eval_config, body.generate_outputs)
         validate_run_config_id(task, body.run_config_id)
         judge_job = _build_judge_job(task, body)
         judge_job.save_to_file()

@@ -15,7 +15,13 @@ from kiln_ai.datamodel import (
     Task,
     TaskOutputRatingType,
 )
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, EvalOutputScore
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalOutputScore,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 
@@ -218,6 +224,38 @@ def test_create_generate_unknown_run_config(
         },
     )
     assert resp.status_code == 404
+
+
+def test_create_reference_answer_eval_requires_generate(
+    client, mock_task, mock_task_from_id
+):
+    eval = Eval(
+        id="refeval",
+        name="ref",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(name="Accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=EvalDataType.reference_answer,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="refcfg",
+        name="c",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["s"]},
+        parent=eval,
+    ).save_to_file()
+
+    # Judging existing outputs with a reference-answer eval is rejected (no reference to compare to).
+    resp = client.post(
+        BASE, json={"target_tags": ["train"], "eval_config_id": "refcfg"}
+    )
+    assert resp.status_code == 422
 
 
 def test_create_and_run_generate(

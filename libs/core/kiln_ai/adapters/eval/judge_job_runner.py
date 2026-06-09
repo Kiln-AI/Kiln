@@ -25,7 +25,12 @@ from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import EvalConfig, EvalOutputScore, EvalScores
+from kiln_ai.datamodel.eval import (
+    EvalConfig,
+    EvalDataType,
+    EvalOutputScore,
+    EvalScores,
+)
 from kiln_ai.datamodel.judge_job import JudgeJob, JudgeJobRun
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import normalize_rating
@@ -135,6 +140,18 @@ class JudgeJobRunner:
         if eval is None:
             raise ValueError("Eval config must have a parent eval")
 
+        # Reference-answer evals compare a generated output against the dataset reference; judging an
+        # existing output has nothing to compare against (run_eval would raise per item). Reject it
+        # here too (the API validates upstream) as a last line of defense.
+        if (
+            eval.evaluation_data_type == EvalDataType.reference_answer
+            and not judge_job.generate_outputs
+        ):
+            raise ValueError(
+                "Reference-answer evals can't judge existing outputs (no reference to compare "
+                "against). Set generate_outputs=true."
+            )
+
         self.judge_job = judge_job
         self.eval_config = eval_config
         self.task = task
@@ -213,11 +230,29 @@ class JudgeJobRunner:
         # failures (a chunk may over-judge by up to concurrency-1 items past the stopping point).
         for start in range(0, len(candidates), concurrency):
             chunk = candidates[start : start + concurrency]
+            # return_exceptions=True so one item's unexpected throw can't discard the rest of the
+            # chunk's results. _score_one is written not to raise, but post-judge processing (or a
+            # bug) could; we convert any escaped exception into a per-item error below.
             results = await asyncio.gather(
-                *(self._score_one(evaluator, task_run, cache) for task_run in chunk)
+                *(self._score_one(evaluator, task_run, cache) for task_run in chunk),
+                return_exceptions=True,
             )
-            for scored in results:
+            for task_run, scored in zip(chunk, results):
                 num_judged += 1
+                if isinstance(scored, BaseException):
+                    logger.error(
+                        "Unexpected error judging item %s for judge job %s",
+                        task_run.id,
+                        self.judge_job.id,
+                        exc_info=scored,
+                    )
+                    errors.append(
+                        JudgeJobItemError(
+                            task_run_id=str(task_run.id),
+                            error=f"Unexpected error judging item: {scored}",
+                        )
+                    )
+                    continue
                 if scored.error is not None:
                     errors.append(scored.error)
                 if scored.run is not None:
