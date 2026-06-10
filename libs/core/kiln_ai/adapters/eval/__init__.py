@@ -15,7 +15,6 @@ The datamodel for Evals is in the `kiln_ai.datamodel.eval` module.
 
 from . import (
     base_eval,
-    base_v2_eval,
     eval_runner,
     g_eval,
     rag_judge_templates,
@@ -32,7 +31,6 @@ from . import (
 
 __all__ = [
     "base_eval",
-    "base_v2_eval",
     "eval_runner",
     "g_eval",
     "rag_judge_templates",

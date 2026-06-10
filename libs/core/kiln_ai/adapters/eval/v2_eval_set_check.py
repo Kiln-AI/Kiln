@@ -1,6 +1,6 @@
 import json
 
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     check_reference_key,
@@ -14,7 +14,7 @@ from kiln_ai.datamodel.eval import (
 )
 
 
-class SetCheckEval(BaseV2Eval):
+class SetCheckEval(BaseV2EvalBridge):
     """V2 adapter for set_check: compares an extracted set against an expected set.
 
     The extracted value is coerced to a set of strings:

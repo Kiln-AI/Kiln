@@ -238,47 +238,36 @@ class TestScoreValidation:
             with pytest.raises(RuntimeError, match="must be a float"):
                 await adapter.evaluate(_inp())
 
-    @pytest.mark.asyncio
-    async def test_no_parent_eval_raises(self):
+    def test_no_parent_eval_raises(self):
         cfg = _make_config()
         cfg.parent_eval.return_value = None
-        adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with (
-            patch.object(
-                adapter, "_resolve_project_path", return_value="/fake/project/path"
-            ),
-            patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run,
-        ):
-            mock_run.return_value = {"ok": {"accuracy": 0.5}}
-            with pytest.raises(RuntimeError, match="no parent eval"):
-                await adapter.evaluate(_inp())
+        with pytest.raises(ValueError, match="parent eval"):
+            CodeEvalAdapter(cfg)
 
 
 class TestResolveProjectPath:
     def test_no_parent_eval_returns_none(self):
         cfg = _make_config()
-        cfg.parent_eval.return_value = None
         adapter = CodeEvalAdapter(cfg)
+        cfg.parent_eval.return_value = None
         assert adapter._resolve_project_path() is None
 
     def test_no_parent_task_returns_none(self):
         cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
         parent_eval = Mock()
         parent_eval.parent_task.return_value = None
         cfg.parent_eval.return_value = parent_eval
-        adapter = CodeEvalAdapter(cfg)
         assert adapter._resolve_project_path() is None
 
     def test_no_project_returns_none(self):
         cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
         parent_eval = Mock()
         parent_task = Mock()
         parent_task.parent = None
         parent_eval.parent_task.return_value = parent_task
         cfg.parent_eval.return_value = parent_eval
-        adapter = CodeEvalAdapter(cfg)
         assert adapter._resolve_project_path() is None
 
     def test_valid_chain_returns_path(self):
@@ -288,6 +277,6 @@ class TestResolveProjectPath:
 
     def test_exception_returns_none(self):
         cfg = _make_config()
-        cfg.parent_eval.side_effect = RuntimeError("broken")
         adapter = CodeEvalAdapter(cfg)
+        cfg.parent_eval.side_effect = RuntimeError("broken")
         assert adapter._resolve_project_path() is None

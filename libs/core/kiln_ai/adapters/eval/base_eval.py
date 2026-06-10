@@ -1,14 +1,28 @@
 import json
 from abc import abstractmethod
-from typing import Dict
+from typing import Dict, get_args
+
+from pydantic import BaseModel
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalScores
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalScores,
+    EvalTaskInput,
+    SkippedReason,
+    V2EvalConfigProperties,
+)
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties, TaskOutputRatingType, TaskRun
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+_V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = get_args(
+    get_args(V2EvalConfigProperties)[0]
+)
 
 
 def model_and_provider_from_config(
@@ -63,13 +77,10 @@ class BaseEval:
     def model_and_provider(self) -> tuple[str, ModelProviderName]:
         return model_and_provider_from_config(self.eval_config)
 
-    async def run_task_and_eval(
-        self, eval_job_item: TaskRun
-    ) -> tuple[TaskRun, EvalScores, Dict[str, str] | None]:
+    async def run_task(self, eval_job_item: TaskRun) -> TaskRun:
         """
-        Runs the task on the provided run_config to generate fresh output, then runs the eval on that output.
+        Runs the task on the provided run_config to generate fresh output.
         """
-        input = eval_job_item.input
         if self.run_config is None:
             raise ValueError("Run config is required for run_task_and_eval")
 
@@ -82,13 +93,19 @@ class BaseEval:
             ),
         )
 
-        # Parse structured input if needed
-        parsed_input = input
+        parsed_input = eval_job_item.input
         if self.target_task.input_json_schema is not None:
-            parsed_input = json.loads(input)
+            parsed_input = json.loads(eval_job_item.input)
 
-        # we don't save by default here. We'll save manually after validating the output
-        run_output = await run_adapter.invoke(parsed_input)
+        return await run_adapter.invoke(parsed_input)
+
+    async def run_task_and_eval(
+        self, eval_job_item: TaskRun
+    ) -> tuple[TaskRun, EvalScores, Dict[str, str] | None]:
+        """
+        Runs the task on the provided run_config to generate fresh output, then runs the eval on that output.
+        """
+        run_output = await self.run_task(eval_job_item)
 
         eval_output, intermediate_outputs = await self.run_eval(
             run_output, eval_job_item
@@ -192,3 +209,42 @@ class BaseEval:
             "additionalProperties": False,
         }
         return json.dumps(schema, ensure_ascii=False)
+
+
+class BaseV2EvalBridge(BaseEval):
+    """Thin BaseEval subclass for V2 eval adapters.
+
+    V2 adapters implement ``evaluate(EvalTaskInput)`` (synchronous scoring logic).
+    This bridge wires that into the shared ``run_eval`` pipeline so V2 adapters
+    gain fresh-generation support via ``run_task_and_eval`` without duplicating
+    infrastructure.
+    """
+
+    def __init__(
+        self,
+        eval_config: EvalConfig,
+        run_config: RunConfigProperties | None = None,
+        skills: SkillsDict | None = None,
+    ) -> None:
+        if eval_config.config_type != EvalConfigType.v2:
+            raise ValueError("V2 eval requires a V2 config_type")
+        if not isinstance(eval_config.properties, _V2_PROPERTY_TYPES):
+            raise ValueError("V2 eval requires typed V2 properties")
+        self.properties = eval_config.properties
+        super().__init__(eval_config, run_config, skills)
+
+    @abstractmethod
+    async def evaluate(
+        self, eval_input: EvalTaskInput
+    ) -> tuple[EvalScores, SkippedReason | None, str | None]: ...
+
+    async def run_eval(
+        self, task_run: TaskRun, eval_job_item: TaskRun | None = None
+    ) -> tuple[EvalScores, Dict[str, str] | None]:
+        eval_task_input = EvalTaskInput.from_task_run(task_run)
+        scores, skipped_reason, skipped_detail = await self.evaluate(eval_task_input)
+        if skipped_reason is not None:
+            raise ValueError(
+                f"V2 eval was skipped ({skipped_reason}): {skipped_detail}"
+            )
+        return scores, None

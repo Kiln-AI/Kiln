@@ -1,6 +1,6 @@
 from typing import Any
 
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import build_binary_scores
 from kiln_ai.datamodel.eval import (
     EvalScores,
@@ -10,7 +10,7 @@ from kiln_ai.datamodel.eval import (
 )
 
 
-class StepCountCheckEval(BaseV2Eval):
+class StepCountCheckEval(BaseV2EvalBridge):
     """V2 adapter for step_count_check: validates the number of steps in the trace.
 
     count_type determines what is counted:

@@ -1,6 +1,6 @@
 import re
 
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     extract_value,
@@ -13,7 +13,7 @@ from kiln_ai.datamodel.eval import (
 )
 
 
-class PatternMatchEval(BaseV2Eval):
+class PatternMatchEval(BaseV2EvalBridge):
     """V2 adapter for pattern_match: tests an extracted value against a regex pattern."""
 
     async def evaluate(

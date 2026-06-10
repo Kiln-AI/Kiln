@@ -1,10 +1,10 @@
-"""Tests for V2 dispatch scaffolding, BaseV2Eval contract, and extraction helpers."""
+"""Tests for V2 dispatch scaffolding, BaseV2EvalBridge contract, and extraction helpers."""
 
 from unittest.mock import Mock
 
 import pytest
 
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
     check_required_vars,
@@ -39,14 +39,14 @@ from kiln_ai.datamodel.eval import (
 # ---------------------------------------------------------------------------
 # Stub V2 adapter (test-only, never registered in prod)
 # ---------------------------------------------------------------------------
-class StubV2Eval(BaseV2Eval):
+class StubV2Eval(BaseV2EvalBridge):
     async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
         return {"stub_score": 1.0}, None, None
 
 
-class SkippingStubV2Eval(BaseV2Eval):
+class SkippingStubV2Eval(BaseV2EvalBridge):
     async def evaluate(
         self, eval_input: EvalTaskInput
     ) -> tuple[EvalScores, SkippedReason | None, str | None]:
@@ -114,13 +114,15 @@ def _sample_eval_input(**overrides) -> EvalTaskInput:  # type: ignore[no-untyped
 
 
 # ===================================================================
-# BaseV2Eval contract tests
+# BaseV2EvalBridge contract tests
 # ===================================================================
-class TestBaseV2EvalContract:
+class TestBaseV2EvalBridgeContract:
     def test_abstract_contract(self):
-        cfg = _mock_v2_eval_config()
-        with pytest.raises(TypeError, match="abstract"):
-            BaseV2Eval(cfg)  # type: ignore[abstract]
+        import inspect
+
+        assert inspect.isabstract(BaseV2EvalBridge) is False
+        assert hasattr(BaseV2EvalBridge.evaluate, "__isabstractmethod__")
+        assert BaseV2EvalBridge.evaluate.__isabstractmethod__ is True
 
     @pytest.mark.asyncio
     async def test_stub_evaluate(self):
@@ -183,7 +185,7 @@ class TestV2Dispatch:
         from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
         from kiln_ai.adapters.eval.v2_eval_tool_call_check import ToolCallCheckEval
 
-        expected_map: dict[V2EvalType, type[BaseV2Eval]] = {
+        expected_map: dict[V2EvalType, type[BaseV2EvalBridge]] = {
             V2EvalType.exact_match: ExactMatchEval,
             V2EvalType.pattern_match: PatternMatchEval,
             V2EvalType.contains: ContainsEval,

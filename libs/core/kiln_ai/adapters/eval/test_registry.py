@@ -13,6 +13,7 @@ from kiln_ai.datamodel.eval import (
     ContainsProperties,
     EvalConfig,
     EvalConfigType,
+    EvalOutputScore,
     ExactMatchProperties,
     LlmJudgeProperties,
     PatternMatchProperties,
@@ -22,6 +23,7 @@ from kiln_ai.datamodel.eval import (
     ToolCallSpec,
     V2EvalType,
 )
+from kiln_ai.datamodel.task import TaskOutputRatingType
 
 _V2_TYPE_TO_PROPS = {
     V2EvalType.llm_judge: LlmJudgeProperties(
@@ -53,9 +55,16 @@ def _mock_eval_config(config_type: EvalConfigType) -> EvalConfig:
 
 def _mock_v2_eval_config(v2_type: V2EvalType) -> EvalConfig:
     props = _V2_TYPE_TO_PROPS[v2_type]
+    parent = Mock()
+    parent.output_scores = [
+        EvalOutputScore(
+            name="score", instruction="s", type=TaskOutputRatingType.pass_fail
+        ),
+    ]
     cfg = Mock(spec=EvalConfig)
     cfg.config_type = EvalConfigType.v2
     cfg.properties = props
+    cfg.parent_eval.return_value = parent
     return cfg
 
 

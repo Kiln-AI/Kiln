@@ -8,9 +8,14 @@ The prompt_template is rendered with Jinja2 using the EvalTaskInput fields
 as the template namespace.
 """
 
+from typing import TYPE_CHECKING
+
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
+
+if TYPE_CHECKING:
+    from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
+    from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
     build_llm_as_judge_score,
@@ -69,15 +74,20 @@ class _LlmJudgeTask(Task, parent_of={}):
         )
 
 
-class LlmJudgeEval(BaseV2Eval):
+class LlmJudgeEval(BaseV2EvalBridge):
     """V2 adapter that invokes an LLM to score eval inputs.
 
     Uses LlmJudgeProperties from the eval config to configure the judge:
     model, prompt template, scoring mode, etc.
     """
 
-    def __init__(self, eval_config: EvalConfig) -> None:
-        super().__init__(eval_config)
+    def __init__(
+        self,
+        eval_config: EvalConfig,
+        run_config: "RunConfigProperties | None" = None,
+        skills: "SkillsDict | None" = None,
+    ) -> None:
+        super().__init__(eval_config, run_config, skills)
         if not isinstance(self.properties, LlmJudgeProperties):
             raise ValueError(
                 "LlmJudgeEval requires LlmJudgeProperties in the eval config"

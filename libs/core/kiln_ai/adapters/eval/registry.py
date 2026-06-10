@@ -1,5 +1,14 @@
-from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.base_v2_eval import _V2_PROPERTY_TYPES, BaseV2Eval
+from typing import TYPE_CHECKING
+
+from kiln_ai.adapters.eval.base_eval import (
+    _V2_PROPERTY_TYPES,
+    BaseEval,
+    BaseV2EvalBridge,
+)
+
+if TYPE_CHECKING:
+    from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
+    from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.adapters.eval.g_eval import GEval
 from kiln_ai.adapters.eval.v2_eval_code_eval import CodeEvalAdapter
 from kiln_ai.adapters.eval.v2_eval_contains import ContainsEval
@@ -12,7 +21,7 @@ from kiln_ai.adapters.eval.v2_eval_tool_call_check import ToolCallCheckEval
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, V2EvalType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
-_V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2Eval]] = {
+_V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2EvalBridge]] = {
     V2EvalType.exact_match: ExactMatchEval,
     V2EvalType.pattern_match: PatternMatchEval,
     V2EvalType.contains: ContainsEval,
@@ -42,7 +51,11 @@ def eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
             raise_exhaustive_enum_error(eval_config.config_type)
 
 
-def v2_eval_adapter_from_config(eval_config: EvalConfig) -> BaseV2Eval:
+def v2_eval_adapter_from_config(
+    eval_config: EvalConfig,
+    run_config: "RunConfigProperties | None" = None,
+    skills: "SkillsDict | None" = None,
+) -> BaseV2EvalBridge:
     """V2 dispatch -- reads properties.type and looks up the adapter in _V2_ADAPTER_MAP.
 
     Returns an instantiated adapter, or raises NotImplementedError if the
@@ -56,4 +69,4 @@ def v2_eval_adapter_from_config(eval_config: EvalConfig) -> BaseV2Eval:
     adapter_cls = _V2_ADAPTER_MAP.get(v2_type)
     if adapter_cls is None:
         raise NotImplementedError(f"V2 eval type '{v2_type}' is not yet implemented")
-    return adapter_cls(eval_config)
+    return adapter_cls(eval_config, run_config, skills)

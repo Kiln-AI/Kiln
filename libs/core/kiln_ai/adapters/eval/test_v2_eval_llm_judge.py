@@ -438,12 +438,11 @@ class TestLlmJudgeEvalRequiredVars:
 
 
 class TestLlmJudgeEvalNoParentEval:
-    @pytest.mark.asyncio
-    async def test_no_parent_eval_raises(self):
+    def test_no_parent_eval_raises(self):
         cfg = _make_config()
         cfg.parent_eval.return_value = None
-        with pytest.raises(ValueError, match="parent Eval"):
-            await LlmJudgeEval(cfg).evaluate(_inp())
+        with pytest.raises(ValueError, match="parent eval"):
+            LlmJudgeEval(cfg)
 
 
 class TestLlmJudgeEvalMultipleScores:

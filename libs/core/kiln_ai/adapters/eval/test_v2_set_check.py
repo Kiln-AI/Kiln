@@ -194,13 +194,11 @@ class TestSetCheckExpression:
 
 
 class TestSetCheckNoScores:
-    @pytest.mark.asyncio
-    async def test_no_parent_eval_returns_empty(self):
+    def test_no_parent_eval_raises(self):
         cfg = _make_config(SetCheckProperties(expected_set=["a", "b"], mode="equal"))
         cfg.parent_eval.return_value = None
-        scores, skip, _ = await SetCheckEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip is None
+        with pytest.raises(ValueError, match="parent eval"):
+            SetCheckEval(cfg)
 
 
 class TestSetCheckEmptySet:

@@ -1,4 +1,4 @@
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     check_reference_key,
@@ -12,7 +12,7 @@ from kiln_ai.datamodel.eval import (
 )
 
 
-class ExactMatchEval(BaseV2Eval):
+class ExactMatchEval(BaseV2EvalBridge):
     """V2 adapter for exact_match: compares an extracted value against an expected string."""
 
     async def evaluate(

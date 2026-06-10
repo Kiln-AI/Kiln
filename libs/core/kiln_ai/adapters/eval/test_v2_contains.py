@@ -140,10 +140,8 @@ class TestContainsExpression:
 
 
 class TestContainsNoScores:
-    @pytest.mark.asyncio
-    async def test_no_parent_eval_returns_empty(self):
+    def test_no_parent_eval_raises(self):
         cfg = _make_config(ContainsProperties(substring="Hello"))
         cfg.parent_eval.return_value = None
-        scores, skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip is None
+        with pytest.raises(ValueError, match="parent eval"):
+            ContainsEval(cfg)

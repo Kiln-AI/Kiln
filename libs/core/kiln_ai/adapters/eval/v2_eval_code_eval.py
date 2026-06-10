@@ -2,9 +2,13 @@
 
 import asyncio
 from threading import Lock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
+
+if TYPE_CHECKING:
+    from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
+    from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.adapters.eval.sandbox_worker import run_scorer
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
@@ -33,11 +37,16 @@ def is_code_eval_trusted(project_path: str) -> bool:
         return project_path in _trusted_projects
 
 
-class CodeEvalAdapter(BaseV2Eval):
+class CodeEvalAdapter(BaseV2EvalBridge):
     """V2 adapter that executes user-authored Python scorer code in a subprocess."""
 
-    def __init__(self, eval_config: EvalConfig) -> None:
-        super().__init__(eval_config)
+    def __init__(
+        self,
+        eval_config: EvalConfig,
+        run_config: "RunConfigProperties | None" = None,
+        skills: "SkillsDict | None" = None,
+    ) -> None:
+        super().__init__(eval_config, run_config, skills)
         assert isinstance(self.properties, CodeEvalProperties)
 
     async def evaluate(

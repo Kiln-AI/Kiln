@@ -1,7 +1,7 @@
 import json
 import logging
-from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Dict, List, Literal, Set
+from dataclasses import dataclass
+from typing import AsyncGenerator, Dict, List, Literal, Set
 
 import litellm
 
@@ -41,8 +41,6 @@ class EvalJob:
     type: Literal["task_run_eval", "eval_config_eval"]
     eval_config: EvalConfig
     task_run_config: TaskRunConfig | None = None
-    stored_output: str | None = None
-    stored_trace: list[dict[str, Any]] | None = field(default=None)
 
 
 class EvalRunner:
@@ -354,7 +352,14 @@ class EvalRunner:
             early_input_str = ""
 
         try:
-            evaluator = v2_eval_adapter_from_config(job.eval_config)
+            rc_props = (
+                job.task_run_config.run_config_properties
+                if job.task_run_config
+                else None
+            )
+            evaluator = v2_eval_adapter_from_config(
+                job.eval_config, rc_props, self._skills
+            )
         except NotImplementedError:
             async with self._save_context():
                 eval_run = EvalRun(
@@ -403,82 +408,67 @@ class EvalRunner:
                 eval_run.save_to_file()
             return True
 
-        if isinstance(job.item, TaskRun):
-            eval_task_input = _build_eval_task_input_from_task_run(job.item)
+        if isinstance(job.item, EvalInput):
+            raise NotImplementedError(
+                "V2 EvalInput-source eval is not yet implemented (Task B)"
+            )
+
+        if job.type == "task_run_eval":
+            run_output = await evaluator.run_task(job.item)
+            eval_task_input = EvalTaskInput.from_task_run(run_output)
+            scores, skipped_reason, skipped_detail = await evaluator.evaluate(
+                eval_task_input
+            )
+            task_output = run_output.output.output
+            task_input_str = run_output.input
+            dataset_id = run_output.id
+
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=dataset_id,
+                    eval_input_id=None,
+                    eval_config_eval=False,
+                    scores=scores,
+                    input=task_input_str,
+                    output=task_output if skipped_reason is None else None,
+                    reference_data=eval_task_input.reference_data,
+                    skipped_reason=skipped_reason.value if skipped_reason else None,
+                    skipped_detail=skipped_detail,
+                )
+                eval_run.save_to_file()
+            return True
+        else:
+            eval_task_input = EvalTaskInput.from_task_run(job.item)
             dataset_id = job.item.id
-            eval_input_id = None
             task_input_str = job.item.input
             task_output = job.item.output.output
-        else:
-            if job.stored_output is None:
-                raise ValueError(
-                    "EvalInput jobs require stored_output (task execution not yet implemented)"
+
+            scores, skipped_reason, skipped_detail = await evaluator.evaluate(
+                eval_task_input
+            )
+
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=dataset_id,
+                    eval_input_id=None,
+                    eval_config_eval=True,
+                    scores=scores,
+                    input=task_input_str,
+                    output=task_output if skipped_reason is None else None,
+                    reference_data=eval_task_input.reference_data,
+                    skipped_reason=skipped_reason.value if skipped_reason else None,
+                    skipped_detail=skipped_detail,
                 )
-            eval_task_input = _build_eval_task_input_from_eval_input(
-                job.item, job.stored_output, job.stored_trace
-            )
-            dataset_id = None
-            eval_input_id = job.item.id
-            task_input_str = eval_task_input.task_input or ""
-            task_output = job.stored_output
-
-        scores, skipped_reason, skipped_detail = await evaluator.evaluate(
-            eval_task_input
-        )
-
-        async with self._save_context():
-            eval_run = EvalRun(
-                parent=job.eval_config,
-                task_run_config_id=job.task_run_config.id
-                if job.task_run_config
-                else None,
-                dataset_id=dataset_id,
-                eval_input_id=eval_input_id,
-                eval_config_eval=job.type == "eval_config_eval",
-                scores=scores,
-                input=task_input_str,
-                output=task_output if skipped_reason is None else None,
-                reference_data=eval_task_input.reference_data,
-                skipped_reason=skipped_reason.value if skipped_reason else None,
-                skipped_detail=skipped_detail,
-            )
-            eval_run.save_to_file()
-
-        return True
-
-
-def _build_eval_task_input_from_task_run(
-    task_run: TaskRun,
-) -> EvalTaskInput:
-    """Translate a TaskRun into the V2 EvalTaskInput namespace."""
-    trace_data: list[dict[str, Any]] | None = None
-    if task_run.trace is not None:
-        trace_data = [dict(msg) for msg in task_run.trace]
-
-    return EvalTaskInput(
-        final_message=task_run.output.output,
-        trace=trace_data,
-        reference_data=None,
-        task_input=task_run.input,
-    )
-
-
-def _build_eval_task_input_from_eval_input(
-    eval_input: EvalInput,
-    stored_output: str,
-    stored_trace: list[dict[str, Any]] | None,
-) -> EvalTaskInput:
-    """Build EvalTaskInput from an EvalInput + stored execution results."""
-    task_input: str | None = None
-    if isinstance(eval_input.data, SingleTurnEvalInputData):
-        task_input = eval_input.data.user_message.text
-
-    return EvalTaskInput(
-        final_message=stored_output,
-        trace=stored_trace,
-        reference_data=eval_input.reference,
-        task_input=task_input,
-    )
+                eval_run.save_to_file()
+            return True
 
 
 def _is_retryable_error(e: BaseException) -> bool:

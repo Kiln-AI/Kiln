@@ -29,6 +29,7 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 if TYPE_CHECKING:
     from kiln_ai.datamodel.spec import Spec
     from kiln_ai.datamodel.task import Task
+    from kiln_ai.datamodel.task_run import TaskRun
 
 EvalScores = Dict[str, float]
 
@@ -316,6 +317,24 @@ class EvalTaskInput(BaseModel):
         default=None,
         description="The original task input text.",
     )
+
+    @classmethod
+    def from_task_run(cls, task_run: "TaskRun") -> "EvalTaskInput":
+        from kiln_ai.datamodel.task_run import TaskRun as _TaskRun
+
+        if not isinstance(task_run, _TaskRun):
+            raise TypeError("Expected a TaskRun instance")
+
+        trace_data: list[dict[str, Any]] | None = None
+        if task_run.trace is not None:
+            trace_data = [dict(msg) for msg in task_run.trace]
+
+        return cls(
+            final_message=task_run.output.output,
+            trace=trace_data,
+            reference_data=None,
+            task_input=task_run.input,
+        )
 
 
 class EvalOutputScore(BaseModel):

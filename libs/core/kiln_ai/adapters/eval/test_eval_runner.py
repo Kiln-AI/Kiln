@@ -6,13 +6,10 @@ from unittest.mock import AsyncMock, patch
 import litellm
 import pytest
 
-from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
-    _build_eval_task_input_from_eval_input,
-    _build_eval_task_input_from_task_run,
     _is_retryable_error,
 )
 from kiln_ai.adapters.ml_model_list import ModelProviderName
@@ -1109,7 +1106,7 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
 # ===================================================================
 
 
-class StubV2Eval(BaseV2Eval):
+class StubV2Eval(BaseV2EvalBridge):
     """Stub that returns a passing score."""
 
     async def evaluate(
@@ -1118,7 +1115,7 @@ class StubV2Eval(BaseV2Eval):
         return {"accuracy": 1.0}, None, None
 
 
-class SkippingStubV2Eval(BaseV2Eval):
+class SkippingStubV2Eval(BaseV2EvalBridge):
     """Stub that returns a skip."""
 
     async def evaluate(
@@ -1382,35 +1379,7 @@ class TestRunV2Job:
         assert saved.output is None
 
     @pytest.mark.asyncio
-    async def test_eval_input_path(
-        self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs
-    ):
-        ei = mock_eval_inputs[0]
-        job = EvalJob(
-            item=ei,
-            eval_config=mock_v2_eval_config,
-            type="eval_config_eval",
-            stored_output="4",
-            stored_trace=[{"role": "assistant", "content": "4"}],
-        )
-        with patch(
-            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-            return_value=StubV2Eval(mock_v2_eval_config),
-        ):
-            result = await mock_v2_runner.run_job(job)
-        assert result is True
-        runs = mock_v2_eval_config.runs(readonly=True)
-        assert len(runs) == 1
-        saved = runs[0]
-        assert saved.scores == {"accuracy": 1.0}
-        assert saved.eval_input_id == ei.id
-        assert saved.dataset_id is None
-        assert saved.input == "What is 2+2?"
-        assert saved.output == "4"
-        assert saved.reference_data == {"answer": "4"}
-
-    @pytest.mark.asyncio
-    async def test_eval_input_path_missing_stored_output(
+    async def test_eval_input_path_raises_not_implemented(
         self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs
     ):
         ei = mock_eval_inputs[0]
@@ -1423,7 +1392,7 @@ class TestRunV2Job:
             "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
             return_value=StubV2Eval(mock_v2_eval_config),
         ):
-            with pytest.raises(ValueError, match="stored_output"):
+            with pytest.raises(NotImplementedError, match="Task B"):
                 await mock_v2_runner.run_job(job)
 
     @pytest.mark.asyncio
@@ -1435,7 +1404,6 @@ class TestRunV2Job:
             item=ei,
             eval_config=mock_v2_eval_config,
             type="eval_config_eval",
-            stored_output="hello",
         )
         with patch(
             "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
@@ -1498,7 +1466,6 @@ class TestRunV2Job:
             item=multi_ei,
             eval_config=mock_v2_eval_config,
             type="eval_config_eval",
-            stored_output="some output",
         )
         with patch(
             "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
@@ -1517,72 +1484,235 @@ class TestRunV2Job:
 
 
 # -------------------------------------------------------------------
-# Translation function unit tests
+# V2 task_run_eval (fresh generation) tests
 # -------------------------------------------------------------------
-class TestBuildEvalTaskInputFromTaskRun:
-    def test_basic_translation(self, mock_task, data_source):
-        task_run = TaskRun(
-            input='{"question": "hi"}',
-            output=TaskOutput(output="hello world", source=data_source),
-            parent=mock_task,
-        )
-        result = _build_eval_task_input_from_task_run(task_run)
-        assert result.final_message == "hello world"
-        assert result.task_input == '{"question": "hi"}'
-        assert result.trace is None
-        assert result.reference_data is None
+@pytest.fixture
+def mock_v2_task_run_eval(mock_task):
+    eval = Eval(
+        id="v2_eval_tr",
+        name="v2 task run eval",
+        description="v2 eval for task_run_eval mode",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check if the output is accurate",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
 
-    def test_with_trace(self, mock_task, data_source):
-        task_run = TaskRun(
-            input="hi",
+
+@pytest.fixture
+def mock_v2_task_run_eval_config(mock_v2_task_run_eval):
+    eval_config = EvalConfig(
+        name="v2 tr config",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="hello"),
+        parent=mock_v2_task_run_eval,
+    )
+    eval_config.save_to_file()
+    return eval_config
+
+
+@pytest.fixture
+def mock_v2_task_run_eval_runner(
+    mock_v2_task_run_eval, mock_v2_task_run_eval_config, mock_run_config
+):
+    return EvalRunner(
+        eval_configs=[mock_v2_task_run_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+    )
+
+
+class TestV2FreshGeneration:
+    @pytest.mark.asyncio
+    async def test_task_run_eval_generates_fresh_and_evaluates(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        stale_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        stale_task_run.save_to_file()
+
+        fresh_task_run = TaskRun(
+            input="test input",
             output=TaskOutput(output="hello", source=data_source),
-            trace=[
-                {"role": "user", "content": "hi"},
-                {"role": "assistant", "content": "hello"},
-            ],
-            parent=mock_task,
+            parent=mock_v2_task_run_eval_runner.task,
         )
-        result = _build_eval_task_input_from_task_run(task_run)
-        assert result.trace is not None
-        assert len(result.trace) == 2
-        assert result.trace[0] == {"role": "user", "content": "hi"}
-        assert result.trace[1] == {"role": "assistant", "content": "hello"}
+        fresh_task_run.save_to_file()
 
+        job = EvalJob(
+            item=stale_task_run,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
 
-class TestBuildEvalTaskInputFromEvalInput:
-    def test_single_turn(self, mock_task):
-        ei = EvalInput(
-            data=SingleTurnEvalInputData(
-                user_message=UserMessage(text="What is 2+2?"),
+        stub = StubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run) as mock_rt,
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
             ),
-            reference={"answer": "4"},
-            parent=mock_task,
-        )
-        result = _build_eval_task_input_from_eval_input(ei, "4", None)
-        assert result.final_message == "4"
-        assert result.task_input == "What is 2+2?"
-        assert result.reference_data == {"answer": "4"}
-        assert result.trace is None
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
 
-    def test_with_trace(self, mock_task):
-        ei = EvalInput(
-            data=SingleTurnEvalInputData(
-                user_message=UserMessage(text="hi"),
+        assert result is True
+        mock_rt.assert_awaited_once_with(stale_task_run)
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.output == "hello"
+        assert saved.dataset_id == fresh_task_run.id
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.eval_config_eval is False
+        assert saved.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_task_run_eval_persists_fresh_output_not_stale(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        stale_task_run = TaskRun(
+            input="prompt",
+            output=TaskOutput(output="old answer", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        stale_task_run.save_to_file()
+
+        fresh_task_run = TaskRun(
+            input="prompt",
+            output=TaskOutput(output="new answer", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=stale_task_run,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        mock_evaluator = AsyncMock()
+        mock_evaluator.run_task = AsyncMock(return_value=fresh_task_run)
+        mock_evaluator.evaluate = AsyncMock(
+            return_value=({"accuracy": 0.5}, None, None)
+        )
+
+        with patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            return_value=mock_evaluator,
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.output == "new answer"
+        assert saved.output != "old answer"
+        assert saved.dataset_id == fresh_task_run.id
+
+    @pytest.mark.asyncio
+    async def test_task_run_eval_skip_persists_skipped_eval_run(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        stale_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        stale_task_run.save_to_file()
+
+        fresh_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="fresh output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=stale_task_run,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = SkippingStubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
             ),
-            parent=mock_task,
-        )
-        trace = [{"role": "assistant", "content": "hello"}]
-        result = _build_eval_task_input_from_eval_input(ei, "hello", trace)
-        assert result.trace == trace
-        assert result.reference_data is None
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
 
-    def test_multi_turn_no_task_input(self, mock_task):
-        ei = EvalInput(
-            data=MultiTurnSyntheticEvalInputData(),
-            reference={"key": "val"},
-            parent=mock_task,
+        assert result is True
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.skipped_reason == SkippedReason.extraction_failed.value
+        assert saved.skipped_detail == "test skip detail"
+        assert saved.output is None
+        assert saved.scores == {}
+        assert saved.eval_config_eval is False
+        assert saved.dataset_id == fresh_task_run.id
+
+    @pytest.mark.asyncio
+    async def test_eval_config_eval_scores_existing_without_fresh_gen(
+        self,
+        mock_v2_runner,
+        mock_v2_eval_config,
+        data_source,
+    ):
+        task_run = TaskRun(
+            input="existing input",
+            output=TaskOutput(output="existing output", source=data_source),
+            parent=mock_v2_runner.task,
         )
-        result = _build_eval_task_input_from_eval_input(ei, "output text", None)
-        assert result.task_input is None
-        assert result.final_message == "output text"
-        assert result.reference_data == {"key": "val"}
+        task_run.save_to_file()
+
+        job = EvalJob(
+            item=task_run,
+            eval_config=mock_v2_eval_config,
+            type="eval_config_eval",
+        )
+
+        stub = StubV2Eval(mock_v2_eval_config)
+        with patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            return_value=stub,
+        ):
+            result = await mock_v2_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.output == "existing output"
+        assert saved.dataset_id == task_run.id
+        assert saved.eval_config_eval is True
+        assert saved.skipped_reason is None

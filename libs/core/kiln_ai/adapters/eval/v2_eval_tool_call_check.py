@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any
 
-from kiln_ai.adapters.eval.base_v2_eval import BaseV2Eval
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import build_binary_scores
 from kiln_ai.datamodel.eval import (
     ArgMatch,
@@ -14,7 +14,7 @@ from kiln_ai.datamodel.eval import (
 )
 
 
-class ToolCallCheckEval(BaseV2Eval):
+class ToolCallCheckEval(BaseV2EvalBridge):
     """V2 adapter for tool_call_check: validates tool calls in the trace."""
 
     async def evaluate(
