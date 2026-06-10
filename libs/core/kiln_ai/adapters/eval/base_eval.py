@@ -11,8 +11,10 @@ from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalInput,
     EvalScores,
     EvalTaskInput,
+    SingleTurnEvalInputData,
     SkippedReason,
     V2EvalConfigProperties,
 )
@@ -77,7 +79,7 @@ class BaseEval:
     def model_and_provider(self) -> tuple[str, ModelProviderName]:
         return model_and_provider_from_config(self.eval_config)
 
-    async def run_task(self, eval_job_item: TaskRun) -> TaskRun:
+    async def run_task(self, eval_job_item: TaskRun | EvalInput) -> TaskRun:
         """
         Runs the task on the provided run_config to generate fresh output.
         """
@@ -93,9 +95,16 @@ class BaseEval:
             ),
         )
 
-        parsed_input = eval_job_item.input
+        if isinstance(eval_job_item, EvalInput):
+            if not isinstance(eval_job_item.data, SingleTurnEvalInputData):
+                raise ValueError("run_task only supports single-turn EvalInput")
+            raw_input = eval_job_item.data.user_message.text
+        else:
+            raw_input = eval_job_item.input
+
+        parsed_input: str | dict = raw_input
         if self.target_task.input_json_schema is not None:
-            parsed_input = json.loads(eval_job_item.input)
+            parsed_input = json.loads(raw_input)
 
         return await run_adapter.invoke(parsed_input)
 

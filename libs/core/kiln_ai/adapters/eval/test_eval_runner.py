@@ -1206,17 +1206,16 @@ class TestEvalRunnerV2Init:
     def test_source_mode_task_run_default(self, mock_eval_runner):
         assert mock_eval_runner._source_mode == "task_run"
 
-    def test_rejects_task_run_eval_with_eval_input_filter(
-        self, mock_task, mock_v2_eval_config, mock_run_config
+    def test_task_run_eval_with_eval_input_filter_allowed(
+        self, mock_v2_eval_config, mock_run_config
     ):
-        with pytest.raises(
-            ValueError, match="not compatible with eval_input_filter_id"
-        ):
-            EvalRunner(
-                eval_configs=[mock_v2_eval_config],
-                run_configs=[mock_run_config],
-                eval_run_type="task_run_eval",
-            )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        assert runner._source_mode == "eval_input"
+        assert runner.eval_run_type == "task_run_eval"
 
 
 # -------------------------------------------------------------------
@@ -1379,7 +1378,7 @@ class TestRunV2Job:
         assert saved.output is None
 
     @pytest.mark.asyncio
-    async def test_eval_input_path_raises_not_implemented(
+    async def test_eval_input_eval_config_eval_clean_skip(
         self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs
     ):
         ei = mock_eval_inputs[0]
@@ -1392,8 +1391,19 @@ class TestRunV2Job:
             "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
             return_value=StubV2Eval(mock_v2_eval_config),
         ):
-            with pytest.raises(NotImplementedError, match="Task B"):
-                await mock_v2_runner.run_job(job)
+            result = await mock_v2_runner.run_job(job)
+        assert result is True
+        runs = mock_v2_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.eval_input_id == ei.id
+        assert saved.dataset_id is None
+        assert saved.eval_config_eval is True
+        assert saved.skipped_reason == SkippedReason.incompatible_input_shape.value
+        assert "deferred" in saved.skipped_detail
+        assert "golden subsets use TaskRun sources" in saved.skipped_detail
+        assert saved.output is None
+        assert saved.scores == {}
 
     @pytest.mark.asyncio
     async def test_type_not_available_skip_eval_input(
@@ -1716,3 +1726,478 @@ class TestV2FreshGeneration:
         assert saved.dataset_id == task_run.id
         assert saved.eval_config_eval is True
         assert saved.skipped_reason is None
+
+
+# -------------------------------------------------------------------
+# V2 EvalInput + task_run_eval (fresh generation from EvalInput)
+# -------------------------------------------------------------------
+@pytest.fixture
+def mock_v2_eval_input_task_run_eval(mock_task):
+    eval = Eval(
+        id="v2_ei_tr_eval",
+        name="v2 eval input task_run_eval",
+        description="v2 eval for EvalInput + task_run_eval mode",
+        eval_input_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check if the output is accurate",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
+@pytest.fixture
+def mock_v2_ei_tr_eval_config(mock_v2_eval_input_task_run_eval):
+    eval_config = EvalConfig(
+        name="v2 ei tr config",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="4"),
+        parent=mock_v2_eval_input_task_run_eval,
+    )
+    eval_config.save_to_file()
+    return eval_config
+
+
+@pytest.fixture
+def mock_v2_ei_tr_runner(
+    mock_v2_eval_input_task_run_eval,
+    mock_v2_ei_tr_eval_config,
+    mock_run_config,
+):
+    return EvalRunner(
+        eval_configs=[mock_v2_ei_tr_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+    )
+
+
+class TestV2EvalInputFreshGeneration:
+    @pytest.mark.asyncio
+    async def test_eval_input_task_run_eval_generates_and_evaluates(
+        self,
+        mock_v2_ei_tr_runner,
+        mock_v2_ei_tr_eval_config,
+        mock_eval_inputs,
+        mock_run_config,
+        data_source,
+    ):
+        ei = mock_eval_inputs[0]
+        fresh_task_run = TaskRun(
+            input="What is 2+2?",
+            output=TaskOutput(output="4", source=data_source),
+            parent=mock_v2_ei_tr_runner.task,
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=ei,
+            eval_config=mock_v2_ei_tr_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = StubV2Eval(mock_v2_ei_tr_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run) as mock_rt,
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await mock_v2_ei_tr_runner.run_job(job)
+
+        assert result is True
+        mock_rt.assert_awaited_once_with(ei)
+        runs = mock_v2_ei_tr_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.eval_input_id == ei.id
+        assert saved.dataset_id is None
+        assert saved.eval_config_eval is False
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.output == "4"
+        assert saved.reference_data == {"answer": "4"}
+        assert saved.skipped_reason is None
+        assert saved.input == "What is 2+2?"
+
+    @pytest.mark.asyncio
+    async def test_eval_input_task_run_eval_skip_persists_skipped(
+        self,
+        mock_v2_ei_tr_runner,
+        mock_v2_ei_tr_eval_config,
+        mock_eval_inputs,
+        mock_run_config,
+        data_source,
+    ):
+        ei = mock_eval_inputs[1]
+        fresh_task_run = TaskRun(
+            input="Say hello",
+            output=TaskOutput(output="hi there", source=data_source),
+            parent=mock_v2_ei_tr_runner.task,
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=ei,
+            eval_config=mock_v2_ei_tr_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = SkippingStubV2Eval(mock_v2_ei_tr_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await mock_v2_ei_tr_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_ei_tr_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.eval_input_id == ei.id
+        assert saved.dataset_id is None
+        assert saved.eval_config_eval is False
+        assert saved.skipped_reason == SkippedReason.extraction_failed.value
+        assert saved.skipped_detail == "test skip detail"
+        assert saved.output is None
+        assert saved.scores == {}
+        assert saved.reference_data == {"answer": "hello"}
+
+    @pytest.mark.asyncio
+    async def test_eval_input_task_run_eval_no_reference(
+        self,
+        mock_task,
+        mock_v2_ei_tr_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        ei_no_ref = EvalInput(
+            id="ei_no_ref",
+            data=SingleTurnEvalInputData(
+                user_message=UserMessage(text="no ref input"),
+            ),
+            reference=None,
+            parent=mock_task,
+        )
+        ei_no_ref.save_to_file()
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_ei_tr_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+
+        fresh_task_run = TaskRun(
+            input="no ref input",
+            output=TaskOutput(output="4", source=data_source),
+            parent=runner.task,
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=ei_no_ref,
+            eval_config=mock_v2_ei_tr_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = StubV2Eval(mock_v2_ei_tr_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_ei_tr_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.reference_data is None
+        assert saved.eval_input_id == "ei_no_ref"
+
+
+class TestCollectTasksEvalInputTaskRunEval:
+    def test_crosses_eval_inputs_x_eval_configs_x_run_configs(
+        self,
+        mock_v2_ei_tr_runner,
+        mock_eval_inputs,
+        mock_run_config,
+    ):
+        jobs = mock_v2_ei_tr_runner.collect_tasks()
+        assert len(jobs) == 2
+        for job in jobs:
+            assert isinstance(job.item, EvalInput)
+            assert job.type == "task_run_eval"
+            assert job.task_run_config == mock_run_config
+
+    def test_multiple_run_configs(
+        self,
+        mock_task,
+        mock_v2_eval_input_task_run_eval,
+        mock_v2_ei_tr_eval_config,
+        mock_eval_inputs,
+    ):
+        rc1 = TaskRunConfig(
+            name="config1",
+            description="first",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            parent=mock_task,
+        )
+        rc1.save_to_file()
+        rc2 = TaskRunConfig(
+            name="config2",
+            description="second",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4o",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            parent=mock_task,
+        )
+        rc2.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_ei_tr_eval_config],
+            run_configs=[rc1, rc2],
+            eval_run_type="task_run_eval",
+        )
+        jobs = runner.collect_tasks()
+        assert len(jobs) == 4
+        config_pairs = {(j.item.id, j.task_run_config.id) for j in jobs}
+        for ei in mock_eval_inputs:
+            assert (ei.id, rc1.id) in config_pairs
+            assert (ei.id, rc2.id) in config_pairs
+
+    def test_dedup_already_run_task_run_eval(
+        self,
+        mock_v2_ei_tr_runner,
+        mock_v2_ei_tr_eval_config,
+        mock_eval_inputs,
+        mock_run_config,
+    ):
+        run = EvalRun(
+            parent=mock_v2_ei_tr_eval_config,
+            eval_input_id="ei_1",
+            task_run_config_id=mock_run_config.id,
+            eval_config_eval=False,
+            scores={"accuracy": 1.0},
+            input="What is 2+2?",
+            output="4",
+        )
+        run.save_to_file()
+        jobs = mock_v2_ei_tr_runner.collect_tasks()
+        assert len(jobs) == 1
+        assert jobs[0].item.id == "ei_2"
+
+    def test_dedup_does_not_cross_run_configs(
+        self,
+        mock_task,
+        mock_v2_eval_input_task_run_eval,
+        mock_v2_ei_tr_eval_config,
+        mock_eval_inputs,
+    ):
+        rc1 = TaskRunConfig(
+            name="rc_a",
+            description="a",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            parent=mock_task,
+        )
+        rc1.save_to_file()
+        rc2 = TaskRunConfig(
+            name="rc_b",
+            description="b",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4o",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            parent=mock_task,
+        )
+        rc2.save_to_file()
+        run = EvalRun(
+            parent=mock_v2_ei_tr_eval_config,
+            eval_input_id="ei_1",
+            task_run_config_id=rc1.id,
+            eval_config_eval=False,
+            scores={"accuracy": 1.0},
+            input="What is 2+2?",
+            output="4",
+        )
+        run.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_ei_tr_eval_config],
+            run_configs=[rc1, rc2],
+            eval_run_type="task_run_eval",
+        )
+        jobs = runner.collect_tasks()
+        assert len(jobs) == 3
+        remaining = {(j.item.id, j.task_run_config.id) for j in jobs}
+        assert (mock_eval_inputs[0].id, rc1.id) not in remaining
+        assert (mock_eval_inputs[0].id, rc2.id) in remaining
+        assert (mock_eval_inputs[1].id, rc1.id) in remaining
+        assert (mock_eval_inputs[1].id, rc2.id) in remaining
+
+
+class TestRunTaskFromEvalInput:
+    @pytest.mark.asyncio
+    async def test_run_task_extracts_eval_input_user_message(
+        self,
+        mock_v2_ei_tr_eval_config,
+        mock_run_config,
+    ):
+        ei = EvalInput(
+            id="ei_rt",
+            data=SingleTurnEvalInputData(
+                user_message=UserMessage(text="What is 2+2?"),
+            ),
+        )
+        stub = StubV2Eval(
+            mock_v2_ei_tr_eval_config,
+            run_config=mock_run_config.run_config_properties,
+        )
+        mock_output = TaskRun(
+            input="What is 2+2?",
+            output=TaskOutput(
+                output="4",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                    },
+                ),
+            ),
+        )
+        with patch(
+            "kiln_ai.adapters.eval.base_eval.adapter_for_task"
+        ) as mock_adapter_for_task:
+            mock_adapter = AsyncMock()
+            mock_adapter.invoke = AsyncMock(return_value=mock_output)
+            mock_adapter_for_task.return_value = mock_adapter
+            result = await stub.run_task(ei)
+
+        assert result == mock_output
+        mock_adapter.invoke.assert_awaited_once_with("What is 2+2?")
+
+    @pytest.mark.asyncio
+    async def test_run_task_extracts_eval_input_with_json_schema(
+        self,
+        mock_task,
+        mock_run_config,
+    ):
+        mock_task.input_json_schema = '{"type": "object"}'
+        mock_task.save_to_file()
+
+        eval = Eval(
+            id="v2_json_eval",
+            name="json eval",
+            description="json eval desc",
+            eval_input_filter_id="all",
+            eval_configs_filter_id="all",
+            output_scores=[
+                EvalOutputScore(
+                    name="Accuracy",
+                    instruction="Check",
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+            ],
+            parent=mock_task,
+        )
+        eval.save_to_file()
+        ec = EvalConfig(
+            name="json config",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="4"),
+            parent=eval,
+        )
+        ec.save_to_file()
+
+        ei = EvalInput(
+            id="ei_json",
+            data=SingleTurnEvalInputData(
+                user_message=UserMessage(text='{"question": "2+2"}'),
+            ),
+        )
+        stub = StubV2Eval(
+            ec,
+            run_config=mock_run_config.run_config_properties,
+        )
+        mock_output = TaskRun(
+            input='{"question": "2+2"}',
+            output=TaskOutput(
+                output="4",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                    },
+                ),
+            ),
+        )
+        with patch(
+            "kiln_ai.adapters.eval.base_eval.adapter_for_task"
+        ) as mock_adapter_for_task:
+            mock_adapter = AsyncMock()
+            mock_adapter.invoke = AsyncMock(return_value=mock_output)
+            mock_adapter_for_task.return_value = mock_adapter
+            result = await stub.run_task(ei)
+
+        assert result == mock_output
+        mock_adapter.invoke.assert_awaited_once_with({"question": "2+2"})
+
+    @pytest.mark.asyncio
+    async def test_run_task_still_works_with_task_run(
+        self,
+        mock_v2_ei_tr_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        tr = TaskRun(
+            input="test input",
+            output=TaskOutput(output="test output", source=data_source),
+        )
+        stub = StubV2Eval(
+            mock_v2_ei_tr_eval_config,
+            run_config=mock_run_config.run_config_properties,
+        )
+        mock_output = TaskRun(
+            input="test input",
+            output=TaskOutput(output="fresh output", source=data_source),
+        )
+        with patch(
+            "kiln_ai.adapters.eval.base_eval.adapter_for_task"
+        ) as mock_adapter_for_task:
+            mock_adapter = AsyncMock()
+            mock_adapter.invoke = AsyncMock(return_value=mock_output)
+            mock_adapter_for_task.return_value = mock_adapter
+            result = await stub.run_task(tr)
+
+        assert result == mock_output
+        mock_adapter.invoke.assert_awaited_once_with("test input")

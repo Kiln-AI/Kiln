@@ -94,10 +94,6 @@ class EvalRunner:
         self._source_mode: Literal["task_run", "eval_input"] = "task_run"
         if target_eval.eval_input_filter_id is not None:
             self._source_mode = "eval_input"
-            if eval_run_type == "task_run_eval":
-                raise ValueError(
-                    "task_run_eval mode is not compatible with eval_input_filter_id"
-                )
 
         self.eval_run_type = eval_run_type
         self.eval_configs = eval_configs
@@ -164,28 +160,62 @@ class EvalRunner:
             )
         input_filter = eval_input_filter_from_id(filter_id)
 
-        already_run: Dict[ID_TYPE, Set[ID_TYPE]] = {}
-        for eval_config in self.eval_configs:
-            already_run[eval_config.id] = set()
-            for run in eval_config.runs(readonly=True):
-                if run.eval_input_id is not None:
-                    already_run[eval_config.id].add(run.eval_input_id)
-
-        jobs: List[EvalJob] = []
-        for eval_input in self.task.eval_inputs(readonly=True):
-            if not input_filter(eval_input):
-                continue
+        if self.eval_run_type == "task_run_eval":
+            already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
             for eval_config in self.eval_configs:
-                if eval_input.id in already_run[eval_config.id]:
+                already_run[eval_config.id] = {}
+                for run_config in self.run_configs or []:
+                    already_run[eval_config.id][run_config.id] = set()
+                for run in eval_config.runs(readonly=True):
+                    if (
+                        run.eval_input_id is not None
+                        and run.task_run_config_id is not None
+                        and run.task_run_config_id in already_run[eval_config.id]
+                    ):
+                        already_run[eval_config.id][run.task_run_config_id].add(
+                            run.eval_input_id
+                        )
+
+            jobs: List[EvalJob] = []
+            for eval_input in self.task.eval_inputs(readonly=True):
+                if not input_filter(eval_input):
                     continue
-                jobs.append(
-                    EvalJob(
-                        item=eval_input,
-                        eval_config=eval_config,
-                        type=self.eval_run_type,
+                for eval_config in self.eval_configs:
+                    for run_config in self.run_configs or []:
+                        if eval_input.id in already_run[eval_config.id][run_config.id]:
+                            continue
+                        jobs.append(
+                            EvalJob(
+                                item=eval_input,
+                                eval_config=eval_config,
+                                type="task_run_eval",
+                                task_run_config=run_config,
+                            )
+                        )
+            return jobs
+        else:
+            already_run_ec: Dict[ID_TYPE, Set[ID_TYPE]] = {}
+            for eval_config in self.eval_configs:
+                already_run_ec[eval_config.id] = set()
+                for run in eval_config.runs(readonly=True):
+                    if run.eval_input_id is not None:
+                        already_run_ec[eval_config.id].add(run.eval_input_id)
+
+            jobs_ec: List[EvalJob] = []
+            for eval_input in self.task.eval_inputs(readonly=True):
+                if not input_filter(eval_input):
+                    continue
+                for eval_config in self.eval_configs:
+                    if eval_input.id in already_run_ec[eval_config.id]:
+                        continue
+                    jobs_ec.append(
+                        EvalJob(
+                            item=eval_input,
+                            eval_config=eval_config,
+                            type=self.eval_run_type,
+                        )
                     )
-                )
-        return jobs
+            return jobs_ec
 
     def collect_tasks_for_task_run_eval(self) -> List[EvalJob]:
         """
@@ -409,9 +439,49 @@ class EvalRunner:
             return True
 
         if isinstance(job.item, EvalInput):
-            raise NotImplementedError(
-                "V2 EvalInput-source eval is not yet implemented (Task B)"
+            if job.type == "eval_config_eval":
+                async with self._save_context():
+                    eval_run = EvalRun(
+                        parent=job.eval_config,
+                        task_run_config_id=job.task_run_config.id
+                        if job.task_run_config
+                        else None,
+                        dataset_id=None,
+                        eval_input_id=job.item.id,
+                        eval_config_eval=True,
+                        scores={},
+                        input=early_input_str,
+                        output=None,
+                        skipped_reason=SkippedReason.incompatible_input_shape.value,
+                        skipped_detail="EvalInput source has no stored output; eval_config_eval over EvalInput is deferred in V2.0 (golden subsets use TaskRun sources)",
+                    )
+                    eval_run.save_to_file()
+                return True
+
+            run_output = await evaluator.run_task(job.item)
+            eval_task_input = EvalTaskInput.from_eval_input(job.item, run_output)
+            scores, skipped_reason, skipped_detail = await evaluator.evaluate(
+                eval_task_input
             )
+
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=None,
+                    eval_input_id=job.item.id,
+                    eval_config_eval=False,
+                    scores=scores,
+                    input=early_input_str,
+                    output=run_output.output.output if skipped_reason is None else None,
+                    reference_data=job.item.reference,
+                    skipped_reason=skipped_reason.value if skipped_reason else None,
+                    skipped_detail=skipped_detail,
+                )
+                eval_run.save_to_file()
+            return True
 
         if job.type == "task_run_eval":
             run_output = await evaluator.run_task(job.item)

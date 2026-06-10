@@ -336,6 +336,31 @@ class EvalTaskInput(BaseModel):
             task_input=task_run.input,
         )
 
+    @classmethod
+    def from_eval_input(
+        cls, eval_input: "EvalInput", run_output: "TaskRun"
+    ) -> "EvalTaskInput":
+        from kiln_ai.datamodel.task_run import TaskRun as _TaskRun
+
+        if not isinstance(run_output, _TaskRun):
+            raise TypeError("Expected a TaskRun instance for run_output")
+        if not isinstance(eval_input, EvalInput):
+            raise TypeError("Expected an EvalInput instance")
+
+        trace_data: list[dict[str, Any]] | None = None
+        if run_output.trace is not None:
+            trace_data = [dict(msg) for msg in run_output.trace]
+
+        if not isinstance(eval_input.data, SingleTurnEvalInputData):
+            raise ValueError("from_eval_input only supports single-turn EvalInput")
+
+        return cls(
+            final_message=run_output.output.output,
+            trace=trace_data,
+            reference_data=eval_input.reference,
+            task_input=eval_input.data.user_message.text,
+        )
+
 
 class EvalOutputScore(BaseModel):
     """
