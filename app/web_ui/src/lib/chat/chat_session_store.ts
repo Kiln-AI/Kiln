@@ -3,8 +3,7 @@ import posthog from "posthog-js"
 import {
   streamChat,
   resumePendingToolCalls,
-  consumeSseStream,
-  StreamEventProcessor,
+  consumeContinuationStream,
   chatGenerateId,
   traceIdForNextChatRequest,
   type AskUserQuestionPayload,
@@ -808,7 +807,21 @@ export function createChatSessionStore(
     setRuntimeState("streaming", controller)
     const thisGeneration = ++generation
     const isStale = () => thisGeneration !== generation
-    const processor = new StreamEventProcessor({
+    // Drive the continuation through the EXISTING tool-approval machinery rather
+    // than a bare consumeSseStream: if this turn emits a ``tool-calls-pending``
+    // (the model called an approval-required client tool), route it through the
+    // same approval gate (handleToolCallsPending → toolApprovalWaiter UI) and
+    // /api/chat/execute-tools continuation loop the interactive path uses,
+    // instead of silently dropping it. A nested ask_user_question still
+    // re-renders its card + re-gates the input (onAskUserQuestion).
+    await consumeContinuationStream({
+      apiUrl: CHAT_API_URL,
+      traceId,
+      reader,
+      onToolCallsPending: (payload) => {
+        if (isStale()) return Promise.resolve({})
+        return handleToolCallsPending(payload)
+      },
       onAssistantMessage: (update) => {
         if (isStale()) return
         updateLastAssistant(update)
@@ -838,26 +851,26 @@ export function createChatSessionStore(
         if (isStale()) return
         recordPendingQuestion(payload)
       },
-    })
-    try {
-      // A nested ask-user-question (the model asks again) renders a new card and
-      // re-gates the input via the processor's onAskUserQuestion handler; the
-      // server ends the stream after emitting it, so the read loop completes.
-      await consumeSseStream(reader, processor)
-    } catch (err) {
-      if (!isStale()) {
-        pushInlineError(err instanceof Error ? err.message : String(err))
-      }
-    } finally {
-      if (!isStale()) {
+      onFinish: () => {
+        if (isStale()) return
         combined.update((s) => ({
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
         }))
         setRuntimeState("ready", null)
-      }
-    }
+      },
+      onError: (err) => {
+        if (isStale()) return
+        pushInlineError(err instanceof Error ? err.message : String(err))
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+        setRuntimeState("ready", null)
+      },
+    })
   }
 
   function stop(): void {

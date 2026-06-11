@@ -393,6 +393,43 @@ describe("auto_run_store", () => {
     expect(FakeEventSource.instances.length).toBe(0)
   })
 
+  it("decline-resume surfaces a follow-on tool-calls-pending to the approval sink (not dropped)", async () => {
+    const items = [
+      {
+        toolCallId: "tc-decline",
+        toolName: "call_kiln_api",
+        input: { method: "POST" },
+        requiresApproval: true,
+      },
+    ]
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () =>
+          readerFromChunks([
+            'data: {"type":"text-start","id":"x"}\n\n',
+            'data: {"type":"text-delta","delta":"resumed"}\n\n',
+            `data: ${JSON.stringify({ type: "tool-calls-pending", items })}\n\n`,
+          ]),
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await store.decline({
+      trace_id: "t9",
+      enable_tool_call_id: "call_1",
+      siblings: [],
+    })
+
+    // The resumed turn's text still rendered.
+    const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
+    expect(last.parts?.[0]).toEqual({ type: "text", text: "resumed" })
+    // The follow-on tool-calls-pending was handed off to the EXISTING approval
+    // flow (graceful-stop handoff), not silently dropped by the processor.
+    expect(calls.pendingToolCalls).toHaveLength(1)
+    expect(calls.pendingToolCalls[0]).toEqual(items)
+  })
+
   it("re-attach opens the events stream and replays buffered events with no gap", () => {
     store.attach("ar_re")
     const source = FakeEventSource.latest()

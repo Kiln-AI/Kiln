@@ -874,6 +874,145 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Tool-approval continuation loop (shared by graceful-stop, declined-resume,
+// and ask_user_question continuations)
+// ---------------------------------------------------------------------------
+
+/**
+ * Drive the multi-round ``tool-calls-pending`` → approve → POST
+ * /api/chat/execute-tools → continuation loop over a sequence of continuation
+ * streams, reusing the EXISTING execute-tools approval contract (NOT a parallel
+ * approval UI). The caller supplies the FIRST continuation reader (e.g. the
+ * declined-resume stream, the ask-answer continuation, or an execute-tools
+ * round it kicked off); each subsequent ``tool-calls-pending`` ends the current
+ * stream and seeds the next execute-tools round via the same approval gate.
+ *
+ * A ``tool-calls-pending`` surfaced on ANY of these streams routes through
+ * ``onToolCallsPending`` (the same ``toolApprovalWaiter`` UI the interactive
+ * ``streamChat`` and graceful-stop paths use) rather than being silently
+ * dropped. ``onAskUserQuestion`` (wired on the processor) still re-gates a
+ * nested ask_user_question in the continuation.
+ *
+ * ``getCurrentTraceId`` reads the latest trace id (updated by the processor's
+ * ``onChatTrace``); ``onError``/``onFinish`` are terminal.
+ */
+async function runToolApprovalLoop(args: {
+  apiUrl: string
+  processor: StreamEventProcessor
+  /** The first continuation stream to consume. Omit when ``firstPendingItems``
+   * seeds the loop with an execute-tools round (graceful-stop handoff). */
+  initialReader?: ReadableStreamDefaultReader<Uint8Array>
+  firstPendingItems?: ToolCallsPendingItem[] | null
+  onToolCallsPending: (
+    payload: ToolCallsPendingPayload,
+  ) => Promise<Record<string, boolean>>
+  getCurrentTraceId: () => string | undefined
+  onFinish: () => void
+  onError: (error: Error) => void
+}): Promise<void> {
+  const {
+    apiUrl,
+    processor,
+    initialReader,
+    firstPendingItems,
+    onToolCallsPending,
+    getCurrentTraceId,
+    onFinish,
+    onError,
+  } = args
+  const executeToolsUrl = chatExecuteToolsUrl(apiUrl)
+
+  // POST one execute-tools round for the given pending items; returns the
+  // continuation reader. Mirrors the inline logic in ``streamChat``.
+  async function executeRound(
+    pendingItems: ToolCallsPendingItem[],
+  ): Promise<ReadableStreamDefaultReader<Uint8Array> | null> {
+    if (!Array.isArray(pendingItems) || pendingItems.length === 0) {
+      onError(new Error("Invalid tool-calls-pending event from server"))
+      return null
+    }
+    const currentTraceId = getCurrentTraceId()
+    if (!currentTraceId) {
+      onError(
+        new Error(
+          "Missing trace id for tool execution; wait for chat trace before tools.",
+        ),
+      )
+      return null
+    }
+    const decisions = await onToolCallsPending({ items: pendingItems })
+    const decisionsPayload: Record<string, boolean> = {}
+    for (const it of pendingItems) {
+      if (it.requiresApproval && typeof it.toolCallId === "string") {
+        decisionsPayload[it.toolCallId] = decisions[it.toolCallId] ?? false
+      }
+    }
+    const toolCallsPayload = pendingItems.map((it) => ({
+      toolCallId: it.toolCallId,
+      toolName: it.toolName,
+      input: toolInputAsRecord(it.input),
+      requiresApproval: Boolean(it.requiresApproval),
+    }))
+    let postRes: Response
+    try {
+      postRes = await fetch(executeToolsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trace_id: currentTraceId,
+          tool_calls: toolCallsPayload,
+          decisions: decisionsPayload,
+        }),
+      })
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)))
+      return null
+    }
+    if (!postRes.ok) {
+      const text = await postRes.text()
+      onError(
+        new Error(
+          `Tool execute API error ${postRes.status}: ${text || postRes.statusText}`,
+        ),
+      )
+      return null
+    }
+    const nextReader = postRes.body?.getReader()
+    if (!nextReader) {
+      onError(new Error("No response body from execute-tools"))
+      return null
+    }
+    return nextReader
+  }
+
+  try {
+    // If the caller already extracted the first round's pending items (e.g. from
+    // a graceful-stop event), seed the loop with an execute-tools round; else
+    // start by consuming the supplied initial continuation reader.
+    let reader = firstPendingItems
+      ? await executeRound(firstPendingItems)
+      : initialReader
+    while (reader) {
+      // Drive one continuation stream. A nested ``tool-calls-pending`` ends this
+      // stream and seeds the next execute-tools round (multi-round approval).
+      let nextItems: ToolCallsPendingItem[] | null = null
+      await consumeSseStream(reader, processor, (event) => {
+        if (event.type === "tool-calls-pending") {
+          nextItems = Array.isArray(event.items) ? event.items : []
+          return true
+        }
+        return false
+      })
+      if (!nextItems) break
+      reader = await executeRound(nextItems)
+    }
+    onFinish()
+  } catch (err) {
+    onError(err instanceof Error ? err : new Error(String(err)))
+  }
+}
+
+// ---------------------------------------------------------------------------
 // resumePendingToolCalls — graceful-stop handoff
 // ---------------------------------------------------------------------------
 
@@ -931,8 +1070,7 @@ export async function resumePendingToolCalls(
     onError,
   } = options
 
-  const executeToolsUrl = chatExecuteToolsUrl(apiUrl)
-  let currentTraceId = traceId
+  let currentTraceId: string | undefined = traceId
 
   const processor = new StreamEventProcessor({
     onAssistantMessage,
@@ -946,88 +1084,97 @@ export async function resumePendingToolCalls(
     onShowActivityIndicator,
   })
 
-  // POST one execute-tools round for the given pending items; returns the
-  // continuation reader. Mirrors the inline logic in ``streamChat``.
-  async function executeRound(
-    pendingItems: ToolCallsPendingItem[],
-  ): Promise<ReadableStreamDefaultReader<Uint8Array> | null> {
-    if (!Array.isArray(pendingItems) || pendingItems.length === 0) {
-      onError(new Error("Invalid tool-calls-pending event from server"))
-      return null
-    }
-    if (!currentTraceId) {
-      onError(
-        new Error(
-          "Missing trace id for tool execution; wait for chat trace before tools.",
-        ),
-      )
-      return null
-    }
-    const decisions = await onToolCallsPending({ items: pendingItems })
-    const decisionsPayload: Record<string, boolean> = {}
-    for (const it of pendingItems) {
-      if (it.requiresApproval && typeof it.toolCallId === "string") {
-        decisionsPayload[it.toolCallId] = decisions[it.toolCallId] ?? false
-      }
-    }
-    const toolCallsPayload = pendingItems.map((it) => ({
-      toolCallId: it.toolCallId,
-      toolName: it.toolName,
-      input: toolInputAsRecord(it.input),
-      requiresApproval: Boolean(it.requiresApproval),
-    }))
-    let postRes: Response
-    try {
-      postRes = await fetch(executeToolsUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          trace_id: currentTraceId,
-          tool_calls: toolCallsPayload,
-          decisions: decisionsPayload,
-        }),
-      })
-    } catch (err) {
-      onError(err instanceof Error ? err : new Error(String(err)))
-      return null
-    }
-    if (!postRes.ok) {
-      const text = await postRes.text()
-      onError(
-        new Error(
-          `Tool execute API error ${postRes.status}: ${text || postRes.statusText}`,
-        ),
-      )
-      return null
-    }
-    const nextReader = postRes.body?.getReader()
-    if (!nextReader) {
-      onError(new Error("No response body from execute-tools"))
-      return null
-    }
-    return nextReader
-  }
+  await runToolApprovalLoop({
+    apiUrl,
+    processor,
+    // The graceful-stop handoff seeds with the surfaced pending items (the first
+    // round is an execute-tools POST), so no initial reader is consumed.
+    firstPendingItems: items,
+    onToolCallsPending,
+    getCurrentTraceId: () => currentTraceId,
+    onFinish,
+    onError,
+  })
+}
 
-  try {
-    let reader = await executeRound(items)
-    while (reader) {
-      // Drive one continuation stream. A nested ``tool-calls-pending`` ends this
-      // stream and seeds the next execute-tools round (multi-round approval).
-      let nextItems: ToolCallsPendingItem[] | null = null
-      await consumeSseStream(reader, processor, (event) => {
-        if (event.type === "tool-calls-pending") {
-          nextItems = Array.isArray(event.items) ? event.items : []
-          return true
-        }
-        return false
-      })
-      if (!nextItems) break
-      reader = await executeRound(nextItems)
-    }
-    onFinish()
-  } catch (err) {
-    onError(err instanceof Error ? err : new Error(String(err)))
-  }
+export interface ConsumeContinuationStreamOptions {
+  /** ``POST /api/chat`` base URL (execute-tools URL is derived from it). */
+  apiUrl: string
+  /** Trace id of the conversation the continuation belongs to. */
+  traceId: string
+  /** The first continuation stream to consume (e.g. ask-answer / decline). */
+  reader: ReadableStreamDefaultReader<Uint8Array>
+  /** Reuses the normal approval gate: toolCallId → allowed. */
+  onToolCallsPending: (
+    payload: ToolCallsPendingPayload,
+  ) => Promise<Record<string, boolean>>
+  onAssistantMessage: (update: (draft: ChatMessage) => void) => void
+  onChatTrace?: (traceId: string) => void
+  onInlineError?: (message: string, traceId?: string, code?: string) => void
+  onToolExecutionStart?: (toolCount: number) => void
+  onToolExecutionEnd?: (toolCount: number) => void
+  onShowActivityIndicator?: (show: boolean) => void
+  /** A nested ask_user_question in the continuation re-renders + re-gates. */
+  onAskUserQuestion?: (payload: AskUserQuestionPayload) => void
+  onFinish: () => void
+  onError: (error: Error) => void
+}
+
+/**
+ * Consume a continuation stream (the post-answer interactive continuation after
+ * an ``ask_user_question``, or the declined-auto-mode resume stream) while
+ * still honouring a follow-on ``tool-calls-pending``. Unlike a bare
+ * ``consumeSseStream``, a ``tool-calls-pending`` emitted by the continuation's
+ * turn (e.g. the model called an approval-required client tool) is routed
+ * through the SAME approval gate (``onToolCallsPending`` → the existing
+ * ``toolApprovalWaiter`` UI) and the SAME /api/chat/execute-tools continuation
+ * loop the interactive ``streamChat`` and graceful-stop paths use — not
+ * silently dropped. A nested ``ask_user_question`` still re-renders its card and
+ * re-gates the input (via the processor's ``onAskUserQuestion``).
+ */
+export async function consumeContinuationStream(
+  options: ConsumeContinuationStreamOptions,
+): Promise<void> {
+  const {
+    apiUrl,
+    traceId,
+    reader,
+    onToolCallsPending,
+    onAssistantMessage,
+    onChatTrace,
+    onInlineError,
+    onToolExecutionStart,
+    onToolExecutionEnd,
+    onShowActivityIndicator,
+    onAskUserQuestion,
+    onFinish,
+    onError,
+  } = options
+
+  let currentTraceId: string | undefined = traceId
+
+  const processor = new StreamEventProcessor({
+    onAssistantMessage,
+    onChatTrace: (tid) => {
+      currentTraceId = tid
+      onChatTrace?.(tid)
+    },
+    onInlineError,
+    onToolExecutionStart,
+    onToolExecutionEnd,
+    onShowActivityIndicator,
+    onAskUserQuestion,
+  })
+
+  await runToolApprovalLoop({
+    apiUrl,
+    processor,
+    initialReader: reader,
+    onToolCallsPending,
+    getCurrentTraceId: () => currentTraceId,
+    onFinish,
+    onError,
+  })
 }
 
 export { generateId as chatGenerateId }

@@ -1427,6 +1427,14 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
 })
 
 describe("ask_user_question (architecture §3)", () => {
+  // Drain microtasks until ``predicate`` holds (the streaming reader resolves a
+  // promise per read()), or give up after a bounded number of turns.
+  async function waitUntil(predicate: () => boolean): Promise<void> {
+    for (let i = 0; i < 50 && !predicate(); i++) {
+      await Promise.resolve()
+    }
+  }
+
   // A fetch returning a streaming SSE body (the interactive answer continuation).
   function streamingResponse(lines: string[]): Response {
     let i = 0
@@ -1758,6 +1766,166 @@ describe("ask_user_question (architecture §3)", () => {
     )
 
     expect(get(store).askPending).toBeNull()
+  })
+
+  // A follow-on tool-calls-pending in the post-answer continuation must surface
+  // the EXISTING approval box and continue via /api/chat/execute-tools (KIL bug:
+  // the bare consumeSseStream path silently dropped it because the processor had
+  // no onToolCallsPending handler).
+  it("pick continuation surfaces the approval box and continues via execute-tools (not dropped)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+
+    const pendingEvent = JSON.stringify({
+      type: "tool-calls-pending",
+      items: [
+        {
+          toolCallId: "tc-approve",
+          toolName: "call_kiln_api",
+          input: { method: "POST" },
+          requiresApproval: true,
+        },
+      ],
+    })
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url.includes("/execute-tools")) {
+        // Post-approval continuation renders the tool's result text.
+        return Promise.resolve(
+          streamingResponse([
+            'data: {"type":"text-start","id":"y"}\n\n',
+            'data: {"type":"text-delta","delta":"done"}\n\n',
+          ]),
+        )
+      }
+      // The ask/answer continuation emits the tool-calls-pending and ends.
+      return Promise.resolve(streamingResponse([`data: ${pendingEvent}\n\n`]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+
+    const answering = store.answerQuestion("tc1", { answer: "Option A" })
+    // Let the continuation read the tool-calls-pending and open the approval gate.
+    await waitUntil(() => get(store).toolApprovalWaiter !== null)
+    expect(get(store).toolApprovalWaiter).not.toBeNull()
+    expect(get(store).toolApprovalWaiter!.payload.items[0].toolCallId).toBe(
+      "tc-approve",
+    )
+
+    // Approve → the store POSTs execute-tools and consumes the continuation.
+    store.applyToolApprovalRun("tc-approve")
+    await answering
+
+    // Execute-tools was called with the approval decision.
+    const executeCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/execute-tools"),
+    )
+    expect(executeCall).toBeTruthy()
+    const body = JSON.parse((executeCall![1] as RequestInit).body as string)
+    expect(body.trace_id).toBe("trace-q")
+    expect(body.decisions).toEqual({ "tc-approve": true })
+
+    const state = get(store)
+    expect(state.toolApprovalWaiter).toBeNull()
+    // The post-approval continuation text rendered into the assistant turn.
+    const text = state.messages
+      .flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "text")
+    expect(text && "text" in text && text.text).toBe("done")
+  })
+
+  it("chat continuation surfaces the approval box and continues via execute-tools (not dropped)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+
+    const pendingEvent = JSON.stringify({
+      type: "tool-calls-pending",
+      items: [
+        {
+          toolCallId: "tc-chat",
+          toolName: "call_kiln_api",
+          input: {},
+          requiresApproval: true,
+        },
+      ],
+    })
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url.includes("/execute-tools")) {
+        return Promise.resolve(
+          streamingResponse(['data: {"type":"text-start","id":"z"}\n\n']),
+        )
+      }
+      return Promise.resolve(streamingResponse([`data: ${pendingEvent}\n\n`]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+
+    const answering = store.answerQuestion("tc1", { chat: true })
+    await waitUntil(() => get(store).toolApprovalWaiter !== null)
+    expect(get(store).toolApprovalWaiter).not.toBeNull()
+    expect(get(store).toolApprovalWaiter!.payload.items[0].toolCallId).toBe(
+      "tc-chat",
+    )
+
+    store.applyToolApprovalRun("tc-chat")
+    await answering
+
+    const executeCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/execute-tools"),
+    )
+    expect(executeCall).toBeTruthy()
+    expect(get(store).toolApprovalWaiter).toBeNull()
+  })
+
+  it("nested ask-user-question in the answer continuation re-renders the card and re-gates", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+
+    const askEvent = JSON.stringify({
+      type: "ask-user-question",
+      trace_id: "trace-q2",
+      toolCallId: "tc-nested",
+      question: "Pick again?",
+      suggested_answers: [{ answer: "B", explanation: "" }],
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        streamingResponse([
+          'data: {"type":"kiln_chat_trace","trace_id":"trace-q2"}\n\n',
+          `data: ${askEvent}\n\n`,
+        ]),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+
+    await store.answerQuestion("tc1", { answer: "Option A" })
+
+    // The continuation's nested question re-gated the input and rendered a card.
+    const state = get(store)
+    expect(state.askPending).toEqual({
+      toolCallId: "tc-nested",
+      traceId: "trace-q2",
+    })
+    const askPart = state.messages
+      .flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "ask-user-question" && p.toolCallId === "tc-nested")
+    expect(askPart).toBeTruthy()
+    // No execute-tools POST: the nested question is not a tool approval.
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]).includes("/execute-tools")),
+    ).toBe(false)
   })
 })
 

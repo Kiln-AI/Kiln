@@ -459,7 +459,22 @@ export function createAutoRunStore(): AutoRunStore {
     }
     sink?.beginAssistantTurn()
     try {
-      await consumeSseStream(reader, buildProcessor())
+      // The resumed interactive turn can itself emit ``tool-calls-pending`` (the
+      // model called an approval-required client tool). Don't drop it: hand it
+      // off to the EXISTING normal approval + /api/chat/execute-tools flow (the
+      // same graceful-stop handoff), so the approval box surfaces and the
+      // conversation continues. A nested ask_user_question still re-gates via the
+      // processor's onAskUserQuestion. The continuation loop after approval is
+      // owned by the handoff; the runner is already off here.
+      await consumeSseStream(reader, buildProcessor(), (event) => {
+        if (event.type === "tool-calls-pending") {
+          sink?.onToolCallsPending(
+            Array.isArray(event.items) ? event.items : [],
+          )
+          return true
+        }
+        return false
+      })
     } catch (err) {
       sink?.onInlineError(err instanceof Error ? err.message : String(err))
     }
