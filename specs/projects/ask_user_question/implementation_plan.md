@@ -36,4 +36,4 @@ architecture.md.
     open follow-up). Verify. Pre-merge: editable deps → published rev (as for auto-mode tools).
     (Architecture §4.)
 
-- [ ] **Phase 5 — Open PR** into `leonard/kil-692-assistant-auto-mode`.
+- [x] **Phase 5 — Open PR (#1461)** into `leonard/kil-692-assistant-auto-mode`.
