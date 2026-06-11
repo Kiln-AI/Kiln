@@ -10,7 +10,7 @@ architecture.md.
 
 ## Phases
 
-- [ ] **Phase 1 — `ask_user_question` tool (libs/core)**
+- [x] **Phase 1 — `ask_user_question` tool (libs/core)**
   - `AskUserQuestionTool` mirroring `enable_auto_mode_tool.py`: `KilnBuiltInToolId.ASK_USER_QUESTION`,
     `tool_registry.py` case, `ASK_USER_QUESTION_TOOL_NAME`, schema (`question` required;
     `suggested_answers` array maxItems 5 of `{answer, explanation}`), signal-only `run()`. Tests.

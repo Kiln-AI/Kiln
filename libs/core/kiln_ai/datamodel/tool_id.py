@@ -32,6 +32,7 @@ class KilnBuiltInToolId(str, Enum):
     CALL_KILN_API = "kiln_tool::call_kiln_api"
     ENABLE_AUTO_MODE = "kiln_tool::enable_auto_mode"
     DISABLE_AUTO_MODE = "kiln_tool::disable_auto_mode"
+    ASK_USER_QUESTION = "kiln_tool::ask_user_question"
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"

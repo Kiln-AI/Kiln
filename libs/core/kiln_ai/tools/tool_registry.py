@@ -12,6 +12,7 @@ from kiln_ai.datamodel.tool_id import (
     rag_config_id_from_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
+from kiln_ai.tools.built_in_tools.ask_user_question_tool import AskUserQuestionTool
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import DisableAutoModeTool
 from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import EnableAutoModeTool
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
@@ -54,6 +55,8 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 return EnableAutoModeTool()
             case KilnBuiltInToolId.DISABLE_AUTO_MODE:
                 return DisableAutoModeTool()
+            case KilnBuiltInToolId.ASK_USER_QUESTION:
+                return AskUserQuestionTool()
             case _:
                 raise_exhaustive_enum_error(typed_tool_id)
 
