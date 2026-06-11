@@ -907,3 +907,369 @@ def test_mutating_auto_endpoints_have_no_write_lock(app, path, method):
             )
             return
     raise AssertionError(f"{method} {path} route not found")
+
+
+# ── ask_user_question interception + answer endpoint ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ask_user_question_interactive_emits_event_and_pauses(
+    client, registry, mock_api_key
+):
+    # The model calls ask_user_question on the interactive stream → it is
+    # intercepted (never executed), an ask-user-question SSE is emitted, and the
+    # stream returns (single upstream round).
+    chunks = [
+        trace("t1"),
+        text_delta("I need to know"),
+        tool_input_available(
+            "tc_ask",
+            "ask_user_question",
+            input={
+                "question": "Which dataset?",
+                "suggested_answers": [
+                    {"answer": "Train", "explanation": "the training split"},
+                    {"answer": "Eval", "explanation": "the eval split"},
+                ],
+            },
+        ),
+        finish_tool_calls(),
+    ]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
+    execute_tool_mock = AsyncMock()
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.execute_tool",
+            execute_tool_mock,
+        ):
+            r = await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "run my eval"}]},
+            )
+
+    assert r.status_code == 200
+    ask = [
+        e for e in _parse_sse_events(r.content) if e.get("type") == "ask-user-question"
+    ]
+    assert len(ask) == 1
+    assert ask[0]["tool_call_id"] == "tc_ask"
+    assert ask[0]["trace_id"] == "t1"
+    assert ask[0]["question"] == "Which dataset?"
+    assert [s["answer"] for s in ask[0]["suggested_answers"]] == ["Train", "Eval"]
+    # Never executed; loop returned after one round.
+    execute_tool_mock.assert_not_called()
+    assert len(fake.bodies) == 1
+
+
+@pytest.mark.asyncio
+async def test_ask_user_question_caps_suggested_answers_to_5(
+    client, registry, mock_api_key
+):
+    suggestions = [{"answer": f"a{i}", "explanation": ""} for i in range(7)]
+    chunks = [
+        trace("t1"),
+        tool_input_available(
+            "tc_ask",
+            "ask_user_question",
+            input={"question": "Pick", "suggested_answers": suggestions},
+        ),
+        finish_tool_calls(),
+    ]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "go"}]},
+        )
+
+    ask = [
+        e for e in _parse_sse_events(r.content) if e.get("type") == "ask-user-question"
+    ][0]
+    assert len(ask["suggested_answers"]) == 5
+
+
+@pytest.mark.asyncio
+async def test_ask_user_question_filters_invalid_then_caps_to_5(
+    client, registry, mock_api_key
+):
+    # A malformed item sits among the first 5 and there are valid items beyond
+    # index 5. Filter-then-cap must drop only the malformed one and still surface
+    # 5 valid suggestions (a cap-then-filter bug would yield 4 and lose v5/v6).
+    suggestions = [
+        {"answer": "v0", "explanation": ""},
+        {"answer": "v1", "explanation": ""},
+        {"answer": 123, "explanation": "bad answer type"},  # malformed, dropped
+        {"answer": "v3", "explanation": ""},
+        {"answer": "v4", "explanation": ""},
+        {"answer": "v5", "explanation": ""},
+        {"answer": "v6", "explanation": ""},
+    ]
+    chunks = [
+        trace("t1"),
+        tool_input_available(
+            "tc_ask",
+            "ask_user_question",
+            input={"question": "Pick", "suggested_answers": suggestions},
+        ),
+        finish_tool_calls(),
+    ]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "go"}]},
+        )
+
+    ask = [
+        e for e in _parse_sse_events(r.content) if e.get("type") == "ask-user-question"
+    ][0]
+    answers = [s["answer"] for s in ask["suggested_answers"]]
+    assert len(answers) == 5
+    assert answers == ["v0", "v1", "v3", "v4", "v5"]
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_pick_interactive_resolves_and_continues(
+    client, registry, mock_api_key
+):
+    # No active auto run for the trace → the answer continues the interactive
+    # stream, seeded with a clean role:"tool" result (no dangling tool call).
+    continuation = [text_delta("Great, using Train"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat/ask/answer",
+            json={
+                "trace_id": "t1",
+                "tool_call_id": "tc_ask",
+                "choice": {"answer": "Train"},
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    assert b"Great, using Train" in r.content
+
+    sent = fake.bodies[0]
+    assert sent["trace_id"] == "t1"
+    assert sent["messages"] == [
+        {"role": "tool", "tool_call_id": "tc_ask", "content": "Train"}
+    ]
+    # Persisted continuation has exactly one message — the clean tool result.
+    assert len(sent["messages"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_chat_interactive_resolves_with_chat_signal(
+    client, registry, mock_api_key
+):
+    continuation = [text_delta("Sure, tell me more"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat/ask/answer",
+            json={
+                "trace_id": "t1",
+                "tool_call_id": "tc_ask",
+                "choice": {"chat": True},
+            },
+        )
+
+    assert r.status_code == 200
+    sent = fake.bodies[0]
+    tool_msg = sent["messages"][0]
+    assert tool_msg["role"] == "tool"
+    assert tool_msg["tool_call_id"] == "tc_ask"
+    assert json.loads(tool_msg["content"]) == {"choice": "chat"}
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_malformed_choice_returns_422(client, registry, mock_api_key):
+    r = await client.post(
+        "/api/chat/ask/answer",
+        json={"trace_id": "t1", "tool_call_id": "tc_ask", "choice": {}},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_both_answer_and_chat_returns_422(
+    client, registry, mock_api_key
+):
+    # An ambiguous body setting BOTH a pick and chat:true must be rejected rather
+    # than silently treated as a pick — exactly one of answer / chat:true allowed.
+    r = await client.post(
+        "/api/chat/ask/answer",
+        json={
+            "trace_id": "t1",
+            "tool_call_id": "tc_ask",
+            "choice": {"answer": "Train", "chat": True},
+        },
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_pick_auto_resumes_burst(client, registry, mock_api_key):
+    # An active (IDLE) auto run owns the trace → the answer resumes its burst with
+    # the role:"tool" continuation and echoes the picked answer onto the bus.
+    record = AutoRunRecord(
+        run_id="ar_live",
+        status=AutoRunStatus.IDLE,
+        current_trace_id="t1",
+        seen_trace_ids=["t1"],
+    )
+    real_run = _make_idle_run(record)
+    registry._runs["ar_live"] = real_run
+    registry._trace_index["t1"] = "ar_live"
+
+    burst = [text_delta("continuing in auto"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=burst)])
+
+    received: list[bytes] = []
+
+    async def _drain():
+        async for b in real_run.bus.subscribe():
+            received.append(b)
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        drain_task = asyncio.create_task(_drain())
+        await asyncio.sleep(0.02)
+        r = await client.post(
+            "/api/chat/ask/answer",
+            json={
+                "trace_id": "t1",
+                "tool_call_id": "tc_ask",
+                "choice": {"answer": "Train"},
+            },
+        )
+        assert r.status_code == 202
+        await _wait_settled(registry, "ar_live")
+        await asyncio.sleep(0.02)
+        drain_task.cancel()
+
+    # The burst was seeded with the clean role:"tool" result.
+    assert fake.bodies[0]["messages"] == [
+        {"role": "tool", "tool_call_id": "tc_ask", "content": "Train"}
+    ]
+    # The picked answer was echoed onto the bus as the user's message.
+    decoded = b"".join(received).decode()
+    assert '"type": "user-message"' in decoded
+    assert "Train" in decoded
+    assert "continuing in auto" in decoded
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_chat_auto_resumes_without_user_echo(
+    client, registry, mock_api_key
+):
+    record = AutoRunRecord(
+        run_id="ar_live",
+        status=AutoRunStatus.IDLE,
+        current_trace_id="t1",
+        seen_trace_ids=["t1"],
+    )
+    real_run = _make_idle_run(record)
+    registry._runs["ar_live"] = real_run
+    registry._trace_index["t1"] = "ar_live"
+
+    burst = [text_delta("tell me more"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=burst)])
+
+    received: list[bytes] = []
+
+    async def _drain():
+        async for b in real_run.bus.subscribe():
+            received.append(b)
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        drain_task = asyncio.create_task(_drain())
+        await asyncio.sleep(0.02)
+        r = await client.post(
+            "/api/chat/ask/answer",
+            json={
+                "trace_id": "t1",
+                "tool_call_id": "tc_ask",
+                "choice": {"chat": True},
+            },
+        )
+        assert r.status_code == 202
+        await _wait_settled(registry, "ar_live")
+        await asyncio.sleep(0.02)
+        drain_task.cancel()
+
+    tool_msg = fake.bodies[0]["messages"][0]
+    assert json.loads(tool_msg["content"]) == {"choice": "chat"}
+    # Chat → no user-message echo (the open follow-up streams instead).
+    assert '"type": "user-message"' not in b"".join(received).decode()
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_routes_interactive_when_no_active_auto_run(
+    client, registry, mock_api_key
+):
+    # A run exists for the trace but its flag is OFF (terminal) → not active, so
+    # the answer falls through to the interactive stream rather than 409.
+    record = AutoRunRecord(
+        run_id="ar_off",
+        status=AutoRunStatus.USER_STOPPED,
+        current_trace_id="t1",
+        seen_trace_ids=["t1"],
+    )
+    registry._runs["ar_off"] = _make_idle_run(record)
+    registry._trace_index["t1"] = "ar_off"
+
+    continuation = [text_delta("interactive answer"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat/ask/answer",
+            json={
+                "trace_id": "t1",
+                "tool_call_id": "tc_ask",
+                "choice": {"answer": "Yes"},
+            },
+        )
+
+    assert r.status_code == 200
+    assert b"interactive answer" in r.content
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_running_auto_run_returns_409(client, registry, mock_api_key):
+    # An active auto run owns the trace but is RUNNING (no pending question while
+    # a burst drives) → 409.
+    record = AutoRunRecord(
+        run_id="ar_run",
+        status=AutoRunStatus.RUNNING,
+        current_trace_id="t1",
+        seen_trace_ids=["t1"],
+    )
+    registry._runs["ar_run"] = _make_idle_run(record)
+    registry._trace_index["t1"] = "ar_run"
+
+    r = await client.post(
+        "/api/chat/ask/answer",
+        json={
+            "trace_id": "t1",
+            "tool_call_id": "tc_ask",
+            "choice": {"answer": "Yes"},
+        },
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_ask_answer_no_write_lock(app):
+    for route in app.routes:
+        if getattr(route, "path", None) == "/api/chat/ask/answer" and "POST" in getattr(
+            route, "methods", set()
+        ):
+            assert getattr(route.endpoint, "_git_sync_no_write_lock", False)
+            return
+    raise AssertionError("POST /api/chat/ask/answer route not found")

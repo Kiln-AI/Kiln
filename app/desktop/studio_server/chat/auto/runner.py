@@ -10,11 +10,16 @@ from app.desktop.studio_server.chat.stream_session import (
     RoundState,
     ToolCallInfo,
     _build_openai_tool_continuation,
+    _format_ask_user_question_sse,
     _format_tool_calls_pending_sse,
+    _parse_ask_user_question,
     execute_tool_batch,
     iter_upstream_round,
 )
 from app.desktop.studio_server.chat.tool_metadata import tool_input_executor_is_server
+from kiln_ai.tools.built_in_tools.ask_user_question_tool import (
+    ASK_USER_QUESTION_TOOL_NAME,
+)
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
     DISABLE_AUTO_MODE_TOOL_NAME,
 )
@@ -189,6 +194,39 @@ class AutoChatRunner:
                         client, body, round_state, disable_evt, client_events
                     )
                     self.status = AutoRunStatus.USER_DISABLED
+                    return
+
+                # ask_user_question interception (architecture §2.2): never execute
+                # it. Emit the question + suggested answers onto the bus and settle
+                # the burst to IDLE (the conversation flag stays on) — a question
+                # inherently needs the user, so this reuses the "assistant asks →
+                # IDLE" settle path (it's a richer 'ask the user'). The pending
+                # ask_user_question tool call is left UNRESOLVED until the user
+                # answers via /api/chat/ask/answer, which resumes the burst with the
+                # role:"tool" result. We must not auto-execute it and must not send
+                # a resolving continuation here.
+                ask_evt = next(
+                    (
+                        e
+                        for e in client_events
+                        if e.toolName == ASK_USER_QUESTION_TOOL_NAME
+                    ),
+                    None,
+                )
+                if ask_evt is not None:
+                    question, suggested_answers = _parse_ask_user_question(
+                        ask_evt.input
+                    )
+                    self._emit(
+                        _format_ask_user_question_sse(
+                            trace_id=round_state.trace_id or trace_id_for_error,
+                            tool_call_id=ask_evt.toolCallId,
+                            question=question,
+                            suggested_answers=suggested_answers,
+                        )
+                    )
+                    self.idle_reason = "asked_user"
+                    self.status = AutoRunStatus.IDLE
                     return
 
                 # Graceful stop (functional spec §4.4(1)): the in-flight round

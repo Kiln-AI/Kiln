@@ -16,7 +16,7 @@ architecture.md.
     `suggested_answers` array maxItems 5 of `{answer, explanation}`), signal-only `run()`. Tests.
     (Architecture §1.)
 
-- [ ] **Phase 2 — App server: interception + answer endpoint**
+- [x] **Phase 2 — App server: interception + answer endpoint**
   - Constants + `ask-user-question` SSE formatter. Intercept `ask_user_question` in
     `ChatStreamSession` (emit + return) and `AutoChatRunner` (emit + go IDLE, pending unresolved).
     `POST /api/chat/ask/answer` resolving the tool call (pick → answer text; chat → chat signal) and

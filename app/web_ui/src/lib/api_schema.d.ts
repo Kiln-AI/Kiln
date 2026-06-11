@@ -3001,6 +3001,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/ask/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer a pending ask_user_question and continue chat
+         * @description Resolve a pending ``ask_user_question`` tool call and continue the
+         *     conversation (architecture §2.3).
+         *
+         *     The tool result for ``tool_call_id`` is the chosen answer text (a pick) or
+         *     a chat signal (``{"choice":"chat"}`` for "Chat about this"). Resolving via
+         *     a ``role:"tool"`` message keeps the persisted trace clean (no dangling tool
+         *     call). Routing mirrors how an answer would continue the conversation:
+         *
+         *     - If the conversation has an **active auto run** (registry lookup by
+         *       trace), resume that run's burst with the tool result and return 202; the
+         *       continuation and the model's reply stream on the run's observer stream.
+         *       For a pick, the chosen answer is echoed onto the bus as the user's
+         *       message; for chat, no user message is echoed (the open follow-up
+         *       streams).
+         *     - Otherwise continue the **interactive** stream: return a
+         *       CancellableStreamingResponse seeded with the tool result.
+         */
+        post: operations["post_answer_question_api_chat_ask_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/sessions": {
         parameters: {
             query?: never;
@@ -3751,6 +3786,20 @@ export interface components {
             /** Archived Tool Server Count */
             archived_tool_server_count: number;
         };
+        /**
+         * AnswerChoice
+         * @description How the user answered a pending ``ask_user_question`` (architecture §2.3).
+         *
+         *     Either a pick (``answer`` = the chosen suggestion's text) or "Chat about
+         *     this" (``chat`` = True). Exactly one is meaningful; a body that is neither is
+         *     rejected (422).
+         */
+        AnswerChoice: {
+            /** Answer */
+            answer?: string | null;
+            /** Chat */
+            chat?: boolean | null;
+        };
         /** AnswerOption */
         AnswerOption: {
             /**
@@ -3784,6 +3833,14 @@ export interface components {
              * @description Whether the user selected this answer option
              */
             selected: boolean;
+        };
+        /** AnswerQuestionRequest */
+        AnswerQuestionRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            choice: components["schemas"]["AnswerChoice"];
         };
         /**
          * ApiPrompt
@@ -17920,6 +17977,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExecuteToolsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_answer_question_api_chat_ask_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerQuestionRequest"];
             };
         };
         responses: {

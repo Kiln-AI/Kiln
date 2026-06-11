@@ -536,3 +536,80 @@ async def test_graceful_stop_drops_queued_inbound_on_plain_text():
     assert runner.status == AutoRunStatus.USER_STOPPED
     # No second round despite the queued message.
     assert len(client.bodies) == 1
+
+
+@pytest.mark.asyncio
+async def test_ask_user_question_settles_idle_unresolved():
+    # ask_user_question is intercepted (architecture §2.2): the runner emits the
+    # ask-user-question event onto the bus and settles to IDLE with the tool call
+    # UNRESOLVED — no second upstream round (no resolving continuation is sent).
+    round1 = [
+        trace("tr-1"),
+        text_delta("Let me check with you"),
+        tool_input_available(
+            "tc_ask",
+            "ask_user_question",
+            input={
+                "question": "Which model?",
+                "suggested_answers": [
+                    {"answer": "GPT-4o", "explanation": "fast"},
+                    {"answer": "Claude", "explanation": "thorough"},
+                ],
+            },
+        ),
+        finish_tool_calls(),
+    ]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    runner, emitted, _ = _runner(client)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "asked_user"
+    # Only one upstream round — the call is left unresolved.
+    assert len(client.bodies) == 1
+    ask_events = [e for e in _events(emitted) if e.get("type") == "ask-user-question"]
+    assert len(ask_events) == 1
+    ev = ask_events[0]
+    assert ev["tool_call_id"] == "tc_ask"
+    assert ev["question"] == "Which model?"
+    assert ev["trace_id"] == "tr-1"
+    assert [s["answer"] for s in ev["suggested_answers"]] == ["GPT-4o", "Claude"]
+    # The tool was never executed: no tool-output-available event for it.
+    assert not [
+        e
+        for e in _events(emitted)
+        if e.get("type") == "tool-output-available" and e.get("toolCallId") == "tc_ask"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ask_user_question_caps_suggested_answers_to_5():
+    # Defensive cap (functional spec §3.4): a model emitting 7 suggestions is
+    # capped to 5 at emit time.
+    suggestions = [{"answer": f"a{i}", "explanation": ""} for i in range(7)]
+    round1 = [
+        trace("tr-1"),
+        tool_input_available(
+            "tc_ask",
+            "ask_user_question",
+            input={"question": "Pick one", "suggested_answers": suggestions},
+        ),
+        finish_tool_calls(),
+    ]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    runner, emitted, _ = _runner(client)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    ev = [e for e in _events(emitted) if e.get("type") == "ask-user-question"][0]
+    assert len(ev["suggested_answers"]) == 5
+    assert [s["answer"] for s in ev["suggested_answers"]] == [
+        "a0",
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+    ]

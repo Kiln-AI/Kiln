@@ -10,6 +10,7 @@ from app.desktop.studio_server.chat.constants import (
     DENIED_TOOL_OUTPUT,
     FUNCTION_NAME_TO_TOOL_ID,
     MAX_TOOL_ROUNDS,
+    SSE_TYPE_ASK_USER_QUESTION,
     SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
     SSE_TYPE_TOOL_CALLS_PENDING,
     SSE_TYPE_TOOL_EXEC_END,
@@ -22,6 +23,9 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_requires_user_approval,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.built_in_tools.ask_user_question_tool import (
+    ASK_USER_QUESTION_TOOL_NAME,
+)
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
     DISABLE_AUTO_MODE_TOOL_NAME,
 )
@@ -34,6 +38,16 @@ from pydantic import BaseModel, ConfigDict, Field
 # The tool result the app server resolves an intercepted disable_auto_mode call
 # to, fed back to the backend so it continues interactively.
 DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
+
+# Defensive cap on the suggested answers surfaced for an ask_user_question call.
+# The tool schema/prompt already say "up to 5"; we cap again at emit time so a
+# misbehaving model can't flood the UI (functional spec §3.4).
+MAX_SUGGESTED_ANSWERS = 5
+
+# The tool result the app server resolves an intercepted ask_user_question call
+# to when the user chooses "Chat about this" rather than picking a suggestion.
+# The model is prompt-guided to ask an open follow-up question on seeing it.
+ASK_USER_QUESTION_CHAT_RESULT = json.dumps({"choice": "chat"}, ensure_ascii=False)
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +152,60 @@ def _format_consent_required_sse(
         "enable_tool_call_id": enable_tool_call_id,
         "reason": reason,
         "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
+    }
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+def _parse_ask_user_question(
+    tool_input: dict[str, Any],
+) -> tuple[str, list[dict[str, str]]]:
+    """Pull ``question`` + ``suggested_answers`` from an ask_user_question call.
+
+    Defensive: the model controls ``tool_input``, so coerce shapes and cap the
+    suggestions to ``MAX_SUGGESTED_ANSWERS``. Each surfaced suggestion is a
+    ``{"answer", "explanation"}`` dict (explanation defaults to "")."""
+    question = tool_input.get("question")
+    question = question if isinstance(question, str) else ""
+
+    raw = tool_input.get("suggested_answers")
+    suggestions: list[dict[str, str]] = []
+    if isinstance(raw, list):
+        # Filter-then-cap: validate every item first, then keep the first
+        # MAX_SUGGESTED_ANSWERS valid ones. Capping before filtering would let a
+        # malformed item among the first 5 drop a valid item beyond index 5.
+        for item in raw:
+            if len(suggestions) >= MAX_SUGGESTED_ANSWERS:
+                break
+            if not isinstance(item, dict):
+                continue
+            answer = item.get("answer")
+            if not isinstance(answer, str):
+                continue
+            explanation = item.get("explanation")
+            suggestions.append(
+                {
+                    "answer": answer,
+                    "explanation": explanation if isinstance(explanation, str) else "",
+                }
+            )
+    return question, suggestions
+
+
+def _format_ask_user_question_sse(
+    trace_id: str | None,
+    tool_call_id: str,
+    question: str,
+    suggested_answers: list[dict[str, str]],
+) -> bytes:
+    """Format the ``ask-user-question`` SSE the stream emits when the model calls
+    ``ask_user_question``. Defensively caps ``suggested_answers`` to
+    ``MAX_SUGGESTED_ANSWERS`` (functional spec §3.4)."""
+    payload = {
+        "type": SSE_TYPE_ASK_USER_QUESTION,
+        "trace_id": trace_id,
+        "tool_call_id": tool_call_id,
+        "question": question,
+        "suggested_answers": suggested_answers[:MAX_SUGGESTED_ANSWERS],
     }
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
@@ -329,6 +397,34 @@ class ChatStreamSession:
                             enable_tool_call_id=enable_evt.toolCallId,
                             reason=enable_evt.input.get("reason"),
                             siblings=siblings,
+                        )
+                        return
+
+                    # ask_user_question interception (architecture §2.2): the
+                    # model asked the user a question. Surface the question + its
+                    # suggested answers and return WITHOUT executing it — the tool
+                    # is a signal, never run. The pending tool call is resolved
+                    # out-of-band by /api/chat/ask/answer. Runs before the approval
+                    # gate so the question UI takes precedence; the model is
+                    # instructed to call it alone, so there are no siblings to
+                    # gate.
+                    ask_evt = next(
+                        (
+                            e
+                            for e in client_events
+                            if e.toolName == ASK_USER_QUESTION_TOOL_NAME
+                        ),
+                        None,
+                    )
+                    if ask_evt is not None:
+                        question, suggested_answers = _parse_ask_user_question(
+                            ask_evt.input
+                        )
+                        yield _format_ask_user_question_sse(
+                            trace_id=round_state.trace_id,
+                            tool_call_id=ask_evt.toolCallId,
+                            question=question,
+                            suggested_answers=suggested_answers,
                         )
                         return
 
