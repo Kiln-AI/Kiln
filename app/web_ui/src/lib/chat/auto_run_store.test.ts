@@ -220,6 +220,54 @@ describe("auto_run_store", () => {
     expect(get(store.working)).toBe(false)
   })
 
+  it("arm sets the armed flag without any server call; disarm clears it", () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    expect(get(store.armed)).toBe(false)
+    store.arm()
+    expect(get(store.armed)).toBe(true)
+    // Client-only: no enable POST and no events stream.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(FakeEventSource.instances.length).toBe(0)
+    store.disarm()
+    expect(get(store.armed)).toBe(false)
+  })
+
+  it("no-trace enable (Revision R2) seeds the first message, begins a turn, attaches, clears armed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_new" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    // The conversation was armed client-side (brand-new chat, no trace_id).
+    store.arm()
+    expect(get(store.armed)).toBe(true)
+
+    // The first send creates the run via enable with extra_messages + no trace_id.
+    const result = await store.requestEnable({
+      extra_messages: [{ role: "user", content: "do the thing" }],
+    })
+    expect(result.ok).toBe(true)
+
+    // The enable POST carried the first message and NO trace_id.
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("http://localhost:8757/api/chat/auto/enable")
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      extra_messages: [{ role: "user", content: "do the thing" }],
+    })
+
+    // A burst starts immediately (extra_messages), so an assistant turn opened,
+    // the events stream attached, and the client-armed flag cleared (the real
+    // server run now owns the on-state).
+    expect(calls.beginAssistantTurn).toBe(1)
+    expect(get(store.armed)).toBe(false)
+    const source = FakeEventSource.latest()
+    expect(source.url).toBe("http://localhost:8757/api/chat/auto/ar_new/events")
+    source.message({ type: "auto-mode-on", run_id: "ar_new" })
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.runId)).toBe("ar_new")
+  })
+
   it("tool-calls-pending on the observer stream hands off to the approval sink (graceful stop)", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

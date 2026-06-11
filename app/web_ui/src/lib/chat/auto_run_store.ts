@@ -76,6 +76,16 @@ export interface AutoRunChatSink {
 export interface AutoRunStore {
   /** Conversation auto-mode flag: ON across RUNNING and IDLE bursts. */
   autoModeOn: Readable<boolean>
+  /**
+   * Client-only "armed" flag (Revision R2): the user turned auto mode on for a
+   * brand-new conversation that has no ``trace_id`` yet, so there is no
+   * server-owned run to key. The indicator shows on ("waiting for you") with NO
+   * server call. The FIRST ``sendMessage`` creates the run (enable with the
+   * first message + no trace_id) and clears this. Distinct from ``autoModeOn``
+   * (which tracks a real server run): the footer treats ``autoModeOn || armed``
+   * as "on". Disable/decline before the first send clears it.
+   */
+  armed: Readable<boolean>
   /** Burst sub-state: a burst is actively running (vs idle, flag still on). */
   working: Readable<boolean>
   /**
@@ -130,12 +140,21 @@ export interface AutoRunStore {
   attach(runId: string, initialWorking?: boolean): void
   /** Stop observing + clear the indicator without ending the run (navigation). */
   detach(): void
+  /**
+   * Client-arm auto mode on a brand-new conversation (Revision R2). No server
+   * call — the indicator turns on ("waiting for you") and the first
+   * ``sendMessage`` creates the run. Idempotent.
+   */
+  arm(): void
+  /** Clear the client-armed flag (disable/decline before the first send). */
+  disarm(): void
   /** Exposed for tests / explicit teardown; not part of normal usage. */
   _close(): void
 }
 
 export function createAutoRunStore(): AutoRunStore {
   const autoModeOn = writable<boolean>(false)
+  const armed = writable<boolean>(false)
   const working = writable<boolean>(false)
   const reconnecting = writable<boolean>(false)
   const runId = writable<string | null>(null)
@@ -176,6 +195,7 @@ export function createAutoRunStore(): AutoRunStore {
   function clearToOff(reason: string | null): void {
     closeSource()
     autoModeOn.set(false)
+    armed.set(false)
     setWorking(false)
     reconnecting.set(false)
     runId.set(null)
@@ -184,12 +204,23 @@ export function createAutoRunStore(): AutoRunStore {
     sink?.onAutoModeOff(reason)
   }
 
+  // Client-arm on a brand-new conversation (Revision R2): indicator on, no
+  // server call. The first sendMessage creates the run and clears this.
+  function arm(): void {
+    armed.set(true)
+  }
+
+  function disarm(): void {
+    armed.set(false)
+  }
+
   // Stop observing the current run and clear the indicator WITHOUT signalling the
   // sink (the run keeps going server-side; the user just navigated away — e.g.
   // New Chat / load another conversation). Re-attach is available from history.
   function detach(): void {
     closeSource()
     autoModeOn.set(false)
+    armed.set(false)
     setWorking(false)
     reconnecting.set(false)
     runId.set(null)
@@ -369,16 +400,22 @@ export function createAutoRunStore(): AutoRunStore {
     // conversation: the server creates the run IDLE without starting an empty
     // upstream burst, so there's no immediate assistant turn — the indicator
     // just turns on ("waiting for you") and the next user message starts the
-    // first burst via the /message inject path. The backend-tool path (an
-    // ``enable_tool_call_id`` is present) DOES start a burst immediately, so we
-    // open a fresh assistant turn to render it.
-    const armingOnly =
-      !seed.enable_tool_call_id &&
-      !(seed.pending_tool_calls && seed.pending_tool_calls.length > 0)
-    if (!armingOnly) {
+    // first burst via the /message inject path. A burst starts immediately when
+    // the seed carries content to run: the backend-tool path (an
+    // ``enable_tool_call_id``) OR a brand-new conversation seeded with the first
+    // user message (``extra_messages``, Revision R2). In those cases open a
+    // fresh assistant turn to render the runner's first burst.
+    const startsBurst =
+      !!seed.enable_tool_call_id ||
+      (!!seed.pending_tool_calls && seed.pending_tool_calls.length > 0) ||
+      (!!seed.extra_messages && seed.extra_messages.length > 0)
+    if (startsBurst) {
       // A fresh assistant turn renders the runner's first burst.
       sink?.beginAssistantTurn()
     }
+    // A real server run now owns the on-state; clear any client-armed flag
+    // (Revision R2: the first send on a brand-new conversation reaches here).
+    armed.set(false)
     attach(data.run_id)
     return { ok: true }
   }
@@ -496,6 +533,7 @@ export function createAutoRunStore(): AutoRunStore {
 
   return {
     autoModeOn: { subscribe: autoModeOn.subscribe },
+    armed: { subscribe: armed.subscribe },
     working: { subscribe: working.subscribe },
     reconnecting: { subscribe: reconnecting.subscribe },
     runId: { subscribe: runId.subscribe },
@@ -510,6 +548,8 @@ export function createAutoRunStore(): AutoRunStore {
     beginReconnect,
     attach,
     detach,
+    arm,
+    disarm,
     _close: closeSource,
   }
 }

@@ -3871,7 +3871,7 @@ export interface components {
             /** Run Id */
             run_id: string;
             /** Current Trace Id */
-            current_trace_id: string;
+            current_trace_id?: string | null;
             status: components["schemas"]["AutoRunStatus"];
             /** Reason */
             reason?: string | null;
@@ -5596,7 +5596,7 @@ export interface components {
          */
         EnableAutoRequest: {
             /** Trace Id */
-            trace_id: string;
+            trace_id?: string | null;
             /** Enable Tool Call Id */
             enable_tool_call_id?: string | null;
             /** Pending Tool Calls */

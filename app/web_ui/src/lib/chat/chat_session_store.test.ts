@@ -73,16 +73,20 @@ function noopStreamChat(): Promise<void> {
 function makeFakeAutoRun(
   overrides: Partial<{
     autoModeOn: boolean
+    armed: boolean
     requestEnable: ReturnType<typeof vi.fn>
     sendMessage: ReturnType<typeof vi.fn>
     stop: ReturnType<typeof vi.fn>
     resolve: ReturnType<typeof vi.fn>
     attach: ReturnType<typeof vi.fn>
     beginReconnect: ReturnType<typeof vi.fn>
+    arm: ReturnType<typeof vi.fn>
+    disarm: ReturnType<typeof vi.fn>
   }> = {},
 ) {
   return {
     autoModeOn: writable(overrides.autoModeOn ?? false),
+    armed: writable(overrides.armed ?? false),
     working: writable(false),
     reconnecting: writable(false),
     runId: writable(overrides.autoModeOn ? "ar_test" : null),
@@ -99,6 +103,8 @@ function makeFakeAutoRun(
     beginReconnect: overrides.beginReconnect ?? vi.fn(),
     attach: overrides.attach ?? vi.fn(),
     detach: vi.fn(),
+    arm: overrides.arm ?? vi.fn(),
+    disarm: overrides.disarm ?? vi.fn(),
     _close: vi.fn(),
   } as unknown as Parameters<
     typeof import("./chat_session_store").createChatSessionStore
@@ -443,6 +449,62 @@ describe("createChatSessionStore", () => {
       expect(sendMessage.mock.calls[0][0]).toBe("keep going")
       expect(stop).not.toHaveBeenCalled()
       expect(streamChatMock).not.toHaveBeenCalled()
+    })
+
+    it("armed-first-send (Revision R2) creates the run via enable seeded with the message, no trace_id", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const requestEnable = vi.fn().mockResolvedValue({ ok: true })
+      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
+      // Armed client-side on a brand-new conversation: no run yet (autoModeOn off).
+      const fakeAutoRun = makeFakeAutoRun({
+        armed: true,
+        requestEnable,
+        sendMessage,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("first message")
+      expect(sent).toBe(true)
+
+      // The first send creates the run via enable seeded with the message and
+      // NO trace_id — never the /message inject path (no run exists yet) and
+      // never the interactive stream.
+      expect(requestEnable).toHaveBeenCalledTimes(1)
+      const seed = requestEnable.mock.calls[0][0]
+      expect(seed.trace_id).toBeUndefined()
+      expect(seed.extra_messages).toEqual([
+        { role: "user", content: "first message" },
+      ])
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(streamChatMock).not.toHaveBeenCalled()
+
+      // The user message is rendered locally (the server does not echo a seed's
+      // extra_messages; only the /message inject path echoes).
+      const msgs = get(store).messages
+      expect(msgs[msgs.length - 1]).toMatchObject({
+        role: "user",
+        content: "first message",
+      })
+    })
+
+    it("armed-first-send surfaces an enable failure and does not consume the input", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const requestEnable = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "Too many auto runs" })
+      const fakeAutoRun = makeFakeAutoRun({ armed: true, requestEnable })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("first message")
+      expect(sent).toBe(false)
+      // The failure surfaces as an inline error message in the transcript.
+      const errors = get(store).messages.filter((m) => m.role === "error")
+      expect(errors.length).toBe(1)
+      expect(errors[0].content).toContain("Too many auto runs")
     })
 
     it("does not re-prompt auto-mode consent while auto mode is already on", async () => {

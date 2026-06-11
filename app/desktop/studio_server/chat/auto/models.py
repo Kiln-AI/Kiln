@@ -68,7 +68,11 @@ class AutoChatSeed(BaseModel):
     """Everything needed to begin (or resume into) an auto run as a fresh
     upstream continuation."""
 
-    trace_id: str
+    # The conversation's current leaf trace id. Optional (Revision R2): a
+    # brand-new conversation has no trace yet, so the seed carries only the
+    # first user message in ``extra_messages`` and the backend starts a fresh
+    # conversation, minting the first trace on the opening turn.
+    trace_id: str | None = None
     # Resolve this enable_auto_mode call as "enabled" before the first round.
     enable_tool_call_id: str | None = None
     # Sibling client tools to auto-execute first (usually empty — the model is
@@ -83,8 +87,10 @@ class AutoRunRecord(BaseModel):
 
     run_id: str
     status: AutoRunStatus
-    # Latest persisted leaf the runner has seen.
-    current_trace_id: str
+    # Latest persisted leaf the runner has seen. Optional (Revision R2): a
+    # no-trace seed (brand-new conversation) has no leaf until the backend emits
+    # the first kiln_chat_trace, at which point _on_trace populates it.
+    current_trace_id: str | None = None
     # Whole chain this run has touched (for history correlation).
     seen_trace_ids: list[str] = Field(default_factory=list)
     # Model-supplied reason from enable_auto_mode.

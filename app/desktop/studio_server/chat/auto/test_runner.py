@@ -138,6 +138,30 @@ async def test_multi_round_auto_executes_client_tool():
 
 
 @pytest.mark.asyncio
+async def test_no_trace_seed_first_round_posts_message_and_gets_trace():
+    # Revision R2: a no-trace seed (brand-new conversation) POSTs the first user
+    # message with NO trace_id; the backend mints the first trace on that round,
+    # which on_trace records. The first turn thus runs in auto mode from the start.
+    chunks = [text_delta("On it"), trace("tr-new-1"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
+    seed = AutoChatSeed(
+        trace_id=None,
+        extra_messages=[{"role": "user", "content": "do the thing"}],
+    )
+    runner, _, traces = _runner(client, seed)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.IDLE
+    # The opening POST carried the user message and NO trace_id (fresh conv).
+    assert "trace_id" not in client.bodies[0]
+    assert client.bodies[0]["messages"] == [{"role": "user", "content": "do the thing"}]
+    # The backend minted the first trace, surfaced to on_trace.
+    assert traces == ["tr-new-1"]
+
+
+@pytest.mark.asyncio
 async def test_finish_with_text_only_is_asked_user():
     chunks = [text_delta("What should I do next?"), trace("tr-1"), finish("stop")]
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
@@ -249,6 +273,20 @@ class TestSeedBody:
         runner, _, _ = _runner(FakeUpstreamClient([]), seed)
         body = await runner._build_seed_body()
         assert body["messages"] == [{"role": "user", "content": "go"}]
+
+    @pytest.mark.asyncio
+    async def test_no_trace_seed_omits_trace_id(self):
+        # Revision R2: a brand-new conversation has no trace yet, so the seed
+        # carries only the first user message and the body omits trace_id (the
+        # backend starts a fresh conversation and mints the first trace).
+        seed = AutoChatSeed(
+            trace_id=None,
+            extra_messages=[{"role": "user", "content": "first message"}],
+        )
+        runner, _, _ = _runner(FakeUpstreamClient([]), seed)
+        body = await runner._build_seed_body()
+        assert "trace_id" not in body
+        assert body["messages"] == [{"role": "user", "content": "first message"}]
 
     @pytest.mark.asyncio
     async def test_pending_sibling_tool_calls_are_executed(self):

@@ -56,7 +56,9 @@ class SendMessageRequest(BaseModel):
 
 class AutoSessionItem(BaseModel):
     run_id: str
-    current_trace_id: str
+    # Optional (Revision R2): a freshly-started no-trace run (brand-new
+    # conversation) has no leaf until the backend emits its first trace.
+    current_trace_id: str | None = None
     status: AutoRunStatus
     reason: str | None = None
 

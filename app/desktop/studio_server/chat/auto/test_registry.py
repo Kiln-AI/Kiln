@@ -508,6 +508,48 @@ async def test_manual_enable_arms_without_empty_upstream_turn():
 
 
 @pytest.mark.asyncio
+async def test_no_trace_seed_starts_running_and_indexes_on_first_trace():
+    # Revision R2: enabling on a brand-new conversation. The seed carries the
+    # first user message and NO trace_id, so the run starts RUNNING (not the
+    # armed-only IDLE case) and POSTs the message (never empty). The backend
+    # mints the first trace, which _on_trace records in the index.
+    reg = AutoChatRegistry()
+    burst = [trace("tr-new-1"), text_delta("on it"), finish("stop")]
+    client = FakeUpstreamClient([FakeUpstreamResponse(chunks=burst)])
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(
+            AutoChatSeed(
+                trace_id=None,
+                extra_messages=[{"role": "user", "content": "first message"}],
+            ),
+            reason=None,
+            upstream_url=URL,
+            headers={},
+        )
+        # Created RUNNING (real content to run), no trace index entry yet, and a
+        # supervising task is spawned.
+        assert rec.status == AutoRunStatus.RUNNING
+        assert rec.current_trace_id is None
+        assert rec.run_id in reg._tasks
+        assert reg._trace_index == {}
+        await _wait_settled(reg, rec.run_id)
+        run = reg.get(rec.run_id)
+        assert run is not None
+        # First trace minted by the backend now indexes the run.
+        assert run.record.current_trace_id == "tr-new-1"
+        assert reg._trace_index["tr-new-1"] == rec.run_id
+        assert reg.run_id_for_trace("tr-new-1") == rec.run_id
+
+    # The opening POST carried the first user message with NO trace_id — never
+    # empty (no "No messages were sent" backend error).
+    assert len(client.bodies) == 1
+    assert "trace_id" not in client.bodies[0]
+    assert client.bodies[0]["messages"] == [
+        {"role": "user", "content": "first message"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_disable_for_trace_clears_idle_flag_and_publishes_off():
     # The interactive disable path: the conversation has settled IDLE and the
     # model called disable_auto_mode. disable_for_trace clears the flag

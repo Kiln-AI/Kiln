@@ -247,7 +247,15 @@ class AutoChatRegistry:
         run = self._runs.get(run_id)
         if run is None:
             return None
-        return (run_id, run.record.current_trace_id, run.record.status)
+        # A run is reachable via the trace index only once it has a leaf (set at
+        # start for a trace-seeded run, or by _on_trace on the first
+        # kiln_chat_trace), so current_trace_id is non-None here. A no-trace seed
+        # (Revision R2) isn't indexed until its first trace arrives, so it can't
+        # be resolved before then — guard defensively for the type checker.
+        current_trace_id = run.record.current_trace_id
+        if current_trace_id is None:
+            return None
+        return (run_id, current_trace_id, run.record.status)
 
     # -- start ---------------------------------------------------------------
 
@@ -285,8 +293,11 @@ class AutoChatRegistry:
         record = AutoRunRecord(
             run_id=run_id,
             status=AutoRunStatus.IDLE if is_armed_only else AutoRunStatus.RUNNING,
+            # Revision R2: a no-trace seed (brand-new conversation) has no leaf
+            # until the backend emits the first kiln_chat_trace; _on_trace then
+            # populates current_trace_id / seen_trace_ids / the trace index.
             current_trace_id=seed.trace_id,
-            seen_trace_ids=[seed.trace_id],
+            seen_trace_ids=[seed.trace_id] if seed.trace_id is not None else [],
             reason=reason,
         )
 
@@ -301,7 +312,8 @@ class AutoChatRegistry:
             on_trace=_on_trace,
         )
         self._runs[run_id] = run
-        self._trace_index[seed.trace_id] = run_id
+        if seed.trace_id is not None:
+            self._trace_index[seed.trace_id] = run_id
         if is_armed_only:
             # Buffer the on→idle markers so a connecting observer immediately
             # lands on "flag on, idle (waiting for you)" with no live burst —

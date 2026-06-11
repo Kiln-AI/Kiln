@@ -215,6 +215,39 @@ async def test_enable_cap_returns_429(client, registry, mock_api_key):
 
 
 @pytest.mark.asyncio
+async def test_enable_no_trace_starts_running_run_with_first_message(
+    client, registry, mock_api_key
+):
+    # Revision R2: enable on a brand-new conversation — body has NO trace_id, just
+    # the first user message in extra_messages. The run starts RUNNING and POSTs
+    # the message (never empty); the backend mints the first trace.
+    round1 = [text_delta("on it"), trace("t-new-1"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat/auto/enable",
+            json={
+                "extra_messages": [{"role": "user", "content": "first message"}],
+            },
+        )
+        assert r.status_code == 200
+        run_id = r.json()["run_id"]
+        run = registry.get(run_id)
+        assert run is not None
+        # Starts RUNNING (carries real content), not the armed-only IDLE case.
+        assert run.record.status == AutoRunStatus.RUNNING
+        await _wait_terminal(registry, run_id)
+
+    # The opening POST carried the first user message and NO trace_id.
+    seed_body = fake.bodies[0]
+    assert "trace_id" not in seed_body
+    assert seed_body["messages"] == [{"role": "user", "content": "first message"}]
+    # The first trace minted upstream now indexes the run.
+    assert registry.get(run_id).record.current_trace_id == "t-new-1"
+
+
+@pytest.mark.asyncio
 async def test_enable_resolves_enable_call_in_seed_body(client, registry, mock_api_key):
     round1 = [text_delta("done"), trace("t1"), finish("stop")]
     fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])

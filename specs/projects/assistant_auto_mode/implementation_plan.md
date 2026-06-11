@@ -84,7 +84,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
 
 ### Revision R2 — Enable auto-mode before sending any message
 
-- [ ] **Phase 10 — Enable on a brand-new conversation** (app server + web UI)
+- [x] **Phase 10 — Enable on a brand-new conversation** (app server + web UI)
   - App server: make `AutoChatSeed.trace_id` optional; `_build_seed_body` omits `trace_id` when
     absent (fresh conversation); `registry.start` accepts a no-trace seed (run reachable by
     `run_id`; trace index populated on first `kiln_chat_trace`); the no-trace seed carries the first

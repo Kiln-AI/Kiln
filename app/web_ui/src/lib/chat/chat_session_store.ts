@@ -535,14 +535,25 @@ export function createChatSessionStore(
     const trimmed = text.trim()
     if (!trimmed) return false
     const autoOn = get(autoRunStore.autoModeOn)
-    // The interactive path requires an idle client stream; the auto-inject path
-    // does not (auto bursts run server-side, leaving the local status "ready").
-    if (!autoOn && status !== "ready") return false
+    const armed = get(autoRunStore.armed)
+    // The interactive path requires an idle client stream; the auto paths
+    // (inject / armed-first-send) do not (auto bursts run server-side, leaving
+    // the local status "ready").
+    const autoActive = autoOn || armed
+    if (!autoActive && status !== "ready") return false
     if (!get(chat_cost_disclaimer_acknowledged)) {
       if (!onConsentNeeded) return false
       const approved = await onConsentNeeded()
       if (!approved) return false
-      if (!autoOn && status !== "ready") return false
+      if (!autoActive && status !== "ready") return false
+    }
+    // Armed-first-send (Revision R2): auto mode was armed client-side on a
+    // brand-new conversation (no trace_id yet, no server run). The FIRST send
+    // creates the run via enable seeded with this message (no trace_id), so the
+    // very first turn runs in auto mode. armed is checked before autoOn because
+    // an armed conversation has no run yet to inject into.
+    if (armed && !autoOn) {
+      return beginArmedAutoRun(trimmed)
     }
     // Inject-on-send (Revision R1): while the conversation's auto-mode flag is on
     // (RUNNING or IDLE) a user message is injected into the server-owned run, not
@@ -561,6 +572,40 @@ export function createChatSessionStore(
       return true
     }
     beginStreaming(trimmed)
+    return true
+  }
+
+  // Armed-first-send (Revision R2): create the server-owned auto run seeded with
+  // the user's first message and NO trace_id, so the backend starts a fresh
+  // conversation and the first turn runs in auto mode. The server does not echo
+  // a seed's extra_messages (only the /message inject path echoes), so we render
+  // the user message locally — mirroring beginStreaming. requestEnable opens the
+  // assistant turn, attaches the live observer, and clears the armed flag.
+  async function beginArmedAutoRun(text: string): Promise<boolean> {
+    removeErrors()
+    const currentAppState = getCurrentAppState()
+    const header = buildContextHeader(
+      currentAppState,
+      get(persisted).lastSentAppState,
+    )
+    const userMessage: ChatMessage = {
+      id: chatGenerateId(),
+      role: "user",
+      content: text,
+    }
+    updateMessages((msgs) => [...msgs, userMessage])
+    persisted.update((p) => ({ ...p, lastSentAppState: currentAppState }))
+    const apiContent = header ? header + "\n" + text : text
+    const seed: EnableAutoRequest = {
+      extra_messages: [{ role: "user", content: apiContent }],
+    }
+    const result = await autoRunStore.requestEnable(seed)
+    if (!result.ok) {
+      pushInlineError(
+        `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+      )
+      return false
+    }
     return true
   }
 

@@ -35,25 +35,44 @@
   $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
 
   const autoModeOn = auto_run_store.autoModeOn
+  // Client-armed flag (Revision R2): auto mode turned on for a brand-new
+  // conversation that has no trace_id yet. The indicator shows on ("waiting for
+  // you") with no server run; the first message creates the run.
+  const autoArmed = auto_run_store.armed
   const autoModeWorking = auto_run_store.working
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
   // History restore) resolves → hydrates → attaches the live observer (Phase 9).
   const autoReconnecting = auto_run_store.reconnecting
 
-  // Manual enable arms a server-owned run keyed by the conversation's trace id
-  // (functional spec §4.1(2)). A run can't exist without a trace id, so manual
-  // enable becomes available only after the first completed exchange. The footer
-  // control is disabled until then (see the disabled binding below) so it's never
-  // a dead click on a brand-new empty chat.
-  $: manualAutoModeAvailable = !!traceIdForNextChatRequest(messages)
+  // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
+  // branch), and is ALWAYS clickable (Revision R2) — including on a brand-new
+  // empty chat. It is disabled only while a consent prompt is already open (so we
+  // never stack dialogs). On a conversation with a trace_id, enable arms a
+  // server-owned run (IDLE); with no trace_id yet it arms client-side (no server
+  // call) and the first message creates the run.
+  let consentPending = false
 
   async function openManualAutoMode() {
-    const traceId = traceIdForNextChatRequest(messages)
-    if (!traceId) return
-    const accepted = await consentDialog.prompt(null)
+    if (consentPending) return
+    consentPending = true
+    let accepted = false
+    try {
+      accepted = await consentDialog.prompt(null)
+    } finally {
+      consentPending = false
+    }
     if (!accepted) return
-    // Surface enable failures (e.g. 429 "Too many auto runs") instead of
-    // silently swallowing them — the dialog has already closed.
+    const traceId = traceIdForNextChatRequest(messages)
+    if (!traceId) {
+      // Brand-new conversation (Revision R2): no trace to key a server run, so
+      // arm client-side. The indicator turns on ("waiting for you"); the first
+      // message creates the run (enable seeded with that message, no trace_id).
+      auto_run_store.arm()
+      return
+    }
+    // Existing conversation: enable arms a server-owned run keyed by the trace
+    // id (functional spec §4.1(2)). Surface enable failures (e.g. 429) instead
+    // of silently swallowing them — the dialog has already closed.
     const result = await auto_run_store.requestEnable({ trace_id: traceId })
     if (!result.ok) {
       store.pushInlineError(
@@ -63,6 +82,10 @@
   }
 
   async function stopAutoMode() {
+    // A client-armed (no-run) conversation just disarms locally; a real server
+    // run is stopped via the registry. Always clear the armed flag so disable
+    // before the first send returns the toggle to off (functional spec §4.1(2)).
+    auto_run_store.disarm()
     await auto_run_store.stop()
   }
 
@@ -1144,7 +1167,7 @@
     <div
       class="flex-none flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 px-1 text-xs"
     >
-      {#if $autoModeOn}
+      {#if $autoModeOn || $autoArmed}
         <div class="flex items-center gap-2">
           <span
             class="inline-flex items-center gap-1.5 font-medium text-primary"
@@ -1172,7 +1195,7 @@
           type="button"
           class="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content/80 disabled:bg-transparent disabled:text-base-content/25"
           on:click={openManualAutoMode}
-          disabled={isLoading || !manualAutoModeAvailable}
+          disabled={consentPending}
           title="Let the assistant run steps automatically without asking for approval."
         >
           <span aria-hidden="true">⏵⏵</span>

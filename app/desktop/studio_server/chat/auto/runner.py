@@ -372,6 +372,12 @@ class AutoChatRunner:
         auto-executes any sibling pending tool calls now, appending their
         ``role:tool`` results. The backend continues from ``trace_id`` with these
         results — the same continuation contract ``/execute-tools`` uses.
+
+        Revision R2: when ``trace_id`` is absent (a brand-new conversation), the
+        body omits ``trace_id`` entirely so the backend starts a fresh
+        conversation and mints the first trace on the opening turn. In that case
+        the seed carries the first user message in ``extra_messages``, so the
+        opening turn is never empty.
         """
         messages: list[dict[str, Any]] = list(self._seed.extra_messages)
 
@@ -405,4 +411,6 @@ class AutoChatRunner:
                     }
                 )
 
+        if self._seed.trace_id is None:
+            return {"messages": messages}
         return {"trace_id": self._seed.trace_id, "messages": messages}
