@@ -25,9 +25,19 @@ vi.mock("$lib/api_client", () => ({
 }))
 
 const mockHydrate = vi.fn()
-vi.mock("./session_messages", () => ({
-  hydrateSessionFromSnapshot: (...args: unknown[]) => mockHydrate(...args),
-}))
+vi.mock("./session_messages", async () => {
+  // Keep the real dangling-approval reconstruction (the store calls it directly
+  // on the hydrated messages); only stub hydrateSessionFromSnapshot so resync
+  // tests can drive the snapshot → messages mapping.
+  const actual =
+    await vi.importActual<typeof import("./session_messages")>(
+      "./session_messages",
+    )
+  return {
+    ...actual,
+    hydrateSessionFromSnapshot: (...args: unknown[]) => mockHydrate(...args),
+  }
+})
 
 const mockAppState = {
   path: "/test",
@@ -1926,6 +1936,383 @@ describe("ask_user_question (architecture §3)", () => {
     expect(
       fetchMock.mock.calls.some((c) => String(c[0]).includes("/execute-tools")),
     ).toBe(false)
+  })
+})
+
+// Re-surface a DANGLING client tool call (a client-visible tool call persisted
+// with NO tool result) as a tool APPROVAL on reattach, reusing the EXISTING
+// approval box + /api/chat/execute-tools continuation (KIL bug: previously such
+// calls rendered as inert blocks and the approval box never came back).
+describe("reattach dangling-tool-call approval re-surfacing", () => {
+  async function waitUntil(predicate: () => boolean): Promise<void> {
+    for (let i = 0; i < 100 && !predicate(); i++) {
+      await Promise.resolve()
+    }
+  }
+
+  function streamingResponse(lines: string[]): Response {
+    let i = 0
+    const enc = new TextEncoder()
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (i >= lines.length) {
+              return Promise.resolve({ done: true, value: undefined })
+            }
+            const line = lines[i]
+            i += 1
+            return Promise.resolve({ done: false, value: enc.encode(line) })
+          },
+        }),
+      },
+    } as unknown as Response
+  }
+
+  // A restored conversation whose latest assistant turn ended on a dangling
+  // call_kiln_api awaiting approval (a tool-* part with no output).
+  function danglingApiMessages(): ChatMessage[] {
+    return [
+      { id: "u1", role: "user", content: "call the api" },
+      {
+        id: "a1",
+        role: "assistant",
+        traceId: "trace-restored",
+        parts: [
+          { type: "text", text: "I'll call the API." },
+          {
+            type: "tool-call_kiln_api",
+            toolCallId: "tc-api",
+            toolName: "call_kiln_api",
+            input: { method: "POST", url_path: "/foo" },
+          },
+        ],
+      },
+    ]
+  }
+
+  it("history-restore of a dangling call_kiln_api surfaces the approval box with the reconstructed item", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const store = createChatSessionStore()
+
+    store.loadSession(danglingApiMessages(), "trace-restored")
+
+    await waitUntil(() => get(store).toolApprovalWaiter !== null)
+    const waiter = get(store).toolApprovalWaiter
+    expect(waiter).not.toBeNull()
+    expect(waiter!.payload.items).toEqual([
+      {
+        toolCallId: "tc-api",
+        toolName: "call_kiln_api",
+        input: { method: "POST", url_path: "/foo" },
+        requiresApproval: true,
+      },
+    ])
+    // The pick is unresolved (the gate is open) until the user decides.
+    expect(get(store).toolApprovalPicks["tc-api"]).toBeUndefined()
+    // No execute-tools POST happens before approval.
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it("approving POSTs /api/chat/execute-tools with the right trace_id + decisions and continues", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url.includes("/execute-tools")) {
+        return Promise.resolve(
+          streamingResponse([
+            'data: {"type":"text-start","id":"y"}\n\n',
+            'data: {"type":"text-delta","delta":"done"}\n\n',
+          ]),
+        )
+      }
+      return Promise.resolve(streamingResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const store = createChatSessionStore()
+    store.loadSession(danglingApiMessages(), "trace-restored")
+    await waitUntil(() => get(store).toolApprovalWaiter !== null)
+
+    store.applyToolApprovalRun("tc-api")
+    await waitUntil(() =>
+      fetchMock.mock.calls.some((c) => String(c[0]).includes("/execute-tools")),
+    )
+    await waitUntil(() => get(store).toolApprovalWaiter === null)
+
+    const executeCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/execute-tools"),
+    )
+    expect(executeCall).toBeTruthy()
+    const body = JSON.parse((executeCall![1] as RequestInit).body as string)
+    expect(body.trace_id).toBe("trace-restored")
+    expect(body.decisions).toEqual({ "tc-api": true })
+    expect(body.tool_calls[0]).toMatchObject({
+      toolCallId: "tc-api",
+      toolName: "call_kiln_api",
+      requiresApproval: true,
+    })
+
+    // The gate cleared and the continuation rendered into a fresh assistant turn.
+    expect(get(store).toolApprovalWaiter).toBeNull()
+    await waitUntil(() =>
+      get(store)
+        .messages.flatMap((m) => m.parts ?? [])
+        .some((p) => p.type === "text" && "text" in p && p.text === "done"),
+    )
+    const text = get(store)
+      .messages.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "text" && "text" in p && p.text === "done")
+    expect(text).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
+
+  it("denying POSTs execute-tools with a deny decision (no run)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url.includes("/execute-tools")) {
+        return Promise.resolve(streamingResponse([]))
+      }
+      return Promise.resolve(streamingResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const store = createChatSessionStore()
+    store.loadSession(danglingApiMessages(), "trace-restored")
+    await waitUntil(() => get(store).toolApprovalWaiter !== null)
+
+    store.applyToolApprovalSkip("tc-api")
+    await waitUntil(() =>
+      fetchMock.mock.calls.some((c) => String(c[0]).includes("/execute-tools")),
+    )
+
+    const executeCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/execute-tools"),
+    )
+    const body = JSON.parse((executeCall![1] as RequestInit).body as string)
+    expect(body.decisions).toEqual({ "tc-api": false })
+    vi.unstubAllGlobals()
+  })
+
+  it("a dangling ask_user_question still renders the card (not an approval box)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const store = createChatSessionStore()
+
+    store.loadSession(
+      [
+        { id: "u1", role: "user", content: "hi" },
+        {
+          id: "a1",
+          role: "assistant",
+          traceId: "trace-restored",
+          parts: [
+            {
+              type: "ask-user-question",
+              toolCallId: "tc-ask",
+              question: "Pick?",
+              suggestedAnswers: [],
+            },
+          ],
+        },
+      ],
+      "trace-restored",
+    )
+
+    await waitUntil(() => get(store).askPending !== null)
+    // The ask path re-gates via askPending and the card; NO approval box.
+    expect(get(store).askPending).toEqual({
+      toolCallId: "tc-ask",
+      traceId: "trace-restored",
+    })
+    expect(get(store).toolApprovalWaiter).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it("dangling enable_auto_mode / disable_auto_mode are NOT surfaced as approvals", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const store = createChatSessionStore()
+
+    store.loadSession(
+      [
+        {
+          id: "a1",
+          role: "assistant",
+          traceId: "trace-restored",
+          parts: [
+            {
+              type: "tool-enable_auto_mode",
+              toolCallId: "tc-enable",
+              toolName: "enable_auto_mode",
+              input: {},
+            },
+            {
+              type: "tool-disable_auto_mode",
+              toolCallId: "tc-disable",
+              toolName: "disable_auto_mode",
+              input: {},
+            },
+          ],
+        },
+      ],
+      "trace-restored",
+    )
+
+    // Give any async surfacing a chance to (not) run.
+    await waitUntil(() => false)
+    expect(get(store).toolApprovalWaiter).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it("a fully-resolved trace (tool result present) surfaces nothing", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const store = createChatSessionStore()
+
+    store.loadSession(
+      [
+        {
+          id: "a1",
+          role: "assistant",
+          traceId: "trace-restored",
+          parts: [
+            {
+              type: "tool-call_kiln_api",
+              toolCallId: "tc-api",
+              toolName: "call_kiln_api",
+              input: { method: "GET" },
+              output: "200 OK",
+            },
+          ],
+        },
+      ],
+      "trace-restored",
+    )
+
+    await waitUntil(() => false)
+    expect(get(store).toolApprovalWaiter).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it("does NOT surface when loadSession suppresses it (attaching to a live run)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const store = createChatSessionStore()
+
+    store.loadSession(danglingApiMessages(), "trace-restored", {
+      surfacePendingApprovals: false,
+    })
+
+    await waitUntil(() => false)
+    expect(get(store).toolApprovalWaiter).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it("hard-refresh of an inactive conversation with a dangling call surfaces the approval (resyncOnLoad, no active run)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    // The stored (restored-from-sessionStorage) leaf trace id.
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue(
+      "trace-restored",
+    )
+
+    // No active run: resolve returns null (the hard-refresh inactive path).
+    const resolve = vi.fn().mockResolvedValue(null)
+    const attach = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach })
+
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    const store = createChatSessionStore("resync_dangling", auto)
+    // Seed the restored transcript (as sessionStorage hydration would have).
+    store.loadSession(danglingApiMessages(), "trace-restored", {
+      surfacePendingApprovals: false,
+    })
+    expect(get(store).toolApprovalWaiter).toBeNull()
+
+    await store.resyncOnLoad()
+    await waitUntil(() => get(store).toolApprovalWaiter !== null)
+
+    expect(resolve).toHaveBeenCalledWith("trace-restored")
+    expect(attach).not.toHaveBeenCalled()
+    const waiter = get(store).toolApprovalWaiter
+    expect(waiter).not.toBeNull()
+    expect(waiter!.payload.items[0].toolCallId).toBe("tc-api")
+    vi.unstubAllGlobals()
+  })
+
+  it("no double-surface when resyncOnLoad attaches to an active auto run", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
+
+    // Active run resolves; the hydrated current leaf still has a dangling call.
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "running",
+    })
+    const attach = vi.fn()
+    const beginReconnect = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
+
+    mockClientGet.mockResolvedValue({
+      data: { id: "t_now", task_run: { trace: [] } },
+      error: undefined,
+    })
+    mockHydrate.mockReturnValue({
+      messages: danglingApiMessages(),
+      continuationTraceId: "t_now",
+    })
+
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    const store = createChatSessionStore("resync_active_dangling", auto)
+    await store.resyncOnLoad()
+    await waitUntil(() => false)
+
+    // Attached to the live run; the dangling call was NOT re-surfaced as an
+    // approval (the live observer stream is the source of truth).
+    expect(attach).toHaveBeenCalledWith("ar_live", true)
+    expect(get(store).toolApprovalWaiter).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })
 

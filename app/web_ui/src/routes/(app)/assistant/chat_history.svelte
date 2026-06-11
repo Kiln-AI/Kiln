@@ -79,7 +79,11 @@
       }
       const { messages, continuationTraceId } =
         hydrateSessionFromSnapshot(snapshot)
-      dispatch("apply", { messages, continuationTraceId })
+      dispatch("apply", {
+        messages,
+        continuationTraceId,
+        autoActive: !!row.auto_active,
+      })
       posthog.capture("chat_history_session_loaded", {
         message_count: messages.length,
         auto_active: !!row.auto_active,

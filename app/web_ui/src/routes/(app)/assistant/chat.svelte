@@ -138,9 +138,20 @@
   // The input/send/Stop controls stay bound to ``isLoading`` only, so the
   // textarea remains usable for inject-on-send while auto mode works.
   $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
-  // Input is gated while loading OR while a question is pending (architecture
-  // §3): the user must choose an option or "Chat about this".
-  $: inputDisabled = isLoading || askPending !== null
+  // A tool approval is awaiting the user's decision. During a normal interactive
+  // approval the stream is mid-flight so ``isLoading`` already gates input; this
+  // also covers a re-surfaced approval after reattach (history-restore /
+  // hard-refresh of a conversation whose latest turn ended on a dangling client
+  // tool call), where ``status`` is "ready" and ``isLoading`` is false.
+  $: pendingApproval =
+    toolApprovalWaiter !== null &&
+    toolApprovalWaiter.payload.items.some(
+      (i) => toolApprovalPicks[i.toolCallId] === undefined,
+    )
+  // Input is gated while loading, while a question is pending (architecture §3:
+  // the user must choose an option or "Chat about this"), or while a tool
+  // approval is awaiting a decision.
+  $: inputDisabled = isLoading || askPending !== null || pendingApproval
 
   let prevIsLoading = false
   $: {
@@ -529,9 +540,15 @@
     e: CustomEvent<{
       messages: ChatMessage[]
       continuationTraceId: string
+      autoActive?: boolean
     }>,
   ) {
-    store.loadSession(e.detail.messages, e.detail.continuationTraceId)
+    // Suppress dangling-approval re-surfacing for an auto-active row: the caller
+    // re-attaches the live run right after, and that observer stream is the
+    // source of truth (auto mode auto-approves, so it won't be at an approval).
+    store.loadSession(e.detail.messages, e.detail.continuationTraceId, {
+      surfacePendingApprovals: !e.detail.autoActive,
+    })
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })

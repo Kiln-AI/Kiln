@@ -21,7 +21,10 @@ import {
 } from "./auto_run_store"
 import type { AutoModeConsentRequiredPayload } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
-import { hydrateSessionFromSnapshot } from "./session_messages"
+import {
+  hydrateSessionFromSnapshot,
+  pendingApprovalsFromMessages,
+} from "./session_messages"
 import { base_url, client } from "$lib/api_client"
 import {
   getCurrentAppState,
@@ -41,6 +44,21 @@ export interface PersistedChatSession {
 
 export interface ToolApprovalWaiter {
   payload: ToolCallsPendingPayload
+}
+
+export interface LoadSessionOptions {
+  /**
+   * When the restored conversation's latest turn ended on DANGLING client tool
+   * calls (a client-visible tool call with no following tool result), re-surface
+   * them as approval requests via the EXISTING approval box + execute-tools
+   * continuation. Defaults to ``true``.
+   *
+   * Set ``false`` when we are about to attach to a LIVE auto run (resync / an
+   * auto-active history row): the live observer stream / buffer-replay is the
+   * source of truth there (and auto mode auto-approves, so it won't be at a
+   * pending approval), so the hydrate-based re-surfacing must not double up.
+   */
+  surfacePendingApprovals?: boolean
 }
 
 /**
@@ -88,7 +106,11 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   stop(): void
   retryLastRequest(): void
   reset(): void
-  loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  loadSession(
+    messages: ChatMessage[],
+    continuationTraceId: string,
+    opts?: LoadSessionOptions,
+  ): void
   /**
    * Resync the restored-from-sessionStorage conversation back to its true
    * auto-mode state after a hard refresh. If the conversation has an active
@@ -443,6 +465,93 @@ export function createChatSessionStore(
         }))
         pushInlineError(err.message)
       },
+    })
+  }
+
+  // Reattach (ui_design §5): the restored conversation's latest turn ended on
+  // DANGLING client tool calls (a client-visible tool call with no persisted
+  // tool result) that require resolution. Re-surface them through the EXISTING
+  // approval gate (handleToolCallsPending → the same toolApprovalWaiter UI) and,
+  // on approval, continue via the EXISTING /api/chat/execute-tools loop
+  // (resumePendingToolCalls — which handles multi-round + nested ask/approval).
+  // No parallel approval UI; the payload is reconstructed purely from the
+  // hydrated trace by ``pendingApprovalsFromMessages``.
+  //
+  // The approval box renders inline against the dangling tool part (matched by
+  // toolCallId) the same way the live ``tool-calls-pending`` path renders it, so
+  // the gate is shown immediately; the execute-tools continuation only fires once
+  // the user approves. The input gate is driven by ``toolApprovalWaiter`` being
+  // non-null (mirroring a normal pending approval) and clears on resolve/error.
+  function surfacePendingApprovals(
+    items: ToolCallsPendingItem[],
+    traceId: string,
+  ): void {
+    if (items.length === 0) return
+    const thisGeneration = ++generation
+    const isStale = () => thisGeneration !== generation
+    // Open the approval box and await the user's decisions; the dangling tool
+    // part is already rendered, so the box appears against it (no new turn yet).
+    void handleToolCallsPending({ items }).then((decisions) => {
+      if (isStale()) return
+      // A fresh assistant turn renders the approved tools' continuation, mirroring
+      // the graceful-stop handoff.
+      beginAssistantTurn()
+      void resumePendingToolCalls({
+        apiUrl: CHAT_API_URL,
+        traceId,
+        items,
+        // Pre-resolve the gate with the picks already collected; a follow-on
+        // round (multi-round approval) re-opens the box via handleToolCallsPending.
+        onToolCallsPending: (payload) => {
+          if (isStale()) return Promise.resolve({})
+          const pendingDecisions = payload.items.every(
+            (it) => it.toolCallId in decisions,
+          )
+          if (pendingDecisions) return Promise.resolve(decisions)
+          return handleToolCallsPending(payload)
+        },
+        onAssistantMessage: (update) => {
+          if (isStale()) return
+          updateLastAssistant(update)
+        },
+        onChatTrace: (tid) => {
+          if (isStale()) return
+          setLastAssistantTraceId(tid)
+        },
+        onInlineError: (message, tid, code) => {
+          if (isStale()) return
+          pushInlineError(message, tid, code)
+        },
+        onToolExecutionStart: () => {
+          if (isStale()) return
+          combined.update((s) => ({ ...s, toolExecuting: true }))
+        },
+        onToolExecutionEnd: () => {
+          if (isStale()) return
+          combined.update((s) => ({ ...s, toolExecuting: false }))
+        },
+        onShowActivityIndicator: (show) => {
+          if (isStale()) return
+          combined.update((s) => ({ ...s, showActivityIndicator: show }))
+        },
+        onFinish: () => {
+          if (isStale()) return
+          combined.update((s) => ({
+            ...s,
+            toolExecuting: false,
+            showActivityIndicator: false,
+          }))
+        },
+        onError: (err) => {
+          if (isStale()) return
+          combined.update((s) => ({
+            ...s,
+            toolExecuting: false,
+            showActivityIndicator: false,
+          }))
+          pushInlineError(err.message)
+        },
+      })
     })
   }
 
@@ -923,7 +1032,11 @@ export function createChatSessionStore(
     setRuntimeState("ready", null)
   }
 
-  function loadSession(messages: ChatMessage[], traceId: string): void {
+  function loadSession(
+    messages: ChatMessage[],
+    traceId: string,
+    opts: LoadSessionOptions = {},
+  ): void {
     if (abortController) {
       abortController.abort()
     }
@@ -943,6 +1056,16 @@ export function createChatSessionStore(
       askPending: pendingQuestionFromMessages(messages, traceId),
     }))
     setRuntimeState("ready", null)
+
+    // Reattach (KIL bug): if the restored conversation's latest turn ended on
+    // DANGLING client tool calls awaiting resolution (e.g. a call_kiln_api
+    // awaiting approval, persisted with no tool result), re-surface the approval
+    // box + execute-tools continuation — UNLESS we are about to attach to a live
+    // run (resync / auto-active history row), where the live stream is the source
+    // of truth. The ask card path above is left untouched (excluded by name).
+    if (opts.surfacePendingApprovals !== false) {
+      surfacePendingApprovals(pendingApprovalsFromMessages(messages), traceId)
+    }
   }
 
   // Resync after a hard refresh. The page restored stale messages from
@@ -961,8 +1084,19 @@ export function createChatSessionStore(
 
     const resolved = await autoRunStore.resolve(storedTraceId)
     // Not active (404 / error): leave the normal restored-from-sessionStorage
-    // state untouched.
-    if (!resolved) return
+    // transcript untouched. But this is the hard-refresh path for an inactive
+    // (interactive / server-restarted) conversation, which never went through
+    // loadSession — so re-surface any dangling client tool calls awaiting
+    // approval here (the same re-surfacing loadSession does for history-restore).
+    // Safe because there is no live run to attach to / double up with.
+    if (!resolved) {
+      const restored = get(persisted).messages
+      surfacePendingApprovals(
+        pendingApprovalsFromMessages(restored),
+        storedTraceId,
+      )
+      return
+    }
 
     // We now know it's an active run. Show a transient "reconnecting…" affordance
     // while we hydrate → attach so the transcript doesn't look done/idle before
@@ -989,7 +1123,11 @@ export function createChatSessionStore(
           hydrateSessionFromSnapshot(snapshot)
         // loadSession detaches any prior observer, sets the messages + trace id,
         // and resets runtime state — identical to the history-restore apply path.
-        loadSession(messages, traceId)
+        // Suppress dangling-approval re-surfacing here: we are attaching to a
+        // LIVE run, where the observer stream / buffer-replay is the source of
+        // truth (and auto mode auto-approves, so it won't be at a pending
+        // approval). Re-surfacing would double up with the live stream.
+        loadSession(messages, traceId, { surfacePendingApprovals: false })
       }
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at

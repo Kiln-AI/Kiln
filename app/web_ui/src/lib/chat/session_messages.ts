@@ -3,6 +3,7 @@ import {
   chatGenerateId,
   type ChatMessage,
   type ChatMessagePart,
+  type ToolCallsPendingItem,
 } from "./streaming_chat"
 
 type TraceMessage = components["schemas"]["TraceMessage"]
@@ -193,4 +194,80 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   }
 
   return { messages, continuationTraceId: snapshot.id }
+}
+
+// Tool names that have their own re-attach handling and must NOT be re-surfaced
+// as generic tool approvals when dangling:
+//  - ask_user_question is re-rendered as its question card (handled by the
+//    ask-user-question part + ``pendingQuestionFromMessages``).
+//  - enable_auto_mode / disable_auto_mode are auto-mode signal tools; resolving
+//    them via the approval box would be wrong, so they are left out of scope.
+const APPROVAL_RESURFACE_EXCLUDED_TOOL_NAMES = new Set([
+  ASK_USER_QUESTION_TOOL_NAME,
+  "enable_auto_mode",
+  "disable_auto_mode",
+])
+
+function toolInputAsRecord(input: unknown): Record<string, unknown> {
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) {
+    return input as Record<string, unknown>
+  }
+  return {}
+}
+
+/**
+ * Detect DANGLING client tool calls in the latest assistant turn of a hydrated
+ * conversation — client-visible tool calls with NO following tool result in the
+ * persisted trace (i.e. a ``tool-*`` part whose ``output`` is undefined). These
+ * are reconstructed into the ``ToolCallsPendingItem`` shape the EXISTING approval
+ * handler expects so the conversation can re-surface the approval box on reattach
+ * (history-restore or hard-refresh) and continue via /api/chat/execute-tools.
+ *
+ * Only the latest assistant turn can hold a live pending approval, so the scan
+ * stops at the first assistant message from the end (mirroring
+ * ``pendingQuestionFromMessages``). The special intercept tools
+ * (``ask_user_question`` / ``enable_auto_mode`` / ``disable_auto_mode``) are
+ * excluded — they have their own reattach handling.
+ *
+ * The persisted trace already carries each tool call's name + arguments (parsed
+ * into ``input`` during hydration), so the payload is reconstructed purely from
+ * the hydrated messages with no backend round-trip. ``requiresApproval`` is
+ * forced true: a dangling client tool call that was awaiting resolution is, by
+ * definition, one the user must approve/deny before it can run.
+ */
+export function pendingApprovalsFromMessages(
+  messages: ChatMessage[],
+): ToolCallsPendingItem[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== "assistant") continue
+    const items: ToolCallsPendingItem[] = []
+    for (const part of m.parts ?? []) {
+      if (
+        typeof part.type !== "string" ||
+        !part.type.startsWith("tool-") ||
+        !("toolCallId" in part)
+      ) {
+        continue
+      }
+      const toolPart = part as Extract<
+        ChatMessagePart,
+        { type: `tool-${string}` }
+      >
+      // A persisted tool result hydrates into ``output``; its presence means the
+      // call is resolved and nothing should be re-surfaced.
+      if (toolPart.output !== undefined) continue
+      const toolName = toolPart.toolName ?? ""
+      if (APPROVAL_RESURFACE_EXCLUDED_TOOL_NAMES.has(toolName)) continue
+      items.push({
+        toolCallId: toolPart.toolCallId,
+        toolName,
+        input: toolInputAsRecord(toolPart.input),
+        requiresApproval: true,
+      })
+    }
+    // Only the latest assistant turn can hold live pending approvals.
+    return items
+  }
+  return []
 }
