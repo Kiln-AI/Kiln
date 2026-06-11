@@ -2,11 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { get, writable } from "svelte/store"
 import type { ChatMessage, StreamChatOptions } from "./streaming_chat"
 
-vi.mock("./streaming_chat", () => ({
-  streamChat: vi.fn(),
-  chatGenerateId: vi.fn(() => `id-${Math.random().toString(36).slice(2, 7)}`),
-  traceIdForNextChatRequest: vi.fn(() => undefined),
-}))
+vi.mock("./streaming_chat", async () => {
+  // Keep the real stream-parsing machinery (consumeSseStream +
+  // StreamEventProcessor) the answerQuestion path uses; only stub streamChat and
+  // the id/trace helpers the tests drive.
+  const actual =
+    await vi.importActual<typeof import("./streaming_chat")>("./streaming_chat")
+  return {
+    ...actual,
+    streamChat: vi.fn(),
+    chatGenerateId: vi.fn(() => `id-${Math.random().toString(36).slice(2, 7)}`),
+    traceIdForNextChatRequest: vi.fn(() => undefined),
+  }
+})
 
 const mockClientGet = vi.fn()
 vi.mock("$lib/api_client", () => ({
@@ -1415,6 +1423,341 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     await store.resyncOnLoad()
 
     expect(resolve).not.toHaveBeenCalled()
+  })
+})
+
+describe("ask_user_question (architecture §3)", () => {
+  // A fetch returning a streaming SSE body (the interactive answer continuation).
+  function streamingResponse(lines: string[]): Response {
+    let i = 0
+    const enc = new TextEncoder()
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (i >= lines.length) {
+              return Promise.resolve({ done: true, value: undefined })
+            }
+            const line = lines[i]
+            i += 1
+            return Promise.resolve({ done: false, value: enc.encode(line) })
+          },
+        }),
+      },
+    } as unknown as Response
+  }
+
+  function jsonError(status: number, detail: string): Response {
+    return {
+      ok: false,
+      status,
+      json: () => Promise.resolve({ detail }),
+    } as unknown as Response
+  }
+
+  // Drive an interactive turn that surfaces a pending question via the stream's
+  // onAskUserQuestion callback, returning the captured options + store.
+  async function withPendingQuestion(
+    streamChatMock: import("vitest").MockInstance<
+      [StreamChatOptions],
+      Promise<void>
+    >,
+    create: (typeof import("./chat_session_store"))["createChatSessionStore"],
+    auto?: Parameters<
+      typeof import("./chat_session_store").createChatSessionStore
+    >[1],
+  ) {
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation((opts: StreamChatOptions) => {
+      capture.options = opts
+      return Promise.resolve()
+    })
+    const store = create(undefined, auto)
+    await store.sendMessage("hi")
+    // The assistant turn renders the card; the trace id keys the answer.
+    capture.options!.onChatTrace!("trace-q")
+    capture.options!.onAssistantMessage!((draft) => {
+      draft.parts = [
+        {
+          type: "ask-user-question",
+          toolCallId: "tc1",
+          question: "Pick?",
+          suggestedAnswers: [{ answer: "Option A", explanation: "why" }],
+        },
+      ]
+    })
+    capture.options!.onAskUserQuestion!({
+      traceId: "trace-q",
+      toolCallId: "tc1",
+      question: "Pick?",
+      suggestedAnswers: [{ answer: "Option A", explanation: "why" }],
+    })
+    return { store, capture }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("records the pending question and gates input on ask-user-question", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+    const state = get(store)
+    expect(state.askPending).toEqual({ toolCallId: "tc1", traceId: "trace-q" })
+  })
+
+  it("one-click pick POSTs the answer, renders the user message, collapses the card, clears the gate (interactive)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        streamingResponse(['data: {"type":"text-start","id":"x"}\n\n']),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+
+    await store.answerQuestion("tc1", { answer: "Option A" })
+
+    // POSTed to the answer endpoint with the pick.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toContain("/api/chat/ask/answer")
+    expect(JSON.parse(init.body)).toEqual({
+      trace_id: "trace-q",
+      tool_call_id: "tc1",
+      choice: { answer: "Option A" },
+    })
+
+    const state = get(store)
+    // Gate cleared.
+    expect(state.askPending).toBeNull()
+    // Chosen answer rendered as the user's message.
+    const lastUser = [...state.messages]
+      .reverse()
+      .find((m) => m.role === "user")
+    // The most recent user message is the picked answer (a new turn was appended).
+    const userMsgs = state.messages.filter((m) => m.role === "user")
+    expect(userMsgs[userMsgs.length - 1].content).toBe("Option A")
+    expect(lastUser).toBeTruthy()
+    // Card collapsed to its picked resolution.
+    const askPart = state.messages
+      .flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "ask-user-question")
+    expect(askPart && "resolution" in askPart && askPart.resolution).toEqual({
+      kind: "pick",
+      answer: "Option A",
+    })
+  })
+
+  it("'Chat about this' POSTs the chat signal, renders NO user message, and clears the gate", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const fetchMock = vi.fn().mockResolvedValue(streamingResponse([]))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+    const userCountBefore = get(store).messages.filter(
+      (m) => m.role === "user",
+    ).length
+
+    await store.answerQuestion("tc1", { chat: true })
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).choice).toEqual({
+      chat: true,
+    })
+    const state = get(store)
+    // Gate cleared → input re-enabled for the open follow-up.
+    expect(state.askPending).toBeNull()
+    // No user message rendered for "Chat about this".
+    expect(state.messages.filter((m) => m.role === "user")).toHaveLength(
+      userCountBefore,
+    )
+    const askPart = state.messages
+      .flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "ask-user-question")
+    expect(askPart && "resolution" in askPart && askPart.resolution).toEqual({
+      kind: "chat",
+    })
+  })
+
+  // In auto mode the question arrives on the observer stream (via the bound
+  // sink); gating + answering route through the registry (202, observer
+  // continues). Establish pending via the sink, then answer.
+  function bindSink(
+    auto: Parameters<
+      typeof import("./chat_session_store").createChatSessionStore
+    >[1],
+  ): {
+    sinkRef: { current: import("./auto_run_store").AutoRunChatSink | null }
+  } {
+    const sinkRef = {
+      current: null as import("./auto_run_store").AutoRunChatSink | null,
+    }
+    ;(
+      auto as unknown as {
+        bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+      }
+    ).bind = (s) => {
+      sinkRef.current = s
+    }
+    return { sinkRef }
+  }
+
+  it("auto path renders the question card on the observer stream and gates input", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const auto = makeFakeAutoRun({ autoModeOn: true })
+    const { sinkRef } = bindSink(auto)
+    const store = createChatSessionStore(undefined, auto)
+
+    sinkRef.current!.onAskUserQuestion({
+      traceId: "trace-auto",
+      toolCallId: "tc-auto",
+      question: "Pick?",
+      suggestedAnswers: [],
+    })
+
+    expect(get(store).askPending).toEqual({
+      toolCallId: "tc-auto",
+      traceId: "trace-auto",
+    })
+  })
+
+  it("auto path: answering POSTs (202) but renders no user message locally (the bus echoes it) and consumes no stream", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 202 } as unknown as Response)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const auto = makeFakeAutoRun({ autoModeOn: true })
+    const { sinkRef } = bindSink(auto)
+    const store = createChatSessionStore(undefined, auto)
+    sinkRef.current!.onAskUserQuestion({
+      traceId: "trace-auto",
+      toolCallId: "tc-auto",
+      question: "Pick?",
+      suggestedAnswers: [{ answer: "Option A", explanation: "" }],
+    })
+
+    await store.answerQuestion("tc-auto", { answer: "Option A" })
+
+    expect(fetchMock.mock.calls[0][0]).toContain("/api/chat/ask/answer")
+    const state = get(store)
+    expect(state.askPending).toBeNull()
+    // No local user message: the observer's user-message echo renders it.
+    expect(state.messages.filter((m) => m.role === "user")).toHaveLength(0)
+  })
+
+  it("clears the gate (and surfaces an error) when the answer request fails", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonError(409, "Run is not idle"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+    await store.answerQuestion("tc1", { answer: "Option A" })
+
+    const state = get(store)
+    // Gate cleared even on error — can't get stuck.
+    expect(state.askPending).toBeNull()
+    const errorMsg = state.messages.find((m) => m.role === "error")
+    expect(errorMsg?.content).toBe("Run is not idle")
+  })
+
+  it("reset clears the pending question gate", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+    expect(get(store).askPending).not.toBeNull()
+    store.reset()
+    expect(get(store).askPending).toBeNull()
+  })
+
+  it("loadSession re-gates input when the restored conversation ends on an unresolved card (reattach)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const store = createChatSessionStore()
+
+    store.loadSession(
+      [
+        { id: "u1", role: "user", content: "hi" },
+        {
+          id: "a1",
+          role: "assistant",
+          traceId: "trace-restored",
+          parts: [
+            {
+              type: "ask-user-question",
+              toolCallId: "tc-restored",
+              question: "Pick?",
+              suggestedAnswers: [],
+            },
+          ],
+        },
+      ],
+      "trace-restored",
+    )
+
+    expect(get(store).askPending).toEqual({
+      toolCallId: "tc-restored",
+      traceId: "trace-restored",
+    })
+  })
+
+  it("loadSession does NOT gate when the restored card is already resolved", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const store = createChatSessionStore()
+
+    store.loadSession(
+      [
+        {
+          id: "a1",
+          role: "assistant",
+          traceId: "t",
+          parts: [
+            {
+              type: "ask-user-question",
+              toolCallId: "tc",
+              question: "Pick?",
+              suggestedAnswers: [],
+              resolution: { kind: "chat" },
+            },
+          ],
+        },
+      ],
+      "t",
+    )
+
+    expect(get(store).askPending).toBeNull()
   })
 })
 

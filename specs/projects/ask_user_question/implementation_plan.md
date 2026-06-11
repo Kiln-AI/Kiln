@@ -23,14 +23,14 @@ architecture.md.
     continuing — auto-resume vs interactive stream by registry lookup; echo the answer to the bus for
     auto. Tests against a fake upstream. (Architecture §2.)
 
-- [ ] **Phase 3 — Web UI**
+- [x] **Phase 3 — Web UI**
   - `ask_user_question.svelte` card (options + "Chat about this"); handle the `ask-user-question`
     event in `streaming_chat.ts` (interactive + auto observer); `chat_session_store.answerQuestion`;
     input gating while pending (re-enabled on chat/resolve); render the chosen answer as the user's
     message; resolution/error/detach clears the gate. Regenerate `api_schema.d.ts`. vitest coverage.
     (`ui_design.md`, Architecture §3.)
 
-- [ ] **Phase 4 — Backend wiring (`/Users/leonardmarcq/Downloads/kiln_server`)**
+- [x] **Phase 4 — Backend wiring (`/Users/leonardmarcq/dev/kiln_ws_1/kiln_server`)**
   - Register `ask_user_question` in `CHAT_CLIENT_VISIBLE_TOOLS` + `get_chat_kiln_tool_ids()`; add
     system-prompt guidance (≤5 concrete answers w/ short explanations, call alone, chat-signal →
     open follow-up). Verify. Pre-merge: editable deps → published rev (as for auto-mode tools).

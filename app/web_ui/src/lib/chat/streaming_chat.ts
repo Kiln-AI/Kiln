@@ -8,6 +8,21 @@
 
 import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 
+/** One suggested answer the model offers for an ``ask_user_question`` call. */
+export interface SuggestedAnswer {
+  answer: string
+  explanation: string
+}
+
+/**
+ * How a surfaced ``ask_user_question`` card was resolved. ``pick`` carries the
+ * chosen answer's main line; ``chat`` records that the user chose to chat. Absent
+ * while the question is still pending.
+ */
+export type AskUserQuestionResolution =
+  | { kind: "pick"; answer: string }
+  | { kind: "chat" }
+
 export type ChatMessagePart =
   | { type: "text"; text: string }
   | { type: "reasoning"; reasoning: string }
@@ -17,6 +32,14 @@ export type ChatMessagePart =
       toolName?: string
       input?: unknown
       output?: unknown
+    }
+  | {
+      type: "ask-user-question"
+      toolCallId: string
+      question: string
+      suggestedAnswers: SuggestedAnswer[]
+      /** Set once the user picks an answer or chooses to chat. */
+      resolution?: AskUserQuestionResolution
     }
 
 export interface ChatMessage {
@@ -47,18 +70,23 @@ function toBackendMessage(m: ChatMessage): BackendChatRequest["messages"][0] {
   if (m.role === "assistant" && m.parts?.length) {
     return {
       role: "assistant",
-      parts: m.parts.map((p) => {
-        if (p.type === "text") return { type: "text", text: p.text }
-        if (p.type === "reasoning")
-          return { type: "reasoning", reasoning: p.reasoning }
-        return {
-          type: p.type,
-          toolCallId: p.toolCallId,
-          toolName: p.toolName,
-          input: p.input,
-          output: p.output,
-        }
-      }),
+      parts: m.parts
+        // The ask-user-question card is a client-rendered surface for an
+        // intercepted tool call; it is resolved server-side via the answer
+        // endpoint (continuation keys off trace_id), so it never round-trips.
+        .filter((p) => p.type !== "ask-user-question")
+        .map((p) => {
+          if (p.type === "text") return { type: "text", text: p.text }
+          if (p.type === "reasoning")
+            return { type: "reasoning", reasoning: p.reasoning }
+          return {
+            type: p.type,
+            toolCallId: p.toolCallId,
+            toolName: p.toolName,
+            input: p.input,
+            output: p.output,
+          }
+        }),
     }
   }
   return { role: m.role, content: m.content ?? "" }
@@ -93,6 +121,47 @@ export interface StreamEvent {
   /** ``auto-mode-state`` (Phase 9) on-subscribe liveness snapshot */
   flag_on?: boolean
   working?: boolean
+  /** ``ask-user-question`` carries the question + the model's suggested answers */
+  question?: string
+  suggested_answers?: Array<{ answer?: unknown; explanation?: unknown }>
+}
+
+/** Payload of the ``ask-user-question`` event (architecture §3). */
+export interface AskUserQuestionPayload {
+  traceId: string | null
+  toolCallId: string
+  question: string
+  suggestedAnswers: SuggestedAnswer[]
+}
+
+/** Defensive cap mirroring the app server (functional spec §3.4). */
+const MAX_SUGGESTED_ANSWERS = 5
+
+/** Map a raw ``ask-user-question`` event to its typed payload. */
+export function askUserQuestionPayloadFromEvent(
+  event: StreamEvent,
+): AskUserQuestionPayload {
+  const raw = Array.isArray(event.suggested_answers)
+    ? event.suggested_answers
+    : []
+  const suggestedAnswers: SuggestedAnswer[] = []
+  for (const item of raw) {
+    if (suggestedAnswers.length >= MAX_SUGGESTED_ANSWERS) break
+    if (item == null || typeof item !== "object") continue
+    const answer = (item as { answer?: unknown }).answer
+    if (typeof answer !== "string") continue
+    const explanation = (item as { explanation?: unknown }).explanation
+    suggestedAnswers.push({
+      answer,
+      explanation: typeof explanation === "string" ? explanation : "",
+    })
+  }
+  return {
+    traceId: event.trace_id ?? null,
+    toolCallId: event.toolCallId ?? "",
+    question: typeof event.question === "string" ? event.question : "",
+    suggestedAnswers,
+  }
 }
 
 export interface ToolCallsPendingItem {
@@ -148,6 +217,12 @@ export interface StreamChatOptions {
   onAutoModeConsentRequired?: (
     payload: AutoModeConsentRequiredPayload,
   ) => void | Promise<void>
+  /**
+   * After ``ask-user-question`` the interactive stream ends; the handler records
+   * the pending question + gates input. Resolution continues out-of-band via
+   * ``POST /api/chat/ask/answer`` (architecture §3).
+   */
+  onAskUserQuestion?: (payload: AskUserQuestionPayload) => void
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -180,6 +255,7 @@ type PartSlot =
   | { kind: "text"; id: string }
   | { kind: "reasoning"; id: string }
   | { kind: "tool"; id: string }
+  | { kind: "ask"; id: string }
 
 export interface StreamEventProcessorOptions {
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
@@ -188,6 +264,12 @@ export interface StreamEventProcessorOptions {
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
   onShowActivityIndicator?: (show: boolean) => void
+  /**
+   * The model called ``ask_user_question`` (architecture §3): a question card is
+   * rendered inline and input must be gated until the user answers. Fired from
+   * BOTH the interactive ``streamChat`` reader and the auto observer path.
+   */
+  onAskUserQuestion?: (payload: AskUserQuestionPayload) => void
 }
 
 export class StreamEventProcessor {
@@ -202,6 +284,16 @@ export class StreamEventProcessor {
       toolName?: string
       input?: unknown
       output?: unknown
+    }
+  >()
+  private askMap = new Map<
+    string,
+    {
+      type: "ask-user-question"
+      toolCallId: string
+      question: string
+      suggestedAnswers: SuggestedAnswer[]
+      resolution?: AskUserQuestionResolution
     }
   >()
   private toolInputBuffer = new Map<string, string>()
@@ -219,6 +311,7 @@ export class StreamEventProcessor {
   private onToolExecutionStart?: (toolCount: number) => void
   private onToolExecutionEnd?: (toolCount: number) => void
   private onShowActivityIndicator?: (show: boolean) => void
+  private onAskUserQuestion?: (payload: AskUserQuestionPayload) => void
 
   private HANDLERS: Record<string, (event: StreamEvent) => void>
 
@@ -229,6 +322,7 @@ export class StreamEventProcessor {
     this.onToolExecutionStart = opts.onToolExecutionStart
     this.onToolExecutionEnd = opts.onToolExecutionEnd
     this.onShowActivityIndicator = opts.onShowActivityIndicator
+    this.onAskUserQuestion = opts.onAskUserQuestion
 
     this.HANDLERS = {
       "text-start": (e) => {
@@ -257,6 +351,10 @@ export class StreamEventProcessor {
       },
       "tool-output-available": (e) => this.handleToolOutputAvailable(e),
       "tool-output-error": (e) => this.handleToolOutputError(e),
+      "ask-user-question": (e) => {
+        this.onShowActivityIndicator?.(false)
+        this.handleAskUserQuestion(e)
+      },
       kiln_chat_trace: (e) => this.handleChatTrace(e),
       "kiln-tool-execution-start": (e) => {
         this.onShowActivityIndicator?.(true)
@@ -290,6 +388,9 @@ export class StreamEventProcessor {
         } else if (slot.kind === "reasoning") {
           const reasoning = this.reasoningBlocks.get(slot.id)
           if (reasoning) next.push({ type: "reasoning", reasoning })
+        } else if (slot.kind === "ask") {
+          const ask = this.askMap.get(slot.id)
+          if (ask) next.push(ask)
         } else {
           const tool = this.toolMap.get(slot.id)
           if (tool) next.push(tool)
@@ -437,6 +538,24 @@ export class StreamEventProcessor {
     }
   }
 
+  private handleAskUserQuestion(event: StreamEvent): void {
+    const payload = askUserQuestionPayloadFromEvent(event)
+    if (!payload.toolCallId) return
+    const key = payload.toolCallId
+    if (!this.askMap.has(key)) {
+      this.partOrder.push({ kind: "ask", id: key })
+    }
+    this.askMap.set(key, {
+      type: "ask-user-question",
+      toolCallId: payload.toolCallId,
+      question: payload.question,
+      suggestedAnswers: payload.suggestedAnswers,
+      resolution: this.askMap.get(key)?.resolution,
+    })
+    this.flushAssistant()
+    this.onAskUserQuestion?.(payload)
+  }
+
   private handleChatTrace(event: StreamEvent): void {
     const tid = event.trace_id
     if (typeof tid === "string" && tid) {
@@ -540,6 +659,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onToolExecutionEnd,
     onShowActivityIndicator,
     onAutoModeConsentRequired,
+    onAskUserQuestion,
     onFinish,
     onError,
     signal,
@@ -616,6 +736,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onToolExecutionStart,
     onToolExecutionEnd,
     onShowActivityIndicator,
+    onAskUserQuestion,
   })
 
   try {
@@ -644,6 +765,14 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
                   autoModeConsentPayloadFromEvent(event),
                 )
               }
+              onFinish()
+              return
+            }
+            if (event.type === "ask-user-question") {
+              // The model asked a question: render the card (via the processor)
+              // and END the stream (same pattern as auto-mode-consent-required).
+              // Resolution continues out-of-band via /api/chat/ask/answer.
+              processor.handleEvent(event)
               onFinish()
               return
             }

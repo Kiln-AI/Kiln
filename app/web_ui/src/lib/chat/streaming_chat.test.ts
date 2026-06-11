@@ -5,8 +5,27 @@ import {
   resumePendingToolCalls,
   chatExecuteToolsUrl,
   traceIdForNextChatRequest,
+  askUserQuestionPayloadFromEvent,
   type ChatMessage,
+  type StreamEvent,
 } from "./streaming_chat"
+
+function readerFromLines(lines: string[]) {
+  let i = 0
+  const enc = new TextEncoder()
+  return {
+    getReader: () => ({
+      read: () => {
+        if (i >= lines.length) {
+          return Promise.resolve({ done: true, value: undefined })
+        }
+        const line = lines[i]
+        i += 1
+        return Promise.resolve({ done: false, value: enc.encode(line) })
+      },
+    }),
+  }
+}
 
 describe("traceIdForNextChatRequest", () => {
   it("returns the latest assistant traceId", () => {
@@ -193,6 +212,95 @@ describe("streamChat", () => {
 
     expect(errorSpy).toHaveBeenCalledOnce()
     expect(inlineErrorSpy).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+  })
+})
+
+describe("askUserQuestionPayloadFromEvent", () => {
+  it("parses question + valid suggestions, defaulting missing explanations", () => {
+    const payload = askUserQuestionPayloadFromEvent({
+      type: "ask-user-question",
+      trace_id: "t1",
+      toolCallId: "tc1",
+      question: "Which one?",
+      suggested_answers: [
+        { answer: "A", explanation: "because A" },
+        { answer: "B" },
+      ],
+    } as StreamEvent)
+    expect(payload).toEqual({
+      traceId: "t1",
+      toolCallId: "tc1",
+      question: "Which one?",
+      suggestedAnswers: [
+        { answer: "A", explanation: "because A" },
+        { answer: "B", explanation: "" },
+      ],
+    })
+  })
+
+  it("drops malformed suggestions and caps to 5", () => {
+    const raw = Array.from({ length: 8 }, (_, i) => ({ answer: `A${i}` }))
+    // Inject a malformed entry that must be skipped.
+    const withBad = [{ explanation: "no answer" }, ...raw] as Array<{
+      answer?: unknown
+    }>
+    const payload = askUserQuestionPayloadFromEvent({
+      type: "ask-user-question",
+      toolCallId: "tc",
+      question: "q",
+      suggested_answers: withBad,
+    } as StreamEvent)
+    expect(payload.suggestedAnswers).toHaveLength(5)
+    expect(payload.suggestedAnswers[0].answer).toBe("A0")
+  })
+})
+
+describe("streamChat ask-user-question", () => {
+  it("renders the question card part, fires onAskUserQuestion, and ends the stream", async () => {
+    const lines = [
+      'data: {"type":"kiln_chat_trace","trace_id":"trace-q"}\n\n',
+      'data: {"type":"ask-user-question","trace_id":"trace-q","toolCallId":"tc1","question":"Pick?","suggested_answers":[{"answer":"A","explanation":"e"}]}\n\n',
+      // Anything after the question must NOT be processed (stream ends).
+      'data: {"type":"text-start","id":"x"}\n\n',
+      'data: {"type":"text-delta","delta":"should not render"}\n\n',
+    ]
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, body: readerFromLines(lines) })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const askSpy = vi.fn()
+    const finishSpy = vi.fn()
+    let lastParts: ChatMessage["parts"] = []
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: (update) => {
+        const draft: ChatMessage = { id: "a", role: "assistant", parts: [] }
+        update(draft)
+        lastParts = draft.parts
+      },
+      onAskUserQuestion: askSpy,
+      onFinish: finishSpy,
+      onError: () => {},
+    })
+
+    expect(askSpy).toHaveBeenCalledTimes(1)
+    expect(askSpy.mock.calls[0][0]).toMatchObject({
+      toolCallId: "tc1",
+      question: "Pick?",
+      suggestedAnswers: [{ answer: "A", explanation: "e" }],
+    })
+    // The card part was rendered.
+    const askPart = lastParts?.find((p) => p.type === "ask-user-question")
+    expect(askPart).toBeTruthy()
+    // The stream ended on the question: the trailing text was never rendered.
+    const textPart = lastParts?.find((p) => p.type === "text")
+    expect(textPart).toBeUndefined()
+    expect(finishSpy).toHaveBeenCalledTimes(1)
 
     vi.unstubAllGlobals()
   })

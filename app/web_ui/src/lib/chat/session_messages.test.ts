@@ -74,6 +74,98 @@ describe("hydrateSessionFromSnapshot", () => {
     })
   })
 
+  it("hydrates an unresolved ask_user_question call as a pending question card", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("tq", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({
+                  question: "Which model?",
+                  suggested_answers: [
+                    { answer: "GPT-4o", explanation: "best" },
+                    { answer: "Llama 3" },
+                  ],
+                }),
+              },
+            },
+          ],
+        },
+      ]),
+    )
+    const part = messages[0].parts![0]
+    expect(part).toEqual({
+      type: "ask-user-question",
+      toolCallId: "tc1",
+      question: "Which model?",
+      suggestedAnswers: [
+        { answer: "GPT-4o", explanation: "best" },
+        { answer: "Llama 3", explanation: "" },
+      ],
+    })
+  })
+
+  it("collapses a resolved ask_user_question card to its picked answer", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("tq", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({ question: "Which?" }),
+              },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "tc1", content: "GPT-4o" },
+      ]),
+    )
+    const part = messages[0].parts![0]
+    expect(part).toMatchObject({
+      type: "ask-user-question",
+      resolution: { kind: "pick", answer: "GPT-4o" },
+    })
+  })
+
+  it("collapses a resolved ask_user_question card to chat for the chat signal", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("tq", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({ question: "Which?" }),
+              },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "tc1",
+          content: JSON.stringify({ choice: "chat" }),
+        },
+      ]),
+    )
+    const part = messages[0].parts![0]
+    expect(part).toMatchObject({
+      type: "ask-user-question",
+      resolution: { kind: "chat" },
+    })
+  })
+
   it("skips system and developer messages", () => {
     const { messages } = hydrateSessionFromSnapshot(
       snap("x", [

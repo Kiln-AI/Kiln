@@ -6,7 +6,11 @@ import {
   type AutoRunChatSink,
   type AutoRunStore,
 } from "./auto_run_store"
-import type { ChatMessage, ToolCallsPendingItem } from "./streaming_chat"
+import type {
+  AskUserQuestionPayload,
+  ChatMessage,
+  ToolCallsPendingItem,
+} from "./streaming_chat"
 
 vi.mock("$lib/api_client", () => ({
   base_url: "http://localhost:8757",
@@ -73,6 +77,7 @@ interface SinkCalls {
   idleReasons: (string | null)[]
   offReasons: (string | null)[]
   pendingToolCalls: ToolCallsPendingItem[][]
+  askQuestions: AskUserQuestionPayload[]
 }
 
 function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
@@ -89,6 +94,7 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     idleReasons: [],
     offReasons: [],
     pendingToolCalls: [],
+    askQuestions: [],
   }
   const sink: AutoRunChatSink = {
     beginAssistantTurn: () => {
@@ -109,6 +115,7 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     onAutoModeIdle: (r) => calls.idleReasons.push(r),
     onAutoModeOff: (r) => calls.offReasons.push(r),
     onToolCallsPending: (items) => calls.pendingToolCalls.push(items),
+    onAskUserQuestion: (payload) => calls.askQuestions.push(payload),
   }
   return { sink, calls }
 }

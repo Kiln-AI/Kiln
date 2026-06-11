@@ -18,6 +18,7 @@ import type { components } from "$lib/api_schema"
 import {
   StreamEventProcessor,
   consumeSseStream,
+  type AskUserQuestionPayload,
   type ChatMessage,
   type StreamEvent,
   type ToolCallsPendingItem,
@@ -71,6 +72,13 @@ export interface AutoRunChatSink {
    * indicator clears on its own.
    */
   onToolCallsPending: (items: ToolCallsPendingItem[]) => void
+  /**
+   * The runner surfaced an ``ask_user_question`` (architecture §3): a question
+   * card renders inline and input is gated. In auto mode the burst settles to
+   * IDLE (the indicator shows "· waiting for you"); answering via
+   * /api/chat/ask/answer resumes the burst on this same observer stream.
+   */
+  onAskUserQuestion: (payload: AskUserQuestionPayload) => void
 }
 
 export interface AutoRunStore {
@@ -182,6 +190,7 @@ export function createAutoRunStore(): AutoRunStore {
       onToolExecutionStart: (count) => sink?.onToolExecutionStart(count),
       onToolExecutionEnd: (count) => sink?.onToolExecutionEnd(count),
       onShowActivityIndicator: (show) => sink?.onShowActivityIndicator(show),
+      onAskUserQuestion: (payload) => sink?.onAskUserQuestion(payload),
     })
   }
 
