@@ -143,7 +143,7 @@ def _require_n(value, label: str) -> int:
     return n
 
 
-def _coerce_binary(values, label: str) -> list[int]:
+def _coerce_binary(values: list[float], label: str) -> list[int]:
     out: list[int] = []
     for x in values:
         try:
