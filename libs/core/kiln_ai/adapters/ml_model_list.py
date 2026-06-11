@@ -129,6 +129,7 @@ class ModelName(str, Enum):
     gemma_3_27b = "gemma_3_27b"
     gemma_3n_2b = "gemma_3n_2b"
     gemma_3n_4b = "gemma_3n_4b"
+    claude_fable_5 = "claude_fable_5"
     claude_3_5_haiku = "claude_3_5_haiku"
     claude_4_5_haiku = "claude_4_5_haiku"
     claude_3_5_sonnet = "claude_3_5_sonnet"
@@ -519,6 +520,16 @@ CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
     "High": "high",
 }
 
+# Fable 5 requires reasoning and cannot disable it, so "none" is omitted (unlike
+# the standard Claude OpenRouter levels which default to "none").
+CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS = {
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
 CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
@@ -528,6 +539,14 @@ CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -1797,6 +1816,56 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels={"High": "high"},
                 default_thinking_level="high",
+            ),
+        ],
+    ),
+    # Claude Fable 5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_fable_5,
+        friendly_name="Claude Fable 5",
+        editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class). State-of-the-art across software engineering, knowledge work, and vision.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-fable-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-fable-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
