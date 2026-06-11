@@ -15,6 +15,7 @@ from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
 from .spec_api import connect_spec_api
+from .statistics_api import connect_statistics_api
 from .task_api import connect_task_api
 from .utils.agent_checks.policy import ALLOW_AGENT
 
@@ -63,6 +64,10 @@ tags_metadata = [
     {
         "name": "Evals",
         "description": "Create and run evaluations for tasks.",
+    },
+    {
+        "name": "Statistics",
+        "description": "Confidence intervals and significance tests on eval metrics.",
     },
     {
         "name": "Synthetic Data",
@@ -134,6 +139,7 @@ def make_app(lifespan=None):
     connect_run_api(app)
     connect_feedback_api(app)
     connect_document_api(app)
+    connect_statistics_api(app)
     connect_custom_errors(app)
 
     frontend_port = os.environ.get("KILN_FRONTEND_PORT", "5173")
