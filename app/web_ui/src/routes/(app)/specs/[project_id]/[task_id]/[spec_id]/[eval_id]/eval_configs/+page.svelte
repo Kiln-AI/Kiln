@@ -22,7 +22,10 @@
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import EvalConfigInstruction from "./eval_config_instruction.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    eval_config_to_detailed_ui_name,
+  } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
@@ -731,20 +734,34 @@
                   ] || 0.0}
                 <tr>
                   <td class="max-w-[400px]">
-                    <div class="font-medium">
-                      {model_name(eval_config?.model_name, $model_info)}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Method: {eval_config_to_ui_name(eval_config.config_type)}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Provider: {provider_name_from_id(
-                        eval_config?.model_provider,
-                      )}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Name: {eval_config.name}
-                    </div>
+                    {#if eval_config.config_type === "v2"}
+                      <div class="font-medium">
+                        {eval_config.name}
+                      </div>
+                      <div class="text-sm text-gray-500">
+                        Type: {eval_config_to_detailed_ui_name(eval_config)}
+                      </div>
+                    {:else}
+                      <div class="font-medium">
+                        {model_name(
+                          eval_config?.model_name ?? undefined,
+                          $model_info,
+                        )}
+                      </div>
+                      <div class="text-sm text-gray-500">
+                        Method: {eval_config_to_ui_name(
+                          eval_config.config_type,
+                        )}
+                      </div>
+                      <div class="text-sm text-gray-500">
+                        Provider: {provider_name_from_id(
+                          eval_config?.model_provider ?? "",
+                        )}
+                      </div>
+                      <div class="text-sm text-gray-500">
+                        Name: {eval_config.name}
+                      </div>
+                    {/if}
                   </td>
                   <td class="text-center text-sm">
                     {#if percent_complete < 1.0}

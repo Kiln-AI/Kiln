@@ -14,6 +14,10 @@ import {
   fixedWindowChunkerProperties,
   semanticChunkerProperties,
 } from "./properties_cast"
+import {
+  getV2TypeFromEvalConfig,
+  getV2EvalTypeMetadata,
+} from "./eval_types/registry"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
@@ -83,12 +87,28 @@ export function formatSize(byteSize: number | undefined | null): string {
 export function eval_config_to_ui_name(
   eval_config_type: EvalConfigType,
 ): string {
-  return (
-    {
-      g_eval: "G-Eval",
-      llm_as_judge: "LLM as Judge",
-    }[eval_config_type] || eval_config_type
-  )
+  const names = {
+    g_eval: "G-Eval",
+    llm_as_judge: "LLM as Judge",
+    v2: "V2",
+  } satisfies Record<EvalConfigType, string>
+  return names[eval_config_type] || eval_config_type
+}
+
+/**
+ * Returns a descriptive UI name for an eval config, resolving V2 configs
+ * to their specific type label (e.g. "Exact Match" instead of "V2").
+ */
+export function eval_config_to_detailed_ui_name(
+  eval_config: EvalConfig,
+): string {
+  if (eval_config.config_type === "v2") {
+    const v2Type = getV2TypeFromEvalConfig(eval_config)
+    if (v2Type) {
+      return getV2EvalTypeMetadata(v2Type).label
+    }
+  }
+  return eval_config_to_ui_name(eval_config.config_type)
 }
 
 export function data_strategy_name(data_strategy: string): string {
@@ -317,12 +337,21 @@ export function formatEvalConfigName(
   model_info: ProviderModels | null,
   compact: boolean = false,
 ): string {
-  const model_name_value = model_name(eval_config.model_name, model_info)
+  if (eval_config.config_type === "v2") {
+    const typeName = eval_config_to_detailed_ui_name(eval_config)
+    return compact
+      ? eval_config.name + " — " + typeName
+      : eval_config.name + " — " + typeName
+  }
+  const model_name_value = model_name(
+    eval_config.model_name ?? undefined,
+    model_info,
+  )
   const parts = compact
     ? [model_name_value]
     : [
         eval_config_to_ui_name(eval_config.config_type),
-        `${model_name_value} (${provider_name_from_id(eval_config.model_provider)})`,
+        `${model_name_value} (${provider_name_from_id(eval_config.model_provider ?? "")})`,
       ]
   return eval_config.name + " — " + parts.join(", ")
 }

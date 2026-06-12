@@ -111,6 +111,12 @@
       return
     }
     const eval_set_filter_id = evaluator.eval_set_filter_id
+    if (!eval_set_filter_id) {
+      alert(
+        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+      )
+      return
+    }
     const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
     const splits: Record<string, number> = {}
     if (

@@ -1943,6 +1943,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test V2 Eval Config */
+        post: operations["test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison": {
         parameters: {
             query?: never;
@@ -2094,6 +2111,40 @@ export interface paths {
         };
         /** Get Run Config Eval Scores */
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/grant_code_eval_trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grant code eval trust for a project */
+        post: operations["grant_code_eval_trust_endpoint_api_projects__project_id__grant_code_eval_trust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/code_eval_trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check code eval trust for a project */
+        get: operations["check_code_eval_trust_endpoint_api_projects__project_id__code_eval_trust_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3547,6 +3598,16 @@ export interface components {
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
         };
+        /** ArgMatch */
+        ArgMatch: {
+            value: components["schemas"]["JsonValue"];
+            /**
+             * Match Mode
+             * @default exact
+             * @enum {string}
+             */
+            match_mode: "exact" | "contains" | "regex";
+        };
         /** Audio */
         Audio: {
             /** Id */
@@ -4105,6 +4166,21 @@ export interface components {
              */
             message: string;
         };
+        /** CodeEvalProperties */
+        CodeEvalProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "code_eval";
+            /** Code */
+            code: string;
+            /**
+             * Timeout Seconds
+             * @default 30
+             */
+            timeout_seconds: number;
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -4126,6 +4202,31 @@ export interface components {
             complete_examples: string;
             /** Incomplete Examples */
             incomplete_examples: string;
+        };
+        /** ContainsProperties */
+        ContainsProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "contains";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Substring */
+            substring?: string | null;
+            /** Reference Key */
+            reference_key?: string | null;
+            /**
+             * Case Sensitive
+             * @default true
+             */
+            case_sensitive: boolean;
+            /**
+             * Mode
+             * @default must_contain
+             * @enum {string}
+             */
+            mode: "must_contain" | "must_not_contain";
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -4227,11 +4328,11 @@ export interface components {
             };
             /**
              * Model Name
-             * @description The model to use for evaluation.
+             * @description The model to use for evaluation. Required for LLM-based eval types.
              */
-            model_name: string;
-            /** @description The provider of the evaluation model. */
-            provider: components["schemas"]["ModelProviderName"];
+            model_name?: string | null;
+            /** @description The provider of the evaluation model. Required for LLM-based eval types. */
+            provider?: components["schemas"]["ModelProviderName"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -5241,19 +5342,24 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).
              */
-            eval_set_filter_id: string;
+            eval_set_filter_id?: string | null;
             /**
              * Eval Configs Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings.
              */
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Eval Input Filter Id
+             * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
+             */
+            eval_input_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -5273,10 +5379,10 @@ export interface components {
                 [key: string]: string | number | boolean;
             } | null;
             /**
-             * @description The output of the task run to evaluate. Can be final answer or full trace.
+             * @description The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.
              * @default final_answer
              */
-            evaluation_data_type: components["schemas"]["EvalDataType"];
+            evaluation_data_type: components["schemas"]["EvalDataType"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5321,14 +5427,14 @@ export interface components {
             name: string;
             /**
              * Model Name
-             * @description The name of the model to use for this eval config.
+             * @description The name of the model to use for this eval config. Required for legacy configs, None for V2.
              */
-            model_name: string;
+            model_name?: string | null;
             /**
              * Model Provider
-             * @description The provider of the model to use for this eval config.
+             * @description The provider of the model to use for this eval config. Required for legacy configs, None for V2.
              */
-            model_provider: string;
+            model_provider?: string | null;
             /**
              * @description This is used to determine the type of eval to run.
              * @default g_eval
@@ -5336,12 +5442,11 @@ export interface components {
             config_type: components["schemas"]["EvalConfigType"];
             /**
              * Properties
-             * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
-             * @default {}
+             * @description Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.
              */
-            properties: {
+            properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | {
                 [key: string]: unknown;
-            };
+            } | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5409,13 +5514,19 @@ export interface components {
              * @description Percent of the dataset processed.
              */
             percent_complete: number;
+            /**
+             * N Excluded
+             * @description Number of EvalRuns excluded due to skipped_reason.
+             * @default 0
+             */
+            n_excluded: number;
         };
         /**
          * EvalConfigType
          * @description The type of eval configuration, determining how scores are generated.
          * @enum {string}
          */
-        EvalConfigType: "g_eval" | "llm_as_judge";
+        EvalConfigType: "g_eval" | "llm_as_judge" | "v2";
         /**
          * EvalDataType
          * @description The type of task output data to evaluate.
@@ -5631,9 +5742,9 @@ export interface components {
             created_by?: string;
             /**
              * Dataset Id
-             * @description The ID of the dataset item that was used for this run. Must belong to the same Task as the grand-parent eval of this EvalRun.
+             * @description The ID of the dataset item (TaskRun) that was used for this run. Mutually exclusive with eval_input_id.
              */
-            dataset_id: string | null;
+            dataset_id?: string | null;
             /**
              * Task Run Config Id
              * @description The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config.
@@ -5652,9 +5763,9 @@ export interface components {
             input: string;
             /**
              * Output
-             * @description The output of the task. JSON formatted for structured output, plaintext for unstructured output.
+             * @description The output of the task. None for skipped-before-execution runs.
              */
-            output: string;
+            output?: string | null;
             /**
              * Reference Answer
              * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
@@ -5675,12 +5786,35 @@ export interface components {
             /**
              * Scores
              * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).
+             * @default {}
              */
             scores: {
                 [key: string]: number;
             };
             /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
             task_run_usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Eval Input Id
+             * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
+             */
+            eval_input_id?: string | null;
+            /**
+             * Reference Data
+             * @description Structured reference data from EvalInput.reference, used by V2 eval types.
+             */
+            reference_data?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Skipped Reason
+             * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.
+             */
+            skipped_reason?: string | null;
+            /**
+             * Skipped Detail
+             * @description Case-specific detail for skipped runs (e.g. missing key name).
+             */
+            skipped_detail?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5702,11 +5836,62 @@ export interface components {
             run_config: components["schemas"]["TaskRunConfig"];
         };
         /**
+         * EvalTaskInput
+         * @description The runtime data bundle passed to V2 evaluators.
+         *
+         *     Assembled by the eval runner from an EvalInput and a task run result.
+         */
+        EvalTaskInput: {
+            /**
+             * Final Message
+             * @description The final model output (task output text).
+             */
+            final_message: string;
+            /**
+             * Trace
+             * @description The full conversation trace, if available.
+             */
+            trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /**
+             * Reference Data
+             * @description Reference/ground-truth data from EvalInput.reference.
+             */
+            reference_data?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Task Input
+             * @description The original task input text.
+             */
+            task_input?: string | null;
+        };
+        /**
          * EvalTemplateId
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /** ExactMatchProperties */
+        ExactMatchProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "exact_match";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Expected Value */
+            expected_value?: string | null;
+            /** Reference Key */
+            reference_key?: string | null;
+            /**
+             * Case Sensitive
+             * @default true
+             */
+            case_sensitive: boolean;
+        };
         /**
          * ExampleWithFeedbackApi
          * @description An example with user feedback for spec refinement.
@@ -6744,6 +6929,7 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
+        JsonValue: unknown;
         /**
          * KilnAgentRunConfigProperties
          * @description A configuration for running a task using a Kiln AI agent.
@@ -7077,6 +7263,34 @@ export interface components {
             prompt_video: string;
             /** Prompt Audio */
             prompt_audio: string;
+        };
+        /** LlmJudgeProperties */
+        LlmJudgeProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "llm_judge";
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** System Prompt */
+            system_prompt?: string | null;
+            /** Prompt Template */
+            prompt_template: string;
+            /**
+             * Required Var
+             * @default []
+             */
+            required_var: string[];
+            /** Thinking Instruction */
+            thinking_instruction?: string | null;
+            /**
+             * G Eval
+             * @default false
+             */
+            g_eval: boolean;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -7540,6 +7754,24 @@ export interface components {
              * @description Whether the extractor config is archived
              */
             is_archived?: boolean | null;
+        };
+        /** PatternMatchProperties */
+        PatternMatchProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "pattern_match";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Pattern */
+            pattern: string;
+            /**
+             * Mode
+             * @default must_match
+             * @enum {string}
+             */
+            mode: "must_match" | "must_not_match";
         };
         /**
          * Priority
@@ -8758,9 +8990,19 @@ export interface components {
         ScoreSummary: {
             /**
              * Mean Score
-             * @description The mean score across all runs.
+             * @description The mean score across all used runs. None when n_used == 0.
              */
-            mean_score: number;
+            mean_score: number | null;
+            /**
+             * N Used
+             * @description Number of EvalRuns with all expected scores and not skipped.
+             */
+            n_used: number;
+            /**
+             * N Excluded
+             * @description Number of EvalRuns excluded due to skipped_reason.
+             */
+            n_excluded: number;
         };
         /** SearchResult */
         SearchResult: {
@@ -8836,6 +9078,26 @@ export interface components {
              * @description The breakpoint percentile threshold to use for the chunker.
              */
             breakpoint_percentile_threshold: number;
+        };
+        /** SetCheckProperties */
+        SetCheckProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_check";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Expected Set */
+            expected_set?: string[] | null;
+            /** Reference Key */
+            reference_key?: string | null;
+            /**
+             * Mode
+             * @default subset
+             * @enum {string}
+             */
+            mode: "subset" | "superset" | "equal";
         };
         /**
          * SkillContentResponse
@@ -9100,6 +9362,23 @@ export interface components {
             target_run_config_id: string;
             /** Eval Ids */
             eval_ids: string[];
+        };
+        /** StepCountCheckProperties */
+        StepCountCheckProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "step_count_check";
+            /**
+             * Count Type
+             * @enum {string}
+             */
+            count_type: "tool_calls" | "model_responses" | "turns";
+            /** Min Count */
+            min_count?: number | null;
+            /** Max Count */
+            max_count?: number | null;
         };
         /**
          * StatisticsRequest
@@ -10005,6 +10284,33 @@ export interface components {
             auth_method?: string | null;
         };
         /**
+         * TestV2EvalRequest
+         * @description Request to test-run a V2 eval config without persisting.
+         */
+        TestV2EvalRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test.
+             */
+            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+        };
+        /**
+         * TestV2EvalResponse
+         * @description Response from a test-run of a V2 eval.
+         */
+        TestV2EvalResponse: {
+            /** Scores */
+            scores?: {
+                [key: string]: number;
+            };
+            /** Skipped Reason */
+            skipped_reason?: string | null;
+            /** Skipped Detail */
+            skipped_detail?: string | null;
+        };
+        /**
          * TestWriteAccessRequest
          * @description Request to test push/write access to a cloned repo's remote.
          */
@@ -10057,6 +10363,28 @@ export interface components {
             /** Description */
             description: string | null;
         };
+        /** ToolCallCheckProperties */
+        ToolCallCheckProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "tool_call_check";
+            /** Expected Tools */
+            expected_tools: components["schemas"]["ToolCallSpec"][];
+            /**
+             * Match Mode
+             * @default all
+             * @enum {string}
+             */
+            match_mode: "any" | "all" | "ordered" | "never";
+            /**
+             * On Unexpected Tools
+             * @default ignore
+             * @enum {string}
+             */
+            on_unexpected_tools: "ignore" | "fail";
+        };
         /** ToolCallInfo */
         ToolCallInfo: {
             /** Toolcallid */
@@ -10069,6 +10397,15 @@ export interface components {
             };
             /** Requiresapproval */
             requiresApproval: boolean;
+        };
+        /** ToolCallSpec */
+        ToolCallSpec: {
+            /** Tool Name */
+            tool_name: string;
+            /** Expected Args */
+            expected_args?: {
+                [key: string]: components["schemas"]["ArgMatch"];
+            } | null;
         };
         /**
          * ToolDefinitionResponse
@@ -15214,6 +15551,46 @@ export interface operations {
             };
         };
     };
+    test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get: {
         parameters: {
             query?: {
@@ -15538,6 +15915,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_code_eval_trust_endpoint_api_projects__project_id__grant_code_eval_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_code_eval_trust_endpoint_api_projects__project_id__code_eval_trust_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */
