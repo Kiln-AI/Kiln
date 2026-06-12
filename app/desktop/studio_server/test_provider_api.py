@@ -2789,6 +2789,7 @@ async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompleti
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.asyncio
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_vertex_live(mock_config_shared):

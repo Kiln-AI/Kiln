@@ -191,6 +191,7 @@ async def run_simple_task_with_tools(
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_tools_gpt_4_1_mini(tmp_path):
     task = build_test_task(tmp_path)
     await run_simple_task_with_tools(task, "gpt_4_1_mini", ModelProviderName.openai)
