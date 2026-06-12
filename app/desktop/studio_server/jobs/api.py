@@ -63,7 +63,9 @@ def _project_id_from_params(validated_params: BaseModel) -> str | None:
 
 
 def _format_sse(event: JobEvent) -> str:
-    return f"event: {event.event}\ndata: {json.dumps(event.data)}\n\n"
+    return (
+        f"event: {event.event}\ndata: {json.dumps(event.data, ensure_ascii=False)}\n\n"
+    )
 
 
 async def _event_stream(
