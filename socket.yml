@@ -1,0 +1,5 @@
+version: 2
+triggerPaths:
+  - "app/web_ui/package-lock.json"
+  - "pyproject.toml"
+
