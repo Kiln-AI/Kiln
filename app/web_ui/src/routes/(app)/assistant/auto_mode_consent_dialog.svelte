@@ -110,8 +110,10 @@
     </div>
 
     <p class="text-base-content/70 leading-relaxed">
-      Auto mode turns off automatically when the assistant has a question for
-      you or is done. You can stop it anytime.
+      Auto mode stays on for this conversation. It pauses when the assistant
+      needs your input or finishes a step, then resumes automatically on your
+      next message — it keeps approving tool calls until you stop it (or the
+      assistant turns it off).
     </p>
   </div>
 </Dialog>

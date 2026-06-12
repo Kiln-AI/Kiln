@@ -157,6 +157,11 @@ export function createChatSessionStore(
 
   let status: ChatSessionState["status"] = "ready"
   let abortController: AbortController | null = null
+  // Synchronous in-flight guard for the armed-first-send enable. Local `status`
+  // stays "ready" and `armed` stays set during the requestEnable round-trip, so
+  // without this a second Enter in that window would fire a second /enable POST
+  // (two server-owned auto runs for one conversation, both bypassing consent).
+  let armedEnablePending = false
   let continuationTraceId: string | undefined = undefined
   let generation = 0
   let toolApprovalResolver:
@@ -797,6 +802,16 @@ export function createChatSessionStore(
   // the user message locally — mirroring beginStreaming. requestEnable opens the
   // assistant turn, attaches the live observer, and clears the armed flag.
   async function beginArmedAutoRun(text: string): Promise<boolean> {
+    if (armedEnablePending) return false
+    armedEnablePending = true
+    try {
+      return await beginArmedAutoRunInner(text)
+    } finally {
+      armedEnablePending = false
+    }
+  }
+
+  async function beginArmedAutoRunInner(text: string): Promise<boolean> {
     removeErrors()
     const currentAppState = getCurrentAppState()
     const header = buildContextHeader(

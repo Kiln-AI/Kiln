@@ -203,7 +203,6 @@ def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
     try:
         json_data = json.loads(training_chat[-1].content or "")
     except json.JSONDecodeError as e:
-        print(training_chat[-1].content)
         raise ValueError(
             f"Last message is not JSON (structured), and this format expects structured data: {e}"
         )
