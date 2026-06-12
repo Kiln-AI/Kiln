@@ -3,9 +3,13 @@ import posthog from "posthog-js"
 import {
   streamChat,
   resumePendingToolCalls,
+  consumeContinuationStream,
   chatGenerateId,
   traceIdForNextChatRequest,
+  type AskUserQuestionPayload,
+  type AskUserQuestionResolution,
   type ChatMessage,
+  type ChatMessagePart,
   type ToolCallsPendingItem,
   type ToolCallsPendingPayload,
 } from "./streaming_chat"
@@ -17,7 +21,10 @@ import {
 } from "./auto_run_store"
 import type { AutoModeConsentRequiredPayload } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
-import { hydrateSessionFromSnapshot } from "./session_messages"
+import {
+  hydrateSessionFromSnapshot,
+  pendingApprovalsFromMessages,
+} from "./session_messages"
 import { base_url, client } from "$lib/api_client"
 import {
   getCurrentAppState,
@@ -39,6 +46,31 @@ export interface ToolApprovalWaiter {
   payload: ToolCallsPendingPayload
 }
 
+export interface LoadSessionOptions {
+  /**
+   * When the restored conversation's latest turn ended on DANGLING client tool
+   * calls (a client-visible tool call with no following tool result), re-surface
+   * them as approval requests via the EXISTING approval box + execute-tools
+   * continuation. Defaults to ``true``.
+   *
+   * Set ``false`` when we are about to attach to a LIVE auto run (resync / an
+   * auto-active history row): the live observer stream / buffer-replay is the
+   * source of truth there (and auto mode auto-approves, so it won't be at a
+   * pending approval), so the hydrate-based re-surfacing must not double up.
+   */
+  surfacePendingApprovals?: boolean
+}
+
+/**
+ * A surfaced ``ask_user_question`` awaiting the user's answer (architecture §3).
+ * While set, the message input is gated (the user must pick an option or choose
+ * "Chat about this"). ``traceId`` keys the answer endpoint.
+ */
+export interface AskQuestionPending {
+  toolCallId: string
+  traceId: string | null
+}
+
 export interface ChatSessionState extends PersistedChatSession {
   status: "ready" | "submitted" | "streaming"
   abortController: AbortController | null
@@ -53,6 +85,12 @@ export interface ChatSessionState extends PersistedChatSession {
    * input usable for inject-on-send.
    */
   autoWorking: boolean
+  /**
+   * A pending ``ask_user_question`` (architecture §3). Non-null gates the
+   * message input until the user answers (pick or "Chat about this"). Cleared on
+   * answer, resolution, error, reset/loadSession (detach).
+   */
+  askPending: AskQuestionPending | null
 }
 
 /**
@@ -68,7 +106,11 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   stop(): void
   retryLastRequest(): void
   reset(): void
-  loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  loadSession(
+    messages: ChatMessage[],
+    continuationTraceId: string,
+    opts?: LoadSessionOptions,
+  ): void
   /**
    * Resync the restored-from-sessionStorage conversation back to its true
    * auto-mode state after a hard refresh. If the conversation has an active
@@ -83,6 +125,16 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   pushInlineError(message: string): void
   applyToolApprovalRun(toolCallId: string): void
   applyToolApprovalSkip(toolCallId: string): void
+  /**
+   * Answer a pending ``ask_user_question`` (architecture §3). A pick sends the
+   * chosen answer's main line as the user's message; "Chat about this" resolves
+   * with a chat signal and re-enables input. Continues the conversation
+   * (interactive stream or auto resume). Clears the input gate on success/error.
+   */
+  answerQuestion(
+    toolCallId: string,
+    choice: { answer: string } | { chat: true },
+  ): Promise<void>
   onConsentNeeded: (() => Promise<boolean>) | null
   onAutoModeConsentNeeded: AutoModeConsentDecision | null
 }
@@ -125,6 +177,7 @@ export function createChatSessionStore(
     toolExecuting: false,
     showActivityIndicator: false,
     autoWorking: false,
+    askPending: null,
   })
 
   // Intentionally never unsubscribed — this store is a module-level singleton
@@ -211,6 +264,74 @@ export function createChatSessionStore(
     })
   }
 
+  // Record a surfaced ask_user_question and gate the input (architecture §3).
+  // The card itself is rendered as an ``ask-user-question`` part by the stream
+  // processor (interactive or auto observer); this only tracks the pending
+  // answer + the trace id the answer endpoint keys off.
+  function recordPendingQuestion(payload: AskUserQuestionPayload) {
+    combined.update((s) => ({
+      ...s,
+      askPending: {
+        toolCallId: payload.toolCallId,
+        traceId: payload.traceId,
+      },
+    }))
+  }
+
+  function clearAskPending() {
+    combined.update((s) => ({ ...s, askPending: null }))
+  }
+
+  // Reattach helper: derive the input gate from restored messages. An unresolved
+  // ``ask-user-question`` part in the last assistant turn means the conversation
+  // is waiting for an answer, so the gate must come back (ui_design §5).
+  function pendingQuestionFromMessages(
+    messages: ChatMessage[],
+    traceId: string | null,
+  ): AskQuestionPending | null {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role !== "assistant") continue
+      const ask = m.parts?.find(
+        (p): p is Extract<ChatMessagePart, { type: "ask-user-question" }> =>
+          p.type === "ask-user-question" && p.resolution === undefined,
+      )
+      if (ask) {
+        return { toolCallId: ask.toolCallId, traceId: m.traceId ?? traceId }
+      }
+      // Only the latest assistant turn can hold the live pending question.
+      return null
+    }
+    return null
+  }
+
+  // Collapse the surfaced question card to its resolved summary (ui_design §1).
+  // Mutates the matching ``ask-user-question`` part in place across all messages
+  // so the card shows "You chose: …" / "You chose to chat about this".
+  function resolveQuestionPart(
+    toolCallId: string,
+    resolution: AskUserQuestionResolution | undefined,
+  ) {
+    persisted.update((p) => ({
+      ...p,
+      messages: p.messages.map((m) => {
+        if (m.role !== "assistant" || !m.parts) return m
+        let changed = false
+        const parts = m.parts.map((part): ChatMessagePart => {
+          if (
+            part.type === "ask-user-question" &&
+            part.toolCallId === toolCallId
+          ) {
+            changed = true
+            return { ...part, resolution }
+          }
+          return part
+        })
+        return changed ? { ...m, parts } : m
+      }),
+    }))
+  }
+
   // Append a fresh empty assistant message so the next streamed burst (auto run
   // or declined-resume) renders into a new turn rather than the prior one.
   function beginAssistantTurn() {
@@ -275,6 +396,9 @@ export function createChatSessionStore(
         autoWorking: false,
       })),
     onToolCallsPending: handleAutoToolCallsPending,
+    // The runner surfaced an ask_user_question and settled to IDLE (the question
+    // card is rendered by the observer processor); gate the input until answered.
+    onAskUserQuestion: recordPendingQuestion,
   })
 
   // Graceful-stop handoff (functional spec §4.4(1)): the runner finished the
@@ -346,6 +470,93 @@ export function createChatSessionStore(
         }))
         pushInlineError(err.message)
       },
+    })
+  }
+
+  // Reattach (ui_design §5): the restored conversation's latest turn ended on
+  // DANGLING client tool calls (a client-visible tool call with no persisted
+  // tool result) that require resolution. Re-surface them through the EXISTING
+  // approval gate (handleToolCallsPending → the same toolApprovalWaiter UI) and,
+  // on approval, continue via the EXISTING /api/chat/execute-tools loop
+  // (resumePendingToolCalls — which handles multi-round + nested ask/approval).
+  // No parallel approval UI; the payload is reconstructed purely from the
+  // hydrated trace by ``pendingApprovalsFromMessages``.
+  //
+  // The approval box renders inline against the dangling tool part (matched by
+  // toolCallId) the same way the live ``tool-calls-pending`` path renders it, so
+  // the gate is shown immediately; the execute-tools continuation only fires once
+  // the user approves. The input gate is driven by ``toolApprovalWaiter`` being
+  // non-null (mirroring a normal pending approval) and clears on resolve/error.
+  function surfacePendingApprovals(
+    items: ToolCallsPendingItem[],
+    traceId: string,
+  ): void {
+    if (items.length === 0) return
+    const thisGeneration = ++generation
+    const isStale = () => thisGeneration !== generation
+    // Open the approval box and await the user's decisions; the dangling tool
+    // part is already rendered, so the box appears against it (no new turn yet).
+    void handleToolCallsPending({ items }).then((decisions) => {
+      if (isStale()) return
+      // A fresh assistant turn renders the approved tools' continuation, mirroring
+      // the graceful-stop handoff.
+      beginAssistantTurn()
+      void resumePendingToolCalls({
+        apiUrl: CHAT_API_URL,
+        traceId,
+        items,
+        // Pre-resolve the gate with the picks already collected; a follow-on
+        // round (multi-round approval) re-opens the box via handleToolCallsPending.
+        onToolCallsPending: (payload) => {
+          if (isStale()) return Promise.resolve({})
+          const pendingDecisions = payload.items.every(
+            (it) => it.toolCallId in decisions,
+          )
+          if (pendingDecisions) return Promise.resolve(decisions)
+          return handleToolCallsPending(payload)
+        },
+        onAssistantMessage: (update) => {
+          if (isStale()) return
+          updateLastAssistant(update)
+        },
+        onChatTrace: (tid) => {
+          if (isStale()) return
+          setLastAssistantTraceId(tid)
+        },
+        onInlineError: (message, tid, code) => {
+          if (isStale()) return
+          pushInlineError(message, tid, code)
+        },
+        onToolExecutionStart: () => {
+          if (isStale()) return
+          combined.update((s) => ({ ...s, toolExecuting: true }))
+        },
+        onToolExecutionEnd: () => {
+          if (isStale()) return
+          combined.update((s) => ({ ...s, toolExecuting: false }))
+        },
+        onShowActivityIndicator: (show) => {
+          if (isStale()) return
+          combined.update((s) => ({ ...s, showActivityIndicator: show }))
+        },
+        onFinish: () => {
+          if (isStale()) return
+          combined.update((s) => ({
+            ...s,
+            toolExecuting: false,
+            showActivityIndicator: false,
+          }))
+        },
+        onError: (err) => {
+          if (isStale()) return
+          combined.update((s) => ({
+            ...s,
+            toolExecuting: false,
+            showActivityIndicator: false,
+          }))
+          pushInlineError(err.message)
+        },
+      })
     })
   }
 
@@ -446,6 +657,10 @@ export function createChatSessionStore(
       onAutoModeConsentRequired: async (payload) => {
         if (isStale()) return
         await handleAutoModeConsent(payload)
+      },
+      onAskUserQuestion: (payload) => {
+        if (isStale()) return
+        recordPendingQuestion(payload)
       },
       onInlineError: (message, traceId, code) => {
         if (isStale()) return
@@ -624,6 +839,174 @@ export function createChatSessionStore(
     return true
   }
 
+  // Answer a pending ask_user_question (architecture §3). Resolves the tool call
+  // server-side via /api/chat/ask/answer and continues:
+  //  - Auto run active → 202; the answer + burst stream on the observer (a pick
+  //    is echoed onto the bus as the user's message, so we DON'T render it
+  //    locally). The card collapses to its resolved summary.
+  //  - Interactive → the endpoint returns the continuation stream; for a pick we
+  //    render the chosen answer as the user's message locally, then consume the
+  //    stream into a fresh assistant turn. For chat, no user message; the open
+  //    follow-up streams and input is re-enabled.
+  // The input gate clears on success and on error (it can't get stuck).
+  async function answerQuestion(
+    toolCallId: string,
+    choice: { answer: string } | { chat: true },
+  ): Promise<void> {
+    const pending = get(combined).askPending
+    if (!pending || pending.toolCallId !== toolCallId) return
+    const traceId = pending.traceId
+    if (!traceId) {
+      pushInlineError("Couldn't answer the question: missing conversation id.")
+      clearAskPending()
+      return
+    }
+    const isPick = "answer" in choice
+    const resolution: AskUserQuestionResolution = isPick
+      ? { kind: "pick", answer: choice.answer }
+      : { kind: "chat" }
+
+    posthog.capture("chat_ask_user_question_answered", {
+      kind: resolution.kind,
+    })
+
+    // Optimistically collapse the card + lift the input gate so the UI feels
+    // responsive and a second click can't double-submit (askPending is now
+    // null, so a re-entrant answerQuestion returns early at the guard above).
+    // If the request fails we roll both back so the user can re-answer.
+    resolveQuestionPart(toolCallId, resolution)
+    clearAskPending()
+    removeErrors()
+
+    const reopenQuestion = () => {
+      resolveQuestionPart(toolCallId, undefined)
+      combined.update((s) => ({ ...s, askPending: pending }))
+    }
+
+    let response: Response
+    try {
+      response = await fetch(`${CHAT_API_URL}/ask/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trace_id: traceId,
+          tool_call_id: toolCallId,
+          choice,
+        }),
+      })
+    } catch (err) {
+      reopenQuestion()
+      pushInlineError(
+        `Couldn't answer the question: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+      return
+    }
+    if (!response.ok) {
+      let detail = `Couldn't answer the question (${response.status}).`
+      try {
+        const parsed = (await response.json()) as { detail?: string }
+        if (parsed?.detail) detail = parsed.detail
+      } catch {
+        /* keep default */
+      }
+      reopenQuestion()
+      pushInlineError(detail)
+      return
+    }
+
+    // Route on the actual server response, not a possibly-stale client auto
+    // flag (the run may have gone terminal between the question surfacing and
+    // this answer). An active auto run resumes and returns 202 — the burst +
+    // (for a pick) the echoed user message stream on the observer, nothing to
+    // consume here. Otherwise the server streams the interactive continuation.
+    if (response.status === 202) return
+
+    // Interactive: render the pick as the user's message, then consume the
+    // continuation stream into a fresh assistant turn.
+    if (isPick) {
+      updateMessages((msgs) => [
+        ...msgs,
+        { id: chatGenerateId(), role: "user", content: choice.answer },
+      ])
+    }
+    const reader = response.body?.getReader()
+    if (!reader) {
+      pushInlineError("No response body when continuing the chat.")
+      return
+    }
+    beginAssistantTurn()
+    const controller = new AbortController()
+    setRuntimeState("streaming", controller)
+    const thisGeneration = ++generation
+    const isStale = () => thisGeneration !== generation
+    // Drive the continuation through the EXISTING tool-approval machinery rather
+    // than a bare consumeSseStream: if this turn emits a ``tool-calls-pending``
+    // (the model called an approval-required client tool), route it through the
+    // same approval gate (handleToolCallsPending → toolApprovalWaiter UI) and
+    // /api/chat/execute-tools continuation loop the interactive path uses,
+    // instead of silently dropping it. A nested ask_user_question still
+    // re-renders its card + re-gates the input (onAskUserQuestion).
+    await consumeContinuationStream({
+      apiUrl: CHAT_API_URL,
+      traceId,
+      reader,
+      onToolCallsPending: (payload) => {
+        if (isStale()) return Promise.resolve({})
+        return handleToolCallsPending(payload)
+      },
+      onAssistantMessage: (update) => {
+        if (isStale()) return
+        updateLastAssistant(update)
+      },
+      onChatTrace: (tid) => {
+        if (isStale()) return
+        setLastAssistantTraceId(tid)
+      },
+      onInlineError: (message, tid, code) => {
+        if (isStale()) return
+        pushInlineError(message, tid, code)
+      },
+      onToolExecutionStart: () => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, toolExecuting: true }))
+      },
+      onToolExecutionEnd: () => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, toolExecuting: false }))
+      },
+      onShowActivityIndicator: (show) => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, showActivityIndicator: show }))
+      },
+      // A follow-up question can itself ask another ask_user_question: re-gate.
+      onAskUserQuestion: (payload) => {
+        if (isStale()) return
+        recordPendingQuestion(payload)
+      },
+      onFinish: () => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+        setRuntimeState("ready", null)
+      },
+      onError: (err) => {
+        if (isStale()) return
+        pushInlineError(err instanceof Error ? err.message : String(err))
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+        setRuntimeState("ready", null)
+      },
+    })
+  }
+
   function stop(): void {
     if (abortController) {
       posthog.capture("chat_stopped")
@@ -659,6 +1042,7 @@ export function createChatSessionStore(
     // is starting a new conversation). Clears the stale "on" indicator.
     autoRunStore.detach()
     clearToolApprovalState()
+    clearAskPending()
     continuationTraceId = undefined
     persisted.set({
       messages: [],
@@ -673,7 +1057,11 @@ export function createChatSessionStore(
     setRuntimeState("ready", null)
   }
 
-  function loadSession(messages: ChatMessage[], traceId: string): void {
+  function loadSession(
+    messages: ChatMessage[],
+    traceId: string,
+    opts: LoadSessionOptions = {},
+  ): void {
     if (abortController) {
       abortController.abort()
     }
@@ -688,8 +1076,21 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      // Reattach (ui_design §5): if the restored conversation ends on an
+      // unresolved question card, re-gate the input until it's answered.
+      askPending: pendingQuestionFromMessages(messages, traceId),
     }))
     setRuntimeState("ready", null)
+
+    // Reattach (KIL bug): if the restored conversation's latest turn ended on
+    // DANGLING client tool calls awaiting resolution (e.g. a call_kiln_api
+    // awaiting approval, persisted with no tool result), re-surface the approval
+    // box + execute-tools continuation — UNLESS we are about to attach to a live
+    // run (resync / auto-active history row), where the live stream is the source
+    // of truth. The ask card path above is left untouched (excluded by name).
+    if (opts.surfacePendingApprovals !== false) {
+      surfacePendingApprovals(pendingApprovalsFromMessages(messages), traceId)
+    }
   }
 
   // Resync after a hard refresh. The page restored stale messages from
@@ -708,8 +1109,19 @@ export function createChatSessionStore(
 
     const resolved = await autoRunStore.resolve(storedTraceId)
     // Not active (404 / error): leave the normal restored-from-sessionStorage
-    // state untouched.
-    if (!resolved) return
+    // transcript untouched. But this is the hard-refresh path for an inactive
+    // (interactive / server-restarted) conversation, which never went through
+    // loadSession — so re-surface any dangling client tool calls awaiting
+    // approval here (the same re-surfacing loadSession does for history-restore).
+    // Safe because there is no live run to attach to / double up with.
+    if (!resolved) {
+      const restored = get(persisted).messages
+      surfacePendingApprovals(
+        pendingApprovalsFromMessages(restored),
+        storedTraceId,
+      )
+      return
+    }
 
     // We now know it's an active run. Show a transient "reconnecting…" affordance
     // while we hydrate → attach so the transcript doesn't look done/idle before
@@ -736,7 +1148,11 @@ export function createChatSessionStore(
           hydrateSessionFromSnapshot(snapshot)
         // loadSession detaches any prior observer, sets the messages + trace id,
         // and resets runtime state — identical to the history-restore apply path.
-        loadSession(messages, traceId)
+        // Suppress dangling-approval re-surfacing here: we are attaching to a
+        // LIVE run, where the observer stream / buffer-replay is the source of
+        // truth (and auto mode auto-approves, so it won't be at a pending
+        // approval). Re-surfacing would double up with the live stream.
+        loadSession(messages, traceId, { surfacePendingApprovals: false })
       }
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at
@@ -850,6 +1266,7 @@ export function createChatSessionStore(
     pushInlineError: (message: string) => pushInlineError(message),
     applyToolApprovalRun,
     applyToolApprovalSkip,
+    answerQuestion,
     get onConsentNeeded() {
       return onConsentNeeded
     },

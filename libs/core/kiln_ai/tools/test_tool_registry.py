@@ -19,6 +19,7 @@ from kiln_ai.datamodel.tool_id import (
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
+from kiln_ai.tools.built_in_tools.ask_user_question_tool import AskUserQuestionTool
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import DisableAutoModeTool
 from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import EnableAutoModeTool
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
@@ -89,6 +90,13 @@ class TestToolRegistry:
         assert isinstance(tool, DisableAutoModeTool)
         assert await tool.id() == KilnBuiltInToolId.DISABLE_AUTO_MODE
         assert await tool.name() == "disable_auto_mode"
+
+    async def test_tool_from_id_ask_user_question(self):
+        tool = tool_from_id(KilnBuiltInToolId.ASK_USER_QUESTION)
+
+        assert isinstance(tool, AskUserQuestionTool)
+        assert await tool.id() == KilnBuiltInToolId.ASK_USER_QUESTION
+        assert await tool.name() == "ask_user_question"
 
     async def test_tool_from_id_with_string_values(self):
         """Test that tool_from_id works with string values of enum members."""

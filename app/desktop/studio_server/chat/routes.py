@@ -21,12 +21,13 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
 from app.desktop.studio_server.chat.stream_session import (
+    ASK_USER_QUESTION_CHAT_RESULT,
     ChatStreamSession,
     ToolCallInfo,
     execute_tool_batch,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, HTTPException, Path, Query, Response
 from fastapi.responses import StreamingResponse
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
@@ -129,6 +130,23 @@ class ExecuteToolsRequest(BaseModel):
     decisions: dict[str, bool]
 
 
+class AnswerChoice(BaseModel):
+    """How the user answered a pending ``ask_user_question`` (architecture §2.3).
+
+    Either a pick (``answer`` = the chosen suggestion's text) or "Chat about
+    this" (``chat`` = True). Exactly one is meaningful; a body that is neither is
+    rejected (422)."""
+
+    answer: str | None = None
+    chat: bool | None = None
+
+
+class AnswerQuestionRequest(BaseModel):
+    trace_id: str
+    tool_call_id: str
+    choice: AnswerChoice
+
+
 def connect_chat_api(app: FastAPI) -> None:
     @app.post(
         "/api/chat/execute-tools",
@@ -173,6 +191,90 @@ def connect_chat_api(app: FastAPI) -> None:
 
         return CancellableStreamingResponse(
             content=generate(),
+            media_type="text/event-stream",
+        )
+
+    @app.post(
+        "/api/chat/ask/answer",
+        summary="Answer a pending ask_user_question and continue chat",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    @no_write_lock
+    async def post_answer_question(body: AnswerQuestionRequest) -> Response:
+        """Resolve a pending ``ask_user_question`` tool call and continue the
+        conversation (architecture §2.3).
+
+        The tool result for ``tool_call_id`` is the chosen answer text (a pick) or
+        a chat signal (``{"choice":"chat"}`` for "Chat about this"). Resolving via
+        a ``role:"tool"`` message keeps the persisted trace clean (no dangling tool
+        call). Routing mirrors how an answer would continue the conversation:
+
+        - If the conversation has an **active auto run** (registry lookup by
+          trace), resume that run's burst with the tool result and return 202; the
+          continuation and the model's reply stream on the run's observer stream.
+          For a pick, the chosen answer is echoed onto the bus as the user's
+          message; for chat, no user message is echoed (the open follow-up
+          streams).
+        - Otherwise continue the **interactive** stream: return a
+          CancellableStreamingResponse seeded with the tool result.
+        """
+        choice = body.choice
+        is_pick = choice.answer is not None
+        is_chat = choice.chat is True
+        if is_pick and is_chat:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "choice is ambiguous: exactly one of {answer: string} or "
+                    "{chat: true} must be provided, not both."
+                ),
+            )
+        if is_pick:
+            result_content = choice.answer or ""
+        elif is_chat:
+            result_content = ASK_USER_QUESTION_CHAT_RESULT
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="choice must be either {answer: string} or {chat: true}.",
+            )
+
+        run_id = auto_chat_registry.run_id_for_trace(body.trace_id)
+        if run_id is not None:
+            accepted = auto_chat_registry.answer_question(
+                run_id,
+                body.tool_call_id,
+                result_content,
+                echo_user_content=choice.answer if is_pick else None,
+            )
+            if not accepted:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Auto run is not idle or no longer active; cannot answer "
+                        f"the question now: {run_id}"
+                    ),
+                )
+            return Response(status_code=202)
+
+        api_key = get_copilot_api_key()
+        session = ChatStreamSession(
+            upstream_url=_upstream_chat_url(),
+            headers=_build_upstream_headers(api_key),
+            initial_body={
+                "trace_id": body.trace_id,
+                "messages": [
+                    {
+                        "role": "tool",
+                        "tool_call_id": body.tool_call_id,
+                        "content": result_content,
+                    }
+                ],
+            },
+        )
+        return CancellableStreamingResponse(
+            content=session.stream(),
             media_type="text/event-stream",
         )
 

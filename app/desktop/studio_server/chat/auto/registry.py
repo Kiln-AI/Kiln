@@ -369,6 +369,56 @@ class AutoChatRegistry:
         logger.info("Resumed auto run %s from idle via /message", run_id)
         return True
 
+    def answer_question(
+        self,
+        run_id: str,
+        tool_call_id: str,
+        result_content: str,
+        echo_user_content: str | None = None,
+    ) -> bool:
+        """Answer a pending ``ask_user_question`` and resume the burst.
+
+        Analogous to the IDLE → burst path in :meth:`send_message`, but the
+        continuation carries the ``role:"tool"`` result resolving
+        ``tool_call_id`` (the pending ask_user_question call) instead of a fresh
+        ``role:"user"`` message — so the persisted trace has no dangling tool
+        call. Only valid when the run is IDLE with its flag on: a question only
+        surfaces after the burst settled to IDLE (architecture §2.2), and there
+        is no pending question while a burst is RUNNING.
+
+        ``echo_user_content`` (the picked answer text) is echoed onto the bus so
+        observers render the user's choice as their message; for "Chat about
+        this" no user message is echoed (the open follow-up streams instead).
+
+        Returns False if the run is unknown, its flag is off, or it is not idle
+        (caller maps to 404/409)."""
+        run = self._runs.get(run_id)
+        if run is None or not run.record.status.flag_on:
+            return False
+        if run.record.status != AutoRunStatus.IDLE:
+            return False
+
+        if echo_user_content is not None:
+            run.echo_user_message(InboundMessage(content=echo_user_content))
+
+        seed = AutoChatSeed(
+            trace_id=run.record.current_trace_id,
+            extra_messages=[
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": result_content,
+                }
+            ],
+        )
+        run.record.status = AutoRunStatus.RUNNING
+        run.start_burst(seed)
+        self._cancel_gc(run_id)
+        self._tasks[run_id] = asyncio.create_task(self._supervise(run))
+        self._touch(run)
+        logger.info("Resumed auto run %s from idle via /ask/answer", run_id)
+        return True
+
     async def disable(self, run_id: str) -> bool:
         """Clear the conversation flag in response to the disable_auto_mode tool.
 

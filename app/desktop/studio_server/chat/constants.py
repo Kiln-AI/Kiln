@@ -12,6 +12,10 @@ SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
 SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
 SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED = "auto-mode-consent-required"
+# The model called ask_user_question: the app server intercepts it (never runs
+# it), surfaces this event with the question + suggested answers, and pauses
+# until the user answers via /api/chat/ask/answer.
+SSE_TYPE_ASK_USER_QUESTION = "ask-user-question"
 # Revision R1: a burst settled but the conversation auto-mode flag stays on. This
 # is distinct from auto-mode-off (which is published only on explicit disable).
 SSE_TYPE_AUTO_MODE_IDLE = "auto-mode-idle"

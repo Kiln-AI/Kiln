@@ -18,6 +18,7 @@ import type { components } from "$lib/api_schema"
 import {
   StreamEventProcessor,
   consumeSseStream,
+  type AskUserQuestionPayload,
   type ChatMessage,
   type StreamEvent,
   type ToolCallsPendingItem,
@@ -71,6 +72,13 @@ export interface AutoRunChatSink {
    * indicator clears on its own.
    */
   onToolCallsPending: (items: ToolCallsPendingItem[]) => void
+  /**
+   * The runner surfaced an ``ask_user_question`` (architecture §3): a question
+   * card renders inline and input is gated. In auto mode the burst settles to
+   * IDLE (the indicator shows "· waiting for you"); answering via
+   * /api/chat/ask/answer resumes the burst on this same observer stream.
+   */
+  onAskUserQuestion: (payload: AskUserQuestionPayload) => void
 }
 
 export interface AutoRunStore {
@@ -182,6 +190,7 @@ export function createAutoRunStore(): AutoRunStore {
       onToolExecutionStart: (count) => sink?.onToolExecutionStart(count),
       onToolExecutionEnd: (count) => sink?.onToolExecutionEnd(count),
       onShowActivityIndicator: (show) => sink?.onShowActivityIndicator(show),
+      onAskUserQuestion: (payload) => sink?.onAskUserQuestion(payload),
     })
   }
 
@@ -450,7 +459,22 @@ export function createAutoRunStore(): AutoRunStore {
     }
     sink?.beginAssistantTurn()
     try {
-      await consumeSseStream(reader, buildProcessor())
+      // The resumed interactive turn can itself emit ``tool-calls-pending`` (the
+      // model called an approval-required client tool). Don't drop it: hand it
+      // off to the EXISTING normal approval + /api/chat/execute-tools flow (the
+      // same graceful-stop handoff), so the approval box surfaces and the
+      // conversation continues. A nested ask_user_question still re-gates via the
+      // processor's onAskUserQuestion. The continuation loop after approval is
+      // owned by the handoff; the runner is already off here.
+      await consumeSseStream(reader, buildProcessor(), (event) => {
+        if (event.type === "tool-calls-pending") {
+          sink?.onToolCallsPending(
+            Array.isArray(event.items) ? event.items : [],
+          )
+          return true
+        }
+        return false
+      })
     } catch (err) {
       sink?.onInlineError(err instanceof Error ? err.message : String(err))
     }

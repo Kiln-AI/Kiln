@@ -6,7 +6,11 @@ import {
   type AutoRunChatSink,
   type AutoRunStore,
 } from "./auto_run_store"
-import type { ChatMessage, ToolCallsPendingItem } from "./streaming_chat"
+import type {
+  AskUserQuestionPayload,
+  ChatMessage,
+  ToolCallsPendingItem,
+} from "./streaming_chat"
 
 vi.mock("$lib/api_client", () => ({
   base_url: "http://localhost:8757",
@@ -73,6 +77,7 @@ interface SinkCalls {
   idleReasons: (string | null)[]
   offReasons: (string | null)[]
   pendingToolCalls: ToolCallsPendingItem[][]
+  askQuestions: AskUserQuestionPayload[]
 }
 
 function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
@@ -89,6 +94,7 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     idleReasons: [],
     offReasons: [],
     pendingToolCalls: [],
+    askQuestions: [],
   }
   const sink: AutoRunChatSink = {
     beginAssistantTurn: () => {
@@ -109,6 +115,7 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     onAutoModeIdle: (r) => calls.idleReasons.push(r),
     onAutoModeOff: (r) => calls.offReasons.push(r),
     onToolCallsPending: (items) => calls.pendingToolCalls.push(items),
+    onAskUserQuestion: (payload) => calls.askQuestions.push(payload),
   }
   return { sink, calls }
 }
@@ -384,6 +391,43 @@ describe("auto_run_store", () => {
     expect(last.parts?.[0]).toEqual({ type: "text", text: "resumed" })
     // No EventSource opened for the decline (interactive resume path).
     expect(FakeEventSource.instances.length).toBe(0)
+  })
+
+  it("decline-resume surfaces a follow-on tool-calls-pending to the approval sink (not dropped)", async () => {
+    const items = [
+      {
+        toolCallId: "tc-decline",
+        toolName: "call_kiln_api",
+        input: { method: "POST" },
+        requiresApproval: true,
+      },
+    ]
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () =>
+          readerFromChunks([
+            'data: {"type":"text-start","id":"x"}\n\n',
+            'data: {"type":"text-delta","delta":"resumed"}\n\n',
+            `data: ${JSON.stringify({ type: "tool-calls-pending", items })}\n\n`,
+          ]),
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await store.decline({
+      trace_id: "t9",
+      enable_tool_call_id: "call_1",
+      siblings: [],
+    })
+
+    // The resumed turn's text still rendered.
+    const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
+    expect(last.parts?.[0]).toEqual({ type: "text", text: "resumed" })
+    // The follow-on tool-calls-pending was handed off to the EXISTING approval
+    // flow (graceful-stop handoff), not silently dropped by the processor.
+    expect(calls.pendingToolCalls).toHaveLength(1)
+    expect(calls.pendingToolCalls[0]).toEqual(items)
   })
 
   it("re-attach opens the events stream and replays buffered events with no gap", () => {

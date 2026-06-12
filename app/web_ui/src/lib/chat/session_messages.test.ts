@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
+  pendingApprovalsFromMessages,
   stripAppUiContext,
   type ChatSessionSnapshot,
 } from "./session_messages"
@@ -71,6 +72,98 @@ describe("hydrateSessionFromSnapshot", () => {
       toolName: "math__add",
       input: { a: 1, b: 2 },
       output: "3",
+    })
+  })
+
+  it("hydrates an unresolved ask_user_question call as a pending question card", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("tq", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({
+                  question: "Which model?",
+                  suggested_answers: [
+                    { answer: "GPT-4o", explanation: "best" },
+                    { answer: "Llama 3" },
+                  ],
+                }),
+              },
+            },
+          ],
+        },
+      ]),
+    )
+    const part = messages[0].parts![0]
+    expect(part).toEqual({
+      type: "ask-user-question",
+      toolCallId: "tc1",
+      question: "Which model?",
+      suggestedAnswers: [
+        { answer: "GPT-4o", explanation: "best" },
+        { answer: "Llama 3", explanation: "" },
+      ],
+    })
+  })
+
+  it("collapses a resolved ask_user_question card to its picked answer", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("tq", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({ question: "Which?" }),
+              },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "tc1", content: "GPT-4o" },
+      ]),
+    )
+    const part = messages[0].parts![0]
+    expect(part).toMatchObject({
+      type: "ask-user-question",
+      resolution: { kind: "pick", answer: "GPT-4o" },
+    })
+  })
+
+  it("collapses a resolved ask_user_question card to chat for the chat signal", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("tq", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({ question: "Which?" }),
+              },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "tc1",
+          content: JSON.stringify({ choice: "chat" }),
+        },
+      ]),
+    )
+    const part = messages[0].parts![0]
+    expect(part).toMatchObject({
+      type: "ask-user-question",
+      resolution: { kind: "chat" },
     })
   })
 
@@ -232,5 +325,139 @@ describe("stripAppUiContext", () => {
 
   it("handles empty string", () => {
     expect(stripAppUiContext("")).toBe("")
+  })
+})
+
+describe("pendingApprovalsFromMessages", () => {
+  // Build a hydrated conversation whose latest assistant turn holds a dangling
+  // call_kiln_api (no tool result) plus surrounding noise, via the real
+  // hydrate path so the reconstruction matches production exactly.
+  function hydrateDangling() {
+    return hydrateSessionFromSnapshot(
+      snap("t", [
+        { role: "user", content: "do it" },
+        {
+          role: "assistant",
+          content: "I'll call the API.",
+          tool_calls: [
+            {
+              id: "tc-api",
+              type: "function",
+              function: {
+                name: "call_kiln_api",
+                arguments: JSON.stringify({
+                  method: "POST",
+                  url_path: "/foo",
+                }),
+              },
+            },
+          ],
+        },
+        // No matching role:"tool" result → the call is DANGLING.
+      ]),
+    ).messages
+  }
+
+  it("reconstructs a dangling call_kiln_api into a requires-approval item", () => {
+    const items = pendingApprovalsFromMessages(hydrateDangling())
+    expect(items).toEqual([
+      {
+        toolCallId: "tc-api",
+        toolName: "call_kiln_api",
+        input: { method: "POST", url_path: "/foo" },
+        requiresApproval: true,
+      },
+    ])
+  })
+
+  it("returns nothing when the tool call has a persisted result (resolved)", () => {
+    const messages = hydrateSessionFromSnapshot(
+      snap("t", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc-api",
+              type: "function",
+              function: {
+                name: "call_kiln_api",
+                arguments: '{"method":"GET"}',
+              },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "tc-api", content: "result" },
+      ]),
+    ).messages
+    expect(pendingApprovalsFromMessages(messages)).toEqual([])
+  })
+
+  it("excludes ask_user_question (rendered as its card, not an approval)", () => {
+    const messages = hydrateSessionFromSnapshot(
+      snap("t", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc-ask",
+              type: "function",
+              function: {
+                name: "ask_user_question",
+                arguments: JSON.stringify({ question: "Which?" }),
+              },
+            },
+          ],
+        },
+      ]),
+    ).messages
+    expect(pendingApprovalsFromMessages(messages)).toEqual([])
+  })
+
+  it("excludes dangling enable_auto_mode / disable_auto_mode signal tools", () => {
+    const messages = hydrateSessionFromSnapshot(
+      snap("t", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc-enable",
+              type: "function",
+              function: { name: "enable_auto_mode", arguments: "{}" },
+            },
+            {
+              id: "tc-disable",
+              type: "function",
+              function: { name: "disable_auto_mode", arguments: "{}" },
+            },
+          ],
+        },
+      ]),
+    ).messages
+    expect(pendingApprovalsFromMessages(messages)).toEqual([])
+  })
+
+  it("only inspects the latest assistant turn", () => {
+    const messages = hydrateSessionFromSnapshot(
+      snap("t", [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "tc-old",
+              type: "function",
+              function: { name: "call_kiln_api", arguments: "{}" },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "tc-old", content: "ok" },
+        { role: "user", content: "again" },
+        {
+          role: "assistant",
+          content: "done, no tools",
+        },
+      ]),
+    ).messages
+    // Latest assistant turn has no dangling tool calls.
+    expect(pendingApprovalsFromMessages(messages)).toEqual([])
   })
 })

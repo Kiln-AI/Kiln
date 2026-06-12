@@ -19,6 +19,7 @@
   import ChatHistory from "./chat_history.svelte"
   import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
+  import AskUserQuestion from "./ask_user_question.svelte"
   import ChatLoading from "./chat_loading.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
@@ -100,6 +101,9 @@
 
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
+  // A pending ask_user_question (architecture §3) gates the input until the user
+  // picks an answer or chooses "Chat about this".
+  $: askPending = $store.askPending
   $: showActivityIndicator = $store.showActivityIndicator
   // A server-owned auto burst is running. Drives the SAME in-transcript loading
   // affordances (thinking dots / animated icon) as interactive streaming, while
@@ -134,7 +138,20 @@
   // The input/send/Stop controls stay bound to ``isLoading`` only, so the
   // textarea remains usable for inject-on-send while auto mode works.
   $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
-  $: inputDisabled = isLoading
+  // A tool approval is awaiting the user's decision. During a normal interactive
+  // approval the stream is mid-flight so ``isLoading`` already gates input; this
+  // also covers a re-surfaced approval after reattach (history-restore /
+  // hard-refresh of a conversation whose latest turn ended on a dangling client
+  // tool call), where ``status`` is "ready" and ``isLoading`` is false.
+  $: pendingApproval =
+    toolApprovalWaiter !== null &&
+    toolApprovalWaiter.payload.items.some(
+      (i) => toolApprovalPicks[i.toolCallId] === undefined,
+    )
+  // Input is gated while loading, while a question is pending (architecture §3:
+  // the user must choose an option or "Chat about this"), or while a tool
+  // approval is awaiting a decision.
+  $: inputDisabled = isLoading || askPending !== null || pendingApproval
 
   let prevIsLoading = false
   $: {
@@ -358,6 +375,12 @@
     return part as ToolPart
   }
 
+  type AskPart = Extract<ChatMessagePart, { type: "ask-user-question" }>
+
+  function asAskPart(part: ChatMessagePart): AskPart {
+    return part as AskPart
+  }
+
   function getPartText(part: ChatMessagePart): string {
     return "text" in part && typeof part.text === "string" ? part.text : ""
   }
@@ -471,7 +494,7 @@
   function handleTextareaKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      if (!isLoading && input.trim()) handleSubmit()
+      if (!inputDisabled && input.trim()) handleSubmit()
     }
   }
 
@@ -480,6 +503,21 @@
     if (!el) return
     el.style.height = "auto"
     el.style.height = `${Math.min(el.scrollHeight + 2, window.innerHeight * 0.4)}px`
+  }
+
+  function answerQuestionPick(toolCallId: string, answer: string): void {
+    void store.answerQuestion(toolCallId, { answer })
+    userNearBottom = true
+    tick().then(() => {
+      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
+    })
+  }
+
+  function answerQuestionChat(toolCallId: string): void {
+    void store.answerQuestion(toolCallId, { chat: true })
+    tick().then(() => {
+      textareaRef?.focus({ preventScroll: true })
+    })
   }
 
   function applyToolApprovalRun(toolCallId: string): void {
@@ -502,9 +540,15 @@
     e: CustomEvent<{
       messages: ChatMessage[]
       continuationTraceId: string
+      autoActive?: boolean
     }>,
   ) {
-    store.loadSession(e.detail.messages, e.detail.continuationTraceId)
+    // Suppress dangling-approval re-surfacing for an auto-active row: the caller
+    // re-attaches the live run right after, and that observer stream is the
+    // source of truth (auto mode auto-approves, so it won't be at an approval).
+    store.loadSession(e.detail.messages, e.detail.continuationTraceId, {
+      surfacePendingApprovals: !e.detail.autoActive,
+    })
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -811,6 +855,23 @@
                                     {detail}
                                   />
                                 {/if}
+                              {:else if item.part.type === "ask-user-question"}
+                                {@const askPart = asAskPart(item.part)}
+                                <div class="mt-2">
+                                  <AskUserQuestion
+                                    question={askPart.question}
+                                    suggestedAnswers={askPart.suggestedAnswers}
+                                    resolution={askPart.resolution}
+                                    disabled={isLoading}
+                                    onPick={(answer) =>
+                                      answerQuestionPick(
+                                        askPart.toolCallId,
+                                        answer,
+                                      )}
+                                    onChat={() =>
+                                      answerQuestionChat(askPart.toolCallId)}
+                                  />
+                                </div>
                               {/if}
                             {/each}
                             {#if segIdx === segments.length - 1 && message.role === "assistant" && message.id === lastMessage?.id}
@@ -883,6 +944,18 @@
                     {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
                       {#if part.type === "text"}
                         <ChatMarkdown text={part.text ?? ""} />
+                      {:else if part.type === "ask-user-question"}
+                        <div class="mt-2">
+                          <AskUserQuestion
+                            question={part.question}
+                            suggestedAnswers={part.suggestedAnswers}
+                            resolution={part.resolution}
+                            disabled={isLoading}
+                            onPick={(answer) =>
+                              answerQuestionPick(part.toolCallId, answer)}
+                            onChat={() => answerQuestionChat(part.toolCallId)}
+                          />
+                        </div>
                       {:else if part.type === "reasoning"}
                         {@const collapsed = isPartCollapsed(
                           collapsedPartKeys,
@@ -1136,7 +1209,9 @@
         bind:this={textareaRef}
         class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12 text-sm"
         aria-label="Chat message"
-        placeholder="Type a message…"
+        placeholder={askPending
+          ? "Choose an option above, or 'Chat about this' to type a reply"
+          : "Type a message…"}
         bind:value={input}
         disabled={inputDisabled}
         rows={3}
