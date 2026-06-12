@@ -61,22 +61,24 @@
         .filter((provider: EmbeddingProvider) => provider.models.length > 0)
         .map((provider: EmbeddingProvider) => ({
           label: provider.provider_name,
-          options: provider.models.map((model: EmbeddingModelDetails) => ({
-            label: model.name,
-            value: {
-              model_name: model.id,
-              model_provider_name: provider.provider_id,
-              n_dimensions: model.n_dimensions,
-              max_input_tokens: model.max_input_tokens,
-              supports_custom_dimensions: model.supports_custom_dimensions,
-              suggested_for_chunk_embedding:
-                model.suggested_for_chunk_embedding,
-            },
-            badge: model.suggested_for_chunk_embedding
-              ? "Recommended"
-              : undefined,
-            description: `${model.n_dimensions} dimensions${model.max_input_tokens ? ` • ${model.max_input_tokens.toLocaleString()} max tokens` : ""}`,
-          })),
+          options: provider.models
+            .filter((model: EmbeddingModelDetails) => !model.deprecated)
+            .map((model: EmbeddingModelDetails) => ({
+              label: model.name,
+              value: {
+                model_name: model.id,
+                model_provider_name: provider.provider_id,
+                n_dimensions: model.n_dimensions,
+                max_input_tokens: model.max_input_tokens,
+                supports_custom_dimensions: model.supports_custom_dimensions,
+                suggested_for_chunk_embedding:
+                  model.suggested_for_chunk_embedding,
+              },
+              badge: model.suggested_for_chunk_embedding
+                ? "Recommended"
+                : undefined,
+              description: `${model.n_dimensions} dimensions${model.max_input_tokens ? ` • ${model.max_input_tokens.toLocaleString()} max tokens` : ""}`,
+            })),
         }))
     } catch (err) {
       error = createKilnError(err)
