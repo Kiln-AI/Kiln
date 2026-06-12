@@ -810,3 +810,273 @@ async def test_get_unknown_returns_none(registry):
 async def test_lifecycle_op_unknown_raises(registry):
     with pytest.raises(JobNotFoundError):
         await registry.cancel("j_doesnotexist")
+
+
+# -- groups, read-gated compute_state, typed progress detail -----------------
+
+
+class GroupGateWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    """Reports some progress, then blocks on a class-level gate so the test can
+    hold members RUNNING, inspect the group, then release them to terminal."""
+
+    type_name = "group_gate"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    supports_pause = True
+    gate: asyncio.Event
+
+    async def run(self, params, ctx):
+        await ctx.report_progress(success=2, total=10)
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+async def _make_group(reg: JobRegistry, count: int, group_id: str) -> list[str]:
+    ids = []
+    for _ in range(count):
+        job = await reg.create(
+            "group_gate", {}, project_id="p1", group_id=group_id, group_label="Run All"
+        )
+        ids.append(job.id)
+    return ids
+
+
+@pytest.mark.asyncio
+async def test_group_summary_aggregates_running_then_terminal():
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(GroupGateWorker)
+    GroupGateWorker.gate = asyncio.Event()
+    ids = await _make_group(reg, 3, "g1")
+    for jid in ids:
+        await wait_for_status(reg, jid, BackgroundJobStatus.RUNNING)
+    # run() reports progress just after the job flips to RUNNING — wait for the
+    # reported counts to land before asserting the aggregate.
+    for _ in range(100):
+        if all(reg._jobs[jid].progress.success == 2 for jid in ids):
+            break
+        await asyncio.sleep(0.01)
+
+    summary = reg.group_summary("g1")
+    assert summary is not None
+    assert summary.job_count == 3
+    assert summary.label == "Run All"
+    assert summary.status == BackgroundJobStatus.RUNNING
+    assert summary.all_terminal is False
+    # 3 members x success=2, total=10 each -> summed.
+    assert summary.progress.success == 6
+    assert summary.progress.total == 30
+
+    GroupGateWorker.gate.set()
+    for jid in ids:
+        await wait_for_status(reg, jid, BackgroundJobStatus.SUCCEEDED)
+    summary = reg.group_summary("g1")
+    assert summary is not None
+    assert summary.status == BackgroundJobStatus.SUCCEEDED
+    assert summary.all_terminal is True
+
+
+@pytest.mark.asyncio
+async def test_group_summary_none_for_unknown_group(registry):
+    assert registry.group_summary("nope") is None
+
+
+@pytest.mark.asyncio
+async def test_group_status_failed_beats_cancelled_beats_succeeded():
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(GroupGateWorker)
+    GroupGateWorker.gate = asyncio.Event()
+    ids = await _make_group(reg, 3, "g2")
+    for jid in ids:
+        await wait_for_status(reg, jid, BackgroundJobStatus.RUNNING)
+    # Cancel one, fail none, let one succeed: cancelled should win over succeeded.
+    await reg.cancel(ids[0])
+    GroupGateWorker.gate.set()
+    for jid in ids[1:]:
+        await wait_for_status(reg, jid, BackgroundJobStatus.SUCCEEDED)
+    summary = reg.group_summary("g2")
+    assert summary is not None
+    assert summary.all_terminal is True
+    assert summary.status == BackgroundJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_group_summary_ignores_deleted_member():
+    # The anti-bug property: a member deleted out of the registry stops
+    # counting, so all_terminal can't wedge on a vanished job.
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(GroupGateWorker)
+    GroupGateWorker.gate = asyncio.Event()
+    ids = await _make_group(reg, 2, "g3")
+    for jid in ids:
+        await wait_for_status(reg, jid, BackgroundJobStatus.RUNNING)
+    # Finish + delete the first; the second is still running.
+    await reg.cancel(ids[0])
+    await reg.delete(ids[0])
+    summary = reg.group_summary("g3")
+    assert summary is not None
+    assert summary.job_count == 1
+    assert summary.status == BackgroundJobStatus.RUNNING
+    GroupGateWorker.gate.set()
+
+
+@pytest.mark.asyncio
+async def test_cancel_group_cancels_all_members():
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(GroupGateWorker)
+    GroupGateWorker.gate = asyncio.Event()
+    ids = await _make_group(reg, 3, "g4")
+    for jid in ids:
+        await wait_for_status(reg, jid, BackgroundJobStatus.RUNNING)
+    summary = await reg.cancel_group("g4")
+    assert summary is not None
+    assert summary.status == BackgroundJobStatus.CANCELLED
+    for jid in ids:
+        assert reg._jobs[jid].status == BackgroundJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_pause_then_resume_group():
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(GroupGateWorker)
+    GroupGateWorker.gate = asyncio.Event()
+    ids = await _make_group(reg, 2, "g5")
+    for jid in ids:
+        await wait_for_status(reg, jid, BackgroundJobStatus.RUNNING)
+    summary = await reg.pause_group("g5")
+    assert summary is not None
+    assert summary.status == BackgroundJobStatus.PAUSED
+    for jid in ids:
+        assert reg._jobs[jid].status == BackgroundJobStatus.PAUSED
+    # Resume puts them back to pending/running.
+    await reg.resume_group("g5")
+    for jid in ids:
+        await wait_for_status(
+            reg, jid, {BackgroundJobStatus.PENDING, BackgroundJobStatus.RUNNING}
+        )
+    GroupGateWorker.gate.set()
+
+
+class NetworkComputeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "network_compute"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    compute_state_cost = "network"
+    compute_calls = 0
+    gate: asyncio.Event
+
+    async def compute_state(self, params):
+        type(self).compute_calls += 1
+        return JobDerivedState(total=1, success=0, error=0, is_complete=False)
+
+    async def run(self, params, ctx):
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_read_path_skips_network_compute_state():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(NetworkComputeWorker)
+    NetworkComputeWorker.gate = asyncio.Event()
+    NetworkComputeWorker.compute_calls = 0
+    job = await reg.create("network_compute", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    # Launch reconcile called compute_state at least once.
+    NetworkComputeWorker.compute_calls = 0
+    for _ in range(3):
+        await reg.get(job.id)
+    assert NetworkComputeWorker.compute_calls == 0  # reads are gated
+    # A lifecycle transition still reconciles.
+    await reg.cancel(job.id)
+    assert NetworkComputeWorker.compute_calls == 0  # cancel of running doesn't compute
+    NetworkComputeWorker.gate.set()
+
+
+class DiskComputeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "disk_compute"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    compute_state_cost = "disk"
+    compute_calls = 0
+    gate: asyncio.Event
+
+    async def compute_state(self, params):
+        type(self).compute_calls += 1
+        return JobDerivedState(total=1, success=0, error=0, is_complete=False)
+
+    async def run(self, params, ctx):
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_read_path_reconciles_disk_compute_state():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(DiskComputeWorker)
+    DiskComputeWorker.gate = asyncio.Event()
+    DiskComputeWorker.compute_calls = 0
+    job = await reg.create("disk_compute", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    DiskComputeWorker.compute_calls = 0
+    await reg.get(job.id)
+    assert DiskComputeWorker.compute_calls == 1  # disk reconciles on read
+    DiskComputeWorker.gate.set()
+
+
+class DetailModel(BaseModel):
+    phase: str
+    done: int
+
+
+class DetailWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "detail"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    progress_model = DetailModel
+    gate: asyncio.Event
+
+    async def run(self, params, ctx):
+        await ctx.report_progress_detail(DetailModel(phase="extract", done=3))
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_report_progress_detail_stamps_typed_payload():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(DetailWorker)
+    DetailWorker.gate = asyncio.Event()
+    job = await reg.create("detail", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    # Give the worker a tick to report the detail.
+    for _ in range(50):
+        if reg._jobs[job.id].progress_detail is not None:
+            break
+        await asyncio.sleep(0.01)
+    assert reg._jobs[job.id].progress_detail == {"phase": "extract", "done": 3}
+    DetailWorker.gate.set()
+
+
+class WrongModel(BaseModel):
+    other: str
+
+
+class BadDetailWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "bad_detail"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    progress_model = DetailModel
+
+    async def run(self, params, ctx):
+        await ctx.report_progress_detail(WrongModel(other="x"))
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_report_progress_detail_rejects_wrong_model():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(BadDetailWorker)
+    job = await reg.create("bad_detail", {})
+    # The type guard raises inside run(), routing the job to FAILED.
+    await wait_for_status(reg, job.id, BackgroundJobStatus.FAILED)
+    assert reg._jobs[job.id].error is not None

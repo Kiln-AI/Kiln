@@ -8,6 +8,7 @@ from typing import (
     Callable,
     ClassVar,
     Generic,
+    Literal,
     TypeVar,
 )
 
@@ -79,19 +80,52 @@ class JobRecord(BaseModel):
     status: BackgroundJobStatus
     run_id: str | None = None
     progress: JobProgress = Field(default_factory=JobProgress)
+    # Typed, per-worker progress detail (validated against the worker's
+    # `progress_model`). The generic `progress` above is the universal counter;
+    # this carries the rich per-kind shape a worker needs the UI to render
+    # (e.g. RAG's four-phase breakdown). Kept as a dict on the wire so the
+    # core stays worker-agnostic; the frontend casts it to the worker's model.
+    progress_detail: dict[str, Any] | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
     error: JobError | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     project_id: str | None = None
     supports_pause: bool = False
+    # Optional grouping for multi-job operations (e.g. "Run All Evals" spawns
+    # one job per run-config under a shared group_id). Aggregate progress,
+    # all-terminal detection, and group-wide cancel/pause are computed
+    # server-side over members sharing this id — see the /api/jobs/groups
+    # endpoints. `group_label` is a display name carried on each member.
+    group_id: str | None = None
+    group_label: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     started_at: datetime | None = None
     ended_at: datetime | None = None
 
 
+class JobGroupSummary(BaseModel):
+    """Aggregate view of a multi-job group (jobs sharing a `group_id`).
+
+    Computed server-side over the group's current members, so a member that was
+    cancelled/superseded out of the registry simply stops counting — callers
+    never track a frozen id list. `status` is derived (running if any member is
+    active, else the worst terminal outcome) and `all_terminal` flips true only
+    once every member has finished.
+    """
+
+    group_id: str
+    label: str | None = None
+    status: BackgroundJobStatus
+    all_terminal: bool
+    job_count: int
+    progress: JobProgress
+    jobs: list[JobRecord]
+
+
 ReportProgress = Callable[["JobProgressUpdate"], Awaitable[None]]
+ReportProgressDetail = Callable[[BaseModel], Awaitable[None]]
 ReportError = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
@@ -114,11 +148,13 @@ class JobContext:
         job_id: str,
         run_id: str,
         report_progress: ReportProgress,
+        report_progress_detail: ReportProgressDetail,
         report_error: ReportError,
     ) -> None:
         self.job_id = job_id
         self.run_id = run_id
         self._report_progress = report_progress
+        self._report_progress_detail = report_progress_detail
         self._report_error = report_error
 
     async def report_progress(
@@ -142,6 +178,17 @@ class JobContext:
             )
         )
 
+    async def report_progress_detail(self, detail: BaseModel) -> None:
+        """Stamp the job's typed `progress_detail` with a worker-specific model.
+
+        For rich per-kind progress the generic counter can't carry (e.g. RAG's
+        per-phase breakdown). `detail` must be an instance of the worker's
+        declared `progress_model`; the registry validates and serializes it.
+        A UI-smoothing signal only — authoritative progress comes from
+        compute_state(). Cheap to call often.
+        """
+        await self._report_progress_detail(detail)
+
     async def report_error(self, error_message: str, **extra: Any) -> None:
         """Append one structured error entry to this run's error log.
 
@@ -160,15 +207,28 @@ class JobWorker(Generic[TParams, TResult]):
     type_name: ClassVar[str]
     params_model: ClassVar[type[BaseModel]]
     result_model: ClassVar[type[BaseModel]]
+    # Optional typed model for rich per-worker progress reported via
+    # JobContext.report_progress_detail(); stamped on JobRecord.progress_detail.
+    # Leave None for workers whose generic count progress is enough.
+    progress_model: ClassVar[type[BaseModel] | None] = None
     supports_pause: ClassVar[bool] = False
+    # How expensive compute_state() is, so the registry doesn't hammer it on the
+    # read path. "cheap" = in-memory/trivial; "disk" = reads project files;
+    # "network" = a remote call (e.g. a provider status check). Reads
+    # (GET /api/jobs/{id}) skip compute_state for "network" workers and return
+    # the last believed snapshot, which the running worker keeps fresh via
+    # report_progress; lifecycle transitions always reconcile regardless.
+    compute_state_cost: ClassVar[Literal["cheap", "disk", "network"]] = "cheap"
 
     async def compute_state(self, params: TParams) -> JobDerivedState | None:
         """Read source-of-truth Kiln entities and return the operation's true state.
 
         MUST be a pure read — no side effects, idempotent, safe to call any time.
-        Return None only when the worker has no backing entity to consult (e.g.
-        the NoopJob fixture); the registry then keeps the last believed snapshot.
-        Real workers must override this.
+        Declare its cost via `compute_state_cost` (it may do disk or network IO):
+        the registry calls it on every lifecycle transition, and on reads unless
+        the worker is "network"-cost. Return None only when the worker has no
+        backing entity to consult (e.g. the NoopJob fixture); the registry then
+        keeps the last believed snapshot. Real workers must override this.
         """
         return None
 

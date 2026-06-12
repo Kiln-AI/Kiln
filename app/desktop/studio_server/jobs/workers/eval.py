@@ -38,6 +38,8 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     params_model = EvalJobParams
     result_model = EvalJobResult
     supports_pause = True
+    # compute_state reads the task's dataset + eval-run files from disk.
+    compute_state_cost = "disk"
 
     async def compute_state(self, params: EvalJobParams) -> JobDerivedState:
         eval_config = eval_config_from_id(

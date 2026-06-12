@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import error_log
 from .events import JobEvent
-from .models import BackgroundJobStatus, JobRecord
+from .models import BackgroundJobStatus, JobGroupSummary, JobRecord
 from .registry import (
     JobNotFoundError,
     JobOperationError,
@@ -46,6 +46,16 @@ class CreateJobRequest(BaseModel):
     metadata: dict[str, Any] | None = Field(
         default=None,
         description="Free-form pass-through attribution, stored verbatim.",
+    )
+    group_id: str | None = Field(
+        default=None,
+        description="Optional group id to bundle this job with siblings (e.g. "
+        "one 'Run All' fans out into N jobs under a shared group). Aggregate "
+        "progress and group-wide control are available under /api/jobs/groups.",
+    )
+    group_label: str | None = Field(
+        default=None,
+        description="Optional display name for the group, carried on each member.",
     )
 
 
@@ -145,6 +155,9 @@ def connect_jobs_api(app: FastAPI) -> None:
         project_id: Annotated[
             str | None, Query(description="Filter by project id.")
         ] = None,
+        group_id: Annotated[
+            str | None, Query(description="Filter by job group id.")
+        ] = None,
         since: Annotated[
             datetime | None,
             Query(description="Only jobs created at or after this ISO-8601 time."),
@@ -157,6 +170,7 @@ def connect_jobs_api(app: FastAPI) -> None:
             status=status,
             type_name=type,
             project_id=project_id,
+            group_id=group_id,
             since=since,
             limit=limit,
         )
@@ -203,6 +217,8 @@ def connect_jobs_api(app: FastAPI) -> None:
             params=validated,
             project_id=request.project_id or _project_id_from_params(validated),
             metadata=request.metadata,
+            group_id=request.group_id,
+            group_label=request.group_label,
         )
         if not wait:
             return CreateJobResponse(job_id=job.id, status=job.status)
@@ -348,6 +364,68 @@ def connect_jobs_api(app: FastAPI) -> None:
     ) -> Response:
         await _run_lifecycle(job_registry.delete, id)
         return Response(status_code=204)
+
+    @app.get(
+        "/api/jobs/groups/{group_id}",
+        summary="Get Job Group",
+        tags=["Jobs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_job_group(
+        group_id: Annotated[str, Path(description="The job group id.")],
+    ) -> JobGroupSummary:
+        """Aggregate status + summed progress for all jobs sharing this group id."""
+        summary = job_registry.group_summary(group_id)
+        if summary is None:
+            raise HTTPException(
+                status_code=404, detail=f"Job group not found: {group_id}"
+            )
+        return summary
+
+    @app.post(
+        "/api/jobs/groups/{group_id}/cancel",
+        summary="Cancel Job Group",
+        tags=["Jobs"],
+        openapi_extra=_JOB_MUTATION_APPROVAL,
+    )
+    async def cancel_job_group(
+        group_id: Annotated[str, Path(description="The job group id.")],
+    ) -> JobGroupSummary:
+        """Cancel every non-terminal member of the group."""
+        return await _run_group_lifecycle(job_registry.cancel_group, group_id)
+
+    @app.post(
+        "/api/jobs/groups/{group_id}/pause",
+        summary="Pause Job Group",
+        tags=["Jobs"],
+        openapi_extra=_JOB_MUTATION_APPROVAL,
+    )
+    async def pause_job_group(
+        group_id: Annotated[str, Path(description="The job group id.")],
+    ) -> JobGroupSummary:
+        """Pause every running, pausable member of the group."""
+        return await _run_group_lifecycle(job_registry.pause_group, group_id)
+
+    @app.post(
+        "/api/jobs/groups/{group_id}/resume",
+        summary="Resume Job Group",
+        tags=["Jobs"],
+        openapi_extra=_JOB_MUTATION_APPROVAL,
+    )
+    async def resume_job_group(
+        group_id: Annotated[str, Path(description="The job group id.")],
+    ) -> JobGroupSummary:
+        """Resume every paused member of the group."""
+        return await _run_group_lifecycle(job_registry.resume_group, group_id)
+
+
+async def _run_group_lifecycle(operation, group_id: str) -> JobGroupSummary:
+    """Run a group-wide lifecycle op and return the resulting summary, 404 if the
+    group has no members."""
+    summary = await operation(group_id)
+    if summary is None:
+        raise HTTPException(status_code=404, detail=f"Job group not found: {group_id}")
+    return summary
 
 
 async def _run_lifecycle(operation, job_id: str) -> Any:
