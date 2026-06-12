@@ -310,7 +310,7 @@ export function createChatSessionStore(
   // so the card shows "You chose: …" / "You chose to chat about this".
   function resolveQuestionPart(
     toolCallId: string,
-    resolution: AskUserQuestionResolution,
+    resolution: AskUserQuestionResolution | undefined,
   ) {
     persisted.update((p) => ({
       ...p,
@@ -870,13 +870,18 @@ export function createChatSessionStore(
       kind: resolution.kind,
     })
 
-    // Collapse the card + lift the input gate immediately so the UI feels
-    // responsive (and the gate can never get stuck on a failed request).
+    // Optimistically collapse the card + lift the input gate so the UI feels
+    // responsive and a second click can't double-submit (askPending is now
+    // null, so a re-entrant answerQuestion returns early at the guard above).
+    // If the request fails we roll both back so the user can re-answer.
     resolveQuestionPart(toolCallId, resolution)
     clearAskPending()
     removeErrors()
 
-    const autoOn = get(autoRunStore.autoModeOn)
+    const reopenQuestion = () => {
+      resolveQuestionPart(toolCallId, undefined)
+      combined.update((s) => ({ ...s, askPending: pending }))
+    }
 
     let response: Response
     try {
@@ -890,6 +895,7 @@ export function createChatSessionStore(
         }),
       })
     } catch (err) {
+      reopenQuestion()
       pushInlineError(
         `Couldn't answer the question: ${
           err instanceof Error ? err.message : String(err)
@@ -905,13 +911,17 @@ export function createChatSessionStore(
       } catch {
         /* keep default */
       }
+      reopenQuestion()
       pushInlineError(detail)
       return
     }
 
-    // Auto run: the endpoint returns 202 and the burst + (for a pick) the echoed
-    // user message stream on the observer. Nothing to consume here.
-    if (autoOn) return
+    // Route on the actual server response, not a possibly-stale client auto
+    // flag (the run may have gone terminal between the question surfacing and
+    // this answer). An active auto run resumes and returns 202 — the burst +
+    // (for a pick) the echoed user message stream on the observer, nothing to
+    // consume here. Otherwise the server streams the interactive continuation.
+    if (response.status === 202) return
 
     // Interactive: render the pick as the user's message, then consume the
     // continuation stream into a fresh assistant turn.

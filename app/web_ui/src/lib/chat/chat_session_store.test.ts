@@ -1684,7 +1684,7 @@ describe("ask_user_question (architecture §3)", () => {
     expect(state.messages.filter((m) => m.role === "user")).toHaveLength(0)
   })
 
-  it("clears the gate (and surfaces an error) when the answer request fails", async () => {
+  it("restores the gate and re-opens the card (and surfaces the error) when the answer request fails", async () => {
     const { createChatSessionStore, streamChatMock } =
       await importFreshWithMock()
     const fetchMock = vi
@@ -1699,10 +1699,42 @@ describe("ask_user_question (architecture §3)", () => {
     await store.answerQuestion("tc1", { answer: "Option A" })
 
     const state = get(store)
-    // Gate cleared even on error — can't get stuck.
-    expect(state.askPending).toBeNull()
+    // The answer didn't reach the server, so roll back the optimistic
+    // resolution: the gate comes back and the card re-opens so the user can
+    // re-answer (rather than being stuck on a falsely "answered" card).
+    expect(state.askPending).toEqual({ toolCallId: "tc1", traceId: "trace-q" })
+    const askPart = state.messages
+      .flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "ask-user-question")
+    expect(
+      askPart && "resolution" in askPart ? askPart.resolution : "no-part",
+    ).toBeUndefined()
     const errorMsg = state.messages.find((m) => m.role === "error")
     expect(errorMsg?.content).toBe("Run is not idle")
+  })
+
+  it("routes on the server response (202), not the client auto flag: returns cleanly with no 'no body' error when the auto flag is off", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    // Auto flag is OFF (the withPendingQuestion setup runs interactively), but
+    // the server resumed an active auto run and returned 202. The old code
+    // keyed on the stale client flag and tried to read a (non-existent) body,
+    // surfacing a spurious "No response body" error. Routing on the status
+    // avoids that.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 202 } as unknown as Response)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { store } = await withPendingQuestion(
+      streamChatMock,
+      createChatSessionStore,
+    )
+    await store.answerQuestion("tc1", { answer: "Option A" })
+
+    const state = get(store)
+    expect(state.askPending).toBeNull()
+    expect(state.messages.find((m) => m.role === "error")).toBeUndefined()
   })
 
   it("reset clears the pending question gate", async () => {
@@ -1931,7 +1963,9 @@ describe("ask_user_question (architecture §3)", () => {
     })
     const askPart = state.messages
       .flatMap((m) => m.parts ?? [])
-      .find((p) => p.type === "ask-user-question" && p.toolCallId === "tc-nested")
+      .find(
+        (p) => p.type === "ask-user-question" && p.toolCallId === "tc-nested",
+      )
     expect(askPart).toBeTruthy()
     // No execute-tools POST: the nested question is not a tool approval.
     expect(
