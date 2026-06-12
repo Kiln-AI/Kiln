@@ -3618,10 +3618,12 @@ async def test_get_available_reranker_models(app, client):
                 {
                     "id": "reranker1",
                     "name": "Reranker 1",
+                    "deprecated": False,
                 },
                 {
                     "id": "reranker2",
                     "name": "Reranker 2",
+                    "deprecated": False,
                 },
             ],
         },
@@ -3632,6 +3634,62 @@ async def test_get_available_reranker_models(app, client):
                 {
                     "id": "reranker2",
                     "name": "Reranker 2",
+                    "deprecated": False,
+                }
+            ],
+        },
+    ]
+
+
+async def test_get_available_reranker_models_surfaces_deprecated(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.together_ai: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_rerankers = [
+        KilnRerankerModel(
+            name="reranker1",
+            friendly_name="Reranker 1",
+            family="family1",
+            providers=[
+                KilnRerankerModelProvider(
+                    name=ModelProviderName.together_ai,
+                    model_id="together_reranker1",
+                    deprecated=True,
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_rerankers",
+            mock_built_in_rerankers,
+        ),
+    ):
+        response = client.get("/api/available_reranker_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "together_ai",
+            "provider_name": "Together AI",
+            "models": [
+                {
+                    "id": "reranker1",
+                    "name": "Reranker 1",
+                    "deprecated": True,
                 }
             ],
         },

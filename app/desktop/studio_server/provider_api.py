@@ -203,6 +203,7 @@ class EmbeddingProvider(BaseModel):
 class RerankerModelDetails(BaseModel):
     id: str
     name: str
+    deprecated: bool = Field(default=False)
 
 
 class RerankerProvider(BaseModel):
@@ -514,6 +515,7 @@ def connect_provider_api(app: FastAPI):
                             RerankerModelDetails(
                                 id=model.name,
                                 name=model.friendly_name,
+                                deprecated=provider.deprecated,
                             )
                         )
 

@@ -56,13 +56,15 @@
         .filter((provider: RerankerProvider) => provider.models.length > 0)
         .map((provider: RerankerProvider) => ({
           label: provider.provider_name,
-          options: provider.models.map((model: RerankerModelDetails) => ({
-            label: model.name,
-            value: {
-              model_name: model.id,
-              model_provider_name: provider.provider_id,
-            },
-          })),
+          options: provider.models
+            .filter((model: RerankerModelDetails) => !model.deprecated)
+            .map((model: RerankerModelDetails) => ({
+              label: model.name,
+              value: {
+                model_name: model.id,
+                model_provider_name: provider.provider_id,
+              },
+            })),
         }))
     } catch (err) {
       error = createKilnError(err)
