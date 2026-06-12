@@ -1,0 +1,5 @@
+ignore_patterns:
+  - "app/desktop/studio_server/api_client/kiln_ai_server_client/**"
+
+memory_config:
+  disabled: false
