@@ -3255,7 +3255,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Run Rag Config
+         * Run RAG Config
          * @description Kick off a RAG ingestion as a tracked background job.
          *
          *     Returns immediately with the job id; the worker streams progress via

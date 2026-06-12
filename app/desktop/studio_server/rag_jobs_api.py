@@ -26,8 +26,15 @@ class RunRagConfigResponse(BaseModel):
 
 
 def connect_rag_jobs_api(app: FastAPI) -> None:
+    # Kept as GET (not POST) to preserve the existing client URL contract. It
+    # spawns a tracked background job rather than doing work inline, and the
+    # spawn is idempotent (keyed on rag_config_id — re-launching supersedes the
+    # in-flight predecessor), so a repeated GET is safe. The endpoint itself
+    # writes no project files — the job handles its own git-sync — hence
+    # @no_write_lock.
     @app.get(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
+        summary="Run RAG Config",
         tags=["Documents"],
         openapi_extra=agent_policy_require_approval(
             "Run RAG config indexing? This re-indexes documents and may take time."
