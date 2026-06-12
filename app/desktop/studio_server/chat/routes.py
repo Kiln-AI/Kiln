@@ -19,6 +19,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     _get_common_headers,
     get_authenticated_client,
 )
+from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
 from app.desktop.studio_server.chat.stream_session import (
     ChatStreamSession,
     ToolCallInfo,
@@ -39,6 +40,14 @@ def _build_upstream_headers(api_key: str) -> dict[str, str]:
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+
+
+def _upstream_chat_url() -> str:
+    """Upstream Kiln Copilot ``/v1/chat/`` continuation URL.
+
+    Shared by the interactive routes here and the auto-mode API so the path is
+    built in exactly one place."""
+    return f"{_get_base_url()}/v1/chat/"
 
 
 def _raise_upstream_error(detailed: KilnResponse) -> NoReturn:
@@ -62,6 +71,8 @@ class ChatSessionListItem(BaseModel):
     id: str
     title: str | None = None
     updated_at: datetime | None = None
+    auto_active: bool = False
+    auto_run_id: str | None = None
 
 
 class TraceToolCallFunction(BaseModel):
@@ -147,7 +158,7 @@ def connect_chat_api(app: FastAPI) -> None:
             ],
         }
         session = ChatStreamSession(
-            upstream_url=f"{_get_base_url()}/v1/chat/",
+            upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(api_key),
             initial_body=continuation_body,
         )
@@ -186,17 +197,29 @@ def connect_chat_api(app: FastAPI) -> None:
             offset=offset,
         )
         if detailed.status_code == HTTPStatus.OK and isinstance(detailed.parsed, list):
-            return [
-                ChatSessionListItem.model_validate(
-                    {
-                        "id": item.id,
-                        "title": item.title,
-                        "updated_at": item.updated_at,
-                    }
+            items: list[ChatSessionListItem] = []
+            for item in detailed.parsed:
+                if not isinstance(item, ApiSessionListItem):
+                    continue
+                # Server-side join against the in-memory auto-run registry so the
+                # UI gets a single, point-in-time view of which sessions are
+                # actively running in auto mode (no two-list correlation client
+                # side). A sub-ms race here is self-healing on the next refresh.
+                auto_active, auto_run_id = auto_chat_registry.is_active_for_trace(
+                    item.id
                 )
-                for item in detailed.parsed
-                if isinstance(item, ApiSessionListItem)
-            ]
+                items.append(
+                    ChatSessionListItem.model_validate(
+                        {
+                            "id": item.id,
+                            "title": item.title,
+                            "updated_at": item.updated_at,
+                            "auto_active": auto_active,
+                            "auto_run_id": auto_run_id,
+                        }
+                    )
+                )
+            return items
         _raise_upstream_error(detailed)
 
     @app.get(
@@ -257,7 +280,7 @@ def connect_chat_api(app: FastAPI) -> None:
         api_key = get_copilot_api_key()
 
         session = ChatStreamSession(
-            upstream_url=f"{_get_base_url()}/v1/chat/",
+            upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(api_key),
             initial_body=body.model_dump(exclude_none=True),
         )

@@ -13,11 +13,15 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
+  import { auto_run_store } from "$lib/chat/auto_run_store"
+  import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
+  import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
+  import BrailleSpinner from "./braille_spinner.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
   import { env } from "$env/dynamic/public"
 
@@ -25,6 +29,66 @@
 
   let costDisclaimer: ChatCostDisclaimer
   $: store.onConsentNeeded = () => costDisclaimer.prompt()
+  let consentDialog: AutoModeConsentDialog
+  // The store asks here when the model requests auto mode; we just decide
+  // accept/decline via the dialog. The store handles enable/decline + handoff.
+  $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
+
+  const autoModeOn = auto_run_store.autoModeOn
+  // Client-armed flag (Revision R2): auto mode turned on for a brand-new
+  // conversation that has no trace_id yet. The indicator shows on ("waiting for
+  // you") with no server run; the first message creates the run.
+  const autoArmed = auto_run_store.armed
+  const autoModeWorking = auto_run_store.working
+  // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
+  // History restore) resolves → hydrates → attaches the live observer (Phase 9).
+  const autoReconnecting = auto_run_store.reconnecting
+
+  // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
+  // branch), and is ALWAYS clickable (Revision R2) — including on a brand-new
+  // empty chat. It is disabled only while a consent prompt is already open (so we
+  // never stack dialogs). On a conversation with a trace_id, enable arms a
+  // server-owned run (IDLE); with no trace_id yet it arms client-side (no server
+  // call) and the first message creates the run.
+  let consentPending = false
+
+  async function openManualAutoMode() {
+    if (consentPending) return
+    consentPending = true
+    let accepted = false
+    try {
+      accepted = await consentDialog.prompt(null)
+    } finally {
+      consentPending = false
+    }
+    if (!accepted) return
+    const traceId = traceIdForNextChatRequest(messages)
+    if (!traceId) {
+      // Brand-new conversation (Revision R2): no trace to key a server run, so
+      // arm client-side. The indicator turns on ("waiting for you"); the first
+      // message creates the run (enable seeded with that message, no trace_id).
+      auto_run_store.arm()
+      return
+    }
+    // Existing conversation: enable arms a server-owned run keyed by the trace
+    // id (functional spec §4.1(2)). Surface enable failures (e.g. 429) instead
+    // of silently swallowing them — the dialog has already closed.
+    const result = await auto_run_store.requestEnable({ trace_id: traceId })
+    if (!result.ok) {
+      store.pushInlineError(
+        `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+      )
+    }
+  }
+
+  async function stopAutoMode() {
+    // A client-armed (no-run) conversation just disarms locally; a real server
+    // run is stopped via the registry. Always clear the armed flag so disable
+    // before the first send returns the toggle to off (functional spec §4.1(2)).
+    auto_run_store.disarm()
+    await auto_run_store.stop()
+  }
+
   let chatHistory: { open: () => void }
   let input = ""
   let messagesContainer: HTMLDivElement | null = null
@@ -37,6 +101,10 @@
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
   $: showActivityIndicator = $store.showActivityIndicator
+  // A server-owned auto burst is running. Drives the SAME in-transcript loading
+  // affordances (thinking dots / animated icon) as interactive streaming, while
+  // leaving the input usable for inject-on-send.
+  $: autoWorking = $store.autoWorking
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -59,6 +127,13 @@
   }
 
   $: isLoading = status === "submitted" || status === "streaming"
+  // The transcript's loading affordances (thinking dots, animated icon, active
+  // tool lines) show for BOTH the interactive client stream and a live auto
+  // burst, AND during a re-attach's brief "reconnecting…" window (Phase 9) so a
+  // reattaching conversation doesn't look done/idle before liveness is known.
+  // The input/send/Stop controls stay bound to ``isLoading`` only, so the
+  // textarea remains usable for inject-on-send while auto mode works.
+  $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
   $: inputDisabled = isLoading
 
   let prevIsLoading = false
@@ -75,11 +150,13 @@
   $: lastParts = lastMessage?.parts ?? []
 
   $: showStreamingCursor =
-    isLoading && lastMessage?.role === "assistant" && lastParts.length === 0
+    transcriptLoading &&
+    lastMessage?.role === "assistant" &&
+    lastParts.length === 0
 
   function isMessageVisible(message: ChatMessage): boolean {
     if (message.role !== "assistant") return true
-    if (isLoading && message.id === lastMessage?.id) return true
+    if (transcriptLoading && message.id === lastMessage?.id) return true
     const parts = message.parts ?? []
     if (parts.length === 0 && !message.content) return false
     return true
@@ -204,7 +281,7 @@
     groupSegment: RenderSegment & { kind: "step-group" },
     allSegments: RenderSegment[],
   ): boolean {
-    if (!(isLoading && message.id === lastMessage?.id)) return false
+    if (!(transcriptLoading && message.id === lastMessage?.id)) return false
 
     const groupIdx = allSegments.indexOf(groupSegment)
     const hasTextAfter = allSegments
@@ -376,6 +453,10 @@
     tick().then(() => {
       textareaRef?.focus({ preventScroll: true })
     })
+    // Resync after a hard refresh: if the restored conversation has an active
+    // server-owned auto run, hydrate from its current leaf and re-attach so the
+    // indicator + live events come back (mirrors the History restore path).
+    void store.resyncOnLoad()
   })
 
   onDestroy(() => {
@@ -697,7 +778,8 @@
                                     ? `(${method} ${urlPath})`
                                     : ""}
                                 {@const isActiveMessage =
-                                  isLoading && message.id === lastMessage?.id}
+                                  transcriptLoading &&
+                                  message.id === lastMessage?.id}
                                 {@const effectivelyComplete =
                                   hasOutput || !isActiveMessage}
                                 {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
@@ -742,7 +824,7 @@
                               {#if !hasVisibleApproval}
                                 <ChatStatusSteps
                                   parts={message.parts ?? []}
-                                  isLoading={isLoading &&
+                                  isLoading={transcriptLoading &&
                                     message.id === lastMessage?.id}
                                   isLastMessage={message.id === lastMessage?.id}
                                   {showActivityIndicator}
@@ -768,7 +850,7 @@
                               toolApprovalPicks[i.toolCallId] === undefined,
                           )}
                         {@const isActiveMessage =
-                          isLoading && message.id === lastMessage?.id}
+                          transcriptLoading && message.id === lastMessage?.id}
                         {#if !hasVisibleApproval}
                           {#if isActiveMessage && showActivityIndicator}
                             <div class="flex items-start gap-3">
@@ -1026,6 +1108,19 @@
           </div>
         {/if}
       {/each}
+      {#if $autoReconnecting}
+        <!-- Transient re-attach affordance (Phase 9): shown while a hard-refresh
+             resync or History restore resolves → hydrates → attaches the live
+             observer, so the transcript doesn't look done/idle before liveness
+             is known. Clears the instant the events stream is established. -->
+        <div
+          class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
+          role="status"
+        >
+          <BrailleSpinner />
+          <span>Reconnecting…</span>
+        </div>
+      {/if}
       <div
         bind:this={messagesEndRef}
         class="shrink-0 min-w-[24px] min-h-[24px]"
@@ -1068,10 +1163,51 @@
         </button>
       {/if}
     </form>
+
+    <div
+      class="flex-none flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 px-1 text-xs"
+    >
+      {#if $autoModeOn || $autoArmed}
+        <div class="flex items-center gap-2">
+          <span
+            class="inline-flex items-center gap-1.5 font-medium text-primary"
+          >
+            <span class:auto-pulse={$autoModeWorking} aria-hidden="true"
+              >⏵⏵</span
+            >
+            <span>auto mode on</span>
+            {#if !$autoModeWorking}
+              <span class="font-normal text-primary/70">· waiting for you</span>
+            {/if}
+          </span>
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs text-error/80 hover:text-error hover:bg-error/10"
+            on:click={stopAutoMode}
+            title="Stop auto mode"
+            aria-label="Stop auto mode"
+          >
+            ▸ Stop
+          </button>
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content/80 disabled:bg-transparent disabled:text-base-content/25"
+          on:click={openManualAutoMode}
+          disabled={consentPending}
+          title="Let the assistant run steps automatically without asking for approval."
+        >
+          <span aria-hidden="true">⏵⏵</span>
+          Auto mode
+        </button>
+      {/if}
+    </div>
   </div>
 </div>
 
 <ChatCostDisclaimer bind:this={costDisclaimer} />
+<AutoModeConsentDialog bind:this={consentDialog} />
 
 <style>
   .chat-messages-scroll::-webkit-scrollbar {
@@ -1094,5 +1230,25 @@
   .chat-messages-scroll {
     scrollbar-width: thin;
     scrollbar-color: oklch(var(--bc) / 0.2) transparent;
+  }
+
+  .auto-pulse {
+    animation: auto-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes auto-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .auto-pulse {
+      animation: none;
+    }
   }
 </style>

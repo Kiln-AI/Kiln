@@ -4,19 +4,20 @@
   import { client } from "$lib/api_client"
   import { hydrateSessionFromSnapshot } from "$lib/chat/session_messages"
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
-  import type { components } from "$lib/api_schema"
+  import {
+    splitSessionRows,
+    type SessionListItem,
+  } from "$lib/chat/session_grouping"
+  import { auto_run_store } from "$lib/chat/auto_run_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
-  import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
-  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import ChatHistoryRow from "./chat_history_row.svelte"
 
   const dispatch = createEventDispatcher<{
     apply: LoadedChatSessionDetail
   }>()
-
-  type SessionListItem = components["schemas"]["ChatSessionListItem"]
 
   let historyDialog: Dialog | null = null
   let sessionsLoading = false
@@ -25,10 +26,8 @@
   let sessionDetailLoading: string | null = null
   let deletingSessionId: string | null = null
 
-  function displayTitle(item: SessionListItem): string {
-    if (item.title) return item.title
-    return item.id.length > 12 ? `${item.id.slice(0, 10)}…` : item.id
-  }
+  $: ({ active: activeRows, recent: recentRows } =
+    splitSessionRows(sessionRows))
 
   async function loadSessionList() {
     sessionsLoading = true
@@ -63,7 +62,8 @@
     historyDialog?.close()
   }
 
-  async function selectSession(sessionId: string) {
+  async function selectSession(row: SessionListItem) {
+    const sessionId = row.id
     sessionDetailLoading = sessionId
     sessionsError = null
     try {
@@ -82,7 +82,18 @@
       dispatch("apply", { messages, continuationTraceId })
       posthog.capture("chat_history_session_loaded", {
         message_count: messages.length,
+        auto_active: !!row.auto_active,
       })
+      // Re-attach the live auto run after hydrating completed history. The
+      // runner replays the in-progress turn so there is no visible gap; if it
+      // has finished or is gone, the events stream lands cleanly in the "off"
+      // state (ui_design §5). Show a transient "reconnecting…" affordance during
+      // the connecting window (Phase 9); attach clears it once established, and
+      // the on-subscribe state marker reflects working-vs-idle immediately.
+      if (row.auto_active && row.auto_run_id) {
+        auto_run_store.beginReconnect()
+        auto_run_store.attach(row.auto_run_id)
+      }
       close()
     } catch (e) {
       sessionsError = createKilnError(e)
@@ -159,57 +170,45 @@
         </p>
       </div>
     {:else}
-      <div class="flex flex-col gap-0.5">
-        {#each sessionRows as row (row.id)}
+      {@const busy =
+        sessionDetailLoading !== null || deletingSessionId !== null}
+      {#if activeRows.length > 0}
+        <div
+          class="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-wide text-primary/90"
+        >
+          Working now
+        </div>
+        <div class="flex flex-col gap-0.5">
+          {#each activeRows as row (row.id)}
+            <ChatHistoryRow
+              {row}
+              loading={sessionDetailLoading === row.id}
+              deleting={deletingSessionId === row.id}
+              {busy}
+              onSelect={selectSession}
+              onDelete={deleteSession}
+            />
+          {/each}
+        </div>
+        {#if recentRows.length > 0}
+          <div class="divider my-1.5"></div>
           <div
-            class="group relative flex items-center w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-base-200/80 cursor-pointer"
-            class:opacity-50={deletingSessionId === row.id}
-            role="button"
-            tabindex="0"
-            on:click={() =>
-              sessionDetailLoading === null &&
-              deletingSessionId === null &&
-              selectSession(row.id)}
-            on:keydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                if (!sessionDetailLoading && !deletingSessionId)
-                  selectSession(row.id)
-              }
-            }}
+            class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-base-content/40"
           >
-            <div class="flex-1 min-w-0">
-              <span class="block text-sm font-medium truncate"
-                >{displayTitle(row)}</span
-              >
-            </div>
-            {#if sessionDetailLoading === row.id || deletingSessionId === row.id}
-              <span class="loading loading-spinner loading-xs shrink-0 ml-2"
-              ></span>
-            {:else}
-              {#if row.updated_at}
-                <span
-                  class="text-xs text-gray-500 shrink-0 ml-3 whitespace-nowrap"
-                  >{formatDate(row.updated_at)}</span
-                >
-              {/if}
-              <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-              <div
-                class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                on:click|stopPropagation
-              >
-                <TableActionMenu
-                  width="w-40"
-                  items={[
-                    {
-                      label: "Delete",
-                      onclick: () => deleteSession(row.id),
-                    },
-                  ]}
-                />
-              </div>
-            {/if}
+            Recent
           </div>
+        {/if}
+      {/if}
+      <div class="flex flex-col gap-0.5">
+        {#each recentRows as row (row.id)}
+          <ChatHistoryRow
+            {row}
+            loading={sessionDetailLoading === row.id}
+            deleting={deletingSessionId === row.id}
+            {busy}
+            onSelect={selectSession}
+            onDelete={deleteSession}
+          />
         {/each}
       </div>
     {/if}

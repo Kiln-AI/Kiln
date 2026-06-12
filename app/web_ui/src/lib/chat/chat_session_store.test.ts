@@ -8,8 +8,17 @@ vi.mock("./streaming_chat", () => ({
   traceIdForNextChatRequest: vi.fn(() => undefined),
 }))
 
+const mockClientGet = vi.fn()
 vi.mock("$lib/api_client", () => ({
   base_url: "http://test:8000",
+  client: {
+    GET: (...args: unknown[]) => mockClientGet(...args),
+  },
+}))
+
+const mockHydrate = vi.fn()
+vi.mock("./session_messages", () => ({
+  hydrateSessionFromSnapshot: (...args: unknown[]) => mockHydrate(...args),
 }))
 
 const mockAppState = {
@@ -59,6 +68,49 @@ function noopStreamChat(): Promise<void> {
   return Promise.resolve()
 }
 
+// A configurable fake auto-run store. ``autoModeOn`` defaults off; pass an
+// override to simulate the conversation flag being on (inject-on-send paths).
+function makeFakeAutoRun(
+  overrides: Partial<{
+    autoModeOn: boolean
+    armed: boolean
+    requestEnable: ReturnType<typeof vi.fn>
+    sendMessage: ReturnType<typeof vi.fn>
+    stop: ReturnType<typeof vi.fn>
+    resolve: ReturnType<typeof vi.fn>
+    attach: ReturnType<typeof vi.fn>
+    beginReconnect: ReturnType<typeof vi.fn>
+    arm: ReturnType<typeof vi.fn>
+    disarm: ReturnType<typeof vi.fn>
+  }> = {},
+) {
+  return {
+    autoModeOn: writable(overrides.autoModeOn ?? false),
+    armed: writable(overrides.armed ?? false),
+    working: writable(false),
+    reconnecting: writable(false),
+    runId: writable(overrides.autoModeOn ? "ar_test" : null),
+    offReason: writable(null),
+    connection: writable("idle"),
+    bind: vi.fn(),
+    requestEnable:
+      overrides.requestEnable ?? vi.fn().mockResolvedValue({ ok: true }),
+    decline: vi.fn().mockResolvedValue(undefined),
+    sendMessage:
+      overrides.sendMessage ?? vi.fn().mockResolvedValue({ ok: true }),
+    stop: overrides.stop ?? vi.fn().mockResolvedValue(undefined),
+    resolve: overrides.resolve ?? vi.fn().mockResolvedValue(null),
+    beginReconnect: overrides.beginReconnect ?? vi.fn(),
+    attach: overrides.attach ?? vi.fn(),
+    detach: vi.fn(),
+    arm: overrides.arm ?? vi.fn(),
+    disarm: overrides.disarm ?? vi.fn(),
+    _close: vi.fn(),
+  } as unknown as Parameters<
+    typeof import("./chat_session_store").createChatSessionStore
+  >[1]
+}
+
 function capturingStreamChat(capture: {
   options: StreamChatOptions | null
 }): (options: StreamChatOptions) => Promise<void> {
@@ -75,6 +127,8 @@ beforeEach(() => {
   })
   vi.stubGlobal("sessionStorage", storage.mock)
   mockConsentStore.set(true)
+  mockClientGet.mockReset()
+  mockHydrate.mockReset()
 })
 
 afterEach(() => {
@@ -327,6 +381,39 @@ describe("createChatSessionStore", () => {
       expect(streamChatMock).not.toHaveBeenCalled()
     })
 
+    it("surfaces an inline error when enabling auto mode fails (429)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+
+      // Fake auto-run store whose enable fails like a 429 "Too many auto runs".
+      const requestEnable = vi.fn().mockResolvedValue({
+        ok: false,
+        error: "Too many auto runs",
+      })
+      const fakeAutoRun = makeFakeAutoRun({ requestEnable })
+
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+      store.onAutoModeConsentNeeded = () => Promise.resolve(true)
+
+      await store.sendMessage("hi")
+      // Drive the consent path the interactive stream hands off to.
+      await capture.options!.onAutoModeConsentRequired!({
+        traceId: "trace-1",
+        enableToolCallId: "call_1",
+        reason: null,
+        siblingToolCalls: [],
+      })
+
+      expect(requestEnable).toHaveBeenCalledTimes(1)
+      const errorMsg = get(store).messages.find((m) => m.role === "error")
+      expect(errorMsg).toBeDefined()
+      expect(errorMsg?.content).toBe(
+        "Couldn't start auto mode: Too many auto runs",
+      )
+    })
+
     it("skips consent prompt when already acknowledged", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
@@ -339,6 +426,187 @@ describe("createChatSessionStore", () => {
       const sent = await store.sendMessage("hello")
       expect(sent).toBe(true)
       expect(consentFn).not.toHaveBeenCalled()
+    })
+
+    it("injects via the auto run (not /api/chat) when auto mode is on, never stopping it", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
+      const stop = vi.fn().mockResolvedValue(undefined)
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage,
+        stop,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("keep going")
+      expect(sent).toBe(true)
+      // Routed to the inject endpoint, NOT the interactive stream, and the run
+      // was never stopped (Revision R1 inject-on-send).
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+      expect(sendMessage.mock.calls[0][0]).toBe("keep going")
+      expect(stop).not.toHaveBeenCalled()
+      expect(streamChatMock).not.toHaveBeenCalled()
+    })
+
+    it("armed-first-send (Revision R2) creates the run via enable seeded with the message, no trace_id", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const requestEnable = vi.fn().mockResolvedValue({ ok: true })
+      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
+      // Armed client-side on a brand-new conversation: no run yet (autoModeOn off).
+      const fakeAutoRun = makeFakeAutoRun({
+        armed: true,
+        requestEnable,
+        sendMessage,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("first message")
+      expect(sent).toBe(true)
+
+      // The first send creates the run via enable seeded with the message and
+      // NO trace_id — never the /message inject path (no run exists yet) and
+      // never the interactive stream.
+      expect(requestEnable).toHaveBeenCalledTimes(1)
+      const seed = requestEnable.mock.calls[0][0]
+      expect(seed.trace_id).toBeUndefined()
+      expect(seed.extra_messages).toEqual([
+        { role: "user", content: "first message" },
+      ])
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(streamChatMock).not.toHaveBeenCalled()
+
+      // The user message is rendered locally (the server does not echo a seed's
+      // extra_messages; only the /message inject path echoes).
+      const msgs = get(store).messages
+      expect(msgs[msgs.length - 1]).toMatchObject({
+        role: "user",
+        content: "first message",
+      })
+    })
+
+    it("armed-first-send surfaces an enable failure and does not consume the input", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const requestEnable = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "Too many auto runs" })
+      const fakeAutoRun = makeFakeAutoRun({ armed: true, requestEnable })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("first message")
+      expect(sent).toBe(false)
+      // The failure surfaces as an inline error message in the transcript.
+      const errors = get(store).messages.filter((m) => m.role === "error")
+      expect(errors.length).toBe(1)
+      expect(errors[0].content).toContain("Too many auto runs")
+    })
+
+    it("does not re-prompt auto-mode consent while auto mode is already on", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+      const autoConsent = vi.fn(() => Promise.resolve(true))
+      store.onAutoModeConsentNeeded = autoConsent
+
+      await store.sendMessage("again")
+      // Sending while on injects directly; the interactive consent handoff
+      // (auto-mode-consent-required) is never reached, so no re-prompt.
+      expect(autoConsent).not.toHaveBeenCalled()
+      expect(streamChatMock).not.toHaveBeenCalled()
+    })
+
+    it("injects even while the interactive status is not ready (auto bursts run server-side)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true, sendMessage })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("during a burst")
+      expect(sent).toBe(true)
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+    })
+
+    it("drives autoWorking from the auto-run sink during bursts and clears it on idle/off", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      // Capture the sink the store registers via bind() so we can simulate the
+      // auto runner's control events (the same path that fires during bursts).
+      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
+      ;(
+        fakeAutoRun as unknown as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        boundSink = s
+      }
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+      expect(boundSink).not.toBeNull()
+
+      // Burst working → the chat view's transcript-loading flag turns on, the
+      // SAME state interactive streaming would set (the loading-indicator fix).
+      boundSink!.onWorkingChange(true)
+      expect(get(store).autoWorking).toBe(true)
+
+      // Idle keeps the flag on (handled by the indicator binding) but clears the
+      // working sub-state so the thinking dots stop.
+      boundSink!.onAutoModeIdle("done")
+      expect(get(store).autoWorking).toBe(false)
+
+      boundSink!.onWorkingChange(true)
+      expect(get(store).autoWorking).toBe(true)
+      boundSink!.onAutoModeOff("user_stopped")
+      expect(get(store).autoWorking).toBe(false)
+    })
+
+    it("renders an echoed injected user message as a fresh user turn", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
+      ;(
+        fakeAutoRun as unknown as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        boundSink = s
+      }
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      boundSink!.onUserMessage("injected text")
+      const msgs = get(store).messages
+      const user = msgs.find((m) => m.role === "user")
+      expect(user?.content).toBe("injected text")
+      // A fresh assistant turn follows so the burst renders into a new turn.
+      expect(msgs[msgs.length - 1].role).toBe("assistant")
+    })
+
+    it("surfaces an inline error when injecting a message fails", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const sendMessage = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "Run is gone" })
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true, sendMessage })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      const sent = await store.sendMessage("hi")
+      expect(sent).toBe(false)
+      const errorMsg = get(store).messages.find((m) => m.role === "error")
+      expect(errorMsg?.content).toBe("Couldn't send the message: Run is gone")
     })
   })
 
@@ -1018,6 +1286,135 @@ describe("createChatSessionStore", () => {
       const stored = JSON.parse(storage.store["no_update_test"])
       expect(stored.lastSentAppState).not.toBeNull()
     })
+  })
+})
+
+describe("resyncOnLoad (hard-refresh resync)", () => {
+  it("active conversation hydrates from the current leaf, attaches, and turns the indicator on", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    // The stored (stale) leaf comes from the restored messages.
+    const streaming = await import("./streaming_chat")
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
+
+    // The server resolves it to the active run whose current leaf is t_now and
+    // whose burst is RUNNING (Phase 9).
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "running",
+    })
+    const attach = vi.fn()
+    const beginReconnect = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
+
+    // Hydration from the current leaf returns caught-up messages.
+    const hydratedMessages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "hi" },
+      { id: "a1", role: "assistant", parts: [], traceId: "t_now" },
+    ]
+    mockClientGet.mockResolvedValue({
+      data: { id: "t_now", task_run: { trace: [] } },
+      error: undefined,
+    })
+    mockHydrate.mockReturnValue({
+      messages: hydratedMessages,
+      continuationTraceId: "t_now",
+    })
+
+    const store = createChatSessionStore("resync_active", auto)
+    await store.resyncOnLoad()
+
+    // Resolved the stale leaf, hydrated from the CURRENT leaf, attached the run.
+    expect(resolve).toHaveBeenCalledWith("t_stale")
+    expect(mockClientGet).toHaveBeenCalledWith(
+      "/api/chat/sessions/{session_id}",
+      { params: { path: { session_id: "t_now" } } },
+    )
+    // Phase 9: attach is driven by the resolved liveness (RUNNING → working) and
+    // the reconnecting affordance is shown for the connecting window.
+    expect(beginReconnect).toHaveBeenCalled()
+    expect(attach).toHaveBeenCalledWith("ar_live", true)
+    // The caught-up messages replaced the stale restored view.
+    expect(get(store).messages).toEqual(hydratedMessages)
+  })
+
+  it("attaches even when snapshot hydration returns a structured error (CR Moderate item 1)", async () => {
+    // resolve() already proved the run is live; a snapshot error/empty response
+    // must NOT short-circuit — fall through to attach so the indicator + live
+    // stream are restored, same as the thrown-exception fallback.
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
+
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "idle",
+    })
+    const attach = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach })
+
+    // Structured error from the snapshot fetch (no data).
+    mockClientGet.mockResolvedValue({
+      data: undefined,
+      error: { detail: "boom" },
+    })
+
+    const store = createChatSessionStore("resync_snapshot_error", auto)
+    await store.resyncOnLoad()
+
+    expect(resolve).toHaveBeenCalledWith("t_stale")
+    // Hydration did not happen (no messages to apply)...
+    expect(mockHydrate).not.toHaveBeenCalled()
+    // ...but we STILL attach so the conversation isn't left looking dead (IDLE
+    // status → not working).
+    expect(attach).toHaveBeenCalledWith("ar_live", false)
+  })
+
+  it("inactive conversation (resolve 404) leaves the restored state and never attaches", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
+
+    const resolve = vi.fn().mockResolvedValue(null)
+    const attach = vi.fn()
+    const beginReconnect = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
+
+    const store = createChatSessionStore("resync_inactive", auto)
+    await store.resyncOnLoad()
+
+    expect(resolve).toHaveBeenCalledWith("t_stale")
+    expect(mockClientGet).not.toHaveBeenCalled()
+    expect(attach).not.toHaveBeenCalled()
+    // Phase 9: no reconnecting affordance when there's no active run to attach to.
+    expect(beginReconnect).not.toHaveBeenCalled()
+  })
+
+  it("no stored trace id is a no-op (does not call resolve)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue(undefined)
+
+    const resolve = vi.fn()
+    const auto = makeFakeAutoRun({ resolve })
+
+    const store = createChatSessionStore("resync_empty", auto)
+    await store.resyncOnLoad()
+
+    expect(resolve).not.toHaveBeenCalled()
   })
 })
 

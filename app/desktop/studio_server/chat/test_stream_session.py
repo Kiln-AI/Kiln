@@ -1,3 +1,6 @@
+# Note: the disable_auto_mode interception on the interactive ChatStreamSession
+# path is covered end-to-end in auto/test_api.py (via /api/chat), including the
+# sibling approval-gate behaviour.
 import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
