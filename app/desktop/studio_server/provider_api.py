@@ -192,6 +192,7 @@ class EmbeddingModelDetails(BaseModel):
     max_input_tokens: int | None
     supports_custom_dimensions: bool
     suggested_for_chunk_embedding: bool
+    deprecated: bool = Field(default=False)
 
 
 class EmbeddingProvider(BaseModel):
@@ -452,6 +453,7 @@ def connect_provider_api(app: FastAPI):
                                 max_input_tokens=provider.max_input_tokens,
                                 supports_custom_dimensions=provider.supports_custom_dimensions,
                                 suggested_for_chunk_embedding=provider.suggested_for_chunk_embedding,
+                                deprecated=provider.deprecated,
                             )
                         )
 
