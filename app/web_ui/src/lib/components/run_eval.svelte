@@ -94,13 +94,33 @@
     eval_type === "run_config"
       ? active_jobs.reduce((s, j) => s + (j.progress?.error ?? 0), 0)
       : calibration_error_count
+  // Track which tracked jobs we've actually observed in $jobs at least once,
+  // so we can tell "not appeared yet" (still launching) apart from "appeared
+  // then vanished" (superseded/deleted out from under an open dialog).
+  let seen_job_ids = new Set<string>()
+  $: {
+    let changed = false
+    for (const id of active_job_ids) {
+      if (!seen_job_ids.has(id) && $jobs.some((j) => j.id === id)) {
+        seen_job_ids.add(id)
+        changed = true
+      }
+    }
+    if (changed) seen_job_ids = seen_job_ids
+  }
   // All spawned jobs reached a terminal state — drive the dialog from
-  // "running" to "complete" / "complete_with_errors".
+  // "running" to "complete" / "complete_with_errors". A job that was seen and
+  // then disappeared (e.g. superseded by another run) counts as terminal, so a
+  // still-open dialog doesn't hang forever waiting on a row that no longer
+  // exists. Jobs that haven't appeared yet keep us in "running".
   $: all_active_terminal =
     eval_type === "run_config" &&
-    active_jobs.length > 0 &&
-    active_jobs.length === active_job_ids.length &&
-    active_jobs.every((j) => is_terminal(j.status))
+    active_job_ids.length > 0 &&
+    active_job_ids.every((id) => {
+      const j = $jobs.find((job) => job.id === id)
+      if (j) return is_terminal(j.status)
+      return seen_job_ids.has(id)
+    })
   $: if (all_active_terminal && eval_state === "running") {
     eval_state = eval_error_count > 0 ? "complete_with_errors" : "complete"
     on_run_complete()
@@ -188,6 +208,7 @@
     eval_state = "running"
     eval_run_error = null
     active_job_ids = []
+    seen_job_ids = new Set()
     calibration_complete_count = 0
     calibration_total_count = 0
     calibration_error_count = 0

@@ -973,6 +973,11 @@ def connect_evals_api(app: FastAPI):
         eval_config.save_to_file()
         return eval_config
 
+    # Kept as GET (not POST) to preserve the existing client URL contract. It
+    # spawns tracked background jobs rather than doing work inline, and those
+    # jobs are idempotent (they supersede any in-flight job with the same
+    # identity), so a repeated GET is safe. The endpoint itself writes no
+    # project files — each job handles its own git-sync — hence @no_write_lock.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
