@@ -8469,6 +8469,11 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /** RerankerProvider */
         RerankerProvider: {
