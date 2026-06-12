@@ -33,8 +33,8 @@
     {#if row.auto_active}
       <span
         class="auto-dot size-2 shrink-0 rounded-full bg-primary"
-        title="Auto mode is running"
-        aria-label="Auto mode running"
+        title="Auto mode is on"
+        aria-label="Auto mode on"
         role="img"
       ></span>
     {/if}
@@ -46,7 +46,7 @@
     {#if row.auto_active}
       <span
         class="text-xs text-primary font-medium shrink-0 ml-3 whitespace-nowrap"
-        >Working…</span
+        >Auto mode</span
       >
     {:else if row.updated_at}
       <span class="text-xs text-gray-500 shrink-0 ml-3 whitespace-nowrap"
