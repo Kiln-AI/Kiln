@@ -124,6 +124,8 @@ export interface StreamEvent {
   /** ``ask-user-question`` carries the question + the model's suggested answers */
   question?: string
   suggested_answers?: Array<{ answer?: unknown; explanation?: unknown }>
+  /** ``ask-user-question`` wire field for the intercepted tool call id (snake_case) */
+  tool_call_id?: string
 }
 
 /** Payload of the ``ask-user-question`` event (architecture §3). */
@@ -158,7 +160,10 @@ export function askUserQuestionPayloadFromEvent(
   }
   return {
     traceId: event.trace_id ?? null,
-    toolCallId: event.toolCallId ?? "",
+    // The app server emits the intercepted tool call id as snake_case
+    // ``tool_call_id`` (stream_session._format_ask_user_question_sse); fall back
+    // to ``toolCallId`` only for robustness.
+    toolCallId: event.tool_call_id ?? event.toolCallId ?? "",
     question: typeof event.question === "string" ? event.question : "",
     suggestedAnswers,
   }

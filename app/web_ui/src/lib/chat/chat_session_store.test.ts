@@ -1901,7 +1901,8 @@ describe("ask_user_question (architecture §3)", () => {
     const askEvent = JSON.stringify({
       type: "ask-user-question",
       trace_id: "trace-q2",
-      toolCallId: "tc-nested",
+      // Real app-server wire shape: snake_case ``tool_call_id``.
+      tool_call_id: "tc-nested",
       question: "Pick again?",
       suggested_answers: [{ answer: "B", explanation: "" }],
     })

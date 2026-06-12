@@ -222,13 +222,17 @@ describe("askUserQuestionPayloadFromEvent", () => {
     const payload = askUserQuestionPayloadFromEvent({
       type: "ask-user-question",
       trace_id: "t1",
-      toolCallId: "tc1",
+      // Real app-server wire shape: snake_case ``tool_call_id``
+      // (stream_session._format_ask_user_question_sse).
+      tool_call_id: "tc1",
       question: "Which one?",
       suggested_answers: [
         { answer: "A", explanation: "because A" },
         { answer: "B" },
       ],
     } as StreamEvent)
+    // The parsed toolCallId must equal the wire ``tool_call_id``.
+    expect(payload.toolCallId).toBe("tc1")
     expect(payload).toEqual({
       traceId: "t1",
       toolCallId: "tc1",
@@ -248,7 +252,7 @@ describe("askUserQuestionPayloadFromEvent", () => {
     }>
     const payload = askUserQuestionPayloadFromEvent({
       type: "ask-user-question",
-      toolCallId: "tc",
+      tool_call_id: "tc",
       question: "q",
       suggested_answers: withBad,
     } as StreamEvent)
@@ -261,7 +265,8 @@ describe("streamChat ask-user-question", () => {
   it("renders the question card part, fires onAskUserQuestion, and ends the stream", async () => {
     const lines = [
       'data: {"type":"kiln_chat_trace","trace_id":"trace-q"}\n\n',
-      'data: {"type":"ask-user-question","trace_id":"trace-q","toolCallId":"tc1","question":"Pick?","suggested_answers":[{"answer":"A","explanation":"e"}]}\n\n',
+      // Real app-server wire shape: snake_case ``tool_call_id``.
+      'data: {"type":"ask-user-question","trace_id":"trace-q","tool_call_id":"tc1","question":"Pick?","suggested_answers":[{"answer":"A","explanation":"e"}]}\n\n',
       // Anything after the question must NOT be processed (stream ends).
       'data: {"type":"text-start","id":"x"}\n\n',
       'data: {"type":"text-delta","delta":"should not render"}\n\n',
@@ -289,14 +294,19 @@ describe("streamChat ask-user-question", () => {
     })
 
     expect(askSpy).toHaveBeenCalledTimes(1)
+    // The parsed toolCallId must equal the wire ``tool_call_id``.
+    expect(askSpy.mock.calls[0][0].toolCallId).toBe("tc1")
     expect(askSpy.mock.calls[0][0]).toMatchObject({
       toolCallId: "tc1",
       question: "Pick?",
       suggestedAnswers: [{ answer: "A", explanation: "e" }],
     })
-    // The card part was rendered.
+    // The card part was rendered, carrying the wire tool call id.
     const askPart = lastParts?.find((p) => p.type === "ask-user-question")
     expect(askPart).toBeTruthy()
+    expect(
+      (askPart as { toolCallId?: string } | undefined)?.toolCallId,
+    ).toBe("tc1")
     // The stream ended on the question: the trailing text was never rendered.
     const textPart = lastParts?.find((p) => p.type === "text")
     expect(textPart).toBeUndefined()
