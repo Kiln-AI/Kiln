@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/jobs/groups/{group_id}/resume",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to control background jobs (pause, resume, cancel, delete)?"
+  }
+}

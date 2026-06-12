@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/jobs/groups/{group_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

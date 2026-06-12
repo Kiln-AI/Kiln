@@ -18,6 +18,7 @@ from .models import (
     JobContext,
     JobDerivedState,
     JobError,
+    JobGroupSummary,
     JobProgress,
     JobProgressUpdate,
     JobRecord,
@@ -43,6 +44,25 @@ class JobOperationError(Exception):
 
     Phase 2 maps these to 409 Conflict.
     """
+
+
+def _derive_group_status(
+    statuses: list[BackgroundJobStatus],
+) -> BackgroundJobStatus:
+    """Collapse member statuses into one group status. Any active member keeps
+    the group active (running > pending > paused); once all members are
+    terminal, the worst outcome wins (failed > cancelled > succeeded)."""
+    if any(s == BackgroundJobStatus.RUNNING for s in statuses):
+        return BackgroundJobStatus.RUNNING
+    if any(s == BackgroundJobStatus.PENDING for s in statuses):
+        return BackgroundJobStatus.PENDING
+    if any(s == BackgroundJobStatus.PAUSED for s in statuses):
+        return BackgroundJobStatus.PAUSED
+    if any(s == BackgroundJobStatus.FAILED for s in statuses):
+        return BackgroundJobStatus.FAILED
+    if any(s == BackgroundJobStatus.CANCELLED for s in statuses):
+        return BackgroundJobStatus.CANCELLED
+    return BackgroundJobStatus.SUCCEEDED
 
 
 def _new_job_id() -> str:
@@ -122,7 +142,7 @@ class JobRegistry:
         job = self._jobs.get(job_id)
         if job is None:
             return None
-        await self._reconcile(job, emit_on_change=True)
+        await self._reconcile(job, emit_on_change=True, from_read=True)
         return job
 
     def run_id_for(self, job_id: str) -> str | None:
@@ -136,6 +156,7 @@ class JobRegistry:
         status: BackgroundJobStatus | None = None,
         type_name: str | None = None,
         project_id: str | None = None,
+        group_id: str | None = None,
         since: datetime | None = None,
         limit: int | None = None,
     ) -> list[JobRecord]:
@@ -146,6 +167,8 @@ class JobRegistry:
             records = [r for r in records if r.type == type_name]
         if project_id is not None:
             records = [r for r in records if r.project_id == project_id]
+        if group_id is not None:
+            records = [r for r in records if r.group_id == group_id]
         if since is not None:
             records = [r for r in records if r.created_at >= since]
         records.sort(key=lambda r: r.created_at, reverse=True)
@@ -161,6 +184,8 @@ class JobRegistry:
         params: dict[str, Any] | BaseModel,
         project_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        group_id: str | None = None,
+        group_label: str | None = None,
     ) -> JobRecord:
         worker = self.worker_for(type_name)
         validated = self._validate_params(worker, params)
@@ -173,6 +198,8 @@ class JobRegistry:
             metadata=metadata or {},
             project_id=project_id,
             supports_pause=worker.supports_pause,
+            group_id=group_id,
+            group_label=group_label,
         )
         self._jobs[job_id] = job
         self._pending_ids.append(job_id)
@@ -222,7 +249,7 @@ class JobRegistry:
         if job is None:
             return
         params = worker.params_model.model_validate(job.params)
-        ctx = self._build_context(job_id, run_id)
+        ctx = self._build_context(job_id, run_id, worker)
         try:
             try:
                 await self._reconcile(job, emit_on_change=True)
@@ -249,7 +276,9 @@ class JobRegistry:
         finally:
             self._release_slot(job_id)
 
-    def _build_context(self, job_id: str, run_id: str) -> JobContext:
+    def _build_context(
+        self, job_id: str, run_id: str, worker: JobWorker
+    ) -> JobContext:
         async def report_progress(update: JobProgressUpdate) -> None:
             job = self._jobs.get(job_id)
             if job is None or job.run_id != run_id:
@@ -265,10 +294,29 @@ class JobRegistry:
             self._touch(job)
             self._emit(job)
 
+        async def report_progress_detail(detail: BaseModel) -> None:
+            job = self._jobs.get(job_id)
+            if job is None or job.run_id != run_id:
+                return
+            # Guard the worker's contract: the detail must be the model the
+            # worker declared, so progress_detail's shape is predictable for
+            # the frontend that casts it.
+            expected = worker.progress_model
+            if expected is not None and not isinstance(detail, expected):
+                raise TypeError(
+                    f"report_progress_detail expected {expected.__name__}, "
+                    f"got {type(detail).__name__}"
+                )
+            job.progress_detail = detail.model_dump(mode="json")
+            self._touch(job)
+            self._emit(job)
+
         async def report_error(message: str, extra: dict[str, Any]) -> None:
             error_log.append_error(run_id, {"error_message": message, **extra})
 
-        return JobContext(job_id, run_id, report_progress, report_error)
+        return JobContext(
+            job_id, run_id, report_progress, report_progress_detail, report_error
+        )
 
     def _finish_succeeded(self, job: JobRecord, result: BaseModel) -> None:
         job.status = BackgroundJobStatus.SUCCEEDED
@@ -394,6 +442,87 @@ class JobRegistry:
             error_log.delete_errors(job.run_id)
         self.events.publish_deleted(job_id, job.type, job.project_id)
 
+    # -- groups --------------------------------------------------------------
+
+    def group_summary(self, group_id: str) -> JobGroupSummary | None:
+        """Aggregate the current members of a group, or None if it has none.
+
+        Derived over live membership: a member cancelled/superseded out of the
+        registry simply stops counting, so `all_terminal` can't get wedged on a
+        job that no longer exists (the failure mode of a frozen client-side id
+        list)."""
+        members = [j for j in self._jobs.values() if j.group_id == group_id]
+        if not members:
+            return None
+        statuses = [m.status for m in members]
+        all_terminal = all(s.is_terminal for s in statuses)
+        derived = _derive_group_status(statuses)
+        totals = [m.progress.total for m in members]
+        progress = JobProgress(
+            total=sum(t for t in totals if t is not None)
+            if any(t is not None for t in totals)
+            else None,
+            success=sum(m.progress.success for m in members),
+            error=sum(m.progress.error for m in members),
+        )
+        label = next((m.group_label for m in members if m.group_label), None)
+        return JobGroupSummary(
+            group_id=group_id,
+            label=label,
+            status=derived,
+            all_terminal=all_terminal,
+            job_count=len(members),
+            progress=progress,
+            jobs=sorted(members, key=lambda m: m.created_at),
+        )
+
+    async def cancel_group(self, group_id: str) -> JobGroupSummary | None:
+        """Cancel every non-terminal member. Best-effort: members that race to
+        terminal between the snapshot and the cancel are skipped."""
+        for job_id in self._group_member_ids(group_id):
+            job = self._jobs.get(job_id)
+            if job is None or job.status.is_terminal:
+                continue
+            try:
+                await self.cancel(job_id)
+            except JobOperationError:
+                pass
+        return self.group_summary(group_id)
+
+    async def pause_group(self, group_id: str) -> JobGroupSummary | None:
+        """Pause every running, pausable member. Non-pausable or already-settled
+        members are skipped."""
+        for job_id in self._group_member_ids(group_id):
+            job = self._jobs.get(job_id)
+            if (
+                job is None
+                or not job.supports_pause
+                or job.status != BackgroundJobStatus.RUNNING
+            ):
+                continue
+            try:
+                await self.pause(job_id)
+            except JobOperationError:
+                pass
+        return self.group_summary(group_id)
+
+    async def resume_group(self, group_id: str) -> JobGroupSummary | None:
+        """Resume every paused member."""
+        for job_id in self._group_member_ids(group_id):
+            job = self._jobs.get(job_id)
+            if job is None or job.status != BackgroundJobStatus.PAUSED:
+                continue
+            try:
+                await self.resume(job_id)
+            except JobOperationError:
+                pass
+        return self.group_summary(group_id)
+
+    def _group_member_ids(self, group_id: str) -> list[str]:
+        # Snapshot the ids first: the lifecycle calls below mutate _jobs
+        # (dispatch, slot release), so we must not iterate it live.
+        return [j.id for j in self._jobs.values() if j.group_id == group_id]
+
     async def _cancel_task(self, job_id: str) -> None:
         task = self._tasks.get(job_id)
         if task is None:
@@ -437,9 +566,17 @@ class JobRegistry:
 
     # -- reconciliation ------------------------------------------------------
 
-    async def _reconcile(self, job: JobRecord, emit_on_change: bool) -> bool:
+    async def _reconcile(
+        self, job: JobRecord, emit_on_change: bool, from_read: bool = False
+    ) -> bool:
         worker = self._workers.get(job.type)
         if worker is None:
+            return False
+        # On the read path (a GET poll), don't pay a network round-trip per
+        # request: return the last believed snapshot, which the running worker
+        # keeps fresh via report_progress. Lifecycle transitions (from_read
+        # False) always reconcile so terminal state is never missed.
+        if from_read and worker.compute_state_cost == "network":
             return False
         params = worker.params_model.model_validate(job.params)
         derived = await worker.compute_state(params)

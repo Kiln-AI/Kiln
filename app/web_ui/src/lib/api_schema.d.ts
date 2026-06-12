@@ -3258,6 +3258,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Group
+         * @description Aggregate status + summed progress for all jobs sharing this group id.
+         */
+        get: operations["get_job_group_api_jobs_groups__group_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/groups/{group_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Job Group
+         * @description Cancel every non-terminal member of the group.
+         */
+        post: operations["cancel_job_group_api_jobs_groups__group_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/groups/{group_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Job Group
+         * @description Pause every running, pausable member of the group.
+         */
+        post: operations["pause_job_group_api_jobs_groups__group_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/groups/{group_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Job Group
+         * @description Resume every paused member of the group.
+         */
+        post: operations["resume_job_group_api_jobs_groups__group_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4559,6 +4639,16 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Group Id
+             * @description Optional group id to bundle this job with siblings (e.g. one 'Run All' fans out into N jobs under a shared group). Aggregate progress and group-wide control are available under /api/jobs/groups.
+             */
+            group_id?: string | null;
+            /**
+             * Group Label
+             * @description Optional display name for the group, carried on each member.
+             */
+            group_label?: string | null;
         };
         /**
          * CreateJobResponse
@@ -6982,6 +7072,30 @@ export interface components {
             } | null;
         };
         /**
+         * JobGroupSummary
+         * @description Aggregate view of a multi-job group (jobs sharing a `group_id`).
+         *
+         *     Computed server-side over the group's current members, so a member that was
+         *     cancelled/superseded out of the registry simply stops counting — callers
+         *     never track a frozen id list. `status` is derived (running if any member is
+         *     active, else the worst terminal outcome) and `all_terminal` flips true only
+         *     once every member has finished.
+         */
+        JobGroupSummary: {
+            /** Group Id */
+            group_id: string;
+            /** Label */
+            label?: string | null;
+            status: components["schemas"]["BackgroundJobStatus"];
+            /** All Terminal */
+            all_terminal: boolean;
+            /** Job Count */
+            job_count: number;
+            progress: components["schemas"]["JobProgress"];
+            /** Jobs */
+            jobs: components["schemas"]["JobRecord"][];
+        };
+        /**
          * JobProgress
          * @description Count-based progress for a job.
          *
@@ -7022,6 +7136,10 @@ export interface components {
             /** Run Id */
             run_id?: string | null;
             progress?: components["schemas"]["JobProgress"];
+            /** Progress Detail */
+            progress_detail?: {
+                [key: string]: unknown;
+            } | null;
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -7042,6 +7160,10 @@ export interface components {
              * @default false
              */
             supports_pause: boolean;
+            /** Group Id */
+            group_id?: string | null;
+            /** Group Label */
+            group_label?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -17866,6 +17988,8 @@ export interface operations {
                 type?: string | null;
                 /** @description Filter by project id. */
                 project_id?: string | null;
+                /** @description Filter by job group id. */
+                group_id?: string | null;
                 /** @description Only jobs created at or after this ISO-8601 time. */
                 since?: string | null;
                 /** @description Maximum number of jobs to return. */
@@ -18189,6 +18313,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_group_api_jobs_groups__group_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job group id. */
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobGroupSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_group_api_jobs_groups__group_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job group id. */
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobGroupSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_job_group_api_jobs_groups__group_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job group id. */
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobGroupSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_job_group_api_jobs_groups__group_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job group id. */
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobGroupSummary"];
                 };
             };
             /** @description Validation Error */

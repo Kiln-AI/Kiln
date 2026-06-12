@@ -778,3 +778,96 @@ async def test_sse_disconnect_leaves_job_running(app, registry, fast_keepalive):
     )
     await _wait_for_status(registry, job.id, BackgroundJobStatus.SUCCEEDED)
     assert registry._jobs[job.id].result == {"completed_steps": 6}
+
+
+# -- job groups --------------------------------------------------------------
+
+
+async def _create_group_member(client, group_id: str, label: str = "Run All") -> str:
+    resp = await client.post(
+        "/api/jobs/project_scoped",
+        json={
+            "params": {"project_id": "p1"},
+            "group_id": group_id,
+            "group_label": label,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["job_id"]
+
+
+@pytest.mark.asyncio
+async def test_create_with_group_id_and_filter_list(client, registry):
+    a = await _create_group_member(client, "grp")
+    b = await _create_group_member(client, "grp")
+    await _create_noop(client)  # ungrouped — must not appear
+    rows = (await client.get("/api/jobs", params={"group_id": "grp"})).json()
+    assert {r["id"] for r in rows} == {a, b}
+    assert all(r["group_id"] == "grp" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_get_job_group_aggregates(client, registry):
+    a = await _create_group_member(client, "grp")
+    b = await _create_group_member(client, "grp")
+    for jid in (a, b):
+        await _wait_for_status(registry, jid, BackgroundJobStatus.RUNNING)
+    resp = await client.get("/api/jobs/groups/grp")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["group_id"] == "grp"
+    assert body["label"] == "Run All"
+    assert body["job_count"] == 2
+    assert body["status"] == "running"
+    assert body["all_terminal"] is False
+    assert {j["id"] for j in body["jobs"]} == {a, b}
+
+
+@pytest.mark.asyncio
+async def test_get_job_group_unknown_404(client):
+    resp = await client.get("/api/jobs/groups/nope")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_group(client, registry):
+    a = await _create_group_member(client, "grp")
+    b = await _create_group_member(client, "grp")
+    for jid in (a, b):
+        await _wait_for_status(registry, jid, BackgroundJobStatus.RUNNING)
+    resp = await client.post("/api/jobs/groups/grp/cancel")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "cancelled"
+    assert body["all_terminal"] is True
+    for jid in (a, b):
+        assert registry._jobs[jid].status == BackgroundJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_pause_then_resume_job_group(client, registry):
+    a = await _create_group_member(client, "grp")
+    b = await _create_group_member(client, "grp")
+    for jid in (a, b):
+        await _wait_for_status(registry, jid, BackgroundJobStatus.RUNNING)
+    resp = await client.post("/api/jobs/groups/grp/pause")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "paused"
+    for jid in (a, b):
+        assert registry._jobs[jid].status == BackgroundJobStatus.PAUSED
+    resp = await client.post("/api/jobs/groups/grp/resume")
+    assert resp.status_code == 200, resp.text
+    for jid in (a, b):
+        await _wait_for_status(
+            registry,
+            jid,
+            {BackgroundJobStatus.PENDING, BackgroundJobStatus.RUNNING},
+        )
+    for jid in (a, b):
+        await _safe_cancel(registry, jid)
+
+
+@pytest.mark.asyncio
+async def test_cancel_unknown_group_404(client):
+    resp = await client.post("/api/jobs/groups/nope/cancel")
+    assert resp.status_code == 404
