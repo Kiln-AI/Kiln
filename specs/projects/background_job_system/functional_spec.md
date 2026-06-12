@@ -196,7 +196,7 @@ All endpoints live under `/api/jobs`. Authentication piggybacks on whatever the 
 | `DELETE` | `/api/jobs/{id}` | — | `204` / `409` | 409 if still in-flight. Drops the in-memory record and best-effort removes the run's error log file(s). |
 | `GET` | `/api/jobs/events` | — | `200 text/event-stream` | SSE; see §6. |
 
-All state-changing endpoints (pause/resume/cancel) are async-effecting: they return immediately with `202 Accepted`; the actual state transition is published via the SSE stream.
+All state-changing endpoints (pause/resume/cancel) return `202 Accepted` once the transition has settled. For pause and cancel this means the handler awaits the supervising task's cancellation/cleanup before responding, so the slot is reclaimed and the terminal result is recorded deterministically (no lost cancellation, no double-release). For our current workers cleanup lands at the next `await`, so this is effectively instant; a future worker with slow cancel-cleanup would hold the connection for that cleanup. The resulting state is also published via the SSE stream for any observers.
 
 Error envelopes follow the existing local-server convention (`{ "detail": "..." }`).
 

@@ -10,6 +10,8 @@ from kiln_server.document_api import build_rag_workflow_runner
 from kiln_server.project_api import project_from_id
 from pydantic import BaseModel
 
+from app.desktop.git_sync.save_context import save_context_for_project
+
 from ..models import JobContext, JobDerivedState, JobWorker
 
 
@@ -136,7 +138,18 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
 
     async def run(self, params: RagJobParams, ctx: JobContext) -> RagJobResult:
         rag_config, project = _load_rag_config(params)
-        runner = await build_rag_workflow_runner(project, params.rag_config_id)
+        # Wrap the RAG ingestion writes (Extraction, ChunkedDocument,
+        # ChunkEmbeddings under the project's .kiln dir) in the project's
+        # git-sync save context so background runs are committed/pushed for
+        # auto-sync projects — otherwise they'd sit dirty and get stashed away
+        # by the next GitSyncManager.ensure_clean(). Mirrors the eval worker.
+        save_context = save_context_for_project(
+            params.project_id,
+            context=f"rag job {params.rag_config_id}",
+        )
+        runner = await build_rag_workflow_runner(
+            project, params.rag_config_id, save_context=save_context
+        )
 
         # Track how many log entries we've already forwarded to the per-run
         # error log so we don't re-report the same error on every subsequent
