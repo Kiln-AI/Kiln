@@ -195,7 +195,10 @@ async def test_compute_state_no_eval_runs(
 
     assert state.total == 3
     assert state.success == 0
-    assert state.error == 0
+    # error left None so the registry preserves the runtime error count
+    # across pause — EvalRun entities don't persist per-item failures, so we
+    # have no opinion to assert here.
+    assert state.error is None
     assert state.is_complete is False
 
 
@@ -443,6 +446,17 @@ async def test_run_reports_full_set_totals_on_partial_resume(
 # -- save_context wiring -----------------------------------------------------
 
 
+class _NoopCtx:
+    job_id = "j_test"
+    run_id = "run_test"
+
+    async def report_progress(self, success, error=0, total=None, message=None):
+        pass
+
+    async def report_error(self, error_message, **extra):
+        pass
+
+
 def test_build_eval_runner_passes_save_context_when_git_sync_enabled(
     resolve_project, task, eval_config, run_config, params
 ):
@@ -452,7 +466,7 @@ def test_build_eval_runner_passes_save_context_when_git_sync_enabled(
         "app.desktop.studio_server.jobs.workers.eval.save_context_for_project",
         return_value=sentinel,
     ) as mock_helper:
-        runner = EvalJobWorker()._build_eval_runner(params)
+        runner = EvalJobWorker()._build_eval_runner(params, _NoopCtx())
 
     mock_helper.assert_called_once_with(
         params.project_id,
@@ -471,11 +485,62 @@ def test_build_eval_runner_defaults_to_noop_when_not_git_sync(
         "app.desktop.studio_server.jobs.workers.eval.save_context_for_project",
         return_value=None,
     ) as mock_helper:
-        runner = EvalJobWorker()._build_eval_runner(params)
+        runner = EvalJobWorker()._build_eval_runner(params, _NoopCtx())
 
     mock_helper.assert_called_once()
     # EvalRunner coalesces None to the no-op default_save_context.
     assert runner._save_context is default_save_context
+
+
+def test_build_eval_runner_attaches_error_log_observer(
+    resolve_project, task, eval_config, run_config, params
+):
+    """The worker must attach an observer that pipes per-item EvalRunner
+    failures into the job's error log — otherwise the "View Errors" dialog
+    only sees the error count, not the actual error details."""
+    from app.desktop.studio_server.jobs.workers.eval import _ReportErrorObserver
+
+    runner = EvalJobWorker()._build_eval_runner(params, _NoopCtx())
+
+    assert any(isinstance(o, _ReportErrorObserver) for o in runner._observers), (
+        f"_build_eval_runner must attach a _ReportErrorObserver. Observers: {runner._observers}"
+    )
+
+
+async def test_report_error_observer_writes_to_error_log():
+    """The observer surfaces per-item EvalRunner errors to ctx.report_error so
+    they land in the per-run error log file (and via the API → the "View
+    Errors" dialog). The dataset_item_id is forwarded so the user can trace
+    a failure back to the specific item that broke."""
+    from app.desktop.studio_server.jobs.workers.eval import _ReportErrorObserver
+
+    captured: list[tuple[str, dict]] = []
+
+    class CaptureCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, **_kwargs):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            captured.append((error_message, extra))
+
+    class _FakeItem:
+        id = "ds_42"
+
+    class _FakeJob:
+        item = _FakeItem()
+
+    observer = _ReportErrorObserver(CaptureCtx())
+    await observer.on_error(_FakeJob(), RuntimeError("boom"))
+
+    assert len(captured) == 1
+    message, extra = captured[0]
+    assert "ds_42" in message
+    assert "boom" in message
+    assert extra["dataset_item_id"] == "ds_42"
+    assert extra["exception_type"] == "RuntimeError"
 
 
 # -- end-to-end via registry -------------------------------------------------

@@ -80,6 +80,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     type: "noop",
     status: "running",
     supports_pause: true,
+    supports_cancel: true,
     created_at: "2026-05-28T12:00:00Z",
     ...overrides,
   }
@@ -216,6 +217,25 @@ describe("jobs_store", () => {
       ],
     })
     expect(get(active_jobs_count)).toBe(3)
+    unsub()
+    unsubJobs()
+  })
+
+  it("running_jobs_count counts only status === 'running'", async () => {
+    const { jobs, running_jobs_count } = await loadStore()
+    const unsubJobs = jobs.subscribe(() => {})
+    const unsub = running_jobs_count.subscribe(() => {})
+    const source = FakeEventSource.latest()
+    source.emit("snapshot", {
+      jobs: [
+        makeJob({ id: "a", status: "pending" }),
+        makeJob({ id: "b", status: "running" }),
+        makeJob({ id: "c", status: "running" }),
+        makeJob({ id: "d", status: "paused" }),
+        makeJob({ id: "e", status: "succeeded" }),
+      ],
+    })
+    expect(get(running_jobs_count)).toBe(2)
     unsub()
     unsubJobs()
   })

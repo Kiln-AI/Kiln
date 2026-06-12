@@ -14,7 +14,7 @@ from kiln_server.utils.agent_checks.policy import (
 from pydantic import BaseModel, Field, ValidationError
 
 from . import error_log
-from .events import JobEvent
+from .events import JobEvent, KeepalivePing, iter_with_keepalive
 from .models import BackgroundJobStatus, JobRecord
 from .registry import (
     JobNotFoundError,
@@ -22,6 +22,7 @@ from .registry import (
     job_registry,
 )
 from .workers.eval import EvalJobWorker
+from .workers.finetune import FinetuneJobWorker
 from .workers.noop import NoopJobWorker
 
 KEEPALIVE_SECONDS = 15.0
@@ -46,6 +47,13 @@ class CreateJobRequest(BaseModel):
     metadata: dict[str, Any] | None = Field(
         default=None,
         description="Free-form pass-through attribution, stored verbatim.",
+    )
+    idempotency_key: str | None = Field(
+        default=None,
+        description="Optional lifecycle identity. When set, any non-terminal "
+        "job of the same type with the same key is torn down before this one "
+        "is created, so re-running the same logical job doesn't pile up "
+        "duplicate rows.",
     )
 
 
@@ -76,29 +84,27 @@ async def _event_stream(
     """Pure-observer SSE generator.
 
     Subscribes to the registry event bus and forwards snapshot/job/deleted
-    events, injecting a keepalive comment between events. Closing this generator
-    (client disconnect, via CancellableStreamingResponse) only unsubscribes from
-    the bus — it never touches any job's supervising task. Jobs keep running.
+    events, injecting a keepalive comment during quiet windows. Closing this
+    generator (client disconnect, via CancellableStreamingResponse) only
+    unsubscribes from the bus — it never touches any job's supervising task.
+    Jobs keep running.
+
+    The keepalive goes through the shared `iter_with_keepalive` feeder-task
+    helper so a quiet-window timeout can never cancel (and thus tear down) the
+    underlying subscription. Here that only saved a churny 15s reconnect, but it
+    shares the fix with the eval stream, where a torn-down subscription would
+    otherwise pause/cancel still-running jobs on a still-connected client.
     """
     subscription: AsyncGenerator[JobEvent, None] = job_registry.events.subscribe(
         job_id=job_id,
         type_name=type_name,
         project_id=project_id,
     )
-    try:
-        while True:
-            try:
-                event = await asyncio.wait_for(
-                    subscription.__anext__(), timeout=KEEPALIVE_SECONDS
-                )
-            except asyncio.TimeoutError:
-                yield ": ping\n\n"
-                continue
-            except StopAsyncIteration:
-                break
-            yield _format_sse(event)
-    finally:
-        await subscription.aclose()
+    async for item in iter_with_keepalive(subscription, KEEPALIVE_SECONDS):
+        if isinstance(item, KeepalivePing):
+            yield ": ping\n\n"
+        else:
+            yield _format_sse(item)
 
 
 def connect_jobs_api(app: FastAPI) -> None:
@@ -106,6 +112,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
     job_registry.register_type(NoopJobWorker)
     job_registry.register_type(EvalJobWorker)
+    job_registry.register_type(FinetuneJobWorker)
 
     @app.get(
         "/api/jobs/events",
@@ -203,6 +210,7 @@ def connect_jobs_api(app: FastAPI) -> None:
             params=validated,
             project_id=request.project_id or _project_id_from_params(validated),
             metadata=request.metadata,
+            idempotency_key=request.idempotency_key,
         )
         if not wait:
             return CreateJobResponse(job_id=job.id, status=job.status)

@@ -59,7 +59,13 @@ class JobDerivedState(BaseModel):
 
     total: int | None = None
     success: int = 0
-    error: int = 0
+    # None = "no opinion" — registry preserves the prior runtime error count.
+    # Workers whose source-of-truth entities don't persist per-item failures
+    # (e.g. EvalRunner — EvalRun entities only exist for successes) should
+    # leave this None so a pause doesn't wipe runtime errors that "View Errors"
+    # needs to surface. Workers where the count IS authoritative (e.g. finetune
+    # status checks) set it explicitly.
+    error: int | None = None
     is_complete: bool = False
     message: str | None = None
 
@@ -75,6 +81,11 @@ class JobRecord(BaseModel):
     """Ephemeral, in-memory bookkeeping for a single job. Never persisted to disk."""
 
     id: str
+    # Friendly adjective-noun label assigned by the registry at create time,
+    # used in the UI instead of the cryptic `id`. Not unique — `id` remains
+    # the canonical key. Optional for backward compatibility with older
+    # records that may have been created before this field existed.
+    name: str | None = None
     type: str
     status: BackgroundJobStatus
     run_id: str | None = None
@@ -85,6 +96,19 @@ class JobRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     project_id: str | None = None
     supports_pause: bool = False
+    # Some workers (e.g. provider-side finetune watchers) wrap external work
+    # that the user can't usefully interrupt from the local UI. The cancel
+    # button is hidden for those jobs and the registry's cancel() refuses.
+    supports_cancel: bool = True
+    # Producer-supplied lifecycle identity. When set, creating a new job with
+    # the same (type, idempotency_key) tears down any non-terminal predecessor
+    # (cancel + remove from the index) so the panel doesn't pile up duplicate
+    # rows for the same logical run. The producer picks the granularity — for
+    # evals this is (eval, eval_config, run_config); for finetune watchers it's
+    # left unset because each provider submission is a fresh identity.
+    # Kept distinct from metadata.tag, which is the *display/back-nav* identity
+    # — same in most cases today but the contracts are unrelated.
+    idempotency_key: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     started_at: datetime | None = None
@@ -161,6 +185,10 @@ class JobWorker(Generic[TParams, TResult]):
     params_model: ClassVar[type[BaseModel]]
     result_model: ClassVar[type[BaseModel]]
     supports_pause: ClassVar[bool] = False
+    # Default True: most workers do in-process work that the user may reasonably
+    # want to abort. Set False on workers wrapping external state we shouldn't
+    # interrupt locally (e.g. a remote finetune already submitted to a provider).
+    supports_cancel: ClassVar[bool] = True
 
     async def compute_state(self, params: TParams) -> JobDerivedState | None:
         """Read source-of-truth Kiln entities and return the operation's true state.

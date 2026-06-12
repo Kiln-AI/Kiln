@@ -14,7 +14,12 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_fr
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
@@ -44,6 +49,7 @@ class EvalRunner:
         run_configs: List[TaskRunConfig] | None,
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         save_context: SaveContext | None = None,
+        observers: List[AsyncJobRunnerObserver[EvalJob]] | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -84,6 +90,10 @@ class EvalRunner:
         self.eval = target_eval
         self._skills: SkillsDict = self._preload_skills()
         self._save_context: SaveContext = save_context or default_save_context
+        # Observers see per-item lifecycle events (start / success / error)
+        # after retries. Callers can attach one to pipe failures into a richer
+        # error log than the integer error count exposed via Progress.
+        self._observers: List[AsyncJobRunnerObserver[EvalJob]] = observers or []
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -194,11 +204,13 @@ class EvalRunner:
             jobs=jobs,
             run_job_fn=self.run_job,
             max_retries=2,
+            observers=self._observers,
         )
         async for progress in runner.run():
             yield progress
 
     async def run_job(self, job: EvalJob) -> bool:
+
         try:
             # Create the evaluator for this eval config/run config pair
             evaluator = eval_adapter_from_type(job.eval_config.config_type)(

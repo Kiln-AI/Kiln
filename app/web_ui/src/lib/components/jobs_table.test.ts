@@ -33,6 +33,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     type: "noop",
     status: "running",
     supports_pause: false,
+    supports_cancel: true,
     created_at: "2024-01-01T00:00:00Z",
     ...overrides,
   }
@@ -84,10 +85,10 @@ describe("JobsTable", () => {
     })
   })
 
-  it("renders a dismiss button (not a Delete label) for terminal rows", () => {
+  it("renders a Clear button (not a Delete label) for terminal rows", () => {
     jobs.set([makeJob({ id: "succeeded", status: "succeeded" })])
-    const { getByLabelText, queryByText } = render(JobsTable)
-    expect(getByLabelText("Dismiss job")).not.toBeNull()
+    const { getByText, queryByText } = render(JobsTable)
+    expect(getByText("Clear")).not.toBeNull()
     expect(queryByText("Delete")).toBeNull()
   })
 
@@ -95,10 +96,10 @@ describe("JobsTable", () => {
     jobs.set([
       makeJob({ id: "running", status: "running", supports_pause: true }),
     ])
-    const { getByText, queryByLabelText } = render(JobsTable)
+    const { getByText, queryByText } = render(JobsTable)
     expect(getByText("Pause")).not.toBeNull()
     expect(getByText("Cancel")).not.toBeNull()
-    expect(queryByLabelText("Dismiss job")).toBeNull()
+    expect(queryByText("Clear")).toBeNull()
   })
 
   it("gates row actions on status: paused shows Resume + Cancel", () => {
@@ -110,11 +111,11 @@ describe("JobsTable", () => {
 
   it("gates row actions on status: pending shows only Cancel", () => {
     jobs.set([makeJob({ id: "pending", status: "pending" })])
-    const { getByText, queryByText, queryByLabelText } = render(JobsTable)
+    const { getByText, queryByText } = render(JobsTable)
     expect(getByText("Cancel")).not.toBeNull()
     expect(queryByText("Pause")).toBeNull()
     expect(queryByText("Resume")).toBeNull()
-    expect(queryByLabelText("Dismiss job")).toBeNull()
+    expect(queryByText("Clear")).toBeNull()
   })
 
   it("shows the loading spinner before the first sync", () => {
@@ -138,5 +139,78 @@ describe("JobsTable", () => {
     connection.set("errored")
     const { getByText } = render(JobsTable)
     expect(getByText("Can't connect to the job stream")).not.toBeNull()
+  })
+
+  it("renders each secondary line on its own row when display.secondary is a list", () => {
+    jobs.set([
+      makeJob({
+        id: "j_eval",
+        type: "eval",
+        metadata: {
+          display: {
+            primary: "Eval: My Eval",
+            secondary: ["Judge: Judge-1", "Run config: RC-1"],
+          },
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    // Each line gets its own element rather than being collapsed into one.
+    expect(getByText("Judge: Judge-1")).not.toBeNull()
+    expect(getByText("Run config: RC-1")).not.toBeNull()
+  })
+
+  it("uses 'View Results' / 'View Errors' labels for the result/errors buttons", () => {
+    jobs.set([
+      makeJob({
+        id: "succ",
+        status: "succeeded",
+        result: { foo: "bar" } as unknown as Record<string, unknown>,
+        progress: {
+          total: 10,
+          success: 9,
+          error: 1,
+          updated_at: "2024-01-01",
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    expect(getByText("View Results")).not.toBeNull()
+    expect(getByText("View Errors")).not.toBeNull()
+  })
+
+  it("keeps the Details primary text neutral even when the job errored", () => {
+    // Errored jobs surface their state through the status badge (red) and the
+    // Message column — the Details column stays neutral so the row doesn't
+    // visually scream and the job identity stays readable.
+    jobs.set([
+      makeJob({
+        id: "failed",
+        status: "failed",
+        metadata: { display: { primary: "Eval: Bad Run" } },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    const primary = getByText("Eval: Bad Run")
+    expect(primary.className).not.toContain("text-error")
+    // And no ancestor wraps it in text-error either.
+    expect(primary.closest(".text-error")).toBeNull()
+  })
+
+  it("still renders a string display.secondary as a single line (back-compat)", () => {
+    jobs.set([
+      makeJob({
+        id: "j_legacy",
+        type: "eval",
+        metadata: {
+          display: {
+            primary: "Eval: Legacy",
+            secondary: "Judge: X · Run config: Y",
+          },
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    expect(getByText("Judge: X · Run config: Y")).not.toBeNull()
   })
 })

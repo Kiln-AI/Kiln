@@ -65,6 +65,7 @@ describe("jobs_api", () => {
         params: { eval_id: "e_1" },
         metadata: { src: "ui" },
         project_id: null,
+        idempotency_key: null,
       },
     })
     expect(result).toEqual({ job_id: "j_3", status: "pending" })
@@ -78,7 +79,29 @@ describe("jobs_api", () => {
     await create_job("noop", { steps: 5 }, null, "p_current")
     expect(mockPOST).toHaveBeenCalledWith("/api/jobs/{type}", {
       params: { path: { type: "noop" } },
-      body: { params: { steps: 5 }, metadata: null, project_id: "p_current" },
+      body: {
+        params: { steps: 5 },
+        metadata: null,
+        project_id: "p_current",
+        idempotency_key: null,
+      },
+    })
+  })
+
+  it("create_job forwards idempotency_key when provided", async () => {
+    mockPOST.mockResolvedValue({
+      data: { job_id: "j_idem", status: "pending" },
+      error: undefined,
+    })
+    await create_job("eval", { eval_id: "e" }, null, "p", "e:cfg:rc")
+    expect(mockPOST).toHaveBeenCalledWith("/api/jobs/{type}", {
+      params: { path: { type: "eval" } },
+      body: {
+        params: { eval_id: "e" },
+        metadata: null,
+        project_id: "p",
+        idempotency_key: "e:cfg:rc",
+      },
     })
   })
 

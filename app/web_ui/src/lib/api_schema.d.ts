@@ -1925,7 +1925,13 @@ export interface paths {
         };
         /**
          * Run Run Config Comparison
-         * @description Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
+         * @description Kick off an eval run against one or more run configs as tracked background jobs.
+         *
+         *     Returns immediately with the tracked job ids; observe live progress via
+         *     the jobs SSE stream (`GET /api/jobs/events`) or by re-fetching the job
+         *     records. Each spawned job is idempotent and supersedes any in-flight job
+         *     with the same `(eval, eval_config, run_config)` identity — re-running
+         *     won't pile up duplicate rows.
          */
         get: operations["run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get"];
         put?: never;
@@ -4559,6 +4565,11 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Idempotency Key
+             * @description Optional lifecycle identity. When set, any non-terminal job of the same type with the same key is torn down before this one is created, so re-running the same logical job doesn't pile up duplicate rows.
+             */
+            idempotency_key?: string | null;
         };
         /**
          * CreateJobResponse
@@ -5934,6 +5945,17 @@ export interface components {
             readonly model_type: string;
         };
         /**
+         * EvalRunComparisonResponse
+         * @description Response returned when an eval comparison kicks off background jobs.
+         */
+        EvalRunComparisonResponse: {
+            /**
+             * Kiln Job Tracking Ids
+             * @description Background job ids spawned for this comparison — one per run config. Use these to follow live progress via the jobs events stream or to poll the job records.
+             */
+            kiln_job_tracking_ids: string[];
+        };
+        /**
          * EvalRunResult
          * @description Results of an eval run including the eval and run config.
          */
@@ -7016,6 +7038,8 @@ export interface components {
         JobRecord: {
             /** Id */
             id: string;
+            /** Name */
+            name?: string | null;
             /** Type */
             type: string;
             status: components["schemas"]["BackgroundJobStatus"];
@@ -7042,6 +7066,13 @@ export interface components {
              * @default false
              */
             supports_pause: boolean;
+            /**
+             * Supports Cancel
+             * @default true
+             */
+            supports_cancel: boolean;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -15428,6 +15459,8 @@ export interface operations {
                 run_config_ids?: string[];
                 /** @description Whether to evaluate all run configurations for the task. */
                 all_run_configs?: boolean;
+                /** @description Optional spec id from the calling page; stored on the job's tag so the jobs widget can link back to the right page. */
+                spec_id?: string | null;
             };
             header?: never;
             path: {
@@ -15450,7 +15483,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EvalRunComparisonResponse"];
                 };
             };
             /** @description Validation Error */

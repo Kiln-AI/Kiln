@@ -33,6 +33,114 @@ MAX_CONCURRENT_ENV_VAR = "KILN_JOBS_MAX_CONCURRENT"
 _JOB_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"
 _JOB_ID_LENGTH = 12
 
+# Friendly adjective-noun name assigned to every job. Not unique (the id is the
+# canonical key) — just a more human label than `j_kwyevdvylgaz`.
+_JOB_NAME_ADJECTIVES = (
+    "amber",
+    "ancient",
+    "bold",
+    "brave",
+    "bright",
+    "calm",
+    "clever",
+    "cosmic",
+    "crisp",
+    "curious",
+    "dapper",
+    "eager",
+    "fearless",
+    "fierce",
+    "gentle",
+    "graceful",
+    "happy",
+    "humble",
+    "jolly",
+    "keen",
+    "lively",
+    "lucky",
+    "merry",
+    "mighty",
+    "noble",
+    "patient",
+    "polished",
+    "quiet",
+    "quick",
+    "radiant",
+    "rapid",
+    "rugged",
+    "scarlet",
+    "serene",
+    "silent",
+    "silver",
+    "soaring",
+    "spirited",
+    "steady",
+    "stellar",
+    "stoic",
+    "sturdy",
+    "swift",
+    "thoughtful",
+    "twilight",
+    "valiant",
+    "vivid",
+    "warm",
+    "wise",
+    "zesty",
+)
+
+_JOB_NAME_NOUNS = (
+    "albatross",
+    "anchor",
+    "aurora",
+    "beacon",
+    "blossom",
+    "boulder",
+    "breeze",
+    "canyon",
+    "cedar",
+    "chestnut",
+    "comet",
+    "cypress",
+    "delta",
+    "ember",
+    "falcon",
+    "forest",
+    "fox",
+    "geyser",
+    "glacier",
+    "harbor",
+    "harvest",
+    "horizon",
+    "hummingbird",
+    "ibex",
+    "island",
+    "lantern",
+    "lighthouse",
+    "lynx",
+    "maple",
+    "meadow",
+    "monsoon",
+    "moss",
+    "mountain",
+    "nebula",
+    "ocean",
+    "orchard",
+    "otter",
+    "panther",
+    "pebble",
+    "phoenix",
+    "prairie",
+    "puffin",
+    "raven",
+    "ridge",
+    "river",
+    "shadow",
+    "spruce",
+    "summit",
+    "tundra",
+    "willow",
+)
+
 
 class JobNotFoundError(Exception):
     pass
@@ -48,6 +156,10 @@ class JobOperationError(Exception):
 def _new_job_id() -> str:
     suffix = "".join(secrets.choice(_JOB_ID_ALPHABET) for _ in range(_JOB_ID_LENGTH))
     return f"j_{suffix}"
+
+
+def _new_job_name() -> str:
+    return f"{secrets.choice(_JOB_NAME_ADJECTIVES)}-{secrets.choice(_JOB_NAME_NOUNS)}"
 
 
 def _resolve_max_concurrent(explicit: int | None) -> int:
@@ -161,24 +273,77 @@ class JobRegistry:
         params: dict[str, Any] | BaseModel,
         project_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> JobRecord:
         worker = self.worker_for(type_name)
         validated = self._validate_params(worker, params)
+        if idempotency_key is not None:
+            await self._supersede_matching(type_name, idempotency_key)
         job_id = self._fresh_job_id()
         job = JobRecord(
             id=job_id,
+            name=_new_job_name(),
             type=type_name,
             status=BackgroundJobStatus.PENDING,
             params=validated.model_dump(mode="json"),
             metadata=metadata or {},
             project_id=project_id,
             supports_pause=worker.supports_pause,
+            supports_cancel=worker.supports_cancel,
+            idempotency_key=idempotency_key,
         )
         self._jobs[job_id] = job
         self._pending_ids.append(job_id)
         self._emit(job)
         self._dispatch_pending()
         return job
+
+    async def _supersede_matching(self, type_name: str, key: str) -> None:
+        """Tear down any supersedable jobs with the same (type, idempotency_key).
+
+        Supersedable = everything except FAILED. Failed jobs carry the previous
+        attempt's error summary that the user may still need to inspect while
+        retrying, so they stay in the panel. Pending/running/paused get cancelled
+        and removed; cancelled and succeeded jobs are pure history that the
+        fresh launch makes obsolete — the source-of-truth EvalRuns etc. persist
+        independently, so dropping the succeeded row loses no real data.
+
+        Idempotent workers compute their state from source-of-truth entities,
+        so a fresh job will pick up wherever the superseded one left off —
+        there's no progress to preserve. We cancel AND remove rather than
+        leaving a Cancelled row behind, since the user's mental model is
+        "Run this again," not "Cancel the old one and start a new one."
+        """
+        targets = [
+            j
+            for j in self._jobs.values()
+            if j.type == type_name
+            and j.idempotency_key == key
+            and j.status != BackgroundJobStatus.FAILED
+        ]
+        for old in targets:
+            await self._teardown_superseded(old)
+
+    async def _teardown_superseded(self, job: JobRecord) -> None:
+        # Mirror the lifecycle paths in cancel() — but unconditionally, since
+        # this is a registry-internal teardown rather than a user action.
+        # `supports_cancel=False` workers must still be replaceable here, or
+        # idempotency would silently break for them.
+        job_id = job.id
+        if job.status == BackgroundJobStatus.PENDING:
+            self._remove_pending(job_id)
+        elif job.status == BackgroundJobStatus.RUNNING:
+            self._cancel_intent.add(job_id)
+            await self._cancel_task(job_id)
+        # PAUSED needs no task teardown — there's no running task to cancel.
+        # In all paths, the record is removed entirely (same cleanup as delete())
+        # so the panel stays clean and resources are released.
+        self._jobs.pop(job_id, None)
+        self._remove_pending(job_id)
+        self._completion_events.pop(job_id, None)
+        if job.run_id is not None:
+            error_log.delete_errors(job.run_id)
+        self.events.publish_deleted(job_id, job.type, job.project_id)
 
     def _fresh_job_id(self) -> str:
         job_id = _new_job_id()
@@ -355,6 +520,8 @@ class JobRegistry:
 
     async def cancel(self, job_id: str) -> JobRecord:
         job = self._require(job_id)
+        if not job.supports_cancel:
+            raise JobOperationError(f"Job type '{job.type}' does not support cancel")
         if job.status.is_terminal:
             raise JobOperationError(
                 f"Cannot cancel a job in status '{job.status.value}'"
@@ -461,7 +628,10 @@ class JobRegistry:
         new_progress = JobProgress(
             total=derived.total if derived.total is not None else job.progress.total,
             success=derived.success,
-            error=derived.error,
+            # error=None means "no opinion" — preserve the prior runtime count
+            # so View Errors stays available across a pause when the worker's
+            # source-of-truth entities don't track failures.
+            error=derived.error if derived.error is not None else job.progress.error,
             message=derived.message
             if derived.message is not None
             else job.progress.message,

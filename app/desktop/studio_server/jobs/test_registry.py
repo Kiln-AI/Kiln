@@ -400,6 +400,57 @@ async def test_pause_rejected_when_not_supported():
 
 
 @pytest.mark.asyncio
+async def test_cancel_rejected_when_not_supported():
+    # supports_cancel=False marks the job as not user-interruptible (e.g.
+    # finetune watcher wrapping a remote provider job). The registry must refuse
+    # cancel rather than tearing down the supervising task.
+    class NonCancelableWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "noncancelable"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        supports_cancel = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(NonCancelableWorker)
+    job = await reg.create("noncancelable", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    with pytest.raises(JobOperationError):
+        await reg.cancel(job.id)
+    # Job is still running — the flag must gate cancel, not silently no-op.
+    assert reg._jobs[job.id].status == BackgroundJobStatus.RUNNING
+    # Force-cleanup so the test doesn't leak the supervising task.
+    reg._jobs[job.id].supports_cancel = True
+    await reg.cancel(job.id)
+
+
+@pytest.mark.asyncio
+async def test_supports_cancel_stamped_on_record_at_create():
+    class WatcherWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "watcher"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        supports_cancel = False
+
+        async def compute_state(self, params):
+            return JobDerivedState(total=1, success=1, error=0, is_complete=True)
+
+        async def run(self, params, ctx):
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(WatcherWorker)
+    job = await reg.create("watcher", {})
+    assert job.supports_cancel is False
+    assert job.supports_pause is False
+
+
+@pytest.mark.asyncio
 async def test_pause_rejected_when_not_running(registry):
     job = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
     await wait_for_status(registry, job.id, BackgroundJobStatus.SUCCEEDED)
@@ -601,6 +652,58 @@ async def test_report_progress_preserves_total_and_message_when_omitted():
     assert final.progress.success == 5
     assert final.progress.total == 50
     assert final.progress.message == "starting"
+
+
+@pytest.mark.asyncio
+async def test_apply_derived_preserves_error_when_compute_state_returns_none():
+    """A compute_state that omits `error` (error=None) must preserve the
+    runtime error count last reported via report_progress. This is the path
+    that keeps View Errors visible on paused eval jobs: EvalRun entities only
+    persist successes, so compute_state can't reconstruct failures and leaves
+    error=None — the registry preserves the live count instead of wiping it."""
+
+    class _ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "error_then_none"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = True
+        started: asyncio.Event
+        gate: asyncio.Event
+
+        async def compute_state(self, params):
+            return JobDerivedState(
+                total=10, success=2, is_complete=False
+            )  # error left None
+
+        async def run(self, params, ctx):
+            await ctx.report_progress(success=2, error=3, total=10)
+            type(self).started.set()
+            try:
+                await type(self).gate.wait()
+            except asyncio.CancelledError:
+                task = asyncio.current_task()
+                # task.uncancel() was added in Python 3.11; on 3.10 simply
+                # swallowing the CancelledError exercises the same worst-case
+                # "swallows cancel and returns normally" path.
+                if task is not None and hasattr(task, "uncancel"):
+                    task.uncancel()
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_ErrorThenNoneWorker)
+    _ErrorThenNoneWorker.started = asyncio.Event()
+    _ErrorThenNoneWorker.gate = asyncio.Event()
+
+    job = await reg.create("error_then_none", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    await asyncio.wait_for(_ErrorThenNoneWorker.started.wait(), timeout=3.0)
+    assert reg._jobs[job.id].progress.error == 3
+
+    result = await reg.pause(job.id)
+    assert result.status == BackgroundJobStatus.PAUSED
+    # The runtime error count survives the reconcile so the "View Errors"
+    # button stays available in the panel while the job is paused.
+    assert result.progress.error == 3
 
 
 @pytest.mark.asyncio
@@ -810,3 +913,224 @@ async def test_get_unknown_returns_none(registry):
 async def test_lifecycle_op_unknown_raises(registry):
     with pytest.raises(JobNotFoundError):
         await registry.cancel("j_doesnotexist")
+
+
+# -- idempotency_key (supersede on create) ----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_pending_predecessor():
+    """Saturate the slot with a long-running job so a same-key second create
+    finds its predecessor still PENDING. The old record must vanish; only the
+    new one remains."""
+
+    class _Long(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "long"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=1)
+    reg.register_type(_Long)
+    # First job occupies the only slot.
+    blocker = await reg.create("long", {})
+    await wait_for_status(reg, blocker.id, BackgroundJobStatus.RUNNING)
+    # Second job with the SAME key — should NOT supersede `blocker` (different
+    # key), so it just sits pending.
+    pending_other = await reg.create("long", {}, idempotency_key="K")
+    assert pending_other.status == BackgroundJobStatus.PENDING
+    # Third job with the same "K" key — must supersede `pending_other`.
+    successor = await reg.create("long", {}, idempotency_key="K")
+    assert pending_other.id not in reg._jobs
+    assert successor.id in reg._jobs
+    # The unrelated `blocker` is untouched.
+    assert blocker.id in reg._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_running_predecessor():
+    class _Long(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "long"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Long)
+    first = await reg.create("long", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.RUNNING)
+    second = await reg.create("long", {}, idempotency_key="K")
+    # Predecessor is fully removed (no Cancelled row left behind).
+    assert first.id not in reg._jobs
+    # Successor takes its place.
+    await wait_for_status(
+        reg, second.id, {BackgroundJobStatus.RUNNING, BackgroundJobStatus.PENDING}
+    )
+    # Tear down the leftover task so asyncio doesn't warn about destroying a
+    # pending coroutine when the event loop closes.
+    await reg.cancel(second.id)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_paused_predecessor(registry):
+    """A paused job has no live task; the supersede path must still remove
+    the record cleanly without trying to cancel a non-existent task."""
+    first = await registry.create(
+        "noop",
+        {"steps": 100, "sleep_per_step_seconds": 0.01},
+        idempotency_key="K",
+    )
+    await wait_for_status(registry, first.id, BackgroundJobStatus.RUNNING)
+    await registry.pause(first.id)
+    assert registry._jobs[first.id].status == BackgroundJobStatus.PAUSED
+    second = await registry.create("noop", {"steps": 1}, idempotency_key="K")
+    assert first.id not in registry._jobs
+    assert second.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_succeeded_predecessor(registry):
+    """A succeeded predecessor is pure history — the source-of-truth entities
+    its run produced (EvalRuns, etc.) persist independently of the job row, so
+    the panel doesn't need to keep an obsolete 'last time it succeeded' row
+    once the user re-launches. Drop it the same way we drop running/cancelled
+    predecessors."""
+    first = await registry.create(
+        "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
+    )
+    await wait_for_status(registry, first.id, BackgroundJobStatus.SUCCEEDED)
+    second = await registry.create(
+        "noop", {"steps": 1, "sleep_per_step_seconds": 0.0}, idempotency_key="K"
+    )
+    assert first.id not in registry._jobs
+    assert second.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_cancelled_predecessor():
+    """A cancelled job is a purely transient 'user changed their mind' state
+    with no result or error info — a fresh same-key launch should replace it
+    rather than leaving a noise Cancelled row behind the new run."""
+
+    class _Long(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "long"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Long)
+    first = await reg.create("long", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.RUNNING)
+    await reg.cancel(first.id)
+    assert reg._jobs[first.id].status == BackgroundJobStatus.CANCELLED
+    second = await reg.create("long", {}, idempotency_key="K")
+    # The cancelled predecessor is gone — replaced, not preserved.
+    assert first.id not in reg._jobs
+    assert second.id in reg._jobs
+    await reg.cancel(second.id)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_keeps_failed_predecessor():
+    """Failed jobs carry the previous attempt's error summary that the user
+    may still need to inspect while retrying. They are preserved across a
+    same-key re-launch (the panel can carry both rows)."""
+
+    class _Boom(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "boom"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            raise RuntimeError("nope")
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Boom)
+    first = await reg.create("boom", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.FAILED)
+    second = await reg.create("boom", {}, idempotency_key="K")
+    await wait_for_status(reg, second.id, BackgroundJobStatus.FAILED)
+    assert first.id in reg._jobs
+    assert second.id in reg._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_only_matches_within_same_type(registry):
+    """Two different worker types sharing the same arbitrary key must NOT
+    supersede each other — keys are scoped per type to avoid cross-type
+    collisions on common strings."""
+
+    class _Other(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "other"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    registry.register_type(_Other)
+    noop_job = await registry.create(
+        "noop",
+        {"steps": 100, "sleep_per_step_seconds": 0.01},
+        idempotency_key="K",
+    )
+    other_job = await registry.create("other", {}, idempotency_key="K")
+    # Both still present — same key, different types.
+    assert noop_job.id in registry._jobs
+    assert other_job.id in registry._jobs
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_supersedes_noncancelable_predecessor():
+    """`supports_cancel=False` (e.g. finetune watchers) must still be
+    supersedable — idempotency is registry-internal teardown, not a user
+    cancel action. Otherwise idempotency would silently break for watchers."""
+
+    class _Watcher(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "watcher"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        supports_cancel = False
+
+        async def run(self, params, ctx):
+            await asyncio.sleep(5)
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_Watcher)
+    first = await reg.create("watcher", {}, idempotency_key="K")
+    await wait_for_status(reg, first.id, BackgroundJobStatus.RUNNING)
+    # User-issued cancel would refuse (supports_cancel=False); supersede must not.
+    with pytest.raises(JobOperationError):
+        await reg.cancel(first.id)
+    second = await reg.create("watcher", {}, idempotency_key="K")
+    assert first.id not in reg._jobs
+    assert second.id in reg._jobs
+    # Clean up the watcher's still-running task so it doesn't leak past the test.
+    second.supports_cancel = True
+    await reg.cancel(second.id)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_is_stamped_on_record(registry):
+    job = await registry.create("noop", {"steps": 1}, idempotency_key="hello")
+    assert registry._jobs[job.id].idempotency_key == "hello"
+    job2 = await registry.create("noop", {"steps": 1})
+    assert registry._jobs[job2.id].idempotency_key is None

@@ -1,7 +1,6 @@
-import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.eval_api import (
@@ -443,58 +442,213 @@ def test_get_eval_configs(
 
 
 @pytest.mark.asyncio
-async def test_run_eval_config(
+async def test_run_eval_config_returns_job_tracking_ids(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
 ):
-    mock_task_from_id.return_value = mock_task
-
-    # Mock progress updates
-    progress_updates = [
-        Mock(complete=1, total=3, errors=0),
-        Mock(complete=2, total=3, errors=0),
-        Mock(complete=3, total=3, errors=0),
-    ]
-
-    # Create async generator for mock progress
-    async def mock_run():
-        for progress in progress_updates:
-            yield progress
-
-    with (
-        patch(
-            "app.desktop.studio_server.eval_api.task_run_config_from_id"
-        ) as mock_run_config_from_id,
-        patch("app.desktop.studio_server.eval_api.EvalRunner") as MockEvalRunner,
-    ):
-        mock_run_config_from_id.return_value = mock_run_config
-        mock_eval_runner = Mock()
-        mock_eval_runner.run.return_value = mock_run()
-        MockEvalRunner.return_value = mock_eval_runner
-
-        # Make request with specific run_config_ids
+    """`/run_comparison` is now a one-shot JSON endpoint: it spawns one tracked
+    job per run_config and returns the ids. Live progress comes from the jobs
+    SSE stream (`/api/jobs/events`), not from this endpoint."""
+    with patch(
+        "app.desktop.studio_server.eval_api.spawn_eval_comparison_jobs",
+        new=AsyncMock(return_value=["j_a", "j_b"]),
+    ) as mock_spawn:
         response = client.get(
             "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
             params={"run_config_ids": ["run_config1", "run_config2"]},
         )
 
-        assert response.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == {"kiln_job_tracking_ids": ["j_a", "j_b"]}
 
-        # Parse SSE messages
-        messages = [msg for msg in response.iter_lines() if msg]
+    mock_spawn.assert_awaited_once()
+    kwargs = mock_spawn.await_args.kwargs
+    assert kwargs == {
+        "project_id": "project1",
+        "task_id": "task1",
+        "eval_id": "eval1",
+        "eval_config_id": "eval_config1",
+        "run_config_ids": ["run_config1", "run_config2"],
+        "all_run_configs": False,
+        "spec_id": None,
+    }
 
-        # Should have 4 messages: 3 progress updates and 1 complete
-        assert len(messages) == 4
 
-        # Check progress messages
-        for i, msg in enumerate(messages[:-1]):
-            assert msg.startswith("data: ")
-            data = json.loads(msg.split("data: ")[1])
-            assert data["progress"] == i + 1
-            assert data["total"] == 3
-            assert data["errors"] == 0
+@pytest.mark.asyncio
+async def test_spawn_eval_comparison_jobs_creates_one_job_per_run_config(
+    monkeypatch,
+):
+    """spawn_eval_comparison_jobs is the single backend entry point for kicking
+    off an eval. Verify it produces exactly one tracked job per run_config and
+    tags each correctly so the panel knows what the rows are."""
+    from app.desktop.studio_server import eval_api
+    from app.desktop.studio_server.jobs import api as jobs_api
+    from app.desktop.studio_server.jobs.registry import JobRegistry
+    from app.desktop.studio_server.jobs.workers.eval import EvalJobWorker
 
-        # Check complete message
-        assert messages[-1] == "data: complete"
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(EvalJobWorker)
+    monkeypatch.setattr(jobs_api, "job_registry", reg)
+    # The spawn helper imports job_registry inside the function (late import),
+    # so monkeypatching the symbol on its source module is what matters.
+    from app.desktop.studio_server.jobs import registry as registry_module
+
+    monkeypatch.setattr(registry_module, "job_registry", reg)
+
+    class _FakeEval:
+        id = "eval1"
+        name = "Fake Eval"
+
+    class _FakeEvalConfig:
+        name = "Fake Judge"
+
+        def parent_eval(self):
+            return _FakeEval()
+
+    class _FakeRunConfig:
+        def __init__(self, rc_id):
+            self.id = rc_id
+            self.name = f"run-config-{rc_id}"
+
+    monkeypatch.setattr(
+        eval_api, "eval_config_from_id", lambda *a, **k: _FakeEvalConfig()
+    )
+    monkeypatch.setattr(
+        eval_api,
+        "task_run_config_from_id",
+        lambda project_id, task_id, run_config_id: _FakeRunConfig(run_config_id),
+    )
+
+    ids = await eval_api.spawn_eval_comparison_jobs(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_ids=["rc1", "rc2", "rc3"],
+        all_run_configs=False,
+        spec_id="spec1",
+    )
+    assert len(ids) == 3
+    eval_jobs = reg.list_jobs(type_name="eval", project_id="project1")
+    assert len(eval_jobs) == 3
+    # Each row carries the eval tag (so back_url_for / live_progress can match)
+    # and a unique idempotency_key keyed on the run_config so re-runs supersede.
+    keys = {j.idempotency_key for j in eval_jobs}
+    assert keys == {
+        "eval1:eval_config1:rc1",
+        "eval1:eval_config1:rc2",
+        "eval1:eval_config1:rc3",
+    }
+    for job in eval_jobs:
+        assert job.metadata["tag"]["kind"] == "eval"
+        assert job.metadata["tag"]["spec_id"] == "spec1"
+
+
+@pytest.mark.asyncio
+async def test_spawn_eval_comparison_jobs_supersedes_running_predecessor(
+    monkeypatch,
+):
+    """A re-launch with the same (eval, eval_config, run_config) identity must
+    tear down an in-flight predecessor — even one that's still RUNNING — so the
+    panel doesn't pile up duplicate rows for the same logical run."""
+    import asyncio as _asyncio
+
+    from app.desktop.studio_server import eval_api
+    from app.desktop.studio_server.jobs import api as jobs_api
+    from app.desktop.studio_server.jobs.models import (
+        BackgroundJobStatus,
+        JobContext,
+        JobDerivedState,
+        JobWorker,
+    )
+    from app.desktop.studio_server.jobs.registry import JobRegistry
+    from pydantic import BaseModel as _BaseModel
+
+    # Slow stub so the first job is genuinely RUNNING when the second arrives.
+    class _StubEvalParams(_BaseModel):
+        project_id: str
+        task_id: str
+        eval_id: str
+        eval_config_id: str
+        run_config_id: str
+
+    class _StubEvalResult(_BaseModel):
+        ok: bool = True
+
+    class _SlowEvalWorker(JobWorker[_StubEvalParams, _StubEvalResult]):
+        type_name = "eval"
+        params_model = _StubEvalParams
+        result_model = _StubEvalResult
+        supports_pause = True
+
+        async def compute_state(self, params):
+            return JobDerivedState(total=1, success=0, is_complete=False)
+
+        async def run(self, params, ctx: JobContext):
+            await _asyncio.sleep(5)
+            return _StubEvalResult()
+
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(_SlowEvalWorker)
+    monkeypatch.setattr(jobs_api, "job_registry", reg)
+    from app.desktop.studio_server.jobs import registry as registry_module
+
+    monkeypatch.setattr(registry_module, "job_registry", reg)
+
+    class _FakeEval:
+        id = "eval1"
+        name = "Fake Eval"
+
+    class _FakeEvalConfig:
+        name = "Fake Judge"
+
+        def parent_eval(self):
+            return _FakeEval()
+
+    class _FakeRunConfig:
+        def __init__(self, rc_id):
+            self.id = rc_id
+            self.name = f"run-config-{rc_id}"
+
+    monkeypatch.setattr(
+        eval_api, "eval_config_from_id", lambda *a, **k: _FakeEvalConfig()
+    )
+    monkeypatch.setattr(
+        eval_api,
+        "task_run_config_from_id",
+        lambda project_id, task_id, run_config_id: _FakeRunConfig(run_config_id),
+    )
+
+    first_ids = await eval_api.spawn_eval_comparison_jobs(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_ids=["rc1"],
+        all_run_configs=False,
+    )
+    # Wait for the predecessor to actually be RUNNING (not just PENDING) before
+    # firing the supersede — proves we can tear down a live task, not just an
+    # un-launched queue entry.
+    deadline = _asyncio.get_event_loop().time() + 3.0
+    while _asyncio.get_event_loop().time() < deadline:
+        if reg._jobs[first_ids[0]].status == BackgroundJobStatus.RUNNING:
+            break
+        await _asyncio.sleep(0.01)
+    assert reg._jobs[first_ids[0]].status == BackgroundJobStatus.RUNNING
+
+    second_ids = await eval_api.spawn_eval_comparison_jobs(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_ids=["rc1"],
+        all_run_configs=False,
+    )
+    # Predecessor: gone (cancelled + removed from the index). Successor: present.
+    assert first_ids[0] not in reg._jobs
+    assert second_ids[0] in reg._jobs
+    # Tear down the leftover so the test doesn't leak an asyncio task.
+    await reg.cancel(second_ids[0])
 
 
 @pytest.mark.asyncio

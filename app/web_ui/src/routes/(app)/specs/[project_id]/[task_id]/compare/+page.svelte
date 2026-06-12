@@ -1037,6 +1037,9 @@
                                       run_config_ids={[runConfigId]}
                                       {project_id}
                                       {task_id}
+                                      spec_id={comparisonFeatures.find(
+                                        (s) => s.eval_id === section.eval_id,
+                                      )?.spec_id ?? null}
                                       current_eval_config_id={defaultEvalConfigId}
                                       eval_type="run_config"
                                       btn_size="xs"

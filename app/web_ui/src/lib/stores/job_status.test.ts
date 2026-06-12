@@ -18,6 +18,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     type: "noop",
     status: "running",
     supports_pause: false,
+    supports_cancel: true,
     ...overrides,
   }
 }
@@ -77,35 +78,89 @@ describe("available_actions", () => {
       expect(available_actions(makeJob({ status }))).toEqual(["delete"])
     }
   })
+
+  it("hides cancel when supports_cancel is false (finetune watcher)", () => {
+    // No buttons at all while pending/running/paused — the user can't usefully
+    // interrupt a provider-side training from here.
+    expect(
+      available_actions(makeJob({ status: "running", supports_cancel: false })),
+    ).toEqual([])
+    expect(
+      available_actions(makeJob({ status: "pending", supports_cancel: false })),
+    ).toEqual([])
+    expect(
+      available_actions(
+        makeJob({
+          status: "paused",
+          supports_pause: true,
+          supports_cancel: false,
+        }),
+      ),
+    ).toEqual(["resume"])
+    // Terminal states still allow Clear (delete), independent of supports_cancel.
+    expect(
+      available_actions(makeJob({ status: "failed", supports_cancel: false })),
+    ).toEqual(["delete"])
+  })
 })
 
 describe("job_status_display / job_status_badge_class", () => {
   const cases: [BackgroundJobStatus, string, string][] = [
-    ["pending", "Pending", "badge-ghost"],
-    ["running", "Running", "badge-info"],
-    ["paused", "Paused", "badge-warning"],
-    ["succeeded", "Succeeded", "badge-success"],
-    ["failed", "Failed", "badge-error"],
-    ["cancelled", "Cancelled", "badge-ghost"],
+    ["pending", "Pending", "badge-outline"],
+    ["running", "Running", "badge-outline badge-success"],
+    ["paused", "Paused", "badge-outline badge-warning"],
+    ["succeeded", "Completed", "badge-outline badge-primary"],
+    ["failed", "Failed", "badge-outline badge-error"],
+    ["cancelled", "Cancelled", "badge-outline"],
   ]
   it.each(cases)("maps %s", (status, label, badge) => {
-    expect(job_status_display(status)).toBe(label)
-    expect(job_status_badge_class(status)).toBe(badge)
+    expect(job_status_display(makeJob({ status }))).toBe(label)
+    expect(job_status_badge_class(makeJob({ status }))).toBe(badge)
+  })
+
+  it("shows 'Completed with errors' when a succeeded job has progress.error > 0", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 4, error: 1, total: 5, updated_at: "now" },
+    })
+    expect(job_status_display(job)).toBe("Completed with errors")
+    // Error tone — matches the RAG processing-status badges' completed-with-
+    // errors color so pipeline-state surfaces look consistent.
+    expect(job_status_badge_class(job)).toBe("badge-outline badge-error")
+  })
+
+  it("shows plain 'Completed' for a succeeded job with no errors", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 5, error: 0, total: 5, updated_at: "now" },
+    })
+    expect(job_status_display(job)).toBe("Completed")
+    expect(job_status_badge_class(job)).toBe("badge-outline badge-primary")
   })
 })
 
 describe("progress_label", () => {
-  it("shows count only when total is null", () => {
+  it("shows processed count only when total is null", () => {
     expect(progress_label({ success: 3, error: 0 })).toBe("3")
   })
 
-  it("shows success / total", () => {
+  it("shows processed / total (no errors)", () => {
     expect(progress_label({ success: 3, error: 0, total: 10 })).toBe("3 / 10")
   })
 
-  it("appends errored count when present", () => {
+  it("counts errors as part of `x` (processed = success + error)", () => {
+    // 7 succeeded + 3 errored => 10 processed of 100. NOT '7 / 100 (3 ...)'.
+    expect(progress_label({ success: 7, error: 3, total: 100 })).toBe(
+      "10 / 100 (3 errors)",
+    )
+  })
+
+  it("pluralizes 'error' / 'errors' based on count", () => {
+    expect(progress_label({ success: 3, error: 1, total: 10 })).toBe(
+      "4 / 10 (1 error)",
+    )
     expect(progress_label({ success: 3, error: 2, total: 10 })).toBe(
-      "3 / 10 (2 errored)",
+      "5 / 10 (2 errors)",
     )
   })
 
@@ -148,15 +203,21 @@ describe("completed_jobs", () => {
 })
 
 describe("jobs_indicator", () => {
-  it("shows a spinner with the active count when any job is active", () => {
-    expect(jobs_indicator(2, 5)).toEqual({ kind: "spinner", count: 2 })
+  it("shows a spinner with the active count when at least one job is running", () => {
+    // 1 running, 3 active total (running + paused + pending), 5 jobs total.
+    expect(jobs_indicator(1, 3, 5)).toEqual({ kind: "spinner", count: 3 })
+  })
+
+  it("stays static when only paused/pending jobs exist (no running)", () => {
+    // 0 running, 2 active (paused), 2 total — must NOT spin.
+    expect(jobs_indicator(0, 2, 2)).toEqual({ kind: "static", count: 2 })
   })
 
   it("shows a static total count when none active but jobs remain", () => {
-    expect(jobs_indicator(0, 3)).toEqual({ kind: "static", count: 3 })
+    expect(jobs_indicator(0, 0, 3)).toEqual({ kind: "static", count: 3 })
   })
 
   it("is hidden when there are no jobs at all", () => {
-    expect(jobs_indicator(0, 0)).toEqual({ kind: "hidden" })
+    expect(jobs_indicator(0, 0, 0)).toEqual({ kind: "hidden" })
   })
 })

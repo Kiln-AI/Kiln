@@ -460,9 +460,7 @@ class DatasetFormatter:
             if cache_key in self._tool_cache:
                 tool_definitions.append(self._tool_cache[cache_key])
             else:
-                from kiln_ai.adapters.adapter_registry import (
-                    load_skills_from_tool_ids,
-                )
+                from kiln_ai.adapters.adapter_registry import load_skills_from_tool_ids
                 from kiln_ai.tools.skill_tool import SkillTool
 
                 skills_dict = load_skills_from_tool_ids(task, skill_tool_ids)

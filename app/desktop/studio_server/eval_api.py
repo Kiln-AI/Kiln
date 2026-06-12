@@ -145,6 +145,83 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
     )
 
 
+async def spawn_eval_comparison_jobs(
+    *,
+    project_id: str,
+    task_id: str,
+    eval_id: str,
+    eval_config_id: str,
+    run_config_ids: list[str],
+    all_run_configs: bool,
+    spec_id: str | None = None,
+) -> list[str]:
+    """Spawn one tracked background eval job per run config and return the job ids.
+
+    The single entry point for kicking off an eval comparison. Each job is keyed
+    by `(eval, eval_config, run_config)` so re-running the same triple supersedes
+    any in-flight predecessor (cancel + remove) instead of stacking a duplicate
+    row in the panel. EvalRunner is idempotent on the underlying EvalRun
+    entities, so the successor picks up wherever the predecessor left off.
+    """
+    # Late import: registry construction at import time would couple this module
+    # to the job system's startup path. Keeping the edge lazy preserves the
+    # existing eager-import-friendly layout for eval_api.
+    from app.desktop.studio_server.jobs.registry import job_registry
+
+    eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+    eval = eval_config.parent_eval()
+    if eval is None:
+        raise HTTPException(status_code=404, detail="Eval config has no parent eval.")
+
+    if all_run_configs:
+        run_config_id_list = [
+            str(rc.id) for rc in get_all_run_configs(project_id, task_id)
+        ]
+    else:
+        if len(run_config_ids) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No run config ids provided. At least one run config id is required.",
+            )
+        run_config_id_list = run_config_ids
+
+    job_ids: list[str] = []
+    for run_config_id in run_config_id_list:
+        run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+        job = await job_registry.create(
+            "eval",
+            {
+                "project_id": project_id,
+                "task_id": task_id,
+                "eval_id": str(eval.id),
+                "eval_config_id": eval_config_id,
+                "run_config_id": run_config_id,
+            },
+            project_id=project_id,
+            metadata={
+                "tag": {
+                    "kind": "eval",
+                    "task_id": task_id,
+                    "spec_id": spec_id,
+                    "eval_id": str(eval.id),
+                    "eval_config_id": eval_config_id,
+                    "run_config_id": run_config_id,
+                },
+                "display": {
+                    "primary": f"Eval: {eval.name}",
+                    "secondary": [
+                        f"Judge: {eval_config.name}",
+                        f"Run config: {run_config.name}",
+                    ],
+                },
+            },
+            idempotency_key=f"{eval.id}:{eval_config_id}:{run_config_id}",
+        )
+        job_ids.append(job.id)
+
+    return job_ids
+
+
 class CreateEvaluatorRequest(BaseModel):
     """Request to create a new evaluator."""
 
@@ -267,6 +344,16 @@ class UpdateEvalRequest(BaseModel):
     )
     train_set_filter_id: str | None = Field(
         default=None, description="The updated train set filter ID."
+    )
+
+
+class EvalRunComparisonResponse(BaseModel):
+    """Response returned when an eval comparison kicks off background jobs."""
+
+    kiln_job_tracking_ids: list[str] = Field(
+        description="Background job ids spawned for this comparison — one per "
+        "run config. Use these to follow live progress via the jobs events "
+        "stream or to poll the job records."
     )
 
 
@@ -886,7 +973,11 @@ def connect_evals_api(app: FastAPI):
         eval_config.save_to_file()
         return eval_config
 
-    # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
+    # Kept as GET (not POST) to preserve the existing client URL contract. It
+    # spawns tracked background jobs rather than doing work inline, and those
+    # jobs are idempotent (they supersede any in-flight job with the same
+    # identity), so a repeated GET is safe. The endpoint itself writes no
+    # project files — each job handles its own git-sync — hence @no_write_lock.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
@@ -895,7 +986,6 @@ def connect_evals_api(app: FastAPI):
     )
     @no_write_lock
     async def run_eval_config(
-        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -917,34 +1007,33 @@ def connect_evals_api(app: FastAPI):
                 description="Whether to evaluate all run configurations for the task."
             ),
         ] = False,
-    ) -> StreamingResponse:
-        """Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them."""
-        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+        spec_id: Annotated[
+            str | None,
+            Query(
+                description="Optional spec id from the calling page; stored on the "
+                "job's tag so the jobs widget can link back to the right page."
+            ),
+        ] = None,
+    ) -> EvalRunComparisonResponse:
+        """Kick off an eval run against one or more run configs as tracked background jobs.
 
-        # Load the list of run configs to use. Two options:
-        run_configs: list[TaskRunConfig] = []
-        if all_run_configs:
-            # special case, we cannot directly load task.run_configs(), we need to also get all finetune run configs which live inside the finetune model
-            run_configs = get_all_run_configs(project_id, task_id)
-        else:
-            if len(run_config_ids) == 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No run config ids provided. At least one run config id is required.",
-                )
-            run_configs = [
-                task_run_config_from_id(project_id, task_id, run_config_id)
-                for run_config_id in run_config_ids
-            ]
-
-        eval_runner = EvalRunner(
-            eval_configs=[eval_config],
-            run_configs=run_configs,
-            eval_run_type="task_run_eval",
-            save_context=build_save_context(request),
+        Returns immediately with the tracked job ids; observe live progress via
+        the jobs SSE stream (`GET /api/jobs/events`) or by re-fetching the job
+        records. Each spawned job is idempotent and supersedes any in-flight job
+        with the same `(eval, eval_config, run_config)` identity — re-running
+        won't pile up duplicate rows.
+        """
+        return EvalRunComparisonResponse(
+            kiln_job_tracking_ids=await spawn_eval_comparison_jobs(
+                project_id=project_id,
+                task_id=task_id,
+                eval_id=eval_id,
+                eval_config_id=eval_config_id,
+                run_config_ids=run_config_ids,
+                all_run_configs=all_run_configs,
+                spec_id=spec_id,
+            )
         )
-
-        return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",

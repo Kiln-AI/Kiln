@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { active_jobs_count, jobs } from "$lib/stores/jobs_store"
+  import {
+    active_jobs_count,
+    jobs,
+    running_jobs_count,
+  } from "$lib/stores/jobs_store"
   import { jobs_indicator } from "$lib/stores/job_status"
 
   // "rail" overlays the indicator on a sidebar icon (absolute, top-right).
@@ -8,10 +12,12 @@
 
   // Default to the live counts, but accept overrides so the component is
   // render-testable in isolation.
+  export let running_count: number | undefined = undefined
   export let active_count: number | undefined = undefined
   export let total_count: number | undefined = undefined
 
   $: indicator = jobs_indicator(
+    running_count ?? $running_jobs_count,
     active_count ?? $active_jobs_count,
     total_count ?? $jobs.length,
   )
@@ -35,7 +41,7 @@
       class="absolute -top-1 -right-1 flex items-center gap-0.5 min-w-4 h-4 px-1 rounded-full text-[10px] leading-4 font-medium text-center {indicator.kind ===
       'spinner'
         ? 'bg-primary text-primary-content'
-        : 'bg-base-300 text-base-content/70'}"
+        : 'bg-neutral text-neutral-content'}"
       aria-label={aria_label}
     >
       {#if indicator.kind === "spinner"}
@@ -48,7 +54,7 @@
       class="badge badge-sm inline-flex items-center gap-1 {indicator.kind ===
       'spinner'
         ? 'badge-primary'
-        : 'badge-ghost text-base-content/70'}"
+        : 'badge-neutral'}"
       aria-label={aria_label}
     >
       {#if indicator.kind === "spinner"}

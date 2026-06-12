@@ -1,7 +1,6 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
-  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { jobs, synced, connection } from "$lib/stores/jobs_store"
   import {
     available_actions,
@@ -24,7 +23,8 @@
     type JobErrorEntry,
     type JobRecord,
   } from "$lib/stores/jobs_api"
-  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import { back_url_for } from "$lib/stores/job_tags"
+  import { formatDate } from "$lib/utils/formatters"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   let action_error: KilnError | null = null
@@ -78,11 +78,25 @@
     }
   }
 
-  function job_type_display(type: string): string {
-    if (type === "noop") {
-      return "No-op"
+  // Per-kind summary stashed by the producer at create time
+  // (`metadata.display`). Keeps the table generic across job kinds. `secondary`
+  // may be a single string or a list of lines — producers with multiple detail
+  // fields (e.g. evals: judge + run config) emit a list so each renders on its
+  // own row instead of getting truncated into a single dot-separated line.
+  function display_primary(job: JobRecord): string | null {
+    const d = (job.metadata as { display?: { primary?: unknown } } | null)
+      ?.display
+    return typeof d?.primary === "string" ? d.primary : null
+  }
+  function display_secondary_lines(job: JobRecord): string[] {
+    const d = (job.metadata as { display?: { secondary?: unknown } } | null)
+      ?.display
+    const raw = d?.secondary
+    if (typeof raw === "string") return [raw]
+    if (Array.isArray(raw)) {
+      return raw.filter((line): line is string => typeof line === "string")
     }
-    return capitalize(type)
+    return []
   }
 
   function has_errors(job: JobRecord): boolean {
@@ -114,7 +128,11 @@
     errors_loading = true
     errors_dialog?.show()
     try {
-      error_entries = await get_job_errors(job.id)
+      const all = await get_job_errors(job.id)
+      // Fatal entries (the one the registry writes when run() raises) duplicate
+      // what the red summary banner already shows — drop them so the user only
+      // sees the per-item, non-fatal errors that aren't already surfaced.
+      error_entries = all.filter((e) => e["fatal"] !== true)
     } catch (e) {
       errors_load_error = createKilnError(e)
     } finally {
@@ -198,8 +216,7 @@
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Type</th>
+          <th>Details</th>
           <th>Status</th>
           <th>Progress</th>
           <th>Message</th>
@@ -209,14 +226,26 @@
       </thead>
       <tbody>
         {#each $jobs as job (job.id)}
+          {@const primary = display_primary(job) || job.name || job.id}
+          {@const url = back_url_for(job)}
           <tr>
-            <td class="font-mono text-xs text-gray-500 whitespace-nowrap"
-              >{job.id}</td
-            >
-            <td class="font-medium">{job_type_display(job.type)}</td>
+            <td class="text-sm max-w-72">
+              <div class="truncate font-medium" title={primary}>
+                {#if url}
+                  <a href={url} class="link">{primary}</a>
+                {:else}
+                  {primary}
+                {/if}
+              </div>
+              {#each display_secondary_lines(job) as line}
+                <div class="text-xs text-gray-500 truncate" title={line}>
+                  {line}
+                </div>
+              {/each}
+            </td>
             <td>
-              <span class="badge {job_status_badge_class(job.status)}">
-                {job_status_display(job.status)}
+              <span class="badge px-3 py-1 {job_status_badge_class(job)}">
+                {job_status_display(job)}
               </span>
             </td>
             <td>
@@ -255,27 +284,25 @@
                     class="btn btn-xs btn-ghost"
                     on:click={() => open_result(job)}
                   >
-                    Result
+                    View Results
                   </button>
                 {/if}
                 {#if has_errors(job)}
                   <button
-                    class="btn btn-xs btn-ghost"
+                    class="btn btn-xs btn-ghost text-error"
                     on:click={() => open_errors(job)}
                   >
-                    Errors
+                    View Errors
                   </button>
                 {/if}
                 {#each available_actions(job) as action}
                   {#if action === "delete"}
                     <button
-                      class="btn btn-xs btn-ghost btn-square text-error"
+                      class="btn btn-xs btn-ghost text-error"
                       disabled={in_flight[job.id]}
-                      aria-label="Dismiss job"
-                      title="Dismiss job"
                       on:click={() => run_action(action, job.id)}
                     >
-                      <span class="w-4 h-4 block"><CloseIcon /></span>
+                      Clear
                     </button>
                   {:else}
                     <button
@@ -300,11 +327,10 @@
 
 <Dialog bind:this={errors_dialog} title="Job Errors" width="wide">
   {#if errors_summary?.error}
-    <div
-      role="alert"
-      class="alert alert-error text-sm mb-4 flex flex-col items-start gap-1"
-    >
-      <span class="font-medium break-words">{errors_summary.error}</span>
+    <div role="alert" class="text-sm mb-4 flex flex-col items-start gap-1">
+      <span class="font-medium break-words text-error"
+        >{errors_summary.error}</span
+      >
       {#if errors_summary.detail}
         <pre
           class="text-xs w-full bg-base-200 text-base-content rounded-md p-2 overflow-x-auto max-h-48">{JSON.stringify(
