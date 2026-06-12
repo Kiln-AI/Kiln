@@ -117,6 +117,8 @@ class JobRecord(BaseModel):
 
 ReportProgress = Callable[["JobProgressUpdate"], Awaitable[None]]
 ReportError = Callable[[str, dict[str, Any]], Awaitable[None]]
+ReportDisplay = Callable[["JobDisplayUpdate"], Awaitable[None]]
+ReportMetadataPatch = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 class JobProgressUpdate(BaseModel):
@@ -124,6 +126,17 @@ class JobProgressUpdate(BaseModel):
     error: int = 0
     total: int | None = None
     message: str | None = None
+
+
+class JobDisplayUpdate(BaseModel):
+    """Partial update for `metadata.display`. Fields left None are preserved —
+    a worker that only updates `secondary` doesn't clobber `primary`.
+    """
+
+    primary: str | None = None
+    # `list[str]` renders as one line per entry in the jobs table; `str` is the
+    # back-compat single-line case. None preserves the prior value.
+    secondary: str | list[str] | None = None
 
 
 class JobContext:
@@ -139,11 +152,15 @@ class JobContext:
         run_id: str,
         report_progress: ReportProgress,
         report_error: ReportError,
+        report_display: ReportDisplay,
+        report_metadata_patch: ReportMetadataPatch,
     ) -> None:
         self.job_id = job_id
         self.run_id = run_id
         self._report_progress = report_progress
         self._report_error = report_error
+        self._report_display = report_display
+        self._report_metadata_patch = report_metadata_patch
 
     async def report_progress(
         self,
@@ -165,6 +182,33 @@ class JobContext:
                 message=message,
             )
         )
+
+    async def report_display(
+        self,
+        primary: str | None = None,
+        secondary: str | list[str] | None = None,
+    ) -> None:
+        """Update the per-kind `metadata.display` lines mid-run.
+
+        Producers normally stamp `metadata.display` once at create-time, but
+        multi-phase workers (e.g. RAG ingestion) need to redraw a richer
+        per-phase summary as the run progresses. Pass only the fields you want
+        to update; None preserves the prior value.
+        """
+        await self._report_display(
+            JobDisplayUpdate(primary=primary, secondary=secondary)
+        )
+
+    async def report_metadata_patch(self, patch: dict[str, Any]) -> None:
+        """Shallow-merge `patch` into the job's top-level `metadata` dict.
+
+        Lets multi-phase workers attach structured per-kind state alongside
+        the generic display lines — e.g. RAG stamps its full `RagProgress`
+        snapshot under `metadata.rag_progress` so the frontend dialog can
+        keep showing its four per-phase progress bars without parsing the
+        human-readable `display.secondary` strings.
+        """
+        await self._report_metadata_patch(patch)
 
     async def report_error(self, error_message: str, **extra: Any) -> None:
         """Append one structured error entry to this run's error log.

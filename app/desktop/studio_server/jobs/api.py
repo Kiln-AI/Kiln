@@ -24,6 +24,7 @@ from .registry import (
 from .workers.eval import EvalJobWorker
 from .workers.finetune import FinetuneJobWorker
 from .workers.noop import NoopJobWorker
+from .workers.rag import RagJobWorker
 
 KEEPALIVE_SECONDS = 15.0
 
@@ -113,6 +114,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     job_registry.register_type(NoopJobWorker)
     job_registry.register_type(EvalJobWorker)
     job_registry.register_type(FinetuneJobWorker)
+    job_registry.register_type(RagJobWorker)
 
     @app.get(
         "/api/jobs/events",

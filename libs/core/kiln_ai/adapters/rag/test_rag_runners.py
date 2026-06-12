@@ -209,16 +209,18 @@ class TestEmbeddingJob:
 class TestRagStepRunnerProgress:
     def test_progress_creation_with_defaults(self):
         progress = RagStepRunnerProgress()
-        assert progress.success_count is None
-        assert progress.error_count is None
-        assert progress.logs == []
+        # Counts default to 0 (no None for "log-only tick" anymore — every
+        # tick carries the cumulative absolute step counts).
+        assert progress.success_count == 0
+        assert progress.error_count == 0
+        assert progress.new_logs == []
 
     def test_progress_creation_with_values(self):
         logs = [LogMessage(level="info", message="test")]
-        progress = RagStepRunnerProgress(success_count=5, error_count=2, logs=logs)
+        progress = RagStepRunnerProgress(success_count=5, error_count=2, new_logs=logs)
         assert progress.success_count == 5
         assert progress.error_count == 2
-        assert progress.logs == logs
+        assert progress.new_logs == logs
 
 
 # Tests for GenericErrorCollector
@@ -1435,9 +1437,9 @@ class TestRagIndexingStepRunner:
             ]
             assert len(error_progress) >= 1
             assert error_progress[0].error_count == 2  # 2 chunks failed
-            assert len(error_progress[0].logs) > 0
-            assert "error" in error_progress[0].logs[0].level.lower()
-            assert "Vector store error" in error_progress[0].logs[0].message
+            assert len(error_progress[0].new_logs) > 0
+            assert "error" in error_progress[0].new_logs[0].level.lower()
+            assert "Vector store error" in error_progress[0].new_logs[0].message
 
     @pytest.mark.asyncio
     async def test_run_calls_delete_nodes_not_in_set_with_all_documents_no_tags(
@@ -1643,8 +1645,8 @@ class TestRagIndexingStepRunner:
             assert len(progress_values) == 1
             assert progress_values[0].success_count == 0
             assert progress_values[0].error_count == 0
-            assert len(progress_values[0].logs) == 1
-            assert "No records to index" in progress_values[0].logs[0].message
+            assert len(progress_values[0].new_logs) == 1
+            assert "No records to index" in progress_values[0].new_logs[0].message
 
             # Should not call vector store methods since it returns early
             mock_vector_store_factory.assert_not_called()
@@ -1762,8 +1764,8 @@ class TestRagIndexingStepRunner:
                 assert len(progress_values) == 1
                 assert progress_values[0].success_count == 0
                 assert progress_values[0].error_count == 0
-                assert len(progress_values[0].logs) == 1
-                assert "No records to index" in progress_values[0].logs[0].message
+                assert len(progress_values[0].new_logs) == 1
+                assert "No records to index" in progress_values[0].new_logs[0].message
 
                 # Verify aclose() was called
                 assert mock_generator.aclose_called
@@ -1771,6 +1773,19 @@ class TestRagIndexingStepRunner:
 
 # Tests for workflow runner
 class TestRagWorkflowRunner:
+    @pytest.fixture(autouse=True)
+    def _patch_compute_current_progress(self, workflow_config):
+        # The workflow runner re-snapshots from disk after acquiring its lock
+        # (to pick up work sibling parallel runs may have completed). Tests
+        # drive a MagicMock project where the real compute helper would
+        # explode walking documents; stub it to return the test's
+        # configured initial_progress so post-lock state matches pre-lock.
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.compute_current_progress_for_rag_config",
+            new=AsyncMock(return_value=workflow_config.initial_progress),
+        ):
+            yield
+
     @pytest.fixture
     def mock_step_runner(self):
         runner = MagicMock(spec=RagExtractionStepRunner)
@@ -1860,23 +1875,25 @@ class TestRagWorkflowRunner:
         assert result.total_chunks_indexed_count == 10
         assert result.total_chunks_indexed_error_count == 2
 
-    def test_update_workflow_progress_indexing_accumulates_chunks(
+    def test_update_workflow_progress_indexing_accumulates_at_step_level(
         self, workflow_runner
     ):
-        # First batch of chunks
-        step_progress1 = RagStepRunnerProgress(success_count=5, error_count=0)
+        # Indexing yields cumulative counts from the step runner itself —
+        # the workflow no longer adds deltas. Subsequent ticks just carry
+        # the absolute total so far, and the workflow's resulting record
+        # mirrors that value (plus the initial baseline of 0 here).
         result1 = workflow_runner.update_workflow_progress(
-            RagWorkflowStepNames.INDEXING, step_progress1
+            RagWorkflowStepNames.INDEXING,
+            RagStepRunnerProgress(success_count=5, error_count=0),
         )
         assert result1.total_chunks_indexed_count == 5
 
-        # Second batch of chunks - should accumulate
-        step_progress2 = RagStepRunnerProgress(success_count=3, error_count=1)
         result2 = workflow_runner.update_workflow_progress(
-            RagWorkflowStepNames.INDEXING, step_progress2
+            RagWorkflowStepNames.INDEXING,
+            RagStepRunnerProgress(success_count=8, error_count=1),
         )
-        assert result2.total_chunks_indexed_count == 8  # 5 + 3
-        assert result2.total_chunks_indexed_error_count == 1  # max(0, 1)
+        assert result2.total_chunks_indexed_count == 8
+        assert result2.total_chunks_indexed_error_count == 1
 
     def test_update_workflow_progress_unknown_step_raises_error(self, workflow_runner):
         step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
@@ -1885,22 +1902,27 @@ class TestRagWorkflowRunner:
             workflow_runner.update_workflow_progress("unknown_step", step_progress)
 
     def test_update_workflow_progress_calculates_completed_count(self, workflow_runner):
-        # Set different counts for each step
-        workflow_runner.current_progress.total_document_extracted_count = 10
-        workflow_runner.current_progress.total_document_chunked_count = 8
-        workflow_runner.current_progress.total_document_embedded_count = 5
-        workflow_runner.current_progress.total_chunks_indexed_count = 3
-
-        step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
+        # Ticks for each phase; completion is the floor of (extracted, chunked,
+        # embedded) — the slowest phase is the gate. Chunks are tracked
+        # separately and compared against total_chunk_count.
+        workflow_runner.update_workflow_progress(
+            RagWorkflowStepNames.EXTRACTING,
+            RagStepRunnerProgress(success_count=10, error_count=0),
+        )
+        workflow_runner.update_workflow_progress(
+            RagWorkflowStepNames.CHUNKING,
+            RagStepRunnerProgress(success_count=8, error_count=0),
+        )
+        workflow_runner.update_workflow_progress(
+            RagWorkflowStepNames.EMBEDDING,
+            RagStepRunnerProgress(success_count=5, error_count=0),
+        )
         result = workflow_runner.update_workflow_progress(
-            RagWorkflowStepNames.EXTRACTING, step_progress
+            RagWorkflowStepNames.INDEXING,
+            RagStepRunnerProgress(success_count=3, error_count=0),
         )
 
-        # Completed count should be the minimum of all document-related step counts
         assert result.total_document_completed_count == 5
-
-        # chunks are tracked separately (so we can compare them against the total chunk count
-        # to determine completion)
         assert result.total_chunk_completed_count == 3
 
     @pytest.mark.asyncio

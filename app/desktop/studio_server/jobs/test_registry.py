@@ -655,6 +655,56 @@ async def test_report_progress_preserves_total_and_message_when_omitted():
 
 
 @pytest.mark.asyncio
+async def test_ctx_report_display_merges_into_metadata():
+    """Workers that call ctx.report_display() should update metadata.display
+    in place — primary/secondary partial-updates merge, the other field
+    stays. Required by multi-phase workers (RAG) that rewrite per-phase
+    progress lines on every tick.
+    """
+
+    class _DisplayWorker(JobWorker[_EmptyParams, _EmptyResult]):
+        type_name = "display_worker"
+        params_model = _EmptyParams
+        result_model = _EmptyResult
+        supports_pause = False
+        started: asyncio.Event
+        gate: asyncio.Event
+
+        async def run(self, params, ctx):
+            await ctx.report_display(secondary=["Extracting 5/10"])
+            type(self).started.set()
+            await type(self).gate.wait()
+            await ctx.report_display(secondary=["Extracting 10/10"])
+            return _EmptyResult()
+
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(_DisplayWorker)
+    _DisplayWorker.started = asyncio.Event()
+    _DisplayWorker.gate = asyncio.Event()
+
+    job = await reg.create(
+        "display_worker",
+        {},
+        metadata={"display": {"primary": "RAG: my-config"}},
+    )
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    await asyncio.wait_for(_DisplayWorker.started.wait(), timeout=3.0)
+    record = reg._jobs[job.id]
+    # `primary` stamped at create time is preserved; `secondary` was added by
+    # the worker's first tick.
+    assert record.metadata["display"]["primary"] == "RAG: my-config"
+    assert record.metadata["display"]["secondary"] == ["Extracting 5/10"]
+
+    # Let the worker finish; the second tick should overwrite `secondary`
+    # without disturbing `primary`.
+    _DisplayWorker.gate.set()
+    await wait_for_status(reg, job.id, BackgroundJobStatus.SUCCEEDED)
+    final = reg._jobs[job.id]
+    assert final.metadata["display"]["primary"] == "RAG: my-config"
+    assert final.metadata["display"]["secondary"] == ["Extracting 10/10"]
+
+
+@pytest.mark.asyncio
 async def test_apply_derived_preserves_error_when_compute_state_returns_none():
     """A compute_state that omits `error` (error=None) must preserve the
     runtime error count last reported via report_progress. This is the path

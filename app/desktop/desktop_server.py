@@ -39,6 +39,7 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
 )
 from app.desktop.studio_server.provider_api import connect_provider_api
+from app.desktop.studio_server.rag_jobs_api import connect_rag_jobs_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.run_config_api import connect_run_config_api
 from app.desktop.studio_server.settings_api import connect_settings
@@ -144,6 +145,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_dev_tools(app)
     connect_chat_api(app)
     connect_jobs_api(app)
+    connect_rag_jobs_api(app)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app

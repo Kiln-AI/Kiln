@@ -41,11 +41,19 @@ class _ProbeContext(JobContext):
         async def _report_error(message: str, extra: dict[str, Any]) -> None:
             pass
 
+        async def _report_display(update: Any) -> None:
+            pass
+
+        async def _report_metadata_patch(patch: dict[str, Any]) -> None:
+            pass
+
         super().__init__(
             job_id="j_test",
             run_id="r_test",
             report_progress=_report_progress,
             report_error=_report_error,
+            report_display=_report_display,
+            report_metadata_patch=_report_metadata_patch,
         )
 
 

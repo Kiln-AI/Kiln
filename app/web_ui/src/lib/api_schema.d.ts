@@ -976,23 +976,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/rag_configs/{rag_config_id}/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Run Rag Config */
-        get: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/rag_configs/progress": {
         parameters: {
             query?: never;
@@ -3258,6 +3241,31 @@ export interface paths {
         put?: never;
         /** Cancel Job */
         post: operations["cancel_job_api_jobs__id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run RAG Config
+         * @description Kick off a RAG ingestion as a tracked background job.
+         *
+         *     Returns immediately with the job id; the worker streams progress via
+         *     the jobs SSE bus (`GET /api/jobs/events`). Idempotent: re-running the
+         *     same RAG config supersedes any in-flight predecessor (cancel + remove)
+         *     instead of stacking a duplicate row in the jobs panel.
+         */
+        get: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8889,6 +8897,17 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunRagConfigResponse
+         * @description Response returned when a RAG config run is kicked off.
+         */
+        RunRagConfigResponse: {
+            /**
+             * Kiln Job Tracking Id
+             * @description Background job id spawned for this RAG run. Use it to follow live progress via the jobs events stream or to poll the job record.
+             */
+            kiln_job_tracking_id: string;
+        };
+        /**
          * RunSummary
          * @description A summary of a task run for list views.
          */
@@ -13315,40 +13334,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagConfigWithSubConfigs"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the RAG configuration. */
-                rag_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -18222,6 +18207,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the RAG configuration. */
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRagConfigResponse"];
                 };
             };
             /** @description Validation Error */

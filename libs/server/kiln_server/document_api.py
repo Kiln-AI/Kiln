@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Awaitable, Callable, Dict, List, Literal
+from typing import Annotated, Dict, List, Literal
 
 from fastapi import (
     Body,
@@ -24,7 +24,6 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 )
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.rag.progress import (
-    LogMessage,
     RagProgress,
     compute_current_progress_for_rag_config,
     compute_current_progress_for_rag_configs,
@@ -170,80 +169,6 @@ async def run_extractor_runner_with_status(
                 "total": progress.total,
                 "errors": progress.errors,
             }
-            yield f"data: {json.dumps(data)}\n\n"
-
-        # Send the final complete message the app expects, and uses to stop listening
-        yield "data: complete\n\n"
-
-    return CancellableStreamingResponse(
-        content=event_generator(),
-        media_type="text/event-stream",
-    )
-
-
-async def run_rag_workflow_runner_with_status(
-    runner_factory: Callable[[], Awaitable[RagWorkflowRunner]],
-) -> StreamingResponse:
-    async def event_generator():
-        latest_progress = RagProgress()
-
-        def serialize_progress(progress: RagProgress):
-            logs = []
-            for log in progress.logs or []:
-                logs.append(
-                    {
-                        "message": log.message,
-                        "level": log.level,
-                    }
-                )
-
-            data = {
-                "total_document_completed_count": progress.total_document_completed_count,
-                "total_document_count": progress.total_document_count,
-                "total_chunk_count": progress.total_chunk_count,
-                "total_chunk_completed_count": progress.total_chunk_completed_count,
-                "total_document_extracted_count": progress.total_document_extracted_count,
-                "total_document_chunked_count": progress.total_document_chunked_count,
-                "total_document_embedded_count": progress.total_document_embedded_count,
-                "total_document_extracted_error_count": progress.total_document_extracted_error_count,
-                "total_document_chunked_error_count": progress.total_document_chunked_error_count,
-                "total_document_embedded_error_count": progress.total_document_embedded_error_count,
-                "total_chunks_indexed_count": progress.total_chunks_indexed_count,
-                "total_chunks_indexed_error_count": progress.total_chunks_indexed_error_count,
-                "logs": logs,
-            }
-            return data
-
-        try:
-            # we initialize the runner inside the wrapper to surface errors to the frontend via logging UI
-            # we do it via a factory to allow for easier mocking in tests
-            runner = await runner_factory()
-            async for progress in runner.run():
-                latest_progress = progress.model_copy()
-                data = serialize_progress(progress)
-                yield f"data: {json.dumps(data)}\n\n"
-        except asyncio.TimeoutError:
-            logger.info("RAG workflow runner cancelled")
-            latest_progress.logs = [
-                LogMessage(
-                    level="error",
-                    message="Timed out after waiting for the lock to be acquired. This may be due to a concurrent RAG workflow running. You may retry in a few minutes.",
-                )
-            ]
-            data = serialize_progress(latest_progress)
-            yield f"data: {json.dumps(data)}\n\n"
-        except Exception as e:
-            logger.error(
-                f"Unexpected server error running RAG workflow runner: {e}",
-                exc_info=True,
-            )
-            latest_progress.logs = [
-                LogMessage(
-                    level="error",
-                    message=f"Unexpected server error: {e}",
-                )
-            ]
-            data = serialize_progress(latest_progress)
             yield f"data: {json.dumps(data)}\n\n"
 
         # Send the final complete message the app expects, and uses to stop listening
@@ -2375,42 +2300,11 @@ def connect_document_api(app: FastAPI):
             tags=rag_config.tags,
         )
 
-    # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
-    @app.get(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
-        tags=["Documents"],
-        openapi_extra=agent_policy_require_approval(
-            "Run RAG config indexing? This re-indexes documents and may take time."
-        ),
-    )
-    @no_write_lock
-    async def run_rag_config(
-        request: Request,
-        project_id: Annotated[
-            str, Path(description="The unique identifier of the project.")
-        ],
-        rag_config_id: Annotated[
-            str, Path(description="The unique identifier of the RAG configuration.")
-        ],
-    ) -> StreamingResponse:
-        project = project_from_id(project_id)
-
-        rag_config = get_rag_config_from_id(project, rag_config_id)
-        if rag_config.is_archived:
-            raise HTTPException(
-                status_code=422,
-                detail="This RAG configuration is archived. You must unarchive it to use it.",
-            )
-
-        save_context = build_save_context(request)
-
-        async def runner_factory():
-            return await build_rag_workflow_runner(
-                project, rag_config_id, save_context=save_context
-            )
-
-        # the workflow runner handles locking
-        return await run_rag_workflow_runner_with_status(runner_factory)
+    # The legacy SSE `run` endpoint moved to `app/desktop/studio_server/rag_jobs_api.py`
+    # when RAG runs were migrated onto the background job system. It now returns
+    # JSON `{kiln_job_tracking_id}` and the worker streams progress via the
+    # generic jobs SSE bus. `build_rag_workflow_runner` stays here as a pure
+    # helper that the new desktop endpoint imports.
 
     @no_write_lock
     @app.post(
