@@ -3,7 +3,10 @@ from typing import List
 
 from llama_index.core.embeddings import BaseEmbedding
 
-from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
+from kiln_ai.adapters.embedding.base_embedding_adapter import (
+    BaseEmbeddingAdapter,
+    EmbeddingContext,
+)
 
 
 class KilnEmbeddingWrapper(BaseEmbedding):
@@ -30,14 +33,18 @@ class KilnEmbeddingWrapper(BaseEmbedding):
     async def _aget_text_embedding(self, text: str) -> List[float]:
         # llama_index only ever calls this one (not the batch one) during semantic chunking
         async with self._semaphore:
-            result = await self._embedding_adapter.generate_embeddings([text])
+            result = await self._embedding_adapter.generate_embeddings(
+                [text], context=EmbeddingContext.SEMANTIC_CHUNKING
+            )
             if not result.embeddings:
                 raise ValueError("No embeddings returned from adapter")
             return result.embeddings[0].vector
 
     async def _aget_text_embedding_batch(self, texts: List[str]) -> List[List[float]]:
         async with self._semaphore:
-            result = await self._embedding_adapter.generate_embeddings(texts)
+            result = await self._embedding_adapter.generate_embeddings(
+                texts, context=EmbeddingContext.SEMANTIC_CHUNKING
+            )
             # this should not happen if the embedding adapter is properly implemented
             if len(result.embeddings) != len(texts):
                 raise ValueError(

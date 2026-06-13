@@ -3,6 +3,7 @@ import pytest
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
     BaseEmbeddingAdapter,
     Embedding,
+    EmbeddingContext,
     EmbeddingResult,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -12,7 +13,9 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 class MockEmbeddingAdapter(BaseEmbeddingAdapter):
     """Concrete implementation of BaseEmbeddingAdapter for testing purposes."""
 
-    async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
+    async def _generate_embeddings(
+        self, text_inputs: list[str], apply_embedding_instructions: bool
+    ) -> EmbeddingResult:
         # Simple test implementation that returns mock embeddings
         embeddings = []
         for i, _ in enumerate(text_inputs):
@@ -24,7 +27,9 @@ class MockEmbeddingAdapter(BaseEmbeddingAdapter):
 class MockEmbeddingAdapterWithUsage(BaseEmbeddingAdapter):
     """Concrete implementation that includes usage information."""
 
-    async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
+    async def _generate_embeddings(
+        self, text_inputs: list[str], apply_embedding_instructions: bool
+    ) -> EmbeddingResult:
         from litellm import Usage
 
         embeddings = []
@@ -241,7 +246,7 @@ class TestBaseEmbeddingAdapterIntegration:
                 self._generate_embeddings_args = None
 
             async def _generate_embeddings(
-                self, text_inputs: list[str]
+                self, text_inputs: list[str], apply_embedding_instructions: bool
             ) -> EmbeddingResult:
                 self._generate_embeddings_called = True
                 self._generate_embeddings_args = text_inputs
@@ -268,7 +273,7 @@ class TestBaseEmbeddingAdapterIntegration:
                 self._generate_embeddings_called = False
 
             async def _generate_embeddings(
-                self, text_inputs: list[str]
+                self, text_inputs: list[str], apply_embedding_instructions: bool
             ) -> EmbeddingResult:
                 self._generate_embeddings_called = True
                 return EmbeddingResult(embeddings=[])
@@ -280,3 +285,35 @@ class TestBaseEmbeddingAdapterIntegration:
         assert not adapter._generate_embeddings_called
         assert result.embeddings == []
         assert result.usage is None
+
+
+class TestEmbeddingContext:
+    """Test the EmbeddingContext enum."""
+
+    def test_embedding_context_values(self):
+        """Test that EmbeddingContext has expected values."""
+        assert EmbeddingContext.DOCUMENT_INDEXING.value == "document_indexing"
+        assert EmbeddingContext.QUERY_SEARCH.value == "query_search"
+        assert EmbeddingContext.SEMANTIC_CHUNKING.value == "semantic_chunking"
+
+    def test_should_apply_instructions_default(self, mock_embedding_config):
+        """Test _should_apply_instructions returns False for non-query contexts."""
+
+        class TestAdapter(BaseEmbeddingAdapter):
+            async def _generate_embeddings(
+                self, text_inputs: list[str], apply_embedding_instructions: bool
+            ) -> EmbeddingResult:
+                return EmbeddingResult(embeddings=[])
+
+        adapter = TestAdapter(mock_embedding_config)
+
+        # Default behavior: only QUERY_SEARCH should apply instructions
+        assert (
+            adapter._should_apply_instructions(EmbeddingContext.DOCUMENT_INDEXING)
+            is False
+        )
+        assert adapter._should_apply_instructions(EmbeddingContext.QUERY_SEARCH) is True
+        assert (
+            adapter._should_apply_instructions(EmbeddingContext.SEMANTIC_CHUNKING)
+            is False
+        )
