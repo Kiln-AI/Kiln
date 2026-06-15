@@ -3,7 +3,10 @@ from typing import List, TypedDict
 
 from pydantic import BaseModel
 
-from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
+from kiln_ai.adapters.embedding.base_embedding_adapter import (
+    BaseEmbeddingAdapter,
+    EmbeddingContext,
+)
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.rerankers.base_reranker import BaseReranker
 from kiln_ai.adapters.rerankers.reranker_registry import reranker_adapter_from_config
@@ -210,7 +213,7 @@ class RagTool(KilnToolInterface):
 
         if is_vector_query:
             query_embedding_result = await embedding_adapter.generate_embeddings(
-                [query]
+                [query], context=EmbeddingContext.QUERY_SEARCH
             )
             if len(query_embedding_result.embeddings) == 0:
                 raise ValueError("No embeddings generated")
