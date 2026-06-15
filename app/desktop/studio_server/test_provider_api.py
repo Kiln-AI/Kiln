@@ -3554,6 +3554,46 @@ async def test_available_ollama_embedding_models_unit():
     assert model.suggested_for_chunk_embedding is True
 
 
+@patch(
+    "app.desktop.studio_server.provider_api.built_in_embedding_models",
+    [
+        KilnEmbeddingModel(
+            family="gemma",
+            name="embeddinggemma",
+            friendly_name="embeddinggemma",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.ollama,
+                    model_id="embeddinggemma:300m",
+                    n_dimensions=768,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=False,
+                    suggested_for_chunk_embedding=True,
+                    ollama_model_aliases=["embeddinggemma"],
+                    deprecated=True,
+                )
+            ],
+        )
+    ],
+)
+@pytest.mark.asyncio
+async def test_available_ollama_embedding_models_surfaces_deprecated():
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_ollama",
+        return_value=OllamaConnection(
+            message="Connected",
+            supported_models=[],
+            untested_models=[],
+            supported_embedding_models=["embeddinggemma:300m"],
+        ),
+    ):
+        provider = await available_ollama_embedding_models()
+
+    assert provider is not None
+    model = next(m for m in provider.models if m.id == "embeddinggemma")
+    assert model.deprecated is True
+
+
 def test_available_embedding_models_endpoint_includes_ollama(client):
     # Return only the Ollama provider, no key-required providers
     fake_provider = {

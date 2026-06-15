@@ -1692,6 +1692,7 @@ async def available_ollama_embedding_models() -> EmbeddingProvider | None:
                             max_input_tokens=ollama_provider.max_input_tokens,
                             supports_custom_dimensions=ollama_provider.supports_custom_dimensions,
                             suggested_for_chunk_embedding=ollama_provider.suggested_for_chunk_embedding,
+                            deprecated=ollama_provider.deprecated,
                         )
                     )
 
