@@ -86,13 +86,11 @@ function reflect_jobs_into_rag_store($jobs: JobRecord[]): void {
         if (tag?.kind !== "rag") continue
         const rag_config_id = tag.rag_config_id
 
-        // Live progress / logs come from the worker's per-tick metadata
-        // patch. Always overlay when present — the worker's snapshot is
-        // strictly fresher than whatever load_all_rag_config_progress put
-        // there at page-mount time.
-        const rag_progress = (
-          job.metadata as { rag_progress?: RagProgress } | null
-        )?.rag_progress
+        // Live progress / logs come from the worker's per-tick typed
+        // progress_detail snapshot. Always overlay when present — the worker's
+        // snapshot is strictly fresher than whatever load_all_rag_config_progress
+        // put there at page-mount time.
+        const rag_progress = job.progress_detail as RagProgress | null
         if (rag_progress) {
           progress[rag_config_id] = rag_progress
           logs[rag_config_id] = rag_progress.logs ?? []
@@ -240,9 +238,9 @@ function createRagProgressStore() {
 
     // The new endpoint returns immediately with a `kiln_job_tracking_id`. We
     // then watch the project-scoped jobs store for that specific job — the
-    // worker stamps a full RagProgress snapshot under `metadata.rag_progress`
-    // on every tick, which is what the existing four-bar dialog reads. Drops
-    // the per-RAG SSE plumbing entirely.
+    // worker stamps a full RagProgress snapshot on the job's typed
+    // `progress_detail` every tick, which is what the existing four-bar dialog
+    // reads. Drops the per-RAG SSE plumbing entirely.
     const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
     let job_id: string
     try {
@@ -312,9 +310,7 @@ function createRagProgressStore() {
         }
         saw_job = true
 
-        const rag_progress = (
-          job.metadata as { rag_progress?: RagProgress } | null
-        )?.rag_progress
+        const rag_progress = job.progress_detail as RagProgress | null
         if (rag_progress) {
           updateProjectState(project_id, (state) => ({
             ...state,
