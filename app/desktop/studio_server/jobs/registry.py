@@ -249,9 +249,7 @@ class JobRegistry:
         finally:
             self._release_slot(job_id)
 
-    def _build_context(
-        self, job_id: str, run_id: str, worker: JobWorker
-    ) -> JobContext:
+    def _build_context(self, job_id: str, run_id: str, worker: JobWorker) -> JobContext:
         async def report_progress(update: JobProgressUpdate) -> None:
             job = self._jobs.get(job_id)
             if job is None or job.run_id != run_id:
