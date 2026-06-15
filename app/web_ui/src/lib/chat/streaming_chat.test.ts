@@ -304,9 +304,9 @@ describe("streamChat ask-user-question", () => {
     // The card part was rendered, carrying the wire tool call id.
     const askPart = lastParts?.find((p) => p.type === "ask-user-question")
     expect(askPart).toBeTruthy()
-    expect(
-      (askPart as { toolCallId?: string } | undefined)?.toolCallId,
-    ).toBe("tc1")
+    expect((askPart as { toolCallId?: string } | undefined)?.toolCallId).toBe(
+      "tc1",
+    )
     // The stream ended on the question: the trailing text was never rendered.
     const textPart = lastParts?.find((p) => p.type === "text")
     expect(textPart).toBeUndefined()
