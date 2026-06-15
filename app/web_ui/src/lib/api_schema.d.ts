@@ -7022,6 +7022,10 @@ export interface components {
             /** Run Id */
             run_id?: string | null;
             progress?: components["schemas"]["JobProgress"];
+            /** Progress Detail */
+            progress_detail?: {
+                [key: string]: unknown;
+            } | null;
             /** Params */
             params?: {
                 [key: string]: unknown;
