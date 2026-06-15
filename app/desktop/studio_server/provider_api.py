@@ -192,6 +192,7 @@ class EmbeddingModelDetails(BaseModel):
     max_input_tokens: int | None
     supports_custom_dimensions: bool
     suggested_for_chunk_embedding: bool
+    deprecated: bool = Field(default=False)
 
 
 class EmbeddingProvider(BaseModel):
@@ -203,6 +204,7 @@ class EmbeddingProvider(BaseModel):
 class RerankerModelDetails(BaseModel):
     id: str
     name: str
+    deprecated: bool = Field(default=False)
 
 
 class RerankerProvider(BaseModel):
@@ -452,6 +454,7 @@ def connect_provider_api(app: FastAPI):
                                 max_input_tokens=provider.max_input_tokens,
                                 supports_custom_dimensions=provider.supports_custom_dimensions,
                                 suggested_for_chunk_embedding=provider.suggested_for_chunk_embedding,
+                                deprecated=provider.deprecated,
                             )
                         )
 
@@ -514,6 +517,7 @@ def connect_provider_api(app: FastAPI):
                             RerankerModelDetails(
                                 id=model.name,
                                 name=model.friendly_name,
+                                deprecated=provider.deprecated,
                             )
                         )
 
@@ -1728,6 +1732,7 @@ async def available_ollama_embedding_models() -> EmbeddingProvider | None:
                             max_input_tokens=ollama_provider.max_input_tokens,
                             supports_custom_dimensions=ollama_provider.supports_custom_dimensions,
                             suggested_for_chunk_embedding=ollama_provider.suggested_for_chunk_embedding,
+                            deprecated=ollama_provider.deprecated,
                         )
                     )
 

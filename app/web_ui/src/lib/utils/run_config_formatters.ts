@@ -291,12 +291,14 @@ export function getRunConfigUiProperties(
           value: tools_property_info.value,
           links: tools_property_info.links,
           badge: Array.isArray(tools_property_info.value) ? true : false,
+          collapse_badges: true,
         },
         {
           name: "Available Skills",
           value: skills_property_info.value,
           links: skills_property_info.links,
           badge: Array.isArray(skills_property_info.value) ? true : false,
+          collapse_badges: true,
         },
         {
           name: "Temperature",
