@@ -3267,6 +3267,7 @@ async def test_get_embedding_providers(app, client):
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": True,
                     "suggested_for_chunk_embedding": True,
+                    "deprecated": False,
                 }
             ],
         },
@@ -3281,6 +3282,7 @@ async def test_get_embedding_providers(app, client):
                     "max_input_tokens": None,
                     "supports_custom_dimensions": False,
                     "suggested_for_chunk_embedding": False,
+                    "deprecated": False,
                 }
             ],
         },
@@ -3295,6 +3297,71 @@ async def test_get_embedding_providers(app, client):
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": False,
                     "suggested_for_chunk_embedding": True,
+                    "deprecated": False,
+                }
+            ],
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_available_embedding_models_surfaces_deprecated(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.openai: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_embedding_models = [
+        KilnEmbeddingModel(
+            name="model1",
+            friendly_name="Model 1",
+            family="",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="oai1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=True,
+                    suggested_for_chunk_embedding=True,
+                    deprecated=True,
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_embedding_models",
+            mock_built_in_embedding_models,
+        ),
+    ):
+        response = client.get("/api/available_embedding_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "openai",
+            "provider_name": "OpenAI",
+            "models": [
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": True,
+                    "suggested_for_chunk_embedding": True,
+                    "deprecated": True,
                 }
             ],
         },
@@ -3485,6 +3552,46 @@ async def test_available_ollama_embedding_models_unit():
     assert model.max_input_tokens == 8192
     assert model.supports_custom_dimensions is False
     assert model.suggested_for_chunk_embedding is True
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.built_in_embedding_models",
+    [
+        KilnEmbeddingModel(
+            family="gemma",
+            name="embeddinggemma",
+            friendly_name="embeddinggemma",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.ollama,
+                    model_id="embeddinggemma:300m",
+                    n_dimensions=768,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=False,
+                    suggested_for_chunk_embedding=True,
+                    ollama_model_aliases=["embeddinggemma"],
+                    deprecated=True,
+                )
+            ],
+        )
+    ],
+)
+@pytest.mark.asyncio
+async def test_available_ollama_embedding_models_surfaces_deprecated():
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_ollama",
+        return_value=OllamaConnection(
+            message="Connected",
+            supported_models=[],
+            untested_models=[],
+            supported_embedding_models=["embeddinggemma:300m"],
+        ),
+    ):
+        provider = await available_ollama_embedding_models()
+
+    assert provider is not None
+    model = next(m for m in provider.models if m.id == "embeddinggemma")
+    assert model.deprecated is True
 
 
 def test_available_embedding_models_endpoint_includes_ollama(client):

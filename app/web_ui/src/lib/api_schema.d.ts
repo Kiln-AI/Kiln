@@ -5113,6 +5113,11 @@ export interface components {
             supports_custom_dimensions: boolean;
             /** Suggested For Chunk Embedding */
             suggested_for_chunk_embedding: boolean;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /**
          * EmbeddingModelName
