@@ -211,11 +211,11 @@ class JobContext:
     async def report_metadata_patch(self, patch: dict[str, Any]) -> None:
         """Shallow-merge `patch` into the job's top-level `metadata` dict.
 
-        Lets multi-phase workers attach structured per-kind state alongside
-        the generic display lines — e.g. RAG stamps its full `RagProgress`
-        snapshot under `metadata.rag_progress` so the frontend dialog can
-        keep showing its four per-phase progress bars without parsing the
-        human-readable `display.secondary` strings.
+        A freeform escape hatch for attaching loosely-structured per-kind state
+        to a job. Prefer `report_progress_detail` for typed per-worker progress
+        the UI renders (it validates against the worker's `progress_model`);
+        reach for this only when the data is genuinely untyped or doesn't fit a
+        single progress model.
         """
         await self._report_metadata_patch(patch)
 
