@@ -204,9 +204,11 @@ export interface paths {
         put?: never;
         /**
          * Build Prompt With Examples
-         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         * @description Build a prompt with the task's prompt, requirements, and optional custom examples.
          *
          *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         *     When the task has a default run config, that run config's prompt is used as the base
+         *     (so synthetic data reflects the production prompt) instead of the task instruction.
          */
         post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
         delete?: never;
