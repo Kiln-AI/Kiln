@@ -3,6 +3,7 @@ export type UiProperty = {
   value: string | number | string[]
   tooltip?: string
   link?: string // Not supported for value type string[]
+  action?: () => void
   links?: (string | null)[] // Only supported for type string[]
   error?: boolean
   warn_icon?: boolean

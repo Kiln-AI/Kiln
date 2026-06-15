@@ -139,6 +139,41 @@ def mock_task(tmp_path):
     return task
 
 
+def test_validate_input_transform_template_valid(client):
+    response = client.post(
+        "/api/validate_input_transform_template",
+        json={"template": "Hello {{ input }}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data["error"] is None
+
+
+def test_validate_input_transform_template_invalid(client):
+    response = client.post(
+        "/api/validate_input_transform_template",
+        json={"template": "{{ unclosed"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+    assert data["error"] is not None
+    assert len(data["error"]) > 0
+    assert "unexpected" in data["error"].lower()
+
+
+def test_validate_input_transform_template_empty(client):
+    response = client.post(
+        "/api/validate_input_transform_template",
+        json={"template": ""},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data["error"] is None
+
+
 def test_validate_mcp_input_schema_plaintext_success(mock_task):
     mock_task.input_json_schema = None
     tool_schema = {"type": "object", "properties": {"message": {"type": "string"}}}
