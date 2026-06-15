@@ -32,6 +32,7 @@
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { isMcpRunConfig } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -865,6 +866,8 @@
                         get_task_composite_id(project_id, task_id)
                       ] || null,
                     )}
+                    {@const transformLabel =
+                      getRunConfigInputTransformSummaryLabel(selectedConfig)}
                     <div class="mt-3 text-center">
                       <div class="font-semibold text-gray-900 text-sm">
                         {#if isMcpRunConfig(selectedConfig.run_config_properties)}
@@ -896,6 +899,11 @@
                               no_pad={true}
                             />
                           {/if}
+                        </div>
+                      {/if}
+                      {#if transformLabel}
+                        <div class="text-xs text-gray-500 font-normal mt-1">
+                          Input Transform: {transformLabel}
                         </div>
                       {/if}
                     </div>

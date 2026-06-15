@@ -1,9 +1,49 @@
-import { describe, it, expect } from "vitest"
-import type { TaskRunConfig } from "$lib/types"
+import { describe, it, expect, vi } from "vitest"
+import type { TaskRunConfig, InputTransform } from "$lib/types"
 import {
   getRunConfigModelDisplayName,
   getRunConfigUiProperties,
+  getInputTransformDisplay,
+  getRunConfigInputTransform,
+  getRunConfigInputTransformSummaryLabel,
+  buildJinjaInputTransform,
+  inputTransformsEqual,
 } from "./run_config_formatters"
+
+const JINJA_TRANSFORM: InputTransform = {
+  type: "jinja",
+  template: "Hello {{ input }}",
+}
+
+function makeKilnAgentConfig(
+  overrides: Partial<TaskRunConfig> & {
+    input_transform?: InputTransform | null
+  } = {},
+): TaskRunConfig {
+  const { input_transform, ...rest } = overrides
+  return {
+    v: 1,
+    id: "rc-agent",
+    created_at: "2026-02-01T00:00:00.000Z",
+    created_by: "test",
+    name: "Agent Config",
+    description: null,
+    run_config_properties: {
+      type: "kiln_agent",
+      model_name: "gpt-4",
+      model_provider_name: "openai",
+      prompt_id: "p1",
+      temperature: 0.7,
+      top_p: 1,
+      structured_output_mode: "default",
+      input_transform: input_transform ?? null,
+    },
+    prompt: null,
+    model_type: "task_run_config",
+    starred: false,
+    ...rest,
+  }
+}
 
 describe("run_config_formatters (MCP)", () => {
   const mcp_config: TaskRunConfig = {
@@ -46,7 +86,170 @@ describe("run_config_formatters (MCP)", () => {
     expect(propNames).toContain("Tool ID")
     expect(propNames).not.toContain("Model")
     expect(propNames).not.toContain("Prompt")
+    expect(propNames).not.toContain("Input Transformer")
     const typeProp = props.find((p) => p.name === "Type")
     expect(typeProp?.value).toBe("MCP Tool (No Agent)")
+  })
+
+  it("getRunConfigInputTransform should return null for MCP", () => {
+    expect(getRunConfigInputTransform(mcp_config)).toBeNull()
+  })
+
+  it("getRunConfigInputTransformSummaryLabel should return null for MCP", () => {
+    expect(getRunConfigInputTransformSummaryLabel(mcp_config)).toBeNull()
+  })
+})
+
+describe("getInputTransformDisplay", () => {
+  it("returns correct labels for jinja transform", () => {
+    const result = getInputTransformDisplay(JINJA_TRANSFORM)
+    expect(result.valueLabel).toBe("Custom Template")
+    expect(result.summaryLabel).toBe("Custom")
+    expect(result.modalSubtitle).toBe("Type: Custom Jinja2 Template")
+  })
+})
+
+describe("getRunConfigInputTransform", () => {
+  it("returns null for kiln_agent without transform", () => {
+    const config = makeKilnAgentConfig()
+    expect(getRunConfigInputTransform(config)).toBeNull()
+  })
+
+  it("returns null for kiln_agent with undefined input_transform", () => {
+    const config = makeKilnAgentConfig()
+    // Simulate absent field by deleting it
+    delete (config.run_config_properties as Record<string, unknown>)
+      .input_transform
+    expect(getRunConfigInputTransform(config)).toBeNull()
+  })
+
+  it("returns the transform for kiln_agent with jinja transform", () => {
+    const config = makeKilnAgentConfig({ input_transform: JINJA_TRANSFORM })
+    const result = getRunConfigInputTransform(config)
+    expect(result).toEqual(JINJA_TRANSFORM)
+    expect(result?.type).toBe("jinja")
+  })
+})
+
+describe("getRunConfigInputTransformSummaryLabel", () => {
+  it("returns null when absent", () => {
+    const config = makeKilnAgentConfig()
+    expect(getRunConfigInputTransformSummaryLabel(config)).toBeNull()
+  })
+
+  it('returns "Custom" for jinja transform', () => {
+    const config = makeKilnAgentConfig({ input_transform: JINJA_TRANSFORM })
+    expect(getRunConfigInputTransformSummaryLabel(config)).toBe("Custom")
+  })
+})
+
+describe("getRunConfigUiProperties (kiln_agent input transformer row)", () => {
+  it('shows "None" without action when no transform', () => {
+    const config = makeKilnAgentConfig()
+    const callback = vi.fn()
+    const props = getRunConfigUiProperties(
+      "p1",
+      "t1",
+      config,
+      null,
+      null,
+      null,
+      callback,
+    )
+    const row = props.find((p) => p.name === "Input Transformer")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("None")
+    expect(row?.action).toBeUndefined()
+  })
+
+  it('shows "Custom Template" with action when jinja transform present', () => {
+    const config = makeKilnAgentConfig({ input_transform: JINJA_TRANSFORM })
+    const callback = vi.fn()
+    const props = getRunConfigUiProperties(
+      "p1",
+      "t1",
+      config,
+      null,
+      null,
+      null,
+      callback,
+    )
+    const row = props.find((p) => p.name === "Input Transformer")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("Custom Template")
+    expect(row?.action).toBe(callback)
+  })
+
+  it("has no action when transform present but no callback provided", () => {
+    const config = makeKilnAgentConfig({ input_transform: JINJA_TRANSFORM })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const row = props.find((p) => p.name === "Input Transformer")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("Custom Template")
+    expect(row?.action).toBeUndefined()
+  })
+
+  it("places Input Transformer row after Prompt", () => {
+    const config = makeKilnAgentConfig()
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    const promptIdx = names.indexOf("Prompt")
+    const transformIdx = names.indexOf("Input Transformer")
+    expect(promptIdx).toBeGreaterThanOrEqual(0)
+    expect(transformIdx).toBe(promptIdx + 1)
+  })
+})
+
+describe("buildJinjaInputTransform", () => {
+  it("builds a jinja input transform from a template string", () => {
+    const result = buildJinjaInputTransform("Hello {{ input }}")
+    expect(result).toEqual({ type: "jinja", template: "Hello {{ input }}" })
+  })
+
+  it("preserves empty strings", () => {
+    const result = buildJinjaInputTransform("")
+    expect(result).toEqual({ type: "jinja", template: "" })
+  })
+})
+
+describe("inputTransformsEqual", () => {
+  it("returns true for null/null", () => {
+    expect(inputTransformsEqual(null, null)).toBe(true)
+  })
+
+  it("returns true for undefined/undefined", () => {
+    expect(inputTransformsEqual(undefined, undefined)).toBe(true)
+  })
+
+  it("returns true for null/undefined", () => {
+    expect(inputTransformsEqual(null, undefined)).toBe(true)
+  })
+
+  it("returns false for null/set", () => {
+    expect(inputTransformsEqual(null, JINJA_TRANSFORM)).toBe(false)
+  })
+
+  it("returns false for set/null", () => {
+    expect(inputTransformsEqual(JINJA_TRANSFORM, null)).toBe(false)
+  })
+
+  it("returns false for undefined/set", () => {
+    expect(inputTransformsEqual(undefined, JINJA_TRANSFORM)).toBe(false)
+  })
+
+  it("returns false for set/undefined", () => {
+    expect(inputTransformsEqual(JINJA_TRANSFORM, undefined)).toBe(false)
+  })
+
+  it("returns true for same template", () => {
+    const a = { type: "jinja" as const, template: "Hello {{ input }}" }
+    const b = { type: "jinja" as const, template: "Hello {{ input }}" }
+    expect(inputTransformsEqual(a, b)).toBe(true)
+  })
+
+  it("returns false for different templates", () => {
+    const a = { type: "jinja" as const, template: "Hello {{ input }}" }
+    const b = { type: "jinja" as const, template: "Goodbye {{ input }}" }
+    expect(inputTransformsEqual(a, b)).toBe(false)
   })
 })

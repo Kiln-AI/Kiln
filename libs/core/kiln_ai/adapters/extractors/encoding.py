@@ -1,8 +1,12 @@
 import base64
 
 
-def to_base64_url(mime_type: str, bytes: bytes) -> str:
-    base64_url = f"data:{mime_type};base64,{base64.b64encode(bytes).decode('utf-8')}"
+def to_base64(data: bytes) -> str:
+    return base64.b64encode(data).decode("utf-8")
+
+
+def to_base64_url(mime_type: str, data: bytes) -> str:
+    base64_url = f"data:{mime_type};base64,{to_base64(data)}"
     return base64_url
 
 
