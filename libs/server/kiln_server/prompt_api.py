@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -17,6 +18,8 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def default_run_config_prompt(task: Task) -> str | None:
@@ -47,9 +50,16 @@ def default_run_config_prompt(task: Task) -> str | None:
     try:
         builder = prompt_builder_from_id(prompt_id, task)
         return builder.build_prompt(include_json_instructions=False)
-    except ValueError:
+    except Exception:
         # A misconfigured run config (e.g. a frozen prompt that no longer resolves)
         # should not break the builder - fall back to the task instruction.
+        logger.warning(
+            "Failed to resolve default run config prompt %s for task %s; "
+            "falling back to task instruction.",
+            prompt_id,
+            task.id,
+            exc_info=True,
+        )
         return None
 
 

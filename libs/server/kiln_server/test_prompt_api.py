@@ -342,3 +342,25 @@ def test_default_run_config_prompt_unresolvable_returns_none(project_and_task):
     # Saved-prompt id that doesn't exist -> SavedPromptBuilder raises ValueError
     _add_default_run_config(task, "id::does-not-exist")
     assert default_run_config_prompt(task) is None
+
+
+def test_default_run_config_prompt_mcp_config_returns_none(project_and_task):
+    from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    from kiln_server.prompt_api import default_run_config_prompt
+
+    _, task = project_and_task
+    # An MCP run config has no prompt_id -> fall back to the task instruction.
+    run_config = TaskRunConfig(
+        name="MCP Config",
+        run_config_properties=McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name"),
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+
+    assert default_run_config_prompt(task) is None
