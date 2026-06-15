@@ -236,3 +236,109 @@ def test_delete_prompt_success(client, project_and_task):
     # Verify the file was actually deleted, including the parent directory
     assert not prompt_path.exists()
     assert not prompt_path.parent.exists()
+
+
+def _add_default_run_config(task, prompt_id):
+    from kiln_ai.datamodel import StructuredOutputMode
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    run_config = TaskRunConfig(
+        name="Default Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name="openai",
+            prompt_id=prompt_id,
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+    return run_config
+
+
+def test_build_prompt_with_examples_uses_instruction(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/build_prompt_with_examples",
+            json={"examples": [{"input": "in", "output": "out"}]},
+        )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    assert task.instruction in prompt
+    assert "# Example Outputs" in prompt
+    assert "Input: in" in prompt
+    assert "Output: out" in prompt
+
+
+def test_build_prompt_with_examples_uses_default_run_config_prompt(
+    client, project_and_task
+):
+    project, task = project_and_task
+
+    saved_prompt = Prompt(
+        name="Production Prompt",
+        prompt="PRODUCTION PROMPT: translate to French.",
+        parent=task,
+    )
+    saved_prompt.save_to_file()
+    _add_default_run_config(task, f"id::{saved_prompt.id}")
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/build_prompt_with_examples",
+            json={"examples": [{"input": "hello", "output": "bonjour"}]},
+        )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    # The default run config prompt is used, not the task instruction
+    assert "PRODUCTION PROMPT: translate to French." in prompt
+    assert task.instruction not in prompt
+    # Examples are still appended
+    assert "# Example Outputs" in prompt
+    assert "Input: hello" in prompt
+    assert "Output: bonjour" in prompt
+
+
+def test_build_prompt_with_examples_missing_default_run_config_falls_back(
+    client, project_and_task
+):
+    project, task = project_and_task
+    # Point at a run config that doesn't exist
+    task.default_run_config_id = "nonexistent"
+    task.save_to_file()
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/build_prompt_with_examples",
+            json={"examples": []},
+        )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    assert task.instruction in prompt
+
+
+def test_default_run_config_prompt_none_without_default(project_and_task):
+    from kiln_server.prompt_api import default_run_config_prompt
+
+    _, task = project_and_task
+    assert default_run_config_prompt(task) is None
+
+
+def test_default_run_config_prompt_unresolvable_returns_none(project_and_task):
+    from kiln_server.prompt_api import default_run_config_prompt
+
+    _, task = project_and_task
+    # Saved-prompt id that doesn't exist -> SavedPromptBuilder raises ValueError
+    _add_default_run_config(task, "id::does-not-exist")
+    assert default_run_config_prompt(task) is None

@@ -2,8 +2,12 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path
-from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
-from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
+from kiln_ai.adapters.prompt_builders import (
+    CustomExamplePromptBuilder,
+    PromptExample,
+    prompt_builder_from_id,
+)
+from kiln_ai.datamodel import BasePrompt, Prompt, PromptId, Task
 from kiln_ai.datamodel.prompt_type import prompt_type_label
 from pydantic import BaseModel, Field
 
@@ -13,6 +17,40 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
+
+
+def default_run_config_prompt(task: Task) -> str | None:
+    """Resolve the prompt text from the task's default run config.
+
+    Returns None when the task has no default run config, the config can't be found,
+    it has no prompt_id (e.g. an MCP run config), or the prompt can't be resolved. In
+    those cases callers should fall back to the task instruction.
+    """
+    if not task.default_run_config_id:
+        return None
+
+    run_config = next(
+        (
+            rc
+            for rc in task.run_configs(readonly=True)
+            if rc.id == task.default_run_config_id
+        ),
+        None,
+    )
+    if run_config is None:
+        return None
+
+    prompt_id = getattr(run_config.run_config_properties, "prompt_id", None)
+    if not prompt_id:
+        return None
+
+    try:
+        builder = prompt_builder_from_id(prompt_id, task)
+        return builder.build_prompt(include_json_instructions=False)
+    except ValueError:
+        # A misconfigured run config (e.g. a frozen prompt that no longer resolves)
+        # should not break the builder - fall back to the task instruction.
+        return None
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -274,15 +312,20 @@ def connect_prompt_api(app: FastAPI):
         ],
         request: BuildPromptRequest,
     ) -> BuildPromptResponse:
-        """Build a prompt with task instruction, requirements, and optional custom examples.
+        """Build a prompt with the task's prompt, requirements, and optional custom examples.
 
         Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+        When the task has a default run config, that run config's prompt is used as the base
+        (so synthetic data reflects the production prompt) instead of the task instruction.
         """
         task = task_from_id(project_id, task_id)
         examples = [
             PromptExample(input=e.input, output=e.output) for e in request.examples
         ]
-        builder = CustomExamplePromptBuilder(task, examples)
+        base_prompt_override = default_run_config_prompt(task)
+        builder = CustomExamplePromptBuilder(
+            task, examples, base_prompt_override=base_prompt_override
+        )
         prompt = builder.build_prompt(include_json_instructions=False)
         return BuildPromptResponse(prompt=prompt)
 
