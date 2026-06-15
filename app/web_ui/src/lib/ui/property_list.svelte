@@ -91,6 +91,10 @@
               {property.value_with_link.link_text}
             </a>
           </span>
+        {:else if property.action}
+          <button class="link text-left" on:click={property.action}
+            >{property.value}</button
+          >
         {:else if property.link}
           <a href={property.link} class="link">{property.value}</a>
         {:else}

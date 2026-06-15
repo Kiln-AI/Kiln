@@ -11,6 +11,7 @@
   import {
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "./chart_no_data.svelte"
   import { formatLatency } from "$lib/utils/formatters"
@@ -91,6 +92,8 @@
     const promptName = getRunConfigPromptDisplayName(config, prompts)
     const parts = [`{sub|Model: ${modelName}}`]
     if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
+    const transformLabel = getRunConfigInputTransformSummaryLabel(config)
+    if (transformLabel) parts.push(`{sub|Input Transform: ${transformLabel}}`)
     return parts.join("\n")
   }
 
@@ -216,6 +219,11 @@
                 )
                 if (promptName) {
                   tooltipHtml += `<br/><span style="color: #666;">Prompt:</span> ${promptName}`
+                }
+                const transformLabel =
+                  getRunConfigInputTransformSummaryLabel(config)
+                if (transformLabel) {
+                  tooltipHtml += `<br/><span style="color: #666;">Input Transform:</span> ${transformLabel}`
                 }
               }
             }
