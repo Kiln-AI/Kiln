@@ -90,6 +90,12 @@ class JobRecord(BaseModel):
     status: BackgroundJobStatus
     run_id: str | None = None
     progress: JobProgress = Field(default_factory=JobProgress)
+    # Typed, per-worker progress detail (validated against the worker's
+    # `progress_model`). The generic `progress` above is the universal counter;
+    # this carries the rich per-kind shape a worker needs the UI to render
+    # (e.g. RAG's four-phase breakdown). Kept as a dict on the wire so the core
+    # stays worker-agnostic; the frontend casts it to the worker's model.
+    progress_detail: dict[str, Any] | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
     error: JobError | None = None
@@ -116,6 +122,7 @@ class JobRecord(BaseModel):
 
 
 ReportProgress = Callable[["JobProgressUpdate"], Awaitable[None]]
+ReportProgressDetail = Callable[[BaseModel], Awaitable[None]]
 ReportError = Callable[[str, dict[str, Any]], Awaitable[None]]
 ReportDisplay = Callable[["JobDisplayUpdate"], Awaitable[None]]
 ReportMetadataPatch = Callable[[dict[str, Any]], Awaitable[None]]
@@ -151,6 +158,7 @@ class JobContext:
         job_id: str,
         run_id: str,
         report_progress: ReportProgress,
+        report_progress_detail: ReportProgressDetail,
         report_error: ReportError,
         report_display: ReportDisplay,
         report_metadata_patch: ReportMetadataPatch,
@@ -158,6 +166,7 @@ class JobContext:
         self.job_id = job_id
         self.run_id = run_id
         self._report_progress = report_progress
+        self._report_progress_detail = report_progress_detail
         self._report_error = report_error
         self._report_display = report_display
         self._report_metadata_patch = report_metadata_patch
@@ -210,6 +219,17 @@ class JobContext:
         """
         await self._report_metadata_patch(patch)
 
+    async def report_progress_detail(self, detail: BaseModel) -> None:
+        """Stamp the job's typed `progress_detail` with a worker-specific model.
+
+        For rich per-kind progress the generic counter can't carry (e.g. RAG's
+        per-phase breakdown). `detail` must be an instance of the worker's
+        declared `progress_model`; the registry validates and serializes it.
+        A UI-smoothing signal only — authoritative progress comes from
+        compute_state(). Cheap to call often.
+        """
+        await self._report_progress_detail(detail)
+
     async def report_error(self, error_message: str, **extra: Any) -> None:
         """Append one structured error entry to this run's error log.
 
@@ -228,6 +248,10 @@ class JobWorker(Generic[TParams, TResult]):
     type_name: ClassVar[str]
     params_model: ClassVar[type[BaseModel]]
     result_model: ClassVar[type[BaseModel]]
+    # Optional typed model for rich per-worker progress reported via
+    # JobContext.report_progress_detail(); stamped on JobRecord.progress_detail.
+    # Leave None for workers whose generic count progress is enough.
+    progress_model: ClassVar[type[BaseModel] | None] = None
     supports_pause: ClassVar[bool] = False
     # Default True: most workers do in-process work that the user may reasonably
     # want to abort. Set False on workers wrapping external state we shouldn't
