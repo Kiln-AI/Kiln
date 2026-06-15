@@ -1184,3 +1184,65 @@ async def test_idempotency_key_is_stamped_on_record(registry):
     assert registry._jobs[job.id].idempotency_key == "hello"
     job2 = await registry.create("noop", {"steps": 1})
     assert registry._jobs[job2.id].idempotency_key is None
+
+
+# -- typed progress detail ---------------------------------------------------
+
+
+class DetailModel(BaseModel):
+    phase: str
+    done: int
+
+
+class DetailWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "detail"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    progress_model = DetailModel
+    gate: asyncio.Event
+
+    async def run(self, params, ctx):
+        await ctx.report_progress_detail(DetailModel(phase="extract", done=3))
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_report_progress_detail_stamps_typed_payload():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(DetailWorker)
+    DetailWorker.gate = asyncio.Event()
+    job = await reg.create("detail", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    # Give the worker a tick to report the detail.
+    for _ in range(50):
+        if reg._jobs[job.id].progress_detail is not None:
+            break
+        await asyncio.sleep(0.01)
+    assert reg._jobs[job.id].progress_detail == {"phase": "extract", "done": 3}
+    DetailWorker.gate.set()
+
+
+class WrongModel(BaseModel):
+    other: str
+
+
+class BadDetailWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "bad_detail"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    progress_model = DetailModel
+
+    async def run(self, params, ctx):
+        await ctx.report_progress_detail(WrongModel(other="x"))
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_report_progress_detail_rejects_wrong_model():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(BadDetailWorker)
+    job = await reg.create("bad_detail", {})
+    # The type guard raises inside run(), routing the job to FAILED.
+    await wait_for_status(reg, job.id, BackgroundJobStatus.FAILED)
+    assert reg._jobs[job.id].error is not None

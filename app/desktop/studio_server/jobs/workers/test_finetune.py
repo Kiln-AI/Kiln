@@ -38,6 +38,9 @@ class _ProbeContext(JobContext):
         async def _report_progress(update: JobProgressUpdate) -> None:
             self.events.append(update.model_dump())
 
+        async def _report_progress_detail(detail: Any) -> None:
+            pass
+
         async def _report_error(message: str, extra: dict[str, Any]) -> None:
             pass
 
@@ -51,6 +54,7 @@ class _ProbeContext(JobContext):
             job_id="j_test",
             run_id="r_test",
             report_progress=_report_progress,
+            report_progress_detail=_report_progress_detail,
             report_error=_report_error,
             report_display=_report_display,
             report_metadata_patch=_report_metadata_patch,
