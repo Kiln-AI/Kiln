@@ -2,8 +2,11 @@
   import type { TaskRunConfig } from "$lib/types"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import { model_info, get_task_composite_id } from "$lib/stores"
-  import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
-  import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
+  import {
+    getRunConfigModelDisplayName,
+    getRunConfigPromptDisplayName,
+    getRunConfigInputTransformSummaryLabel,
+  } from "$lib/utils/run_config_formatters"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import { goto } from "$app/navigation"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
@@ -74,6 +77,13 @@
       <div>
         Skills: {skills_count > 0 ? `${skills_count} available` : "None"}
       </div>
+      {@const transformLabel =
+        getRunConfigInputTransformSummaryLabel(task_run_config)}
+      {#if transformLabel}
+        <div>
+          Input Transform: {transformLabel}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
