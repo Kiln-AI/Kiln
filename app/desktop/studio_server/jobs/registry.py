@@ -388,7 +388,7 @@ class JobRegistry:
         if job is None:
             return
         params = worker.params_model.model_validate(job.params)
-        ctx = self._build_context(job_id, run_id)
+        ctx = self._build_context(job_id, run_id, worker)
         try:
             try:
                 await self._reconcile(job, emit_on_change=True)
@@ -415,7 +415,7 @@ class JobRegistry:
         finally:
             self._release_slot(job_id)
 
-    def _build_context(self, job_id: str, run_id: str) -> JobContext:
+    def _build_context(self, job_id: str, run_id: str, worker: JobWorker) -> JobContext:
         async def report_progress(update: JobProgressUpdate) -> None:
             job = self._jobs.get(job_id)
             if job is None or job.run_id != run_id:
@@ -428,6 +428,23 @@ class JobRegistry:
                 if update.message is not None
                 else job.progress.message,
             )
+            self._touch(job)
+            self._emit(job)
+
+        async def report_progress_detail(detail: BaseModel) -> None:
+            job = self._jobs.get(job_id)
+            if job is None or job.run_id != run_id:
+                return
+            # Guard the worker's contract: the detail must be the model the
+            # worker declared, so progress_detail's shape is predictable for
+            # the frontend that casts it.
+            expected = worker.progress_model
+            if expected is not None and not isinstance(detail, expected):
+                raise TypeError(
+                    f"report_progress_detail expected {expected.__name__}, "
+                    f"got {type(detail).__name__}"
+                )
+            job.progress_detail = detail.model_dump(mode="json")
             self._touch(job)
             self._emit(job)
 
@@ -467,6 +484,7 @@ class JobRegistry:
             job_id,
             run_id,
             report_progress,
+            report_progress_detail,
             report_error,
             report_display,
             report_metadata_patch,
