@@ -92,12 +92,15 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
     """Background worker that runs a RAG ingestion workflow against one config.
 
     Wraps the existing `RagWorkflowRunner` unchanged. Multi-phase progress is
-    surfaced two ways:
+    surfaced three ways:
     - `report_progress` carries the headline (documents-completed / total +
       aggregate error count) so the generic Progress column / bar work.
     - `report_display` rewrites `metadata.display.secondary` to a per-phase
       list every tick — that's what gives the row its richer "Extracted X/Y ·
       Chunked X/Y · ..." breakdown the user sees in the Details column.
+    - `report_progress_detail` stamps the full typed `RagProgress` snapshot on
+      `progress_detail` every tick — that's what the four-bar progress dialog
+      reads for its per-phase percentages.
 
     Idempotent: each step's `collect_jobs` skips items whose downstream
     artifact (Extraction / ChunkedDocument / ChunkEmbeddings) already exists
@@ -108,6 +111,7 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
     type_name = "rag"
     params_model = RagJobParams
     result_model = RagJobResult
+    progress_model = RagProgress
     supports_pause = True
 
     async def compute_state(self, params: RagJobParams) -> JobDerivedState:
@@ -177,11 +181,9 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
                 total=progress.total_document_count,
             )
             await ctx.report_display(secondary=_rag_step_lines(progress))
-            # Stamp the full RagProgress snapshot so the existing four-bar
+            # Stamp the full typed RagProgress snapshot so the existing four-bar
             # frontend dialog can keep showing per-phase percentages.
-            await ctx.report_metadata_patch(
-                {"rag_progress": progress.model_dump(mode="json")}
-            )
+            await ctx.report_progress_detail(progress)
 
         if latest is None:
             # RagWorkflowRunner always yields at least the initial_progress, so
@@ -222,9 +224,7 @@ class RagJobWorker(JobWorker[RagJobParams, RagJobResult]):
             total=final_progress.total_document_count,
         )
         await ctx.report_display(secondary=_rag_step_lines(final_progress))
-        await ctx.report_metadata_patch(
-            {"rag_progress": final_progress.model_dump(mode="json")}
-        )
+        await ctx.report_progress_detail(final_progress)
 
         return RagJobResult(
             documents_total=final_progress.total_document_count,
