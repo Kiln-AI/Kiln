@@ -53,7 +53,6 @@
 
       // Transform the API response into OptionGroup format
       rerankerModels = data
-        .filter((provider: RerankerProvider) => provider.models.length > 0)
         .map((provider: RerankerProvider) => ({
           label: provider.provider_name,
           options: provider.models
@@ -66,6 +65,7 @@
               },
             })),
         }))
+        .filter((group) => group.options.length > 0)
     } catch (err) {
       error = createKilnError(err)
     } finally {
