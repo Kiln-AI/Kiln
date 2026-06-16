@@ -10,6 +10,7 @@ from app.desktop.studio_server.eval_api import (
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
+    rename_eval_output_scores,
     task_run_config_from_id,
 )
 from fastapi import FastAPI, HTTPException
@@ -1556,6 +1557,187 @@ def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_ta
     assert updated_eval["name"] == original_name
     assert updated_eval["description"] == original_description
     assert updated_eval["train_set_filter_id"] == original_train_set_filter_id
+
+
+@pytest.fixture
+def mock_eval_runs(mock_eval_config):
+    """Two eval runs with scores keyed by the json_key of each output score."""
+    runs = []
+    for i in range(2):
+        run = EvalRun(
+            id=f"eval_run{i}",
+            parent=mock_eval_config,
+            dataset_id=f"dataset{i}",
+            task_run_config_id=None,
+            eval_config_eval=True,
+            input="input",
+            output="output",
+            scores={"score1": 4.0, "overall_rating": 3.0},
+        )
+        run.save_to_file()
+        runs.append(run)
+    return runs
+
+
+def _reload_eval(mock_task) -> Eval:
+    from kiln_ai.datamodel.model_cache import ModelCache
+
+    ModelCache.shared().clear()
+    return mock_task.evals()[0]
+
+
+def test_update_eval_rename_score_migrates_runs(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_runs
+):
+    """Renaming a score that changes its json_key re-keys the score across all eval runs."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_names": ["Quality Check", "overall_rating"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["output_scores"][0]["name"] == "Quality Check"
+
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.output_scores[0].name == "Quality Check"
+    assert eval_from_disk.output_scores[0].json_key() == "quality_check"
+    assert eval_from_disk.output_scores[1].name == "overall_rating"
+
+    for config in eval_from_disk.configs():
+        runs = config.runs()
+        assert len(runs) == 2
+        for run in runs:
+            assert "quality_check" in run.scores
+            assert "score1" not in run.scores
+            assert run.scores["quality_check"] == 4.0
+            assert run.scores["overall_rating"] == 3.0
+
+
+def test_update_eval_rename_score_display_only_no_rekey(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_runs
+):
+    """Renaming a score without changing its json_key updates the name but leaves run keys intact."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # "Score1" normalizes to the same json_key "score1"
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_names": ["Score1", "overall_rating"]},
+        )
+
+    assert response.status_code == 200
+
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.output_scores[0].name == "Score1"
+    assert eval_from_disk.output_scores[0].json_key() == "score1"
+
+    for config in eval_from_disk.configs():
+        for run in config.runs():
+            assert "score1" in run.scores
+            assert run.scores["score1"] == 4.0
+
+
+def test_update_eval_rename_score_with_name_change(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_runs
+):
+    """Eval name and score names can be updated in the same request, atomically."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={
+                "name": "Renamed Eval",
+                "output_score_names": ["Quality Check", "overall_rating"],
+            },
+        )
+
+    assert response.status_code == 200
+
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.name == "Renamed Eval"
+    assert eval_from_disk.output_scores[0].name == "Quality Check"
+
+
+def test_update_eval_rename_score_length_mismatch(client, mock_task_from_id, mock_eval):
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_names": ["only_one"]},
+        )
+
+    assert response.status_code == 400
+    assert "same length" in response.json()["message"]
+
+
+def test_update_eval_rename_score_duplicate_keys(client, mock_task_from_id, mock_eval):
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_names": ["Same Name", "Same Name"]},
+        )
+
+    assert response.status_code == 400
+    assert "unique" in response.json()["message"]
+
+
+@pytest.mark.parametrize("bad_name", ["", "x" * 33])
+def test_update_eval_rename_score_invalid_name(
+    client, mock_task_from_id, mock_eval, bad_name
+):
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_names": [bad_name, "overall_rating"]},
+        )
+
+    assert response.status_code == 400
+    assert "Invalid score name" in response.json()["message"]
+
+
+def test_update_eval_rename_score_rollback_on_save_failure(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_runs
+):
+    """If saving the eval fails, run files are restored to their original score keys."""
+    with (
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
+        patch.object(Eval, "save_to_file", side_effect=Exception("boom")),
+    ):
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_names": ["Quality Check", "overall_rating"]},
+        )
+
+    assert response.status_code == 500
+    assert "rolled back" in response.json()["message"]
+
+    eval_from_disk = _reload_eval(mock_task)
+    # Eval name/scores unchanged on disk
+    assert eval_from_disk.output_scores[0].name == "score1"
+    # Run files restored to original keys
+    for config in eval_from_disk.configs():
+        for run in config.runs():
+            assert "score1" in run.scores
+            assert "quality_check" not in run.scores
+
+
+def test_rename_eval_output_scores_helper_no_runs(mock_eval, mock_task):
+    """The helper works when there are no eval runs to migrate."""
+    rename_eval_output_scores(mock_eval, ["Quality Check", "overall_rating"])
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.output_scores[0].name == "Quality Check"
 
 
 def test_runs_in_filter():

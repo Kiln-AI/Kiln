@@ -28,6 +28,9 @@
     placeholder?: string
     optional?: boolean
     max_length?: number
+    // When set, this field is excluded from the main PATCH body and persisted via this
+    // callback instead (e.g. fields that target a different endpoint).
+    custom_setter?: (value: string) => Promise<void>
   }
   export let fields: EditField[]
 
@@ -40,26 +43,35 @@
     try {
       const body = fields.reduce(
         (acc, field) => {
-          acc[field.api_name] = field.value
+          if (!field.custom_setter) {
+            acc[field.api_name] = field.value
+          }
           return acc
         },
         {} as Record<string, string>,
       )
-      const response = await fetch(base_url + patch_url, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      })
-      if (!response.ok) {
-        let error_body: unknown
-        try {
-          error_body = await response.json()
-        } catch (_) {
-          throw new Error("Failed to save edit. Invalid JSON response.")
+      if (Object.keys(body).length > 0) {
+        const response = await fetch(base_url + patch_url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        })
+        if (!response.ok) {
+          let error_body: unknown
+          try {
+            error_body = await response.json()
+          } catch (_) {
+            throw new Error("Failed to save edit. Invalid JSON response.")
+          }
+          throw createKilnError(error_body)
         }
-        throw createKilnError(error_body)
+      }
+      for (const field of fields) {
+        if (field.custom_setter) {
+          await field.custom_setter(field.value)
+        }
       }
       after_save()
       saved = true

@@ -10225,6 +10225,11 @@ export interface components {
              * @description The updated train set filter ID.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Output Score Names
+             * @description Updated names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Renaming a score that changes its JSON key migrates the score across all stored eval runs.
+             */
+            output_score_names?: string[] | null;
         };
         /**
          * UpdateFinetuneRequest
