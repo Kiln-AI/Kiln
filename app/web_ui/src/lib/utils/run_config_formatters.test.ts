@@ -243,6 +243,15 @@ describe("getRunConfigUiProperties (kiln_agent thinking level row)", () => {
     expect(names).not.toContain("Thinking Level")
   })
 
+  it("omits the Thinking Level row when thinking_level is undefined/absent", () => {
+    const config = makeKilnAgentConfig()
+    delete (config.run_config_properties as Record<string, unknown>)
+      .thinking_level
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    expect(names).not.toContain("Thinking Level")
+  })
+
   it("places the Thinking Level row after Top P", () => {
     const config = makeKilnAgentConfig({ thinking_level: "medium" })
     const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)

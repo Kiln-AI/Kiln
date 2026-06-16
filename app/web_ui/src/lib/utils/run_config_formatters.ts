@@ -308,7 +308,7 @@ export function getRunConfigUiProperties(
           name: "Top P",
           value: run_config.run_config_properties.top_p.toString(),
         },
-        ...(run_config.run_config_properties.thinking_level
+        ...(run_config.run_config_properties.thinking_level != null
           ? [
               {
                 name: "Thinking Level",
