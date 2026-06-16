@@ -68,8 +68,13 @@
           throw createKilnError(error_body)
         }
       }
+      // Invoke each distinct custom_setter once. Multiple fields may share a setter (e.g. all eval
+      // score-name fields persist via a single endpoint call), so we dedupe by function reference to
+      // avoid redundant requests.
+      const called_setters = new Set<(value: string) => Promise<void>>()
       for (const field of fields) {
-        if (field.custom_setter) {
+        if (field.custom_setter && !called_setters.has(field.custom_setter)) {
+          called_setters.add(field.custom_setter)
           await field.custom_setter(field.value)
         }
       }

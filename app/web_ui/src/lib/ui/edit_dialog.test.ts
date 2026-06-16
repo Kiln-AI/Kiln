@@ -72,6 +72,43 @@ describe("EditDialog custom_setter", () => {
     expect(body).toEqual({ name: "new name" })
   })
 
+  it("invokes a shared custom_setter only once across multiple fields", async () => {
+    const fetch_mock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
+    const custom_setter = vi.fn().mockResolvedValue(undefined)
+
+    const { component } = render(EditDialog, {
+      props: {
+        name: "Thing",
+        patch_url: "/api/thing",
+        fields: [
+          {
+            label: "Score 0",
+            api_name: "output_score_name_0",
+            value: "A",
+            input_type: "input",
+            custom_setter,
+          },
+          {
+            label: "Score 1",
+            api_name: "output_score_name_1",
+            value: "B",
+            input_type: "input",
+            custom_setter,
+          },
+        ],
+      },
+    })
+    component.show()
+    await tick()
+
+    await submit_form()
+
+    await waitFor(() => expect(custom_setter).toHaveBeenCalledTimes(1))
+    expect(fetch_mock).not.toHaveBeenCalled()
+  })
+
   it("does not call after_save when a custom_setter rejects (dialog stays open)", async () => {
     const fetch_mock = vi
       .spyOn(global, "fetch")
