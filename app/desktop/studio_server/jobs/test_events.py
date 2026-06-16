@@ -88,3 +88,57 @@ async def test_filter_by_type_and_job_id():
     assert event.data["id"] == "j_target000001"
 
     await gen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_keepalive_ping_does_not_finalize_generator():
+    # Regression: the timeout must yield `ping` events from inside the generator
+    # and keep it alive, not finalize it after the first one.
+    bus = JobEventBus(snapshot_provider=lambda: [])
+    gen = bus.subscribe(timeout=0.02)
+    assert (await _next_event(gen)).event == "snapshot"
+    assert (await _next_event(gen)).event == "ping"
+    assert (await _next_event(gen)).event == "ping"
+
+    # A real event still flows after pings.
+    bus.publish_job(_record("j_after000001"))
+    event = await _next_event(gen)
+    assert event.event == "job"
+    assert event.data["id"] == "j_after000001"
+
+    await gen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_ends_open_stream_and_rejects_new_ones():
+    bus = JobEventBus(snapshot_provider=lambda: [])
+    gen = bus.subscribe()
+    assert (await _next_event(gen)).event == "snapshot"
+
+    # shutdown() pushes a close sentinel so the open generator returns.
+    bus.shutdown()
+    with pytest.raises(StopAsyncIteration):
+        await _next_event(gen)
+
+    # A subscription opened after shutdown ends immediately (no snapshot).
+    gen2 = bus.subscribe()
+    with pytest.raises(StopAsyncIteration):
+        await _next_event(gen2)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_unblocks_subscriber_waiting_without_timeout():
+    # With no keepalive timeout the subscriber blocks on queue.get(); shutdown()
+    # must still wake it so a hot reload isn't held open.
+    bus = JobEventBus(snapshot_provider=lambda: [])
+    gen = bus.subscribe()  # timeout=None
+    assert (await _next_event(gen)).event == "snapshot"
+
+    async def _drain():
+        with pytest.raises(StopAsyncIteration):
+            await gen.__anext__()
+
+    waiter = asyncio.ensure_future(_drain())
+    await asyncio.sleep(0)  # let the waiter block on queue.get()
+    bus.shutdown()
+    await asyncio.wait_for(waiter, timeout=1.0)

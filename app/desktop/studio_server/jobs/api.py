@@ -80,23 +80,21 @@ async def _event_stream(
     (client disconnect, via CancellableStreamingResponse) only unsubscribes from
     the bus — it never touches any job's supervising task. Jobs keep running.
     """
+    # The keepalive timeout lives inside subscribe() (yields a "ping" event),
+    # NOT here via asyncio.wait_for on __anext__(): cancelling the generator's
+    # __anext__() finalizes it, so the stream would die after the first ping.
     subscription: AsyncGenerator[JobEvent, None] = job_registry.events.subscribe(
         job_id=job_id,
         type_name=type_name,
         project_id=project_id,
+        timeout=KEEPALIVE_SECONDS,
     )
     try:
-        while True:
-            try:
-                event = await asyncio.wait_for(
-                    subscription.__anext__(), timeout=KEEPALIVE_SECONDS
-                )
-            except asyncio.TimeoutError:
+        async for event in subscription:
+            if event.event == "ping":
                 yield ": ping\n\n"
-                continue
-            except StopAsyncIteration:
-                break
-            yield _format_sse(event)
+            else:
+                yield _format_sse(event)
     finally:
         await subscription.aclose()
 

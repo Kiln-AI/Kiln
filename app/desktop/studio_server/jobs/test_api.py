@@ -115,15 +115,6 @@ def registry(monkeypatch):
 
 
 @pytest.fixture
-def fast_keepalive(monkeypatch):
-    # httpx's ASGITransport batches the SSE generator's output and only surfaces
-    # buffered lines once the next chunk (here, the keepalive ping) forces a
-    # flush. Shortening the keepalive makes that flush — and stream teardown —
-    # prompt in tests. Production keeps the 15s default.
-    monkeypatch.setattr(jobs_api, "KEEPALIVE_SECONDS", 0.1)
-
-
-@pytest.fixture
 def app(registry):
     app = FastAPI()
     connect_jobs_api(app)
@@ -666,111 +657,113 @@ def _parse_sse_block(block: str) -> tuple[str | None, dict | None]:
     return event_name, data
 
 
-async def _read_until_event(line_iter, target: str, timeout: float = 3.0) -> dict:
-    """Read SSE blocks from a shared line iterator until one matches the target
-    event name; return its data. httpx allows streaming the body only once, so a
-    single iterator must be threaded through all reads on a response."""
-    buffer = ""
-    while True:
-        line = await asyncio.wait_for(line_iter.__anext__(), timeout=timeout)
-        if line == "":
-            event_name, data = _parse_sse_block(buffer)
-            buffer = ""
-            if event_name == target and data is not None:
-                return data
+# The SSE endpoint is now a correctly *infinite* stream (it pings forever until
+# the client disconnects or the bus shuts down). httpx's ASGITransport runs the
+# app to completion and buffers the whole body before returning a response, and
+# its `receive()` only yields http.disconnect once the response is complete — so
+# it cannot exercise an open-ended stream incrementally or simulate a mid-stream
+# disconnect. We therefore drive `_event_stream` / `subscribe` directly for the
+# streaming-content behavior, and keep one HTTP-level test that ends the stream
+# via `events.shutdown()` so ASGITransport can return the buffered response.
+
+
+async def _read_stream_until(stream, target: str, timeout: float = 3.0) -> dict:
+    """Pull SSE blocks straight from the `_event_stream` async generator until
+    one matches `target`; return its parsed data."""
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        chunk = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
+        event_name, data = _parse_sse_block(chunk)
+        if event_name == target and data is not None:
+            return data
+    raise AssertionError(f"did not see event '{target}' within {timeout}s")
+
+
+def _parse_sse_body(body: str) -> list[tuple[str | None, dict | None]]:
+    return [_parse_sse_block(b) for b in body.split("\n\n") if b.strip()]
+
+
+@pytest.mark.asyncio
+async def test_sse_endpoint_returns_event_stream_and_ends_on_shutdown(app, registry):
+    # Full HTTP path: correct status + content-type and an initial snapshot.
+    # The stream is infinite, and ASGITransport buffers the whole body, so we
+    # end it with events.shutdown() (the same hook the server uses on reload)
+    # to let the buffered response come back.
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as http_client:
+        get = asyncio.ensure_future(http_client.get("/api/jobs/events"))
+        # Wait until the endpoint's subscription is registered, then shut the
+        # bus so the (otherwise infinite) stream returns.
+        for _ in range(300):
+            if registry.events._subscribers:
+                break
+            await asyncio.sleep(0.01)
         else:
-            buffer += line + "\n"
+            raise AssertionError("SSE subscription never registered")
+        registry.events.shutdown()
+
+        response = await asyncio.wait_for(get, timeout=3.0)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        blocks = _parse_sse_body(response.text)
+        assert ("snapshot", {"jobs": []}) in blocks
 
 
 @pytest.mark.asyncio
-async def test_sse_empty_snapshot(app, fast_keepalive):
-    # Connecting with no jobs yields an empty snapshot. (httpx's ASGITransport
-    # sends http.disconnect right after the GET body, so we only assert the
-    # initial snapshot here; live-event delivery is covered below with a job
-    # that is already running before we connect.)
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream("GET", "/api/jobs/events") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            snapshot = await _read_until_event(response.aiter_lines(), "snapshot")
-            assert snapshot == {"jobs": []}
+async def test_event_stream_emits_keepalive_ping(registry, monkeypatch):
+    # The keepalive is the regression we fixed: a timeout must yield a `: ping`
+    # comment WITHOUT finalizing the generator, so MANY pings arrive over time.
+    monkeypatch.setattr(jobs_api, "KEEPALIVE_SECONDS", 0.05)
+    stream = jobs_api._event_stream(job_id=None, type_name=None, project_id=None)
+    try:
+        first = await asyncio.wait_for(stream.__anext__(), timeout=3.0)
+        assert first.startswith("event: snapshot\n")
+        # Two consecutive pings prove the stream survives repeated timeouts.
+        for _ in range(2):
+            chunk = await asyncio.wait_for(stream.__anext__(), timeout=3.0)
+            assert chunk == ": ping\n\n"
+    finally:
+        await stream.aclose()
 
 
 @pytest.mark.asyncio
-async def test_sse_snapshot_then_job_event(app, registry, fast_keepalive):
-    # Start a long-running job first, so it appears in the snapshot and keeps
-    # emitting live `job` progress events while we observe the stream.
-    job = await registry.create("noop", {"steps": 40, "sleep_per_step_seconds": 0.05})
-
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream("GET", "/api/jobs/events") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            lines = response.aiter_lines()
-
-            snapshot = await _read_until_event(lines, "snapshot")
-            assert [j["id"] for j in snapshot["jobs"]] == [job.id]
-
-            data = await _read_until_event(lines, "job")
-            assert data["id"] == job.id
-            assert data["type"] == "noop"
-
-    await _safe_cancel(registry, job.id)
-
-
-@pytest.mark.asyncio
-async def test_sse_filters_by_job_id(app, registry, fast_keepalive):
-    # Both jobs run; only `target`'s events should reach a job_id-filtered stream.
+async def test_event_stream_filters_by_job_id(registry):
+    # Both jobs run; only `target`'s events reach a job_id-filtered stream.
     other = await registry.create("noop", {"steps": 40, "sleep_per_step_seconds": 0.05})
     target = await registry.create(
         "noop", {"steps": 40, "sleep_per_step_seconds": 0.05}
     )
+    stream = jobs_api._event_stream(job_id=target.id, type_name=None, project_id=None)
+    try:
+        snapshot = await _read_stream_until(stream, "snapshot")
+        snapshot_ids = {j["id"] for j in snapshot["jobs"]}
+        assert target.id in snapshot_ids
+        assert other.id not in snapshot_ids
 
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream(
-            "GET", "/api/jobs/events", params={"job_id": target.id}
-        ) as response:
-            lines = response.aiter_lines()
-            snapshot = await _read_until_event(lines, "snapshot")
-            snapshot_ids = {j["id"] for j in snapshot["jobs"]}
-            assert target.id in snapshot_ids
-            assert other.id not in snapshot_ids
-
-            # The progress event that arrives is for the target, never `other`.
-            data = await _read_until_event(lines, "job")
-            assert data["id"] == target.id
-
+        # Every live event that arrives is for the target, never `other`.
+        data = await _read_stream_until(stream, "job")
+        assert data["id"] == target.id
+    finally:
+        await stream.aclose()
     await _safe_cancel(registry, other.id)
     await _safe_cancel(registry, target.id)
 
 
 @pytest.mark.asyncio
-async def test_sse_disconnect_leaves_job_running(app, registry, fast_keepalive):
+async def test_event_stream_disconnect_leaves_job_running(registry):
     """The decoupling guarantee: dropping the SSE stream mid-run must NOT stop
-    the job. Only explicit cancel/pause stops a job."""
+    the job. Only explicit cancel/pause stops a job. Closing the generator is
+    exactly what CancellableStreamingResponse does on a real client disconnect."""
     job = await registry.create("noop", {"steps": 6, "sleep_per_step_seconds": 0.05})
 
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as http_client:
-        async with http_client.stream("GET", "/api/jobs/events") as response:
-            lines = response.aiter_lines()
-            await _read_until_event(lines, "snapshot")
-            # Observe at least one live job event so we know the run is underway.
-            await _read_until_event(lines, "job")
-        # Exiting the `stream` context drops the client connection, which cancels
-        # the SSE subscription generator (CancellableStreamingResponse). The job
-        # task lives in the registry and must keep running.
+    stream = jobs_api._event_stream(job_id=None, type_name=None, project_id=None)
+    await _read_stream_until(stream, "snapshot")
+    # Observe at least one live job event so we know the run is underway.
+    await _read_stream_until(stream, "job")
+    # Simulate the client disconnecting mid-stream.
+    await stream.aclose()
 
     assert registry._jobs[job.id].status in (
         BackgroundJobStatus.RUNNING,
