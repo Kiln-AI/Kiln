@@ -8,6 +8,7 @@ import {
   getRunConfigInputTransformSummaryLabel,
   buildJinjaInputTransform,
   inputTransformsEqual,
+  getThinkingLevelDisplayName,
 } from "./run_config_formatters"
 
 const JINJA_TRANSFORM: InputTransform = {
@@ -18,9 +19,10 @@ const JINJA_TRANSFORM: InputTransform = {
 function makeKilnAgentConfig(
   overrides: Partial<TaskRunConfig> & {
     input_transform?: InputTransform | null
+    thinking_level?: string | null
   } = {},
 ): TaskRunConfig {
-  const { input_transform, ...rest } = overrides
+  const { input_transform, thinking_level, ...rest } = overrides
   return {
     v: 1,
     id: "rc-agent",
@@ -37,6 +39,7 @@ function makeKilnAgentConfig(
       top_p: 1,
       structured_output_mode: "default",
       input_transform: input_transform ?? null,
+      thinking_level: thinking_level ?? null,
     },
     prompt: null,
     model_type: "task_run_config",
@@ -197,6 +200,57 @@ describe("getRunConfigUiProperties (kiln_agent input transformer row)", () => {
     const transformIdx = names.indexOf("Input Transformer")
     expect(promptIdx).toBeGreaterThanOrEqual(0)
     expect(transformIdx).toBe(promptIdx + 1)
+  })
+})
+
+describe("getThinkingLevelDisplayName", () => {
+  it("maps known thinking level values to friendly labels", () => {
+    expect(getThinkingLevelDisplayName("none")).toBe("None")
+    expect(getThinkingLevelDisplayName("minimal")).toBe("Minimal")
+    expect(getThinkingLevelDisplayName("low")).toBe("Low")
+    expect(getThinkingLevelDisplayName("medium")).toBe("Medium")
+    expect(getThinkingLevelDisplayName("high")).toBe("High")
+    expect(getThinkingLevelDisplayName("xhigh")).toBe("Extra High")
+    expect(getThinkingLevelDisplayName("max")).toBe("Max")
+  })
+
+  it("capitalizes unknown values as a fallback", () => {
+    expect(getThinkingLevelDisplayName("ultra")).toBe("Ultra")
+  })
+})
+
+describe("getRunConfigUiProperties (kiln_agent thinking level row)", () => {
+  it("shows the Thinking Level row when a value is set", () => {
+    const config = makeKilnAgentConfig({ thinking_level: "high" })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const row = props.find((p) => p.name === "Thinking Level")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("High")
+  })
+
+  it('shows "None" when thinking level is explicitly "none"', () => {
+    const config = makeKilnAgentConfig({ thinking_level: "none" })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const row = props.find((p) => p.name === "Thinking Level")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("None")
+  })
+
+  it("omits the Thinking Level row when thinking level is null", () => {
+    const config = makeKilnAgentConfig({ thinking_level: null })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    expect(names).not.toContain("Thinking Level")
+  })
+
+  it("places the Thinking Level row after Top P", () => {
+    const config = makeKilnAgentConfig({ thinking_level: "medium" })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    const topPIdx = names.indexOf("Top P")
+    const thinkingIdx = names.indexOf("Thinking Level")
+    expect(topPIdx).toBeGreaterThanOrEqual(0)
+    expect(thinkingIdx).toBe(topPIdx + 1)
   })
 })
 

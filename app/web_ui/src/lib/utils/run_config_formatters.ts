@@ -308,6 +308,18 @@ export function getRunConfigUiProperties(
           name: "Top P",
           value: run_config.run_config_properties.top_p.toString(),
         },
+        ...(run_config.run_config_properties.thinking_level
+          ? [
+              {
+                name: "Thinking Level",
+                value: getThinkingLevelDisplayName(
+                  run_config.run_config_properties.thinking_level,
+                ),
+                tooltip:
+                  "The reasoning effort used for this run config. Higher levels use more tokens and are slower.",
+              },
+            ]
+          : []),
       ]
     }
     default: {
@@ -315,6 +327,25 @@ export function getRunConfigUiProperties(
       throw new Error(`Unknown run config type: ${_exhaustive}`)
     }
   }
+}
+
+const THINKING_LEVEL_DISPLAY_NAMES: Record<string, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+}
+
+export function getThinkingLevelDisplayName(value: string): string {
+  const known = THINKING_LEVEL_DISPLAY_NAMES[value]
+  if (known) {
+    return known
+  }
+  // Fallback for unknown values: capitalize the first letter.
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 export function buildJinjaInputTransform(template: string): InputTransform {
