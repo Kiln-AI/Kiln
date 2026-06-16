@@ -461,7 +461,15 @@ class JobRegistry:
         if worker is None:
             return False
         params = worker.params_model.model_validate(job.params)
-        derived = await worker.compute_state(params)
+        try:
+            derived = await worker.compute_state(params)
+        except Exception:
+            # compute_state may touch on-disk entities (project/task/eval) that
+            # could be deleted or transiently unavailable. A failure here must
+            # not 500 the GET /api/jobs/{id} read or crash _supervise's initial
+            # reconcile — fall back to the last known in-memory state.
+            logger.exception("Failed to compute state for job %s", job.id)
+            return False
         if derived is None:
             return False
         changed = self._apply_derived(job, derived)
