@@ -7,6 +7,13 @@
 
   export let properties: UiProperty[]
   export let title: string | null = null
+  // When true, links open in a new tab. Useful when the list is rendered inside
+  // a form with an unsaved-changes warning, so following a link doesn't trigger
+  // a same-tab navigation (and the warning popup).
+  export let open_links_in_new_tab: boolean = false
+
+  $: link_target = open_links_in_new_tab ? "_blank" : undefined
+  $: link_rel = open_links_in_new_tab ? "noopener noreferrer" : undefined
 
   let badges_dialog: Dialog
   let modal_title = ""
@@ -68,6 +75,8 @@
                 {#if link}
                   <a
                     href={link}
+                    target={link_target}
+                    rel={link_rel}
                     class="badge badge-outline h-auto hover:bg-base-200"
                   >
                     {value}
@@ -95,7 +104,12 @@
                     : null}
 
                 {#if link}
-                  <a href={link} class="link">{value}</a>
+                  <a
+                    href={link}
+                    target={link_target}
+                    rel={link_rel}
+                    class="link">{value}</a
+                  >
                 {:else}
                   <span>{value}</span>
                 {/if}
@@ -116,7 +130,12 @@
         {:else if property.value_with_link}
           <span>
             {property.value_with_link.prefix}
-            <a href={property.value_with_link.link} class="link">
+            <a
+              href={property.value_with_link.link}
+              target={link_target}
+              rel={link_rel}
+              class="link"
+            >
               {property.value_with_link.link_text}
             </a>
           </span>
@@ -125,7 +144,12 @@
             >{property.value}</button
           >
         {:else if property.link}
-          <a href={property.link} class="link">{property.value}</a>
+          <a
+            href={property.link}
+            target={link_target}
+            rel={link_rel}
+            class="link">{property.value}</a
+          >
         {:else}
           {property.value}
         {/if}
@@ -147,7 +171,12 @@
           ? modal_links[i]
           : null}
       {#if link}
-        <a href={link} class="badge badge-outline h-auto hover:bg-base-200">
+        <a
+          href={link}
+          target={link_target}
+          rel={link_rel}
+          class="badge badge-outline h-auto hover:bg-base-200"
+        >
           {value}
         </a>
       {:else}
