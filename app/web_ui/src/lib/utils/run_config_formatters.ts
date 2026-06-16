@@ -315,8 +315,7 @@ export function getRunConfigUiProperties(
                 value: getThinkingLevelDisplayName(
                   run_config.run_config_properties.thinking_level,
                 ),
-                tooltip:
-                  "The reasoning effort used for this run config. Higher levels use more tokens and are slower.",
+                tooltip: THINKING_LEVEL_INFO_DESCRIPTION,
               },
             ]
           : []),
@@ -328,6 +327,9 @@ export function getRunConfigUiProperties(
     }
   }
 }
+
+export const THINKING_LEVEL_INFO_DESCRIPTION =
+  "Thinking level controls the model's internal reasoning effort for supported models. Higher effort uses more tokens and is slower; lower effort is faster."
 
 const THINKING_LEVEL_DISPLAY_NAMES: Record<string, string> = {
   none: "None",
