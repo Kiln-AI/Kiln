@@ -15,7 +15,6 @@
   import DataGenIntro from "../data_gen_intro.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import SynthDataGuidance from "../synth_data_guidance.svelte"
-  import SynthDataGuide from "../synth_data_guide.svelte"
   import { onDestroy } from "svelte"
   import { get_splits_from_url_param } from "$lib/utils/splits_util"
   import DataGenDescription from "../data_gen_description.svelte"
@@ -1316,9 +1315,6 @@
         </div>
         <div>
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
-        </div>
-        <div>
-          <SynthDataGuide {guidance_data} />
         </div>
         {#if task}
           <!-- Lock tools and skills whenever SDG inherits fine-tuning tool state, including the empty set. -->
