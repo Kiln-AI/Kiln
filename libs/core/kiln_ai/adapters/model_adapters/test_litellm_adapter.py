@@ -609,6 +609,57 @@ def test_build_extra_body_thinking_level_explicit_none(config, mock_task):
     assert "reasoning_effort" not in extra_body
 
 
+def test_build_extra_body_thinking_level_anthropic_none_omits_reasoning_effort(
+    config, mock_task
+):
+    """Anthropic has no reasoning_effort='none' (sending it crashes litellm). Selecting
+    the 'none' thinking level must omit the param entirely so thinking is disabled and
+    custom temperature/top_p become allowed."""
+    config.run_config_properties.thinking_level = "none"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.default_thinking_level = "high"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
+
+
+def test_build_extra_body_thinking_level_anthropic_non_none_sets_reasoning_effort(
+    config, mock_task
+):
+    """Non-'none' Anthropic thinking levels are still sent as reasoning_effort."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.default_thinking_level = "high"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "high"
+
+
 def test_build_extra_body_thinking_level_skipped_when_provider_has_no_levels(
     config, mock_task
 ):
@@ -1603,6 +1654,76 @@ async def test_build_completion_kwargs_temp_top_p_not_exclusive(config, mock_tas
 
         assert kwargs["temperature"] == 0.7
         assert kwargs["top_p"] == 0.9
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_name", "extra_body", "temperature", "top_p", "expected_error"),
+    [
+        # Anthropic + thinking on (reasoning_effort) + custom temperature -> clear error
+        (
+            ModelProviderName.anthropic,
+            {"reasoning_effort": "high"},
+            0.5,
+            1.0,
+            "temperature to be 1 when a thinking level",
+        ),
+        # Anthropic + thinking on (legacy thinking block) + custom temperature -> clear error
+        (
+            ModelProviderName.anthropic,
+            {"thinking": {"type": "enabled"}},
+            0.5,
+            1.0,
+            "temperature to be 1 when a thinking level",
+        ),
+        # Anthropic + thinking on + custom top_p below 0.95 -> clear error
+        (
+            ModelProviderName.anthropic,
+            {"reasoning_effort": "high"},
+            1.0,
+            0.8,
+            "top_p to be 0.95 or higher",
+        ),
+        # Anthropic + thinking on + default sampling (1.0/1.0 dropped) -> ok
+        (ModelProviderName.anthropic, {"reasoning_effort": "high"}, 1.0, 1.0, None),
+        # Anthropic + thinking on + top_p exactly 0.95 -> ok (boundary allowed)
+        (ModelProviderName.anthropic, {"reasoning_effort": "high"}, 1.0, 0.95, None),
+        # Anthropic + thinking OFF (no reasoning_effort) + custom temperature -> ok
+        (ModelProviderName.anthropic, {}, 0.5, 1.0, None),
+        # Non-Anthropic + thinking on + custom temperature -> not guarded here -> ok
+        (ModelProviderName.openai, {"reasoning_effort": "high"}, 0.5, 1.0, None),
+    ],
+)
+async def test_build_completion_kwargs_anthropic_thinking_sampling(
+    config, mock_task, provider_name, extra_body, temperature, top_p, expected_error
+):
+    """Anthropic rejects custom temperature/top_p while a thinking level is enabled
+    (temperature must be 1, top_p must be >= 0.95 or unset). build_completion_kwargs
+    should fail fast with a clear ValueError instead of letting the provider 400."""
+    config.run_config_properties.temperature = temperature
+    config.run_config_properties.top_p = top_p
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = provider_name
+    # Mirror real config: native-Anthropic reasoning models are temp/top_p exclusive.
+    mock_provider.temp_top_p_exclusive = provider_name == ModelProviderName.anthropic
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="anthropic/test-model"),
+        patch.object(adapter, "build_extra_body", return_value=extra_body),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        if expected_error is not None:
+            with pytest.raises(ValueError, match=expected_error):
+                await adapter.build_completion_kwargs(mock_provider, messages, None)
+        else:
+            kwargs = await adapter.build_completion_kwargs(
+                mock_provider, messages, None
+            )
+            assert kwargs is not None
 
 
 @pytest.mark.asyncio
