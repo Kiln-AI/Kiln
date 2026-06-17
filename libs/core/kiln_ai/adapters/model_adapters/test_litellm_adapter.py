@@ -660,6 +660,55 @@ def test_build_extra_body_thinking_level_anthropic_non_none_sets_reasoning_effor
     assert extra_body.get("reasoning_effort") == "high"
 
 
+def test_build_extra_body_anthropic_extended_thinking_respects_none_opt_out(
+    config, mock_task
+):
+    """thinking_level='none' must not be re-enabled by the extended-thinking block."""
+    config.run_config_properties.thinking_level = "none"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.default_thinking_level = "high"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = True
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "thinking" not in extra_body
+    assert "reasoning_effort" not in extra_body
+
+
+def test_build_extra_body_anthropic_extended_thinking_enabled_when_not_none(
+    config, mock_task
+):
+    """The extended-thinking block still fires when the user hasn't opted out."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.default_thinking_level = "high"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = True
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("thinking") == {"type": "enabled", "budget_tokens": 4000}
+
+
 def test_build_extra_body_thinking_level_skipped_when_provider_has_no_levels(
     config, mock_task
 ):

@@ -101,6 +101,15 @@ def native_anthropic_thinking_models() -> list[str]:
     return names
 
 
+# Resolve once at import so a config drift that empties the list fails loudly at
+# collection time instead of silently turning this regression suite into a no-op.
+NATIVE_ANTHROPIC_THINKING_MODELS = native_anthropic_thinking_models()
+assert NATIVE_ANTHROPIC_THINKING_MODELS, (
+    "Expected at least one native Anthropic model exposing thinking levels "
+    "{'none', 'high'}; model config may have drifted."
+)
+
+
 def build_test_task(tmp_path: Path) -> datamodel.Task:
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
     project.save_to_file()
@@ -146,7 +155,7 @@ INTERACTION_CASES = [
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", native_anthropic_thinking_models())
+@pytest.mark.parametrize("model_name", NATIVE_ANTHROPIC_THINKING_MODELS)
 @pytest.mark.parametrize(
     ("thinking_level", "temperature", "top_p", "expected"),
     INTERACTION_CASES,

@@ -591,7 +591,9 @@ class LiteLlmAdapter(BaseAdapter):
                 "nebius",
             ]
 
-        if provider.anthropic_extended_thinking:
+        # Respect the thinking_level="none" opt-out: don't re-enable thinking via
+        # the extended-thinking block after the level block deliberately skipped it.
+        if provider.anthropic_extended_thinking and thinking_level != "none":
             extra_body["thinking"] = {"type": "enabled", "budget_tokens": 4000}
 
         if provider.r1_openrouter_options:
@@ -736,7 +738,11 @@ class LiteLlmAdapter(BaseAdapter):
         # fast with an actionable message instead of an opaque provider 400 -- and
         # without silently dropping the user's value. Selecting thinking level
         # "None" disables thinking and lifts this restriction.
-        thinking_enabled = "reasoning_effort" in extra_body or "thinking" in extra_body
+        # Check completion_kwargs (not extra_body) so thinking passed via
+        # additional_body_options is also caught -- those merge in directly.
+        thinking_enabled = (
+            "reasoning_effort" in completion_kwargs or "thinking" in completion_kwargs
+        )
         if provider.name == ModelProviderName.anthropic and thinking_enabled:
             temperature = completion_kwargs.get("temperature")
             if isinstance(temperature, (int, float)) and temperature != 1.0:
