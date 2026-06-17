@@ -1,6 +1,9 @@
+import asyncio
 import logging
-from typing import Annotated
+import time
+from typing import Annotated, Any
 
+import httpx
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
@@ -26,6 +29,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SubmitAnswersRequest as SubmitAnswersRequestServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
+    AuthenticatedClient,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
@@ -119,6 +125,111 @@ class CreateSpecWithCopilotRequest(BaseModel):
     task_description: str = ""
     task_prompt_with_example: str = ""
     task_sample: TaskSample | None = None
+
+
+# --- Data Guide job (Cloud Run Job) plumbing -------------------------------
+#
+# The Data Guide draft runs as a kiln_server job so the heavy
+# summarize+aggregate work happens server-side and survives a flaky
+# connection. The studio server polls the job to completion under the hood;
+# the endpoint's response contract is unchanged, so the UI keeps showing its
+# loading animation.
+#
+# Raw httpx is used because the generated kiln_ai_server_client doesn't expose
+# the data_guide_job endpoints yet; swap to the typed client methods once it's
+# regenerated post-deploy. Note the path asymmetry: start/result use the
+# underscore segment `data_guide_job`, while status uses the hyphenated
+# job-type value `data-guide-job` (the shared /{job_type}/{job_id}/status route).
+_DATA_GUIDE_JOB_TYPE = "data-guide-job"
+_DATA_GUIDE_JOB_POLL_INTERVAL_SECONDS = 3.0
+# The job's own Cloud Run timeout is 30 min (staging); allow a little beyond
+# that before we stop polling, so we never give up while the job is still alive.
+_DATA_GUIDE_JOB_MAX_WAIT_SECONDS = 32 * 60
+_DATA_GUIDE_JOB_FINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def _kiln_server_error_detail(response: httpx.Response, fallback: str) -> str:
+    """Surface kiln_server's human-readable `message` from an error body."""
+    if response.content.startswith(b"{"):
+        try:
+            return response.json().get("message") or fallback
+        except ValueError:
+            pass
+    return fallback
+
+
+async def _run_data_guide_job(
+    client: AuthenticatedClient, draft_payload: dict[str, Any]
+) -> str:
+    """Start the Data Guide job on kiln_server, poll it to completion, and
+    return the draft guide markdown. Raises HTTPException on failure."""
+    async with client.get_async_httpx_client() as http:
+        start_response = await http.post(
+            "/v1/jobs/data_guide_job/start", json=draft_payload
+        )
+        if start_response.status_code != 200:
+            raise HTTPException(
+                status_code=start_response.status_code,
+                detail=_kiln_server_error_detail(
+                    start_response,
+                    "Failed to start the data guide job. Please try again.",
+                ),
+            )
+        job_id = start_response.json().get("job_id")
+        if not job_id:
+            raise HTTPException(
+                status_code=500,
+                detail="Data guide job did not return a job id.",
+            )
+
+        deadline = time.monotonic() + _DATA_GUIDE_JOB_MAX_WAIT_SECONDS
+        status = ""
+        while True:
+            status_response = await http.get(
+                f"/v1/jobs/{_DATA_GUIDE_JOB_TYPE}/{job_id}/status"
+            )
+            if status_response.status_code != 200:
+                raise HTTPException(
+                    status_code=status_response.status_code,
+                    detail=_kiln_server_error_detail(
+                        status_response,
+                        "Failed to check the data guide job status.",
+                    ),
+                )
+            status = str(status_response.json().get("status", "")).lower()
+            if status in _DATA_GUIDE_JOB_FINAL_STATUSES:
+                break
+            if time.monotonic() >= deadline:
+                raise HTTPException(
+                    status_code=504,
+                    detail="The data guide job timed out. Please try again.",
+                )
+            await asyncio.sleep(_DATA_GUIDE_JOB_POLL_INTERVAL_SECONDS)
+
+        if status != "succeeded":
+            raise HTTPException(
+                status_code=502,
+                detail=f"The data guide job did not succeed (status: {status}).",
+            )
+
+        result_response = await http.get(f"/v1/jobs/data_guide_job/{job_id}/result")
+        if result_response.status_code != 200:
+            raise HTTPException(
+                status_code=result_response.status_code,
+                detail=_kiln_server_error_detail(
+                    result_response,
+                    "Failed to fetch the data guide result.",
+                ),
+            )
+        output = result_response.json().get("output") or {}
+        draft_guide = output.get("draft_guide", "")
+
+    if not isinstance(draft_guide, str) or not draft_guide.strip():
+        raise HTTPException(
+            status_code=500,
+            detail="Copilot returned an empty draft guide.",
+        )
+    return draft_guide
 
 
 def connect_copilot_api(app: FastAPI):
@@ -297,12 +408,12 @@ def connect_copilot_api(app: FastAPI):
         (manual entries, existing task runs, uploaded text documents) using the
         Kiln Copilot, plus a small set of preview inputs the user can review.
 
-        Two-step internally: (1) call kiln_server's
-        `/v1/copilot/draft_input_data_guide` to get the draft guide markdown,
-        then (2) reuse the local input-preview helper with that draft to
-        generate `num_preview_samples` preview inputs. Both go back to the
-        client in one response so the UI can drop straight into the existing
-        review/refine flow.
+        Two-step internally: (1) run the kiln_server data guide job
+        (`/v1/jobs/data_guide_job/*`), polling it to completion under the hood,
+        to get the draft guide markdown, then (2) reuse the local input-preview
+        helper with that draft to generate `num_preview_samples` preview inputs.
+        Both go back to the client in one response so the UI can drop straight
+        into the existing review/refine flow.
         """
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -316,40 +427,10 @@ def connect_copilot_api(app: FastAPI):
             "input_examples": input.input_examples,
         }
 
-        # Call kiln_server directly via the underlying httpx client. The
-        # generated `kiln_ai_server_client` doesn't include this endpoint
-        # yet — when it's regenerated post-deploy, swap to the typed client
-        # method (draft_input_data_guide_v1_copilot_draft_input_data_guide_post).
-        async with client.get_async_httpx_client() as http:
-            response = await http.post(
-                "/v1/copilot/draft_input_data_guide",
-                json=draft_payload,
-            )
-        if response.status_code != 200:
-            # Mirror unwrap_response()'s error handling for the typed copilot
-            # endpoints: surface the human-readable `message` field rather than
-            # the raw JSON body. This raw-httpx path goes away once the endpoint
-            # lands in the generated client.
-            detail = "Failed to draft input data guide. Please try again."
-            if response.content.startswith(b"{"):
-                try:
-                    detail = response.json().get("message", detail)
-                except ValueError:
-                    pass
-            raise HTTPException(status_code=response.status_code, detail=detail)
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Invalid response from copilot service: {exc}",
-            )
-        draft_guide = payload.get("draft_guide", "")
-        if not isinstance(draft_guide, str) or not draft_guide.strip():
-            raise HTTPException(
-                status_code=500,
-                detail="Copilot returned an empty draft guide.",
-            )
+        # Run the draft as a kiln_server job and poll it to completion under the
+        # hood (see _run_data_guide_job). The response contract is unchanged, so
+        # the UI keeps showing its loading animation.
+        draft_guide = await _run_data_guide_job(client, draft_payload)
 
         preview = await generate_input_preview_samples(
             task=task,

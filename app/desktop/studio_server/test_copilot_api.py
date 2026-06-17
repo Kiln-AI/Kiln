@@ -451,15 +451,21 @@ class TestDraftInputDataGuide:
     """Tests for the input data guide copilot proxy endpoint.
 
     The endpoint internally:
-    1. POSTs to kiln_server's /v1/copilot/draft_input_data_guide via the
-       authenticated client's underlying httpx.AsyncClient → expects
-       `{"draft_guide": str}` back
+    1. Runs the kiln_server data guide job: POST /v1/jobs/data_guide_job/start,
+       poll GET /v1/jobs/data-guide-job/{job_id}/status until final, then GET
+       /v1/jobs/data_guide_job/{job_id}/result → `{"output": {"draft_guide"}}`
     2. Calls the local `generate_input_preview_samples` helper to produce
        preview inputs from that draft
     3. Returns both fields together
     """
 
     URL = "/api/projects/proj_x/tasks/task_y/copilot/draft_input_data_guide"
+
+    DRAFT = (
+        "# Semantics\n\n## Data Patterns\nShort greetings.\n\n"
+        "# Style\n\n## Input-Level Metrics\nOne short sentence.\n\n"
+        "# Presentation Defaults\n\nLowercase casual register.\n"
+    )
 
     @staticmethod
     def _payload() -> dict:
@@ -484,47 +490,77 @@ class TestDraftInputDataGuide:
     def _make_task(instruction: str = "Translate the input to French.") -> Task:
         return Task(name="MockTask", instruction=instruction)
 
-    def test_no_api_key(self, client):
-        with patch(
-            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
-        ) as mock_config_shared:
-            mock_config_shared.return_value.kiln_copilot_api_key = None
-            response = client.post(self.URL, json=self._payload())
-            assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+    @classmethod
+    def _mock_http(
+        cls,
+        *,
+        job_id: str = "job-123",
+        start_status_code: int = 200,
+        start_content: bytes = b"{}",
+        start_json: dict | None = None,
+        statuses: list[str] | None = None,
+        status_http_code: int = 200,
+        status_content: bytes = b"{}",
+        result_status_code: int = 200,
+        result_content: bytes = b"{}",
+        draft_guide: str | None = None,
+    ):
+        """Build a mock httpx client modelling the start/poll/result job flow.
 
-    def test_success(self, client, mock_api_key):
+        `statuses` is the sequence returned by successive status polls (defaults
+        to a single "succeeded").
+        """
+        statuses = statuses if statuses is not None else ["succeeded"]
+        draft_guide = cls.DRAFT if draft_guide is None else draft_guide
 
-        # Mock the underlying httpx call to return a draft guide.
-        async def _aenter(self):
-            return self
+        start_resp = MagicMock(status_code=start_status_code)
+        start_resp.content = start_content
+        start_resp.json.return_value = (
+            start_json if start_json is not None else {"job_id": job_id}
+        )
 
-        async def _aexit(self, *a, **kw):
-            return False
-
-        mock_post_response = MagicMock()
-        mock_post_response.status_code = 200
-        mock_post_response.json.return_value = {
-            "draft_guide": "# Semantics\n\n## Data Patterns\nShort greetings.\n\n# Style\n\n## Input-Level Metrics\nOne short sentence.\n\n# Presentation Defaults\n\nLowercase casual register.\n"
+        result_resp = MagicMock(status_code=result_status_code)
+        result_resp.content = result_content
+        result_resp.json.return_value = {
+            "status": "succeeded",
+            "output": {"draft_guide": draft_guide},
+            "output_files": [],
         }
+
+        status_iter = iter(statuses)
+
+        async def _get(url, *a, **kw):
+            if url.endswith("/status"):
+                resp = MagicMock(status_code=status_http_code)
+                resp.content = status_content
+                try:
+                    value = next(status_iter)
+                except StopIteration:
+                    value = statuses[-1]
+                resp.json.return_value = {"job_id": job_id, "status": value}
+                return resp
+            return result_resp
+
         mock_http = MagicMock()
-        mock_http.post = AsyncMock(return_value=mock_post_response)
+        mock_http.post = AsyncMock(return_value=start_resp)
+        mock_http.get = AsyncMock(side_effect=_get)
         mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
         mock_http.__aexit__ = AsyncMock(return_value=False)
+        return mock_http
 
+    def _post(self, client, mock_http, *, task=None, sleep_mock=None):
+        """Run the request with the standard set of patches."""
+        from app.desktop.studio_server.data_gen_api import GuidePreviewSample
+
+        task = task or self._make_task()
         mock_authclient = MagicMock()
         mock_authclient.get_async_httpx_client.return_value = mock_http
-
-        # Mock the local preview helper so we don't need a real task on disk.
-        from app.desktop.studio_server.data_gen_api import GuidePreviewSample
 
         async def fake_preview(**kwargs):
             return [
                 GuidePreviewSample(input="generated 1"),
                 GuidePreviewSample(input="generated 2"),
             ]
-
-        task = self._make_task(instruction="Translate the input to French.")
 
         with (
             patch(
@@ -539,8 +575,27 @@ class TestDraftInputDataGuide:
                 "app.desktop.studio_server.copilot_api.task_from_id",
                 return_value=task,
             ),
+            patch(
+                "app.desktop.studio_server.copilot_api.asyncio.sleep",
+                new=sleep_mock or AsyncMock(),
+            ),
         ):
+            return client.post(self.URL, json=self._payload())
+
+    def test_no_api_key(self, client):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config_shared.return_value.kiln_copilot_api_key = None
             response = client.post(self.URL, json=self._payload())
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_success(self, client, mock_api_key):
+        mock_http = self._mock_http()
+        response = self._post(
+            client, mock_http, task=self._make_task("Translate the input to French.")
+        )
 
         assert response.status_code == 200
         body = response.json()
@@ -553,9 +608,9 @@ class TestDraftInputDataGuide:
             {"input": "generated 1"},
             {"input": "generated 2"},
         ]
-        # Verify the upstream call hit the v1 endpoint with our payload shape.
+        # Start call hit the job start endpoint with the right payload shape.
+        assert mock_http.post.await_args.args == ("/v1/jobs/data_guide_job/start",)
         post_kwargs = mock_http.post.await_args.kwargs
-        assert mock_http.post.await_args.args == ("/v1/copilot/draft_input_data_guide",)
         # task_prompt comes from the server-resolved runtime prompt
         # (task.instruction here, since this task has no default run config),
         # NOT from the frontend-supplied target_task_info.task_prompt.
@@ -566,93 +621,74 @@ class TestDraftInputDataGuide:
         # The wrapper does NOT pass task_description — the model shouldn't see
         # the user-facing task description.
         assert "task_description" not in post_kwargs["json"]
+        # Status was polled at the hyphenated job-type path, result at the
+        # underscore path.
+        get_urls = [c.args[0] for c in mock_http.get.await_args_list]
+        assert get_urls == [
+            "/v1/jobs/data-guide-job/job-123/status",
+            "/v1/jobs/data_guide_job/job-123/result",
+        ]
 
-    def test_upstream_error_surfaces_message_field(self, client, mock_api_key):
-        mock_post_response = MagicMock()
-        mock_post_response.status_code = 402
-        mock_post_response.content = b'{"message": "Your trial has expired."}'
-        mock_post_response.json.return_value = {"message": "Your trial has expired."}
+    def test_polls_until_final(self, client, mock_api_key):
+        sleep_mock = AsyncMock()
+        mock_http = self._mock_http(statuses=["pending", "running", "succeeded"])
+        response = self._post(client, mock_http, sleep_mock=sleep_mock)
 
-        mock_http = MagicMock()
-        mock_http.post = AsyncMock(return_value=mock_post_response)
-        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
-        mock_http.__aexit__ = AsyncMock(return_value=False)
+        assert response.status_code == 200
+        # 3 status polls + 1 result fetch.
+        assert mock_http.get.await_count == 4
+        # Slept between the two non-final polls (after pending, after running).
+        assert sleep_mock.await_count == 2
 
-        mock_authclient = MagicMock()
-        mock_authclient.get_async_httpx_client.return_value = mock_http
-
-        task = self._make_task()
-        with (
-            patch(
-                "app.desktop.studio_server.copilot_api.get_authenticated_client",
-                return_value=mock_authclient,
-            ),
-            patch(
-                "app.desktop.studio_server.copilot_api.task_from_id",
-                return_value=task,
-            ),
-        ):
-            response = client.post(self.URL, json=self._payload())
-
+    def test_start_error_surfaces_message_field(self, client, mock_api_key):
+        mock_http = self._mock_http(
+            start_status_code=402,
+            start_content=b'{"message": "Your trial has expired."}',
+            start_json={"message": "Your trial has expired."},
+        )
+        response = self._post(client, mock_http)
         assert response.status_code == 402
         assert response.json()["message"] == "Your trial has expired."
 
-    def test_upstream_error_non_json_falls_back_to_default(self, client, mock_api_key):
-        mock_post_response = MagicMock()
-        mock_post_response.status_code = 502
-        mock_post_response.content = b"upstream down"
-
-        mock_http = MagicMock()
-        mock_http.post = AsyncMock(return_value=mock_post_response)
-        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
-        mock_http.__aexit__ = AsyncMock(return_value=False)
-
-        mock_authclient = MagicMock()
-        mock_authclient.get_async_httpx_client.return_value = mock_http
-
-        task = self._make_task()
-        with (
-            patch(
-                "app.desktop.studio_server.copilot_api.get_authenticated_client",
-                return_value=mock_authclient,
-            ),
-            patch(
-                "app.desktop.studio_server.copilot_api.task_from_id",
-                return_value=task,
-            ),
-        ):
-            response = client.post(self.URL, json=self._payload())
-
+    def test_start_error_non_json_falls_back_to_default(self, client, mock_api_key):
+        mock_http = self._mock_http(
+            start_status_code=502, start_content=b"upstream down"
+        )
+        response = self._post(client, mock_http)
         assert response.status_code == 502
         assert response.json()["message"] == (
-            "Failed to draft input data guide. Please try again."
+            "Failed to start the data guide job. Please try again."
         )
 
+    def test_missing_job_id_returns_500(self, client, mock_api_key):
+        mock_http = self._mock_http(job_id="")
+        response = self._post(client, mock_http)
+        assert response.status_code == 500
+        assert "job id" in response.json()["message"].lower()
+
+    def test_status_poll_error_surfaces(self, client, mock_api_key):
+        mock_http = self._mock_http(status_http_code=500)
+        response = self._post(client, mock_http)
+        assert response.status_code == 500
+        assert response.json()["message"] == (
+            "Failed to check the data guide job status."
+        )
+
+    def test_failed_job_status_returns_502(self, client, mock_api_key):
+        mock_http = self._mock_http(statuses=["failed"])
+        response = self._post(client, mock_http)
+        assert response.status_code == 502
+        assert "did not succeed" in response.json()["message"]
+        assert "failed" in response.json()["message"]
+
+    def test_result_fetch_error_surfaces(self, client, mock_api_key):
+        mock_http = self._mock_http(result_status_code=502)
+        response = self._post(client, mock_http)
+        assert response.status_code == 502
+        assert response.json()["message"] == ("Failed to fetch the data guide result.")
+
     def test_empty_draft_returns_500(self, client, mock_api_key):
-        mock_post_response = MagicMock()
-        mock_post_response.status_code = 200
-        mock_post_response.json.return_value = {"draft_guide": "   "}
-
-        mock_http = MagicMock()
-        mock_http.post = AsyncMock(return_value=mock_post_response)
-        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
-        mock_http.__aexit__ = AsyncMock(return_value=False)
-
-        mock_authclient = MagicMock()
-        mock_authclient.get_async_httpx_client.return_value = mock_http
-
-        task = self._make_task()
-        with (
-            patch(
-                "app.desktop.studio_server.copilot_api.get_authenticated_client",
-                return_value=mock_authclient,
-            ),
-            patch(
-                "app.desktop.studio_server.copilot_api.task_from_id",
-                return_value=task,
-            ),
-        ):
-            response = client.post(self.URL, json=self._payload())
-
+        mock_http = self._mock_http(draft_guide="   ")
+        response = self._post(client, mock_http)
         assert response.status_code == 500
         assert "empty" in response.json()["message"].lower()
