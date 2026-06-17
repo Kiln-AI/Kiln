@@ -547,6 +547,16 @@ class LiteLlmAdapter(BaseAdapter):
                 and provider.openrouter_reasoning_object
             ):
                 extra_body["reasoning"] = {"effort": thinking_level}
+            elif (
+                provider.name == ModelProviderName.anthropic
+                and thinking_level == "none"
+            ):
+                # Anthropic thinking is opt-in via a thinking block; there is no
+                # reasoning_effort="none". Omit the param entirely to disable
+                # thinking (which also frees the user to set a custom temperature
+                # / top_p). litellm errors if we send reasoning_effort="none" to
+                # Anthropic.
+                pass
             else:
                 extra_body["reasoning_effort"] = thinking_level
 
@@ -719,6 +729,28 @@ class LiteLlmAdapter(BaseAdapter):
             if "top_p" in completion_kwargs and "temperature" in completion_kwargs:
                 raise ValueError(
                     "top_p and temperature can not both have custom values for this model. This is a restriction from the model provider. Please set only one of them to a custom value (not 1.0)."
+                )
+
+        # Anthropic disallows custom temperature/top_p while extended thinking is
+        # enabled (temperature must be 1, top_p must be >= 0.95 or unset). Fail
+        # fast with an actionable message instead of an opaque provider 400 -- and
+        # without silently dropping the user's value. Selecting thinking level
+        # "None" disables thinking and lifts this restriction.
+        thinking_enabled = "reasoning_effort" in extra_body or "thinking" in extra_body
+        if provider.name == ModelProviderName.anthropic and thinking_enabled:
+            temperature = completion_kwargs.get("temperature")
+            if isinstance(temperature, (int, float)) and temperature != 1.0:
+                raise ValueError(
+                    "Anthropic requires temperature to be 1 when a thinking level is "
+                    "enabled. Set temperature to 1, or set the thinking level to None "
+                    "to use a custom temperature."
+                )
+            top_p = completion_kwargs.get("top_p")
+            if isinstance(top_p, (int, float)) and top_p < 0.95:
+                raise ValueError(
+                    "Anthropic requires top_p to be 0.95 or higher (or unset) when a "
+                    "thinking level is enabled. Increase top_p to at least 0.95, or "
+                    "set the thinking level to None to use a custom top_p."
                 )
 
         if not skip_response_format:

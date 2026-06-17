@@ -516,6 +516,7 @@ CLAUDE_OPENROUTER_THINKING_LEVELS = {
 }
 
 CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -532,6 +533,7 @@ CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -540,6 +542,7 @@ CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
