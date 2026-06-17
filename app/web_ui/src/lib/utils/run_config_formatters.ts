@@ -291,12 +291,14 @@ export function getRunConfigUiProperties(
           value: tools_property_info.value,
           links: tools_property_info.links,
           badge: Array.isArray(tools_property_info.value) ? true : false,
+          collapse_badges: true,
         },
         {
           name: "Available Skills",
           value: skills_property_info.value,
           links: skills_property_info.links,
           badge: Array.isArray(skills_property_info.value) ? true : false,
+          collapse_badges: true,
         },
         {
           name: "Temperature",
@@ -306,6 +308,17 @@ export function getRunConfigUiProperties(
           name: "Top P",
           value: run_config.run_config_properties.top_p.toString(),
         },
+        ...(run_config.run_config_properties.thinking_level != null
+          ? [
+              {
+                name: "Thinking Level",
+                value: getThinkingLevelDisplayName(
+                  run_config.run_config_properties.thinking_level,
+                ),
+                tooltip: THINKING_LEVEL_INFO_DESCRIPTION,
+              },
+            ]
+          : []),
       ]
     }
     default: {
@@ -313,6 +326,28 @@ export function getRunConfigUiProperties(
       throw new Error(`Unknown run config type: ${_exhaustive}`)
     }
   }
+}
+
+export const THINKING_LEVEL_INFO_DESCRIPTION =
+  "Thinking level controls the model's internal reasoning effort for supported models. Higher effort uses more tokens and is slower; lower effort is faster."
+
+const THINKING_LEVEL_DISPLAY_NAMES: Record<string, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+}
+
+export function getThinkingLevelDisplayName(value: string): string {
+  const known = THINKING_LEVEL_DISPLAY_NAMES[value]
+  if (known) {
+    return known
+  }
+  // Fallback for unknown values: capitalize the first letter.
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 export function buildJinjaInputTransform(template: string): InputTransform {
