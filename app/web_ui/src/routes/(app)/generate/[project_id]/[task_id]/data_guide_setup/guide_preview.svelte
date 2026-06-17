@@ -35,6 +35,9 @@
   // and nothing else needs refinement, the submit becomes a "Back to Input
   // Data Guide" navigation that skips the redundant PUT.
   export let requires_save: boolean = true
+  // Copilot flow only: show a "Restart Data Guide" link that abandons the
+  // current draft and starts the setup process over. Hidden in the manual flow.
+  export let show_restart: boolean = false
 
   // True iff the user edited the guide via the Edit dialog after this
   // preview was generated. Drives the submit button label (Refine vs Save
@@ -130,6 +133,7 @@
     refine: { feedback: string; rated_samples: RatedSample[] }
     save: void
     back: void
+    restart: void
   }>()
 
   function handle_submit() {
@@ -154,6 +158,10 @@
 
   function handle_save_without_refining() {
     dispatch("save")
+  }
+
+  function handle_restart() {
+    dispatch("restart")
   }
 
   function scroll_to_feedback() {
@@ -346,7 +354,6 @@
 
 {#if has_any_failed}
   <div class="flex flex-row gap-1 mt-4 justify-end">
-    <span class="text-sm text-gray-500">or</span>
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
@@ -358,6 +365,16 @@
         Save Without Refining Further
       {/if}
     </button>
+    {#if show_restart}
+      <span class="text-sm text-gray-500">or</span>
+      <button
+        class="link underline text-sm text-gray-500"
+        disabled={submitting}
+        on:click={handle_restart}
+      >
+        Restart Data Guide Setup
+      </button>
+    {/if}
   </div>
 {/if}
 

@@ -28,6 +28,12 @@
     MAX_TOTAL_ENTRIES,
   } from "./input_examples_uploader.svelte"
   import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
+  import { pending_data_guide_draft } from "./pending_draft_store"
+  import {
+    getDataGuideJob,
+    setDataGuideJob,
+    clearDataGuideJob,
+  } from "$lib/stores/data_guide_job_store"
   import posthog from "posthog-js"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
@@ -156,7 +162,64 @@
       return
     }
 
-    // Pro is required for the analyze endpoint. If the key isn't connected,
+    // --- Resume an in-flight / finished data guide draft job --------------
+    // 1. Fresh draft just handed off from the spinner page → drop straight
+    //    into preview generation.
+    const draft = get(pending_data_guide_draft)
+    if (draft && draft.project_id === project_id && draft.task_id === task_id) {
+      pending_data_guide_draft.set(null)
+      captured_input_run_config = draft.run_config_properties
+      guide = draft.draft_guide
+      await generate_preview_from_draft()
+      return
+    }
+
+    const failed_return = new URLSearchParams(window.location.search).has(
+      "draft_failed",
+    )
+    const job = getDataGuideJob(project_id, task_id)
+
+    // 2. A job is still running — the spinner page owns that view.
+    if (!failed_return && job?.status === "running") {
+      goto(
+        `/generate/${project_id}/${task_id}/data_guide_setup_copilot/${job.job_id}`,
+        { replaceState: true },
+      )
+      return
+    }
+
+    // 3. A job already succeeded (e.g. hard refresh on this page) — re-fetch
+    //    its draft and resume the review flow.
+    if (!failed_return && job?.status === "succeeded") {
+      captured_input_run_config = job.run_config_properties
+      if (await load_draft_from_result(job.job_id)) {
+        await generate_preview_from_draft()
+        return
+      }
+      // Fall through to the create state if the result couldn't be fetched.
+    }
+
+    // 4. A job failed/cancelled — re-seed the inputs and surface the error so
+    //    the user can retry.
+    if (
+      failed_return ||
+      job?.status === "failed" ||
+      job?.status === "cancelled"
+    ) {
+      if (job) {
+        entries = job.input_examples.map((text, i) => ({
+          source: "manual",
+          label: `Example ${i + 1}`,
+          text,
+        }))
+        clearDataGuideJob(project_id, task_id)
+      }
+      error = new KilnError(
+        "The data guide draft didn't finish. Please review your inputs and try again.",
+      )
+    }
+
+    // Pro is required for the start endpoint. If the key isn't connected,
     // show the connect-Kiln-Pro card inline.
     let pro_available = false
     try {
@@ -166,6 +229,68 @@
     }
     current_state = pro_available ? "create" : "connect"
   })
+
+  // Fetch the draft markdown produced by a completed job into `guide`.
+  // Returns false (and sets `error`) if the result couldn't be fetched.
+  async function load_draft_from_result(job_id: string): Promise<boolean> {
+    try {
+      const { data, error: api_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/result",
+        { params: { path: { project_id, task_id, job_id } } },
+      )
+      if (api_error) throw api_error
+      if (!data?.draft_guide)
+        throw new KilnError("No draft guide returned", null)
+      guide = data.draft_guide
+      return true
+    } catch (e) {
+      error = createKilnError(e)
+      return false
+    }
+  }
+
+  // Generate preview inputs from the current `guide` and enter the review
+  // (preview) state. Used both for a fresh draft handoff and when resuming a
+  // completed job. Mirrors the refine path's preview call.
+  async function generate_preview_from_draft() {
+    if (!captured_input_run_config) {
+      error = new KilnError(
+        "Pick a kiln_agent run config for input generation.",
+      )
+      current_state = "create"
+      return
+    }
+    submitting = true
+    current_state = "analyzing"
+    try {
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            guide,
+            run_config_properties: captured_input_run_config,
+            num_samples: 5,
+          },
+        },
+      )
+      if (api_error) throw api_error
+      if (!data) throw new KilnError("No preview inputs returned", null)
+      preview_samples = data as PreviewSample[]
+      reviewed_samples = preview_samples.map((s) => ({
+        input: s.input,
+        looks_good: undefined,
+      }))
+      general_feedback = ""
+      preview_initial_guide = guide
+      current_state = "preview"
+    } catch (e) {
+      error = createKilnError(e)
+      current_state = "create"
+    } finally {
+      submitting = false
+    }
+  }
 
   function handle_connect_success() {
     connect_success = true
@@ -344,10 +469,13 @@
       )
     }
     submitting = true
-    current_state = "analyzing"
+    const input_examples = to_analyze.map((e) => e.text)
     try {
+      // Kick off the draft as a background job and hand the user off to the
+      // spinner page, which polls it to completion. The job survives the user
+      // leaving the page, and the task-wide progress widget links them back.
       const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/copilot/draft_input_data_guide",
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/start",
         {
           params: { path: { project_id, task_id } },
           body: {
@@ -360,27 +488,28 @@
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },
-            input_examples: to_analyze.map((e) => e.text),
-            num_preview_samples: 5,
-            run_config_properties: captured_input_run_config,
+            input_examples,
           },
         },
       )
       if (api_error) throw api_error
-      if (!data) throw new KilnError("No draft guide returned", null)
+      if (!data?.job_id) throw new KilnError("No job id returned", null)
 
-      guide = data.draft_guide
-      preview_samples = data.preview_samples as PreviewSample[]
-      reviewed_samples = preview_samples.map((s) => ({
-        input: s.input,
-        looks_good: undefined,
-      }))
-      general_feedback = ""
-      preview_initial_guide = guide
-      current_state = "preview"
-      posthog.capture("data_guide_copilot_analyzed", {
+      setDataGuideJob({
+        job_id: data.job_id,
+        project_id,
+        task_id,
+        status: "running",
+        input_examples,
+        run_config_properties: captured_input_run_config,
+        created_at: new Date().toISOString(),
+      })
+      posthog.capture("data_guide_copilot_job_started", {
         entry_count: to_analyze.length,
       })
+      goto(
+        `/generate/${project_id}/${task_id}/data_guide_setup_copilot/${data.job_id}`,
+      )
     } catch (e) {
       error = createKilnError(e)
       current_state = "create"
@@ -469,6 +598,9 @@
       )
       if (api_error) throw api_error
       saved = true
+      // The draft job's work is now persisted — drop the tracking record so
+      // the progress widget clears and Create Data Guide starts fresh.
+      clearDataGuideJob(project_id, task_id)
       posthog.capture("data_guide_saved", {
         method: "after_preview",
         source: "copilot",
@@ -483,6 +615,23 @@
     } finally {
       submitting = false
     }
+  }
+
+  // Restart the whole setup process from the review screen: drop the tracked
+  // job + draft and return to a clean input-gathering state.
+  function handle_restart() {
+    clearDataGuideJob(project_id, task_id)
+    guide = ""
+    preview_initial_guide = ""
+    preview_samples = []
+    reviewed_samples = []
+    general_feedback = ""
+    refine_iterations = 0
+    entries = []
+    error = null
+    saved = false
+    posthog.capture("data_guide_restarted", { source: "copilot" })
+    current_state = "create"
   }
 </script>
 
@@ -532,7 +681,7 @@
         bind:submitting
         submit_disabled={!has_entries || extraction_running}
         compact_button={true}
-        warn_before_unload={has_entries}
+        warn_before_unload={has_entries && !submitting}
         submit_visible={has_entries}
       >
         <InputExamplesUploader
@@ -564,8 +713,8 @@
       {/if}
     {:else if current_state === "analyzing"}
       <AnalyzingAnimation
-        title="Analyzing Inputs"
-        description="Kiln Pro is analyzing your example inputs and drafting your data guide for review."
+        title="Generating Examples"
+        description="Generating example inputs from your data guide for you to review."
       />
     {:else if current_state === "preview"}
       <GuidePreview
@@ -576,8 +725,10 @@
         bind:reviewed_samples
         bind:general_feedback
         {saved}
+        show_restart={true}
         on:refine={handle_refine}
         on:save={handle_save}
+        on:restart={handle_restart}
       />
     {:else if current_state === "refining"}
       <RefiningAnimation

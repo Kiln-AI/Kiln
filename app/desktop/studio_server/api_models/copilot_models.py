@@ -3,7 +3,6 @@
 from typing import Annotated
 
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from pydantic import BaseModel, Field, StringConstraints
 
 
@@ -152,18 +151,24 @@ class SpecQuestionerApiInput(BaseModel):
     )
 
 
-# Analyze Input Data Guide
+# Input Data Guide draft job
+#
+# The draft runs as a kiln_server background job so the heavy
+# summarize+aggregate work survives a flaky connection and the user can leave
+# the page and come back. The studio server exposes the job's start / status /
+# result lifecycle so the web UI owns polling. Preview inputs are no longer
+# bundled here — once the draft is ready the UI generates them via the existing
+# `/data_gen_guide_preview` endpoint.
 
 DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 200
-DRAFT_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES = 20
 # Per-example character ceiling. Each example becomes one summarize LLM call;
 # 200k chars stays well under the model's context window even for prose. The
 # client mirrors this and blocks before sending, so hitting it here is a guard.
 DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH = 200_000
 
 
-class DraftInputDataGuideApiInput(BaseModel):
-    """Input for the input data guide copilot's draft step."""
+class StartDataGuideJobApiInput(BaseModel):
+    """Input to kick off the input data guide draft job."""
 
     target_task_info: TaskInfoApi = Field(
         ...,
@@ -185,39 +190,25 @@ class DraftInputDataGuideApiInput(BaseModel):
         min_length=1,
         max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES,
     )
-    num_preview_samples: int = Field(
-        5,
-        description="Number of preview inputs to generate alongside the draft guide.",
-        ge=1,
-        le=DRAFT_INPUT_DATA_GUIDE_MAX_PREVIEW_SAMPLES,
-    )
-    run_config_properties: KilnAgentRunConfigProperties = Field(
+
+
+class StartDataGuideJobApiOutput(BaseModel):
+    """Identifier for the started data guide draft job."""
+
+    job_id: str = Field(description="Identifier for the started data guide draft job.")
+
+
+class DataGuideJobStatusApiOutput(BaseModel):
+    """Current status of a data guide draft job."""
+
+    status: str = Field(
         description=(
-            "Run config used to generate preview inputs locally with the "
-            "returned draft guide. Same shape the manual preview endpoint uses."
+            "Current job status (e.g. running, succeeded, failed, cancelled)."
         ),
     )
 
 
-class DraftInputDataGuidePreviewSampleApi(BaseModel):
-    """One preview-generated input returned alongside the draft guide."""
-
-    input: str = Field(
-        description="A generated example input the draft guide produces."
-    )
-
-
-class DraftInputDataGuideApiOutput(BaseModel):
-    """Output of the input data guide copilot's draft step.
-
-    Combines (a) the draft guide markdown produced by the copilot service with
-    (b) preview inputs generated locally by re-running the existing
-    `/data_gen_guide_preview` flow against the draft. The preview is generated
-    locally so it shares the same input-generation infrastructure the manual
-    refine loop uses.
-    """
+class DataGuideJobResultApiOutput(BaseModel):
+    """Result of a completed data guide draft job."""
 
     draft_guide: str = Field(description="Full draft input data guide markdown.")
-    preview_samples: list[DraftInputDataGuidePreviewSampleApi] = Field(
-        description="Preview inputs generated using the draft guide for the user to review."
-    )

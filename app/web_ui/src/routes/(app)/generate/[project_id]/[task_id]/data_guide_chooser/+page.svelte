@@ -1,8 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
+  import { onMount } from "svelte"
   import AppPage from "../../../../app_page.svelte"
   import { agentInfo } from "$lib/agent"
+  import { getDataGuideJob } from "$lib/stores/data_guide_job_store"
   import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id!
@@ -12,6 +14,18 @@
     description: `Choose between manual and Kiln Pro Data Guide creation for project ${project_id}, task ${task_id}.`,
   })
 
+  // If a Kiln Pro draft job is already in progress for this task, skip the
+  // chooser and drop the user straight back onto its spinner page.
+  onMount(() => {
+    const job = getDataGuideJob(project_id, task_id)
+    if (job) {
+      goto(
+        `/generate/${project_id}/${task_id}/data_guide_setup_copilot/${job.job_id}`,
+        { replaceState: true },
+      )
+    }
+  })
+
   function pick_manual() {
     posthog.capture("data_guide_chooser_picked", { choice: "manual" })
     goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
@@ -19,6 +33,13 @@
 
   function pick_kiln_pro() {
     posthog.capture("data_guide_chooser_picked", { choice: "kiln_pro" })
+    const job = getDataGuideJob(project_id, task_id)
+    if (job) {
+      goto(
+        `/generate/${project_id}/${task_id}/data_guide_setup_copilot/${job.job_id}`,
+      )
+      return
+    }
     goto(`/generate/${project_id}/${task_id}/data_guide_setup_copilot`)
   }
 </script>

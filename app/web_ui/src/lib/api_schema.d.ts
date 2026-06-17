@@ -2782,7 +2782,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/copilot/draft_input_data_guide": {
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -2792,19 +2792,62 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Draft Input Data Guide
-         * @description Draft an input data guide from a heterogeneous list of input examples
-         *     (manual entries, existing task runs, uploaded text documents) using the
-         *     Kiln Copilot, plus a small set of preview inputs the user can review.
+         * Start Data Guide Job
+         * @description Kick off the input data guide draft job on kiln_server and return its
+         *     job id. The job summarizes and aggregates the heterogeneous list of
+         *     input examples (manual entries, existing task runs, uploaded text
+         *     documents) into a draft guide.
          *
-         *     Two-step internally: (1) call kiln_server's
-         *     `/v1/copilot/draft_input_data_guide` to get the draft guide markdown,
-         *     then (2) reuse the local input-preview helper with that draft to
-         *     generate `num_preview_samples` preview inputs. Both go back to the
-         *     client in one response so the UI can drop straight into the existing
-         *     review/refine flow.
+         *     The job runs in the background so the user can leave the page and come
+         *     back. The web UI polls `.../data_guide_job/{job_id}/status` and, once
+         *     the job succeeds, fetches `.../data_guide_job/{job_id}/result` and
+         *     generates preview inputs locally via the existing
+         *     `/data_gen_guide_preview` flow.
          */
-        post: operations["draft_input_data_guide_api_projects__project_id__tasks__task_id__copilot_draft_input_data_guide_post"];
+        post: operations["start_data_guide_job_api_projects__project_id__tasks__task_id__copilot_data_guide_job_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Guide Job Status
+         * @description Return the current status of a data guide draft job (e.g. running,
+         *     succeeded, failed, cancelled). The web UI polls this while showing the
+         *     analyzing animation and the task-wide progress widget.
+         */
+        get: operations["data_guide_job_status_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Guide Job Result
+         * @description Return the draft guide markdown produced by a completed data guide
+         *     draft job. The web UI calls this once the job status is `succeeded`.
+         */
+        get: operations["data_guide_job_result_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__result_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4912,6 +4955,28 @@ export interface components {
             readonly model_type: string;
         };
         /**
+         * DataGuideJobResultApiOutput
+         * @description Result of a completed data guide draft job.
+         */
+        DataGuideJobResultApiOutput: {
+            /**
+             * Draft Guide
+             * @description Full draft input data guide markdown.
+             */
+            draft_guide: string;
+        };
+        /**
+         * DataGuideJobStatusApiOutput
+         * @description Current status of a data guide draft job.
+         */
+        DataGuideJobStatusApiOutput: {
+            /**
+             * Status
+             * @description Current job status (e.g. running, succeeded, failed, cancelled).
+             */
+            status: string;
+        };
+        /**
          * DataSource
          * @description Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
          *
@@ -5144,60 +5209,6 @@ export interface components {
              * @description Whether the library is empty
              */
             is_empty: boolean;
-        };
-        /**
-         * DraftInputDataGuideApiInput
-         * @description Input for the input data guide copilot's draft step.
-         */
-        DraftInputDataGuideApiInput: {
-            /** @description The task info including prompt, input schema, and output schema. */
-            target_task_info: components["schemas"]["TaskInfoApi"];
-            /**
-             * Input Examples
-             * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
-             */
-            input_examples: string[];
-            /**
-             * Num Preview Samples
-             * @description Number of preview inputs to generate alongside the draft guide.
-             * @default 5
-             */
-            num_preview_samples: number;
-            /** @description Run config used to generate preview inputs locally with the returned draft guide. Same shape the manual preview endpoint uses. */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
-        };
-        /**
-         * DraftInputDataGuideApiOutput
-         * @description Output of the input data guide copilot's draft step.
-         *
-         *     Combines (a) the draft guide markdown produced by the copilot service with
-         *     (b) preview inputs generated locally by re-running the existing
-         *     `/data_gen_guide_preview` flow against the draft. The preview is generated
-         *     locally so it shares the same input-generation infrastructure the manual
-         *     refine loop uses.
-         */
-        DraftInputDataGuideApiOutput: {
-            /**
-             * Draft Guide
-             * @description Full draft input data guide markdown.
-             */
-            draft_guide: string;
-            /**
-             * Preview Samples
-             * @description Preview inputs generated using the draft guide for the user to review.
-             */
-            preview_samples: components["schemas"]["DraftInputDataGuidePreviewSampleApi"][];
-        };
-        /**
-         * DraftInputDataGuidePreviewSampleApi
-         * @description One preview-generated input returned alongside the draft guide.
-         */
-        DraftInputDataGuidePreviewSampleApi: {
-            /**
-             * Input
-             * @description A generated example input the draft guide produces.
-             */
-            input: string;
         };
         /**
          * EmbeddingConfig
@@ -9306,6 +9317,30 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /**
+         * StartDataGuideJobApiInput
+         * @description Input to kick off the input data guide draft job.
+         */
+        StartDataGuideJobApiInput: {
+            /** @description The task info including prompt, input schema, and output schema. */
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            /**
+             * Input Examples
+             * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
+             */
+            input_examples: string[];
+        };
+        /**
+         * StartDataGuideJobApiOutput
+         * @description Identifier for the started data guide draft job.
+         */
+        StartDataGuideJobApiOutput: {
+            /**
+             * Job Id
+             * @description Identifier for the started data guide draft job.
+             */
+            job_id: string;
         };
         /** StartPromptOptimizationJobRequest */
         StartPromptOptimizationJobRequest: {
@@ -17162,7 +17197,7 @@ export interface operations {
             };
         };
     };
-    draft_input_data_guide_api_projects__project_id__tasks__task_id__copilot_draft_input_data_guide_post: {
+    start_data_guide_job_api_projects__project_id__tasks__task_id__copilot_data_guide_job_start_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -17176,7 +17211,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DraftInputDataGuideApiInput"];
+                "application/json": components["schemas"]["StartDataGuideJobApiInput"];
             };
         };
         responses: {
@@ -17186,7 +17221,79 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftInputDataGuideApiOutput"];
+                    "application/json": components["schemas"]["StartDataGuideJobApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    data_guide_job_status_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The data guide draft job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuideJobStatusApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    data_guide_job_result_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The data guide draft job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuideJobResultApiOutput"];
                 };
             };
             /** @description Validation Error */
