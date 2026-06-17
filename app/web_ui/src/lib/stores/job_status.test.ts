@@ -4,8 +4,11 @@ import {
   completed_jobs,
   is_active,
   is_terminal,
+  job_completed_with_errors,
   job_status_badge_class,
   job_status_display,
+  job_status_display_badge_class,
+  job_status_display_label,
   jobs_indicator,
   progress_label,
   progress_percent,
@@ -81,16 +84,69 @@ describe("available_actions", () => {
 
 describe("job_status_display / job_status_badge_class", () => {
   const cases: [BackgroundJobStatus, string, string][] = [
-    ["pending", "Pending", "badge-ghost"],
-    ["running", "Running", "badge-info"],
-    ["paused", "Paused", "badge-warning"],
-    ["succeeded", "Succeeded", "badge-success"],
-    ["failed", "Failed", "badge-error"],
-    ["cancelled", "Cancelled", "badge-ghost"],
+    ["pending", "Pending", "badge-outline"],
+    ["running", "Running", "badge-outline badge-success"],
+    ["paused", "Paused", "badge-outline badge-warning"],
+    ["succeeded", "Succeeded", "badge-outline badge-primary"],
+    ["failed", "Failed", "badge-outline badge-error"],
+    ["cancelled", "Cancelled", "badge-outline"],
   ]
   it.each(cases)("maps %s", (status, label, badge) => {
     expect(job_status_display(status)).toBe(label)
     expect(job_status_badge_class(status)).toBe(badge)
+  })
+})
+
+describe("job_completed_with_errors / display helpers", () => {
+  it("is true only when succeeded with a positive error count", () => {
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "succeeded", progress: { success: 8, error: 2 } }),
+      ),
+    ).toBe(true)
+  })
+
+  it("is false when succeeded without errors", () => {
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "succeeded", progress: { success: 10, error: 0 } }),
+      ),
+    ).toBe(false)
+  })
+
+  it("is false for non-succeeded statuses even with errors", () => {
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "running", progress: { success: 1, error: 3 } }),
+      ),
+    ).toBe(false)
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "failed", progress: { success: 1, error: 3 } }),
+      ),
+    ).toBe(false)
+  })
+
+  it("derives label and badge for completed-with-errors", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 8, error: 2 },
+    })
+    expect(job_status_display_label(job)).toBe("Completed with errors")
+    expect(job_status_display_badge_class(job)).toBe(
+      "badge-outline badge-error",
+    )
+  })
+
+  it("falls back to plain status display when there are no errors", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 10, error: 0 },
+    })
+    expect(job_status_display_label(job)).toBe("Succeeded")
+    expect(job_status_display_badge_class(job)).toBe(
+      "badge-outline badge-primary",
+    )
   })
 })
 

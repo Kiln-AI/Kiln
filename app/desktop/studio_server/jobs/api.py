@@ -16,11 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
-from .registry import (
-    JobNotFoundError,
-    JobOperationError,
-    job_registry,
-)
+from .registry import JobNotFoundError, JobOperationError, job_registry
 from .workers.eval import EvalJobWorker
 from .workers.noop import NoopJobWorker
 
@@ -80,9 +76,8 @@ async def _event_stream(
     (client disconnect, via CancellableStreamingResponse) only unsubscribes from
     the bus — it never touches any job's supervising task. Jobs keep running.
     """
-    # The keepalive timeout lives inside subscribe() (yields a "ping" event),
-    # NOT here via asyncio.wait_for on __anext__(): cancelling the generator's
-    # __anext__() finalizes it, so the stream would die after the first ping.
+    # subscribe() handles the keepalive itself, yielding a "ping" event after
+    # `timeout` idle seconds.
     subscription: AsyncGenerator[JobEvent, None] = job_registry.events.subscribe(
         job_id=job_id,
         type_name=type_name,

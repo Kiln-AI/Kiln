@@ -1,14 +1,13 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
-  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { jobs, synced, connection } from "$lib/stores/jobs_store"
   import {
     available_actions,
     completed_jobs,
     is_terminal,
-    job_status_badge_class,
-    job_status_display,
+    job_status_display_badge_class,
+    job_status_display_label,
     progress_label,
     progress_percent,
     type JobAction,
@@ -198,53 +197,60 @@
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Type</th>
+          <th>Details</th>
           <th>Status</th>
-          <th>Progress</th>
-          <th>Message</th>
-          <th>Created</th>
-          <th class="text-right">Actions</th>
+          <th class="text-right"></th>
         </tr>
       </thead>
       <tbody>
         {#each $jobs as job (job.id)}
           <tr>
-            <td class="font-mono text-xs text-gray-500 whitespace-nowrap"
-              >{job.id}</td
-            >
-            <td class="font-medium">{job_type_display(job.type)}</td>
-            <td>
-              <span class="badge {job_status_badge_class(job.status)}">
-                {job_status_display(job.status)}
-              </span>
+            <td class="whitespace-nowrap">
+              <div class="flex flex-col gap-1">
+                <span class="font-medium">{job_type_display(job.type)}</span>
+                <span class="font-mono text-xs text-gray-500">{job.id}</span>
+                <span class="text-xs text-gray-500"
+                  >{formatDate(job.created_at)}</span
+                >
+              </div>
             </td>
             <td>
-              <div class="flex flex-col gap-1 min-w-32">
-                <span class="text-sm">{progress_label(job.progress)}</span>
-                {#if job.progress?.total}
+              <div class="flex flex-col gap-2 w-full max-w-[360px] min-w-48">
+                <span
+                  class="badge px-3 py-1 self-start {job_status_display_badge_class(
+                    job,
+                  )}"
+                >
+                  {job_status_display_label(job)}
+                </span>
+                <div class="flex items-center justify-between text-gray-500">
+                  {#if job.status === "running"}
+                    <span>{progress_percent(job.progress)}% Complete</span>
+                  {/if}
+                  {#if job.progress?.total}
+                    <span>{progress_label(job.progress)}</span>
+                  {/if}
+                </div>
+                {#if progress_percent(job.progress) < 100}
                   <progress
-                    class="progress progress-primary w-32 h-1.5"
+                    class="progress progress-primary bg-base-200 w-full h-2"
                     value={progress_percent(job.progress)}
                     max="100"
                   ></progress>
+                  {#if failure_error(job)?.error}
+                    <span
+                      class="font-mono text-sm text-error block truncate"
+                      title={failure_error(job)?.error}
+                      >{failure_error(job)?.error}</span
+                    >
+                  {:else if job.progress?.message}
+                    <span
+                      class="font-mono text-sm text-gray-500 block truncate"
+                      title={job.progress.message}>{job.progress.message}</span
+                    >
+                  {/if}
                 {/if}
               </div>
-            </td>
-            <td class="text-sm text-gray-500 max-w-48">
-              {#if failure_error(job)?.error}
-                <span
-                  class="text-error block truncate"
-                  title={failure_error(job)?.error}
-                  >{failure_error(job)?.error}</span
-                >
-              {:else}
-                <span class="block truncate">{job.progress?.message || ""}</span
-                >
-              {/if}
-            </td>
-            <td class="text-sm text-gray-500 whitespace-nowrap">
-              {formatDate(job.created_at)}
             </td>
             <td>
               <div
@@ -255,7 +261,7 @@
                     class="btn btn-xs btn-ghost"
                     on:click={() => open_result(job)}
                   >
-                    Result
+                    View results
                   </button>
                 {/if}
                 {#if has_errors(job)}
@@ -263,19 +269,19 @@
                     class="btn btn-xs btn-ghost"
                     on:click={() => open_errors(job)}
                   >
-                    Errors
+                    View errors
                   </button>
                 {/if}
                 {#each available_actions(job) as action}
                   {#if action === "delete"}
                     <button
-                      class="btn btn-xs btn-ghost btn-square text-error"
+                      class="btn btn-xs btn-ghost"
                       disabled={in_flight[job.id]}
                       aria-label="Dismiss job"
                       title="Dismiss job"
                       on:click={() => run_action(action, job.id)}
                     >
-                      <span class="w-4 h-4 block"><CloseIcon /></span>
+                      Clear
                     </button>
                   {:else}
                     <button
