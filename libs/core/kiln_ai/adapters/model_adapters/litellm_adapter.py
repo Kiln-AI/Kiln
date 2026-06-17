@@ -547,8 +547,29 @@ class LiteLlmAdapter(BaseAdapter):
                 and provider.openrouter_reasoning_object
             ):
                 extra_body["reasoning"] = {"effort": thinking_level}
+            elif (
+                provider.name == ModelProviderName.anthropic
+                and thinking_level == "none"
+            ):
+                # Anthropic's native API has no reasoning_effort="none"; passing it makes
+                # litellm map thinking to None and then crash. Omitting reasoning_effort
+                # disables extended thinking, which also frees temperature from the
+                # temperature=1 requirement that applies whenever thinking is enabled.
+                pass
             else:
                 extra_body["reasoning_effort"] = thinking_level
+                # Opus 4.7/4.8 default thinking display to "omitted", returning empty
+                # thinking text. Request the summary so reasoning is surfaced. litellm
+                # still maps reasoning_effort to output_config.effort; this only adds the
+                # display to the adaptive thinking object.
+                if (
+                    provider.name == ModelProviderName.anthropic
+                    and provider.anthropic_summarized_thinking
+                ):
+                    extra_body["thinking"] = {
+                        "type": "adaptive",
+                        "display": "summarized",
+                    }
 
         if provider.require_openrouter_reasoning:
             # https://openrouter.ai/docs/use-cases/reasoning-tokens
