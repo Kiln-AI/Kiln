@@ -170,12 +170,14 @@
       value: tools_property_value,
       links: tool_links,
       badge: Array.isArray(tools_property_value) ? true : false,
+      collapse_badges: true,
     })
     properties.push({
       name: "Available Skills",
       value: skills_property_value,
       links: skill_links,
       badge: Array.isArray(skills_property_value) ? true : false,
+      collapse_badges: true,
     })
     return properties
   }

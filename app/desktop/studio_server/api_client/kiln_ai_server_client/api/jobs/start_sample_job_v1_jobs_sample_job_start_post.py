@@ -23,7 +23,6 @@ def _get_kwargs(
     }
 
     _kwargs["data"] = body.to_dict()
-
     headers["Content-Type"] = "application/x-www-form-urlencoded"
 
     _kwargs["headers"] = headers

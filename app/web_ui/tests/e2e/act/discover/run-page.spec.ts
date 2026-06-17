@@ -95,7 +95,9 @@ test.describe("Run page", () => {
     await page.goto("/run")
 
     await expect(page.getByText("Plaintext Input")).toBeVisible()
-    await expect(page.locator("textarea")).toBeVisible()
+    await expect(
+      page.getByRole("textbox", { name: "Plaintext Input" }),
+    ).toBeVisible()
   })
 
   /* @act
@@ -123,7 +125,7 @@ test.describe("Run page", () => {
 
     await page.goto("/run")
 
-    const textarea = page.locator("textarea")
+    const textarea = page.getByRole("textbox", { name: "Plaintext Input" })
     await expect(textarea).toBeVisible()
 
     await textarea.fill("Some test input data")
@@ -272,7 +274,7 @@ test.describe("Run page", () => {
 
     await page.goto("/run")
 
-    const textarea = page.locator("textarea")
+    const textarea = page.getByRole("textbox", { name: "Plaintext Input" })
     await expect(textarea).toBeVisible()
     await textarea.fill("Test input for run page")
 
