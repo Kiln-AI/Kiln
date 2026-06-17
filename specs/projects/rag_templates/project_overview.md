@@ -70,7 +70,7 @@ Recommend option (a) as the default approach.
 
 ## Starting point
 
-The working implementation was removed in commit `<REMOVAL_COMMIT_SHA>` -- start from that diff to restore the templates + continuous scoring. The diff contains:
+The working implementation was removed in commit `5efc6265379fa9fff45b83e641896afb66325d14` -- start from that diff to restore the templates + continuous scoring. The diff contains:
 - `libs/core/kiln_ai/adapters/eval/rag_judge_templates.py` -- 6 template factory functions + prompt constants
 - `libs/core/kiln_ai/adapters/eval/test_rag_judge_templates.py` -- unit tests for all templates
 - `libs/core/kiln_ai/adapters/eval/v2_eval_llm_judge.py` -- `allow_float_scores=True` and `_filter_output_to_score_keys` (rich JSON filtering for RAG output)
