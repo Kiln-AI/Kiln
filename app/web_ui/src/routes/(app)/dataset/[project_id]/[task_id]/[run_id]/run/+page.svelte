@@ -863,7 +863,7 @@
             <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
               <div
                 bind:this={transcript_scroll_el}
-                class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden"
+                class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-4"
               >
                 <div
                   class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
@@ -915,7 +915,7 @@
                   {/if}
                 </div>
               </div>
-              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
+              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4 xl:pr-4">
                 <div class="mx-auto w-full max-w-3xl">
                   {#if fork_target}
                     <MultiturnComposer
@@ -946,7 +946,7 @@
                 </div>
               </div>
               <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
-              <div class="xl:flex-none mt-2">
+              <div class="xl:flex-none mt-2 xl:pr-4">
                 <div class="mx-auto w-full max-w-3xl">
                   <button
                     class="text-xs link"
@@ -958,7 +958,7 @@
               </div>
             </div>
             <div
-              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-6"
+              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:px-4 xl:pb-6"
             >
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
@@ -1054,7 +1054,9 @@
 </Dialog>
 
 <style>
-  /* Match the Assistant chat transcript scrollbar. */
+  /* Match the Assistant chat transcript scrollbar. Overlay style: the thumb
+     stays invisible until you hover (or scroll) the zone, so the two adjacent
+     scroll regions don't both show persistent bars. */
   .chat-messages-scroll::-webkit-scrollbar {
     width: 6px;
   }
@@ -1064,16 +1066,25 @@
   }
 
   .chat-messages-scroll::-webkit-scrollbar-thumb {
-    background-color: oklch(var(--bc) / 0.2);
+    background-color: transparent;
     border-radius: 3px;
+    transition: background-color 0.2s ease;
   }
 
-  .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+  .chat-messages-scroll:hover::-webkit-scrollbar-thumb {
+    background-color: oklch(var(--bc) / 0.2);
+  }
+
+  .chat-messages-scroll:hover::-webkit-scrollbar-thumb:hover {
     background-color: oklch(var(--bc) / 0.35);
   }
 
   .chat-messages-scroll {
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .chat-messages-scroll:hover {
     scrollbar-color: oklch(var(--bc) / 0.2) transparent;
   }
 </style>
