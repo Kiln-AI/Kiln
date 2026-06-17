@@ -242,6 +242,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_2 = "glm_5_2"
     glm_5_1 = "glm_5_1"
     glm_5_turbo = "glm_5_turbo"
     glm_5v_turbo = "glm_5v_turbo"
@@ -7078,13 +7079,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.2
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_2,
+        friendly_name="GLM 5.2",
+        featured_rank=4,
+        editorial_notes="Z.ai's newest flagship, with a 1M token context window. Benchmarks land near Claude Opus 4.8, with strong long-horizon agentic and coding performance.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-5p2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 5.1
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_5_1,
         friendly_name="GLM 5.1",
-        featured_rank=4,
-        editorial_notes="Z.ai's newest flagship for long-horizon agentic tasks. Coding performance on par with Claude Opus 4.6, and can autonomously execute complex engineering work for up to 8 hours.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
