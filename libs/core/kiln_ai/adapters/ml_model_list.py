@@ -358,6 +358,9 @@ class KilnModelProvider(BaseModel):
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
+    # Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text, signature
+    # only). Set this for those models to request the readable reasoning summary.
+    anthropic_summarized_thinking: bool = False
     gemini_reasoning_enabled: bool = False
     # Can only specify top_p or temp, not both. Opus 4.1 and Sonnet 4.5 for example.
     temp_top_p_exclusive: bool = False
@@ -516,6 +519,7 @@ CLAUDE_OPENROUTER_THINKING_LEVELS = {
 }
 
 CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -532,6 +536,7 @@ CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -540,6 +545,7 @@ CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -1853,6 +1859,7 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
+                anthropic_summarized_thinking=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2117,6 +2124,7 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
+                anthropic_summarized_thinking=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -2164,6 +2172,7 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
+                anthropic_summarized_thinking=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
