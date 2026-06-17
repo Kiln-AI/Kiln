@@ -39,7 +39,7 @@ Build from these. Phase column = where each is consumed in `implementation_plan.
 | `components/20_eval_config_types_overview.md` | V2.0 catalog, per-type adapter contract, plugin-extensibility seam | 2 |
 | `components/22_type_deterministic_basics.md` | `exact_match`, `pattern_match`, `set_check`, `contains`, `tool_call_check`, `step_count_check` | 3 |
 | `components/21_type_llm_judge.md` | Enhanced `llm_judge` — per-criterion verdicts, `g_eval` toggle, Jinja2 templates, structured output | 4 |
-| `components/29_rag_judge_templates.md` | 6 first-party RAG judge templates (content over the reference-key contract) | 4 |
+| `components/29_rag_judge_templates.md` | 6 first-party RAG judge templates (content over the reference-key contract) -- **deferred from V2.0** (see `/specs/projects/rag_templates/`) | 4 |
 | `components/27_type_code_eval.md` | `code_eval` properties, scorer contract, helper library, `multiprocessing` execution, trust gate | 5 |
 | `components/70_builder_and_onboarding.md` | V2 create + view UI (create container, code-eval editor, renderer registry) | 6 |
 | `components/50_reference_data.md` | Flat-dict reference shape, multi-config consumption, naming guidelines | 1–4 (consumed) |

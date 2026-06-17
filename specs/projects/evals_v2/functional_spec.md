@@ -27,7 +27,7 @@ The catalog overview, the per-type **adapter contract**, and the extensibility s
 
 - **EvalInput** — the purpose-built eval dataset entity (per-case structured `reference` dict + `tags`, discriminated single-turn / multi-turn-synthetic data): `components/10_data_model.md`.
 - **Reference data** — flat-dict shape, multi-config consumption, naming guidelines, per-case criteria expressed through reference data: `components/50_reference_data.md`.
-- **RAG behavior** — 6 first-party `llm_judge` templates (faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness) over a canonical reference-key contract: `components/29_rag_judge_templates.md`.
+- **RAG behavior** — ~~6 first-party `llm_judge` templates (faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness) over a canonical reference-key contract: `components/29_rag_judge_templates.md`.~~ **Deferred from V2.0** -- see `/specs/projects/rag_templates/project_overview.md`.
 
 ## 3. Template + extraction behavior
 

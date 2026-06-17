@@ -207,6 +207,8 @@ When different EvalInputs have different numbers of criteria in `reference_data.
 
 ## 4. `g_eval` scoring mode (A2.2)
 
+> **V2.0 note:** V2 `llm_judge` uses discrete model output only (`allow_float_scores=False`), matching V1's convention and the phase plan. Continuous/direct-float scoring was removed along with RAG templates -- see `/specs/projects/rag_templates/project_overview.md`.
+
 ### 4.1. Mode semantics
 
 | Aspect | `g_eval=False` (default) | `g_eval=True` |
@@ -580,6 +582,6 @@ Implementation-time verification items (not design opens):
 - `components/40_template_and_extraction.md` -- LlmJudgeProperties shape (section 3.1), EvalTaskInput assembly, save-time validation, system_prompt/thinking_instruction handling
 - `components/50_reference_data.md` -- reference-key contract, per-case criteria pattern (section 5.3), naming guidelines
 - `components/05_prereq_thinking_formatter_fix.md` -- forward_thinking_instructions fix for reasoning models
-- `components/29_rag_judge_templates.md` -- first consumer of llm_judge; validates template rendering against reference-data contract
+- `components/29_rag_judge_templates.md` -- designed as first consumer of llm_judge; validated template rendering against reference-data contract (deferred from V2.0)
 - `batch_h_coexistence_and_builder.md` -- H.32a code-reuse strategy (option a: extract-helpers-then-build-V2-fresh)
 - `reports/kintsugi_synthesis.md` -- semantic-criteria section, per-criterion pattern, trace condensation

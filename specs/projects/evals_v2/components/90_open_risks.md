@@ -20,7 +20,7 @@ These are the residual opens that remain at Stage 4 close. Each entry names the 
 
 ### 1.1 Design-file frontmatter opens
 
-At Stage 4 close, `components/29_rag_judge_templates.md` was the only file with non-empty `opens:`. **Both were resolved at Stage 5 (2026-06-06); `components/29` is now `status: complete`.** Recorded here for the audit trail:
+At Stage 4 close, `components/29_rag_judge_templates.md` was the only file with non-empty `opens:`. **Both were resolved at Stage 5 (2026-06-06); `components/29` was `status: complete`.** With RAG templates now deferred from V2.0 (see `/specs/projects/rag_templates/`), these items are moot. Recorded here for the audit trail:
 
 #### O-rag-template-var-rendering — RESOLVED (2026-06-06)
 
@@ -178,6 +178,18 @@ Per reference/ALIGNMENT.md A2.4, V2.0 ships 8 types. The following are deferred 
 
 - **Server-side output generation becomes optional** — V2 EvalInputs don't require outputs; the remote `api.kiln.tech` output-generation step can be made optional post-V2, reducing Copilot generation time (~10min to ~3-4min). Requires old-client upgrade coordination.
 - **Manual flow migration to EvalInput-source datasets** — manual evals currently produce TaskRuns; V2 EvalConfigs consume them via B2.1 runtime translation. Post-V2, the manual flow could migrate to producing EvalInputs (matching the Copilot path's shape). Requires synthetic data UI redesign. Explicitly out of scope per Steve.
+
+### 2.11 RAG judge templates + continuous scoring (punted from V2.0)
+
+**What:** 6 first-party RAGAS-style `llm_judge` templates (faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness) and the continuous 0-1 scoring model they required.
+
+**Why punted:** Continuous scoring was not a first-class V2 feature (modeled by abusing `pass_fail` as float), deviated from V1's discrete convention and the phase plan (`phase_4.md:183` says `allow_float_scores=False`), leaked leniency into V1's battle-tested scorer, g-eval cannot compute continuous fractions, and UI/doc support was missing.
+
+**V2.0 consequence:** V2 `llm_judge` uses discrete model output only (`allow_float_scores=False`), matching V1. The shared scorer (`build_llm_as_judge_score`) is restored to its pristine strict behavior with no float-leniency.
+
+**Bring-back plan:** `/specs/projects/rag_templates/project_overview.md`. Design preserved in `components/29_rag_judge_templates.md` (status: deferred).
+
+**Re-evaluate when:** First-class continuous-score representation is designed (proper 0-1 score type, not pass_fail-as-float), g-eval incompatibility is resolved, and docs/UI support for continuous scoring exists.
 
 ---
 

@@ -1,10 +1,12 @@
 ---
-status: complete
+status: deferred
 approved: true
 alignment_refs: []
 opens: []
-summary: First-party RAG judge template library — 6 llm_judge templates against canonical reference-key contract.
+summary: First-party RAG judge template library — 6 llm_judge templates against canonical reference-key contract. DEFERRED from V2.0.
 ---
+
+> **Deferred from V2.0** -- Implementation removed; RAG judge templates and continuous scoring are punted to a future project. Design preserved here for reference. See `/specs/projects/rag_templates/project_overview.md` for the bring-back plan.
 
 # RAG Judge Templates -- Stage 5 Design
 

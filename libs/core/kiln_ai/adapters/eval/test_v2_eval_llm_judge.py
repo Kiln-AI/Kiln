@@ -271,6 +271,30 @@ class TestLlmJudgeEvalLlmAsJudge:
         with pytest.raises(ValueError, match="must be a dictionary"):
             await LlmJudgeEval(cfg).evaluate(_inp())
 
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.BaseEval.build_score_schema")
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_discrete_score_schema(
+        self, mock_adapter_for_task, mock_build_schema
+    ):
+        mock_build_schema.return_value = _VALID_SCHEMA
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            Mock(),
+            RunOutput(output={"quality": "3"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        cfg = _make_config()
+        await LlmJudgeEval(cfg).evaluate(_inp())
+
+        discrete_calls = [
+            c
+            for c in mock_build_schema.call_args_list
+            if c[1].get("allow_float_scores") is False
+        ]
+        assert len(discrete_calls) == 1
+
 
 class TestLlmJudgeEvalGEval:
     @pytest.mark.asyncio

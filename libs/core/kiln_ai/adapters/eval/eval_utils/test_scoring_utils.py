@@ -271,6 +271,30 @@ class TestBuildLlmAsJudgeScore:
         scores = build_llm_as_judge_score(run_output, custom_fn)
         assert scores == {"metric": 99.0}
 
+    def test_non_mapping_float_raises(self):
+        run_output = RunOutput(
+            output={"quality": "3.7"},
+            intermediate_outputs=None,
+        )
+        with pytest.raises(ValueError, match="No score found"):
+            build_llm_as_judge_score(run_output, score_from_token_string)
+
+    def test_raw_int_value_maps_via_token_string(self):
+        run_output = RunOutput(
+            output={"quality": 4},
+            intermediate_outputs=None,
+        )
+        scores = build_llm_as_judge_score(run_output, score_from_token_string)
+        assert scores == {"quality": 4.0}
+
+    def test_raw_float_non_integer_raises(self):
+        run_output = RunOutput(
+            output={"quality": 3.7},
+            intermediate_outputs=None,
+        )
+        with pytest.raises(ValueError, match="No score found"):
+            build_llm_as_judge_score(run_output, score_from_token_string)
+
 
 class TestBuildGEvalScore:
     def test_delegates_to_functions(self):

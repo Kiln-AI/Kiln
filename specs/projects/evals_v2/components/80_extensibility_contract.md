@@ -16,7 +16,7 @@ summary: V2.0 extensibility stance — closed catalog + code_eval escape hatch; 
 - V2.0 ships a **closed catalog** of 8 `V2EvalType` values. Adding a new built-in EvalConfigType requires a PR to Kiln. No runtime plugin discovery, no setuptools entry-point registration, no plugin marketplace.
 - **`code_eval` is the per-project escape hatch** for anything the closed catalog does not cover (B.12). User-authored Python scorers handle the long tail of custom signal extraction, project-specific logic, and novel scoring.
 - The architecture **does not foreclose** a future plugin model. Four seams (enum extension, properties union, adapter map, builder UI discovery) are identified and documented. Opening them is additive.
-- **Judge prompt templates** are user-extensible today: every `llm_judge` EvalConfig carries its own Jinja2 `prompt_template`. First-party RAG templates (`components/29`) ship as pre-authored starting points, not a closed set.
+- **Judge prompt templates** are user-extensible today: every `llm_judge` EvalConfig carries its own Jinja2 `prompt_template`. First-party RAG templates (`components/29`) were designed as pre-authored starting points, not a closed set. *(RAG templates deferred from V2.0 -- see `/specs/projects/rag_templates/`.)*
 - **Filter primitives** (extraction via `extract()` / `value_expression`) are internal-only for V2.0. The `extract()` helper is a library function, not an extension point; users cannot register custom extraction functions.
 - This file **extends** `components/20`'s section 5 (extensibility seam) into the full contract. `components/20` defines the seams; this file documents what is stable, what is internal, and the conditions under which the seams would open.
 
@@ -150,12 +150,14 @@ Every `llm_judge` EvalConfig carries a Jinja2 `prompt_template` field (`componen
 There is no closed set of judge prompts. Users can:
 
 - Write a prompt from scratch using the template variables.
-- Start from a first-party RAG template (`components/29`) and customize it.
+- Start from a first-party RAG template (`components/29`) and customize it. *(RAG templates deferred from V2.0.)*
 - Start from an existing EvalConfig (clone-not-edit per G.1) and modify the prompt.
 
 ### 4.2 First-party RAG templates as starting points
 
-`components/29_rag_judge_templates.md` defines a library of first-party RAG judge templates (faithfulness, relevance, context recall, etc.). These are **pre-authored `prompt_template` strings** shipped with Kiln as starting points. They are NOT a separate extension point or a template registry. They are presented in the builder UI's template gallery and instantiated as the `prompt_template` field of a new `llm_judge` EvalConfig.
+> **Deferred from V2.0** -- RAG templates are not shipped in V2.0. Design preserved in `components/29` (status: deferred). See `/specs/projects/rag_templates/` for the bring-back plan.
+
+`components/29_rag_judge_templates.md` defines a library of first-party RAG judge templates (faithfulness, relevance, context recall, etc.). These are **pre-authored `prompt_template` strings** designed as starting points. They are NOT a separate extension point or a template registry. When restored, they would be presented in the builder UI's template gallery and instantiated as the `prompt_template` field of a new `llm_judge` EvalConfig.
 
 Users can modify them after instantiation. The EvalConfig's saved `prompt_template` is the source of truth (immutable per D.3's snapshot principle); the template gallery is a convenience, not a constraint.
 

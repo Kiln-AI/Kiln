@@ -127,21 +127,21 @@ Mitigation:
 
 ## 4. Reference-key naming guidelines
 
-Reference keys are plain strings (dict keys in `EvalInput.reference`). These naming conventions ensure consistency across the V2 ecosystem: first-party EvalConfigTypes, RAG templates (`components/29`), third-party plugins, and user-authored configs.
+Reference keys are plain strings (dict keys in `EvalInput.reference`). These naming conventions ensure consistency across the V2 ecosystem: first-party EvalConfigTypes, RAG templates (`components/29`, deferred from V2.0), third-party plugins, and user-authored configs.
 
 ### 4.1. Canonical keys (first-party)
 
-These keys are defined by first-party EvalConfigTypes and RAG templates. They are not reserved at the framework level (any config can use any key name), but these names carry established semantics and should not be repurposed.
+These keys are defined by first-party EvalConfigTypes and RAG templates (deferred from V2.0 -- see `/specs/projects/rag_templates/`). They are not reserved at the framework level (any config can use any key name), but these names carry established semantics and should not be repurposed.
 
 | Key | Type | Semantics | Defined by |
 |---|---|---|---|
-| `reference_answer` | `str` | Gold-standard answer for correctness comparison. The factually correct, complete answer a human expert would give. | RAG templates (Answer Correctness), general `llm_judge` usage |
-| `retrieved_context` | `list[str]` | Text chunks returned by a RAG retrieval system. Each element is one chunk. Order reflects retrieval rank where applicable. | RAG templates (Faithfulness, Context Relevance, Context Precision, Hallucination) |
-| `ground_truth_context` | `list[str]` | Ideal source passages that should have been retrieved. Authoritative, curated set for evaluating retrieval quality against actual results. | RAG templates (Context Precision, optional) |
+| `reference_answer` | `str` | Gold-standard answer for correctness comparison. The factually correct, complete answer a human expert would give. | RAG templates (deferred), general `llm_judge` usage |
+| `retrieved_context` | `list[str]` | Text chunks returned by a RAG retrieval system. Each element is one chunk. Order reflects retrieval rank where applicable. | RAG templates (deferred) |
+| `ground_truth_context` | `list[str]` | Ideal source passages that should have been retrieved. Authoritative, curated set for evaluating retrieval quality against actual results. | RAG templates (deferred) |
 | `expected_classification` | `str` | Expected enum/label value for classifier tasks. | `exact_match` via `reference_key` |
 | `expected_set` | `list[str]` | Expected set of values for set-containment checks. | `set_check` via `reference_key` |
 
-**Consistency note:** The three RAG keys (`reference_answer`, `retrieved_context`, `ground_truth_context`) are used verbatim in `components/29_rag_judge_templates.md` sections 2.1-2.3 and throughout the six RAG template prompts via `{{ reference_data.retrieved_context }}`, `{{ reference_data.reference_answer }}`, `{{ reference_data.ground_truth_context }}`. The names here and there are identical; any rename must be coordinated.
+**Consistency note:** The three RAG keys (`reference_answer`, `retrieved_context`, `ground_truth_context`) are defined in `components/29_rag_judge_templates.md` sections 2.1-2.3 (deferred from V2.0). The key names here and there are identical; any rename must be coordinated when the RAG templates are restored.
 
 ### 4.2. `expected_*` convention
 

@@ -107,7 +107,7 @@ V2 is allowed to invent. Framing missing V1 pieces as "gaps to patch" would narr
 | `step_count_check` | Agent efficiency | `components/22_type_deterministic_basics.md` |
 | `code_eval` | User-authored Python (Beta) | `components/27_type_code_eval.md` |
 
-**RAG judge templates** (`components/29_rag_judge_templates.md`): 6 first-party `llm_judge` templates (faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness) against the `EvalInput.reference` contract.
+**RAG judge templates** (`components/29_rag_judge_templates.md`): 6 first-party `llm_judge` templates (faithfulness, answer relevance, context relevance, context precision, hallucination, answer correctness) against the `EvalInput.reference` contract. **Deferred from V2.0** -- see `/specs/projects/rag_templates/`.
 
 **Template + extraction layer** (`components/40_template_and_extraction.md`, `components/06_prereq_input_transform.md`): Jinja2 `input_transform` as general Kiln capability (prereq). `extract()` helper. Eval consumer design (EvalTaskInput assembly, `required_var` pre-check, save-time template compilation).
 
@@ -180,7 +180,7 @@ Batch G's original scope (goal-first questionnaire, routing logic, right-sizing 
 | `components/22_type_deterministic_basics.md` | `exact_match`, `pattern_match`, `set_check`, `contains`, `tool_call_check`, `step_count_check`. |
 | `components/26_type_multi_turn_synthetic.md` | Coordination contract with parallel multi-turn-synthetic project. |
 | `components/27_type_code_eval.md` | `code_eval` properties, scorer contract, helper library, execution model, trust gate. |
-| `components/29_rag_judge_templates.md` | 6 first-party RAG judge templates. |
+| `components/29_rag_judge_templates.md` | 6 first-party RAG judge templates. **Deferred from V2.0.** |
 | `components/40_template_and_extraction.md` | Jinja2 input transform, `extract()` helper, eval consumer design, V1 BC. |
 | `components/45_runner_architecture.md` | EvalInput flow, adapter dispatch, orchestration, skip handling, runtime translation. |
 | `components/50_reference_data.md` | Flat dict shape, multi-config consumption, naming guidelines, per-case criteria. |

@@ -4,13 +4,15 @@ status: complete
 
 # Phase 4: Enhanced `llm_judge` + RAG Judge Templates
 
+> **Partial deferral:** The RAG judge templates (item 3 below, Step 7, and the corresponding tests) were removed from V2.0. The `LlmJudgeEval` adapter shipped with discrete scoring only. Design preserved in `components/29` (status: deferred); see `/specs/projects/rag_templates/` for the bring-back plan.
+
 ## Overview
 
 This phase delivers three things:
 
 1. **Async V2 contract** -- make `BaseV2Eval.evaluate()` async so the LLM-backed `llm_judge` adapter can `await` model calls. Update all 6 existing deterministic adapters and the runner call-site.
 2. **`LlmJudgeEval` adapter** -- a new V2 adapter that renders a Jinja2 prompt template, invokes an LLM via `adapter_for_task()`, and dispatches scoring through `build_llm_as_judge_score()` or `build_g_eval_score()` from `scoring_utils.py`. Wires `forward_thinking_instructions=True` so reasoning-model judges receive eval criteria.
-3. **6 RAG judge template factories** -- functions that return pre-configured `LlmJudgeProperties` for faithfulness, answer relevance, context relevance, context precision, hallucination, and answer correctness.
+3. **6 RAG judge template factories** -- functions that return pre-configured `LlmJudgeProperties` for faithfulness, answer relevance, context relevance, context precision, hallucination, and answer correctness. *(Deferred from V2.0.)*
 
 ## Design Decisions
 
@@ -307,6 +309,8 @@ V2EvalType.llm_judge: LlmJudgeEval,
 Add `v2_eval_llm_judge` to both the import list and `__all__`.
 
 ### Step 7: Create RAG judge template library
+
+> **Deferred from V2.0.** This step and all RAG template tests below were not shipped. See `/specs/projects/rag_templates/`.
 
 **New file: `libs/core/kiln_ai/adapters/eval/rag_judge_templates.py`**
 

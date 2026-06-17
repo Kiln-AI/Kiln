@@ -188,16 +188,8 @@ def build_llm_as_judge_score(
         raise ValueError("LLM as Judge output must be a dictionary")
 
     for metric, value in run_output.output.items():
-        if isinstance(value, (int, float)):
-            scores[metric] = float(value)
-            continue
         token_score = score_from_token_fn(f"{value}")
         if token_score is None:
-            try:
-                scores[metric] = float(value)
-                continue
-            except (ValueError, TypeError):
-                pass
             raise ValueError(
                 f"No score found for metric: {metric}. The LLM failed to follow the scoring rubric/instructions/schema."
             )

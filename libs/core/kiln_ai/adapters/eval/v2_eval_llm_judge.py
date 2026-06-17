@@ -31,7 +31,6 @@ from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalScores,
@@ -116,7 +115,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         if parent_eval is None:
             raise ValueError("LlmJudgeEval requires a parent Eval with output_scores")
         output_json_schema = BaseEval.build_score_schema(
-            parent_eval, allow_float_scores=True
+            parent_eval, allow_float_scores=False
         )
 
         system_prompt = props.system_prompt or _DEFAULT_SYSTEM_PROMPT
@@ -168,9 +167,6 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         _, run_output = await adapter.invoke_returning_run_output(rendered_prompt)
 
-        score_names = {s.name for s in parent_eval.output_scores}
-        run_output = _filter_output_to_score_keys(run_output, score_names)
-
         if props.g_eval:
             scores = build_g_eval_score(
                 run_output,
@@ -185,23 +181,3 @@ class LlmJudgeEval(BaseV2EvalBridge):
             )
 
         return scores, None, None
-
-
-def _filter_output_to_score_keys(
-    run_output: RunOutput, score_names: set[str]
-) -> RunOutput:
-    """Filter run_output.output dict to only keys matching score names.
-
-    RAG templates produce rich JSON (claims, reasoning, etc.) but the scoring
-    pipeline only needs the score fields. Non-dict outputs pass through as-is.
-    """
-    if not isinstance(run_output.output, dict):
-        return run_output
-    filtered = {k: v for k, v in run_output.output.items() if k in score_names}
-    if not filtered:
-        return run_output
-    return RunOutput(
-        output=filtered,
-        intermediate_outputs=run_output.intermediate_outputs,
-        output_logprobs=run_output.output_logprobs,
-    )
