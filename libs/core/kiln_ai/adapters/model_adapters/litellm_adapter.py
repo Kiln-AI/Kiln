@@ -602,7 +602,7 @@ class LiteLlmAdapter(BaseAdapter):
                 "nebius",
             ]
 
-        if provider.anthropic_extended_thinking:
+        if provider.anthropic_extended_thinking and "thinking" not in extra_body:
             extra_body["thinking"] = {"type": "enabled", "budget_tokens": 4000}
 
         if provider.r1_openrouter_options:
