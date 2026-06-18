@@ -4154,6 +4154,14 @@ export interface components {
              */
             timeout_seconds: number;
         };
+        /**
+         * CodeEvalTrustResponse
+         * @description Response indicating whether code eval is trusted for a project.
+         */
+        CodeEvalTrustResponse: {
+            /** Trusted */
+            trusted: boolean;
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -15816,9 +15824,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": components["schemas"]["CodeEvalTrustResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15850,9 +15856,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": components["schemas"]["CodeEvalTrustResponse"];
                 };
             };
             /** @description Validation Error */

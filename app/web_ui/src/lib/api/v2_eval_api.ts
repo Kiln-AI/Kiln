@@ -85,7 +85,7 @@ export async function createEvalConfig(
  */
 export async function checkCodeEvalTrust(
   projectId: string,
-): Promise<{ [key: string]: boolean }> {
+): Promise<{ trusted: boolean }> {
   const { data, error } = await client.GET(
     "/api/projects/{project_id}/code_eval_trust",
     {
@@ -109,7 +109,7 @@ export async function checkCodeEvalTrust(
  */
 export async function grantCodeEvalTrust(
   projectId: string,
-): Promise<{ [key: string]: boolean }> {
+): Promise<{ trusted: boolean }> {
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/grant_code_eval_trust",
     {

@@ -212,6 +212,12 @@ class TestV2EvalResponse(BaseModel):
     skipped_detail: str | None = None
 
 
+class CodeEvalTrustResponse(BaseModel):
+    """Response indicating whether code eval is trusted for a project."""
+
+    trusted: bool
+
+
 class CreateTaskRunConfigRequest(BaseModel):
     """Request to create a new run config for eval."""
 
@@ -1734,14 +1740,14 @@ def connect_evals_api(app: FastAPI):
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
-    ) -> dict[str, bool]:
+    ) -> CodeEvalTrustResponse:
         from kiln_server.project_api import project_from_id
 
         project = project_from_id(project_id)
         from kiln_ai.adapters.eval.v2_eval_code_eval import grant_code_eval_trust
 
         grant_code_eval_trust(str(project.path))
-        return {"trusted": True}
+        return CodeEvalTrustResponse(trusted=True)
 
     @app.get(
         "/api/projects/{project_id}/code_eval_trust",
@@ -1753,10 +1759,10 @@ def connect_evals_api(app: FastAPI):
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
-    ) -> dict[str, bool]:
+    ) -> CodeEvalTrustResponse:
         from kiln_server.project_api import project_from_id
 
         project = project_from_id(project_id)
         from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
 
-        return {"trusted": is_code_eval_trusted(str(project.path))}
+        return CodeEvalTrustResponse(trusted=is_code_eval_trusted(str(project.path)))

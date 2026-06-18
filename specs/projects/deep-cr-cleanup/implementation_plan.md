@@ -30,7 +30,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 8 — V1 coexistence test guard.** 6.4 (verify `42050a2` coverage; add (a) V1 EvalRun new-fields→`None`, (b) V1 config through legacy runner e2e, (c) V1 `config_type=None` load+run; absorbs 5.10 misroute round-trip). The A0.1 regression guard.
 
-- [ ] **Phase 9 — API: typed trust response.** 2.1 (`CodeEvalTrustResponse{trusted:bool}` replacing `dict[str,bool]`) + web_ui OpenAPI schema regen.
+- [x] **Phase 9 — API: typed trust response.** 2.1 (`CodeEvalTrustResponse{trusted:bool}` replacing `dict[str,bool]`) + web_ui OpenAPI schema regen.
 
 - [ ] **Phase 10 — API: consistency fixes.** 2.2a (de-leak the two 400 messages), 2.3 (clean V2 validation 400 + test), 2.6 (trust-endpoint imports → top-level); + 6.8 (`test_nothing_persisted` asserts the real data-model dir).
 
