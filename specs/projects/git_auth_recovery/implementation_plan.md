@@ -25,7 +25,7 @@ See `functional_spec.md` and `architecture.md` for details.
   `remove_conflicting_id` to `SaveConfigRequest` and the de-register-then-save path in
   `api_save_config`. (Spec: Part C.1–C.3 backend.)
 
-- [ ] **Phase 3 — Recovery UI (frontend).**
+- [x] **Phase 3 — Recovery UI (frontend).**
   Subtle "Re-import project?" link in `select_tasks_menu.svelte` error state + the
   `import_project_url` prop wiring (setup vs app); typed `GitSyncRequestError` +
   `is_duplicate_project_error` + `remove_conflicting_id` in `git_sync/api.ts`; red

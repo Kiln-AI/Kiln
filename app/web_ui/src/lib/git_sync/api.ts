@@ -1,5 +1,18 @@
 import { base_url } from "$lib/api_client"
 
+export class GitSyncRequestError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "GitSyncRequestError"
+    this.status = status
+  }
+}
+
+export function is_duplicate_project_error(e: unknown): boolean {
+  return e instanceof GitSyncRequestError && e.status === 409
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -12,8 +25,9 @@ async function request<T>(
   })
   if (!resp.ok) {
     const detail = await resp.json().catch(() => null)
-    throw new Error(
-      detail?.detail || detail?.message || `Request failed: ${resp.statusText}`,
+    throw new GitSyncRequestError(
+      detail?.message || detail?.detail || `Request failed: ${resp.statusText}`,
+      resp.status,
     )
   }
   return resp.json()
@@ -185,6 +199,7 @@ export async function saveConfig(config: {
   oauth_token?: string | null
   auth_mode?: string
   sync_mode?: string
+  remove_conflicting_id?: boolean
 }): Promise<GitSyncConfigResponse> {
   return post("/api/git_sync/save_config", config)
 }
@@ -198,7 +213,9 @@ export async function getConfig(
   }
   if (!resp.ok) {
     const detail = await resp.json().catch(() => null)
-    throw new Error(detail?.detail || `Request failed: ${resp.statusText}`)
+    throw new Error(
+      detail?.message || detail?.detail || `Request failed: ${resp.statusText}`,
+    )
   }
   return resp.json()
 }
@@ -223,7 +240,9 @@ export async function deleteConfig(
   })
   if (!resp.ok) {
     const detail = await resp.json().catch(() => null)
-    throw new Error(detail?.detail || `Request failed: ${resp.statusText}`)
+    throw new Error(
+      detail?.message || detail?.detail || `Request failed: ${resp.statusText}`,
+    )
   }
   return resp.json()
 }
@@ -237,8 +256,8 @@ export async function oauthStatus(state: string): Promise<OAuthStatusResponse> {
   if (!resp.ok) {
     const detail = await resp.json().catch(() => null)
     throw new Error(
-      detail?.detail ||
-        detail?.message ||
+      detail?.message ||
+        detail?.detail ||
         `Failed to check OAuth status (${resp.status})`,
     )
   }

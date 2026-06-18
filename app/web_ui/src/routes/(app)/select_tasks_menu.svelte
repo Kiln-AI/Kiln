@@ -11,6 +11,7 @@
 
   export let new_project_url = "/settings/create_project"
   export let new_task_url = "/settings/create_task"
+  export let import_project_url = "/settings/import_project"
 
   $: project_list = $projects?.projects || []
   let manually_selected_project: Project | null | undefined = undefined
@@ -239,6 +240,13 @@
                 <div class="text-sm text-base-content/60">
                   {tasks_loading_error}
                 </div>
+                <a
+                  href={import_project_url}
+                  class="text-xs text-base-content/40 hover:underline mt-1 inline-block"
+                  on:click={() => dispatch("dismiss")}
+                >
+                  Re-import project?
+                </a>
               </div>
             </div>
           {:else}
