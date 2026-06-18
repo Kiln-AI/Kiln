@@ -69,6 +69,7 @@ from .image_url import ImageURL
 from .image_url_detail import ImageURLDetail
 from .input_audio import InputAudio
 from .input_audio_format import InputAudioFormat
+from .jinja_input_transform import JinjaInputTransform
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
@@ -181,6 +182,7 @@ __all__ = (
     "ImageURLDetail",
     "InputAudio",
     "InputAudioFormat",
+    "JinjaInputTransform",
     "JobStartResponse",
     "JobStatus",
     "JobStatusResponse",
