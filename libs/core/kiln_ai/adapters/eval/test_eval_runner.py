@@ -2243,3 +2243,199 @@ class TestRunnerSkipReasonsAreValidEnumMembers:
             "Expected at least one hardcoded SkippedReason usage in eval_runner. "
             "Test may need updating if runner was refactored."
         )
+
+
+# ── V1 Legacy Runner Coexistence Guards ──────────────────────────────
+
+
+class TestV1LegacyRunnerCoexistence:
+    """Verify V1 eval configs dispatch through the legacy runner path.
+
+    Guards against V2 additions accidentally misrouting V1 configs.
+    Complements the model-layer tests in TestV1EvalConfigCoexistence (42050a2).
+    """
+
+    @pytest.mark.asyncio
+    async def test_v1_g_eval_dispatches_through_legacy_runner(
+        self,
+        mock_eval_runner,
+        mock_task,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        task_run = TaskRun(
+            parent=mock_task,
+            input="test input",
+            input_source=data_source,
+            output=TaskOutput(output="test output"),
+        )
+        task_run.save_to_file()
+
+        job = EvalJob(
+            item=task_run,
+            task_run_config=mock_run_config,
+            type="task_run_eval",
+            eval_config=mock_eval_config,
+        )
+
+        assert mock_eval_config.config_type == EvalConfigType.g_eval
+
+        mock_scores: EvalScores = {"accuracy": 0.9}
+
+        class LegacyStubEval(BaseEval):
+            async def run_task_and_eval(self, eval_job_item: TaskRun):
+                return (
+                    TaskRun(
+                        input=eval_job_item.input,
+                        input_source=data_source,
+                        output=TaskOutput(output="legacy output"),
+                    ),
+                    mock_scores,
+                    None,
+                )
+
+        with patch(
+            "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
+            return_value=lambda *args, **kwargs: LegacyStubEval(*args, **kwargs),
+        ) as mock_dispatch:
+            success = await mock_eval_runner.run_job(job)
+
+        assert success is True
+        mock_dispatch.assert_called_once_with(mock_eval_config)
+
+        runs = mock_eval_config.runs()
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.dataset_id == task_run.id
+        assert saved.eval_input_id is None
+        assert saved.skipped_reason is None
+        assert saved.reference_data is None
+        assert saved.scores == mock_scores
+        assert saved.output == "legacy output"
+        assert saved.eval_config_eval is False
+
+    @pytest.mark.asyncio
+    async def test_v1_config_without_config_type_key_runs_through_legacy_runner(
+        self, mock_eval_runner, mock_task, mock_eval, mock_run_config, data_source
+    ):
+        raw = {
+            "name": "No Config Type Key",
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "properties": {"eval_steps": ["step1"]},
+        }
+        config = EvalConfig.model_validate(raw)
+        config.parent = mock_eval
+        config.save_to_file()
+
+        assert config.config_type == EvalConfigType.g_eval
+
+        task_run = TaskRun(
+            parent=mock_task,
+            input="hello",
+            input_source=data_source,
+            output=TaskOutput(output="world"),
+        )
+        task_run.save_to_file()
+
+        job = EvalJob(
+            item=task_run,
+            task_run_config=mock_run_config,
+            type="task_run_eval",
+            eval_config=config,
+        )
+
+        mock_scores: EvalScores = {"accuracy": 0.85}
+
+        class LegacyStubEval(BaseEval):
+            async def run_task_and_eval(self, eval_job_item: TaskRun):
+                return (
+                    TaskRun(
+                        input=eval_job_item.input,
+                        input_source=data_source,
+                        output=TaskOutput(output="from default config_type"),
+                    ),
+                    mock_scores,
+                    None,
+                )
+
+        with patch(
+            "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
+            return_value=lambda *args, **kwargs: LegacyStubEval(*args, **kwargs),
+        ) as mock_dispatch:
+            success = await mock_eval_runner.run_job(job)
+
+        assert success is True
+        mock_dispatch.assert_called_once_with(config)
+
+        runs = config.runs()
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.dataset_id == task_run.id
+        assert saved.eval_input_id is None
+        assert saved.output == "from default config_type"
+        assert saved.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_v1_config_with_type_key_in_properties_not_misrouted_at_runner(
+        self, mock_eval_runner, mock_task, mock_eval, mock_run_config, data_source
+    ):
+        config = EvalConfig(
+            name="Type Key Collision",
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["s1"], "type": "exact_match"},
+            parent=mock_eval,
+        )
+        config.save_to_file()
+
+        assert config.config_type == EvalConfigType.g_eval
+        assert isinstance(config.properties, dict)
+        assert config.properties["type"] == "exact_match"
+
+        task_run = TaskRun(
+            parent=mock_task,
+            input="collision input",
+            input_source=data_source,
+            output=TaskOutput(output="collision output"),
+        )
+        task_run.save_to_file()
+
+        job = EvalJob(
+            item=task_run,
+            task_run_config=mock_run_config,
+            type="task_run_eval",
+            eval_config=config,
+        )
+
+        mock_scores: EvalScores = {"accuracy": 0.75}
+
+        class LegacyStubEval(BaseEval):
+            async def run_task_and_eval(self, eval_job_item: TaskRun):
+                return (
+                    TaskRun(
+                        input=eval_job_item.input,
+                        input_source=data_source,
+                        output=TaskOutput(output="legacy, not v2"),
+                    ),
+                    mock_scores,
+                    None,
+                )
+
+        with patch(
+            "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
+            return_value=lambda *args, **kwargs: LegacyStubEval(*args, **kwargs),
+        ) as mock_dispatch:
+            success = await mock_eval_runner.run_job(job)
+
+        assert success is True
+        mock_dispatch.assert_called_once_with(config)
+
+        runs = config.runs()
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.output == "legacy, not v2"
+        assert saved.eval_input_id is None
+        assert saved.skipped_reason is None
