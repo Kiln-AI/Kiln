@@ -12,7 +12,7 @@ See `functional_spec.md` and `architecture.md` for details.
 
 ## Phases
 
-- [ ] **Phase 1 — Error envelope + auth classification (backend).**
+- [x] **Phase 1 — Error envelope + auth classification (backend).**
   Middleware error bodies `{"detail": …}` → `{"message": …}` (all sites). Add
   `GitAuthError`; classify auth failures in `GitSyncManager.fetch()`; widen
   `ensure_fresh`/`ensure_fresh_for_read` `except` to `GitSyncError` so it propagates;
