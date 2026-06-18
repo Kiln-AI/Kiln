@@ -21,6 +21,8 @@ from kiln_ai.datamodel.eval import (
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
 
+_code_eval_execution_lock = asyncio.Lock()
+
 
 def grant_code_eval_trust(project_path: str) -> None:
     with _trust_lock:
@@ -70,10 +72,11 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             "task_input": eval_input.task_input,
         }
 
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, run_scorer, props.code, inputs, float(props.timeout_seconds)
-        )
+        async with _code_eval_execution_lock:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, run_scorer, props.code, inputs, float(props.timeout_seconds)
+            )
 
         if "error" in result:
             tb = result.get("traceback", "")

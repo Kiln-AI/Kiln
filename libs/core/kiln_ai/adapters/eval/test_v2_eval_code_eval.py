@@ -1,5 +1,8 @@
 """Tests for CodeEvalAdapter and trust gate helpers."""
 
+import asyncio
+import threading
+import time
 from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
@@ -269,3 +272,47 @@ class TestResolveProjectPath:
         broken_parent = PropertyMock(side_effect=RuntimeError("broken"))
         type(adapter.target_task).parent = broken_parent
         assert adapter._resolve_project_path() is None
+
+
+class TestExecutionSerialization:
+    @pytest.mark.asyncio
+    async def test_concurrent_evaluations_are_serialized(self):
+        """Two concurrent evaluate() calls must not overlap execution.
+
+        run_scorer is called inside run_in_executor (a thread pool thread).
+        We replace it with a slow mock that tracks concurrency via a
+        threading counter. If the asyncio.Lock serialization works, the
+        counter never exceeds 1.
+        """
+        cfg1 = _make_config()
+        cfg2 = _make_config()
+        adapter1 = CodeEvalAdapter(cfg1)
+        adapter2 = CodeEvalAdapter(cfg2)
+        grant_code_eval_trust("/fake/project/path")
+
+        counter_lock = threading.Lock()
+        concurrency_counter = 0
+        max_concurrency = 0
+
+        def slow_run_scorer(code, inputs, timeout):
+            nonlocal concurrency_counter, max_concurrency
+            with counter_lock:
+                concurrency_counter += 1
+                max_concurrency = max(max_concurrency, concurrency_counter)
+            time.sleep(0.05)
+            with counter_lock:
+                concurrency_counter -= 1
+            return {"ok": {"accuracy": 1.0}}
+
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
+            side_effect=slow_run_scorer,
+        ):
+            await asyncio.gather(
+                adapter1.evaluate(_inp()),
+                adapter2.evaluate(_inp()),
+            )
+
+        assert max_concurrency == 1, (
+            f"Expected serialized execution (max concurrency 1), got {max_concurrency}"
+        )

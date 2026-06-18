@@ -130,11 +130,11 @@ class TestErrors:
         code = (
             "import time\n"
             "def score(output, trace, reference_data, task_input, kiln):\n"
-            "    time.sleep(60)\n"
+            "    time.sleep(10)\n"
             "    return {'x': 1.0}\n"
         )
         with pytest.raises(RuntimeError, match="timed out"):
-            run_scorer(code, _inputs(), timeout=2)
+            run_scorer(code, _inputs(), timeout=1)
 
     def test_crash_via_os_exit(self):
         code = (
