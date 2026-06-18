@@ -98,4 +98,14 @@ describe("LlmJudgeResult", () => {
     expect(container.textContent).toContain("quality:")
     expect(container.textContent).toContain("0.85")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: { scores: { quality: 0.9 } },
+    })
+    expect(container.textContent).toContain("quality:")
+    expect(container.textContent).not.toContain("Model:")
+    expect(container.textContent).not.toContain("G-Eval")
+    expect(container.textContent).not.toContain("Chain-of-thought")
+  })
 })

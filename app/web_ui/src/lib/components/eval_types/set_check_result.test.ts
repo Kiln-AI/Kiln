@@ -127,4 +127,17 @@ describe("SetCheckResult", () => {
     expect(container.textContent).toContain("match:")
     expect(container.textContent).toContain("0.00")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(SetCheckResult, {
+      props: { scores: { match: 1.0 } },
+    })
+    expect(container.textContent).toContain("match:")
+    expect(container.textContent).not.toContain("Expected:")
+    expect(container.textContent).not.toContain("Reference key:")
+    expect(container.textContent).not.toContain("Expression:")
+    expect(container.textContent).not.toContain("Output is subset")
+    expect(container.textContent).not.toContain("Output is superset")
+    expect(container.textContent).not.toContain("Output equals expected")
+  })
 })

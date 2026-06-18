@@ -130,4 +130,13 @@ describe("StepCountCheckResult", () => {
     expect(container.textContent).toContain("match:")
     expect(container.textContent).toContain("0.00")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(StepCountCheckResult, {
+      props: { scores: { match: 1.0 } },
+    })
+    expect(container.textContent).toContain("match:")
+    expect(container.textContent).not.toContain("Counting:")
+    expect(container.textContent).not.toContain("Allowed range:")
+  })
 })

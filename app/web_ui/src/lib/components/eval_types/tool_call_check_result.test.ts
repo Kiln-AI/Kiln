@@ -140,4 +140,15 @@ describe("ToolCallCheckResult", () => {
     expect(container.textContent).toContain("match:")
     expect(container.textContent).toContain("1.00")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(ToolCallCheckResult, {
+      props: { scores: { match: 1.0 } },
+    })
+    expect(container.textContent).toContain("match:")
+    expect(container.textContent).not.toContain("Tools:")
+    expect(container.textContent).not.toContain("All expected tools")
+    expect(container.textContent).not.toContain("Any expected tool")
+    expect(container.textContent).not.toContain("Fails on unexpected")
+  })
 })

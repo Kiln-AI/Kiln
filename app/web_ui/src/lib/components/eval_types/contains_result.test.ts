@@ -128,4 +128,15 @@ describe("ContainsResult", () => {
     expect(container.textContent).toContain("match:")
     expect(container.textContent).toContain("1.00")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(ContainsResult, {
+      props: { scores: { match: 1.0 } },
+    })
+    expect(container.textContent).toContain("match:")
+    expect(container.textContent).not.toContain("Substring:")
+    expect(container.textContent).not.toContain("Mode:")
+    expect(container.textContent).not.toContain("Reference key:")
+    expect(container.textContent).not.toContain("Expression:")
+  })
 })

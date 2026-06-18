@@ -10,23 +10,24 @@ import {
 } from "./registry"
 import type { EvalConfig } from "$lib/types"
 
+const EXPECTED_TYPES: V2EvalType[] = [
+  "exact_match",
+  "pattern_match",
+  "contains",
+  "set_check",
+  "tool_call_check",
+  "step_count_check",
+  "llm_judge",
+  "code_eval",
+]
+
 describe("ALL_V2_EVAL_TYPES", () => {
-  it("contains exactly 8 entries", () => {
-    expect(ALL_V2_EVAL_TYPES).toHaveLength(8)
+  it("contains exactly the expected entries", () => {
+    expect(ALL_V2_EVAL_TYPES).toHaveLength(EXPECTED_TYPES.length)
   })
 
   it("contains all expected type values", () => {
-    const expected: V2EvalType[] = [
-      "exact_match",
-      "pattern_match",
-      "contains",
-      "set_check",
-      "tool_call_check",
-      "step_count_check",
-      "llm_judge",
-      "code_eval",
-    ]
-    for (const t of expected) {
+    for (const t of EXPECTED_TYPES) {
       expect(ALL_V2_EVAL_TYPES).toContain(t)
     }
   })

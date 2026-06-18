@@ -71,4 +71,12 @@ describe("CodeEvalResult", () => {
     expect(container.textContent).toContain("accuracy:")
     expect(container.textContent).toContain("0.75")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(CodeEvalResult, {
+      props: { scores: { accuracy: 0.9 } },
+    })
+    expect(container.textContent).toContain("accuracy:")
+    expect(container.textContent).not.toContain("Timeout:")
+  })
 })

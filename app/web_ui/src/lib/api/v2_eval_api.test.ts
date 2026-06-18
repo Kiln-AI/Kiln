@@ -66,28 +66,6 @@ describe("testV2Eval", () => {
     const result = await testV2Eval("p", "t", "e", request)
     expect(result.scores).toEqual({ accuracy: 1.0, relevance: 0.8 })
   })
-
-  it("throws on error response with message field", async () => {
-    mockPost.mockResolvedValue({
-      data: undefined,
-      error: { message: "Validation error" },
-    })
-
-    await expect(testV2Eval("p", "t", "e", request)).rejects.toThrow(
-      "test_v2_eval failed: Validation error",
-    )
-  })
-
-  it("falls back to detail field when message is absent", async () => {
-    mockPost.mockResolvedValue({
-      data: undefined,
-      error: { detail: "Detail fallback" },
-    })
-
-    await expect(testV2Eval("p", "t", "e", request)).rejects.toThrow(
-      "test_v2_eval failed: Detail fallback",
-    )
-  })
 })
 
 describe("createEvalConfig", () => {
@@ -131,28 +109,6 @@ describe("createEvalConfig", () => {
     const result = await createEvalConfig("p", "t", "e", request)
     expect(result.id).toBe("cfg-1")
     expect(result.config_type).toBe("v2")
-  })
-
-  it("throws on error response with message field", async () => {
-    mockPost.mockResolvedValue({
-      data: undefined,
-      error: { message: "Internal Server Error" },
-    })
-
-    await expect(createEvalConfig("p", "t", "e", request)).rejects.toThrow(
-      "create_eval_config failed: Internal Server Error",
-    )
-  })
-
-  it("falls back to detail field when message is absent", async () => {
-    mockPost.mockResolvedValue({
-      data: undefined,
-      error: { detail: "Detail fallback" },
-    })
-
-    await expect(createEvalConfig("p", "t", "e", request)).rejects.toThrow(
-      "create_eval_config failed: Detail fallback",
-    )
   })
 
   it("sends optional model_name and provider when provided", async () => {
@@ -199,28 +155,6 @@ describe("checkCodeEvalTrust", () => {
     const result = await checkCodeEvalTrust("proj-1")
     expect(result.trusted).toBe(true)
   })
-
-  it("throws on error response with message field", async () => {
-    mockGet.mockResolvedValue({
-      data: undefined,
-      error: { message: "Server Error" },
-    })
-
-    await expect(checkCodeEvalTrust("proj-1")).rejects.toThrow(
-      "code_eval_trust check failed: Server Error",
-    )
-  })
-
-  it("falls back to detail field when message is absent", async () => {
-    mockGet.mockResolvedValue({
-      data: undefined,
-      error: { detail: "Detail fallback" },
-    })
-
-    await expect(checkCodeEvalTrust("proj-1")).rejects.toThrow(
-      "code_eval_trust check failed: Detail fallback",
-    )
-  })
 })
 
 describe("grantCodeEvalTrust", () => {
@@ -247,26 +181,61 @@ describe("grantCodeEvalTrust", () => {
     const result = await grantCodeEvalTrust("proj-1")
     expect(result.trusted).toBe(true)
   })
+})
 
+describe.each([
+  {
+    fnName: "testV2Eval",
+    callFn: () =>
+      testV2Eval("p", "t", "e", {
+        properties: {
+          type: "exact_match",
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+        eval_input: { final_message: "hello" },
+      } as TestV2EvalRequest),
+    setupMock: (error: Record<string, unknown>) =>
+      mockPost.mockResolvedValue({ data: undefined, error }),
+    expectedPrefix: "test_v2_eval failed",
+  },
+  {
+    fnName: "createEvalConfig",
+    callFn: () =>
+      createEvalConfig("p", "t", "e", {
+        type: "v2",
+        properties: { type: "exact_match", case_sensitive: true },
+        model_name: null,
+        provider: null,
+      } as CreateEvalConfigRequest),
+    setupMock: (error: Record<string, unknown>) =>
+      mockPost.mockResolvedValue({ data: undefined, error }),
+    expectedPrefix: "create_eval_config failed",
+  },
+  {
+    fnName: "checkCodeEvalTrust",
+    callFn: () => checkCodeEvalTrust("proj-1"),
+    setupMock: (error: Record<string, unknown>) =>
+      mockGet.mockResolvedValue({ data: undefined, error }),
+    expectedPrefix: "code_eval_trust check failed",
+  },
+  {
+    fnName: "grantCodeEvalTrust",
+    callFn: () => grantCodeEvalTrust("proj-1"),
+    setupMock: (error: Record<string, unknown>) =>
+      mockPost.mockResolvedValue({ data: undefined, error }),
+    expectedPrefix: "grant_code_eval_trust failed",
+  },
+])("$fnName error handling", ({ callFn, setupMock, expectedPrefix }) => {
   it("throws on error response with message field", async () => {
-    mockPost.mockResolvedValue({
-      data: undefined,
-      error: { message: "Forbidden" },
-    })
-
-    await expect(grantCodeEvalTrust("proj-1")).rejects.toThrow(
-      "grant_code_eval_trust failed: Forbidden",
-    )
+    setupMock({ message: "Server Error" })
+    await expect(callFn()).rejects.toThrow(`${expectedPrefix}: Server Error`)
   })
 
   it("falls back to detail field when message is absent", async () => {
-    mockPost.mockResolvedValue({
-      data: undefined,
-      error: { detail: "Detail fallback" },
-    })
-
-    await expect(grantCodeEvalTrust("proj-1")).rejects.toThrow(
-      "grant_code_eval_trust failed: Detail fallback",
-    )
+    setupMock({ detail: "Detail fallback" })
+    await expect(callFn()).rejects.toThrow(`${expectedPrefix}: Detail fallback`)
   })
 })

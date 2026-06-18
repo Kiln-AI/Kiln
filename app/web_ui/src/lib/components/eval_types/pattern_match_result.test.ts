@@ -113,4 +113,14 @@ describe("PatternMatchResult", () => {
     expect(container.textContent).toContain("match:")
     expect(container.textContent).toContain("0.00")
   })
+
+  it("does not show config details when eval_config is null", () => {
+    const { container } = render(PatternMatchResult, {
+      props: { scores: { match: 1.0 } },
+    })
+    expect(container.textContent).toContain("match:")
+    expect(container.textContent).not.toContain("Pattern:")
+    expect(container.textContent).not.toContain("Mode:")
+    expect(container.textContent).not.toContain("Expression:")
+  })
 })
