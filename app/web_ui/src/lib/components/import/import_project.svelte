@@ -110,6 +110,7 @@
     if (step === "local_file") {
       import_project_path = ""
       import_error = null
+      import_conflict = false
       select_file_unavailable = false
       import_done = false
     }
@@ -233,12 +234,20 @@
   // Local file import logic
   let select_file_unavailable = false
   $: show_select_file = !select_file_unavailable && !import_project_path
-  $: import_submit_visible = !show_select_file
+  $: import_submit_visible = !show_select_file && !import_conflict
   let import_project_path = ""
   let import_error: KilnError | null = null
   let import_submitting = false
   let import_saved = false
   let import_done = false
+  let import_conflict = false
+
+  function on_path_input() {
+    if (import_conflict) {
+      import_conflict = false
+      import_error = null
+    }
+  }
 
   async function select_project_file() {
     try {
@@ -264,21 +273,28 @@
     }
   }
 
-  const import_project = async () => {
+  const import_project = async (remove_conflicting_id = false) => {
     try {
       import_submitting = true
       import_saved = false
-      const { data, error: post_error } = await client.POST(
-        "/api/import_project",
-        {
-          params: {
-            query: {
-              project_path: import_project_path,
-            },
+      import_error = null
+      import_conflict = false
+      const {
+        data,
+        error: post_error,
+        response,
+      } = await client.POST("/api/import_project", {
+        params: {
+          query: {
+            project_path: import_project_path,
+            ...(remove_conflicting_id && { remove_conflicting_id: true }),
           },
         },
-      )
+      })
       if (post_error) {
+        if (response?.status === 409) {
+          import_conflict = true
+        }
         throw post_error
       }
 
@@ -360,7 +376,7 @@
     {#if !import_done}
       <FormContainer
         submit_label="Import Project"
-        on:submit={import_project}
+        on:submit={() => import_project()}
         bind:submitting={import_submitting}
         bind:error={import_error}
         bind:saved={import_saved}
@@ -371,14 +387,25 @@
             Select Project File
           </button>
         {:else}
-          <FormElement
-            label="Existing Project Path"
-            description="The path to a project.kiln file. For example, /Users/username/my_project/project.kiln"
-            info_description="You must enter the full path to the file, not just a filename. The path should be to a project.kiln file."
-            id="import_project_path"
-            inputType="input"
-            bind:value={import_project_path}
-          />
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div on:input={on_path_input}>
+            <FormElement
+              label="Existing Project Path"
+              description="The path to a project.kiln file. For example, /Users/username/my_project/project.kiln"
+              info_description="You must enter the full path to the file, not just a filename. The path should be to a project.kiln file."
+              id="import_project_path"
+              inputType="input"
+              bind:value={import_project_path}
+            />
+          </div>
+        {/if}
+        {#if import_conflict}
+          <button
+            class="btn btn-error btn-outline"
+            on:click={() => import_project(true)}
+          >
+            Remove existing and re-import
+          </button>
         {/if}
       </FormContainer>
     {/if}

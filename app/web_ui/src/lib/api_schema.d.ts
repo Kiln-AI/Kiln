@@ -10686,6 +10686,8 @@ export interface operations {
             query: {
                 /** @description File path to the project.kiln file to import. */
                 project_path: string;
+                /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
+                remove_conflicting_id?: boolean;
             };
             header?: never;
             path?: never;

@@ -32,7 +32,7 @@ See `functional_spec.md` and `architecture.md` for details.
   "Remove existing and re-sync" button + `run_save` refactor in `step_complete.svelte`.
   Regenerate OpenAPI bindings. (Spec: Part C.1 entry, C.3–C.4 frontend.)
 
-- [ ] **Phase 4 — Local-folder import parity.**
+- [x] **Phase 4 — Local-folder import parity.**
   `remove_conflicting_id` query param on `POST /api/import_project` (libs/server, via
   the core helper); red "Remove existing and re-import" button on the local-file step
   in `import_project.svelte` using `response.status === 409`. Regenerate bindings.
