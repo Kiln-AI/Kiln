@@ -711,13 +711,9 @@
       >
     </div>
     <p class="text-sm text-gray-600">
-      Code evals execute Python in a sandboxed subprocess. While basic
-      safeguards are in place, malicious code could still pose risks. Review the
-      score function carefully before granting trust.
-    </p>
-    <p class="text-sm text-gray-600">
-      Trust is granted for this session only and applies to all code evals in
-      this project.
+      Review the score function carefully before granting trust. Trust is
+      granted for this session only and applies to all code evals in this
+      project.
     </p>
   </div>
 </Dialog>

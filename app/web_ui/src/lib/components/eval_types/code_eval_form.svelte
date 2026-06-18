@@ -165,6 +165,8 @@ def score(output, trace, reference_data, task_input, kiln):
     inputType="input_number"
     bind:value={timeout_seconds}
     placeholder="30"
+    min={1}
+    max={300}
   />
 </div>
 

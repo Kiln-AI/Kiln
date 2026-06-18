@@ -36,7 +36,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 11 — code_eval: serialize execution.** 3.1 (full-execution serialization via a module-level `asyncio.Lock` in `CodeEvalAdapter.evaluate()`, keeping the narrow spawn-race `threading.Lock`); + 6.11 (sandbox timeout test `sleep(60)`/2s → `sleep(10)`/1s). The subtlest change — its own commit.
 
-- [ ] **Phase 12 — code_eval: UI & doc polish.** 3.2 (timeout `min={1} max={300}`), 3.3 (trust-dialog wording — remove all method/reassurance language), 3.4 (`five_star` docstring).
+- [x] **Phase 12 — code_eval: UI & doc polish.** 3.2 (timeout `min={1} max={300}`), 3.3 (trust-dialog wording — remove all method/reassurance language), 3.4 (`five_star` docstring).
 
 - [ ] **Phase 13 — Frontend: typed form contract.** 4.2/4.4 (`EvalTypeFormApi` interface; type the registry's `createFormComponent`; narrow call sites; drop the `eslint-disable`s).
 

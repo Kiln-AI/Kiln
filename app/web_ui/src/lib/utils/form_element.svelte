@@ -48,6 +48,8 @@
   export let inline_action: InlineAction | null = null
   export let aria_label: string | null = null
   export let hide_label: boolean = false
+  export let min: number | null = null
+  export let max: number | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -256,6 +258,8 @@
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
+        {min}
+        {max}
       />
     {:else if inputType === "select"}
       <select

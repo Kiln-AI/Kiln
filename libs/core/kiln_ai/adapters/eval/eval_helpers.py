@@ -90,9 +90,9 @@ class KilnEvalHelpers:
 
     @staticmethod
     def five_star(rating: int | float) -> float:
-        """Return a clamped 1-5 star rating as a float.
+        """Validate and return a 1-5 star rating as a float.
 
-        Raises ValueError if *rating* is outside [1, 5].
+        Raises ValueError if *rating* is not a number or is outside [1, 5].
         """
         if not isinstance(rating, (int, float)) or isinstance(rating, bool):
             raise ValueError(f"rating must be a number, got {type(rating).__name__}")
