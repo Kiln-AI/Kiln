@@ -18,6 +18,10 @@
   // Tags scoping the extraction run — only documents carrying these tags are
   // extracted. Documents already extracted with the chosen extractor are skipped.
   export let target_tags: string[] = []
+  // Document-id allow-list scoping the run. When set, only these documents are
+  // extracted (combined with target_tags). Lets a caller extract specific docs
+  // without having to tag them. Empty = no id filter.
+  export let target_document_ids: string[] = []
   export let selected_extractor_id: string | null = null
   // When true, default the selector to the most-recently-created (non-archived)
   // extractor so the common case is one click.
@@ -178,6 +182,9 @@
       )
       if (target_tags.length > 0) {
         url.searchParams.set("tags", target_tags.join(","))
+      }
+      if (target_document_ids.length > 0) {
+        url.searchParams.set("document_ids", target_document_ids.join(","))
       }
 
       // Ensure only one live stream - we don't want to trigger parallel

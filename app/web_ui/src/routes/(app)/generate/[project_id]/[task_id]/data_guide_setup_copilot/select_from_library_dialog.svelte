@@ -159,10 +159,7 @@
     ? []
     : [
         {
-          label:
-            selected_ids.length > 1
-              ? `Add ${selected_ids.length} Documents`
-              : "Add",
+          label: "Add",
           asyncAction: handle_add_without_extraction,
           disabled: selected_ids.length === 0,
           isPrimary: true,

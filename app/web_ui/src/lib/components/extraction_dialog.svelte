@@ -9,6 +9,9 @@
   export let keyboard_submit: boolean = false
   export let selected_extractor_id: string | null = null
   export let target_tags: string[] = []
+  // Optional document-id allow-list, forwarded to the extractor picker. Lets a
+  // caller scope the run to specific documents without tagging them.
+  export let target_document_ids: string[] = []
   // When true, default the selector to the most-recently-created (non-archived)
   // extractor so the common case is one click. Off by default to leave other
   // callers' behavior unchanged.
@@ -77,6 +80,7 @@
       bind:error
       bind:selected_extractor_id
       {target_tags}
+      {target_document_ids}
       {preselect_default_extractor}
       show_run_button={false}
       on:extractor_config_selected={(e) =>

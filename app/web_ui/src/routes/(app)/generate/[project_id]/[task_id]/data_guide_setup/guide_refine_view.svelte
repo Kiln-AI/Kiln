@@ -9,7 +9,6 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
-    Task,
     KilnAgentRunConfigProperties,
     RunConfigProperties,
     DataGuide,
@@ -23,7 +22,6 @@
 
   export let project_id: string
   export let guide: string
-  export let task: Task | null = null
   // The full DataGuide model so we can surface metadata (created_at /
   // created_by) in the right column.
   export let data_guide: DataGuide | null = null
@@ -272,7 +270,6 @@
         bind:this={run_options_tiles}
         mode="link"
         {project_id}
-        {task}
       />
     </aside>
   </div>

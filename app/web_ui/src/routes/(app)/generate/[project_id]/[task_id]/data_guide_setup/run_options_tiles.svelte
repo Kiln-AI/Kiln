@@ -8,7 +8,6 @@
   //
   // Parents read the resulting config via get_input_run_config().
   import { onMount } from "svelte"
-  import type { Task } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import {
@@ -21,11 +20,6 @@
   import type { AvailableModels, RunConfigProperties } from "$lib/types"
 
   export let project_id: string
-  // Optional — Task is currently unused but kept on the API for parity with the
-  // copilot variant that needs it for run-config presets.
-  export let task: Task | null = null
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  $: void task
   export let mode: "tiles" | "link" = "tiles"
 
   let input_config_dialog: Dialog

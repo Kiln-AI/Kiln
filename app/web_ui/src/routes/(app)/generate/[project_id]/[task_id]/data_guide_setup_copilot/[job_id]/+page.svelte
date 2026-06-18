@@ -87,19 +87,20 @@
       })
       goto(base_url(), { replaceState: true })
     } catch (e) {
-      // Fetching the finished result failed (e.g. transient network). Let the
-      // user retry rather than losing the completed draft.
-      handled = false
+      // Fetching the finished result failed (e.g. transient network). Surface
+      // the error and let the user retry rather than losing the completed
+      // draft. Keep `handled` true: resetting it here would re-fire the
+      // reactive block above (status is still "succeeded") and auto-retry in a
+      // tight loop instead of waiting for the user's Retry click.
       error = createKilnError(e)
     }
   }
 
   function retry_result() {
     error = null
-    if (!handled) {
-      handled = true
-      handle_success()
-    }
+    // `handled` stays true across the failed fetch (see handle_success catch),
+    // so don't gate on it — just re-run the result fetch.
+    handle_success()
   }
 
   function back_to_setup() {

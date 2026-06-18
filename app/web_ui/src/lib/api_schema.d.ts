@@ -3736,6 +3736,7 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
+             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -6989,7 +6990,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        "KilnBaseModel-Input": {
+        KilnBaseModel: {
             /**
              * V
              * @description Schema version for migration support.
@@ -7017,48 +7018,6 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-        };
-        /**
-         * KilnBaseModel
-         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
-         *
-         *     Attributes:
-         *         v (int): Schema version number for migration support
-         *         id (str): Unique identifier for the model instance
-         *         path (Path): File system path where the model is stored
-         *         created_at (datetime): Timestamp when the model was created
-         *         created_by (str): User ID of the creator
-         */
-        "KilnBaseModel-Output": {
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
-            /**
-             * Id
-             * @description Unique identifier for this record.
-             */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -9325,8 +9284,11 @@ export interface components {
          * @description Input to kick off the input data guide draft job.
          */
         StartDataGuideJobApiInput: {
-            /** @description The task info including prompt, input schema, and output schema. */
-            target_task_info: components["schemas"]["TaskInfoApi"];
+            /**
+             * Task Input Schema
+             * @description The task's input JSON schema. The Data Guide describes input shape only, so this is the sole piece of task info the job needs — the prompt is resolved server-side and the output schema is deliberately excluded (output policy must never reach the guide LLM).
+             */
+            task_input_schema: string;
             /**
              * Input Examples
              * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
@@ -9935,7 +9897,7 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -10663,10 +10625,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig
@@ -12509,6 +12467,8 @@ export interface operations {
             query?: {
                 /** @description Comma-separated list of tags to filter documents by. */
                 tags?: string | null;
+                /** @description Comma-separated list of document ids to filter by. Combined (AND) with tags when both are set. */
+                document_ids?: string | null;
             };
             header?: never;
             path: {

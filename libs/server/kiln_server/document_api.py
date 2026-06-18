@@ -942,7 +942,12 @@ def get_documents_filtered(
     project: Project,
     exclude_extracted_by_extractor_config_id: str | None = None,
     target_tags: list[str] | None = None,
+    target_document_ids: list[str] | None = None,
 ) -> list[Document]:
+    # An explicit id allow-list scopes the run to specific documents (used when
+    # the caller knows exactly which documents to extract and doesn't want to
+    # tag them just to select them).
+    document_id_set = set(target_document_ids) if target_document_ids else None
     documents: list[Document] = []
     for document in project.documents(readonly=True):
         # no tags target every document
@@ -950,6 +955,9 @@ def get_documents_filtered(
             tag in (document.tags or []) for tag in target_tags
         )
         if not is_target_document:
+            continue
+
+        if document_id_set is not None and document.id not in document_id_set:
             continue
 
         if exclude_extracted_by_extractor_config_id:
@@ -1408,11 +1416,22 @@ def connect_document_api(app: FastAPI):
             str | None,
             Query(description="Comma-separated list of tags to filter documents by."),
         ] = None,
+        document_ids: Annotated[
+            str | None,
+            Query(
+                description="Comma-separated list of document ids to filter by. Combined (AND) with tags when both are set."
+            ),
+        ] = None,
     ) -> StreamingResponse:
         save_context = build_save_context(request)
         target_tags: list[str] | None = None
         if tags:
             target_tags = parse_comma_separated_tags(tags)
+        target_document_ids: list[str] | None = None
+        if document_ids:
+            target_document_ids = [
+                doc_id.strip() for doc_id in document_ids.split(",") if doc_id.strip()
+            ]
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
         async with shared_async_lock_manager.acquire(
@@ -1438,6 +1457,7 @@ def connect_document_api(app: FastAPI):
                 project,
                 exclude_extracted_by_extractor_config_id=extractor_config_id,
                 target_tags=target_tags,
+                target_document_ids=target_document_ids,
             )
 
             extractor_runner = ExtractorRunner(

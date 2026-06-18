@@ -11,9 +11,8 @@
   import GuidePreview from "./guide_preview.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
-  import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
+  import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { agentInfo } from "$lib/agent"
-  import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import posthog from "posthog-js"
@@ -56,9 +55,6 @@
 
   // Number of successful refine/regenerate cycles before save, for analytics.
   let refine_iterations = 0
-
-  // The task being edited.
-  let task: Task | null = null
 
   // Lifted out of GuideSetupForm so the user's examples survive the
   // setup → generating → setup unmount cycle that happens when a preview
@@ -109,22 +105,6 @@
       return
     }
 
-    if ($current_task?.id === task_id) {
-      task = $current_task
-    } else {
-      try {
-        const { data: task_data } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (task_data) {
-          task = task_data
-        }
-      } catch {
-        // Non-critical — `task` is bound nullable downstream. The setup form
-        // remains usable without it.
-      }
-    }
 
     // Seed from the synth-page handoff: if the user clicked "Set Up Data
     // Guide" and added their first example via the dialog before navigating
@@ -329,7 +309,6 @@
       <GuideSetupForm
         {project_id}
         {task_id}
-        {task}
         bind:guide_examples
         bind:page_error={error}
         on:generate_preview={handle_generate_preview}

@@ -94,9 +94,13 @@
   $: existing_task_run_ids = entries
     .map((e) => e.task_run_id)
     .filter((id): id is string => !!id)
-  // Soft count cap: only the first MAX_TOTAL_ENTRIES are analyzed. We don't
-  // block adding more; this just drives a heads-up notice.
-  $: over_count = entries.length > MAX_TOTAL_ENTRIES
+  // Hard total cap: the example count can't exceed MAX_TOTAL_ENTRIES. Each add
+  // is truncated to the remaining room (see append_with_cap), so once at the
+  // cap we disable adding more.
+  $: at_cap = entries.length >= MAX_TOTAL_ENTRIES
+  // Set when the most recent add dropped items to stay under the cap. Cleared
+  // on a non-truncating add or on removal.
+  let truncation_notice = ""
   // Examples whose resolved text exceeds the per-example limit. Computed
   // reactively so document entries are flagged as soon as extraction populates
   // their text — not just at Continue. The analyze step hard-blocks on these.
@@ -137,14 +141,49 @@
     dispatch("change", { entries })
   }
 
+  // Append `incoming` up to the room left under MAX_TOTAL_ENTRIES. Callers pass
+  // entries already in priority order — most-recent-first for tag picks, file
+  // order for CSV/uploads — so the survivors are the ones we want to keep.
+  // `kept_label` ("most recent" / "first") and the nouns shape the user notice
+  // when some are dropped. Truncating here (rather than at analyze time) means
+  // the drop is visible the moment it happens.
+  function append_with_cap(
+    incoming: InputExampleEntry[],
+    noun_singular: string,
+    noun_plural: string,
+    kept_label: string,
+  ) {
+    const remaining = Math.max(0, MAX_TOTAL_ENTRIES - entries.length)
+    const accepted = incoming.slice(0, remaining)
+    const dropped = incoming.length - accepted.length
+    if (accepted.length > 0) {
+      entries = [...entries, ...accepted]
+      emit_change()
+    }
+    if (dropped === 0) {
+      truncation_notice = ""
+      return
+    }
+    const noun = dropped === 1 ? noun_singular : noun_plural
+    const verb = dropped === 1 ? "was" : "were"
+    truncation_notice =
+      accepted.length === 0
+        ? `You're at the ${MAX_TOTAL_ENTRIES}-example limit — ${dropped} ${noun} ${verb} not added. Remove some to add more.`
+        : `Added the ${kept_label} ${accepted.length} — ${dropped} ${noun} ${verb} skipped to stay under the ${MAX_TOTAL_ENTRIES}-example limit.`
+  }
+
   function remove_entry(index: number) {
     entries = entries.filter((_, i) => i !== index)
+    truncation_notice = ""
     emit_change()
   }
 
   // --- Source picker dispatch ----------------------------------------------
 
   function open_source_picker() {
+    // Guards every entry point (main button, empty state, See All "add") once
+    // the cap is reached.
+    if (at_cap) return
     add_samples_picker?.show()
   }
 
@@ -180,16 +219,15 @@
       text: "",
       document_id: d.id,
     }))
-    entries = [...entries, ...new_entries]
-    emit_change()
+    append_with_cap(new_entries, "document", "documents", "first")
     library_has_docs = true
   }
 
   // --- Source dialog handlers -----------------------------------------------
 
-  // The library dialog tags the picks and runs the inline extraction step
-  // itself; here we just add them as (text-less) document entries. Their text is
-  // hydrated when the dialog reports extraction_complete.
+  // Add the picked library docs as (text-less) document entries. They're not
+  // tagged — the Continue-step extraction scopes by document id. Their text is
+  // hydrated when that extraction completes.
   function handle_library_add(event: CustomEvent<{ picks: LibraryPick[] }>) {
     const new_entries: InputExampleEntry[] = event.detail.picks.map((p) => ({
       source: "document",
@@ -197,8 +235,9 @@
       text: "",
       document_id: p.document_id,
     }))
-    entries = [...entries, ...new_entries]
-    emit_change()
+    // Picks arrive newest-first (the library list is sorted by created_at desc),
+    // so truncation keeps the most recent.
+    append_with_cap(new_entries, "document", "documents", "most recent")
   }
 
   function handle_existing_runs_add(event: CustomEvent<{ runs: TaskRun[] }>) {
@@ -211,8 +250,9 @@
         task_run_id: id,
       }
     })
-    entries = [...entries, ...new_entries]
-    emit_change()
+    // Runs arrive newest-first (dataset sorted by created_at desc), so
+    // truncation keeps the most recent.
+    append_with_cap(new_entries, "run", "runs", "most recent")
   }
 
   function handle_csv_import(event: CustomEvent<{ rows: CsvImportRow[] }>) {
@@ -223,20 +263,22 @@
         text: r.text,
       }),
     )
-    entries = [...entries, ...new_entries]
-    emit_change()
+    append_with_cap(new_entries, "row", "rows", "first")
   }
 
   function handle_structured_add(event: CustomEvent<{ text: string }>) {
-    entries = [
-      ...entries,
-      {
-        source: "manual",
-        label: `Manual ${manual_count + 1}`,
-        text: event.detail.text,
-      },
-    ]
-    emit_change()
+    append_with_cap(
+      [
+        {
+          source: "manual",
+          label: `Manual ${manual_count + 1}`,
+          text: event.detail.text,
+        },
+      ],
+      "example",
+      "examples",
+      "first",
+    )
   }
 
   // --- All Samples handlers ------------------------------------------------
@@ -288,25 +330,19 @@
           Examples
         </div>
         <div class="text-sm text-[#5a5a5a] mt-1">
-          {#if over_count}
-            <span class="font-semibold text-[#131517] tabular-nums"
-              >{MAX_TOTAL_ENTRIES}</span
+          <span class="font-semibold text-[#131517] tabular-nums"
+            >{entries.length}
+            {entries.length === 1 ? "example" : "examples"}</span
+          >
+          will be analyzed to draft your guide.{#if at_cap}
+            <span class="text-[#131517]">
+              You're at the {MAX_TOTAL_ENTRIES}-example limit.</span
             >
-            of
-            <span class="tabular-nums">{entries.length}</span>
-            examples will be analyzed to draft your guide.
-          {:else}
-            <span class="font-semibold text-[#131517] tabular-nums"
-              >{entries.length}
-              {entries.length === 1 ? "example" : "examples"}</span
-            >
-            will be analyzed to draft your guide.
           {/if}
         </div>
-        {#if over_count}
-          <div class="text-sm text-[#5a5a5a] mt-1">
-            You've added more than {MAX_TOTAL_ENTRIES} examples — only the first
-            {MAX_TOTAL_ENTRIES} will be analyzed.
+        {#if truncation_notice}
+          <div class="text-sm text-warning mt-1">
+            {truncation_notice}
           </div>
         {/if}
         {#if over_length_count > 0}
@@ -336,6 +372,10 @@
           type="button"
           class="btn btn-sm btn-primary btn-outline gap-1.5"
           on:click={open_source_picker}
+          disabled={at_cap}
+          title={at_cap
+            ? `You're at the ${MAX_TOTAL_ENTRIES}-example limit. Remove some to add more.`
+            : undefined}
         >
           Add Examples
         </button>
@@ -408,6 +448,7 @@
   auto_tags={[DATA_GUIDE_DOC_TAG]}
   close_on_success={true}
   subtitle="Add files to use as example inputs for your data guide."
+  max_files={Math.max(0, MAX_TOTAL_ENTRIES - entries.length)}
   onUploadCompleted={handle_documents_uploaded}
 />
 
@@ -422,11 +463,12 @@
   on:add={open_source_picker}
 />
 
+<!-- No auto_tags: picking an existing library doc must not tag it. Extraction
+     at Continue is scoped by document id, not by tag. -->
 <SelectFromLibraryDialog
   bind:this={select_from_library_dialog}
   {project_id}
   {existing_document_ids}
-  auto_tags={[DATA_GUIDE_DOC_TAG]}
   extract_after_pick={false}
   on:add={handle_library_add}
 />

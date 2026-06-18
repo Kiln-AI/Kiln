@@ -1,7 +1,6 @@
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
-import httpx
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
@@ -9,11 +8,18 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     refine_spec_v1_copilot_refine_spec_post,
     refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
+    get_data_guide_job_result_v1_jobs_data_guide_job_job_id_result_get,
+    get_job_status_v1_jobs_job_type_job_id_status_get,
+    start_data_guide_job_v1_jobs_data_guide_job_start_post,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecInput,
     ClarifySpecOutput,
+    DraftInputDataGuideInput,
     GenerateBatchInput,
     GenerateBatchOutput,
+    JobType,
     RefineSpecInput,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -133,83 +139,62 @@ class CreateSpecWithCopilotRequest(BaseModel):
 # lifecycle so the web UI owns polling and the user can leave the page and
 # come back (or get nudged back via the task-wide progress widget).
 #
-# Raw httpx is used because the generated kiln_ai_server_client doesn't expose
-# the data_guide_job endpoints yet; swap to the typed client methods once it's
-# regenerated post-deploy. Note the path asymmetry: start/result use the
-# underscore segment `data_guide_job`, while status uses the hyphenated
-# job-type value `data-guide-job` (the shared /{job_type}/{job_id}/status route).
-_DATA_GUIDE_JOB_TYPE = "data-guide-job"
-
-
-def _kiln_server_error_detail(response: httpx.Response, fallback: str) -> str:
-    """Surface kiln_server's human-readable `message` from an error body."""
-    if response.content.startswith(b"{"):
-        try:
-            return response.json().get("message") or fallback
-        except ValueError:
-            pass
-    return fallback
+# These go through the generated kiln_ai_server_client like the other copilot
+# and job endpoints. Note the start/result endpoints live under the
+# `data_guide_job` path segment, while status goes through the shared
+# `/{job_type}/{job_id}/status` route keyed by `JobType.DATA_GUIDE_JOB`.
 
 
 async def _start_data_guide_job(
-    client: AuthenticatedClient, draft_payload: dict[str, Any]
+    client: AuthenticatedClient, body: DraftInputDataGuideInput
 ) -> str:
     """Start the Data Guide draft job on kiln_server and return its job id.
     Raises HTTPException on failure."""
-    async with client.get_async_httpx_client() as http:
-        start_response = await http.post(
-            "/v1/jobs/data_guide_job/start", json=draft_payload
+    detailed = (
+        await start_data_guide_job_v1_jobs_data_guide_job_start_post.asyncio_detailed(
+            client=client,
+            body=body,
         )
-    if start_response.status_code != 200:
-        raise HTTPException(
-            status_code=start_response.status_code,
-            detail=_kiln_server_error_detail(
-                start_response,
-                "Failed to start the data guide job. Please try again.",
-            ),
-        )
-    job_id = start_response.json().get("job_id")
-    if not job_id:
+    )
+    response = unwrap_response(
+        detailed,
+        default_detail="Failed to start the data guide job. Please try again.",
+    )
+    if not response.job_id:
         raise HTTPException(
             status_code=500,
             detail="Data guide job did not return a job id.",
         )
-    return job_id
+    return response.job_id
 
 
 async def _get_data_guide_job_status(client: AuthenticatedClient, job_id: str) -> str:
     """Fetch the current status of a Data Guide draft job. Raises HTTPException
     on a transport/server error."""
-    async with client.get_async_httpx_client() as http:
-        status_response = await http.get(
-            f"/v1/jobs/{_DATA_GUIDE_JOB_TYPE}/{job_id}/status"
-        )
-    if status_response.status_code != 200:
-        raise HTTPException(
-            status_code=status_response.status_code,
-            detail=_kiln_server_error_detail(
-                status_response,
-                "Failed to check the data guide job status.",
-            ),
-        )
-    return str(status_response.json().get("status", "")).lower()
+    detailed = await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed(
+        job_type=JobType.DATA_GUIDE_JOB,
+        job_id=job_id,
+        client=client,
+    )
+    response = unwrap_response(
+        detailed,
+        default_detail="Failed to check the data guide job status.",
+    )
+    return response.status.value
 
 
 async def _get_data_guide_job_result(client: AuthenticatedClient, job_id: str) -> str:
     """Fetch the draft guide markdown from a completed Data Guide draft job.
     Raises HTTPException on failure or an empty result."""
-    async with client.get_async_httpx_client() as http:
-        result_response = await http.get(f"/v1/jobs/data_guide_job/{job_id}/result")
-    if result_response.status_code != 200:
-        raise HTTPException(
-            status_code=result_response.status_code,
-            detail=_kiln_server_error_detail(
-                result_response,
-                "Failed to fetch the data guide result.",
-            ),
-        )
-    output = result_response.json().get("output") or {}
-    draft_guide = output.get("draft_guide", "")
+    detailed = await get_data_guide_job_result_v1_jobs_data_guide_job_job_id_result_get.asyncio_detailed(
+        job_id=job_id,
+        client=client,
+    )
+    response = unwrap_response(
+        detailed,
+        default_detail="Failed to fetch the data guide result.",
+    )
+    draft_guide = getattr(response.output, "draft_guide", "") or ""
     if not isinstance(draft_guide, str) or not draft_guide.strip():
         raise HTTPException(
             status_code=500,
@@ -407,13 +392,17 @@ def connect_copilot_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         resolved_task_prompt = _resolve_task_runtime_prompt(task)
 
-        draft_payload = {
-            "task_prompt": resolved_task_prompt,
-            "task_input_schema": input.target_task_info.task_input_schema or None,
-            "input_examples": input.input_examples,
-        }
+        # The Data Guide describes input shape only, so the input carries just
+        # `task_input_schema`. The prompt is resolved server-side (not trusted
+        # from the client), and neither the output schema nor task.description
+        # is forwarded: output policy must never reach the guide LLM.
+        body = DraftInputDataGuideInput(
+            task_prompt=resolved_task_prompt,
+            task_input_schema=input.task_input_schema or None,
+            input_examples=input.input_examples,
+        )
 
-        job_id = await _start_data_guide_job(client, draft_payload)
+        job_id = await _start_data_guide_job(client, body)
         return StartDataGuideJobApiOutput(job_id=job_id)
 
     @app.get(

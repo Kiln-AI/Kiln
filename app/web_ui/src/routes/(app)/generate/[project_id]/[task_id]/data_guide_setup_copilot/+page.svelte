@@ -25,7 +25,6 @@
   import InputExamplesUploader, {
     type InputExampleEntry,
     MAX_EXAMPLE_LENGTH,
-    MAX_TOTAL_ENTRIES,
   } from "./input_examples_uploader.svelte"
   import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
   import { pending_data_guide_draft } from "./pending_draft_store"
@@ -39,11 +38,6 @@
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import ExtractionDialog from "$lib/components/extraction_dialog.svelte"
   import type Dialog from "$lib/ui/dialog.svelte"
-
-  // Tag used to scope the auto-extraction-on-submit popup. Mirrors the
-  // constant in input_examples_uploader.svelte — uploaded docs and library
-  // picks are both tagged with this so a single SSE run extracts them all.
-  const DATA_GUIDE_DOC_TAG = "data_guide_example"
 
   type CopilotState =
     | "loading"
@@ -93,6 +87,11 @@
   })
 
   $: has_entries = entries.length > 0
+  // Document entries (uploads + library picks) to extract at Continue, scoped by
+  // id so picks don't need a tag. The backend skips ones already extracted.
+  $: extraction_document_ids = entries
+    .filter((e) => e.source === "document" && !!e.document_id)
+    .map((e) => e.document_id as string)
 
   onMount(async () => {
     // A fresh Kiln Pro OAuth callback (?code=...) must be handled by the inline
@@ -166,12 +165,23 @@
     // 1. Fresh draft just handed off from the spinner page → drop straight
     //    into preview generation.
     const draft = get(pending_data_guide_draft)
-    if (draft && draft.project_id === project_id && draft.task_id === task_id) {
+    if (draft) {
+      // Always clear the one-shot stash. Only consume it when it matches this
+      // task AND this task's currently-tracked job — a draft stashed by a job
+      // that's since been superseded (user restarted) must not be picked up
+      // here and mis-attributed to the new run.
+      const tracked = getDataGuideJob(project_id, task_id)
+      const matches =
+        draft.project_id === project_id &&
+        draft.task_id === task_id &&
+        (!tracked || tracked.job_id === draft.job_id)
       pending_data_guide_draft.set(null)
-      captured_input_run_config = draft.run_config_properties
-      guide = draft.draft_guide
-      await generate_preview_from_draft()
-      return
+      if (matches) {
+        captured_input_run_config = draft.run_config_properties
+        guide = draft.draft_guide
+        await generate_preview_from_draft()
+        return
+      }
     }
 
     const failed_return = new URLSearchParams(window.location.search).has(
@@ -452,9 +462,10 @@
     if (!captured_input_run_config) {
       throw new KilnError("Pick a kiln_agent run config for input generation.")
     }
-    // Soft count cap: analyze only the first MAX_TOTAL_ENTRIES. Extra examples
-    // are silently dropped here (the UI already warns when over the limit).
-    const to_analyze = ready.slice(0, MAX_TOTAL_ENTRIES)
+    // Examples are capped to MAX_TOTAL_ENTRIES at add time (the uploader
+    // truncates each add to the remaining room), so `ready` is already within
+    // the limit here.
+    const to_analyze = ready
     // Hard length cap: block (don't truncate) when any analyzed example exceeds
     // the per-example limit — name the offenders so the user can fix them.
     const over_limit = to_analyze.filter(
@@ -479,15 +490,12 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            target_task_info: {
-              task_prompt: task?.instruction ?? "",
-              task_input_schema: task?.input_json_schema
-                ? JSON.stringify(task.input_json_schema)
-                : "",
-              task_output_schema: task?.output_json_schema
-                ? JSON.stringify(task.output_json_schema)
-                : "",
-            },
+            // The Data Guide describes input shape only: send just the input
+            // schema. The prompt is resolved server-side and the output schema
+            // is intentionally not sent.
+            task_input_schema: task?.input_json_schema
+              ? JSON.stringify(task.input_json_schema)
+              : "",
             input_examples,
           },
         },
@@ -697,7 +705,6 @@
           bind:this={run_options_tiles}
           mode="link"
           {project_id}
-          {task}
         />
       </FormContainer>
       {#if has_entries}
@@ -755,7 +762,7 @@
 <ExtractionDialog
   bind:dialog={extraction_dialog}
   bind:extracting={extraction_running}
-  target_tags={[DATA_GUIDE_DOC_TAG]}
+  target_document_ids={extraction_document_ids}
   preselect_default_extractor={true}
   on:extraction_complete={handle_extraction_complete}
   on:extraction_failed={handle_extraction_failed}

@@ -9,7 +9,7 @@
   import { createEventDispatcher } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
-  import type { Task, KilnAgentRunConfigProperties } from "$lib/types"
+  import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import RunOptionsTiles from "./run_options_tiles.svelte"
@@ -21,7 +21,6 @@
 
   export let project_id: string
   export let task_id: string
-  export let task: Task | null = null
 
   // page_error is exported so the parent can surface async errors (e.g. a
   // failed preview API call) inline above the submit button instead of in a
@@ -212,7 +211,6 @@
     bind:this={run_options_tiles}
     mode="link"
     {project_id}
-    {task}
   />
   {#if !has_examples}
     <div class="flex justify-end">

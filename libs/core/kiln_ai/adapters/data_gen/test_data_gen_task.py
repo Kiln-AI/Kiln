@@ -846,6 +846,40 @@ def test_generate_guidance_refinement_prompt_documents_legacy_migration():
     assert "Drop" in prompt and "<output_" in prompt
 
 
+def test_generate_guidance_refinement_prompt_handles_legacy_reference_examples():
+    """Regression: a v1 manual guide that names its examples section
+    `# Reference Examples` (the old name) must still go through the four-section
+    manual path and be told to treat that section as equivalent to
+    `# Reference Inputs` (rename + drop any output fields). Older code branched
+    on the literal `# Reference Inputs` string, so a `# Reference Examples`
+    guide silently lost its example content — that branch is gone now."""
+    legacy_guide = (
+        "# Reference Examples\n\n"
+        "## Example 1\n```input\nWhat time is it?\n```\n"
+        "```output\nIt is 3pm.\n```\n"
+    )
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Answer the user's question",
+        current_guide=legacy_guide,
+        preview_samples=[],
+        feedback="",
+        source="manual",
+    )
+
+    # Manual four-section path — NOT the three-section surgical (kiln_pro) path.
+    assert "four top-level sections" in prompt
+    assert "three top-level sections" not in prompt
+    assert "Surgical-edit policy" not in prompt
+
+    # The legacy guide body is carried into the prompt verbatim, so the LLM
+    # actually sees the example content it must migrate.
+    assert "What time is it?" in prompt
+
+    # The metaprompter must teach the legacy rename + output-field drop.
+    assert "# Reference Examples" in prompt
+    assert "rename it to `# Reference Inputs`" in prompt
+
+
 def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
     """Sample blocks should be numbered 1..N in the order received and each
     one should reflect the user's rating. Inputs only — no output rendered."""

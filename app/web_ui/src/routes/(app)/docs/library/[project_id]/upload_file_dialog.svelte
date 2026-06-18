@@ -38,9 +38,15 @@
   // Subtitle shown under the dialog title. Defaults to the document library
   // copy; flows like the Data Guide override it to describe their own context.
   export let subtitle: string = "Add files to your project's document library"
+  // Optional cap on how many files can be selected/uploaded at once. null =
+  // unlimited (default). Excess files are dropped at selection time so they
+  // never reach the library.
+  export let max_files: number | null = null
 
   let upload_error: KilnError | null = null
   let selected_files: File[] = []
+  // Count of files dropped at selection time because they'd exceed max_files.
+  let over_limit_skipped = 0
   let file_input: HTMLInputElement
   let drag_over = false
   const supported_file_types = [
@@ -92,7 +98,15 @@
             existing.name === file.name && existing.size === file.size,
         ),
     )
-    selected_files = [...selected_files, ...newFiles]
+    // Enforce the optional cap here, before upload, so excess files never get
+    // created in the library at all.
+    let accepted = newFiles
+    if (max_files != null) {
+      const room = Math.max(0, max_files - selected_files.length)
+      accepted = newFiles.slice(0, room)
+      over_limit_skipped += newFiles.length - accepted.length
+    }
+    selected_files = [...selected_files, ...accepted]
   }
 
   function removeFile(index: number) {
@@ -334,6 +348,7 @@
     picker_active = false
     extractor_picker?.reset()
     unsupported_files_count = 0
+    over_limit_skipped = 0
     selected_tags = []
   }
 
@@ -346,6 +361,7 @@
     picker_active = false
     extractor_picker?.reset()
     unsupported_files_count = 0
+    over_limit_skipped = 0
     selected_tags = []
     return true
   }
@@ -471,6 +487,12 @@
               {unsupported_files_count} file{unsupported_files_count === 1
                 ? ""
                 : "s"} skipped due to unsupported format
+            </div>
+          {/if}
+          {#if over_limit_skipped > 0 && max_files != null}
+            <div class="text-warning text-sm">
+              {over_limit_skipped} file{over_limit_skipped === 1 ? "" : "s"} not added
+              — you can upload at most {max_files} here.
             </div>
           {/if}
         </div>

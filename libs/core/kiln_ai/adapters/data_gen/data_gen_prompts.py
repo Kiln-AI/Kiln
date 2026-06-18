@@ -402,12 +402,9 @@ def generate_guidance_refinement_prompt(
             task_input_json_schema=task_input_json_schema,
         )
 
-    has_reference_inputs = "# Reference Inputs" in current_guide
+    sections_intro = """A Data Guide has four top-level sections in this order:
 
-    if has_reference_inputs:
-        sections_intro = """A Data Guide has four top-level sections in this order:
-
-1. **`# Reference Inputs`** — concrete example inputs the user has authored or curated. These are the user's ground truth for what realistic inputs look like. **Preserve them verbatim by default — only add, modify, or remove an example when the user's feedback explicitly asks for it** (e.g. "add an example showing X", "input 2 is wrong, it should look like Y", "remove the third example"). If the section is missing and the user hasn't asked for examples, do not invent any.
+1. **`# Reference Inputs`** — concrete example inputs the user has authored or curated. These are the user's ground truth for what realistic inputs look like. **Preserve them verbatim by default — only add, modify, or remove an example when the user's feedback explicitly asks for it** (e.g. "add an example showing X", "input 2 is wrong, it should look like Y", "remove the third example"). If the section is missing and the user hasn't asked for examples, do not invent any. Older guides may call this section `# Reference Examples` and may include output fields alongside inputs — treat it as equivalent, and if you refine the guide, rename it to `# Reference Inputs` and drop any output fields (input-only from here on).
 
 2. **`# Semantics`** — what information exists in inputs and how fields relate. WHAT data exists, not HOW it's formatted. Subsections to cover (omit any that don't apply):
    - `## Semantic Structure` — what fields/sections exist; logical organization
@@ -432,32 +429,6 @@ def generate_guidance_refinement_prompt(
    - Any other domain-specific presentation patterns
 
 You own all four sections (Reference Inputs is mostly user-owned but you may add/edit/remove examples when feedback explicitly asks). You may add, edit, reorder, split, merge, or remove subsections in response to feedback or to fix what the rated samples got wrong. If a section is empty after your refine, write at least one short subsection capturing the most defensible pattern — don't omit a top-level section."""
-    else:
-        sections_intro = """A Data Guide has three top-level sections in this order:
-
-1. **`# Semantics`** — what information exists in inputs and how fields relate. WHAT data exists, not HOW it's formatted. Subsections to cover (omit any that don't apply):
-   - `## Semantic Structure` — what fields/sections exist; logical organization
-   - `## Data Patterns` — types of fields, valid values, ranges, units, terminology
-   - `## Relationships` — logical relationships between input fields (correlations, dependencies)
-   - `## Critical Constraints` — rules that MUST hold (field A implies field B; certain combinations are logically invalid)
-   - `## Inter-Input Variability` — how inputs differ; axes of variability
-   - `## Divergence Boundaries` — which patterns are flexible vs. fixed
-
-2. **`# Style`** — how inputs read and look, with measurements where possible. Vague descriptions like "professional tone" are NOT sufficient. Subsections:
-   - `## Section-by-Section Style Profile` (when inputs have internal structure) — per section: typical length, structure pattern, detail level
-   - `## Input-Level Metrics` — total input length, terminology level, sentence structure, voice, tone, abbreviation conventions
-   - `## Formatting Conventions` — separators, header styles, list conventions, value presentation, whitespace
-   - `## Quantitative Constraints` — specific measurable style rules (e.g., "the 'assessment' section is always 1-3 sentences"). These are CEILINGS — never exceed at synthesis time.
-
-3. **`# Presentation Defaults`** — defaults that per-batch user guidance can override more freely than Semantics or Style:
-   - Unit systems / measurement conventions
-   - Date and time formats
-   - Number formats (decimal separators, thousands grouping)
-   - Default section ordering and organization
-   - Naming conventions, terminology style
-   - Any other domain-specific presentation patterns
-
-You own all three sections. You may add, edit, reorder, split, merge, or remove subsections in response to feedback or to fix what the rated samples got wrong. If a section is empty after your refine, write at least one short subsection capturing the most defensible pattern — don't omit a top-level section. **Do NOT add a `# Reference Inputs` section** — this guide came from the Kiln Pro analyze flow, which derives rules from input documents rather than quoting them."""
 
     prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a **Data Guide** — a single markdown document that, together with the task definition, controls how synthetic *inputs* for this task are generated.
 
@@ -538,8 +509,7 @@ The user's written feedback (focused on the "Needs Work" inputs):
 </feedback>
 """
 
-    if has_reference_inputs:
-        your_task_intro = """## Your Task
+    your_task_intro = """## Your Task
 
 Produce the **complete refined Data Guide markdown** with all four top-level sections in order: `# Reference Inputs`, `# Semantics`, `# Style`, `# Presentation Defaults`. Your output replaces the entire guide on the user's task.
 
@@ -547,27 +517,13 @@ Produce the **complete refined Data Guide markdown** with all four top-level sec
 
 1. **Output the full guide markdown.** All four top-level sections must be present. If a section's content is sparse, write at least one short subsection capturing the most defensible pattern — don't omit it.
 
-2. **Preserve reference inputs verbatim by default.** The reference inputs in `# Reference Inputs` are user-owned ground truth. Carry every existing example forward unchanged unless the user's feedback explicitly asks you to add, modify, or remove specific examples (e.g. "add an example showing X", "input 2 is wrong, it should be Y", "remove the third example", "this example uses the wrong format"). When in doubt, keep examples exactly as the user wrote them.
+2. **Preserve reference inputs verbatim by default.** The reference inputs in `# Reference Inputs` are user-owned ground truth. Carry every existing example forward unchanged unless the user's feedback explicitly asks you to add, modify, or remove specific examples (e.g. "add an example showing X", "input 2 is wrong, it should be Y", "remove the third example", "this example uses the wrong format"). When in doubt, keep examples exactly as the user wrote them. If the guide uses the older `# Reference Examples` section name, rename it to `# Reference Inputs`; if examples include output fields, drop them — the guide is input-only.
 
 3. **Rewrite Semantics, Style, and Presentation Defaults in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove subsections. Carry forward existing content unless the user's feedback contradicts it, it's now redundant with another subsection, or it's clearly causing a "Needs Work" sample. When in doubt, keep the content. **If the existing guide uses the older `# Input Guidelines & Rules` shape with `<input_structural>` / `<input_semantic>` (or any `<output_*>` / `<both_*>`) blocks, migrate per the "Migrating older guides" section above** — re-emit only the new four-section shape, never preserve XML group tags.
 
 4. **If the current guide has examples but sparse Semantics/Style/Presentation Defaults, generate an initial set.** Extract the patterns implicit in the examples and codify them, using the rated inputs and feedback as confirmation/correction signal.
 
 5. **Stay consistent with the task definition above, AND mine it for content.** The refined guide must respect the task's runtime system prompt and (when provided) its description and input JSON schema — do not invent fields, formats, or behaviors that contradict them. The task definition is also a source of guide content, not just a constraint — see the next section."""
-    else:
-        your_task_intro = """## Your Task
-
-Produce the **complete refined Data Guide markdown** with all three top-level sections in order: `# Semantics`, `# Style`, `# Presentation Defaults`. Your output replaces the entire guide on the user's task.
-
-### Hard requirements
-
-1. **Output the full guide markdown.** All three top-level sections must be present. If a section's content is sparse, write at least one short subsection capturing the most defensible pattern — don't omit it.
-
-2. **Do NOT add a `# Reference Inputs` section.** This guide originates from the Kiln Pro analyze flow; verbatim example inputs are not part of its canonical shape. The rated samples and any uploaded source material are evidence used to derive rules, not content to quote in the guide.
-
-3. **Rewrite Semantics, Style, and Presentation Defaults in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove subsections. Carry forward existing content unless the user's feedback contradicts it, it's now redundant with another subsection, or it's clearly causing a "Needs Work" sample. When in doubt, keep the content. **If the existing guide uses the older `# Input Guidelines & Rules` shape with `<input_structural>` / `<input_semantic>` (or any `<output_*>` / `<both_*>`) blocks, migrate per the "Migrating older guides" section above** — re-emit only the canonical three-section shape, never preserve XML group tags.
-
-4. **Stay consistent with the task definition above, AND mine it for content.** The refined guide must respect the task's runtime system prompt and (when provided) its description and input JSON schema — do not invent fields, formats, or behaviors that contradict them. The task definition is also a source of guide content, not just a constraint — see the next section."""
 
     prompt += (
         "\n"
@@ -609,10 +565,7 @@ When the current guide has examples but sparse sections, the examples are your p
     )
 
     if has_samples:
-        if has_reference_inputs:
-            ratings_feedback_rule = '- If the user\'s feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than touching the reference inputs — examples are user-owned and only change when feedback names them directly.'
-        else:
-            ratings_feedback_rule = '- If the user\'s feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than restating the rated samples in the guide.'
+        ratings_feedback_rule = '- If the user\'s feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than touching the reference inputs — examples are user-owned and only change when feedback names them directly.'
         prompt += f"""
 ### How to use the ratings
 
@@ -622,10 +575,7 @@ When the current guide has examples but sparse sections, the examples are your p
 - If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "id must be a UUID v4 string").
 """
 
-    if has_reference_inputs:
-        output_section = "Return the **complete refined Data Guide markdown** with all four top-level sections in order: `# Reference Inputs`, `# Semantics`, `# Style`, `# Presentation Defaults`. Each example in `# Reference Inputs` is a `## Example N` block containing a fenced ```input block. Each of the other three sections contains one or more `## <subsection title>` blocks. Do NOT emit any XML group tags. Do NOT emit any output-related content. Do NOT add other top-level (`#`) headings. Do NOT include commentary or explanation of your changes."
-    else:
-        output_section = "Return the **complete refined Data Guide markdown** with all three top-level sections in order: `# Semantics`, `# Style`, `# Presentation Defaults`. Each section contains one or more `## <subsection title>` blocks. Do NOT add a `# Reference Inputs` section. Do NOT emit any XML group tags. Do NOT emit any output-related content. Do NOT add other top-level (`#`) headings. Do NOT include commentary or explanation of your changes."
+    output_section = "Return the **complete refined Data Guide markdown** with all four top-level sections in order: `# Reference Inputs`, `# Semantics`, `# Style`, `# Presentation Defaults`. Each example in `# Reference Inputs` is a `## Example N` block containing a fenced ```input block. Each of the other three sections contains one or more `## <subsection title>` blocks. Do NOT emit any XML group tags. Do NOT emit any output-related content. Do NOT add other top-level (`#`) headings. Do NOT include commentary or explanation of your changes."
 
     prompt += f"""
 ### How to phrase content

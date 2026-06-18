@@ -12,13 +12,8 @@
   import GuideRefineView from "../data_guide_setup/guide_refine_view.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
-  import type {
-    KilnAgentRunConfigProperties,
-    Task,
-    DataGuide,
-  } from "$lib/types"
+  import type { KilnAgentRunConfigProperties, DataGuide } from "$lib/types"
   import { agentInfo } from "$lib/agent"
-  import { current_task } from "$lib/stores"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import { isMacOS } from "$lib/utils/platform"
   import { pending_data_guide_refine_handoff } from "./refine_handoff_store"
@@ -31,7 +26,6 @@
 
   let guide: string = ""
   let saved_data_guide: DataGuide | null = null
-  let task: Task | null = null
   // Bound so the AppPage's "Edit" action button can drive the dialog inside
   // GuideRefineView without having to lift the dialog state up here.
   let refine_view: GuideRefineView | null = null
@@ -89,22 +83,6 @@
     if (!guide.trim()) {
       goto(`/generate/${project_id}/${task_id}/synth`)
       return
-    }
-
-    if ($current_task?.id === task_id) {
-      task = $current_task
-    } else {
-      try {
-        const { data: task_data } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (task_data) {
-          task = task_data
-        }
-      } catch {
-        // Non-critical
-      }
     }
 
     current_state = "saved"
@@ -203,7 +181,6 @@
         bind:this={refine_view}
         {project_id}
         {guide}
-        {task}
         data_guide={saved_data_guide}
         bind:page_error={error}
         bind:save_error
