@@ -32,7 +32,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 9 — API: typed trust response.** 2.1 (`CodeEvalTrustResponse{trusted:bool}` replacing `dict[str,bool]`) + web_ui OpenAPI schema regen.
 
-- [ ] **Phase 10 — API: consistency fixes.** 2.2a (de-leak the two 400 messages), 2.3 (clean V2 validation 400 + test), 2.6 (trust-endpoint imports → top-level); + 6.8 (`test_nothing_persisted` asserts the real data-model dir).
+- [x] **Phase 10 — API: consistency fixes.** 2.2a (de-leak the two 400 messages), 2.3 (clean V2 validation 400 + test), 2.6 (trust-endpoint imports → top-level); + 6.8 (`test_nothing_persisted` asserts the real data-model dir).
 
 - [ ] **Phase 11 — code_eval: serialize execution.** 3.1 (full-execution serialization via a module-level `asyncio.Lock` in `CodeEvalAdapter.evaluate()`, keeping the narrow spawn-race `threading.Lock`); + 6.11 (sandbox timeout test `sleep(60)`/2s → `sleep(10)`/1s). The subtlest change — its own commit.
 

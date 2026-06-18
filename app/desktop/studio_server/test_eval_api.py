@@ -443,6 +443,30 @@ async def test_create_eval_config_invalid_properties(
     assert response.status_code == 400
 
 
+@pytest.mark.asyncio
+async def test_create_eval_config_invalid_v2_properties(
+    client, mock_task_from_id, mock_v2_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_v2_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval_v2/create_eval_config",
+            json={
+                "name": "Bad V2 Config",
+                "type": "v2",
+                "properties": {"type": "not_a_real_type"},
+            },
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "Invalid properties for eval config type" in body["message"]
+    assert "v2" in body["message"]
+
+
 def test_get_eval_config(
     client, mock_task_from_id, mock_eval, mock_task, mock_eval_config
 ):
@@ -3578,7 +3602,7 @@ class TestCodeEvalTrustEndpoints:
         _trusted_projects.clear()
 
     def test_grant_trust(self, client):
-        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.return_value = Mock()
             response = client.post("/api/projects/proj-1/grant_code_eval_trust")
 
@@ -3586,14 +3610,14 @@ class TestCodeEvalTrustEndpoints:
         assert response.json() == {"trusted": True}
 
     def test_grant_trust_invalid_project(self, client):
-        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.side_effect = HTTPException(status_code=404, detail="Not found")
             response = client.post("/api/projects/bad-id/grant_code_eval_trust")
 
         assert response.status_code == 404
 
     def test_check_trust_untrusted(self, client):
-        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.return_value = Mock()
             response = client.get("/api/projects/proj-1/code_eval_trust")
         assert response.status_code == 200
@@ -3601,7 +3625,7 @@ class TestCodeEvalTrustEndpoints:
 
     def test_check_trust_after_grant(self, client):
         mock_project = Mock()
-        with patch("kiln_server.project_api.project_from_id") as mock_proj:
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.return_value = mock_project
             client.post("/api/projects/proj-1/grant_code_eval_trust")
             response = client.get("/api/projects/proj-1/code_eval_trust")
@@ -3750,19 +3774,15 @@ class TestTestV2Eval:
         assert "accuracy" in body["scores"]
         assert body["skipped_reason"] is None
 
-    def test_nothing_persisted(self, client, mock_v2_eval, tmp_path):
-        files_before = set()
-        for f in tmp_path.rglob("*"):
-            files_before.add(str(f))
+    def test_nothing_persisted(self, client, mock_v2_eval):
+        eval_dir = mock_v2_eval.path.parent
+        files_before = set(str(f) for f in eval_dir.rglob("*"))
 
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
             mock_eid.return_value = mock_v2_eval
             client.post(self._url(), json=self._exact_match_payload())
 
-        files_after = set()
-        for f in tmp_path.rglob("*"):
-            files_after.add(str(f))
-
+        files_after = set(str(f) for f in eval_dir.rglob("*"))
         new_files = files_after - files_before
         assert len(new_files) == 0, f"Unexpected new files created: {new_files}"
 

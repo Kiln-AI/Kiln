@@ -17,6 +17,10 @@ from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.adapters.eval.v2_eval_code_eval import (
+    grant_code_eval_trust,
+    is_code_eval_trusted,
+)
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -37,6 +41,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -949,7 +954,12 @@ def connect_evals_api(app: FastAPI):
                 model_provider=request.provider,
                 parent=eval,
             )
-        except (ValueError, ValidationError) as e:
+        except ValidationError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid properties for eval config type '{request.type.value}'.",
+            )
+        except ValueError as e:
             raise HTTPException(
                 status_code=400,
                 detail=str(e),
@@ -1191,7 +1201,7 @@ def connect_evals_api(app: FastAPI):
         if eval.eval_set_filter_id is None:
             raise HTTPException(
                 status_code=400,
-                detail="This eval does not have a V1 eval set filter.",
+                detail="This endpoint isn't supported for this eval type.",
             )
         dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
@@ -1262,7 +1272,7 @@ def connect_evals_api(app: FastAPI):
         if eval.eval_set_filter_id is None:
             raise HTTPException(
                 status_code=400,
-                detail="This eval does not have a V1 eval set filter.",
+                detail="This endpoint isn't supported for this eval type.",
             )
         expected_dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
@@ -1741,11 +1751,7 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> CodeEvalTrustResponse:
-        from kiln_server.project_api import project_from_id
-
         project = project_from_id(project_id)
-        from kiln_ai.adapters.eval.v2_eval_code_eval import grant_code_eval_trust
-
         grant_code_eval_trust(str(project.path))
         return CodeEvalTrustResponse(trusted=True)
 
@@ -1760,9 +1766,5 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> CodeEvalTrustResponse:
-        from kiln_server.project_api import project_from_id
-
         project = project_from_id(project_id)
-        from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
-
         return CodeEvalTrustResponse(trusted=is_code_eval_trusted(str(project.path)))
