@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render, fireEvent } from "@testing-library/svelte"
+import type { EvalOutputScore } from "$lib/types"
 
 vi.mock("$lib/components/code_editor.svelte", async () => {
   const StubModule = await import("./__tests__/code_editor_stub.svelte")
@@ -27,6 +28,13 @@ beforeAll(() => {
     ).ResizeObserver = ResizeObserverStub
   }
 })
+
+function make_score(
+  name: string,
+  type: EvalOutputScore["type"],
+): EvalOutputScore {
+  return { name, type, instruction: null }
+}
 
 describe("CodeEvalForm", () => {
   it("renders without errors", () => {
@@ -57,6 +65,14 @@ describe("CodeEvalForm", () => {
     expect(container.textContent).toContain(
       "score(output, trace, reference_data, task_input, kiln)",
     )
+  })
+
+  it("displays updated helper text mentioning per-type ranges", () => {
+    const { container } = render(CodeEvalForm)
+    const text = container.textContent ?? ""
+    expect(text).toContain("pass/fail uses 0.0")
+    expect(text).toContain("five-star")
+    expect(text).toContain("1.0–5.0")
   })
 
   it("renders the timeout input with default value of 30", () => {
@@ -155,5 +171,63 @@ describe("CodeEvalForm", () => {
       '[data-testid="code-editor-stub"]',
     )
     expect(editorStub).not.toBeNull()
+  })
+})
+
+describe("dynamic default code via output_scores prop", () => {
+  it("uses output_scores to generate the initial code", () => {
+    const scores = [make_score("Relevance", "five_star")]
+    const { component } = render(CodeEvalForm, {
+      props: { output_scores: scores },
+    })
+    const props = component.getProperties()
+    expect(props.code).toContain('"relevance"')
+    expect(props.code).toContain("5.0")
+    expect(props.code).not.toContain('"quality"')
+  })
+
+  it("falls back to generic code when output_scores is undefined", () => {
+    const { component } = render(CodeEvalForm)
+    const props = component.getProperties()
+    expect(props.code).toContain('"quality"')
+  })
+})
+
+describe("example code correctness", () => {
+  function get_example_code(container: HTMLElement): string {
+    return container.querySelector(".whitespace-pre")?.textContent ?? ""
+  }
+
+  it("Domain-specific grading uses kiln.pass_fail with assert_contains result", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll(".tab")
+    await fireEvent.click(tabs[2])
+    const domainCode = get_example_code(container)
+    expect(domainCode).toContain("kiln.pass_fail(contains)")
+    expect(domainCode).not.toContain('"contains_answer": 1.0')
+  })
+
+  it("Domain-specific grading handles empty expected gracefully", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll(".tab")
+    await fireEvent.click(tabs[2])
+    const domainCode = get_example_code(container)
+    expect(domainCode).toContain("if expected else True")
+  })
+
+  it("Check tool usage example clamps five_star lower bound to 1", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll(".tab")
+    await fireEvent.click(tabs[1])
+    const toolCode = get_example_code(container)
+    expect(toolCode).toContain("kiln.five_star(max(min(call_count, 5), 1))")
+  })
+
+  it("Parse JSON example returns valid score dicts", () => {
+    const { container } = render(CodeEvalForm)
+    const parseCode = get_example_code(container)
+    expect(parseCode).toContain("kiln.pass_fail(has_all)")
+    expect(parseCode).toContain('"valid_json": 1.0')
+    expect(parseCode).toContain('"valid_json": 0.0')
   })
 })

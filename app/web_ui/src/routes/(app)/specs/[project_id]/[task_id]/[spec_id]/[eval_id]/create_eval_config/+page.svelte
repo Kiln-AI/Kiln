@@ -544,6 +544,12 @@
             bind:combined_model_name={llm_combined_model_name}
             bind:selected_algo={llm_selected_algo}
           />
+        {:else if selected_v2_type === "code_eval" && selected_metadata}
+          <svelte:component
+            this={selected_metadata.createFormComponent}
+            bind:this={v2FormComponentRef}
+            output_scores={evaluator?.output_scores}
+          />
         {:else if selected_metadata}
           <svelte:component
             this={selected_metadata.createFormComponent}
