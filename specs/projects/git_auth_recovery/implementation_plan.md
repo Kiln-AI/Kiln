@@ -19,7 +19,7 @@ See `functional_spec.md` and `architecture.md` for details.
   map `GitAuthError` → 401 in the middleware `ERROR_MAP`. Update affected backend
   tests. (Spec: Part A, Part B.)
 
-- [ ] **Phase 2 — Git re-import recovery (backend).**
+- [x] **Phase 2 — Git re-import recovery (backend).**
   Add `remove_project_from_config` (libs/core); add the `_deregister_project`
   app-layer wrapper and refactor `delete_project` to use it; add
   `remove_conflicting_id` to `SaveConfigRequest` and the de-register-then-save path in
