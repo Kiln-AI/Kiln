@@ -92,13 +92,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
 
     def _resolve_project_path(self) -> str | None:
         try:
-            eval_obj = self.eval_config.parent_eval()
-            if eval_obj is None:
-                return None
-            task = eval_obj.parent_task()
-            if task is None:
-                return None
-            project = task.parent
+            project = self.target_task.parent
             if project is None:
                 return None
             return str(project.path) if project.path else None
@@ -106,11 +100,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             return None
 
     def _validate_scores(self, raw: dict[str, Any]) -> EvalScores:
-        eval_obj = self.eval_config.parent_eval()
-        if eval_obj is None:
-            raise RuntimeError("Cannot validate scores: eval config has no parent eval")
-
-        expected_keys = {score.json_key() for score in eval_obj.output_scores}
+        expected_keys = {score.json_key() for score in self._output_scores}
         actual_keys = set(raw.keys())
         if actual_keys != expected_keys:
             raise RuntimeError(

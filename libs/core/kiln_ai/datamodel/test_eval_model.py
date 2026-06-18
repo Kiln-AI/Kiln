@@ -2266,7 +2266,10 @@ def test_eval_run_v2_with_eval_input_id():
 
 def test_eval_run_input_source_xor():
     """Exactly one of dataset_id / eval_input_id must be set."""
-    with pytest.raises(ValueError, match="Exactly one of dataset_id or eval_input_id"):
+    with pytest.raises(
+        ValueError,
+        match=r"Exactly one of dataset_id \(V1 TaskRun source\) or eval_input_id \(V2 EvalInput source\)",
+    ):
         EvalRun(
             dataset_id="d1",
             eval_input_id="ei1",
@@ -2275,7 +2278,10 @@ def test_eval_run_input_source_xor():
             output="o",
             scores={"s": 1.0},
         )
-    with pytest.raises(ValueError, match="Exactly one of dataset_id or eval_input_id"):
+    with pytest.raises(
+        ValueError,
+        match=r"Exactly one of dataset_id \(V1 TaskRun source\) or eval_input_id \(V2 EvalInput source\)",
+    ):
         EvalRun(
             task_run_config_id="rc1",
             input="i",

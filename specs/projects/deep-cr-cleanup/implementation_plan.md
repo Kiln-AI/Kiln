@@ -20,7 +20,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 3 — Rename legacy dispatcher.** 5.2 (`eval_adapter_from_type` → `legacy_eval_adapter_from_type`, clearer V2-branch error) across all call sites; + 6.2 (dedupe the now-overlapping dispatch tests in `test_registry.py`).
 
-- [ ] **Phase 4 — Data-model robustness.** 5.8 (explicit `_V2_PROPERTY_TYPES` tuple in `eval.py`), 5.9 (cache `output_scores` to drop per-item `parent_eval()` I/O), 5.6 (clarify the `dataset_id`/`eval_input_id` mutual-exclusivity error). + tests.
+- [x] **Phase 4 — Data-model robustness.** 5.8 (explicit `_V2_PROPERTY_TYPES` tuple in `eval.py`), 5.9 (cache `output_scores` to drop per-item `parent_eval()` I/O), 5.6 (clarify the `dataset_id`/`eval_input_id` mutual-exclusivity error). + tests.
 
 - [ ] **Phase 5 — Reference-data UI TODO-gates.** 5.3 — add the pre-ship `TODO`s at every eval-type form exposing a `reference_key`/reference_data source (wire-or-remove before ship). SDK path untouched.
 

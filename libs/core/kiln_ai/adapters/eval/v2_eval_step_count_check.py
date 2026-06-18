@@ -40,7 +40,7 @@ class StepCountCheckEval(BaseV2EvalBridge):
         if props.max_count is not None and count > props.max_count:
             passed = False
 
-        return build_binary_scores(self.eval_config, passed), None, None
+        return build_binary_scores(self._output_scores, passed), None, None
 
     @staticmethod
     def _count(trace: list[dict[str, Any]], count_type: str) -> int:

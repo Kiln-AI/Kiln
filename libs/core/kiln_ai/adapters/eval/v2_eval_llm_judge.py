@@ -111,11 +111,8 @@ class LlmJudgeEval(BaseV2EvalBridge):
             **namespace
         )
 
-        parent_eval = self.eval_config.parent_eval()
-        if parent_eval is None:
-            raise ValueError("LlmJudgeEval requires a parent Eval with output_scores")
         output_json_schema = BaseEval.build_score_schema(
-            parent_eval, allow_float_scores=False
+            self.eval, allow_float_scores=False
         )
 
         system_prompt = props.system_prompt or _DEFAULT_SYSTEM_PROMPT

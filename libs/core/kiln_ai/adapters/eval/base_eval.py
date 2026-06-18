@@ -1,13 +1,12 @@
 import json
 from abc import abstractmethod
-from typing import Dict, get_args
-
-from pydantic import BaseModel
+from typing import Dict
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
 from kiln_ai.datamodel.eval import (
+    V2_PROPERTY_TYPES,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -16,15 +15,10 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     SingleTurnEvalInputData,
     SkippedReason,
-    V2EvalConfigProperties,
 )
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties, TaskOutputRatingType, TaskRun
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-
-_V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = get_args(
-    get_args(V2EvalConfigProperties)[0]
-)
 
 
 def model_and_provider_from_config(
@@ -237,10 +231,11 @@ class BaseV2EvalBridge(BaseEval):
     ) -> None:
         if eval_config.config_type != EvalConfigType.v2:
             raise ValueError("V2 eval requires a V2 config_type")
-        if not isinstance(eval_config.properties, _V2_PROPERTY_TYPES):
+        if not isinstance(eval_config.properties, V2_PROPERTY_TYPES):
             raise ValueError("V2 eval requires typed V2 properties")
         self.properties = eval_config.properties
         super().__init__(eval_config, run_config, skills)
+        self._output_scores = self.eval.output_scores
 
     @abstractmethod
     async def evaluate(

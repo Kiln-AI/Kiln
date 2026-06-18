@@ -56,7 +56,7 @@ class SetCheckEval(BaseV2EvalBridge):
         else:
             passed = actual_set == expected_set
 
-        return build_binary_scores(self.eval_config, passed), None, None
+        return build_binary_scores(self._output_scores, passed), None, None
 
     @staticmethod
     def _coerce_to_set(value: object) -> set[str]:

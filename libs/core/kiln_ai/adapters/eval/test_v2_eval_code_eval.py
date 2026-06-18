@@ -1,6 +1,6 @@
 """Tests for CodeEvalAdapter and trust gate helpers."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 
@@ -246,28 +246,16 @@ class TestScoreValidation:
 
 
 class TestResolveProjectPath:
-    def test_no_parent_eval_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        cfg.parent_eval.return_value = None
-        assert adapter._resolve_project_path() is None
-
-    def test_no_parent_task_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        parent_eval = Mock()
-        parent_eval.parent_task.return_value = None
-        cfg.parent_eval.return_value = parent_eval
-        assert adapter._resolve_project_path() is None
-
     def test_no_project_returns_none(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        parent_eval = Mock()
-        parent_task = Mock()
-        parent_task.parent = None
-        parent_eval.parent_task.return_value = parent_task
-        cfg.parent_eval.return_value = parent_eval
+        adapter.target_task.parent = None
+        assert adapter._resolve_project_path() is None
+
+    def test_no_path_returns_none(self):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        adapter.target_task.parent.path = None
         assert adapter._resolve_project_path() is None
 
     def test_valid_chain_returns_path(self):
@@ -278,5 +266,6 @@ class TestResolveProjectPath:
     def test_exception_returns_none(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        cfg.parent_eval.side_effect = RuntimeError("broken")
+        broken_parent = PropertyMock(side_effect=RuntimeError("broken"))
+        type(adapter.target_task).parent = broken_parent
         assert adapter._resolve_project_path() is None

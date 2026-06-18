@@ -47,4 +47,4 @@ class ContainsEval(BaseV2EvalBridge):
         else:
             passed = not found
 
-        return build_binary_scores(self.eval_config, passed), None, None
+        return build_binary_scores(self._output_scores, passed), None, None

@@ -35,7 +35,7 @@ class ToolCallCheckEval(BaseV2EvalBridge):
             props.on_unexpected_tools,
         )
 
-        return build_binary_scores(self.eval_config, passed), None, None
+        return build_binary_scores(self._output_scores, passed), None, None
 
     @staticmethod
     def _extract_tool_calls(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:

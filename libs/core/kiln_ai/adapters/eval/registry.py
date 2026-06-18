@@ -1,10 +1,6 @@
 from typing import TYPE_CHECKING
 
-from kiln_ai.adapters.eval.base_eval import (
-    _V2_PROPERTY_TYPES,
-    BaseEval,
-    BaseV2EvalBridge,
-)
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -18,7 +14,12 @@ from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
 from kiln_ai.adapters.eval.v2_eval_set_check import SetCheckEval
 from kiln_ai.adapters.eval.v2_eval_step_count_check import StepCountCheckEval
 from kiln_ai.adapters.eval.v2_eval_tool_call_check import ToolCallCheckEval
-from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, V2EvalType
+from kiln_ai.datamodel.eval import (
+    V2_PROPERTY_TYPES,
+    EvalConfig,
+    EvalConfigType,
+    V2EvalType,
+)
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 _V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2EvalBridge]] = {
@@ -63,7 +64,7 @@ def v2_eval_adapter_from_config(
     """
     if eval_config.config_type != EvalConfigType.v2:
         raise ValueError("v2_eval_adapter_from_config only accepts V2 configs")
-    if not isinstance(eval_config.properties, _V2_PROPERTY_TYPES):
+    if not isinstance(eval_config.properties, V2_PROPERTY_TYPES):
         raise ValueError("V2 config must have typed properties")
     v2_type = eval_config.properties.type  # type: ignore[union-attr]
     adapter_cls = _V2_ADAPTER_MAP.get(v2_type)

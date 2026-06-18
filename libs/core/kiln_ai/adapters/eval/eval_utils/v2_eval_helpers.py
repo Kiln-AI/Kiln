@@ -1,21 +1,26 @@
 from typing import Any
 
 from jinja2 import Undefined
-from kiln_ai.datamodel.eval import EvalConfig, EvalScores, EvalTaskInput, SkippedReason
+from kiln_ai.datamodel.eval import (
+    EvalOutputScore,
+    EvalScores,
+    EvalTaskInput,
+    SkippedReason,
+)
 from kiln_ai.utils.jinja_engine import extract
 
 
-def build_binary_scores(eval_config: EvalConfig, passed: bool) -> EvalScores:
+def build_binary_scores(
+    output_scores: list[EvalOutputScore], passed: bool
+) -> EvalScores:
     """Build an EvalScores dict with the same binary value for all declared score keys.
 
-    Reads output_scores from the parent Eval via eval_config.parent_eval().
-    Returns {} if no parent eval or no output_scores are declared.
+    Returns {} if output_scores is empty.
     """
-    parent = eval_config.parent_eval()
-    if parent is None or not parent.output_scores:
+    if not output_scores:
         return {}
     value = 1.0 if passed else 0.0
-    return {score.json_key(): value for score in parent.output_scores}
+    return {score.json_key(): value for score in output_scores}
 
 
 def extract_value(

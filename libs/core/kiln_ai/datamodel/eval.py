@@ -237,6 +237,19 @@ V2EvalConfigProperties = Annotated[
     Discriminator("type"),
 ]
 
+# Explicit tuple of V2 property types for isinstance() checks.
+# Must list exactly the same types as the V2EvalConfigProperties union above.
+V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = (
+    LlmJudgeProperties,
+    ExactMatchProperties,
+    PatternMatchProperties,
+    SetCheckProperties,
+    ToolCallCheckProperties,
+    ContainsProperties,
+    StepCountCheckProperties,
+    CodeEvalProperties,
+)
+
 
 class SkippedReason(str, Enum):
     """Terminal skip reasons stored as str for back/forward-compat."""
@@ -469,7 +482,10 @@ class EvalRun(KilnParentedModel):
     @model_validator(mode="after")
     def validate_input_source(self) -> Self:
         if (self.dataset_id is None) == (self.eval_input_id is None):
-            raise ValueError("Exactly one of dataset_id or eval_input_id must be set")
+            raise ValueError(
+                "Exactly one of dataset_id (V1 TaskRun source) or "
+                "eval_input_id (V2 EvalInput source) must be set"
+            )
         return self
 
     @model_validator(mode="after")
