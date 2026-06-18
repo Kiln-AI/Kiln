@@ -90,12 +90,11 @@ def score(output, trace, reference_data, task_input, kiln) -> dict[str, float]:
 
 ### 2.2 Return shape: `dict[str, float]`
 
-The `score()` function must return a `dict[str, float]` whose keys are a subset of the Eval's `output_scores` score names.
+The `score()` function must return a `dict[str, float]` whose keys exactly match the Eval's `output_scores` score names.
 
 - **`float` values** must already be in the correct range for each score's `rating_type`: 0.0-1.0 for `pass_fail` / `pass_fail_critical`; 0.0-5.0 for `five_star`. Use the `kiln.pass_fail(passed)` and `kiln.five_star(rating)` helpers (section 3.3) to produce correct floats from booleans or integers.
-- **No bool convenience.** A `bool` value (or any non-float type) is a **hard error** (failed score with a reason), not coerced. This avoids implicit magic; use `kiln.pass_fail(passed)` explicitly.
-- **Missing keys** are allowed -- the adapter maps absent scores to `None` on the EvalRun (same as a skip for that score dimension). All keys present in the Eval's `output_scores` but absent from the return dict are surfaced as warnings in the test-run preview.
-- **Extra keys** (not in `output_scores`) are silently ignored (consistent with the existing `EvalRun.validate_scores` mechanism per C.9 -- it validates required keys, not surplus ones).
+- **No bool convenience.** A `bool` value, or any non-numeric type (str, list, dict, None, etc.), is a **hard error** (RuntimeError, not coerced). `int` values are silently coerced to `float`. This avoids implicit magic for booleans (since `bool` is a subclass of `int` in Python, the check for `bool` runs first); use `kiln.pass_fail(passed)` explicitly.
+- **Strict exact-key-match validation (deliberate Kiln behavior).** The `_validate_scores` implementation requires the returned dict's keys to be exactly equal to the expected score keys from `output_scores`. Missing keys or extra keys both raise a `RuntimeError` with a clear "Score key mismatch" message listing the expected vs. actual keys. This is stricter than a lenient approach (missing -> None, extra -> ignored) and was chosen deliberately: code_eval scorers are user-authored Python where key mismatches almost always indicate a bug in the scorer code, so failing loudly gives the fastest feedback loop. The error surfaces in the test-run preview, letting users fix their scorer immediately.
 
 **Error cases:**
 
@@ -103,7 +102,9 @@ The `score()` function must return a `dict[str, float]` whose keys are a subset 
 |---|---|
 | `score` function not defined or not callable | `Score.failed(reason="Scorer code does not define a callable 'score' function")` |
 | `score()` did not return a dict | `Score.failed(reason="'score()' must return dict[str, float], got <type>")` |
-| A value is not a float (including bool) | `Score.failed(reason="Score '<key>' must be float, got <type>. Use kiln.pass_fail() or kiln.five_star() for conversions.")` |
+| Score key mismatch (missing or extra keys) | `RuntimeError("Score key mismatch: got [actual], expected [expected]")` |
+| A value is a bool | `RuntimeError("Score '<key>' returned a bool. Use a float (e.g. 1.0 for pass, 0.0 for fail).")` |
+| A value is not a float or int (non-numeric type) | `RuntimeError("Score '<key>' must be a float, got <type>")` |
 | A float value is outside the valid range for its rating type | `Score.failed(reason="Score '<key>' value <v> is outside valid range [<min>, <max>]")` |
 | `score()` raises an exception | `Score.failed(reason="Scorer error: <exception message>")` |
 | Worker crashes (nonzero exit, empty queue) | `Score.failed(reason="Scorer crashed (exit code <N>)")` |

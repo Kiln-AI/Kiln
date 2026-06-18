@@ -211,11 +211,13 @@ The existing validator at `eval.py:168-177` enforcing `eval_config_eval <-> task
 
 ```python
 class Eval(KilnParentedModel):
-    # CHANGED: optional for V2 Evals; V1 Evals always have it set
-    evaluation_data_type: EvalDataType | None = None
+    # CHANGED: optional for V2 Evals; defaults to final_answer for V1 back-compat
+    evaluation_data_type: EvalDataType | None = EvalDataType.final_answer
 ```
 
-V1 clients treat this as required (compiled against the V1 definition). V1 loading a V2-only Eval (`evaluation_data_type: None`) fails — acceptable per A0.1. V2 EvalConfigs declare their data needs in their own properties (per A2.3); the Eval-level field is preserved only for V1 EvalConfigs which continue to read it from the grandparent Eval.
+**Default rationale:** The default is `EvalDataType.final_answer` rather than `None`. This is deliberate for V1 backwards compatibility: a V1 Eval on disk that omits this field (e.g., an older file format) loads with `final_answer`, which is the correct V1 behavior (V1 evals evaluate the model's final answer unless explicitly configured for `full_trace` or `reference_answer`). A `None` default would make such V1 Evals ambiguous and could break the `validate_output_fields` validator which reads this field for V1 EvalRuns. V2 Evals that need `None` semantics set it explicitly when constructed.
+
+V1 clients treat this as required (compiled against the V1 definition). V2 EvalConfigs declare their data needs in their own properties (per A2.3); the Eval-level field is preserved only for V1 EvalConfigs which continue to read it from the grandparent Eval.
 
 ### 4.2 Filter field coexistence (A2.5, A2.9)
 

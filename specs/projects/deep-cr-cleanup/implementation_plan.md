@@ -24,7 +24,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 5 — Reference-data UI TODO-gates.** 5.3 — add the pre-ship `TODO`s at every eval-type form exposing a `reference_key`/reference_data source (wire-or-remove before ship). SDK path untouched.
 
-- [ ] **Phase 6 — Spec doc alignment (docs only).** 1d (document intentional `code_eval` `_validate_scores` strictness in `components/27 §2.2`); 5.1 (align `15_v1_v2_coexistence.md:215` to the `final_answer` default + rationale).
+- [x] **Phase 6 — Spec doc alignment (docs only).** 1d (document intentional `code_eval` `_validate_scores` strictness in `components/27 §2.2`); 5.1 (align `15_v1_v2_coexistence.md:215` to the `final_answer` default + rationale).
 
 - [ ] **Phase 7 — Backend test hygiene.** 6.1 (shared conftest for `StubV2Eval`/`SkippingStubV2Eval`), 6.3 (shared `_make_config`/`_inp` fixture factory across the 6 matcher files), 6.5 (`run_until_complete` → `@pytest.mark.asyncio`), 5.5 (test runner paths emit valid `SkippedReason`), 6.12 (provenance README for `test_g_eval_data/`).
 
