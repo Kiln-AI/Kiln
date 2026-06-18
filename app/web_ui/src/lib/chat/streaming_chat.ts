@@ -10,7 +10,6 @@ import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 
 export type ChatMessagePart =
   | { type: "text"; text: string }
-  | { type: "reasoning"; reasoning: string }
   | {
       type: `tool-${string}`
       toolCallId: string
@@ -49,8 +48,6 @@ function toBackendMessage(m: ChatMessage): BackendChatRequest["messages"][0] {
       role: "assistant",
       parts: m.parts.map((p) => {
         if (p.type === "text") return { type: "text", text: p.text }
-        if (p.type === "reasoning")
-          return { type: "reasoning", reasoning: p.reasoning }
         return {
           type: p.type,
           toolCallId: p.toolCallId,
@@ -176,10 +173,7 @@ export function traceIdForNextChatRequest(
   return undefined
 }
 
-type PartSlot =
-  | { kind: "text"; id: string }
-  | { kind: "reasoning"; id: string }
-  | { kind: "tool"; id: string }
+type PartSlot = { kind: "text"; id: string } | { kind: "tool"; id: string }
 
 export interface StreamEventProcessorOptions {
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
@@ -193,7 +187,6 @@ export interface StreamEventProcessorOptions {
 export class StreamEventProcessor {
   private partOrder: PartSlot[] = []
   private textBlocks = new Map<string, string>()
-  private reasoningBlocks = new Map<string, string>()
   private toolMap = new Map<
     string,
     {
@@ -206,7 +199,6 @@ export class StreamEventProcessor {
   >()
   private toolInputBuffer = new Map<string, string>()
   private currentTextId: string | null = null
-  private currentReasoningId: string | null = null
   private slotIdCounter = 0
 
   private onAssistantMessage: (update: (draft: ChatMessage) => void) => void
@@ -240,12 +232,6 @@ export class StreamEventProcessor {
         this.onShowActivityIndicator?.(true)
         this.handleTextEnd()
       },
-      "reasoning-start": () => {
-        this.onShowActivityIndicator?.(true)
-        this.handleReasoningStart()
-      },
-      "reasoning-delta": (e) => this.handleReasoningDelta(e),
-      "reasoning-end": () => this.handleReasoningEnd(),
       "tool-input-start": (e) => {
         this.onShowActivityIndicator?.(true)
         this.handleToolInputStart(e)
@@ -287,9 +273,6 @@ export class StreamEventProcessor {
         if (slot.kind === "text") {
           const text = this.textBlocks.get(slot.id)
           if (text) next.push({ type: "text", text })
-        } else if (slot.kind === "reasoning") {
-          const reasoning = this.reasoningBlocks.get(slot.id)
-          if (reasoning) next.push({ type: "reasoning", reasoning })
         } else {
           const tool = this.toolMap.get(slot.id)
           if (tool) next.push(tool)
@@ -305,15 +288,6 @@ export class StreamEventProcessor {
       this.partOrder.push({ kind: "text", id })
       this.currentTextId = id
       this.textBlocks.set(id, "")
-    }
-  }
-
-  private ensureReasoningSlot(): void {
-    if (this.currentReasoningId === null) {
-      const id = this.nextSlotId()
-      this.partOrder.push({ kind: "reasoning", id })
-      this.currentReasoningId = id
-      this.reasoningBlocks.set(id, "")
     }
   }
 
@@ -352,30 +326,6 @@ export class StreamEventProcessor {
 
   private handleTextEnd(): void {
     this.currentTextId = null
-  }
-
-  private handleReasoningStart(): void {
-    if (this.currentReasoningId !== null) {
-      this.currentReasoningId = null
-    }
-    this.ensureReasoningSlot()
-  }
-
-  private handleReasoningDelta(event: StreamEvent): void {
-    if (this.currentReasoningId === null) {
-      this.ensureReasoningSlot()
-    }
-    if (event.delta != null && this.currentReasoningId !== null) {
-      this.reasoningBlocks.set(
-        this.currentReasoningId,
-        (this.reasoningBlocks.get(this.currentReasoningId) ?? "") + event.delta,
-      )
-      this.flushAssistant()
-    }
-  }
-
-  private handleReasoningEnd(): void {
-    this.currentReasoningId = null
   }
 
   private handleToolInputStart(event: StreamEvent): void {

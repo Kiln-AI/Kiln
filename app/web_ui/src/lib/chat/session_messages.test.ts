@@ -31,7 +31,7 @@ describe("hydrateSessionFromSnapshot", () => {
     expect(continuationTraceId).toBe("trace-sess")
   })
 
-  it("maps reasoning_content into a reasoning part", () => {
+  it("ignores reasoning_content (reasoning is not surfaced in the UI)", () => {
     const { messages } = hydrateSessionFromSnapshot(
       snap("t2", [
         {
@@ -41,10 +41,7 @@ describe("hydrateSessionFromSnapshot", () => {
         },
       ]),
     )
-    expect(messages[0].parts).toEqual([
-      { type: "reasoning", reasoning: "think" },
-      { type: "text", text: "answer" },
-    ])
+    expect(messages[0].parts).toEqual([{ type: "text", text: "answer" }])
   })
 
   it("maps tool_calls and tool messages", () => {
