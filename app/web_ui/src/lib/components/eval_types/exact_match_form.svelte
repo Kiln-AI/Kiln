@@ -14,6 +14,11 @@
     return properties
   }
 
+  // TODO(pre-ship 5.3): The "Reference Data Key" source option below lets users configure
+  // exact_match to compare against reference_data, but in V2.0 no UI path populates
+  // reference_data on EvalInputs — so this eval will always silently skip at runtime.
+  // Before shipping to main: either wire reference_data population into the UI,
+  // or remove the "reference_key" source option from this form.
   let source: "expected_value" | "reference_key" | "value_expression" =
     properties.expected_value
       ? "expected_value"

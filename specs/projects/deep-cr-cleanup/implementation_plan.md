@@ -22,7 +22,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 4 — Data-model robustness.** 5.8 (explicit `_V2_PROPERTY_TYPES` tuple in `eval.py`), 5.9 (cache `output_scores` to drop per-item `parent_eval()` I/O), 5.6 (clarify the `dataset_id`/`eval_input_id` mutual-exclusivity error). + tests.
 
-- [ ] **Phase 5 — Reference-data UI TODO-gates.** 5.3 — add the pre-ship `TODO`s at every eval-type form exposing a `reference_key`/reference_data source (wire-or-remove before ship). SDK path untouched.
+- [x] **Phase 5 — Reference-data UI TODO-gates.** 5.3 — add the pre-ship `TODO`s at every eval-type form exposing a `reference_key`/reference_data source (wire-or-remove before ship). SDK path untouched.
 
 - [ ] **Phase 6 — Spec doc alignment (docs only).** 1d (document intentional `code_eval` `_validate_scores` strictness in `components/27 §2.2`); 5.1 (align `15_v1_v2_coexistence.md:215` to the `final_answer` default + rationale).
 
