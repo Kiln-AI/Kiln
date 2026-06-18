@@ -207,11 +207,7 @@
     {/if}
   </div>
 
-  <RunOptionsTiles
-    bind:this={run_options_tiles}
-    mode="link"
-    {project_id}
-  />
+  <RunOptionsTiles bind:this={run_options_tiles} mode="link" {project_id} />
   {#if !has_examples}
     <div class="flex justify-end">
       <Warning

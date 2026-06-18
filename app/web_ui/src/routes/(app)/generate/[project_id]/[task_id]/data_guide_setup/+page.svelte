@@ -105,7 +105,6 @@
       return
     }
 
-
     // Seed from the synth-page handoff: if the user clicked "Set Up Data
     // Guide" and added their first example via the dialog before navigating
     // here, that sample is sitting on a writable store. Pull it once and

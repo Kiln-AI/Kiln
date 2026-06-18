@@ -491,8 +491,8 @@
           {/if}
           {#if over_limit_skipped > 0 && max_files != null}
             <div class="text-warning text-sm">
-              {over_limit_skipped} file{over_limit_skipped === 1 ? "" : "s"} not added
-              — you can upload at most {max_files} here.
+              {over_limit_skipped} file{over_limit_skipped === 1 ? "" : "s"} not
+              added — you can upload at most {max_files} here.
             </div>
           {/if}
         </div>

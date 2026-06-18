@@ -266,11 +266,7 @@
              right-aligns with the button's edge, not the row's. -->
         <div class="w-6 shrink-0" aria-hidden="true"></div>
       </div>
-      <RunOptionsTiles
-        bind:this={run_options_tiles}
-        mode="link"
-        {project_id}
-      />
+      <RunOptionsTiles bind:this={run_options_tiles} mode="link" {project_id} />
     </aside>
   </div>
 </FormContainer>
