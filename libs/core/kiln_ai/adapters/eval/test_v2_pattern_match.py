@@ -1,44 +1,21 @@
 """Tests for PatternMatchEval adapter."""
 
-from unittest.mock import Mock
-
 import pytest
 
+from kiln_ai.adapters.eval.conftest import make_eval_task_input, make_v2_eval_config
 from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
-    EvalConfig,
-    EvalConfigType,
-    EvalOutputScore,
     EvalTaskInput,
     PatternMatchProperties,
     SkippedReason,
 )
 
-
-def _make_config(props: PatternMatchProperties) -> EvalConfig:
-    parent = Mock()
-    parent.output_scores = [
-        EvalOutputScore(
-            name="score_a", instruction="a", type=TaskOutputRatingType.pass_fail
-        ),
-    ]
-    cfg = Mock(spec=EvalConfig)
-    cfg.config_type = EvalConfigType.v2
-    cfg.properties = props
-    cfg.parent_eval.return_value = parent
-    return cfg
+_make_config = make_v2_eval_config
 
 
-def _inp(**overrides) -> EvalTaskInput:
-    defaults: dict = {
-        "final_message": "Hello world 42",
-        "trace": None,
-        "reference_data": None,
-        "task_input": None,
-    }
-    defaults.update(overrides)
-    return EvalTaskInput(**defaults)
+def _inp(**overrides: object) -> EvalTaskInput:
+    final_message = overrides.pop("final_message", "Hello world 42")
+    return make_eval_task_input(final_message=str(final_message), **overrides)
 
 
 class TestPatternMatchMustMatch:

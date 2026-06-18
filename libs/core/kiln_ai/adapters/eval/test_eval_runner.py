@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, patch
 import litellm
 import pytest
 
-from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
+from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.conftest import SkippingStubV2Eval, StubV2Eval
 from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
@@ -30,7 +31,6 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalScores,
-    EvalTaskInput,
     ExactMatchProperties,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
@@ -1104,24 +1104,6 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
 # ===================================================================
 # V2 Eval Runner Tests
 # ===================================================================
-
-
-class StubV2Eval(BaseV2EvalBridge):
-    """Stub that returns a passing score."""
-
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
-        return {"accuracy": 1.0}, None, None
-
-
-class SkippingStubV2Eval(BaseV2EvalBridge):
-    """Stub that returns a skip."""
-
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
-        return {}, SkippedReason.extraction_failed, "test skip detail"
 
 
 @pytest.fixture
@@ -2201,3 +2183,63 @@ class TestRunTaskFromEvalInput:
 
         assert result == mock_output
         mock_adapter.invoke.assert_awaited_once_with("test input")
+
+
+# -------------------------------------------------------------------
+# SkippedReason validity: all runner skip paths emit valid enum values
+# -------------------------------------------------------------------
+class TestRunnerSkipReasonsAreValidEnumMembers:
+    """Verify every hardcoded ``skipped_reason=`` value in ``eval_runner.py``
+    is a valid ``SkippedReason`` member.
+
+    The runner stores ``skipped_reason`` as a plain ``str`` on ``EvalRun``.
+    This test catches any future hardcoded string that falls outside the
+    ``SkippedReason`` enum.
+    """
+
+    def test_all_hardcoded_skip_reasons_are_valid(self):
+        import ast
+        import inspect
+
+        from kiln_ai.adapters.eval import eval_runner
+
+        source = inspect.getsource(eval_runner)
+        tree = ast.parse(source)
+
+        valid_values = {member.value for member in SkippedReason}
+        found_reasons: list[str] = []
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.keyword):
+                continue
+            if node.arg != "skipped_reason":
+                continue
+            value_node = node.value
+            # Catch SkippedReason.<member>.value patterns
+            if isinstance(value_node, ast.Attribute) and isinstance(
+                value_node.attr, str
+            ):
+                if value_node.attr == "value":
+                    if isinstance(value_node.value, ast.Attribute):
+                        reason_name = value_node.value.attr
+                        found_reasons.append(reason_name)
+                        assert reason_name in SkippedReason.__members__, (
+                            f"eval_runner uses SkippedReason.{reason_name} "
+                            f"which is not a valid SkippedReason member"
+                        )
+            # Catch raw string literals like skipped_reason="some_string"
+            elif isinstance(value_node, ast.Constant) and isinstance(
+                value_node.value, str
+            ):
+                literal = value_node.value
+                found_reasons.append(literal)
+                assert literal in valid_values, (
+                    f'eval_runner uses raw string skipped_reason="{literal}" '
+                    f"which is not a valid SkippedReason value — "
+                    f"use SkippedReason.<member>.value instead"
+                )
+
+        assert len(found_reasons) > 0, (
+            "Expected at least one hardcoded SkippedReason usage in eval_runner. "
+            "Test may need updating if runner was refactored."
+        )

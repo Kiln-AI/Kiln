@@ -4,41 +4,17 @@ from unittest.mock import Mock
 
 import pytest
 
+from kiln_ai.adapters.eval.conftest import make_eval_task_input, make_v2_eval_config
 from kiln_ai.adapters.eval.v2_eval_exact_match import ExactMatchEval
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
-    EvalConfig,
-    EvalConfigType,
     EvalOutputScore,
-    EvalTaskInput,
     ExactMatchProperties,
     SkippedReason,
 )
 
-
-def _make_config(props: ExactMatchProperties) -> EvalConfig:
-    parent = Mock()
-    parent.output_scores = [
-        EvalOutputScore(
-            name="score_a", instruction="a", type=TaskOutputRatingType.pass_fail
-        ),
-    ]
-    cfg = Mock(spec=EvalConfig)
-    cfg.config_type = EvalConfigType.v2
-    cfg.properties = props
-    cfg.parent_eval.return_value = parent
-    return cfg
-
-
-def _inp(**overrides) -> EvalTaskInput:
-    defaults: dict = {
-        "final_message": "Hello world",
-        "trace": None,
-        "reference_data": None,
-        "task_input": None,
-    }
-    defaults.update(overrides)
-    return EvalTaskInput(**defaults)
+_make_config = make_v2_eval_config
+_inp = make_eval_task_input
 
 
 class TestExactMatchBasic:

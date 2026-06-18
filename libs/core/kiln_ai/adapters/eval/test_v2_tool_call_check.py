@@ -1,47 +1,25 @@
 """Tests for ToolCallCheckEval adapter."""
 
 import json
-from unittest.mock import Mock
 
 import pytest
 
+from kiln_ai.adapters.eval.conftest import make_eval_task_input, make_v2_eval_config
 from kiln_ai.adapters.eval.v2_eval_tool_call_check import ToolCallCheckEval
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     ArgMatch,
-    EvalConfig,
-    EvalConfigType,
-    EvalOutputScore,
     EvalTaskInput,
     SkippedReason,
     ToolCallCheckProperties,
     ToolCallSpec,
 )
 
-
-def _make_config(props: ToolCallCheckProperties) -> EvalConfig:
-    parent = Mock()
-    parent.output_scores = [
-        EvalOutputScore(
-            name="score_a", instruction="a", type=TaskOutputRatingType.pass_fail
-        ),
-    ]
-    cfg = Mock(spec=EvalConfig)
-    cfg.config_type = EvalConfigType.v2
-    cfg.properties = props
-    cfg.parent_eval.return_value = parent
-    return cfg
+_make_config = make_v2_eval_config
 
 
 def _inp(**overrides: object) -> EvalTaskInput:
-    defaults: dict = {
-        "final_message": "hello",
-        "trace": None,
-        "reference_data": None,
-        "task_input": None,
-    }
-    defaults.update(overrides)
-    return EvalTaskInput(**defaults)
+    final_message = overrides.pop("final_message", "hello")
+    return make_eval_task_input(final_message=str(final_message), **overrides)
 
 
 def _trace_with_tool_calls(

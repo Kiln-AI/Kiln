@@ -5,6 +5,10 @@ from unittest.mock import Mock
 import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
+from kiln_ai.adapters.eval.conftest import (
+    SkippingStubV2Eval,
+    StubV2Eval,
+)
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
     check_required_vars,
@@ -23,7 +27,6 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalOutputScore,
-    EvalScores,
     EvalTaskInput,
     ExactMatchProperties,
     LlmJudgeProperties,
@@ -34,23 +37,6 @@ from kiln_ai.datamodel.eval import (
     ToolCallCheckProperties,
     V2EvalType,
 )
-
-
-# ---------------------------------------------------------------------------
-# Stub V2 adapter (test-only, never registered in prod)
-# ---------------------------------------------------------------------------
-class StubV2Eval(BaseV2EvalBridge):
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
-        return {"stub_score": 1.0}, None, None
-
-
-class SkippingStubV2Eval(BaseV2EvalBridge):
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
-        return {}, SkippedReason.extraction_failed, "test skip"
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +115,7 @@ class TestBaseV2EvalBridgeContract:
         cfg = _mock_v2_eval_config()
         adapter = StubV2Eval(cfg)
         scores, skip, detail = await adapter.evaluate(_sample_eval_input())
-        assert scores == {"stub_score": 1.0}
+        assert scores == {"accuracy": 1.0}
         assert skip is None
         assert detail is None
 
@@ -144,7 +130,7 @@ class TestBaseV2EvalBridgeContract:
             task_input="some input",
         )
         scores, skip, _detail = await adapter.evaluate(inp)
-        assert scores == {"stub_score": 1.0}
+        assert scores == {"accuracy": 1.0}
         assert skip is None
 
     def test_rejects_non_v2_config(self):
@@ -168,7 +154,7 @@ class TestBaseV2EvalBridgeContract:
         scores, skip, detail = await adapter.evaluate(_sample_eval_input())
         assert scores == {}
         assert skip == SkippedReason.extraction_failed
-        assert detail == "test skip"
+        assert detail == "test skip detail"
 
 
 # ===================================================================

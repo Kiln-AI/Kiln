@@ -352,7 +352,8 @@ class TestLlmJudgeEvalGEval:
 
 
 class TestLlmJudgeEvalGEvalFailFast:
-    def test_g_eval_raises_when_provider_lacks_logprobs(self):
+    @pytest.mark.asyncio
+    async def test_g_eval_raises_when_provider_lacks_logprobs(self):
         mock_provider = Mock()
         mock_provider.supports_logprobs = False
         props = _make_props(g_eval=True)
@@ -364,9 +365,7 @@ class TestLlmJudgeEvalGEvalFailFast:
             return_value=mock_provider,
         ):
             with pytest.raises(ValueError, match="logprobs support"):
-                import asyncio
-
-                asyncio.get_event_loop().run_until_complete(adapter.evaluate(_inp()))
+                await adapter.evaluate(_inp())
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
