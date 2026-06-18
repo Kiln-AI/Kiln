@@ -31,11 +31,11 @@ def extract_value(
         return eval_input.final_message, None, None
     data = eval_input.model_dump()
     result = extract(expression, data)
-    if isinstance(result, Undefined):
+    if isinstance(result, Undefined) or result is None:
         return (
             None,
             SkippedReason.extraction_failed,
-            f"Expression '{expression}' resolved to undefined",
+            f"Expression '{expression}' resolved to {'undefined' if isinstance(result, Undefined) else 'None'}",
         )
     return result, None, None
 
@@ -60,20 +60,27 @@ def check_reference_key(
             SkippedReason.missing_reference_key,
             f"reference_data missing key '{reference_key}'",
         )
-    return eval_input.reference_data[reference_key], None, None
+    value = eval_input.reference_data[reference_key]
+    if value is None:
+        return (
+            None,
+            SkippedReason.missing_reference_key,
+            f"reference_data key '{reference_key}' is None",
+        )
+    return value, None, None
 
 
 def check_required_vars(
     required_vars: list[str],
     eval_input: EvalTaskInput,
 ) -> tuple[SkippedReason | None, str | None]:
-    """Check that all required_var expressions resolve to non-Undefined values."""
+    """Check that all required_var expressions resolve to non-Undefined/non-None values."""
     data = eval_input.model_dump()
     for var_expr in required_vars:
         result = extract(var_expr, data)
-        if isinstance(result, Undefined):
+        if isinstance(result, Undefined) or result is None:
             return (
                 SkippedReason.extraction_failed,
-                f"required_var '{var_expr}' resolved to undefined",
+                f"required_var '{var_expr}' resolved to {'undefined' if isinstance(result, Undefined) else 'None'}",
             )
     return None, None

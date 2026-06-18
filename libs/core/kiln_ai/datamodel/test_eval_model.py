@@ -2809,3 +2809,144 @@ class TestV1EvalConfigCoexistence:
         assert isinstance(loaded.properties, dict)
         assert loaded.properties["type"] == "some_value"
         assert loaded.properties["eval_steps"] == ["s1"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: V1 EvalRun output=None guard (Item 1c)
+# ---------------------------------------------------------------------------
+
+
+class TestV1EvalRunOutputNoneGuard:
+    """V1 EvalRun with output=None should raise unless skipped."""
+
+    def test_v1_eval_run_output_none_raises(self, mock_task, valid_eval_config_data):
+        eval_obj = Eval(
+            name="Guard Test",
+            parent=mock_task,
+            eval_set_filter_id="tag::s",
+            eval_configs_filter_id="tag::g",
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        config = EvalConfig(parent=eval_obj, **valid_eval_config_data)
+
+        with pytest.raises(ValueError, match="V1 EvalRun requires output to be set"):
+            EvalRun(
+                parent=config,
+                dataset_id="d1",
+                task_run_config_id="c1",
+                input="test",
+                output=None,
+                scores={"score": 1.0},
+            )
+
+    def test_v1_eval_run_output_none_skipped_allowed(
+        self, mock_task, valid_eval_config_data
+    ):
+        eval_obj = Eval(
+            name="Guard Skipped Test",
+            parent=mock_task,
+            eval_set_filter_id="tag::s",
+            eval_configs_filter_id="tag::g",
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        config = EvalConfig(parent=eval_obj, **valid_eval_config_data)
+
+        run = EvalRun(
+            parent=config,
+            dataset_id="d1",
+            task_run_config_id="c1",
+            input="test",
+            output=None,
+            scores={"score": 1.0},
+            skipped_reason="missing_reference_key",
+        )
+        assert run.output is None
+        assert run.skipped_reason == "missing_reference_key"
+
+    def test_v1_eval_run_output_set_passes(self, mock_task, valid_eval_config_data):
+        eval_obj = Eval(
+            name="Guard Pass Test",
+            parent=mock_task,
+            eval_set_filter_id="tag::s",
+            eval_configs_filter_id="tag::g",
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        config = EvalConfig(parent=eval_obj, **valid_eval_config_data)
+
+        run = EvalRun(
+            parent=config,
+            dataset_id="d1",
+            task_run_config_id="c1",
+            input="test",
+            output="some output",
+            scores={"score": 1.0},
+        )
+        assert run.output == "some output"
+
+    def test_v2_eval_run_output_none_allowed(self, mock_task):
+        eval_obj = Eval(
+            name="V2 Guard Test",
+            parent=mock_task,
+            eval_input_filter_id="tag::s",
+            eval_configs_filter_id="tag::g",
+            evaluation_data_type=None,
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        config = EvalConfig(
+            parent=eval_obj,
+            name="V2 Config",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(
+                expected_value="gold",
+            ),
+        )
+
+        run = EvalRun(
+            parent=config,
+            eval_input_id="e1",
+            task_run_config_id="c1",
+            input="test",
+            output=None,
+            scores={"score": 1.0},
+            skipped_reason="extraction_failed",
+        )
+        assert run.output is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: CodeEvalProperties dead SyntaxError catch removed (Item 5.4)
+# ---------------------------------------------------------------------------
+
+
+class TestCodeEvalNoDeadSyntaxErrorCatch:
+    """After removing the dead except SyntaxError, ast.parse + score fn check still works."""
+
+    def test_valid_code_with_score_fn(self):
+        props = CodeEvalProperties(
+            code="def score(output, expected):\n    return 1.0\n"
+        )
+        assert props.code.startswith("def score")
+
+    def test_code_missing_score_fn_raises(self):
+        with pytest.raises(
+            ValueError, match="must define a module-level 'score' function"
+        ):
+            CodeEvalProperties(code="def helper():\n    pass\n")
+
+    def test_syntax_error_caught_by_compile(self):
+        with pytest.raises(ValueError, match="syntax error"):
+            CodeEvalProperties(code="def bad(:\n")
+
+    def test_async_score_fn_valid(self):
+        props = CodeEvalProperties(
+            code="async def score(output, expected):\n    return 1.0\n"
+        )
+        assert "async def score" in props.code

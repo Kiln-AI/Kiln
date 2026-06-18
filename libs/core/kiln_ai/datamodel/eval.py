@@ -209,19 +209,16 @@ class CodeEvalProperties(BaseModel):
 
         import ast
 
-        try:
-            tree = ast.parse(self.code)
-            has_score_fn = any(
-                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and node.name == "score"
-                for node in ast.iter_child_nodes(tree)
+        tree = ast.parse(self.code)
+        has_score_fn = any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "score"
+            for node in ast.iter_child_nodes(tree)
+        )
+        if not has_score_fn:
+            raise ValueError(
+                "Code must define a module-level 'score' function (def score(...))."
             )
-            if not has_score_fn:
-                raise ValueError(
-                    "Code must define a module-level 'score' function (def score(...))."
-                )
-        except SyntaxError:
-            pass
 
         return self
 
@@ -483,6 +480,9 @@ class EvalRun(KilnParentedModel):
         parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
         if not parent_eval:
             return self
+
+        if self.output is None and self.skipped_reason is None:
+            raise ValueError("V1 EvalRun requires output to be set")
 
         evaluation_data_type = parent_eval.evaluation_data_type
         if (

@@ -16,7 +16,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 1 — Verify the already-done RAG punt.** Verification only (independent; run first). Execute the "Already-completed work" checklist (V1 == `main` A0.1, V2 discrete, strict scorer restored, no RAG refs, specs punted, `rag_templates` overview + SHA). Resolve Batch-1 #2's open question: does `_filter_output_to_score_keys` still exist? (feeds Phase 2). File gaps as follow-up; do not re-implement.
 
-- [ ] **Phase 2 — Backend correctness guards.** Batch 1: 1a (`required_var`/`extract_value` treat `None` as skip), 1b (`_filter_output_to_score_keys` raise on no-match — only if it survived the RAG removal), 1c (V1 `output is not None` guard); plus 5.4 (remove dead `except SyntaxError`). + tests for each.
+- [x] **Phase 2 — Backend correctness guards.** Batch 1: 1a (`required_var`/`extract_value` treat `None` as skip), 1b (`_filter_output_to_score_keys` raise on no-match — only if it survived the RAG removal), 1c (V1 `output is not None` guard); plus 5.4 (remove dead `except SyntaxError`). + tests for each.
 
 - [ ] **Phase 3 — Rename legacy dispatcher.** 5.2 (`eval_adapter_from_type` → `legacy_eval_adapter_from_type`, clearer V2-branch error) across all call sites; + 6.2 (dedupe the now-overlapping dispatch tests in `test_registry.py`).
 
