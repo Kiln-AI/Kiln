@@ -4,10 +4,9 @@
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
+  import { onMount, SvelteComponent, tick } from "svelte"
   import type { Eval, Task, EvalConfigType, Spec } from "$lib/types"
   import type { components } from "$lib/api_schema"
-  import { tick } from "svelte"
   import { load_task, load_available_models } from "$lib/stores"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
@@ -18,6 +17,7 @@
     ALL_V2_EVAL_TYPES,
     getV2EvalTypeMetadata,
     type V2EvalType,
+    type EvalTypeFormApi,
   } from "$lib/utils/eval_types/registry"
   import {
     createEvalConfig,
@@ -26,7 +26,6 @@
     grantCodeEvalTrust,
     type EvalTaskInput,
     type TestV2EvalResponse,
-    type V2EvalConfigProperties,
   } from "$lib/api/v2_eval_api"
   import Dialog from "$lib/ui/dialog.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -170,9 +169,13 @@
   let llm_combined_model_name: string | undefined = undefined
   let llm_selected_algo: EvalConfigType | undefined = undefined
 
-  // Form component references
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let v2FormComponent: any
+  // Form component references — Svelte 4 bind:this on <svelte:component> yields
+  // a SvelteComponent instance, which doesn't encode the imperative API in its
+  // type. We bind to SvelteComponent and derive a typed accessor.
+  let v2FormComponentRef: SvelteComponent | undefined
+  $: v2FormComponent = v2FormComponentRef as unknown as
+    | EvalTypeFormApi
+    | undefined
   let llmJudgeFormComponent: LlmJudgeForm
 
   // Save state
@@ -206,7 +209,7 @@
   async function run_test() {
     if (!selected_v2_type || !v2FormComponent) return
 
-    if (typeof v2FormComponent.validate === "function") {
+    if (v2FormComponent.validate) {
       const validation_error = v2FormComponent.validate()
       if (validation_error) {
         test_error = createKilnError(new Error(validation_error))
@@ -214,7 +217,7 @@
       }
     }
 
-    const properties = v2FormComponent.getProperties() as V2EvalConfigProperties
+    const properties = v2FormComponent.getProperties()
 
     const eval_input: EvalTaskInput = {
       final_message: test_final_message,
@@ -349,7 +352,7 @@
           throw new Error("No model selected")
         }
       } else if (selected_v2_type && v2FormComponent) {
-        if (typeof v2FormComponent.validate === "function") {
+        if (v2FormComponent.validate) {
           const validation_error = v2FormComponent.validate()
           if (validation_error) {
             throw new Error(validation_error)
@@ -544,7 +547,7 @@
         {:else if selected_metadata}
           <svelte:component
             this={selected_metadata.createFormComponent}
-            bind:this={v2FormComponent}
+            bind:this={v2FormComponentRef}
           />
         {/if}
 

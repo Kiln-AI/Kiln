@@ -38,7 +38,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 12 — code_eval: UI & doc polish.** 3.2 (timeout `min={1} max={300}`), 3.3 (trust-dialog wording — remove all method/reassurance language), 3.4 (`five_star` docstring).
 
-- [ ] **Phase 13 — Frontend: typed form contract.** 4.2/4.4 (`EvalTypeFormApi` interface; type the registry's `createFormComponent`; narrow call sites; drop the `eslint-disable`s).
+- [x] **Phase 13 — Frontend: typed form contract.** 4.2/4.4 (`EvalTypeFormApi` interface; type the registry's `createFormComponent`; narrow call sites; drop the `eslint-disable`s).
 
 - [ ] **Phase 14 — Frontend: cleanups.** 4.1 (collapse `formatEvalConfigName` ternary), 4.5 (remove dead `"value_expression"` union member), 4.6 (`extractV2Props<T>` dedup util), 4.7 (import `ToolCallSpec` from schema).
 

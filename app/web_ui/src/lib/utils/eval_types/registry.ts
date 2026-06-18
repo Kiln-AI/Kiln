@@ -1,5 +1,6 @@
-import type { SvelteComponent } from "svelte"
+import type { ComponentType } from "svelte"
 import { assertNever } from "$lib/utils/exhaustive"
+import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
 
 import ExactMatchForm from "$lib/components/eval_types/exact_match_form.svelte"
 import PatternMatchForm from "$lib/components/eval_types/pattern_match_form.svelte"
@@ -44,15 +45,22 @@ export const ALL_V2_EVAL_TYPES: readonly V2EvalType[] = [
   "code_eval",
 ] as const
 
+/**
+ * Imperative API exposed by V2 eval-type form components via `export function`.
+ * Used to retrieve form state from the parent page via `bind:this`.
+ */
+export interface EvalTypeFormApi {
+  getProperties(): V2EvalConfigProperties
+  validate?(): string | null
+}
+
 export interface V2EvalTypeMetadata {
   label: string
   description: string
   icon: string
   requiresTrust: boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createFormComponent: typeof SvelteComponent<any>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  resultRendererComponent: typeof SvelteComponent<any>
+  createFormComponent: ComponentType
+  resultRendererComponent: ComponentType
 }
 
 /**
