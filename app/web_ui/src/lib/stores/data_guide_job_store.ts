@@ -67,6 +67,9 @@ export const data_guide_jobs =
 function hydrate(): Record<string, DataGuideJobRecord> {
   const jobs: Record<string, DataGuideJobRecord> = {}
   if (!isBrowser) return jobs
+  // Removing an entry mid-loop shifts the remaining indices and would skip
+  // items, so collect corrupt keys during the index walk and delete them after.
+  const corrupt_keys: string[] = []
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
     if (!key || !key.startsWith(KEY_PREFIX)) continue
@@ -78,12 +81,15 @@ function hydrate(): Record<string, DataGuideJobRecord> {
         jobs[map_key(record.project_id, record.task_id)] = record
       }
     } catch {
-      // Corrupt entry — drop it so it can't wedge the store.
-      try {
-        localStorage.removeItem(key)
-      } catch {
-        // ignore
-      }
+      // Corrupt entry — mark it for removal so it can't wedge the store.
+      corrupt_keys.push(key)
+    }
+  }
+  for (const key of corrupt_keys) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // ignore
     }
   }
   return jobs

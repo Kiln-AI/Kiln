@@ -38,32 +38,46 @@
     return true
   }
 
-  // Parse a single CSV line accounting for double-quoted fields. We only ever
-  // read the first column, so the algorithm only needs to find the end of
-  // that column.
-  function first_csv_column(line: string): string {
-    if (line.length === 0) return ""
-    if (line[0] === '"') {
-      let i = 1
-      let result = ""
-      while (i < line.length) {
-        const ch = line[i]
-        if (ch === '"') {
-          if (i + 1 < line.length && line[i + 1] === '"') {
-            result += '"'
-            i += 2
-          } else {
-            return result
-          }
+  // Extract the first column of every record in a CSV. Parses the whole text
+  // with a quote-aware state machine (rather than splitting on "\n" first) so a
+  // quoted field containing newlines, commas, or escaped quotes stays intact —
+  // common for the prose/document inputs this dialog accepts. Only the first
+  // column is accumulated; the rest of each record is skipped.
+  function parse_first_column_csv(text: string): string[] {
+    const normalized = text.replace(/\r\n?/g, "\n")
+    const results: string[] = []
+    let field = ""
+    let in_quotes = false
+    let in_first_column = true
+    for (let i = 0; i < normalized.length; i++) {
+      const ch = normalized[i]
+      if (ch === '"') {
+        if (in_quotes && normalized[i + 1] === '"') {
+          if (in_first_column) field += '"'
+          i++ // escaped quote — consume the pair
         } else {
-          result += ch
-          i++
+          in_quotes = !in_quotes
         }
+      } else if (ch === "," && !in_quotes) {
+        // End of the first column; ignore the remaining columns of this record.
+        if (in_first_column) {
+          results.push(field)
+          field = ""
+          in_first_column = false
+        }
+      } else if (ch === "\n" && !in_quotes) {
+        // End of record. Push only when no comma was seen (first col = whole row).
+        if (in_first_column) results.push(field)
+        field = ""
+        in_first_column = true
+      } else if (in_first_column) {
+        field += ch
       }
-      return result
     }
-    const comma = line.indexOf(",")
-    return comma === -1 ? line : line.slice(0, comma)
+    // Flush a trailing record with no final newline (skip if a comma already
+    // pushed its first column).
+    if (in_first_column && field.length > 0) results.push(field)
+    return results
   }
 
   async function process_file(file: File) {
@@ -73,24 +87,17 @@
     selected_file_name = file.name
     try {
       const text = await file.text()
-      // Normalize line endings; ignore blank lines.
-      const lines = text
-        .replace(/\r\n?/g, "\n")
-        .split("\n")
-        .map((l) => l)
-        .filter((l) => l.trim().length > 0)
-      if (lines.length === 0) {
+      const columns = parse_first_column_csv(text)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      if (columns.length === 0) {
         parse_error = `${selected_file_name} is empty.`
         return
       }
-      // Treat the first line as a header iff it is literally "input"
-      // (case-insensitive). Otherwise treat every line as data.
-      const first_col_header = first_csv_column(lines[0]).trim().toLowerCase()
-      const data_lines = first_col_header === "input" ? lines.slice(1) : lines
-      let rows = data_lines
-        .map(first_csv_column)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
+      // Treat the first value as a header iff it is literally "input"
+      // (case-insensitive). Otherwise treat every value as data.
+      let rows =
+        columns[0].toLowerCase() === "input" ? columns.slice(1) : columns
       const warnings: string[] = []
       // Drop rows over the per-example character limit — they'd be blocked at
       // analyze time anyway, so skip them here with a heads-up.
