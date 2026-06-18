@@ -1,7 +1,7 @@
 """Integration tests: run code-eval sample snippets through the real execution path.
 
-Sample code is mirrored verbatim from the frontend:
-  - "See examples" snippets → code_eval_form.svelte
+Sample code is mirrored from the frontend's dynamic generators:
+  - "See examples" snippets → code_eval_helpers.ts (generate_examples)
   - Default starter code shape → code_eval_helpers.ts (generate_default_code)
 Keep these fixtures in sync with those sources.
 """
@@ -87,10 +87,24 @@ PFC = TaskOutputRatingType.pass_fail_critical
 
 
 # ---------------------------------------------------------------------------
-# Sample code fixtures — verbatim from code_eval_form.svelte ("See examples")
+# Sample code fixtures — mirror of code_eval_helpers.ts generate_examples()
+# Each example uses a test eval with both pass_fail and five_star scores
+# (plus pass_fail_critical in the domain example) to exercise the type mapping.
 # ---------------------------------------------------------------------------
 
-# Mirror of code_eval_form.svelte "Parse JSON" example.
+# Scores used by the "See examples" tests: pass_fail + five_star
+EXAMPLE_SCORES_PF_FS = [_score("Check", PF), _score("Rating", FS)]
+EXAMPLE_KEYS_PF_FS = {"check", "rating"}
+
+# Scores with an additional pass_fail_critical
+EXAMPLE_SCORES_PF_FS_PFC = [
+    _score("Check", PF),
+    _score("Rating", FS),
+    _score("Safety", PFC),
+]
+EXAMPLE_KEYS_PF_FS_PFC = {"check", "rating", "safety"}
+
+# Mirror of code_eval_helpers.ts "Parse JSON" example (multi-score).
 PARSE_JSON_CODE = """\
 import json
 
@@ -99,17 +113,18 @@ def score(output, trace, reference_data, task_input, kiln):
     try:
         data = json.loads(output)
     except (json.JSONDecodeError, TypeError):
-        return {"valid_json": 0.0, "has_fields": 0.0}
+        return {"check": 0.0, "rating": 1.0}
 
     required = ["name", "description"]
     has_all = all(k in data for k in required)
-    return {
-        "valid_json": 1.0,
-        "has_fields": kiln.pass_fail(has_all),
+    passed = isinstance(data, dict) and has_all
+    return {  # Adjust each score's logic for your eval
+        "check": kiln.pass_fail(passed),
+        "rating": kiln.five_star(5 if passed else 1),
     }
 """
 
-# Mirror of code_eval_form.svelte "Check tool usage" example.
+# Mirror of code_eval_helpers.ts "Check tool usage" example (multi-score).
 CHECK_TOOL_USAGE_CODE = """\
 def score(output, trace, reference_data, task_input, kiln):
     \"\"\"Verify the model used the expected tools.\"\"\"
@@ -117,13 +132,13 @@ def score(output, trace, reference_data, task_input, kiln):
     used_search = kiln.has_tool_call(tool_calls, "search")
     call_count = kiln.count_tool_calls(tool_calls, "search")
 
-    return {
-        "used_search": kiln.pass_fail(used_search),
-        "search_count": kiln.five_star(max(min(call_count, 5), 1)),
+    return {  # Adjust each score's logic for your eval
+        "check": kiln.pass_fail(used_search),
+        "rating": kiln.five_star(max(min(call_count, 5), 1)),
     }
 """
 
-# Mirror of code_eval_form.svelte "Domain-specific grading" example.
+# Mirror of code_eval_helpers.ts "Domain-specific grading" example (3-score).
 DOMAIN_GRADING_CODE = """\
 def score(output, trace, reference_data, task_input, kiln):
     \"\"\"Grade output against domain-specific criteria.\"\"\"
@@ -132,14 +147,11 @@ def score(output, trace, reference_data, task_input, kiln):
     contains = kiln.assert_contains(output, expected) if expected else True
 
     word_count = len(output.split())
-    concise = 10 <= word_count <= 200
 
-    return {
-        "contains_answer": kiln.pass_fail(contains),
-        "conciseness": kiln.pass_fail(concise),
-        "length_score": kiln.five_star(
-            5 if word_count < 50 else 3 if word_count < 150 else 1
-        ),
+    return {  # Adjust each score's logic for your eval
+        "check": kiln.pass_fail(contains),
+        "rating": kiln.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1),
+        "safety": kiln.pass_fail(contains),
     }
 """
 
@@ -204,10 +216,10 @@ def _assert_valid_scores(
 
 
 class TestParseJsonExample:
-    """Parse JSON example from code_eval_form.svelte."""
+    """Parse JSON example from code_eval_helpers.ts generate_examples."""
 
-    SCORES: ClassVar = [_score("Valid JSON", PF), _score("Has Fields", PF)]
-    KEYS: ClassVar = {"valid_json", "has_fields"}
+    SCORES: ClassVar = EXAMPLE_SCORES_PF_FS
+    KEYS: ClassVar = EXAMPLE_KEYS_PF_FS
 
     @pytest.mark.asyncio
     async def test_valid_json_with_required_fields(self):
@@ -220,8 +232,8 @@ class TestParseJsonExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["valid_json"] == 1.0
-        assert scores["has_fields"] == 1.0
+        assert scores["check"] == 1.0
+        assert scores["rating"] == 5.0
 
     @pytest.mark.asyncio
     async def test_valid_json_missing_fields(self):
@@ -234,8 +246,8 @@ class TestParseJsonExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["valid_json"] == 1.0
-        assert scores["has_fields"] == 0.0
+        assert scores["check"] == 0.0
+        assert scores["rating"] == 1.0
 
     @pytest.mark.asyncio
     async def test_invalid_json(self):
@@ -248,15 +260,30 @@ class TestParseJsonExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["valid_json"] == 0.0
-        assert scores["has_fields"] == 0.0
+        assert scores["check"] == 0.0
+        assert scores["rating"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_json_array_not_dict(self):
+        """A valid JSON array is not a dict -- passed should be False."""
+        cfg = _make_config(PARSE_JSON_CODE, self.SCORES)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        inp = _inp(final_message="[1, 2, 3]")
+        scores, reason, _ = await adapter.evaluate(inp)
+
+        assert reason is None
+        _assert_valid_scores(scores, self.KEYS, self.SCORES)
+        assert scores["check"] == 0.0
+        assert scores["rating"] == 1.0
 
 
 class TestCheckToolUsageExample:
-    """Check tool usage example from code_eval_form.svelte."""
+    """Check tool usage example from code_eval_helpers.ts generate_examples."""
 
-    SCORES: ClassVar = [_score("Used Search", PF), _score("Search Count", FS)]
-    KEYS: ClassVar = {"used_search", "search_count"}
+    SCORES: ClassVar = EXAMPLE_SCORES_PF_FS
+    KEYS: ClassVar = EXAMPLE_KEYS_PF_FS
 
     @pytest.mark.asyncio
     async def test_trace_with_search_calls(self):
@@ -274,8 +301,8 @@ class TestCheckToolUsageExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["used_search"] == 1.0
-        assert scores["search_count"] == 2.0
+        assert scores["check"] == 1.0
+        assert scores["rating"] == 2.0
 
     @pytest.mark.asyncio
     async def test_zero_matching_tool_calls(self):
@@ -290,8 +317,8 @@ class TestCheckToolUsageExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["used_search"] == 0.0
-        assert scores["search_count"] == 1.0  # max(min(0, 5), 1) == 1
+        assert scores["check"] == 0.0
+        assert scores["rating"] == 1.0  # max(min(0, 5), 1) == 1
 
     @pytest.mark.asyncio
     async def test_none_trace(self):
@@ -305,8 +332,8 @@ class TestCheckToolUsageExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["used_search"] == 0.0
-        assert scores["search_count"] == 1.0
+        assert scores["check"] == 0.0
+        assert scores["rating"] == 1.0
 
     @pytest.mark.asyncio
     async def test_many_search_calls_capped_at_five(self):
@@ -323,19 +350,15 @@ class TestCheckToolUsageExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["used_search"] == 1.0
-        assert scores["search_count"] == 5.0  # max(min(10, 5), 1) == 5
+        assert scores["check"] == 1.0
+        assert scores["rating"] == 5.0  # max(min(10, 5), 1) == 5
 
 
 class TestDomainGradingExample:
-    """Domain-specific grading example from code_eval_form.svelte."""
+    """Domain-specific grading example from code_eval_helpers.ts generate_examples."""
 
-    SCORES: ClassVar = [
-        _score("Contains Answer", PF),
-        _score("Conciseness", PF),
-        _score("Length Score", FS),
-    ]
-    KEYS: ClassVar = {"contains_answer", "conciseness", "length_score"}
+    SCORES: ClassVar = EXAMPLE_SCORES_PF_FS_PFC
+    KEYS: ClassVar = EXAMPLE_KEYS_PF_FS_PFC
 
     @pytest.mark.asyncio
     async def test_output_contains_expected_answer(self):
@@ -352,9 +375,9 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["contains_answer"] == 1.0
-        assert scores["conciseness"] == 1.0
-        assert scores["length_score"] == 5.0
+        assert scores["check"] == 1.0
+        assert scores["safety"] == 1.0
+        assert scores["rating"] == 5.0
 
     @pytest.mark.asyncio
     async def test_output_missing_expected_answer(self):
@@ -371,8 +394,8 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["contains_answer"] == 0.0
-        assert scores["conciseness"] == 1.0
+        assert scores["check"] == 0.0
+        assert scores["safety"] == 0.0
 
     @pytest.mark.asyncio
     async def test_empty_reference_data(self):
@@ -387,7 +410,8 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["contains_answer"] == 1.0
+        assert scores["check"] == 1.0
+        assert scores["safety"] == 1.0
 
     @pytest.mark.asyncio
     async def test_empty_reference_data_dict(self):
@@ -402,11 +426,12 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["contains_answer"] == 1.0
+        assert scores["check"] == 1.0
+        assert scores["safety"] == 1.0
 
     @pytest.mark.asyncio
-    async def test_very_short_output_not_concise(self):
-        """Output with fewer than 10 words is not concise."""
+    async def test_short_output_high_rating(self):
+        """Output with fewer than 50 words gets rating of 5."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
@@ -417,12 +442,11 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["conciseness"] == 0.0
-        assert scores["length_score"] == 5.0
+        assert scores["rating"] == 5.0
 
     @pytest.mark.asyncio
-    async def test_long_output_length_score(self):
-        """Output with 150+ words gets length_score of 1."""
+    async def test_long_output_low_rating(self):
+        """Output with 150+ words gets rating of 1."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
@@ -433,12 +457,11 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["conciseness"] == 1.0
-        assert scores["length_score"] == 1.0
+        assert scores["rating"] == 1.0
 
     @pytest.mark.asyncio
-    async def test_medium_output_length_score(self):
-        """Output with 50-149 words gets length_score of 3."""
+    async def test_medium_output_mid_rating(self):
+        """Output with 50-149 words gets rating of 3."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
@@ -449,7 +472,7 @@ class TestDomainGradingExample:
 
         assert reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["length_score"] == 3.0
+        assert scores["rating"] == 3.0
 
 
 # ---------------------------------------------------------------------------

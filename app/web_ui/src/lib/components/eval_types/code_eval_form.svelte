@@ -4,7 +4,7 @@
   import CodeEditor from "$lib/components/code_editor.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { EvalOutputScore } from "$lib/types"
-  import { generate_default_code } from "./code_eval_helpers"
+  import { generate_default_code, generate_examples } from "./code_eval_helpers"
 
   export let output_scores: EvalOutputScore[] | undefined = undefined
 
@@ -41,61 +41,7 @@
   let examples_dialog: Dialog
   let active_example_tab: number = 0
 
-  const examples = [
-    {
-      label: "Parse JSON",
-      code: `import json
-
-def score(output, trace, reference_data, task_input, kiln):
-    """Check if the output is valid JSON with required fields."""
-    try:
-        data = json.loads(output)
-    except (json.JSONDecodeError, TypeError):
-        return {"valid_json": 0.0, "has_fields": 0.0}
-
-    required = ["name", "description"]
-    has_all = all(k in data for k in required)
-    return {
-        "valid_json": 1.0,
-        "has_fields": kiln.pass_fail(has_all),
-    }
-`,
-    },
-    {
-      label: "Check tool usage",
-      code: `def score(output, trace, reference_data, task_input, kiln):
-    """Verify the model used the expected tools."""
-    tool_calls = kiln.get_tool_calls(trace)
-    used_search = kiln.has_tool_call(tool_calls, "search")
-    call_count = kiln.count_tool_calls(tool_calls, "search")
-
-    return {
-        "used_search": kiln.pass_fail(used_search),
-        "search_count": kiln.five_star(max(min(call_count, 5), 1)),
-    }
-`,
-    },
-    {
-      label: "Domain-specific grading",
-      code: `def score(output, trace, reference_data, task_input, kiln):
-    """Grade output against domain-specific criteria."""
-    expected = (reference_data or {}).get("expected_answer", "")
-
-    contains = kiln.assert_contains(output, expected) if expected else True
-
-    word_count = len(output.split())
-    concise = 10 <= word_count <= 200
-
-    return {
-        "contains_answer": kiln.pass_fail(contains),
-        "conciseness": kiln.pass_fail(concise),
-        "length_score": kiln.five_star(
-            5 if word_count < 50 else 3 if word_count < 150 else 1
-        ),
-    }
-`,
-    },
-  ]
+  $: examples = generate_examples(output_scores)
 
   function show_examples() {
     active_example_tab = 0

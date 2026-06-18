@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { EvalOutputScore } from "$lib/types"
-import { generate_default_code } from "./code_eval_helpers"
+import { generate_default_code, generate_examples } from "./code_eval_helpers"
 
 function make_score(
   name: string,
@@ -142,6 +142,159 @@ describe("generate_default_code", () => {
       expect(code).toContain('"custom_score": 0.0')
       expect(code).toContain('"custom_score": 1.0')
       expect(code).toContain("return 0.0 for Fail or 1.0 for Pass")
+    })
+  })
+})
+
+describe("generate_examples", () => {
+  it("returns three examples with correct labels", () => {
+    const examples = generate_examples(undefined)
+    expect(examples).toHaveLength(3)
+    expect(examples[0].label).toBe("Parse JSON")
+    expect(examples[1].label).toBe("Check tool usage")
+    expect(examples[2].label).toBe("Domain-specific grading")
+  })
+
+  it("falls back to quality key when no output_scores", () => {
+    const examples = generate_examples(undefined)
+    for (const ex of examples) {
+      expect(ex.code).toContain('"quality"')
+    }
+  })
+
+  it("falls back to quality key when output_scores is empty", () => {
+    const examples = generate_examples([])
+    for (const ex of examples) {
+      expect(ex.code).toContain('"quality"')
+    }
+  })
+
+  it("uses string_to_json_key-derived keys from output_scores", () => {
+    const scores = [
+      make_score("Valid JSON", "pass_fail"),
+      make_score("Overall Rating", "five_star"),
+    ]
+    const examples = generate_examples(scores)
+    for (const ex of examples) {
+      expect(ex.code).toContain('"valid_json"')
+      expect(ex.code).toContain('"overall_rating"')
+    }
+  })
+
+  describe("type-appropriate value mapping", () => {
+    const scores = [
+      make_score("Check", "pass_fail"),
+      make_score("Rating", "five_star"),
+    ]
+
+    it("uses kiln.pass_fail for pass_fail scores", () => {
+      const examples = generate_examples(scores)
+      for (const ex of examples) {
+        expect(ex.code).toContain('"check": kiln.pass_fail(')
+      }
+    })
+
+    it("uses kiln.five_star for five_star scores", () => {
+      const examples = generate_examples(scores)
+      for (const ex of examples) {
+        expect(ex.code).toContain('"rating": kiln.five_star(')
+      }
+    })
+
+    it("uses kiln.pass_fail for pass_fail_critical scores", () => {
+      const scores_pfc = [make_score("Safety", "pass_fail_critical")]
+      const examples = generate_examples(scores_pfc)
+      for (const ex of examples) {
+        expect(ex.code).toContain('"safety": kiln.pass_fail(')
+      }
+    })
+  })
+
+  describe("Parse JSON example", () => {
+    it("computes passed from isinstance and has_all", () => {
+      const examples = generate_examples(undefined)
+      expect(examples[0].code).toContain(
+        "passed = isinstance(data, dict) and has_all",
+      )
+    })
+
+    it("uses passed as the bool expression", () => {
+      const examples = generate_examples(undefined)
+      expect(examples[0].code).toContain("kiln.pass_fail(passed)")
+    })
+
+    it("returns error dict on parse failure with low values", () => {
+      const scores = [
+        make_score("A", "pass_fail"),
+        make_score("B", "five_star"),
+      ]
+      const examples = generate_examples(scores)
+      expect(examples[0].code).toContain('"a": 0.0')
+      expect(examples[0].code).toContain('"b": 1.0')
+    })
+  })
+
+  describe("Check tool usage example", () => {
+    it("clamps five_star lower bound to 1 when a five_star score is present", () => {
+      const scores = [make_score("Rating", "five_star")]
+      const examples = generate_examples(scores)
+      expect(examples[1].code).toContain("max(min(call_count, 5), 1)")
+    })
+
+    it("uses used_search as the bool expression", () => {
+      const examples = generate_examples(undefined)
+      expect(examples[1].code).toContain("kiln.pass_fail(used_search)")
+    })
+  })
+
+  describe("Domain-specific grading example", () => {
+    it("guards assert_contains with if expected else True", () => {
+      const examples = generate_examples(undefined)
+      expect(examples[2].code).toContain("if expected else True")
+    })
+
+    it("uses contains as the bool expression", () => {
+      const examples = generate_examples(undefined)
+      expect(examples[2].code).toContain("kiln.pass_fail(contains)")
+    })
+
+    it("uses word_count-based rating expression for five_star", () => {
+      const scores = [make_score("R", "five_star")]
+      const examples = generate_examples(scores)
+      expect(examples[2].code).toContain(
+        "kiln.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1)",
+      )
+    })
+  })
+
+  describe("single score (no multi-line return dict)", () => {
+    it("produces inline return for a single score", () => {
+      const scores = [make_score("Quality", "pass_fail")]
+      const examples = generate_examples(scores)
+      expect(examples[1].code).toContain(
+        'return {"quality": kiln.pass_fail(used_search)}',
+      )
+    })
+
+    it("does not include the adjust comment for a single score", () => {
+      const scores = [make_score("Quality", "pass_fail")]
+      const examples = generate_examples(scores)
+      for (const ex of examples) {
+        expect(ex.code).not.toContain("Adjust each")
+      }
+    })
+  })
+
+  describe("multi-score adjust comment", () => {
+    it("includes an adjust comment in multi-score return dicts", () => {
+      const scores = [
+        make_score("Check", "pass_fail"),
+        make_score("Rating", "five_star"),
+      ]
+      const examples = generate_examples(scores)
+      for (const ex of examples) {
+        expect(ex.code).toContain("# Adjust each score's logic for your eval")
+      }
     })
   })
 })

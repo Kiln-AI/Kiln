@@ -204,7 +204,6 @@ describe("example code correctness", () => {
     await fireEvent.click(tabs[2])
     const domainCode = get_example_code(container)
     expect(domainCode).toContain("kiln.pass_fail(contains)")
-    expect(domainCode).not.toContain('"contains_answer": 1.0')
   })
 
   it("Domain-specific grading handles empty expected gracefully", async () => {
@@ -216,18 +215,39 @@ describe("example code correctness", () => {
   })
 
   it("Check tool usage example clamps five_star lower bound to 1", async () => {
-    const { container } = render(CodeEvalForm)
+    const scores = [make_score("Rating", "five_star")]
+    const { container } = render(CodeEvalForm, {
+      props: { output_scores: scores },
+    })
     const tabs = container.querySelectorAll(".tab")
     await fireEvent.click(tabs[1])
     const toolCode = get_example_code(container)
-    expect(toolCode).toContain("kiln.five_star(max(min(call_count, 5), 1))")
+    expect(toolCode).toContain("max(min(call_count, 5), 1)")
   })
 
-  it("Parse JSON example returns valid score dicts", () => {
+  it("Parse JSON example uses kiln.pass_fail(passed)", () => {
     const { container } = render(CodeEvalForm)
     const parseCode = get_example_code(container)
-    expect(parseCode).toContain("kiln.pass_fail(has_all)")
-    expect(parseCode).toContain('"valid_json": 1.0')
-    expect(parseCode).toContain('"valid_json": 0.0')
+    expect(parseCode).toContain("kiln.pass_fail(passed)")
+  })
+
+  it("examples use fallback quality key when no output_scores", () => {
+    const { container } = render(CodeEvalForm)
+    const parseCode = get_example_code(container)
+    expect(parseCode).toContain('"quality"')
+  })
+
+  it("examples use real score keys from output_scores", async () => {
+    const scores = [
+      make_score("Accuracy", "pass_fail"),
+      make_score("Depth", "five_star"),
+    ]
+    const { container } = render(CodeEvalForm, {
+      props: { output_scores: scores },
+    })
+    const parseCode = get_example_code(container)
+    expect(parseCode).toContain('"accuracy"')
+    expect(parseCode).toContain('"depth"')
+    expect(parseCode).not.toContain('"quality"')
   })
 })
