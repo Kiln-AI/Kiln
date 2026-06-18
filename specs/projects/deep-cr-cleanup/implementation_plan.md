@@ -44,4 +44,4 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 15 — Frontend test hygiene.** 6.7 (extend the with/without-`eval_config` renderer pattern to the other 7), 6.13 (parametrize `v2_eval_api.test.ts` error paths), 6.14 (derive `registry.test.ts` count from the array).
 
-- [ ] **Phase 16 — Deps.** 7.1 (remove the redundant `codemirror` umbrella; re-resolve the lockfile; confirm the editor still builds). Final pass: full project checks green across all phases.
+- [x] **Phase 16 — Deps.** 7.1 (remove the redundant `codemirror` umbrella; re-resolve the lockfile; confirm the editor still builds). Final pass: full project checks green across all phases.

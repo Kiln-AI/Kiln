@@ -57,7 +57,6 @@
     "@floating-ui/dom": "^1.7.2",
     "@kinde-oss/kinde-auth-pkce-js": "^4.3.0",
     "@sentry/sveltekit": "^10.50.0",
-    "codemirror": "^6.0.2",
     "dompurify": "^3.3.3",
     "echarts": "^6.0.0",
     "highlight.js": "^11.10.0",
