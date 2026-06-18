@@ -709,8 +709,8 @@
     <div class="alert alert-warning text-sm">
       <i class="bi bi-exclamation-triangle-fill"></i>
       <span
-        >This eval runs arbitrary Python code on your machine. Only proceed if
-        you trust the code.</span
+        >This eval runs Python code on your machine. Only proceed if you trust
+        eval code inside this project.</span
       >
     </div>
     <p class="text-sm text-gray-600">
