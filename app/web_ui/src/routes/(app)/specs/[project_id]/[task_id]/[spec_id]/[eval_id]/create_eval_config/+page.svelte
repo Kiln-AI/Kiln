@@ -713,11 +713,6 @@
         eval code inside this project.</span
       >
     </div>
-    <p class="text-sm text-gray-600">
-      Review the score function carefully before granting trust. Trust is
-      granted for this session only and applies to all code evals in this
-      project.
-    </p>
   </div>
 </Dialog>
 
