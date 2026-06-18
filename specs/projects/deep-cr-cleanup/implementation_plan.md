@@ -18,7 +18,7 @@ For this remediation project the detailed `project_overview.md` doubles as the f
 
 - [x] **Phase 2 — Backend correctness guards.** Batch 1: 1a (`required_var`/`extract_value` treat `None` as skip), 1b (`_filter_output_to_score_keys` raise on no-match — only if it survived the RAG removal), 1c (V1 `output is not None` guard); plus 5.4 (remove dead `except SyntaxError`). + tests for each.
 
-- [ ] **Phase 3 — Rename legacy dispatcher.** 5.2 (`eval_adapter_from_type` → `legacy_eval_adapter_from_type`, clearer V2-branch error) across all call sites; + 6.2 (dedupe the now-overlapping dispatch tests in `test_registry.py`).
+- [x] **Phase 3 — Rename legacy dispatcher.** 5.2 (`eval_adapter_from_type` → `legacy_eval_adapter_from_type`, clearer V2-branch error) across all call sites; + 6.2 (dedupe the now-overlapping dispatch tests in `test_registry.py`).
 
 - [ ] **Phase 4 — Data-model robustness.** 5.8 (explicit `_V2_PROPERTY_TYPES` tuple in `eval.py`), 5.9 (cache `output_scores` to drop per-item `parent_eval()` I/O), 5.6 (clarify the `dataset_id`/`eval_input_id` mutual-exclusivity error). + tests.
 

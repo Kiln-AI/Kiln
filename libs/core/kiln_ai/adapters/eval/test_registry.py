@@ -5,7 +5,7 @@ import pytest
 
 from kiln_ai.adapters.eval.g_eval import GEval
 from kiln_ai.adapters.eval.registry import (
-    eval_adapter_from_type,
+    legacy_eval_adapter_from_type,
     v2_eval_adapter_from_config,
 )
 from kiln_ai.datamodel.eval import (
@@ -68,31 +68,21 @@ def _mock_v2_eval_config(v2_type: V2EvalType) -> EvalConfig:
     return cfg
 
 
-class TestEvalAdapterFromType:
+class TestLegacyEvalAdapterFromType:
     @pytest.mark.parametrize(
         "config_type", [EvalConfigType.g_eval, EvalConfigType.llm_as_judge]
     )
     def test_legacy_types_return_geval(self, config_type: EvalConfigType):
         cfg = _mock_eval_config(config_type)
-        assert eval_adapter_from_type(cfg) is GEval
+        assert legacy_eval_adapter_from_type(cfg) is GEval
 
     def test_v2_raises_not_implemented(self):
         cfg = _mock_eval_config(EvalConfigType.v2)
         with pytest.raises(
             NotImplementedError,
-            match="V2 eval configs use v2_eval_adapter_from_config",
+            match="V2 eval configs should use v2_eval_adapter_from_config",
         ):
-            eval_adapter_from_type(cfg)
-
-    def test_legacy_dispatch_v2_raises(self):
-        cfg = _mock_eval_config(EvalConfigType.v2)
-        with pytest.raises(NotImplementedError, match="v2_eval_adapter_from_config"):
-            eval_adapter_from_type(cfg)
-
-    def test_legacy_dispatch_unchanged(self):
-        for ct in (EvalConfigType.g_eval, EvalConfigType.llm_as_judge):
-            cfg = _mock_eval_config(ct)
-            assert eval_adapter_from_type(cfg) is GEval
+            legacy_eval_adapter_from_type(cfg)
 
 
 class TestV2EvalAdapterFromConfig:

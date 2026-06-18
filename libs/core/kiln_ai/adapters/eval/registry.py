@@ -33,7 +33,7 @@ _V2_ADAPTER_MAP: dict[V2EvalType, type[BaseV2EvalBridge]] = {
 }
 
 
-def eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
+def legacy_eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
     """Legacy dispatch -- returns a BaseEval subclass for g_eval/llm_as_judge.
 
     For v2, raises NotImplementedError (v2 adapters use v2_eval_adapter_from_config).
@@ -45,7 +45,7 @@ def eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
             return GEval
         case EvalConfigType.v2:
             raise NotImplementedError(
-                "V2 eval configs use v2_eval_adapter_from_config(), not eval_adapter_from_type()"
+                "V2 eval configs should use v2_eval_adapter_from_config(), not legacy_eval_adapter_from_type()"
             )
         case _:
             raise_exhaustive_enum_error(eval_config.config_type)

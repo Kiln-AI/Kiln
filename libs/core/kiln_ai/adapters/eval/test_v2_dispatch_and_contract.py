@@ -13,7 +13,7 @@ from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
 from kiln_ai.adapters.eval.g_eval import GEval
 from kiln_ai.adapters.eval.registry import (
     _V2_ADAPTER_MAP,
-    eval_adapter_from_type,
+    legacy_eval_adapter_from_type,
     v2_eval_adapter_from_config,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -218,7 +218,7 @@ class TestV2Dispatch:
         for ct in (EvalConfigType.g_eval, EvalConfigType.llm_as_judge):
             cfg = Mock(spec=EvalConfig)
             cfg.config_type = ct
-            assert eval_adapter_from_type(cfg) is GEval
+            assert legacy_eval_adapter_from_type(cfg) is GEval
 
 
 # ===================================================================

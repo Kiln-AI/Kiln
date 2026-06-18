@@ -525,7 +525,7 @@ async def test_run_job_success_task_run_eval(
             )
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
@@ -581,7 +581,7 @@ async def test_run_job_success_eval_config_eval(
             return mock_scores, {"intermediate_output": "intermediate output"}
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
@@ -621,7 +621,7 @@ async def test_run_job_invalid_evaluator(
 
     # Return an invalid evaluator type
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: object(),
     ):
         with pytest.raises(ValueError):
@@ -653,7 +653,7 @@ async def test_run_job_evaluator_error(
             raise ValueError("Evaluation failed")
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: ErrorEvaluator(*args, **kwargs),
     ):
         with pytest.raises(ValueError):
@@ -712,7 +712,7 @@ async def test_run_job_with_full_trace_evaluation_data_type(
             )
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
@@ -780,7 +780,7 @@ async def test_run_job_with_final_answer_evaluation_data_type(
             )
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
@@ -838,7 +838,7 @@ async def test_run_job_with_none_trace(
             )
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         with pytest.raises(ValueError):
@@ -969,7 +969,7 @@ async def test_run_job_custom_save_context_wraps_save(
             )
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await runner.run_job(job)
@@ -1021,7 +1021,7 @@ async def test_run_job_save_context_sees_save_exception(
 
     with (
         patch(
-            "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+            "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
             return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
         ),
         patch.object(EvalRun, "save_to_file", side_effect=RuntimeError("disk full")),
@@ -1085,7 +1085,7 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
 
     with (
         patch(
-            "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+            "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
             return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
         ),
         patch.object(EvalRun, "save_to_file", fail_first_save),

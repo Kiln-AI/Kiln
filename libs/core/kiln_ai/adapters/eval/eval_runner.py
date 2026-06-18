@@ -7,7 +7,7 @@ import litellm
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.registry import eval_adapter_from_type
+from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import (
@@ -308,7 +308,7 @@ class EvalRunner:
         if not isinstance(job.item, TaskRun):
             raise ValueError("Legacy eval jobs require a TaskRun item")
 
-        evaluator = eval_adapter_from_type(job.eval_config)(
+        evaluator = legacy_eval_adapter_from_type(job.eval_config)(
             job.eval_config,
             job.task_run_config.run_config_properties if job.task_run_config else None,
             skills=self._skills,
