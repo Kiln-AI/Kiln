@@ -489,15 +489,10 @@
         "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/start",
         {
           params: { path: { project_id, task_id } },
-          body: {
-            // The Data Guide describes input shape only: send just the input
-            // schema. The prompt is resolved server-side and the output schema
-            // is intentionally not sent.
-            task_input_schema: task?.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            input_examples,
-          },
+          // Only the examples are sent. The server derives the prompt and input
+          // schema from the task (identified by the route); the output schema
+          // and description are intentionally never involved.
+          body: { input_examples },
         },
       )
       if (api_error) throw api_error

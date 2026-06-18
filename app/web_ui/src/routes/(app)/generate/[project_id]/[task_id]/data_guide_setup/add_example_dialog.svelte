@@ -6,6 +6,12 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
+  import { client } from "$lib/api_client"
+  import RunInputFormElement from "$lib/components/run_input_form_element.svelte"
+  import {
+    model_from_schema_string,
+    type SchemaModelProperty,
+  } from "$lib/utils/json_schema_editor/json_schema_templates"
   import {
     fetch_task_sample_candidates,
     task_run_to_example,
@@ -33,6 +39,27 @@
 
   let available_runs: TaskRun[] = []
   let loading_runs: boolean = true
+
+  // Input JSON schema for structured tasks, fetched on mount. When present, a
+  // new manual entry is captured field-by-field (matching the Kiln Pro path)
+  // instead of via a free-text textarea.
+  let input_json_schema: string | null = null
+  let rootFormElement: { buildValue(): unknown } | null = null
+  let manual_error: string | null = null
+  // Bumped on each open so the structured form re-mounts fresh.
+  let formKey = 0
+
+  $: structured_model = (() => {
+    if (!input_json_schema) return null
+    try {
+      return model_from_schema_string(input_json_schema)
+    } catch {
+      return null
+    }
+  })() as SchemaModelProperty | null
+  // Field-by-field entry only for adding from scratch (the schema form can't be
+  // pre-filled, so editing an existing example stays on the textarea).
+  $: use_structured_form = mode === "add" && !!structured_model
 
   $: added_run_ids = new Set(
     existing_examples
@@ -64,6 +91,16 @@
     } finally {
       loading_runs = false
     }
+
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}",
+        { params: { path: { project_id, task_id } } },
+      )
+      input_json_schema = data?.input_json_schema ?? null
+    } catch {
+      // Non-critical — falls back to the free-text textarea.
+    }
   })
 
   export function open_add() {
@@ -72,6 +109,8 @@
     editing_index = -1
     editing_input = ""
     editing_task_run_id = undefined
+    manual_error = null
+    formKey += 1
     example_dialog?.show()
   }
 
@@ -85,8 +124,22 @@
   }
 
   function save_manual() {
+    manual_error = null
+    let input = editing_input
+    if (use_structured_form) {
+      if (!rootFormElement) {
+        manual_error = "Form not ready."
+        return
+      }
+      try {
+        input = JSON.stringify(rootFormElement.buildValue(), null, 2)
+      } catch (e) {
+        manual_error = e instanceof Error ? e.message : String(e)
+        return
+      }
+    }
     const sample: GuideSample = {
-      input: editing_input,
+      input,
       task_run_id: mode === "edit" ? editing_task_run_id : undefined,
     }
     dispatch("submit", { sample, index: editing_index, mode })
@@ -157,15 +210,30 @@
   {#if (filtered_available_runs.length === 0 && !allow_documents) || add_method === "manual"}
     <!-- Manual input form -->
     <div class="flex flex-col gap-3">
-      <FormElement
-        label="Input"
-        id="example_input"
-        inputType="textarea"
-        height="medium"
-        bind:value={editing_input}
-        optional={true}
-        hide_optional_badge={true}
-      />
+      {#if use_structured_form && structured_model}
+        {#key formKey}
+          <RunInputFormElement
+            property={structured_model}
+            level={0}
+            path="root"
+            hideHeaderAndIndent={true}
+            bind:this={rootFormElement}
+          />
+        {/key}
+      {:else}
+        <FormElement
+          label="Input"
+          id="example_input"
+          inputType="textarea"
+          height="medium"
+          bind:value={editing_input}
+          optional={true}
+          hide_optional_badge={true}
+        />
+      {/if}
+      {#if manual_error}
+        <div class="text-error text-sm">{manual_error}</div>
+      {/if}
       <div class="flex flex-row gap-2 justify-end mt-2">
         {#if mode === "add" && (filtered_available_runs.length > 0 || allow_documents)}
           <button

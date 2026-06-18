@@ -382,7 +382,14 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <!-- Structured tasks hide the Documents tile, leaving two buckets — drop to
+         a 2-col grid so there's no empty third column (and the header buttons
+         line up over the second bucket). -->
+    <div
+      class="grid grid-cols-1 sm:grid-cols-2 gap-3 {is_structured_task
+        ? ''
+        : 'lg:grid-cols-3'}"
+    >
       {#if !is_structured_task}
         <button
           type="button"
@@ -429,7 +436,9 @@
           </div>
         </div>
         <div class="tile-count">{manual_count}</div>
-        <div class="tile-label">Imported Examples</div>
+        <div class="tile-label">
+          {is_structured_task ? "Manual Entries" : "Imported Examples"}
+        </div>
       </button>
     </div>
   {/if}
@@ -456,6 +465,7 @@
   bind:this={all_samples_dialog}
   {project_id}
   {task_id}
+  {is_structured_task}
   {entries}
   {extraction_in_progress}
   initial_filter={initial_all_samples_filter}
