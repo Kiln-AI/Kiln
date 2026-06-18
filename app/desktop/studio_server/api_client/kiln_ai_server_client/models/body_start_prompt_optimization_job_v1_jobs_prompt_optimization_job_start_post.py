@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from io import BytesIO
 from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from .. import types
+from ..types import File
 
 T = TypeVar("T", bound="BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost")
 
@@ -18,13 +20,13 @@ class BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost:
         task_id (str): The task ID
         target_run_config_id (str): The target run config ID
         eval_ids (list[str]): The list of eval IDs to use for optimization
-        project_zip (str): The project zip file
+        project_zip (File): The project zip file
     """
 
     task_id: str
     target_run_config_id: str
     eval_ids: list[str]
-    project_zip: str
+    project_zip: File
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,7 +36,7 @@ class BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost:
 
         eval_ids = self.eval_ids
 
-        project_zip = self.project_zip
+        project_zip = self.project_zip.to_tuple()
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -59,7 +61,7 @@ class BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost:
         for eval_ids_item_element in self.eval_ids:
             files.append(("eval_ids", (None, str(eval_ids_item_element).encode(), "text/plain")))
 
-        files.append(("project_zip", (None, str(self.project_zip).encode(), "text/plain")))
+        files.append(("project_zip", self.project_zip.to_tuple()))
 
         for prop_name, prop in self.additional_properties.items():
             files.append((prop_name, (None, str(prop).encode(), "text/plain")))
@@ -75,7 +77,7 @@ class BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost:
 
         eval_ids = cast(list[str], d.pop("eval_ids"))
 
-        project_zip = d.pop("project_zip")
+        project_zip = File(payload=BytesIO(d.pop("project_zip")))
 
         body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post = cls(
             task_id=task_id,

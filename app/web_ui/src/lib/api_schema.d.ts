@@ -9288,7 +9288,7 @@ export interface components {
              * Task Input Schema
              * @description The task's input JSON schema. The Data Guide describes input shape only, so this is the sole piece of task info the job needs — the prompt is resolved server-side and the output schema is deliberately excluded (output policy must never reach the guide LLM).
              */
-            task_input_schema: string;
+            task_input_schema?: string | null;
             /**
              * Input Examples
              * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.

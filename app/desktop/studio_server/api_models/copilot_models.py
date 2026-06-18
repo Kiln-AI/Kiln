@@ -170,8 +170,8 @@ DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH = 200_000
 class StartDataGuideJobApiInput(BaseModel):
     """Input to kick off the input data guide draft job."""
 
-    task_input_schema: str = Field(
-        ...,
+    task_input_schema: str | None = Field(
+        None,
         description=(
             "The task's input JSON schema. The Data Guide describes input shape "
             "only, so this is the sole piece of task info the job needs — the "

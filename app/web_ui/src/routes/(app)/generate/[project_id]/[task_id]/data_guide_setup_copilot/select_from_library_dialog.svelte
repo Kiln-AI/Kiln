@@ -114,10 +114,16 @@
   // catches the picked docs. Awaited before extraction to avoid a race.
   async function tag_documents(document_ids: string[]) {
     if (auto_tags.length === 0 || document_ids.length === 0) return
-    await client.POST("/api/projects/{project_id}/documents/edit_tags", {
-      params: { path: { project_id } },
-      body: { document_ids, add_tags: auto_tags },
-    })
+    const { error } = await client.POST(
+      "/api/projects/{project_id}/documents/edit_tags",
+      {
+        params: { path: { project_id } },
+        body: { document_ids, add_tags: auto_tags },
+      },
+    )
+    // Surface tagging failures so callers don't proceed to a tag-scoped
+    // extraction (or a deferred add) with untagged docs.
+    if (error) throw error
   }
 
   // Runs before the picker starts extraction: add the picks as entries (once)

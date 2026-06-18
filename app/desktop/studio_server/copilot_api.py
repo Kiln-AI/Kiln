@@ -92,7 +92,10 @@ from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
-from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -408,6 +411,7 @@ def connect_copilot_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/status",
         tags=["Copilot"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def data_guide_job_status(
         project_id: Annotated[
@@ -424,6 +428,9 @@ def connect_copilot_api(app: FastAPI):
         """Return the current status of a data guide draft job (e.g. running,
         succeeded, failed, cancelled). The web UI polls this while showing the
         analyzing animation and the task-wide progress widget."""
+        # Validate the route scope — 404 on an unknown project/task path rather
+        # than serving by job_id alone under any task.
+        task_from_id(project_id, task_id)
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         status = await _get_data_guide_job_status(client, job_id)
@@ -432,6 +439,7 @@ def connect_copilot_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/result",
         tags=["Copilot"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def data_guide_job_result(
         project_id: Annotated[
@@ -447,6 +455,9 @@ def connect_copilot_api(app: FastAPI):
     ) -> DataGuideJobResultApiOutput:
         """Return the draft guide markdown produced by a completed data guide
         draft job. The web UI calls this once the job status is `succeeded`."""
+        # Validate the route scope — 404 on an unknown project/task path rather
+        # than serving by job_id alone under any task.
+        task_from_id(project_id, task_id)
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         draft_guide = await _get_data_guide_job_result(client, job_id)

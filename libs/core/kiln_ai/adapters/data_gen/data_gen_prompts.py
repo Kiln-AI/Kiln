@@ -334,7 +334,7 @@ This is a refine pass driven by **user feedback only**. The current guide was ge
 
 The task's runtime system prompt:
 <task_instruction>
-{task_instruction}
+{_xml_escape(task_instruction)}
 </task_instruction>"""
 
     if task_input_json_schema and task_input_json_schema.strip():
@@ -342,7 +342,7 @@ The task's runtime system prompt:
 
 The task's input JSON schema:
 <task_input_json_schema>
-{task_input_json_schema}
+{_xml_escape(task_input_json_schema)}
 </task_input_json_schema>"""
 
     guide_block = current_guide.strip() or "(empty)"
@@ -451,7 +451,7 @@ A user is generating synthetic input data for the following task. Read this task
 
 The task's runtime system prompt:
 <task_instruction>
-{task_instruction}
+{_xml_escape(task_instruction)}
 </task_instruction>"""
 
     if task_input_json_schema and task_input_json_schema.strip():
@@ -459,7 +459,7 @@ The task's runtime system prompt:
 
 The task's input JSON schema (every rule about input structure must be consistent with this; do not invent fields the schema doesn't allow):
 <task_input_json_schema>
-{task_input_json_schema}
+{_xml_escape(task_input_json_schema)}
 </task_input_json_schema>"""
 
     guide_block = current_guide.strip()
