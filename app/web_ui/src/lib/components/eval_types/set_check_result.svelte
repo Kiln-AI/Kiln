@@ -1,22 +1,14 @@
 <script lang="ts">
   import EvalResultScores from "./eval_result_scores.svelte"
   import type { EvalConfig } from "$lib/types"
+  import { extractV2Props } from "$lib/utils/eval_types/registry"
 
   export let scores: Record<string, number> = {}
   export let skipped_reason: string | null = null
   export let skipped_detail: string | null = null
   export let eval_config: EvalConfig | null = null
 
-  $: props =
-    eval_config?.properties && "type" in eval_config.properties
-      ? (eval_config.properties as {
-          type: "set_check"
-          expected_set?: string[] | null
-          reference_key?: string | null
-          value_expression?: string | null
-          mode: "subset" | "superset" | "equal"
-        })
-      : null
+  $: props = extractV2Props(eval_config, "set_check")
 
   $: passed = scores.match === 1.0
   $: has_score = "match" in scores

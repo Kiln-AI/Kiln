@@ -2,21 +2,14 @@
   import EvalResultScores from "./eval_result_scores.svelte"
   import type { EvalConfig } from "$lib/types"
   import { model_info, model_name } from "$lib/stores"
+  import { extractV2Props } from "$lib/utils/eval_types/registry"
 
   export let scores: Record<string, number> = {}
   export let skipped_reason: string | null = null
   export let skipped_detail: string | null = null
   export let eval_config: EvalConfig | null = null
 
-  $: props =
-    eval_config?.properties && "type" in eval_config.properties
-      ? (eval_config.properties as {
-          type: "llm_judge"
-          model_name: string
-          model_provider: string
-          g_eval: boolean
-        })
-      : null
+  $: props = extractV2Props(eval_config, "llm_judge")
 </script>
 
 <div class="flex flex-col gap-2">

@@ -339,9 +339,7 @@ export function formatEvalConfigName(
 ): string {
   if (eval_config.config_type === "v2") {
     const typeName = eval_config_to_detailed_ui_name(eval_config)
-    return compact
-      ? eval_config.name + " — " + typeName
-      : eval_config.name + " — " + typeName
+    return eval_config.name + " — " + typeName
   }
   const model_name_value = model_name(
     eval_config.model_name ?? undefined,

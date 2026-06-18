@@ -1,6 +1,8 @@
 import type { ComponentType } from "svelte"
 import { assertNever } from "$lib/utils/exhaustive"
 import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
+import type { components } from "$lib/api_schema"
+import type { EvalConfig } from "$lib/types"
 
 import ExactMatchForm from "$lib/components/eval_types/exact_match_form.svelte"
 import PatternMatchForm from "$lib/components/eval_types/pattern_match_form.svelte"
@@ -180,4 +182,37 @@ export function buildV2EvalTypeRegistry(): Map<V2EvalType, V2EvalTypeMetadata> {
     map.set(t, getV2EvalTypeMetadata(t))
   }
   return map
+}
+
+/**
+ * Maps each V2 eval type discriminator to its generated schema properties type.
+ */
+export type V2PropsMap = {
+  exact_match: components["schemas"]["ExactMatchProperties"]
+  pattern_match: components["schemas"]["PatternMatchProperties"]
+  contains: components["schemas"]["ContainsProperties"]
+  set_check: components["schemas"]["SetCheckProperties"]
+  tool_call_check: components["schemas"]["ToolCallCheckProperties"]
+  step_count_check: components["schemas"]["StepCountCheckProperties"]
+  llm_judge: components["schemas"]["LlmJudgeProperties"]
+  code_eval: components["schemas"]["CodeEvalProperties"]
+}
+
+/**
+ * Extract typed V2 properties from an EvalConfig, returning null if the config
+ * is missing, has no properties, or the properties' type discriminator doesn't
+ * match the expected type.
+ */
+export function extractV2Props<T extends V2EvalType>(
+  eval_config: EvalConfig | null,
+  expectedType: T,
+): V2PropsMap[T] | null {
+  if (
+    !eval_config?.properties ||
+    !("type" in eval_config.properties) ||
+    eval_config.properties.type !== expectedType
+  ) {
+    return null
+  }
+  return eval_config.properties as V2PropsMap[T]
 }

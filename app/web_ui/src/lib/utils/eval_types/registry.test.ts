@@ -4,9 +4,11 @@ import {
   getV2EvalTypeMetadata,
   getV2TypeFromEvalConfig,
   buildV2EvalTypeRegistry,
+  extractV2Props,
   type V2EvalType,
   type V2EvalTypeMetadata,
 } from "./registry"
+import type { EvalConfig } from "$lib/types"
 
 describe("ALL_V2_EVAL_TYPES", () => {
   it("contains exactly 8 entries", () => {
@@ -193,6 +195,68 @@ describe("buildV2EvalTypeRegistry", () => {
       expect(fromRegistry.resultRendererComponent).toBe(
         fromFn.resultRendererComponent,
       )
+    }
+  })
+})
+
+describe("extractV2Props", () => {
+  function makeEvalConfig(
+    properties: Record<string, unknown> | null,
+  ): EvalConfig {
+    return {
+      v: 1,
+      name: "test",
+      config_type: "v2",
+      model_type: "eval_config",
+      properties,
+    } as EvalConfig
+  }
+
+  it("returns typed properties when type matches", () => {
+    const config = makeEvalConfig({
+      type: "exact_match",
+      case_sensitive: true,
+      expected_value: "hello",
+      reference_key: null,
+      value_expression: null,
+    })
+    const result = extractV2Props(config, "exact_match")
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe("exact_match")
+    expect(result!.case_sensitive).toBe(true)
+    expect(result!.expected_value).toBe("hello")
+  })
+
+  it("returns null when type discriminator does not match", () => {
+    const config = makeEvalConfig({
+      type: "contains",
+      case_sensitive: false,
+      mode: "must_contain",
+    })
+    const result = extractV2Props(config, "exact_match")
+    expect(result).toBeNull()
+  })
+
+  it("returns null when eval_config is null", () => {
+    expect(extractV2Props(null, "exact_match")).toBeNull()
+  })
+
+  it("returns null when properties is null", () => {
+    const config = makeEvalConfig(null)
+    expect(extractV2Props(config, "exact_match")).toBeNull()
+  })
+
+  it("returns null when properties has no type field", () => {
+    const config = makeEvalConfig({ case_sensitive: true })
+    expect(extractV2Props(config, "exact_match")).toBeNull()
+  })
+
+  it("works for each V2 type", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const config = makeEvalConfig({ type: t })
+      const result = extractV2Props(config, t)
+      expect(result).not.toBeNull()
+      expect(result!.type).toBe(t)
     }
   })
 })
