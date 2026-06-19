@@ -1291,4 +1291,58 @@ describe("clone task schema fidelity", () => {
     // Empty item title is preserved (previously fabricated as "items").
     expect(schema_from_model(model, false)).toEqual(schema)
   })
+
+  it("preserves camelCase keys (top-level and nested) on a migration-style schema", () => {
+    // Mirrors a schema imported/ported during a migration: camelCase keys with
+    // Title Case titles, so every key != string_to_json_key(title). Reproduced
+    // end-to-end: cloning this on the old creating=true path rewrote every key
+    // (and nested key) to snake_case.
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        detectedEntities: {
+          title: "Detected Entities",
+          type: "array",
+          items: {
+            title: "",
+            type: "object",
+            properties: {
+              entityType: { title: "Entity Type", type: "string" },
+              entityValue: { title: "Entity Value", type: "string" },
+            },
+            required: ["entityType", "entityValue"],
+            additionalProperties: false,
+          },
+        },
+        targetAudiences: {
+          title: "Target Audiences",
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+      required: ["detectedEntities", "targetAudiences"],
+      additionalProperties: false,
+    }
+    const model = model_from_schema(schema)
+
+    // Fixed Save path keeps every stored key, top-level and nested.
+    const fixed = schema_from_model(model, false)
+    expect(Object.keys(fixed.properties!)).toEqual([
+      "detectedEntities",
+      "targetAudiences",
+    ])
+    expect(
+      Object.keys(fixed.properties!.detectedEntities.items!.properties!),
+    ).toEqual(["entityType", "entityValue"])
+
+    // Documents the old bug: creating=true rewrites every key to snake_case.
+    const drifted = schema_from_model(model, true)
+    expect(Object.keys(drifted.properties!)).toEqual([
+      "detected_entities",
+      "target_audiences",
+    ])
+    expect(
+      Object.keys(drifted.properties!.detected_entities.items!.properties!),
+    ).toEqual(["entity_type", "entity_value"])
+  })
 })
