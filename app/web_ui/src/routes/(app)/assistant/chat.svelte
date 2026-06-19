@@ -458,13 +458,11 @@
 </script>
 
 <div class="flex flex-col flex-1 min-h-0">
-  <div
-    class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
-  >
+  <div class="flex flex-col flex-1 min-h-0 overflow-hidden w-full">
     <ChatHistory bind:this={chatHistory} on:apply={onChatHistoryApply} />
     <div
       bind:this={messagesContainer}
-      class="chat-messages-scroll flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto overflow-x-hidden"
+      class="chat-messages-scroll flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto overflow-x-hidden px-1 md:px-[max(0.25rem,calc((100%_-_48rem)/2))]"
       role="log"
       aria-live="polite"
     >
@@ -1034,7 +1032,7 @@
     </div>
 
     <form
-      class="flex-none relative w-full pt-2"
+      class="flex-none relative w-full md:max-w-3xl md:mx-auto px-1 md:px-0 pt-2"
       on:submit|preventDefault={handleSubmit}
     >
       <textarea
