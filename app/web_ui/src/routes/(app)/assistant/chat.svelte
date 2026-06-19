@@ -1051,7 +1051,7 @@
       {#if isLoading}
         <button
           type="button"
-          class="absolute right-3 bottom-6 flex size-8 items-center justify-center rounded-full bg-base-300 text-base-content hover:opacity-90 transition-opacity"
+          class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-neutral"
           on:click={stop}
           aria-label="Stop"
         >
@@ -1060,7 +1060,7 @@
       {:else}
         <button
           type="submit"
-          class="absolute right-3 bottom-6 flex size-8 items-center justify-center rounded-full bg-primary text-primary-content hover:opacity-90 disabled:bg-base-300 disabled:text-base-content/40 disabled:pointer-events-none transition-colors"
+          class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-primary"
           disabled={!input.trim() || inputDisabled}
           aria-label="Send"
         >
