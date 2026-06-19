@@ -518,7 +518,6 @@ class TestDataGuideJob:
     @staticmethod
     def _start_payload() -> dict:
         return {
-            "task_input_schema": "",
             "input_examples": ["hello", "frog"],
         }
 
@@ -571,11 +570,32 @@ class TestDataGuideJob:
         body = sdk_mock.await_args.kwargs["body"]
         assert body.task_prompt == "Translate the input to French."
         assert body.input_examples == ["hello", "frog"]
+        # Plaintext task → no input schema derived.
+        assert not body.task_input_schema
         # The body model has no output schema or task description fields — output
         # policy must never reach the guide LLM.
         body_dict = body.to_dict()
         assert "task_output_schema" not in body_dict
         assert "task_description" not in body_dict
+
+    def test_start_derives_input_schema_from_task(self, client, mock_api_key):
+        """The input schema is read off the task server-side, not sent by the
+        client (the payload has no schema field)."""
+        schema = '{"type": "object", "properties": {"q": {"type": "string"}}}'
+        structured_task = Task(
+            name="MockTask",
+            instruction="Answer the question.",
+            input_json_schema=schema,
+        )
+        sdk_mock = AsyncMock(
+            return_value=_make_sdk_response(parsed=JobStartResponse(job_id="job-123"))
+        )
+        p1, p2, p3 = self._patches(_START_FN, sdk_mock, task=structured_task)
+        with p1, p2, p3:
+            response = client.post(self.START_URL, json=self._start_payload())
+        assert response.status_code == 200
+        body = sdk_mock.await_args.kwargs["body"]
+        assert body.task_input_schema == schema
 
     def test_start_error_surfaces_message_field(self, client, mock_api_key):
         sdk_mock = AsyncMock(

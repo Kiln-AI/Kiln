@@ -168,17 +168,14 @@ DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH = 200_000
 
 
 class StartDataGuideJobApiInput(BaseModel):
-    """Input to kick off the input data guide draft job."""
+    """Input to kick off the input data guide draft job.
 
-    task_input_schema: str | None = Field(
-        None,
-        description=(
-            "The task's input JSON schema. The Data Guide describes input shape "
-            "only, so this is the sole piece of task info the job needs — the "
-            "prompt is resolved server-side and the output schema is "
-            "deliberately excluded (output policy must never reach the guide LLM)."
-        ),
-    )
+    Carries only the input examples. All task info the job needs — the runtime
+    prompt and the input JSON schema — is derived server-side from the task
+    identified by the route, so the client can't supply a manipulated prompt or
+    schema, and the output schema / description never reach the guide LLM.
+    """
+
     input_examples: list[
         Annotated[
             str,

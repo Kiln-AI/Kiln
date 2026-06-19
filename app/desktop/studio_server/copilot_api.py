@@ -395,13 +395,14 @@ def connect_copilot_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         resolved_task_prompt = _resolve_task_runtime_prompt(task)
 
-        # The Data Guide describes input shape only, so the input carries just
-        # `task_input_schema`. The prompt is resolved server-side (not trusted
-        # from the client), and neither the output schema nor task.description
-        # is forwarded: output policy must never reach the guide LLM.
+        # Everything except the examples is derived server-side from the task:
+        # the prompt is resolved (not trusted from the client) and the input
+        # schema is read straight off the task. The output schema and
+        # task.description are never forwarded — output policy must not reach the
+        # guide LLM.
         body = DraftInputDataGuideInput(
             task_prompt=resolved_task_prompt,
-            task_input_schema=input.task_input_schema or None,
+            task_input_schema=task.input_json_schema,
             input_examples=input.input_examples,
         )
 
