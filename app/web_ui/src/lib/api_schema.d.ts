@@ -5440,6 +5440,11 @@ export interface components {
              */
             name: string;
             /**
+             * Display Name
+             * @description An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set.
+             */
+            display_name?: string | null;
+            /**
              * Instruction
              * @description A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.
              */
@@ -10226,10 +10231,10 @@ export interface components {
              */
             train_set_filter_id?: string | null;
             /**
-             * Output Score Names
-             * @description Updated names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Renaming a score that changes its JSON key migrates the score across all stored eval runs.
+             * Output Score Display Names
+             * @description Updated user-facing display names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run. Empty entries clear the display name.
              */
-            output_score_names?: string[] | null;
+            output_score_display_names?: (string | null)[] | null;
         };
         /**
          * UpdateFinetuneRequest

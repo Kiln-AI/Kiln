@@ -108,9 +108,9 @@
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
   let edit_dialog: EditDialog | null = null
 
-  // Editable score-name fields for the eval (spec evals usually have a single score).
-  // These persist to the eval endpoint (not the spec endpoint) via a custom setter, since
-  // renaming a score also migrates the score key across all stored eval runs.
+  // Editable score display-name fields for the eval (spec evals usually have a single score).
+  // The display name is cosmetic: it persists to the eval endpoint (not the spec endpoint) via a
+  // custom setter and never changes the underlying score name, JSON key, or stored eval runs.
   type ScoreEditField = {
     label: string
     api_name: string
@@ -124,31 +124,31 @@
     (score, index): ScoreEditField => ({
       label:
         (evaluator?.output_scores?.length || 0) > 1
-          ? `Score Name: ${score.name}`
-          : "Score Name",
-      api_name: `output_score_name_${index}`,
-      value: score.name,
+          ? `Score Display Name: ${score.name}`
+          : "Score Display Name",
+      api_name: `output_score_display_name_${index}`,
+      value: score.display_name || score.name,
       input_type: "input",
       description:
-        "The name of the eval score, shown when comparing run configurations.",
+        "A display name for the eval score, shown throughout the UI (e.g. when comparing run configurations). This is cosmetic and does not change stored eval results.",
       max_length: 32,
-      custom_setter: save_output_score_names,
+      custom_setter: save_output_score_display_names,
     }),
   )
 
-  async function save_output_score_names(): Promise<void> {
+  async function save_output_score_display_names(): Promise<void> {
     const eval_id = spec?.eval_id
     if (!eval_id) {
       return
     }
-    const names = output_score_fields.map((field) => field.value)
+    const display_names = output_score_fields.map((field) => field.value)
     const { error: patch_error } = await client.PATCH(
       "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
       {
         params: {
           path: { project_id, task_id, eval_id },
         },
-        body: { output_score_names: names },
+        body: { output_score_display_names: display_names },
       },
     )
     if (patch_error) {

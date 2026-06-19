@@ -1,5 +1,4 @@
 import json
-import logging
 from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
@@ -26,7 +25,6 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
-from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import SpecStatus
@@ -40,15 +38,13 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from .correlation_calculator import (
     CorrelationCalculator,
     CorrelationResult,
     CorrelationScore,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
@@ -63,105 +59,34 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     )
 
 
-def _save_eval_run_rekeyed(run: EvalRun) -> None:
-    """Persist an EvalRun whose scores were re-keyed during a rename.
+def set_output_score_display_names(eval: Eval, display_names: list[str | None]) -> None:
+    """Set the user-facing display name for each of the eval's output scores.
 
-    EvalRun.save_to_file() assigns self.path, which (via validate_assignment) re-validates the whole
-    run against its lazily-loaded parent eval. Mid-rename that parent still reflects the old score
-    keys, so the standard save would spuriously fail. The run's new scores are already consistent with
-    the renamed eval, so we serialize and write directly instead.
+    display_names must be positionally aligned with eval.output_scores (same length). A display name
+    is purely cosmetic: it does not affect the score's name, JSON key, or any stored eval run, so only
+    the single eval file is written. Empty/whitespace entries clear the display name (fall back to
+    the score's name). Only the eval is saved.
     """
-    if run.path is None:
-        raise ValueError("Cannot save EvalRun without a path")
-    json_data = run.model_dump_json(
-        indent=2,
-        exclude={"path"},
-        context={"save_attachments": True, "dest_path": run.path.parent},
-    )
-    run.path.write_text(json_data, encoding="utf-8")
-    ModelCache.shared().invalidate(run.path)
-
-
-def rename_eval_output_scores(eval: Eval, new_names: list[str]) -> None:
-    """Rename the eval's output scores in place and migrate the new keys across all stored eval runs.
-
-    new_names must be positionally aligned with eval.output_scores (same length). Renaming a score
-    that changes its JSON key re-keys that score in every EvalRun under every EvalConfig. The eval and
-    all affected run files are saved atomically: if any save fails, all touched files are restored to
-    their prior on-disk contents.
-    """
-    if len(new_names) != len(eval.output_scores):
+    if len(display_names) != len(eval.output_scores):
         raise HTTPException(
             status_code=400,
-            detail=f"output_score_names must have the same length as the eval's output scores. Got {len(new_names)}, expected {len(eval.output_scores)}.",
+            detail=f"output_score_display_names must have the same length as the eval's output scores. Got {len(display_names)}, expected {len(eval.output_scores)}.",
         )
 
-    old_keys = [score.json_key() for score in eval.output_scores]
-
-    # Validate each new name (length/charset) and compute the resulting JSON keys.
-    new_keys: list[str] = []
-    for index, name in enumerate(new_names):
-        existing = eval.output_scores[index]
-        try:
-            EvalOutputScore(
-                name=name, type=existing.type, instruction=existing.instruction
-            )
-        except ValidationError as e:
+    normalized: list[str | None] = []
+    for display_name in display_names:
+        cleaned = display_name.strip() if display_name is not None else None
+        if cleaned is not None and len(cleaned) > 32:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid score name '{name}': {e}",
+                detail="Score display names must be 32 characters or fewer.",
             )
-        new_keys.append(string_to_json_key(name))
+        normalized.append(cleaned or None)
 
-    if len(set(new_keys)) != len(new_keys):
-        raise HTTPException(
-            status_code=400,
-            detail="Score names must be unique (once normalized to JSON keys).",
-        )
+    for index, display_name in enumerate(normalized):
+        eval.output_scores[index].display_name = display_name
 
-    key_map = {old: new for old, new in zip(old_keys, new_keys)}
-    keys_changed = old_keys != new_keys
-
-    # Load all runs (with the pre-rename eval state, so they validate on load) and re-key the scores
-    # of those that change. We set scores via object.__setattr__ to bypass EvalRun's
-    # validate_assignment: it would otherwise validate the new keys against each run's lazily-reloaded
-    # (pre-rename) parent eval and fail. The new keys are already validated above, and save_to_file
-    # does not re-validate, so the final on-disk state (new run keys + new eval names) is consistent.
-    runs_to_update: list[EvalRun] = []
-    if keys_changed:
-        for config in eval.configs():
-            for run in config.runs():
-                new_scores = {key_map.get(k, k): v for k, v in run.scores.items()}
-                if new_scores != run.scores:
-                    object.__setattr__(run, "scores", new_scores)
-                    runs_to_update.append(run)
-
-    # Apply the new names to the eval in memory.
-    for index, name in enumerate(new_names):
-        eval.output_scores[index].name = name
-
-    # Snapshot the current on-disk contents of every file we will write, for rollback.
-    models_to_save: list[Eval | EvalRun] = [*runs_to_update, eval]
-    snapshots: dict[Any, bytes] = {}
-    for model in models_to_save:
-        if model.path is not None and model.path.exists():
-            snapshots[model.path] = model.path.read_bytes()
-
-    try:
-        for run in runs_to_update:
-            _save_eval_run_rekeyed(run)
-        eval.save_to_file()
-    except Exception as e:
-        for path, content in snapshots.items():
-            try:
-                path.write_bytes(content)
-                ModelCache.shared().invalidate(path)
-            except Exception:
-                logger.exception("Failed to roll back %s after rename failure", path)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to rename eval scores. All changes were rolled back. Error: {e}",
-        )
+    eval.save_to_file()
 
 
 def eval_config_from_id(
@@ -373,9 +298,9 @@ class UpdateEvalRequest(BaseModel):
     train_set_filter_id: str | None = Field(
         default=None, description="The updated train set filter ID."
     )
-    output_score_names: list[str] | None = Field(
+    output_score_display_names: list[str | None] | None = Field(
         default=None,
-        description="Updated names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Renaming a score that changes its JSON key migrates the score across all stored eval runs.",
+        description="Updated user-facing display names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run. Empty entries clear the display name.",
     )
 
 
@@ -800,10 +725,10 @@ def connect_evals_api(app: FastAPI):
                 )
             eval.train_set_filter_id = request.train_set_filter_id
 
-        if request.output_score_names is not None:
-            # Saves the eval (including the name/description/train_set_filter changes above)
-            # atomically with the migrated eval runs.
-            rename_eval_output_scores(eval, request.output_score_names)
+        if request.output_score_display_names is not None:
+            # Saves the eval, including the name/description/train_set_filter changes above. Display
+            # names are cosmetic, so no eval run data is touched.
+            set_output_score_display_names(eval, request.output_score_display_names)
         else:
             eval.save_to_file()
         return eval

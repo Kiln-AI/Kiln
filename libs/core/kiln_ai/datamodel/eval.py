@@ -65,6 +65,11 @@ class EvalOutputScore(BaseModel):
     name: FilenameStringShort = Field(
         description="The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance."
     )
+    display_name: str | None = Field(
+        default=None,
+        max_length=32,
+        description="An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set.",
+    )
     instruction: str | None = Field(
         default=None,
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
@@ -78,6 +83,9 @@ class EvalOutputScore(BaseModel):
         The JSON key for the score, used when running the evaluator with a LLM and we need JSON output.
 
         For example, "Overall Rating" -> "overall_rating"
+
+        Always derived from 'name' (not 'display_name'), so renaming for display never changes the
+        key used by stored eval runs.
         """
         return string_to_json_key(self.name)
 

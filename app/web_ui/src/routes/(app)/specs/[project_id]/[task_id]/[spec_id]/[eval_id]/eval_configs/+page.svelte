@@ -22,7 +22,10 @@
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import EvalConfigInstruction from "./eval_config_instruction.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    score_display_name,
+  } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
@@ -709,7 +712,7 @@
                 <th> Eval Instructions </th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
-                    {output_score.name}
+                    {score_display_name(output_score)}
                     {#if output_score.type}
                       <InfoTooltip
                         tooltip_text={info_tooltip_text(
