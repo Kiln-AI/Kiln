@@ -4,8 +4,11 @@ import {
   completed_jobs,
   is_active,
   is_terminal,
+  job_completed_with_errors,
   job_status_badge_class,
   job_status_display,
+  job_status_display_badge_class,
+  job_status_display_label,
   jobs_indicator,
   progress_label,
   progress_percent,
@@ -136,6 +139,59 @@ describe("job_status_display / job_status_badge_class", () => {
     })
     expect(job_status_display(job)).toBe("Completed")
     expect(job_status_badge_class(job)).toBe("badge-outline badge-primary")
+  })
+})
+
+describe("job_completed_with_errors / display helpers", () => {
+  it("is true only when succeeded with a positive error count", () => {
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "succeeded", progress: { success: 8, error: 2 } }),
+      ),
+    ).toBe(true)
+  })
+
+  it("is false when succeeded without errors", () => {
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "succeeded", progress: { success: 10, error: 0 } }),
+      ),
+    ).toBe(false)
+  })
+
+  it("is false for non-succeeded statuses even with errors", () => {
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "running", progress: { success: 1, error: 3 } }),
+      ),
+    ).toBe(false)
+    expect(
+      job_completed_with_errors(
+        makeJob({ status: "failed", progress: { success: 1, error: 3 } }),
+      ),
+    ).toBe(false)
+  })
+
+  it("derives label and badge for completed-with-errors", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 8, error: 2 },
+    })
+    expect(job_status_display_label(job)).toBe("Completed with errors")
+    expect(job_status_display_badge_class(job)).toBe(
+      "badge-outline badge-error",
+    )
+  })
+
+  it("falls back to plain status display when there are no errors", () => {
+    const job = makeJob({
+      status: "succeeded",
+      progress: { success: 10, error: 0 },
+    })
+    expect(job_status_display_label(job)).toBe("Completed")
+    expect(job_status_display_badge_class(job)).toBe(
+      "badge-outline badge-primary",
+    )
   })
 })
 

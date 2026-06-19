@@ -6,8 +6,8 @@
     available_actions,
     completed_jobs,
     is_terminal,
-    job_status_badge_class,
-    job_status_display,
+    job_status_display_badge_class,
+    job_status_display_label,
     progress_label,
     progress_percent,
     type JobAction,
@@ -24,7 +24,6 @@
     type JobRecord,
   } from "$lib/stores/jobs_api"
   import { back_url_for } from "$lib/stores/job_tags"
-  import { formatDate } from "$lib/utils/formatters"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   let action_error: KilnError | null = null
@@ -218,10 +217,7 @@
         <tr>
           <th>Details</th>
           <th>Status</th>
-          <th>Progress</th>
-          <th>Message</th>
-          <th>Created</th>
-          <th class="text-right">Actions</th>
+          <th class="text-right"></th>
         </tr>
       </thead>
       <tbody>
@@ -244,36 +240,42 @@
               {/each}
             </td>
             <td>
-              <span class="badge px-3 py-1 {job_status_badge_class(job)}">
-                {job_status_display(job)}
-              </span>
-            </td>
-            <td>
-              <div class="flex flex-col gap-1 min-w-32">
-                <span class="text-sm">{progress_label(job.progress)}</span>
-                {#if job.progress?.total}
+              <div class="flex flex-col gap-2 w-full max-w-[360px] min-w-48">
+                <span
+                  class="badge px-3 py-1 self-start {job_status_display_badge_class(
+                    job,
+                  )}"
+                >
+                  {job_status_display_label(job)}
+                </span>
+                <div class="flex items-center justify-between text-gray-500">
+                  {#if job.status === "running"}
+                    <span>{progress_percent(job.progress)}% Complete</span>
+                  {/if}
+                  {#if job.progress?.total}
+                    <span>{progress_label(job.progress)}</span>
+                  {/if}
+                </div>
+                {#if progress_percent(job.progress) < 100}
                   <progress
-                    class="progress progress-primary w-32 h-1.5"
+                    class="progress progress-primary bg-base-200 w-full h-2"
                     value={progress_percent(job.progress)}
                     max="100"
                   ></progress>
+                  {#if failure_error(job)?.error}
+                    <span
+                      class="font-mono text-sm text-error block truncate"
+                      title={failure_error(job)?.error}
+                      >{failure_error(job)?.error}</span
+                    >
+                  {:else if job.progress?.message}
+                    <span
+                      class="font-mono text-sm text-gray-500 block truncate"
+                      title={job.progress.message}>{job.progress.message}</span
+                    >
+                  {/if}
                 {/if}
               </div>
-            </td>
-            <td class="text-sm text-gray-500 max-w-48">
-              {#if failure_error(job)?.error}
-                <span
-                  class="text-error block truncate"
-                  title={failure_error(job)?.error}
-                  >{failure_error(job)?.error}</span
-                >
-              {:else}
-                <span class="block truncate">{job.progress?.message || ""}</span
-                >
-              {/if}
-            </td>
-            <td class="text-sm text-gray-500 whitespace-nowrap">
-              {formatDate(job.created_at)}
             </td>
             <td>
               <div
@@ -300,6 +302,8 @@
                     <button
                       class="btn btn-xs btn-ghost text-error"
                       disabled={in_flight[job.id]}
+                      aria-label="Dismiss job"
+                      title="Dismiss job"
                       on:click={() => run_action(action, job.id)}
                     >
                       Clear

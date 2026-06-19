@@ -118,7 +118,7 @@
 
   <SidebarRailProgress />
 
-  <SidebarRailItem on_click={() => jobs_dialog.open()} label="In progress">
+  <SidebarRailItem on_click={() => jobs_dialog.open()} label="Jobs">
     <div slot="icon" class="w-full h-full relative">
       <JobsIcon />
       <SidebarJobsIndicator variant="rail" />
