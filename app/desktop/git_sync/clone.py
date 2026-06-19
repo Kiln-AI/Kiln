@@ -403,6 +403,22 @@ def _ensure_gitignore(
         logger.warning("Gitignore push failed: %s", "; ".join(push_errors))
 
 
+def _rollback_dummy_commit(
+    repo: pygit2.Repository | None,
+    pre_commit_head: pygit2.Oid | str | None,
+) -> None:
+    """Reset the repo HEAD to undo a dummy test commit, if one was created.
+
+    Silently swallows any error so the caller's original exception is
+    always propagated unchanged.
+    """
+    if repo is not None and pre_commit_head is not None:
+        try:
+            repo.reset(pre_commit_head, pygit2.enums.ResetMode.HARD)
+        except Exception:
+            pass
+
+
 def test_write_access(
     clone_path: Path,
     pat_token: str | None = None,
@@ -419,6 +435,7 @@ def test_write_access(
     insufficient permissions (e.g. read-only access on the branch).
     """
     repo: pygit2.Repository | None = None
+    pre_commit_head: pygit2.Oid | str | None = None
     try:
         repo = pygit2.Repository(str(clone_path))
         sig = pygit2.Signature(get_committer_name(), get_committer_email())
@@ -445,11 +462,13 @@ def test_write_access(
         remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
 
         if push_errors:
+            assert pre_commit_head is not None
             repo.reset(pre_commit_head, pygit2.enums.ResetMode.HARD)
             return False, "; ".join(push_errors), True
 
         return True, "Write access confirmed", False
     except pygit2.GitError as e:
+        _rollback_dummy_commit(repo, pre_commit_head)
         error_str = str(e).lower()
         if "403" in error_str:
             return (
@@ -461,6 +480,7 @@ def test_write_access(
             return False, "Authentication failed - check your token permissions", False
         return False, f"Write access check failed: {e}", False
     except Exception as e:
+        _rollback_dummy_commit(repo, pre_commit_head)
         return False, f"Write access check failed: {e}", False
     finally:
         if repo is not None:
