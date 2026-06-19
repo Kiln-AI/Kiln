@@ -22,6 +22,7 @@
   import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
   import JobsDialog from "$lib/components/jobs_dialog.svelte"
   import { jobs_dialog } from "$lib/stores/jobs_dialog"
+  import { active_jobs_count } from "$lib/stores/jobs_store"
   import { Section } from "$lib/ui/section"
   import Dialog from "$lib/ui/dialog.svelte"
   import SidebarRail from "./sidebar_rail.svelte"
@@ -431,14 +432,17 @@
         <li class="menu-sm">
           <button
             type="button"
-            class="text-xs text-base-content/60"
+            class="text-xs {$active_jobs_count > 0
+              ? 'text-base-content'
+              : 'text-base-content/60'}"
             on:click={() => jobs_dialog.open()}
-            aria-label="Background jobs"
           >
-            <div class="sidebar-icon opacity-60">
+            <div
+              class="sidebar-icon {$active_jobs_count > 0 ? '' : 'opacity-60'}"
+            >
               <JobsIcon />
             </div>
-            In progress
+            Jobs
             <SidebarJobsIndicator variant="inline" />
           </button>
         </li>

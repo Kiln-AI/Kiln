@@ -5,11 +5,28 @@ import pytest
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
-from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    ModelName,
+    ModelProviderName,
+    built_in_models,
+)
 from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+# Anthropic's adaptive-thinking models (Opus 4.6+) decide per request whether to emit
+# a thinking block, and Opus 4.7/4.8 return encrypted thinking (a signature with no
+# plaintext) even on the raw Anthropic API. So a non-"none" thinking level is not
+# guaranteed to surface reasoning content for these models on the native Anthropic
+# provider; for them we only assert the run succeeded. OpenRouter still exposes
+# reasoning for the same models, so it is not relaxed.
+ANTHROPIC_ADAPTIVE_THINKING_MODELS = {
+    ModelName.claude_opus_4_6.value,
+    ModelName.claude_opus_4_7.value,
+    ModelName.claude_opus_4_8.value,
+    ModelName.claude_sonnet_4_6.value,
+}
 
 
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
@@ -112,6 +129,13 @@ async def test_thinking_level_reasoning_content(
             f"but got {len(reasoning_content)} chars "
             f"(provider={provider_name}, model={model_name})"
         )
+    elif (
+        provider_name == ModelProviderName.anthropic
+        and model_name in ANTHROPIC_ADAPTIVE_THINKING_MODELS
+    ):
+        # Adaptive/encrypted-thinking models may not surface reasoning content (see
+        # note above); reaching here means the run succeeded, which is what we verify.
+        pass
     else:
         assert reasoning_content is not None, (
             f"Expected reasoning content for thinking_level='{thinking_level}', "

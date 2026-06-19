@@ -868,7 +868,10 @@
                     <div class="text-md font-semibold text-left mb-4">
                       Details
                     </div>
-                    <PropertyList properties={run_config_properties} />
+                    <PropertyList
+                      properties={run_config_properties}
+                      open_links_in_new_tab={true}
+                    />
                   </div>
                 </div>
               {/if}

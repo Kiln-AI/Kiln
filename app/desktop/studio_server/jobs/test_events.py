@@ -3,7 +3,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from app.desktop.studio_server.jobs.events import JobEvent, JobEventBus
+from app.desktop.studio_server.jobs.events import (
+    JobEvent,
+    JobEventBus,
+    KeepalivePing,
+    iter_with_keepalive,
+)
 from app.desktop.studio_server.jobs.models import BackgroundJobStatus, JobRecord
 
 
@@ -88,3 +93,64 @@ async def test_filter_by_type_and_job_id():
     assert event.data["id"] == "j_target000001"
 
     await gen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_keepalive_ping_does_not_finalize_generator():
+    # Regression: iter_with_keepalive must yield KeepalivePing sentinels on quiet
+    # windows while keeping the underlying subscription alive — not finalize it
+    # after the first one.
+    bus = JobEventBus(snapshot_provider=lambda: [])
+    gen = iter_with_keepalive(bus.subscribe(), 0.02)
+
+    async def _next():
+        return await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+
+    first = await _next()
+    assert isinstance(first, JobEvent) and first.event == "snapshot"
+    assert isinstance(await _next(), KeepalivePing)
+    assert isinstance(await _next(), KeepalivePing)
+
+    # A real event still flows after pings.
+    bus.publish_job(_record("j_after000001"))
+    event = await _next()
+    assert isinstance(event, JobEvent)
+    assert event.event == "job"
+    assert event.data["id"] == "j_after000001"
+
+    await gen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_ends_open_stream_and_rejects_new_ones():
+    bus = JobEventBus(snapshot_provider=lambda: [])
+    gen = bus.subscribe()
+    assert (await _next_event(gen)).event == "snapshot"
+
+    # shutdown() pushes a close sentinel so the open generator returns.
+    bus.shutdown()
+    with pytest.raises(StopAsyncIteration):
+        await _next_event(gen)
+
+    # A subscription opened after shutdown ends immediately (no snapshot).
+    gen2 = bus.subscribe()
+    with pytest.raises(StopAsyncIteration):
+        await _next_event(gen2)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_unblocks_subscriber_waiting_without_timeout():
+    # With no keepalive timeout the subscriber blocks on queue.get(); shutdown()
+    # must still wake it so a hot reload isn't held open.
+    bus = JobEventBus(snapshot_provider=lambda: [])
+    gen = bus.subscribe()  # timeout=None
+    assert (await _next_event(gen)).event == "snapshot"
+
+    async def _drain():
+        with pytest.raises(StopAsyncIteration):
+            await gen.__anext__()
+
+    waiter = asyncio.ensure_future(_drain())
+    await asyncio.sleep(0)  # let the waiter block on queue.get()
+    bus.shutdown()
+    await asyncio.wait_for(waiter, timeout=1.0)
