@@ -98,6 +98,7 @@ class KilnTaskTool(KilnToolInterface):
                 allow_saving=context.allow_saving,
                 default_tags=["tool_call"],
                 skills=skills,
+                task_run_config_id=self._run_config_id,
             ),
         )
         task_run = await adapter.invoke(
