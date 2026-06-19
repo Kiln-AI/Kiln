@@ -44,9 +44,6 @@ function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
 
 function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
   const parts: ChatMessagePart[] = []
-  if (msg.reasoning_content) {
-    parts.push({ type: "reasoning", reasoning: msg.reasoning_content })
-  }
   const text = extractTextContent(msg.content)
   if (text) {
     parts.push({ type: "text", text })
