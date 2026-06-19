@@ -23,6 +23,7 @@ from app.desktop.git_sync.errors import (
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 from kiln_server.git_sync_decorators import no_write_lock, write_lock
+from kiln_server.server import make_app
 
 PROJECT_ID = "test_proj_123"
 PROJECT_PATH = "/tmp/test/project.kiln"
@@ -383,6 +384,50 @@ def test_error_mapping(git_repos, error_class, expected_status, expected_detail)
     assert resp.status_code == expected_status
     body = resp.json()
     assert body["message"] == expected_detail
+
+
+def test_git_sync_error_response_has_cors_headers():
+    """GitSyncMiddleware error short-circuits must still carry CORS headers.
+
+    GitSyncMiddleware must be installed INNER to CORSMiddleware (via
+    make_app's extra_middleware), so error responses it short-circuits pass
+    back out through CORS and get Access-Control-Allow-Origin. If the ordering
+    regresses (GitSyncMiddleware outermost), the browser blocks the response
+    as "origin not allowed" and the user sees "Load failed" with no error
+    message instead of the descriptive git-sync error.
+    """
+    config = _auto_config("/tmp/test/clone.kiln")
+    origin = "http://localhost:5173"
+
+    mock_manager = MagicMock(repo_path=PROJECT_PATH)
+    mock_manager.ensure_fresh_for_read = AsyncMock(
+        side_effect=GitAuthError("auth failed")
+    )
+
+    # Mirror the real desktop assembly: GitSyncMiddleware inner, CORS outermost.
+    app = make_app(extra_middleware=[GitSyncMiddleware])
+
+    with (
+        mock_git_sync_config(config),
+        patch.object(GitSyncRegistry, "get_or_create", return_value=mock_manager),
+        patch(
+            "app.desktop.git_sync.middleware.GitSyncRegistry.get_background_sync",
+            return_value=None,
+        ),
+    ):
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get(
+            f"/api/projects/{PROJECT_ID}/tasks",
+            headers={"Origin": origin},
+        )
+
+    assert resp.status_code == 401
+    assert resp.json()["message"] == (
+        "Git authentication failed or expired. Re-import the project to "
+        "reconnect with fresh credentials."
+    )
+    # The fix: CORS header is present on the short-circuited error response.
+    assert resp.headers.get("access-control-allow-origin") == origin
 
 
 def test_write_lock_timeout_from_lock_acquisition(git_repos):

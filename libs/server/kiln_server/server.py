@@ -112,7 +112,7 @@ tags_metadata = [
 ]
 
 
-def make_app(lifespan=None):
+def make_app(lifespan=None, extra_middleware: list[type] | None = None):
     app = FastAPI(
         title="Kiln AI API",
         summary="A REST API for Kiln AI.",
@@ -149,6 +149,16 @@ def make_app(lifespan=None):
         f"https://localhost:{frontend_port}",
         f"https://127.0.0.1:{frontend_port}",
     ]
+
+    # Install any caller-provided middleware BEFORE CORS so it ends up inner to
+    # CORS. CORS must remain the outermost middleware: Starlette makes the
+    # last-added middleware outermost, and CORS only adds its headers to
+    # responses that pass back out through it. Inner middleware that
+    # short-circuits a response (e.g. GitSyncMiddleware returning a git-sync
+    # error) would otherwise bypass CORS entirely, and the browser would block
+    # the response with "origin not allowed".
+    for middleware_class in extra_middleware or []:
+        app.add_middleware(middleware_class)
 
     app.add_middleware(
         # Type issue https://github.com/astral-sh/ty/issues/1635
