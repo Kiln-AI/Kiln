@@ -981,6 +981,21 @@ def test_data_source_run_config_id_round_trips(task: Task):
     assert loaded.output.source.run_config_id == "rc_abc123"
 
 
+def test_data_source_normalizes_empty_run_config_id_to_none():
+    # Tool callers default missing IDs to "". Coerce empty strings to None so
+    # the on-disk field is either a real ID or unset, never an ambiguous "".
+    source = DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "gpt_4o",
+            "model_provider": "openai",
+            "adapter_name": "kiln_langchain_adapter",
+        },
+        run_config_id="",
+    )
+    assert source.run_config_id is None
+
+
 def test_data_source_does_not_validate_run_config_id_existence(task: Task):
     # Per the ticket: a TaskRunConfig may be manually deleted from disk without
     # invalidating historical TaskRuns that reference it.
