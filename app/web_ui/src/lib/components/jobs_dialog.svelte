@@ -26,11 +26,12 @@
   })
 </script>
 
-<Dialog bind:this={dialog} title="Jobs" width="extra-wide">
-  <p class="text-sm font-light mb-4">
-    <a href="/jobs" class="link" on:click={() => dialog?.close()}
-      >View full page →</a
-    >
-  </p>
+<Dialog
+  bind:this={dialog}
+  title="Jobs"
+  width="wide"
+  sub_subtitle="View full page →"
+  sub_subtitle_link="/jobs"
+>
   <JobsTable />
 </Dialog>

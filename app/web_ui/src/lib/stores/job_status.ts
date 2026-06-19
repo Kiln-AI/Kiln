@@ -80,6 +80,28 @@ export function job_status_badge_class(job: JobRecord): string {
   }
 }
 
+// A job that finished successfully but logged one or more non-fatal per-item
+// errors. Like RAG's `completed_with_errors`, this is a frontend-derived display
+// state only — the backend status stays `succeeded` and the error detail lives
+// in the per-run error log. No worker/backend change is needed.
+export function job_completed_with_errors(job: JobRecord): boolean {
+  return job.status === "succeeded" && (job.progress?.error ?? 0) > 0
+}
+
+export function job_status_display_label(job: JobRecord): string {
+  if (job_completed_with_errors(job)) {
+    return "Completed with errors"
+  }
+  return job_status_display(job)
+}
+
+export function job_status_display_badge_class(job: JobRecord): string {
+  if (job_completed_with_errors(job)) {
+    return "badge-outline badge-error"
+  }
+  return job_status_badge_class(job)
+}
+
 export type JobAction = "pause" | "resume" | "cancel" | "delete"
 
 // The set of lifecycle actions valid for a job given its status and whether

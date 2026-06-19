@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from app.desktop.git_sync.save_context import save_context_for_project
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
@@ -61,6 +63,13 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     supports_pause = True
 
     async def compute_state(self, params: EvalJobParams) -> JobDerivedState:
+        # _compute_state_sync loads entities and enumerates runs/ directories
+        # (os.scandir + open/read/json.loads per child) synchronously. The
+        # registry awaits this on the event loop, so offload the blocking IO to
+        # a thread to keep progress/SSE updates flowing for large eval sets.
+        return await asyncio.to_thread(self._compute_state_sync, params)
+
+    def _compute_state_sync(self, params: EvalJobParams) -> JobDerivedState:
         eval_config = eval_config_from_id(
             params.project_id,
             params.task_id,
