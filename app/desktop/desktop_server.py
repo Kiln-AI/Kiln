@@ -34,6 +34,7 @@ from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.jobs.api import connect_jobs_api
+from app.desktop.studio_server.jobs.registry import job_registry
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
@@ -113,6 +114,12 @@ async def lifespan(app: FastAPI):
         await _start_background_syncs()
         yield
     finally:
+        # End open SSE subscriptions so a UI holding the jobs stream open can't
+        # keep the worker alive (e.g. block a dev-server hot reload). Pure
+        # observer teardown — jobs keep running. Note uvicorn only reaches
+        # lifespan shutdown after its graceful-shutdown wait, so the dev server
+        # also sets timeout_graceful_shutdown to bound that wait.
+        job_registry.events.shutdown()
         try:
             await _stop_background_syncs()
         finally:

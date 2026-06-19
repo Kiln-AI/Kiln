@@ -116,10 +116,8 @@ def registry(monkeypatch):
 
 @pytest.fixture
 def fast_keepalive(monkeypatch):
-    # httpx's ASGITransport batches the SSE generator's output and only surfaces
-    # buffered lines once the next chunk (here, the keepalive ping) forces a
-    # flush. Shortening the keepalive makes that flush — and stream teardown —
-    # prompt in tests. Production keeps the 15s default.
+    # Shorten the keepalive so quiet-window pings (and any teardown that depends
+    # on them) happen promptly in tests. Production keeps the 15s default.
     monkeypatch.setattr(jobs_api, "KEEPALIVE_SECONDS", 0.1)
 
 
@@ -768,3 +766,63 @@ async def test_sse_disconnect_leaves_job_running(registry, fast_keepalive):
     )
     await _wait_for_status(registry, job.id, BackgroundJobStatus.SUCCEEDED)
     assert registry._jobs[job.id].result == {"completed_steps": 6}
+
+
+def _parse_sse_block(block: str) -> tuple[str | None, dict | None]:
+    event_name: str | None = None
+    data: dict | None = None
+    for line in block.splitlines():
+        if line.startswith("event:"):
+            event_name = line[len("event:") :].strip()
+        elif line.startswith("data:"):
+            data = json.loads(line[len("data:") :].strip())
+    return event_name, data
+
+
+def _parse_sse_body(body: str) -> list[tuple[str | None, dict | None]]:
+    return [_parse_sse_block(b) for b in body.split("\n\n") if b.strip()]
+
+
+@pytest.mark.asyncio
+async def test_sse_endpoint_returns_event_stream_and_ends_on_shutdown(app, registry):
+    # Full HTTP path: correct status + content-type and an initial snapshot.
+    # The stream is infinite, and ASGITransport buffers the whole body, so we
+    # end it with events.shutdown() (the same hook the server uses on reload)
+    # to let the buffered response come back.
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as http_client:
+        get = asyncio.ensure_future(http_client.get("/api/jobs/events"))
+        # Wait until the endpoint's subscription is registered, then shut the
+        # bus so the (otherwise infinite) stream returns.
+        for _ in range(300):
+            if registry.events._subscribers:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise AssertionError("SSE subscription never registered")
+        registry.events.shutdown()
+
+        response = await asyncio.wait_for(get, timeout=3.0)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        blocks = _parse_sse_body(response.text)
+        assert ("snapshot", {"jobs": []}) in blocks
+
+
+@pytest.mark.asyncio
+async def test_event_stream_emits_keepalive_ping(registry, monkeypatch):
+    # The keepalive is the regression we fixed: a timeout must yield a `: ping`
+    # comment WITHOUT finalizing the generator, so MANY pings arrive over time.
+    monkeypatch.setattr(jobs_api, "KEEPALIVE_SECONDS", 0.05)
+    stream = jobs_api._event_stream(job_id=None, type_name=None, project_id=None)
+    try:
+        first = await asyncio.wait_for(stream.__anext__(), timeout=3.0)
+        assert first.startswith("event: snapshot\n")
+        # Two consecutive pings prove the stream survives repeated timeouts.
+        for _ in range(2):
+            chunk = await asyncio.wait_for(stream.__anext__(), timeout=3.0)
+            assert chunk == ": ping\n\n"
+    finally:
+        await stream.aclose()

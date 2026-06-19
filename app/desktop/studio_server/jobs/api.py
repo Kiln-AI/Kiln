@@ -16,11 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from . import error_log
 from .events import JobEvent, KeepalivePing, iter_with_keepalive
 from .models import BackgroundJobStatus, JobRecord
-from .registry import (
-    JobNotFoundError,
-    JobOperationError,
-    job_registry,
-)
+from .registry import JobNotFoundError, JobOperationError, job_registry
 from .workers.eval import EvalJobWorker
 from .workers.finetune import FinetuneJobWorker
 from .workers.noop import NoopJobWorker
