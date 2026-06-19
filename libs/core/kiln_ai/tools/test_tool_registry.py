@@ -198,6 +198,49 @@ class TestToolRegistry:
             ):
                 tool_from_id(tool_id, task=mock_task)
 
+    def test_tool_from_id_mcp_archived_server_raises(self):
+        """Archived MCP servers can't be run via tool_from_id."""
+        mock_server = ExternalToolServer(
+            name="archived_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": True,
+            },
+        )
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::echo"
+
+        with pytest.raises(ValueError, match="archived tool server 'archived_server'"):
+            tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_mcp_archived_server_allowed(self):
+        """allow_archived lets historical callers resolve an archived MCP server."""
+        mock_server = ExternalToolServer(
+            name="archived_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": True,
+            },
+        )
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::echo"
+        tool = tool_from_id(tool_id, task=mock_task, allow_archived=True)
+
+        assert isinstance(tool, MCPServerTool)
+        assert tool._tool_server_model == mock_server
+
     def test_tool_from_id_rag_tool_success(self):
         """Test that tool_from_id works with RAG tool IDs."""
         # Create mock RAG config
@@ -210,6 +253,7 @@ class TestToolRegistry:
             # Setup mock RAG config
             mock_rag_config = Mock()
             mock_rag_config.id = "test_rag_config"
+            mock_rag_config.is_archived = False
             mock_rag_config_class.from_id_and_parent_path.return_value = mock_rag_config
 
             # Setup mock RAG tool
@@ -284,6 +328,55 @@ class TestToolRegistry:
                 match="RAG config not found: missing_rag_config in project test_project_id for tool",
             ):
                 tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_rag_archived_raises(self):
+        """Archived RAG configs can't be run via tool_from_id."""
+        from unittest.mock import patch
+
+        with patch("kiln_ai.tools.tool_registry.RagConfig") as mock_rag_config_class:
+            mock_rag_config = Mock()
+            mock_rag_config.id = "test_rag_config"
+            mock_rag_config.name = "archived_rag"
+            mock_rag_config.is_archived = True
+            mock_rag_config_class.from_id_and_parent_path.return_value = mock_rag_config
+
+            mock_project = Mock(spec=Project)
+            mock_project.id = "test_project_id"
+            mock_project.path = Path("/test/path")
+            mock_task = Mock(spec=Task)
+            mock_task.parent_project.return_value = mock_project
+
+            tool_id = f"{RAG_TOOL_ID_PREFIX}test_rag_config"
+
+            with pytest.raises(ValueError, match="'archived_rag' is archived"):
+                tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_rag_archived_allowed(self):
+        """allow_archived lets historical callers resolve an archived RAG config."""
+        from unittest.mock import patch
+
+        with (
+            patch("kiln_ai.tools.tool_registry.RagConfig") as mock_rag_config_class,
+            patch("kiln_ai.tools.rag_tools.RagTool") as mock_rag_tool_class,
+        ):
+            mock_rag_config = Mock()
+            mock_rag_config.id = "test_rag_config"
+            mock_rag_config.name = "archived_rag"
+            mock_rag_config.is_archived = True
+            mock_rag_config_class.from_id_and_parent_path.return_value = mock_rag_config
+            mock_rag_tool = Mock()
+            mock_rag_tool_class.return_value = mock_rag_tool
+
+            mock_project = Mock(spec=Project)
+            mock_project.id = "test_project_id"
+            mock_project.path = Path("/test/path")
+            mock_task = Mock(spec=Task)
+            mock_task.parent_project.return_value = mock_project
+
+            tool_id = f"{RAG_TOOL_ID_PREFIX}test_rag_config"
+            tool = tool_from_id(tool_id, task=mock_task, allow_archived=True)
+
+            assert tool == mock_rag_tool
 
     def test_all_built_in_tools_are_registered(self):
         """Test that all KilnBuiltInToolId enum members are handled by the registry."""
@@ -787,3 +880,56 @@ class TestToolRegistry:
             match="Kiln Task External tool server not found: nonexistent_server in project ID test_project_id",
         ):
             tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_kiln_task_archived_raises(self):
+        """Archived Kiln task tools can't be run via tool_from_id."""
+        mock_server = ExternalToolServer(
+            name="archived_kiln_task",
+            type=ToolServerType.kiln_task,
+            description="Archived Kiln task server",
+            properties={
+                "name": "archived_tool",
+                "description": "An archived task tool",
+                "task_id": "test_task_123",
+                "run_config_id": "test_config_456",
+                "is_archived": True,
+            },
+        )
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        tool_id = f"{KILN_TASK_TOOL_ID_PREFIX}{mock_server.id}"
+
+        with pytest.raises(
+            ValueError, match="Kiln Task tool 'archived_kiln_task' is archived"
+        ):
+            tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_kiln_task_archived_allowed(self):
+        """allow_archived lets historical callers resolve an archived Kiln task tool."""
+        mock_server = ExternalToolServer(
+            name="archived_kiln_task",
+            type=ToolServerType.kiln_task,
+            description="Archived Kiln task server",
+            properties={
+                "name": "archived_tool",
+                "description": "An archived task tool",
+                "task_id": "test_task_123",
+                "run_config_id": "test_config_456",
+                "is_archived": True,
+            },
+        )
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        tool_id = f"{KILN_TASK_TOOL_ID_PREFIX}{mock_server.id}"
+        tool = tool_from_id(tool_id, task=mock_task, allow_archived=True)
+
+        assert isinstance(tool, KilnTaskTool)
+        assert tool._tool_server_model == mock_server
