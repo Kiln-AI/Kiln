@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterEach, vi } from "vitest"
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  vi,
+} from "vitest"
 import { render, fireEvent, cleanup } from "@testing-library/svelte"
 import FilterTagsDialog from "./filter_tags_dialog.svelte"
 
 // jsdom does not implement HTMLDialogElement.showModal/close.
+const originalShowModal = HTMLDialogElement.prototype.showModal
+const originalClose = HTMLDialogElement.prototype.close
+
 beforeAll(() => {
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
@@ -15,6 +26,11 @@ beforeAll(() => {
       this.open = false
     }
   }
+})
+
+afterAll(() => {
+  HTMLDialogElement.prototype.showModal = originalShowModal
+  HTMLDialogElement.prototype.close = originalClose
 })
 
 afterEach(() => {

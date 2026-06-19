@@ -26,19 +26,14 @@
     setTimeout(() => search_input?.focus(), 0)
   }
 
-  $: sorted_available_tags = Object.entries(available_filter_tags).sort(
+  $: sorted_available_tags = Object.entries(available_filter_tags || {}).sort(
     (a, b) => b[1] - a[1],
   )
 
-  $: filtered_available_tags = (() => {
-    const query = search_text.trim().toLowerCase()
-    if (!query) {
-      return sorted_available_tags
-    }
-    return sorted_available_tags.filter(([tag]) =>
-      tag.toLowerCase().includes(query),
-    )
-  })()
+  $: query = search_text.trim().toLowerCase()
+  $: filtered_available_tags = query
+    ? sorted_available_tags.filter(([tag]) => tag.toLowerCase().includes(query))
+    : sorted_available_tags
 </script>
 
 <Dialog
@@ -76,6 +71,7 @@
       autocapitalize="none"
       spellcheck="false"
       placeholder="Search tags…"
+      aria-label="Search tags"
       class="input input-bordered input-sm w-full mb-3"
     />
     <div class="flex flex-row gap-2 flex-wrap">
