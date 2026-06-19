@@ -140,14 +140,14 @@ describe("StepComplete", () => {
 
     // Verify conflict UI appears
     expect(container.textContent).toContain("Setup Error")
-    expect(container.textContent).toContain("Remove existing and re-sync")
+    expect(container.textContent).toContain("Remove existing and sync")
 
     // Set up the retry to succeed
     vi.mocked(saveConfig).mockResolvedValueOnce(saveConfigResponse)
     vi.mocked(is_duplicate_project_error).mockReturnValue(false)
 
     // Click the conflict-recovery button
-    const retryButton = getByText("Remove existing and re-sync")
+    const retryButton = getByText("Remove existing and sync")
     await fireEvent.click(retryButton)
     // Allow the async run_save promise to settle
     await new Promise((r) => setTimeout(r, 0))
@@ -174,6 +174,6 @@ describe("StepComplete", () => {
     await tick()
 
     expect(container.textContent).toContain("Setup Error")
-    expect(container.textContent).not.toContain("Remove existing and re-sync")
+    expect(container.textContent).not.toContain("Remove existing and sync")
   })
 })

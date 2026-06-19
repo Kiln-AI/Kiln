@@ -128,7 +128,7 @@
     <button class="btn btn-primary" on:click={on_back}> Back </button>
     {#if is_conflict}
       <button class="btn btn-error btn-outline" on:click={() => run_save(true)}>
-        Remove existing and re-sync
+        Remove existing and sync
       </button>
     {/if}
   </div>

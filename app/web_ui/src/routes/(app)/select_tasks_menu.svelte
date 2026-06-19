@@ -242,7 +242,7 @@
                 </div>
                 <a
                   href={import_project_url}
-                  class="text-xs text-base-content/40 hover:underline mt-1 inline-block"
+                  class="text-xs text-gray-500 hover:underline mt-4 inline-block"
                   on:click={() => dispatch("dismiss")}
                 >
                   Re-import project?
