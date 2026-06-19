@@ -124,13 +124,13 @@
     (score, index): ScoreEditField => ({
       label:
         (evaluator?.output_scores?.length || 0) > 1
-          ? `Score Display Name: ${score.name}`
-          : "Score Display Name",
+          ? `Score Name: ${score.name}`
+          : "Score Name",
       api_name: `output_score_display_name_${index}`,
       value: score.display_name || score.name,
       input_type: "input",
       description:
-        "A display name for the eval score, shown throughout the UI (e.g. when comparing run configurations). This is cosmetic and does not change stored eval results.",
+        "The name of the eval score, shown when comparing run configurations.",
       max_length: 32,
       custom_setter: save_output_score_display_names,
     }),
