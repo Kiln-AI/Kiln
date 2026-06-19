@@ -158,10 +158,20 @@ ${spec.definition}
   }
 
   if (template === "rag") {
-    const steps: string[] = [
-      `Evaluate if the model's output is accurate as per the reference answer.`,
-    ]
-    return steps
+    if (spec !== null) {
+      const steps: string[] = [
+        `Look at the "output" for the task run. Evaluate if the model's output meets the <spec_description>. The eval should pass if the model's output meets all requirements of the spec, and fail if any requirements of the spec are not met.
+<spec_description>
+${spec.definition}
+</spec_description>`,
+      ]
+      return steps
+    } else {
+      const steps: string[] = [
+        `Evaluate if the model's output is accurate as per the reference answer.`,
+      ]
+      return steps
+    }
   }
 
   if (template === "tool_call") {
