@@ -247,7 +247,7 @@ describe("ImportProject local_file conflict handling", () => {
     })
     expect(submitBtn?.classList.contains("hidden")).toBe(true)
 
-    // Now edit the path - should clear conflict and restore normal submit
+    // Now edit the path via typing - should clear conflict and restore normal submit
     await fireEvent.input(input, {
       target: { value: "/different/path/project.kiln" },
     })
@@ -264,5 +264,124 @@ describe("ImportProject local_file conflict handling", () => {
       'button[type="submit"]',
     ) as HTMLButtonElement
     expect(restoredSubmit?.classList.contains("hidden")).toBe(false)
+  })
+
+  it("file picker programmatic path change clears conflict via reactive block", async () => {
+    // Validates the reactive clearing mechanism via the real file-picker path.
+    // select_project_file() sets import_project_path programmatically (no DOM
+    // input event), which the old on:input wrapper div would have missed.
+    const result = render(ImportProject, { props: baseProps })
+    await tick()
+
+    const localBtn = result.getByText("Import from Local Folder")
+    await fireEvent.click(localBtn)
+    await tick()
+
+    const { container } = result
+
+    // Use the file picker (not manual input) to set the initial path
+    vi.mocked(client.GET).mockResolvedValueOnce({
+      data: { file_path: "/path/to/project.kiln" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never)
+
+    const selectBtn = container.querySelector(
+      "button.btn-primary",
+    ) as HTMLButtonElement
+    expect(selectBtn?.textContent).toContain("Select Project File")
+    await fireEvent.click(selectBtn)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Path was set programmatically by the file picker; input field should show
+    const input = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    expect(input).toBeTruthy()
+    expect(input.value).toBe("/path/to/project.kiln")
+
+    // Submit -> 409 conflict
+    vi.mocked(client.POST).mockResolvedValueOnce({
+      data: undefined,
+      error: { message: "Duplicate project ID" },
+      response: new Response(null, { status: 409 }),
+    } as never)
+
+    const submitBtn = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    await fireEvent.click(submitBtn)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Conflict button appears (reactive did NOT self-wipe on the 409)
+    await waitFor(() => {
+      expect(container.textContent).toContain("Remove existing and re-import")
+    })
+    expect(submitBtn?.classList.contains("hidden")).toBe(true)
+
+    // Clear the path to make the file picker button reappear.
+    // This also clears the conflict (expected: path changed from the conflict path).
+    await fireEvent.input(input, { target: { value: "" } })
+    await tick()
+
+    await waitFor(() => {
+      expect(container.textContent).not.toContain(
+        "Remove existing and re-import",
+      )
+    })
+
+    // File picker button is visible again (select_file_unavailable is still false)
+    const selectBtn2 = container.querySelector(
+      "button.btn-primary",
+    ) as HTMLButtonElement
+    expect(selectBtn2?.textContent).toContain("Select Project File")
+
+    // Use the file picker to set a DIFFERENT path programmatically
+    vi.mocked(client.GET).mockResolvedValueOnce({
+      data: { file_path: "/different/programmatic/path.kiln" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never)
+
+    await fireEvent.click(selectBtn2)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Verify the file picker set the new path programmatically
+    const updatedInput = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    expect(updatedInput?.value).toBe("/different/programmatic/path.kiln")
+
+    // Submit again -> 409
+    vi.mocked(client.POST).mockResolvedValueOnce({
+      data: undefined,
+      error: { message: "Duplicate project ID" },
+      response: new Response(null, { status: 409 }),
+    } as never)
+
+    const submitBtn2 = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    await fireEvent.click(submitBtn2)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Conflict button appears again -- the reactive block correctly handled the
+    // programmatic path set from the file picker without self-wiping on the 409
+    await waitFor(() => {
+      expect(container.textContent).toContain("Remove existing and re-import")
+    })
+
+    const hiddenSubmit = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(hiddenSubmit?.classList.contains("hidden")).toBe(true)
   })
 })

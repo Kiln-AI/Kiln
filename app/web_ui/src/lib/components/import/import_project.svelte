@@ -111,6 +111,7 @@
       import_project_path = ""
       import_error = null
       import_conflict = false
+      conflict_path = null
       select_file_unavailable = false
       import_done = false
     }
@@ -241,12 +242,16 @@
   let import_saved = false
   let import_done = false
   let import_conflict = false
+  let conflict_path: string | null = null
 
-  function on_path_input() {
-    if (import_conflict) {
-      import_conflict = false
-      import_error = null
-    }
+  // conflict_path is set equal to import_project_path when a 409 fires, so the
+  // guard `import_project_path !== conflict_path` is false at that moment and the
+  // reactive block does NOT wipe the conflict on the initial 409. It only clears
+  // once the user actually changes the path (via typing or the file picker).
+  $: if (conflict_path !== null && import_project_path !== conflict_path) {
+    import_conflict = false
+    import_error = null
+    conflict_path = null
   }
 
   async function select_project_file() {
@@ -294,6 +299,7 @@
       if (post_error) {
         if (response?.status === 409) {
           import_conflict = true
+          conflict_path = import_project_path
         }
         throw post_error
       }
@@ -387,17 +393,14 @@
             Select Project File
           </button>
         {:else}
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div on:input={on_path_input}>
-            <FormElement
-              label="Existing Project Path"
-              description="The path to a project.kiln file. For example, /Users/username/my_project/project.kiln"
-              info_description="You must enter the full path to the file, not just a filename. The path should be to a project.kiln file."
-              id="import_project_path"
-              inputType="input"
-              bind:value={import_project_path}
-            />
-          </div>
+          <FormElement
+            label="Existing Project Path"
+            description="The path to a project.kiln file. For example, /Users/username/my_project/project.kiln"
+            info_description="You must enter the full path to the file, not just a filename. The path should be to a project.kiln file."
+            id="import_project_path"
+            inputType="input"
+            bind:value={import_project_path}
+          />
         {/if}
         {#if import_conflict}
           <button
