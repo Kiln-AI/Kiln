@@ -54,6 +54,7 @@ export type TestAccessResponse = {
   success: boolean
   message: string
   auth_required: boolean
+  write_denied: boolean
   auth_method: string | null
 }
 

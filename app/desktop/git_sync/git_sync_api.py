@@ -165,6 +165,10 @@ class TestAccessResponse(BaseModel):
         default=False,
         description="True when the failure is due to missing authentication.",
     )
+    write_denied: bool = Field(
+        default=False,
+        description="True when the user authenticated but the remote rejected the push due to insufficient write permissions.",
+    )
     auth_method: str | None = Field(
         default=None,
         description="Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.",
@@ -516,16 +520,19 @@ def connect_git_sync_api(app: FastAPI):
         request: TestWriteAccessRequest,
     ) -> TestAccessResponse:
         _validate_clone_path(request.clone_path)
-        success, message = await asyncio.to_thread(
+        success, message, write_denied = await asyncio.to_thread(
             test_write_access,
             Path(request.clone_path),
             request.pat_token,
             request.auth_mode,
             request.oauth_token,
         )
-        auth_required = not success and "auth" in message.lower()
+        auth_required = not success and not write_denied and "auth" in message.lower()
         return TestAccessResponse(
-            success=success, message=message, auth_required=auth_required
+            success=success,
+            message=message,
+            auth_required=auth_required,
+            write_denied=write_denied,
         )
 
     @app.post(

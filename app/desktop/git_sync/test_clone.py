@@ -483,9 +483,10 @@ class TestTestWriteAccessFreesRepository:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg = check_write_access(Path("/tmp/clone"))
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is True
+        assert denied is False
         mock_repo.free.assert_called_once()
 
     def test_frees_repo_on_git_error(self):
@@ -498,9 +499,10 @@ class TestTestWriteAccessFreesRepository:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg = check_write_access(Path("/tmp/clone"))
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
+        assert denied is False
         mock_repo.free.assert_called_once()
 
     def test_frees_repo_on_unexpected_error(self):
@@ -513,7 +515,111 @@ class TestTestWriteAccessFreesRepository:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg = check_write_access(Path("/tmp/clone"))
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
+        assert denied is False
         mock_repo.free.assert_called_once()
+
+
+class TestWriteAccessDeniedClassification:
+    def _make_mock_repo(self) -> MagicMock:
+        mock_repo = MagicMock()
+        mock_repo.head.target = "abc123"
+        mock_repo.head.name = "refs/heads/main"
+        mock_repo.head.shorthand = "main"
+        mock_repo.index.write_tree.return_value = "tree_oid"
+        mock_repo.create_commit.return_value = "commit_oid"
+        return mock_repo
+
+    def test_push_rejection_sets_write_denied(self):
+        mock_repo = self._make_mock_repo()
+
+        def fake_make_push_callbacks(cred_callbacks, push_errors):
+            push_errors.append("Push rejected for refs/heads/main: permission denied")
+            return MagicMock()
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch(
+                "app.desktop.git_sync.clone.make_push_callbacks",
+                side_effect=fake_make_push_callbacks,
+            ),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is True
+        assert "permission denied" in msg.lower()
+
+    def test_403_git_error_sets_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError(
+            "403 Forbidden: write access denied"
+        )
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is True
+        assert "read-only" in msg.lower()
+
+    def test_401_git_error_does_not_set_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError("401 Unauthorized")
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is False
+        assert "authentication failed" in msg.lower()
+
+    def test_auth_git_error_does_not_set_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError(
+            "authentication required"
+        )
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is False
+        assert "authentication failed" in msg.lower()
+
+    def test_generic_git_error_does_not_set_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError("network timeout")
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is False

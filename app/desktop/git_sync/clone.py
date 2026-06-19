@@ -408,13 +408,15 @@ def test_write_access(
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
     oauth_token: str | None = None,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, bool]:
     """Test write access by pushing an empty commit.
 
     The pygit2 Repository is freed before returning to release libgit2
     file handles (required on Windows).
 
-    Returns (success, message).
+    Returns (success, message, write_denied).  *write_denied* is True when
+    the user authenticated but the remote rejected the push due to
+    insufficient permissions (e.g. read-only access on the branch).
     """
     repo: pygit2.Repository | None = None
     try:
@@ -444,16 +446,22 @@ def test_write_access(
 
         if push_errors:
             repo.reset(pre_commit_head, pygit2.enums.ResetMode.HARD)
-            return False, "; ".join(push_errors)
+            return False, "; ".join(push_errors), True
 
-        return True, "Write access confirmed"
+        return True, "Write access confirmed", False
     except pygit2.GitError as e:
         error_str = str(e).lower()
-        if "401" in error_str or "403" in error_str or "auth" in error_str:
-            return False, "Authentication failed - check your token permissions"
-        return False, f"Write access check failed: {e}"
+        if "403" in error_str:
+            return (
+                False,
+                "Write permission denied - your access to this branch is read-only",
+                True,
+            )
+        if "401" in error_str or "auth" in error_str:
+            return False, "Authentication failed - check your token permissions", False
+        return False, f"Write access check failed: {e}", False
     except Exception as e:
-        return False, f"Write access check failed: {e}"
+        return False, f"Write access check failed: {e}", False
     finally:
         if repo is not None:
             repo.free()
