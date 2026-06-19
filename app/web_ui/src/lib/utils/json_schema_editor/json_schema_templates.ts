@@ -64,7 +64,10 @@ function build_schema_model_property(
 ): SchemaModelProperty {
   const result: SchemaModelProperty = {
     id,
-    title: options.title || id,
+    // Use ?? (not ||) so an explicit empty title round-trips unchanged. Array
+    // items are stored with an empty title; || would fabricate the synthetic
+    // id ("items") and mutate the schema on every clone.
+    title: options.title ?? id,
     description: options.description,
     type: options.type,
     required: !!required.includes(id),
