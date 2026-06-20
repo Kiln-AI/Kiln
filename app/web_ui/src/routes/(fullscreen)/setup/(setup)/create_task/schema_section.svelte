@@ -3,6 +3,8 @@
   import {
     example_schema_model,
     model_from_schema,
+    type SchemaModelProperty,
+    type SchemaModelType,
     type SchemaModelTypedObject,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
 
@@ -61,7 +63,8 @@
       if (
         model.type === "object" &&
         model.properties &&
-        model.additionalProperties === false
+        model.additionalProperties === false &&
+        representable_in_visual_editor(model)
       ) {
         return model as SchemaModelTypedObject
       }
@@ -69,6 +72,32 @@
       // Invalid JSON or unsupported shape -- fall back to the raw editor.
     }
     return null
+  }
+
+  const REPRESENTABLE_TYPES: SchemaModelType[] = [
+    "number",
+    "string",
+    "integer",
+    "boolean",
+    "array",
+    "object",
+  ]
+
+  // The visual editor models each property's type as a single primitive. A node
+  // with a union type (e.g. ["string", "null"]) or any other non-primitive type
+  // can't be represented and would be silently mangled on save -- so recurse and
+  // bail to the raw editor if any node (root or nested) has an unsupported type.
+  function representable_in_visual_editor(model: SchemaModelProperty): boolean {
+    if (!(REPRESENTABLE_TYPES as string[]).includes(model.type)) {
+      return false
+    }
+    if (model.items && !representable_in_visual_editor(model.items)) {
+      return false
+    }
+    if (model.properties) {
+      return model.properties.every(representable_in_visual_editor)
+    }
+    return true
   }
 
   let schema_form_element: JsonSchemaFormElement | null = null

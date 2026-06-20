@@ -44,6 +44,23 @@ const supported_schema = JSON.stringify({
   required: ["name"],
 })
 
+// Supported root (typed object, additionalProperties:false) but a nested union
+// type the visual editor can't represent -- must still fall back to raw so the
+// nested type isn't silently mangled on save.
+const supported_root_unsupported_nested_schema = JSON.stringify(
+  {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: { title: "Name", type: "string" },
+      nickname: { title: "Nickname", type: ["string", "null"] },
+    },
+    required: ["name"],
+  },
+  null,
+  2,
+)
+
 describe("SchemaSection raw-editor fallback", () => {
   it("falls back to the raw editor for schemas the visual editor can't represent", async () => {
     const { container, getByLabelText } = render(SchemaSection, {
@@ -72,6 +89,30 @@ describe("SchemaSection raw-editor fallback", () => {
     expect(component.get_schema_string("output_schema")).toBe(
       unsupported_schema,
     )
+  })
+
+  it("falls back to raw for a supported root with an unsupported nested type", async () => {
+    const { component, getByLabelText } = render(SchemaSection, {
+      props: { schema_string: supported_root_unsupported_nested_schema },
+    })
+    await tick()
+    const textarea = getByLabelText("Raw JSON Schema") as HTMLTextAreaElement
+    expect(textarea.value).toBe(supported_root_unsupported_nested_schema)
+    expect(component.get_schema_string("output_schema")).toBe(
+      supported_root_unsupported_nested_schema,
+    )
+  })
+
+  it("falls back to the raw editor for invalid JSON and preserves it verbatim", async () => {
+    const invalid_schema =
+      '{"type":"object","properties":{"name":{"type":"string"}}'
+    const { component, getByLabelText } = render(SchemaSection, {
+      props: { schema_string: invalid_schema },
+    })
+    await tick()
+    const textarea = getByLabelText("Raw JSON Schema") as HTMLTextAreaElement
+    expect(textarea.value).toBe(invalid_schema)
+    expect(component.get_schema_string("output_schema")).toBe(invalid_schema)
   })
 
   it("opens supported schemas in the visual editor, not the raw editor", async () => {
