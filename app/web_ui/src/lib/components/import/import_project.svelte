@@ -404,6 +404,7 @@
         {/if}
         {#if import_conflict}
           <button
+            type="button"
             class="btn btn-error btn-outline"
             on:click={() => import_project(true)}
           >

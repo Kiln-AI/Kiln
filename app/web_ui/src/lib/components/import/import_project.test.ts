@@ -131,6 +131,45 @@ describe("ImportProject local_file conflict handling", () => {
     expect(hiddenSubmit?.classList.contains("hidden")).toBe(true)
   })
 
+  it("conflict button is type=button so it cannot submit the form", async () => {
+    vi.mocked(client.POST).mockResolvedValue({
+      data: undefined,
+      error: { message: "Duplicate project ID" },
+      response: new Response(null, { status: 409 }),
+    } as never)
+
+    const { container, getByText } = await renderAtLocalStep()
+
+    const input = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(input, {
+      target: { value: "/path/to/project.kiln" },
+    })
+    await tick()
+
+    const submitBtn = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    await fireEvent.click(submitBtn)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Remove existing and re-import")
+    })
+
+    // type="button" keeps the conflict button out of implicit form submission.
+    // Without it the button defaults to type="submit" and, as the first submit
+    // button in tree order, would become the form's default button -- so Enter
+    // in the path field could fire the destructive remove-and-re-import action.
+    const conflictBtn = getByText(
+      "Remove existing and re-import",
+    ) as HTMLButtonElement
+    expect(conflictBtn.getAttribute("type")).toBe("button")
+  })
+
   it("does not show conflict button on non-409 error", async () => {
     vi.mocked(client.POST).mockResolvedValue({
       data: undefined,
