@@ -260,13 +260,62 @@ class TestTestWriteAccess:
             ),
             patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
         ):
-            mock.return_value = (True, "Write access confirmed")
+            mock.return_value = (True, "Write access confirmed", False)
             resp = api_client.post(
                 "/api/git_sync/test_write_access",
                 json={"clone_path": str(clone_dir)},
             )
         data = resp.json()
         assert data["success"] is True
+        assert data["write_denied"] is False
+
+    def test_write_denied(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
+        ):
+            mock.return_value = (
+                False,
+                "Push rejected for refs/heads/main: denied",
+                True,
+            )
+            resp = api_client.post(
+                "/api/git_sync/test_write_access",
+                json={"clone_path": str(clone_dir)},
+            )
+        data = resp.json()
+        assert data["success"] is False
+        assert data["write_denied"] is True
+        assert data["auth_required"] is False
+
+    def test_auth_required(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
+        ):
+            mock.return_value = (
+                False,
+                "Authentication failed - check your token permissions",
+                False,
+            )
+            resp = api_client.post(
+                "/api/git_sync/test_write_access",
+                json={"clone_path": str(clone_dir)},
+            )
+        data = resp.json()
+        assert data["success"] is False
+        assert data["write_denied"] is False
+        assert data["auth_required"] is True
 
 
 class TestScanProjects:

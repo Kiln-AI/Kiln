@@ -10068,6 +10068,12 @@ export interface components {
              */
             auth_required: boolean;
             /**
+             * Write Denied
+             * @description True when the user authenticated but the remote rejected the push due to insufficient write permissions.
+             * @default false
+             */
+            write_denied: boolean;
+            /**
              * Auth Method
              * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
              */
