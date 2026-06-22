@@ -10,6 +10,14 @@ _GENERATOR_LABELS: dict[str, str] = {
 }
 
 
+def generator_label(generator_id: str | None) -> str | None:
+    """Return the human-readable label for a prompt generator id, or None if the
+    id isn't a known generator."""
+    if not generator_id:
+        return None
+    return _GENERATOR_LABELS.get(generator_id)
+
+
 def prompt_type_label(prompt_id: str, generator_id: str | None) -> str:
     """Derive a human-readable type label for a prompt.
 
