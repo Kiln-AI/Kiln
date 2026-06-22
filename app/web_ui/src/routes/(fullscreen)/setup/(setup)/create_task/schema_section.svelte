@@ -3,6 +3,8 @@
   import {
     example_schema_model,
     model_from_schema,
+    type SchemaModelProperty,
+    type SchemaModelType,
     type SchemaModelTypedObject,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
 
@@ -13,37 +15,89 @@
   // We're reactive for setting the schema_string, which allows the caller to set a well known schema (like the demo/example)
   // It's not reactive when the user starts editing (the string stays static), as we need a more complex in memory view-model. Access the new string via the accessor below.
   export let schema_string: string | null = null
-  let schema_model: SchemaModelTypedObject =
-    schema_model_from_string(schema_string)
-  $: schema_model = schema_model_from_string(schema_string)
-  let plaintext: boolean = !schema_string
-  $: plaintext = !schema_string
 
-  // Keep the copy the raw state here, so it persists even if they toggle the radio back to plaintext, and the component is removed.
+  // The visual editor can only represent a subset of JSON Schema: a typed object
+  // with additionalProperties:false, single-type properties, etc. Schemas authored
+  // via the API or the raw JSON editor often fall outside that subset (union types,
+  // open objects, camelCase keys, missing root additionalProperties). For those we
+  // fall back to the raw JSON editor instead of crashing, so the schema is preserved
+  // verbatim and stays editable (e.g. when cloning such a task).
+  let schema_model: SchemaModelTypedObject = example_schema_model()
+  let plaintext: boolean = !schema_string
+
+  // Keep the raw state here, so it persists even if they toggle the radio back to plaintext, and the component is removed.
   let raw = false
   let raw_schema_string: string = ""
 
-  // Update our live VM from the schema string
-  function schema_model_from_string(
-    new_schema_string: string | null,
-  ): SchemaModelTypedObject {
-    if (new_schema_string) {
+  $: load_schema(schema_string)
+
+  // Load the schema string into the editor. Supported schemas open in the visual
+  // editor; anything the visual editor can't represent opens in the raw editor.
+  function load_schema(new_schema_string: string | null) {
+    plaintext = !new_schema_string
+    if (!new_schema_string) {
+      schema_model = example_schema_model()
+      raw = false
+      raw_schema_string = ""
+      return
+    }
+    const model = typed_object_from_string(new_schema_string)
+    if (model) {
+      schema_model = model
+      raw = false
+      raw_schema_string = ""
+    } else {
+      raw = true
+      raw_schema_string = new_schema_string
+    }
+  }
+
+  // Parse a schema string into the visual editor's view-model, or return null if
+  // it isn't a typed object the visual editor supports.
+  function typed_object_from_string(
+    new_schema_string: string,
+  ): SchemaModelTypedObject | null {
+    try {
       const model = model_from_schema(JSON.parse(new_schema_string))
       // Check it's a valid object with properties (aka SchemaModelTypedObject) -- we only support typed objects for now
       if (
         model.type === "object" &&
         model.properties &&
-        model.additionalProperties === false
+        model.additionalProperties === false &&
+        representable_in_visual_editor(model)
       ) {
         return model as SchemaModelTypedObject
-      } else {
-        throw new Error(
-          "Invalid schema string: not a valid JSON schema object with properties",
-        )
       }
-    } else {
-      return example_schema_model()
+    } catch {
+      // Invalid JSON or unsupported shape -- fall back to the raw editor.
     }
+    return null
+  }
+
+  const REPRESENTABLE_TYPES: SchemaModelType[] = [
+    "number",
+    "string",
+    "integer",
+    "boolean",
+    "array",
+    "object",
+  ]
+
+  // The visual editor models each property's type as a single primitive. A node
+  // with a union type (e.g. ["string", "null"]) or any other non-primitive type
+  // can't be represented and would be silently mangled on save -- so recurse and
+  // bail to the raw editor if any node (root or nested) has an unsupported type.
+  function representable_in_visual_editor(model: SchemaModelProperty): boolean {
+    if (!(REPRESENTABLE_TYPES as string[]).includes(model.type)) {
+      return false
+    }
+    if (model.items && !representable_in_visual_editor(model.items)) {
+      return false
+    }
+    if (model.properties) {
+      return model.properties.every(representable_in_visual_editor)
+    }
+    return true
   }
 
   let schema_form_element: JsonSchemaFormElement | null = null
