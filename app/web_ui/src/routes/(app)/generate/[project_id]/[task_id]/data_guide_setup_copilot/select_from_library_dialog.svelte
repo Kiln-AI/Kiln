@@ -18,6 +18,8 @@
   import { client } from "$lib/api_client"
   import type { KilnDocument } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import Intro from "$lib/ui/intro.svelte"
+  import CopyDocumentsIcon from "$lib/ui/icons/copy_documents_icon.svelte"
 
   export let project_id: string
   // Document IDs already added as entries; filtered out so the user can't
@@ -39,6 +41,13 @@
   // failed extraction without closing the dialog.
   let committed = false
   let documents: KilnDocument[] = []
+  // True when the library has documents but they're all already added — lets the
+  // empty state distinguish "library is empty" from "you've added them all".
+  let all_added = false
+  // True when the raw library has any tagged docs (before filtering out
+  // already-added ones) — lets the empty state say "you've added all your
+  // tagged docs" instead of wrongly claiming nothing is tagged.
+  let library_has_tagged = false
   let loading = false
   let load_error: KilnError | null = null
   let selected_ids: string[] = []
@@ -63,6 +72,14 @@
     return true
   }
 
+  // Open the Document Library in a new tab and close this dialog — it loads its
+  // document list once on open and doesn't live-refresh, so leaving it open
+  // would show stale data after the user tags/uploads documents.
+  function go_to_library() {
+    window.open(`/docs/library/${project_id}`, "_blank", "noopener")
+    close()
+  }
+
   async function load_documents() {
     loading = true
     load_error = null
@@ -72,15 +89,49 @@
         { params: { path: { project_id } } },
       )
       if (fetch_error) throw fetch_error
-      documents = (data || []).filter(
-        (d) => !!d.id && !existing_document_ids.includes(d.id!),
-      )
+      const all_docs = (data || []).filter((d) => !!d.id)
+      documents = all_docs.filter((d) => !existing_document_ids.includes(d.id!))
+      all_added = documents.length === 0 && all_docs.length > 0
+      library_has_tagged = all_docs.some((d) => !!d.tags && d.tags.length > 0)
     } catch (e) {
       load_error = createKilnError(e)
     } finally {
       loading = false
     }
   }
+
+  // The picker is tag-first, so untagged documents can't be selected here. When
+  // no available document is tagged we show an empty state nudging the user to
+  // tag their docs rather than rendering an empty table.
+  $: has_tagged_docs = documents.some((d) => !!d.tags && d.tags.length > 0)
+
+  // Empty-state copy, by reason. Note `library_has_tagged` is the raw library
+  // (before filtering out already-added docs), which lets us say "you've added
+  // them all" instead of wrongly claiming nothing is tagged.
+  $: empty_state =
+    documents.length === 0
+      ? all_added
+        ? {
+            title: "All Documents Added",
+            description:
+              "You've already added every document in your library. Upload more documents to your library to add them here.",
+          }
+        : {
+            title: "No Documents To Add",
+            description:
+              "Your document library is empty. Upload documents to your library to add them here.",
+          }
+      : library_has_tagged
+        ? {
+            title: "No Tagged Documents To Add",
+            description:
+              "You've already added all of your tagged documents. Tag more documents in the Document Library to add them here.",
+          }
+        : {
+            title: "No Tagged Documents To Add",
+            description:
+              "Only tagged documents can be added here. Tag your documents in the Document Library to add them here.",
+          }
 
   // Newest-first, matching the library's default sort.
   $: selector_items = [...documents]
@@ -161,7 +212,7 @@
   bind:this={dialog}
   width="wide"
   title="Select from Document Library"
-  action_buttons={extract_after_pick
+  action_buttons={extract_after_pick || !has_tagged_docs
     ? []
     : [
         {
@@ -191,19 +242,26 @@
     <div class="text-error text-sm">
       Failed to load documents: {load_error.getMessage()}
     </div>
-  {:else if documents.length === 0}
-    <div class="text-sm text-gray-500 py-8 text-center">
-      Your Document Library is empty.
-      <div class="mt-4">
-        <a
-          href={`/docs/library/${project_id}`}
-          target="_blank"
-          rel="noopener"
-          class="link link-primary"
-        >
-          Go to Document Library →
-        </a>
-      </div>
+  {:else if !has_tagged_docs}
+    <!-- Empty state for: nothing in the library (race past the uploader's
+         library_has_docs gating), everything already added, or documents that
+         exist but have no tags (untagged docs can't be picked tag-first). -->
+    <div class="py-8 flex justify-center">
+      <Intro
+        title={empty_state.title}
+        description_paragraphs={[empty_state.description]}
+        action_buttons={[
+          {
+            label: "Go to Document Library",
+            onClick: go_to_library,
+            is_primary: true,
+          },
+        ]}
+      >
+        <div slot="icon" class="h-12 w-12">
+          <CopyDocumentsIcon />
+        </div>
+      </Intro>
     </div>
   {:else}
     {#if !extracting}

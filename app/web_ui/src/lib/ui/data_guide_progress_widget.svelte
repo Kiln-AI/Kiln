@@ -67,43 +67,41 @@
     ? { label: "Failed", cls: "badge-outline badge-error" }
     : job?.status === "succeeded"
       ? { label: "Complete", cls: "badge-outline badge-primary" }
-      : { label: "In Progress", cls: "badge-outline" }
+      : { label: "In Progress", cls: "badge-outline badge-primary" }
 
   $: body = is_failed
     ? "The draft didn't finish."
     : job?.status === "succeeded"
-      ? "Your data guide is ready to review."
+      ? "Your data guide is ready to"
       : "Drafting your data guide."
 
-  $: cta = is_failed
-    ? "View"
-    : job?.status === "succeeded"
-      ? "Review"
-      : "View Progress"
+  $: cta = is_failed ? "View" : job?.status === "succeeded" ? "review" : ""
 </script>
 
 {#if visible && job}
-  <div class="relative max-w-full">
-    <button
-      class="bg-white border border-primary rounded-lg p-3 flex flex-col gap-1 items-start text-left text-xs 2xl:text-sm w-full"
-      on:click={open}
-    >
-      <div class="font-medium pr-6">Data Guide</div>
-      <div class="font-light">
-        {body}
-        <span class="text-primary font-medium">{cta}</span>.
-      </div>
-      <div class="badge px-3 py-1 gap-1 text-xs {badge.cls}">
-        {#if is_running}
-          <span class="loading loading-spinner h-[12px] w-[12px]"></span>
-        {/if}
-        {badge.label}
-      </div>
-    </button>
+  <!-- Structure mirrors progress_widget.svelte (the eval widget): a single
+       card button so it gets the same DaisyUI sidebar-menu sizing. A wrapper
+       div is treated differently by the menu and stretched the card on wide
+       screens. The dismiss control is a nested button with stopPropagation —
+       same pattern as the eval widget. -->
+  <button
+    class="bg-white border border-primary rounded-lg p-3 flex flex-col gap-1 items-start relative text-left text-xs 2xl:text-sm max-w-full mb-2"
+    on:click={open}
+  >
     <button
       class="hover:text-xl h-8 w-8 leading-none absolute top-0 right-0 flex items-center justify-center"
       aria-label="Dismiss data guide notification"
-      on:click={close}>&#x2715;</button
+      on:click|stopPropagation={close}>&#x2715;</button
     >
-  </div>
+    <div class="font-medium pr-6">Data Guide</div>
+    <div class="font-light">
+      {body}{#if cta} <span class="text-primary font-medium">{cta}</span>.{/if}
+    </div>
+    <div class="badge px-3 py-1 gap-1 text-xs {badge.cls}">
+      {#if is_running}
+        <span class="loading loading-spinner h-[12px] w-[12px]"></span>
+      {/if}
+      {badge.label}
+    </div>
+  </button>
 {/if}

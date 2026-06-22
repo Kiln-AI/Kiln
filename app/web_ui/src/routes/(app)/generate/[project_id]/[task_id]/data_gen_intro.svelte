@@ -273,11 +273,7 @@
       >
         <div slot="description">
           Adding topics will help generate diverse data. They can be nested,
-          forming a topic tree. <a
-            href="https://docs.kiln.tech/docs/synthetic-data-generation#topic-tree-data-generation"
-            target="_blank"
-            class="link">Guide</a
-          >.
+          forming a topic tree.
         </div>
         <div slot="icon">
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->

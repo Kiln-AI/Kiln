@@ -9,7 +9,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, onDestroy } from "svelte"
   import { page } from "$app/stores"
-  import { goto } from "$app/navigation"
+  import { goto, beforeNavigate } from "$app/navigation"
   import { get } from "svelte/store"
   import GuidePreview from "../data_guide_setup/guide_preview.svelte"
   import RunOptionsTiles from "../data_guide_setup/run_options_tiles.svelte"
@@ -92,6 +92,46 @@
   $: extraction_document_ids = entries
     .filter((e) => e.source === "document" && !!e.document_id)
     .map((e) => e.document_id as string)
+
+  // States that run foreground LLM work (generating/refining preview inputs)
+  // tied to this page — unlike the draft, this work is NOT a resumable
+  // background job, so navigating away discards it. Guard against accidental
+  // loss while one of these is in flight.
+  $: generating_in_progress =
+    current_state === "analyzing" ||
+    current_state === "refining" ||
+    current_state === "regenerating"
+
+  // SvelteKit (in-app) navigation guard. Only prompt when actually leaving this
+  // page — query-param / same-path transitions are fine.
+  beforeNavigate((navigation) => {
+    if (!generating_in_progress) return
+    if (
+      navigation.to?.url?.pathname &&
+      navigation.to.url.pathname === navigation.from?.url?.pathname
+    ) {
+      return
+    }
+    if (
+      !confirm(
+        "Examples are still being generated and will be lost if you leave.\n\n" +
+          "Press Cancel to stay, OK to leave.",
+      )
+    ) {
+      navigation.cancel()
+    }
+  })
+
+  // Browser reload / tab close guard.
+  function handle_before_unload(event: BeforeUnloadEvent) {
+    if (generating_in_progress) {
+      event.preventDefault()
+    }
+  }
+  onMount(() => {
+    window.addEventListener("beforeunload", handle_before_unload)
+    return () => window.removeEventListener("beforeunload", handle_before_unload)
+  })
 
   onMount(async () => {
     // A fresh Kiln Pro OAuth callback (?code=...) must be handled by the inline
@@ -510,7 +550,13 @@
       posthog.capture("data_guide_copilot_job_started", {
         entry_count: to_analyze.length,
       })
-      goto(
+      // Await the navigation so `submitting` stays true until it's underway.
+      // The FormContainer's beforeNavigate guard keys off `!submitting`;
+      // resetting it (in `finally`) before the guard runs would pop a spurious
+      // "unsaved changes" prompt on this intentional Continue navigation.
+      // Awaiting also surfaces a route-chunk load failure as a handled error
+      // rather than an unhandled promise rejection.
+      await goto(
         `/generate/${project_id}/${task_id}/data_guide_setup_copilot/${data.job_id}`,
       )
     } catch (e) {
@@ -716,7 +762,7 @@
     {:else if current_state === "analyzing"}
       <AnalyzingAnimation
         title="Generating Examples"
-        description="Generating example inputs from your data guide for you to review."
+        description="Generating example inputs from your data guide for you to review. Leaving this page will discard them."
       />
     {:else if current_state === "preview"}
       <GuidePreview
@@ -740,7 +786,7 @@
     {:else if current_state === "regenerating"}
       <AnalyzingAnimation
         title="Regenerating Inputs"
-        description="Regenerating synthetic inputs to test your edited data guide."
+        description="Regenerating synthetic inputs to test your edited data guide. Leaving this page will discard them."
       />
     {:else if current_state === "load_error"}
       <div
