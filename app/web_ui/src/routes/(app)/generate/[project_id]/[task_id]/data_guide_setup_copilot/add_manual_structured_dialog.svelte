@@ -3,7 +3,7 @@
   // page's schema-driven form so users enter values per-property instead of
   // dumping JSON into a textarea. Output is serialized to a JSON string so it
   // funnels into the same `text` field as other entries.
-  import { createEventDispatcher } from "svelte"
+  import { createEventDispatcher, setContext } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import RunInputFormElement from "$lib/components/run_input_form_element.svelte"
   import {
@@ -12,6 +12,14 @@
   } from "$lib/utils/json_schema_editor/json_schema_templates"
 
   export let input_json_schema: string
+
+  // Isolate this dialog's schema fields from any ancestor FormContainer. The
+  // Kiln Pro setup page wraps the uploader (and therefore this dialog) in its
+  // "Continue" form; without this, the dialog's always-mounted, empty required
+  // fields register into that form and block Continue with "Please correct the
+  // errors above". The dialog validates itself via buildValue() on Add, so it
+  // doesn't need the ancestor container.
+  setContext("form_container", { registerFormElement: () => () => {} })
 
   let dialog: Dialog | null = null
   let formKey = 0
