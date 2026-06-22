@@ -8754,6 +8754,12 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "auto" | "manual";
+            /**
+             * Remove Conflicting Id
+             * @description When true and a duplicate project ID conflict is detected, remove the existing project registration before saving.
+             * @default false
+             */
+            remove_conflicting_id: boolean;
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -10692,6 +10698,8 @@ export interface operations {
             query: {
                 /** @description File path to the project.kiln file to import. */
                 project_path: string;
+                /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
+                remove_conflicting_id?: boolean;
             };
             header?: never;
             path?: never;

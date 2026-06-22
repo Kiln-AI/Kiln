@@ -8,11 +8,14 @@ import pytest
 
 from app.desktop.git_sync.conftest import _test_sig, commit_in_repo, push_from
 from app.desktop.git_sync.errors import (
+    GitAuthError,
+    RemoteUnreachableError,
     SyncConflictError,
     WriteLockTimeoutError,
 )
 from app.desktop.git_sync.git_sync_manager import (
     GitSyncManager,
+    _is_auth_error,
     get_committer_email,
     get_committer_name,
     reset_committer_cache,
@@ -594,3 +597,81 @@ def test_committer_caching(monkeypatch):
     get_committer_email()
     assert call_count == 2
     reset_committer_cache()
+
+
+# --- _is_auth_error classification ---
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("HTTP 401 Unauthorized", True),
+        ("HTTP 403 Forbidden", True),
+        ("authentication required", True),
+        ("authorization failed", True),
+        ("bad credentials", True),
+        ("invalid username or password", True),
+        ("password authentication was removed", True),
+        ("too many redirects", True),
+        ("could not resolve host", False),
+        ("connection timed out", False),
+        ("network is unreachable", False),
+        ("unexpected http status code: 500", False),
+    ],
+)
+def test_is_auth_error_markers(message, expected):
+    assert _is_auth_error(pygit2.GitError(message)) is expected
+
+
+# --- fetch auth classification ---
+
+
+@pytest.mark.asyncio
+async def test_fetch_raises_git_auth_error_for_auth_failure(manager):
+    def broken_fetch():
+        raise pygit2.GitError("HTTP 401 Unauthorized")
+
+    manager._fetch_sync = broken_fetch  # type: ignore[assignment]
+
+    with pytest.raises(GitAuthError, match="Git authentication failed"):
+        await manager.fetch()
+
+
+@pytest.mark.asyncio
+async def test_fetch_raises_remote_unreachable_for_non_auth_failure(manager):
+    def broken_fetch():
+        raise pygit2.GitError("could not resolve host")
+
+    manager._fetch_sync = broken_fetch  # type: ignore[assignment]
+
+    with pytest.raises(RemoteUnreachableError, match="Cannot sync with remote"):
+        await manager.fetch()
+
+
+# --- ensure_fresh / ensure_fresh_for_read propagation ---
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_for_read_propagates_git_auth_error(manager):
+    manager._last_sync = 0.0
+
+    def broken_fetch():
+        raise pygit2.GitError("authentication required")
+
+    manager._fetch_sync = broken_fetch  # type: ignore[assignment]
+
+    with pytest.raises(GitAuthError):
+        await manager.ensure_fresh_for_read()
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_propagates_git_auth_error(manager):
+    manager._last_sync = 0.0
+
+    def broken_fetch():
+        raise pygit2.GitError("HTTP 403 Forbidden")
+
+    manager._fetch_sync = broken_fetch  # type: ignore[assignment]
+
+    with pytest.raises(GitAuthError):
+        await manager.ensure_fresh()

@@ -25,6 +25,7 @@
   <SelectTasksMenu
     new_project_url="/setup/create_project"
     new_task_url="/setup/create_task"
+    import_project_url="/setup/import_project"
   />
 </div>
 
