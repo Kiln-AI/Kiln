@@ -7,7 +7,10 @@
   import { page } from "$app/stores"
   import type { EvalProgress } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    score_display_name,
+  } from "$lib/utils/formatters"
   import {
     model_info,
     load_model_info,
@@ -431,7 +434,7 @@
     // Goals are setup. Generate friendly names for them.
     goals = []
     for (const output of evaluator.output_scores) {
-      goals.push(output.name + " (" + output.type + ")")
+      goals.push(score_display_name(output) + " (" + output.type + ")")
     }
 
     if (has_default_eval_config) {

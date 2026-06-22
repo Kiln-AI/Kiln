@@ -460,6 +460,75 @@ def test_update_spec_name_syncs_eval_name(
     assert updated_eval.name == "Updated Name"
 
 
+def test_update_spec_name_syncs_auto_generated_score_instruction(
+    client: TestClient,
+    project_and_task: tuple[Project, Task],
+    sample_tone_properties: ToneProperties,
+) -> None:
+    """Renaming a spec regenerates auto-generated score instructions, leaving custom ones intact."""
+    from kiln_server.utils.spec_utils import spec_eval_output_score
+
+    project, task = project_and_task
+
+    auto_instruction = spec_eval_output_score("Original Name").instruction
+    eval = Eval(
+        name="Original Name",
+        description="Test eval",
+        template="rag",
+        eval_set_filter_id="tag::test_eval",
+        output_scores=[
+            EvalOutputScore(
+                name="Original Name",
+                type=TaskOutputRatingType.pass_fail,
+                instruction=auto_instruction,
+            ),
+            EvalOutputScore(
+                name="Custom Score",
+                type=TaskOutputRatingType.five_star,
+                instruction="A custom instruction the user wrote.",
+            ),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+
+    spec = Spec(
+        name="Original Name",
+        definition="Original definition",
+        priority=Priority.p2,
+        status=SpecStatus.active,
+        tags=[],
+        eval_id=eval.id,
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json={"name": "Updated Name"},
+        )
+
+    assert response.status_code == 200
+
+    updated_eval = Eval.from_id_and_parent_path(eval.id, task.path)
+    assert updated_eval is not None
+    # Auto-generated instruction regenerated with the new name
+    assert (
+        updated_eval.output_scores[0].instruction
+        == spec_eval_output_score("Updated Name").instruction
+    )
+    # Score name itself is left untouched (user-controlled)
+    assert updated_eval.output_scores[0].name == "Original Name"
+    # Custom instruction is not clobbered
+    assert (
+        updated_eval.output_scores[1].instruction
+        == "A custom instruction the user wrote."
+    )
+
+
 def test_update_spec_name_rollback_eval_on_spec_save_failure(
     client: TestClient,
     project_and_task: tuple[Project, Task],

@@ -202,6 +202,7 @@ def connect_spec_api(app: FastAPI):
         request: UpdateSpecRequest,
     ) -> Spec:
         spec = spec_from_id(project_id, task_id, spec_id)
+        previous_spec_name = spec.name
 
         # Update all provided fields
         if request.name is not None:
@@ -217,15 +218,30 @@ def connect_spec_api(app: FastAPI):
         if request.tags is not None:
             spec.tags = request.tags
 
-        # Sync eval name when spec name changes
+        # Sync eval name and auto-generated score instructions when the spec name changes
         eval: Eval | None = None
         previous_eval_name: str | None = None
+        previous_score_instructions: list[str | None] | None = None
         if request.name is not None and spec.eval_id:
             parent_task = task_from_id(project_id, task_id)
             eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
             if eval and eval.name != request.name:
                 previous_eval_name = eval.name
                 eval.name = request.name
+
+                # The score instruction embeds the spec name. Regenerate it for scores that still
+                # use the auto-generated text, without clobbering user-customized instructions.
+                old_auto_instruction = spec_eval_output_score(
+                    previous_spec_name
+                ).instruction
+                new_auto_instruction = spec_eval_output_score(request.name).instruction
+                previous_score_instructions = [
+                    score.instruction for score in eval.output_scores
+                ]
+                for score in eval.output_scores:
+                    if score.instruction == old_auto_instruction:
+                        score.instruction = new_auto_instruction
+
                 eval.save_to_file()
 
         try:
@@ -234,6 +250,11 @@ def connect_spec_api(app: FastAPI):
             if eval is not None and previous_eval_name is not None:
                 try:
                     eval.name = previous_eval_name
+                    if previous_score_instructions is not None:
+                        for score, instruction in zip(
+                            eval.output_scores, previous_score_instructions
+                        ):
+                            score.instruction = instruction
                     eval.save_to_file()
                 except Exception:
                     logger.exception(

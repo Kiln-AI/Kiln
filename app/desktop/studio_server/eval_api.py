@@ -59,6 +59,36 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     )
 
 
+def set_output_score_display_names(eval: Eval, display_names: list[str | None]) -> None:
+    """Set the user-facing display name for each of the eval's output scores.
+
+    display_names must be positionally aligned with eval.output_scores (same length). A display name
+    is purely cosmetic: it does not affect the score's name, JSON key, or any stored eval run, so only
+    the single eval file is written. Empty/whitespace entries clear the display name (fall back to
+    the score's name). Only the eval is saved.
+    """
+    if len(display_names) != len(eval.output_scores):
+        raise HTTPException(
+            status_code=400,
+            detail=f"output_score_display_names must have the same length as the eval's output scores. Got {len(display_names)}, expected {len(eval.output_scores)}.",
+        )
+
+    normalized: list[str | None] = []
+    for display_name in display_names:
+        cleaned = display_name.strip() if display_name is not None else None
+        if cleaned is not None and len(cleaned) > 32:
+            raise HTTPException(
+                status_code=400,
+                detail="Score display names must be 32 characters or fewer.",
+            )
+        normalized.append(cleaned or None)
+
+    for index, display_name in enumerate(normalized):
+        eval.output_scores[index].display_name = display_name
+
+    eval.save_to_file()
+
+
 def eval_config_from_id(
     project_id: str, task_id: str, eval_id: str, eval_config_id: str
 ) -> EvalConfig:
@@ -267,6 +297,10 @@ class UpdateEvalRequest(BaseModel):
     )
     train_set_filter_id: str | None = Field(
         default=None, description="The updated train set filter ID."
+    )
+    output_score_display_names: list[str | None] | None = Field(
+        default=None,
+        description="Updated user-facing display names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run. Empty entries clear the display name.",
     )
 
 
@@ -691,7 +725,12 @@ def connect_evals_api(app: FastAPI):
                 )
             eval.train_set_filter_id = request.train_set_filter_id
 
-        eval.save_to_file()
+        if request.output_score_display_names is not None:
+            # Saves the eval, including the name/description/train_set_filter changes above. Display
+            # names are cosmetic, so no eval run data is touched.
+            set_output_score_display_names(eval, request.output_score_display_names)
+        else:
+            eval.save_to_file()
         return eval
 
     @app.get(

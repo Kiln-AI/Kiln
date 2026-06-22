@@ -4,6 +4,7 @@
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { score_display_name } from "$lib/utils/formatters"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
@@ -141,7 +142,7 @@
           <th class="text-center">Status</th>
           {#each evaluator.output_scores as output_score}
             <th class="text-center">
-              {output_score.name}
+              {score_display_name(output_score)}
               {#if output_score.type}
                 <OutputTypeTablePreview output_score_type={output_score.type} />
               {/if}

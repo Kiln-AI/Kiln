@@ -15,7 +15,10 @@
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    score_display_name,
+  } from "$lib/utils/formatters"
   import {
     get_task_composite_id,
     model_info,
@@ -258,7 +261,7 @@
             <th>Thinking</th>
             {#each results.eval.output_scores as score}
               <th class="text-center">
-                {score.name}
+                {score_display_name(score)}
                 {#if score.type}
                   <OutputTypeTablePreview output_score_type={score.type} />
                 {/if}
