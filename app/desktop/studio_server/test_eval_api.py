@@ -461,6 +461,34 @@ def test_reusable_frozen_prompt_id_picks_most_recent(mock_task):
     )
 
 
+def test_reusable_frozen_prompt_id_normalizes_empty_cot(mock_task):
+    # An empty-string cot and a missing cot should be treated as equivalent.
+    config = TaskRunConfig(
+        parent=mock_task,
+        id="rc_empty_cot",
+        name="Empty CoT",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="task_run_config::project1::task1::rc_empty_cot",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        prompt=BasePrompt(
+            name="Empty CoT Frozen",
+            prompt="body",
+            chain_of_thought_instructions="",
+        ),
+    )
+    config.save_to_file()
+
+    assert reusable_frozen_prompt_id(mock_task, "project1", "body", None) == (
+        "task_run_config::project1::task1::rc_empty_cot"
+    )
+    assert reusable_frozen_prompt_id(mock_task, "project1", "body", "") == (
+        "task_run_config::project1::task1::rc_empty_cot"
+    )
+
+
 @pytest.mark.asyncio
 async def test_create_eval_config(
     client, mock_task_from_id, valid_eval_config_request, mock_eval, mock_task

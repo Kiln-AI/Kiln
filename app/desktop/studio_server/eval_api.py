@@ -61,12 +61,15 @@ def reusable_frozen_prompt_id(
     there's no match. If multiple match (legacy data created before dedup), the
     most recently created run config is used.
     """
+    # Treat empty-string and missing chain-of-thought instructions as equivalent
+    # so prompts dedupe regardless of how "no instructions" is represented.
+    normalized_cot = cot_instructions or None
     matches = [
         run_config
         for run_config in task.run_configs(readonly=True)
         if run_config.prompt is not None
         and run_config.prompt.prompt == prompt_text
-        and run_config.prompt.chain_of_thought_instructions == cot_instructions
+        and (run_config.prompt.chain_of_thought_instructions or None) == normalized_cot
     ]
     if not matches:
         return None
