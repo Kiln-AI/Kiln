@@ -514,9 +514,11 @@
     })
   }
 
-  // The transcript scroll container (the chat-style scrollview on xl+).
+  // The transcript content element. The whole page scrolls (no inner scroll
+  // region) — we observe this element for content mutations and pin the window
+  // scroll to the bottom while things settle.
   let transcript_scroll_el: HTMLElement | null = null
-  // Scroll the transcript to the latest turn whenever a run renders — both on
+  // Scroll the page to the latest turn whenever a run renders — both on
   // initial load and after sending a new turn. The composer is pinned
   // separately, so "bottom" lands on the newest message, not the textbox.
   let scrolled_for_run_id: string | null = null
@@ -598,9 +600,9 @@
     if (!el || typeof MutationObserver === "undefined") return
     stop_pinning_transcript()
     const stick = () => {
-      if (transcript_scroll_el) {
-        transcript_scroll_el.scrollTop = transcript_scroll_el.scrollHeight
-      }
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+      })
     }
     stick()
     settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
@@ -847,27 +849,23 @@
     {:else if run && task}
       {#if task.turn_mode === "multiturn" && task.id}
         {@const multiturn_task_id = task.id}
-        <!-- Chat-style layout: on xl+ the whole row is bounded to the viewport
-             height. Both the centered chat column and the right-pinned Options
-             sidebar fill that height and scroll independently. The chat
-             transcript scrolls with the composer pinned below it. Below xl this
-             falls back to normal document flow. The 100vh offset clears the app
-             header above. -->
+        <!-- Chat-style layout: the whole page scrolls (no inner scroll
+             regions). The conversation flows top-to-bottom with the composer
+             pinned to the bottom of the viewport via position:sticky; the
+             Options sidebar sits at the top of the page in normal flow. -->
         <div data-testid="multiturn-layout">
-          <div
-            class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
-          >
-            <!-- The chat column is full width so its scrollbar sits at the
-                 right boundary; the conversation + composer are centered
-                 inside via max-w + mx-auto. -->
-            <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+            <!-- The conversation + composer are centered inside via
+                 max-w + mx-auto. The min-height keeps the sticky composer at
+                 the bottom of the viewport even for short conversations. -->
+            <div
+              class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]"
+            >
               <div
                 bind:this={transcript_scroll_el}
-                class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-4"
+                class="min-w-0 xl:flex-1 xl:pr-4"
               >
-                <div
-                  class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
-                >
+                <div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
                   {#if run_has_children}
                     <div role="alert" data-testid="run-has-children-banner">
                       <Warning
@@ -915,8 +913,10 @@
                   {/if}
                 </div>
               </div>
-              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4 xl:pr-4">
-                <div class="mx-auto w-full max-w-3xl">
+              <div
+                class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4 xl:pr-4"
+              >
+                <div class="mx-auto flex w-full max-w-3xl flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
                       bind:this={fork_composer}
@@ -943,23 +943,19 @@
                       on_send_settled={handle_send_settled}
                     />
                   {/if}
-                </div>
-              </div>
-              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
-              <div class="xl:flex-none mt-2 xl:pr-4">
-                <div class="mx-auto w-full max-w-3xl">
-                  <button
-                    class="text-xs link"
-                    on:click={() => raw_data_dialog?.show()}
-                  >
-                    Show Raw Data
-                  </button>
+                  <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
+                  <div>
+                    <button
+                      class="text-xs link"
+                      on:click={() => raw_data_dialog?.show()}
+                    >
+                      Show Raw Data
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-            <div
-              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:px-4 xl:pb-6"
-            >
+            <div class="w-72 2xl:w-96 flex-none flex flex-col xl:pl-4">
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
@@ -1052,39 +1048,3 @@
     </div>
   {/if}
 </Dialog>
-
-<style>
-  /* Match the Assistant chat transcript scrollbar. Overlay style: the thumb
-     stays invisible until you hover (or scroll) the zone, so the two adjacent
-     scroll regions don't both show persistent bars. */
-  .chat-messages-scroll::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-thumb {
-    background-color: transparent;
-    border-radius: 3px;
-    transition: background-color 0.2s ease;
-  }
-
-  .chat-messages-scroll:hover::-webkit-scrollbar-thumb {
-    background-color: oklch(var(--bc) / 0.2);
-  }
-
-  .chat-messages-scroll:hover::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(var(--bc) / 0.35);
-  }
-
-  .chat-messages-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-  }
-
-  .chat-messages-scroll:hover {
-    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
-  }
-</style>
