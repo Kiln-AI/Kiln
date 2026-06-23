@@ -55,7 +55,7 @@ describe("CodeEvalForm", () => {
   it("displays the score function signature hint", () => {
     const { container } = render(CodeEvalForm)
     expect(container.textContent).toContain(
-      "score(output, trace, reference_data, task_input, kiln)",
+      "score(output, trace, reference_data, task_input)",
     )
   })
 
@@ -100,7 +100,7 @@ describe("CodeEvalForm", () => {
   it("accepts initial properties via props", () => {
     const customProps = {
       type: "code_eval" as const,
-      code: 'def score(output, trace, reference_data, task_input, kiln):\n    return {"custom": 0.5}\n',
+      code: 'def score(output, trace, reference_data, task_input):\n    return {"custom": 0.5}\n',
       timeout_seconds: 120,
     }
     const { component } = render(CodeEvalForm, {
@@ -116,7 +116,7 @@ describe("CodeEvalForm", () => {
     const { component } = render(CodeEvalForm)
     const props = component.getProperties()
     expect(props.code).toContain(
-      "def score(output, trace, reference_data, task_input, kiln)",
+      "def score(output, trace, reference_data, task_input)",
     )
   })
 

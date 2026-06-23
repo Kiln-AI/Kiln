@@ -33,7 +33,7 @@ def _clear_trust():
 
 
 def _make_config(
-    code: str = "def score(output, trace, reference_data, task_input, kiln):\n    return {'accuracy': 1.0}\n",
+    code: str = "def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n",
     timeout: int = 30,
 ) -> EvalConfig:
     props = CodeEvalProperties(code=code, timeout_seconds=timeout)

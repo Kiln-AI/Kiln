@@ -28,7 +28,7 @@ def _inputs(output: str = "hello", **overrides: object) -> dict:
 class TestHappyPath:
     def test_scorer_returns_dict(self):
         code = (
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    return {'accuracy': 1.0}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)
@@ -37,7 +37,7 @@ class TestHappyPath:
 
     def test_scorer_uses_output(self):
         code = (
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    return {'has_hello': 1.0 if 'hello' in output else 0.0}\n"
         )
         result = run_scorer(code, _inputs(output="hello world"), timeout=10)
@@ -49,7 +49,7 @@ class TestHappyPath:
     def test_scorer_uses_stdlib(self):
         code = (
             "import math\n"
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    return {'sqrt4': math.sqrt(4)}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)
@@ -57,8 +57,9 @@ class TestHappyPath:
 
     def test_scorer_uses_kiln_helpers(self):
         code = (
-            "def score(output, trace, reference_data, task_input, kiln):\n"
-            "    return {'pass': kiln.pass_fail(True)}\n"
+            "from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers\n"
+            "def score(output, trace, reference_data, task_input):\n"
+            "    return {'pass': KilnEvalHelpers.pass_fail(True)}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)
         assert result["ok"] == {"pass": 1.0}
@@ -72,7 +73,7 @@ class TestHappyPath:
 class TestCapture:
     def test_stdout_captured(self):
         code = (
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    print('debug info')\n"
             "    return {'x': 1.0}\n"
         )
@@ -83,7 +84,7 @@ class TestCapture:
     def test_stderr_captured(self):
         code = (
             "import sys\n"
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    print('err msg', file=sys.stderr)\n"
             "    return {'x': 1.0}\n"
         )
@@ -100,7 +101,7 @@ class TestCapture:
 class TestErrors:
     def test_runtime_exception(self):
         code = (
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    raise ValueError('boom')\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)
@@ -129,7 +130,7 @@ class TestErrors:
     def test_timeout(self):
         code = (
             "import time\n"
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    time.sleep(10)\n"
             "    return {'x': 1.0}\n"
         )
@@ -139,7 +140,7 @@ class TestErrors:
     def test_crash_via_os_exit(self):
         code = (
             "import os\n"
-            "def score(output, trace, reference_data, task_input, kiln):\n"
+            "def score(output, trace, reference_data, task_input):\n"
             "    os._exit(1)\n"
         )
         with pytest.raises(RuntimeError, match="exit code"):

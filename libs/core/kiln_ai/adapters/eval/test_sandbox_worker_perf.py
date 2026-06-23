@@ -1,8 +1,10 @@
 """Benchmarks for sandbox_worker / code-eval subprocess performance.
 
 These benchmarks measure the end-to-end cost of spawning a child process
-via ``run_scorer`` at various levels of code complexity. They are designed
-to attribute time to process spawn + package imports vs. user code execution.
+via ``run_scorer`` at various levels of code complexity.  With lazy
+``__init__.py`` imports, the child process no longer loads the full
+kiln_ai.adapters package chain, so ``run_scorer`` completes in tens of
+milliseconds rather than seconds.
 
 Marked ``@pytest.mark.slow`` so they are skipped in normal CI runs (requires
 ``--runslow`` to execute). Also marked ``@pytest.mark.benchmark`` for
@@ -29,24 +31,24 @@ _INPUTS: dict = {
 }
 
 TRIVIAL_CODE = (
-    "def score(output, trace, reference_data, task_input, kiln):\n"
-    "    return {'x': 1.0}\n"
+    "def score(output, trace, reference_data, task_input):\n    return {'x': 1.0}\n"
 )
 
 STDLIB_IMPORT_CODE = (
     "import math\nimport json\nimport re\n"
-    "def score(output, trace, reference_data, task_input, kiln):\n"
+    "def score(output, trace, reference_data, task_input):\n"
     "    return {'x': math.sqrt(4)}\n"
 )
 
 KILN_HELPERS_CODE = (
-    "def score(output, trace, reference_data, task_input, kiln):\n"
-    "    return {'x': kiln.pass_fail(True)}\n"
+    "from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers\n"
+    "def score(output, trace, reference_data, task_input):\n"
+    "    return {'x': KilnEvalHelpers.pass_fail(True)}\n"
 )
 
 
 # ---------------------------------------------------------------------------
-# run_scorer benchmarks (current implementation — multiprocessing.spawn)
+# run_scorer benchmarks (multiprocessing.spawn with lazy __init__)
 # ---------------------------------------------------------------------------
 
 
@@ -61,7 +63,7 @@ def test_benchmark_run_scorer_trivial(benchmark):
 
     benchmark.pedantic(run, rounds=10, iterations=1)
     mean = benchmark.stats.stats.mean
-    assert mean < 8, f"Trivial scorer averaged {mean:.2f}s — expected under 8s"
+    assert mean < 0.5, f"Trivial scorer averaged {mean:.2f}s — expected under 0.5s"
 
 
 @pytest.mark.benchmark
@@ -75,13 +77,13 @@ def test_benchmark_run_scorer_stdlib_imports(benchmark):
 
     benchmark.pedantic(run, rounds=10, iterations=1)
     mean = benchmark.stats.stats.mean
-    assert mean < 8, f"Stdlib scorer averaged {mean:.2f}s — expected under 8s"
+    assert mean < 0.5, f"Stdlib scorer averaged {mean:.2f}s — expected under 0.5s"
 
 
 @pytest.mark.benchmark
 @pytest.mark.slow
 def test_benchmark_run_scorer_kiln_helpers(benchmark):
-    """Spawn + scorer that uses kiln helpers (exercises the eval_helpers import)."""
+    """Spawn + scorer that uses KilnEvalHelpers (explicit import in scorer code)."""
 
     def run():
         result = run_scorer(KILN_HELPERS_CODE, _INPUTS, timeout=30)
@@ -89,7 +91,7 @@ def test_benchmark_run_scorer_kiln_helpers(benchmark):
 
     benchmark.pedantic(run, rounds=10, iterations=1)
     mean = benchmark.stats.stats.mean
-    assert mean < 8, f"Kiln-helpers scorer averaged {mean:.2f}s — expected under 8s"
+    assert mean < 0.5, f"Kiln-helpers scorer averaged {mean:.2f}s — expected under 0.5s"
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +113,7 @@ def test_benchmark_raw_subprocess_baseline(benchmark):
         "code = sys.argv[2]; "
         "ns = {}; exec(code, ns); "
         "r = ns['score'](output=inputs['output'], trace=inputs.get('trace'), "
-        "reference_data=inputs.get('reference_data'), task_input=inputs['task_input'], kiln=None); "
+        "reference_data=inputs.get('reference_data'), task_input=inputs['task_input']); "
         "print(json.dumps(r))"
     )
     inputs_json = json.dumps(_INPUTS)
@@ -139,8 +141,7 @@ def test_benchmark_raw_subprocess_baseline(benchmark):
 def test_benchmark_import_chain_adapters(benchmark):
     """Subprocess that only does ``import kiln_ai.adapters``.
 
-    This isolates the cost of the package init chain that the spawned child
-    process must pay on every invocation.
+    With lazy __init__.py this should be fast (no transitive imports).
     """
 
     def run():
@@ -153,7 +154,7 @@ def test_benchmark_import_chain_adapters(benchmark):
 
     benchmark.pedantic(run, rounds=10, iterations=1)
     mean = benchmark.stats.stats.mean
-    assert mean < 8, f"Import chain averaged {mean:.2f}s — expected under 8s"
+    assert mean < 0.5, f"Import chain averaged {mean:.2f}s — expected under 0.5s"
 
 
 @pytest.mark.benchmark

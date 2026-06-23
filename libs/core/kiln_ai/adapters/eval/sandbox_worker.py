@@ -1,6 +1,6 @@
 """Multiprocessing worker for executing user-authored scorer functions.
 
-Thin module: stdlib + eval_helpers only. No Pydantic / Kiln-model / DB / UI imports.
+Thin module: stdlib only. No Pydantic / Kiln-model / DB / UI imports.
 """
 
 import io
@@ -38,10 +38,6 @@ def _execute_scorer(
         sys.stdout = captured_stdout
         sys.stderr = captured_stderr
 
-        from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-        helpers = KilnEvalHelpers()
-
         namespace: dict[str, Any] = {}
         exec(code, namespace)
 
@@ -70,7 +66,6 @@ def _execute_scorer(
             trace=inputs.get("trace"),
             reference_data=inputs.get("reference_data"),
             task_input=inputs["task_input"],
-            kiln=helpers,
         )
 
         result_queue.put(
