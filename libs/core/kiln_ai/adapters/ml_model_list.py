@@ -1716,6 +1716,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-120b",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -7246,7 +7252,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cerebras,
                 model_id="zai-glm-4.7",
-                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),

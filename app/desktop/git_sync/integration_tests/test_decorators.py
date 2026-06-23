@@ -153,7 +153,7 @@ class TestStreamingResponseUnderLock:
                 resp = client.post(f"/api/projects/{PROJECT_ID}/test_stream")
 
                 assert resp.status_code == 500
-                assert "no_write_lock" in resp.json().get("detail", "").lower()
+                assert "no_write_lock" in resp.json().get("message", "").lower()
 
 
 class TestLongLockHoldWarning:

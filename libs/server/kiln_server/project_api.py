@@ -8,6 +8,7 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
+    remove_project_from_config,
 )
 from kiln_ai.utils.project_utils import (
     project_from_id as project_from_id_core,
@@ -135,6 +136,13 @@ def connect_project_api(app: FastAPI):
         project_path: Annotated[
             str, Query(description="File path to the project.kiln file to import.")
         ],
+        remove_conflicting_id: Annotated[
+            bool,
+            Query(
+                description="When true and a duplicate project ID conflict is detected, "
+                "remove the existing project registration before importing."
+            ),
+        ] = False,
     ) -> Project:
         if project_path is None or not os.path.exists(project_path):
             raise HTTPException(
@@ -154,7 +162,18 @@ def connect_project_api(app: FastAPI):
             try:
                 check_duplicate_project_id(project.id, project_path)
             except DuplicateProjectError as e:
-                raise HTTPException(status_code=409, detail=str(e))
+                if not remove_conflicting_id:
+                    raise HTTPException(status_code=409, detail=str(e))
+                # Resolve and de-register the conflicting project before proceeding.
+                # Layering caveat: libs/server cannot call GitSyncRegistry.unregister
+                # (app layer), so if the removed project was git-synced and had a live
+                # manager this session, its in-memory manager lingers until restart.
+                conflicting = project_from_id_core(project.id)
+                if conflicting is not None:
+                    remove_project_from_config(str(conflicting.path))
+                # If conflicting is None the project is already gone from
+                # config (e.g. manually removed); safe to fall through to
+                # add_project_to_config which will (re-)register the path.
 
         # add to projects list
         add_project_to_config(project_path)

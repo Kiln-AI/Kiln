@@ -525,7 +525,8 @@ def test_get_tool_server_config_not_found(client, test_project):
 
 
 def test_get_available_tools_empty(client, test_project):
-    """Test get_available_tools with no tool servers returns only built-in tools"""
+    """With no tool servers and the only built-in tool (Call Kiln API) being
+    not listed (it is an internal agent tool), no tool sets are returned."""
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
@@ -535,9 +536,7 @@ def test_get_available_tools_empty(client, test_project):
 
         assert response.status_code == 200
         result = response.json()
-        assert len(result) == 1
-        assert result[0]["type"] == "builtin"
-        assert result[0]["tools"][0]["id"] == "kiln_tool::call_kiln_api"
+        assert result == []
 
 
 async def test_get_available_tools_success_single_server(client, test_project):
@@ -581,7 +580,8 @@ async def test_get_available_tools_success_single_server(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 2
+            # Just the MCP set — the Call Kiln API built-in tool is not listed.
+            assert len(set_result) == 1
             mcp_set = next(
                 s
                 for s in set_result
@@ -721,7 +721,9 @@ async def test_get_available_tools_multiple_servers(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 4  # builtin + 2 MCP servers + 1 kiln task set
+            assert len(set_result) == 3  # 2 MCP servers + 1 kiln task set
+            # The Call Kiln API built-in tool is intentionally not listed.
+            assert not any(s["type"] == "builtin" for s in set_result)
 
             # Find sets by name instead of assuming order
             server1_set = next(
@@ -814,8 +816,9 @@ async def test_get_available_tools_mcp_error_handling(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            assert len(result) == 1
-            assert result[0]["type"] == "builtin"
+            # Failing server is skipped; the Call Kiln API built-in tool is not listed, so
+            # no tool sets remain.
+            assert result == []
 
 
 def test_get_available_tools_demo_tools_enabled(client, test_project):
@@ -839,14 +842,12 @@ def test_get_available_tools_demo_tools_enabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        assert len(result) == 2
-        builtin_set = result[0]
-        assert builtin_set["type"] == "builtin"
-        assert builtin_set["set_name"] == "Kiln built-in tools"
-        assert len(builtin_set["tools"]) == 1
-        assert builtin_set["tools"][0]["id"] == "kiln_tool::call_kiln_api"
+        # The Call Kiln API built-in tool is not listed, so the
+        # built-in set is omitted and only the demo set remains.
+        assert len(result) == 1
+        assert not any(s["type"] == "builtin" for s in result)
 
-        demo_set = result[1]
+        demo_set = result[0]
         assert demo_set["set_name"] == "Kiln Demo Tools"
         assert len(demo_set["tools"]) == 4
 
@@ -898,11 +899,8 @@ def test_get_available_tools_demo_tools_disabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        assert len(result) == 1
-        assert result[0]["type"] == "builtin"
-        assert result[0]["set_name"] == "Kiln built-in tools"
-        assert len(result[0]["tools"]) == 1
-        assert result[0]["tools"][0]["id"] == "kiln_tool::call_kiln_api"
+        # Demo tools disabled and the Call Kiln API built-in tool is not listed.
+        assert result == []
 
 
 async def test_create_tool_server_whitespace_handling(
@@ -3524,7 +3522,8 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            assert len(result) == 2
+            # RAG set only — the Call Kiln API built-in tool is not listed.
+            assert len(result) == 1
             rag_set = next(s for s in result if s["set_name"] == "Search Tools (RAG)")
             assert len(rag_set["tools"]) == 2
 
@@ -3609,7 +3608,8 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            assert len(result) == 3
+            # RAG + MCP sets — the Call Kiln API built-in tool is not listed.
+            assert len(result) == 2
 
             # Find both sets
             mcp_set = next(
@@ -3745,7 +3745,8 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
         assert response.status_code == 200
         result = response.json()
 
-        assert len(result) == 3
+        # RAG + Kiln task sets — the Call Kiln API built-in tool is not listed.
+        assert len(result) == 2
 
         rag_set = next(
             (s for s in result if s["set_name"] == "Search Tools (RAG)"), None
