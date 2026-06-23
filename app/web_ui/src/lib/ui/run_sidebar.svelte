@@ -324,7 +324,6 @@
     base_cost: number,
     base_tokens: number,
     base_latency_ms: number,
-    base_loading: boolean,
     subtask_cost: number | null,
     subtask_usage_loading: boolean,
     subtask_tokens: number | null,
@@ -337,11 +336,8 @@
     const run_cost = base_cost
     const run_tokens = base_tokens
     const run_latency = base_latency_ms
-    // The "Total" rows aggregate the base usage with subtasks, so they're only
-    // settled once both have loaded.
-    const total_loading = base_loading || subtask_usage_loading
 
-    if (total_loading) {
+    if (subtask_usage_loading) {
       properties.push({
         name: label("Cost"),
         value: "Loading...",
@@ -368,7 +364,7 @@
       })
     }
 
-    if (total_loading) {
+    if (subtask_usage_loading) {
       properties.push({
         name: label("Tokens"),
         value: "Loading...",
@@ -395,7 +391,7 @@
       })
     }
 
-    if (total_loading) {
+    if (subtask_usage_loading) {
       properties.push({
         name: label("Latency"),
         value: "Loading...",
@@ -465,7 +461,6 @@
     base_cost,
     base_tokens,
     base_latency_ms,
-    false,
     subtask_cost,
     subtask_usage_loading,
     subtask_tokens,

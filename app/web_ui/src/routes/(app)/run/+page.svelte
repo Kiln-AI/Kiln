@@ -186,10 +186,6 @@
         })
       }
       response = data
-      if ($current_task?.turn_mode === "multiturn" && data?.id) {
-        await goto(`/dataset/${project_id}/${task_id}/${data.id}/run`)
-        return
-      }
     } catch (e) {
       run_error = createKilnError(e)
     } finally {
