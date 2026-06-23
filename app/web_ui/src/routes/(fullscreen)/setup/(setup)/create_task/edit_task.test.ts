@@ -241,15 +241,11 @@ describe("EditTask — create payload", () => {
   })
 })
 
-describe("EditTask — Try an example resets to single_turn", () => {
-  it("clicking 'Try an example' restores schema sections after multiturn", async () => {
-    const { container, queryByTestId, getByTestId } = render(EditTask, {
+describe("EditTask — Try an example adapts to turn mode", () => {
+  it("clicking 'Try an example' in single-turn loads the structured joke example", async () => {
+    const { container, getByTestId } = render(EditTask, {
       props: { redirect_on_created: null },
     })
-
-    await fireEvent.click(getByTestId("turn-mode-multiturn"))
-    await tick()
-    expect(queryByTestId("multiturn-input-schema-note")).not.toBeNull()
 
     const exampleBtn = findButtonByText(
       container as HTMLElement,
@@ -259,10 +255,37 @@ describe("EditTask — Try an example resets to single_turn", () => {
     await fireEvent.click(exampleBtn!)
     await tick()
 
-    expect(queryByTestId("multiturn-input-schema-note")).toBeNull()
-    expect(queryByTestId("multiturn-output-schema-note")).toBeNull()
+    const nameInput = container.querySelector("#task_name") as HTMLInputElement
+    expect(nameInput.value).toBe("Joke Generator")
     expect(
       (getByTestId("turn-mode-single-turn") as HTMLInputElement).checked,
+    ).toBe(true)
+  })
+
+  it("clicking 'Try an example' in multiturn loads a generic chat example and stays multiturn", async () => {
+    const { container, getByTestId } = render(EditTask, {
+      props: { redirect_on_created: null },
+    })
+
+    await fireEvent.click(getByTestId("turn-mode-multiturn"))
+    await tick()
+
+    const exampleBtn = findButtonByText(
+      container as HTMLElement,
+      "Try an example.",
+    )
+    expect(exampleBtn).not.toBeNull()
+    await fireEvent.click(exampleBtn!)
+    await tick()
+
+    const nameInput = container.querySelector("#task_name") as HTMLInputElement
+    expect(nameInput.value).toBe("Chat Assistant")
+    const instructionInput = container.querySelector(
+      "#task_instructions",
+    ) as HTMLTextAreaElement
+    expect(instructionInput.value.toLowerCase()).toContain("helpful assistant")
+    expect(
+      (getByTestId("turn-mode-multiturn") as HTMLInputElement).checked,
     ).toBe(true)
   })
 })

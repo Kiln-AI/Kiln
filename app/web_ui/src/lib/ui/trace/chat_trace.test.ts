@@ -690,12 +690,12 @@ describe("ChatTrace component — usage info row", () => {
     ) as HTMLButtonElement
     await fireEvent.click(button)
     // The page mounts two Dialogs (subtask trace + usage info). Pick the
-    // one whose heading is "Turn Usage".
+    // one whose heading is "Usage".
     const dialogs = Array.from(
       baseElement.querySelectorAll<HTMLDialogElement>("dialog"),
     )
     const usage_dialog = dialogs.find((d) =>
-      (d.textContent ?? "").includes("Turn Usage"),
+      (d.textContent ?? "").includes("Usage"),
     )
     expect(usage_dialog).toBeDefined()
     const text = usage_dialog!.textContent ?? ""

@@ -251,6 +251,22 @@
       }
     }
 
+    // Multi-turn tasks are plain-text conversations (no input/output schema),
+    // so the example is a generic chat assistant rather than the structured
+    // joke generator used for single-turn.
+    if (is_multiturn) {
+      // @ts-expect-error This is a partial task, which is fine.
+      task = {
+        name: "Chat Assistant",
+        description: "An example multi-turn task from the KilnAI team.",
+        instruction:
+          "You are a helpful assistant. Have a natural back-and-forth conversation with the user: answer their questions clearly and concisely, ask for clarification when you need it, and use the context from earlier in the conversation.",
+        requirements: [],
+      }
+      turn_mode = "multiturn"
+      return
+    }
+
     // @ts-expect-error This is a partial task, which is fine.
     task = {
       name: "Joke Generator",

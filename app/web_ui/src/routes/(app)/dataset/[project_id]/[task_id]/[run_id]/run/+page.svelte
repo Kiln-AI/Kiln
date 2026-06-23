@@ -51,7 +51,7 @@
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
-  import ChatLoading from "../../../../../assistant/chat_loading.svelte"
+  import ChatLoading from "$lib/ui/conversation/chat_thinking_loading.svelte"
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
@@ -768,9 +768,22 @@
     await handle_send(new_run_id)
   }
 
+  function new_chat() {
+    goto(`/run`)
+  }
+
   let buttons: ActionButton[] = []
   $: {
     buttons = []
+    // Multiturn: start a fresh conversation (the /run page is the new-chat
+    // entry point), mirroring the Kiln Assistant's "New Chat" button.
+    if (is_multiturn) {
+      buttons.push({
+        label: "New Chat",
+        icon: "/images/new_chat.svg",
+        handler: new_chat,
+      })
+    }
     if (!deleted[run_id]) {
       buttons.push({
         icon: "/images/delete.svg",
@@ -828,9 +841,9 @@
   }
 </script>
 
-<!-- Multi-turn uses the full width (sidebar pinned to the right edge, chat
-     centered); single-turn keeps the capped reading width. -->
-<div class={is_multiturn ? "" : "max-w-[1400px]"}>
+<!-- Both layouts use the same capped width with the chat/input on the left and
+     the Options sidebar on the right. -->
+<div class="max-w-[1400px]">
   <AppPage
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
@@ -855,17 +868,14 @@
              Options sidebar sits at the top of the page in normal flow. -->
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-            <!-- The conversation + composer are centered inside via
-                 max-w + mx-auto. The min-height keeps the sticky composer at
-                 the bottom of the viewport even for short conversations. -->
+            <!-- The chat/input fills the left column. The min-height keeps the
+                 sticky composer at the bottom of the viewport even for short
+                 conversations. -->
             <div
               class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]"
             >
-              <div
-                bind:this={transcript_scroll_el}
-                class="min-w-0 xl:flex-1 xl:pr-4"
-              >
-                <div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+              <div bind:this={transcript_scroll_el} class="min-w-0 xl:flex-1">
+                <div class="flex w-full flex-col gap-6">
                   {#if run_has_children}
                     <div role="alert" data-testid="run-has-children-banner">
                       <Warning
@@ -913,10 +923,8 @@
                   {/if}
                 </div>
               </div>
-              <div
-                class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4 xl:pr-4"
-              >
-                <div class="mx-auto flex w-full max-w-3xl flex-col gap-2">
+              <div class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4">
+                <div class="flex w-full flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
                       bind:this={fork_composer}

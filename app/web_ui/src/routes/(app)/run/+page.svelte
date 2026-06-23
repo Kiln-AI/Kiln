@@ -16,7 +16,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
-  import ChatLoading from "../assistant/chat_loading.svelte"
+  import ChatLoading from "$lib/ui/conversation/chat_thinking_loading.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
@@ -251,9 +251,9 @@
   }
 </script>
 
-<!-- Multi-turn uses the full width (sidebar pinned right, chat centered);
-     single-turn keeps the capped reading width. -->
-<div class={is_multiturn ? "" : "max-w-[1400px]"}>
+<!-- Both layouts use the same capped width with the chat/input on the left and
+     the Options sidebar on the right. -->
+<div class="max-w-[1400px]">
   <AppPage
     title="Run"
     bind:subtitle
@@ -272,7 +272,7 @@
              the bottom of the screen for the (empty) new-conversation state. -->
         <div class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]">
           <div class="min-w-0 xl:flex-1 xl:flex xl:flex-col">
-            <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:flex-1">
+            <div class="flex w-full flex-col gap-6 xl:flex-1">
               {#if mt_awaiting_response}
                 <ChatTrace
                   trace={mt_display_trace}
@@ -301,7 +301,7 @@
             </div>
           </div>
           <div class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4">
-            <div class="mx-auto w-full max-w-3xl">
+            <div class="w-full">
               <MultiturnComposer
                 mode="append"
                 {project_id}
