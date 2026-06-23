@@ -92,8 +92,19 @@
       mt_awaiting_response = false
     }
   }
-  async function handle_first_turn_success(new_run_id: string) {
-    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`)
+  async function handle_first_turn_success(
+    new_run_id: string,
+    created_run?: TaskRun,
+  ) {
+    // Hand the freshly-created run to the dataset run page via navigation
+    // state so it can render the conversation immediately instead of flashing
+    // the full-page loading spinner while it re-fetches the run. noScroll keeps
+    // the page from jumping to the top before the transcript pins to the
+    // latest turn.
+    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
+      state: created_run ? { created_run } : {},
+      noScroll: true,
+    })
   }
 
   onMount(() => {

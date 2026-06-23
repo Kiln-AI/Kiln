@@ -1,5 +1,9 @@
 import { client } from "$lib/api_client"
-import { isMcpRunConfig, type RunConfigProperties } from "$lib/types"
+import {
+  isMcpRunConfig,
+  type RunConfigProperties,
+  type TaskRun,
+} from "$lib/types"
 
 export type RunConfigController = {
   clear_run_options_errors: () => void
@@ -20,7 +24,10 @@ export type SendMultiturnArgs = {
   parent_task_run_id: string | null | undefined
   run_config_component: RunConfigController | null | undefined
   input_form: InputFormController | null | undefined
-  on_success: (new_run_id: string) => Promise<void> | void
+  // Receives the new run id and the full created run (the POST response,
+  // which already contains the completed trace). Callers can hand the run
+  // straight to the next page to avoid a redundant load / loading flash.
+  on_success: (new_run_id: string, created_run: TaskRun) => Promise<void> | void
   tags?: string[]
   // The message text to send. When omitted, it's read from input_form. Pass
   // it explicitly when the caller has already cleared the input (so the text
@@ -113,7 +120,7 @@ export async function send_multiturn(
     }
   }
 
-  await on_success(data.id)
+  await on_success(data.id, data)
   // Only clear input after on_success resolves. If on_success throws, the
   // caller catches it and the textarea contents are preserved. on_success
   // may also have already unmounted the form (e.g. by clearing `run`), in

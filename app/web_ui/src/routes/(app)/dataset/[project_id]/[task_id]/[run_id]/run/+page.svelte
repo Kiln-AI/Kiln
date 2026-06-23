@@ -14,6 +14,7 @@
     load_available_models,
     load_available_tools,
     available_tools,
+    current_task,
   } from "$lib/stores"
   import {
     prompts_by_task_composite_id,
@@ -398,6 +399,26 @@
     ]
   }
 
+  // The /run page hands the just-created first-turn run over via navigation
+  // state. Seed it (plus the task, from the current-task store set on /run) so
+  // we render the conversation immediately instead of flashing the full-page
+  // loading spinner while load_run / load_task re-fetch them (both still run
+  // below to refresh). We only drop `loading` once both are present, so we
+  // never briefly render the "Run not found" branch (which needs run && task).
+  $: {
+    // @ts-expect-error created_run is not a declared property of PageState
+    const seeded_run = $page.state?.created_run as TaskRun | undefined
+    if (seeded_run?.id && seeded_run.id === run_id && run === null) {
+      run = seeded_run
+      if (!task && $current_task?.id === task_id) {
+        task = $current_task
+      }
+      if (run && task) {
+        loading = false
+      }
+    }
+  }
+
   $: if (project_id && task_id && run_id) {
     load_run(project_id, task_id, run_id)
     load_task_for_page(project_id, task_id)
@@ -509,8 +530,11 @@
     // mounted while we navigate avoids the blank full-page spinner flash.
     // `awaiting_response` keeps the composer disabled until the new run
     // renders, and the run-load reactive clears the optimistic state then.
+    // noScroll: SvelteKit otherwise jumps to the top of the page on navigate,
+    // which would flash the top before our pin scrolls back to the latest turn.
     await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
       replaceState: true,
+      noScroll: true,
     })
   }
 
@@ -905,16 +929,19 @@
                       />
                     </div>
                   {/if}
-                  {#key run.id}
-                    <ChatTrace
-                      trace={display_trace}
-                      {project_id}
-                      {forkable_run_ids}
-                      truncate_at_trace_index={fork_target?.trace_index ?? null}
-                      {on_fork}
-                      show_per_message_usage={task?.turn_mode === "multiturn"}
-                    />
-                  {/key}
+                  <!-- Intentionally NOT keyed on run.id: each turn loads a new
+                       leaf run whose trace is a superset of the previous one,
+                       so letting ChatTrace diff (append the new messages)
+                       avoids tearing down and rebuilding the whole transcript
+                       on every send — which caused a visible flash. -->
+                  <ChatTrace
+                    trace={display_trace}
+                    {project_id}
+                    {forkable_run_ids}
+                    truncate_at_trace_index={fork_target?.trace_index ?? null}
+                    {on_fork}
+                    show_per_message_usage={task?.turn_mode === "multiturn"}
+                  />
                   {#if awaiting_response}
                     <div data-testid="multiturn-pending-response">
                       <ChatLoading />
