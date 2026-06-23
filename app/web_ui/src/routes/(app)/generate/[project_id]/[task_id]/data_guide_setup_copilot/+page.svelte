@@ -130,7 +130,8 @@
   }
   onMount(() => {
     window.addEventListener("beforeunload", handle_before_unload)
-    return () => window.removeEventListener("beforeunload", handle_before_unload)
+    return () =>
+      window.removeEventListener("beforeunload", handle_before_unload)
   })
 
   onMount(async () => {
@@ -702,7 +703,7 @@
 
     {#if current_state === "loading"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
+        <span class="loading loading-spinner loading-lg" />
       </div>
     {:else if current_state === "connect"}
       <div

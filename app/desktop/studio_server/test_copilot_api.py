@@ -592,10 +592,67 @@ class TestDataGuideJob:
         )
         p1, p2, p3 = self._patches(_START_FN, sdk_mock, task=structured_task)
         with p1, p2, p3:
-            response = client.post(self.START_URL, json=self._start_payload())
+            response = client.post(
+                self.START_URL,
+                json={"input_examples": ['{"q": "hello"}', '{"q": "frog"}']},
+            )
         assert response.status_code == 200
         body = sdk_mock.await_args.kwargs["body"]
         assert body.task_input_schema == schema
+
+    # --- structured-input validation ----------------------------------------
+
+    STRUCTURED_SCHEMA = (
+        '{"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}'
+    )
+
+    def _structured_task(self) -> Task:
+        return Task(
+            name="MockTask",
+            instruction="Answer the question.",
+            input_json_schema=self.STRUCTURED_SCHEMA,
+        )
+
+    def test_start_accepts_valid_structured_examples(self, client, mock_api_key):
+        sdk_mock = AsyncMock(
+            return_value=_make_sdk_response(parsed=JobStartResponse(job_id="job-123"))
+        )
+        p1, p2, p3 = self._patches(_START_FN, sdk_mock, task=self._structured_task())
+        with p1, p2, p3:
+            response = client.post(
+                self.START_URL,
+                json={"input_examples": ['{"q": "hello"}', '{"q": "frog"}']},
+            )
+        assert response.status_code == 200
+        sdk_mock.assert_awaited_once()
+
+    def test_start_rejects_structured_example_not_matching_schema(
+        self, client, mock_api_key
+    ):
+        sdk_mock = AsyncMock()
+        p1, p2, p3 = self._patches(_START_FN, sdk_mock, task=self._structured_task())
+        with p1, p2, p3:
+            response = client.post(
+                self.START_URL,
+                # second example is missing the required "q" field
+                json={"input_examples": ['{"q": "ok"}', "{}"]},
+            )
+        assert response.status_code == 422
+        assert "Example 2" in response.json()["message"]
+        # validation must fail before the draft job is started
+        sdk_mock.assert_not_awaited()
+
+    def test_start_rejects_non_json_structured_example(self, client, mock_api_key):
+        sdk_mock = AsyncMock()
+        p1, p2, p3 = self._patches(_START_FN, sdk_mock, task=self._structured_task())
+        with p1, p2, p3:
+            response = client.post(
+                self.START_URL,
+                json={"input_examples": ["not valid json"]},
+            )
+        assert response.status_code == 422
+        assert "not valid JSON" in response.json()["message"]
+        sdk_mock.assert_not_awaited()
 
     def test_start_error_surfaces_message_field(self, client, mock_api_key):
         sdk_mock = AsyncMock(
@@ -666,6 +723,67 @@ class TestDataGuideJob:
             "Failed to check the data guide job status."
         )
 
+    def test_status_succeeded_held_until_result_ready(self, client, mock_api_key):
+        """Status reads succeeded but the result endpoint still reports the job
+        in-progress → hold at running so the UI stays in-progress instead of
+        fetching an unfinished result."""
+        status_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                parsed=JobStatusResponse(job_id="job-123", status=JobStatus.SUCCEEDED)
+            )
+        )
+        result_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                parsed=DataGuideJobResultResponse(status=JobStatus.RUNNING, output=None)
+            )
+        )
+        with (
+            patch(_STATUS_FN, status_mock),
+            patch(_RESULT_FN, result_mock),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_authenticated_client",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=self._make_task(),
+            ),
+        ):
+            response = client.get(self.STATUS_URL)
+        assert response.status_code == 200
+        assert response.json() == {"status": "running"}
+
+    def test_status_succeeded_when_result_ready(self, client, mock_api_key):
+        """When both status and result report succeeded, report succeeded."""
+        status_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                parsed=JobStatusResponse(job_id="job-123", status=JobStatus.SUCCEEDED)
+            )
+        )
+        result_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                parsed=DataGuideJobResultResponse(
+                    status=JobStatus.SUCCEEDED,
+                    output=DataGuideJobOutput(draft_guide="# Semantics"),
+                )
+            )
+        )
+        with (
+            patch(_STATUS_FN, status_mock),
+            patch(_RESULT_FN, result_mock),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_authenticated_client",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=self._make_task(),
+            ),
+        ):
+            response = client.get(self.STATUS_URL)
+        assert response.status_code == 200
+        assert response.json() == {"status": "succeeded"}
+
     # --- result -------------------------------------------------------------
 
     def test_result_success(self, client, mock_api_key):
@@ -727,3 +845,165 @@ class TestDataGuideJob:
             response = client.get(self.RESULT_URL)
         assert response.status_code == 500
         assert "empty" in response.json()["message"].lower()
+
+    def test_result_not_ready_returns_425(self, client, mock_api_key):
+        """If the result endpoint returns before the job is actually succeeded
+        (output not yet committed), surface a distinct "still generating" 425
+        rather than mislabeling it as an empty draft."""
+        sdk_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                parsed=DataGuideJobResultResponse(status=JobStatus.RUNNING, output=None)
+            )
+        )
+        p1, p2, p3 = self._patches(_RESULT_FN, sdk_mock)
+        with p1, p2, p3:
+            response = client.get(self.RESULT_URL)
+        assert response.status_code == 425
+        assert "still being generated" in response.json()["message"].lower()
+
+
+class TestParseImportFile:
+    """Tests for the server-side bulk-import file parser.
+
+    Plaintext tasks → single-column CSV (stdlib csv reader, single-column
+    enforced). Structured tasks → one JSON object per line, schema-validated.
+    """
+
+    URL = "/api/projects/proj_x/tasks/task_y/copilot/parse_import_file"
+
+    STRUCTURED_SCHEMA = (
+        '{"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}'
+    )
+
+    def _post(self, client, content: bytes, name: str = "examples.csv"):
+        return client.post(self.URL, files={"file": (name, content, "text/plain")})
+
+    def _patch_task(self, task: Task):
+        return patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        )
+
+    def _plaintext_task(self) -> Task:
+        return Task(name="MockTask", instruction="Echo the input.")
+
+    def _structured_task(self) -> Task:
+        return Task(
+            name="MockTask",
+            instruction="Answer.",
+            input_json_schema=self.STRUCTURED_SCHEMA,
+        )
+
+    # --- plaintext ----------------------------------------------------------
+
+    def test_plaintext_single_column(self, client):
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, b"hello\nworld\n")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["rows"] == ["hello", "world"]
+        assert body["error"] is None
+
+    def test_plaintext_quoted_comma_and_newline_preserved(self, client):
+        # A quoted field carries commas and newlines as a single value.
+        content = b'"a, b\nc"\n"second"\n'
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, content)
+        assert response.status_code == 200
+        assert response.json()["rows"] == ["a, b\nc", "second"]
+
+    def test_plaintext_unescaped_comma_is_rejected(self, client):
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, b"fine\nhas, an unescaped comma\n")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["rows"] == []
+        assert body["error"] == "Invalid CSV format. Expected only one column."
+
+    def test_plaintext_optional_input_header_dropped(self, client):
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, b"input\nhello\nworld\n")
+        assert response.status_code == 200
+        assert response.json()["rows"] == ["hello", "world"]
+
+    def test_plaintext_lone_quote_does_not_swallow_rows(self, client):
+        # The stdlib parser keeps a mid-field quote literal — it must not merge
+        # the following row (the bug the old hand-rolled parser had).
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, b'5" nail\nnext row\n')
+        assert response.status_code == 200
+        assert response.json()["rows"] == ['5" nail', "next row"]
+
+    def test_plaintext_empty_file(self, client):
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, b"\n  \n")
+        assert response.status_code == 200
+        assert response.json()["error"] == "No examples found in the file."
+
+    # --- structured (one JSON object per CSV cell) --------------------------
+
+    MULTI_FIELD_SCHEMA = (
+        '{"type": "object", "properties": {"q": {"type": "string"}, '
+        '"n": {"type": "integer"}}, "required": ["q"]}'
+    )
+
+    def test_structured_single_field_cells(self, client):
+        # A single-property JSON object has no comma, so it's a clean one-column
+        # CSV without needing quotes.
+        content = b'{"q": "hello"}\n{"q": "world"}\n'
+        with self._patch_task(self._structured_task()):
+            response = self._post(client, content, name="examples.csv")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["rows"] == ['{"q": "hello"}', '{"q": "world"}']
+        assert body["error"] is None
+
+    def test_structured_quoted_multi_field_cells(self, client):
+        # Spreadsheet-export form: each JSON object is a quoted CSV cell with its
+        # inner quotes doubled, so the JSON's commas don't split the columns.
+        content = b'"{""q"": ""a"", ""n"": 1}"\n"{""q"": ""b"", ""n"": 2}"\n'
+        task = Task(
+            name="MockTask",
+            instruction="Answer.",
+            input_json_schema=self.MULTI_FIELD_SCHEMA,
+        )
+        with self._patch_task(task):
+            response = self._post(client, content, name="examples.csv")
+        assert response.status_code == 200
+        assert response.json()["rows"] == ['{"q": "a", "n": 1}', '{"q": "b", "n": 2}']
+
+    def test_structured_unquoted_multi_field_json_rejected(self, client):
+        # Raw (unquoted) multi-field JSON: the comma splits it into columns, so
+        # the single-column check rejects it and points the user at quoting.
+        task = Task(
+            name="MockTask",
+            instruction="Answer.",
+            input_json_schema=self.MULTI_FIELD_SCHEMA,
+        )
+        with self._patch_task(task):
+            response = self._post(client, b'{"q": "a", "n": 1}\n', name="x.csv")
+        assert response.status_code == 200
+        assert (
+            response.json()["error"] == "Invalid CSV format. Expected only one column."
+        )
+
+    def test_structured_non_json_cell(self, client):
+        with self._patch_task(self._structured_task()):
+            response = self._post(client, b'{"q": "ok"}\nnope\n', name="x.csv")
+        assert response.status_code == 200
+        assert response.json()["error"] == "Row 2 is not valid JSON."
+
+    def test_structured_schema_mismatch(self, client):
+        # Missing the required "q" field.
+        with self._patch_task(self._structured_task()):
+            response = self._post(client, b'{"q": "ok"}\n{}\n', name="x.csv")
+        assert response.status_code == 200
+        assert "Row 2 does not match the task input schema" in response.json()["error"]
+
+    # --- encoding -----------------------------------------------------------
+
+    def test_non_utf8_file_rejected(self, client):
+        with self._patch_task(self._plaintext_task()):
+            response = self._post(client, b"\xff\xfe invalid bytes")
+        assert response.status_code == 422
+        assert "UTF-8" in response.json()["message"]

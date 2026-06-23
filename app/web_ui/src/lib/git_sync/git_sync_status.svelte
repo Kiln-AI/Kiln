@@ -251,8 +251,7 @@
                 </div>
               {:else}
                 <div class="flex flex-col items-center py-6 gap-3">
-                  <span class="loading loading-spinner loading-md text-primary"
-                  ></span>
+                  <span class="loading loading-spinner loading-md"></span>
                   <p class="text-sm text-gray-500">
                     {oauth.checking_access
                       ? "Verifying access..."

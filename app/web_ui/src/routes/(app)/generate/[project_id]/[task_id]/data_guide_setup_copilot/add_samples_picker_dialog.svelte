@@ -16,13 +16,11 @@
   import EditIcon from "$lib/ui/icons/edit_icon.svelte"
   import CsvIcon from "$lib/ui/icons/csv_icon.svelte"
 
-  // Plaintext tasks expose the document-based sources; structured tasks fall
-  // back to manual entry + existing run picker.
+  // Plaintext tasks expose the document-based sources (upload + library);
+  // structured tasks fall back to manual entry. Dataset and CSV are offered to
+  // both. Empty sources show their own empty state when opened, so they're
+  // always listed here.
   export let is_structured_task: boolean = false
-  // Hide the Document Library row when the project has nothing in its library
-  // yet — the dialog inside would just say "no documents".
-  export let library_has_docs: boolean = false
-  export let dataset_has_runs: boolean = false
 
   let dialog: Dialog | null = null
 
@@ -63,25 +61,43 @@
         <span class="source-chev">›</span>
       </button>
 
-      {#if library_has_docs}
-        <button
-          type="button"
-          class="source-row"
-          on:click={() => pick("library")}
-        >
-          <div class="source-icon bg-blue-50 text-[#628BD9]">
-            <FileIcon kind="document" />
+      <button type="button" class="source-row" on:click={() => pick("library")}>
+        <div class="source-icon bg-blue-50 text-[#628BD9]">
+          <FileIcon kind="document" />
+        </div>
+        <div class="source-body">
+          <div class="source-title">Document Library</div>
+          <div class="source-desc">
+            Pick from documents already uploaded to this project.
           </div>
-          <div class="source-body">
-            <div class="source-title">Document Library</div>
-            <div class="source-desc">
-              Pick from documents already uploaded to this project.
-            </div>
-          </div>
-          <span class="source-chev">›</span>
-        </button>
-      {/if}
+        </div>
+        <span class="source-chev">›</span>
+      </button>
     {/if}
+
+    <button type="button" class="source-row" on:click={() => pick("dataset")}>
+      <div class="source-icon bg-blue-50 text-[#628BD9]">
+        <DatabaseIcon />
+      </div>
+      <div class="source-body">
+        <div class="source-title">Dataset</div>
+        <div class="source-desc">
+          Pick examples already in your Kiln Dataset.
+        </div>
+      </div>
+      <span class="source-chev">›</span>
+    </button>
+
+    <button type="button" class="source-row" on:click={() => pick("csv")}>
+      <div class="source-icon bg-blue-50 text-[#628BD9]">
+        <CsvIcon />
+      </div>
+      <div class="source-body">
+        <div class="source-title">CSV Import</div>
+        <div class="source-desc">Import a CSV file to bulk-add examples.</div>
+      </div>
+      <span class="source-chev">›</span>
+    </button>
 
     {#if is_structured_task}
       <button
@@ -96,36 +112,6 @@
           <div class="source-title">Manual Entry</div>
           <div class="source-desc">
             Write an example input by hand using your task's input schema.
-          </div>
-        </div>
-        <span class="source-chev">›</span>
-      </button>
-    {/if}
-
-    {#if dataset_has_runs}
-      <button type="button" class="source-row" on:click={() => pick("dataset")}>
-        <div class="source-icon bg-blue-50 text-[#628BD9]">
-          <DatabaseIcon />
-        </div>
-        <div class="source-body">
-          <div class="source-title">Dataset</div>
-          <div class="source-desc">
-            Pick examples already in your Kiln Dataset.
-          </div>
-        </div>
-        <span class="source-chev">›</span>
-      </button>
-    {/if}
-
-    {#if !is_structured_task}
-      <button type="button" class="source-row" on:click={() => pick("csv")}>
-        <div class="source-icon bg-blue-50 text-[#628BD9]">
-          <CsvIcon />
-        </div>
-        <div class="source-body">
-          <div class="source-title">CSV</div>
-          <div class="source-desc">
-            Import a CSV file to batch import examples.
           </div>
         </div>
         <span class="source-chev">›</span>

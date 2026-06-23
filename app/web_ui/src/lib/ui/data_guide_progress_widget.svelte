@@ -95,7 +95,8 @@
     >
     <div class="font-medium pr-6">Data Guide</div>
     <div class="font-light">
-      {body}{#if cta} <span class="text-primary font-medium">{cta}</span>.{/if}
+      {body}{#if cta}
+        <span class="text-primary font-medium">{cta}</span>.{/if}
     </div>
     <div class="badge px-3 py-1 gap-1 text-xs {badge.cls}">
       {#if is_running}

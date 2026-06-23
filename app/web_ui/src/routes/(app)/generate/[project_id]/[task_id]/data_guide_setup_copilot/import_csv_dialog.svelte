@@ -8,10 +8,14 @@
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
-  import { MAX_EXAMPLE_LENGTH } from "./input_examples_uploader.svelte"
+  import { client } from "$lib/api_client"
 
-  // -1 = no limit; otherwise caps the number of rows the parent will accept.
-  export let max_rows: number = -1
+  export let project_id: string
+  export let task_id: string
+  // When set, the task has a structured input schema. This only drives the
+  // dialog's copy and accepted file types — the backend reads the schema off
+  // the task and decides how to parse (single-column CSV vs one JSON per line).
+  export let input_json_schema: string | null = null
 
   let dialog: Dialog | null = null
   let file_input: HTMLInputElement
@@ -20,6 +24,11 @@
   let parse_error: string | null = null
   let parse_warning: string | null = null
   let selected_file_name: string | null = null
+
+  $: is_structured = !!input_json_schema
+  $: dialog_subtitle = is_structured
+    ? "Upload a single-column CSV where each row is a JSON object matching this task's input schema. Export from a spreadsheet so the JSON's commas and quotes are escaped."
+    : "Upload a CSV to add each row as an example input. The CSV must contain a single column, with one input per row. Do not include a header row."
 
   const dispatch = createEventDispatcher<{
     add: { rows: CsvImportRow[] }
@@ -38,91 +47,40 @@
     return true
   }
 
-  // Extract the first column of every record in a CSV. Parses the whole text
-  // with a quote-aware state machine (rather than splitting on "\n" first) so a
-  // quoted field containing newlines, commas, or escaped quotes stays intact —
-  // common for the prose/document inputs this dialog accepts. Only the first
-  // column is accumulated; the rest of each record is skipped.
-  function parse_first_column_csv(text: string): string[] {
-    const normalized = text.replace(/\r\n?/g, "\n")
-    const results: string[] = []
-    let field = ""
-    let in_quotes = false
-    let in_first_column = true
-    for (let i = 0; i < normalized.length; i++) {
-      const ch = normalized[i]
-      if (ch === '"') {
-        if (in_quotes && normalized[i + 1] === '"') {
-          if (in_first_column) field += '"'
-          i++ // escaped quote — consume the pair
-        } else {
-          in_quotes = !in_quotes
-        }
-      } else if (ch === "," && !in_quotes) {
-        // End of the first column; ignore the remaining columns of this record.
-        if (in_first_column) {
-          results.push(field)
-          field = ""
-          in_first_column = false
-        }
-      } else if (ch === "\n" && !in_quotes) {
-        // End of record. Push only when no comma was seen (first col = whole row).
-        if (in_first_column) results.push(field)
-        field = ""
-        in_first_column = true
-      } else if (in_first_column) {
-        field += ch
-      }
-    }
-    // Flush a trailing record with no final newline (skip if a comma already
-    // pushed its first column).
-    if (in_first_column && field.length > 0) results.push(field)
-    return results
-  }
-
+  // Parsing + validation happens server-side: the backend reads the schema off
+  // the task and parses a single-column CSV (plaintext) or one JSON object per
+  // line (structured) with the stdlib csv / json parsers, returning the rows
+  // plus any whole-file error or partial-skip warning.
   async function process_file(file: File) {
     parse_error = null
     parse_warning = null
     parsed_rows = []
     selected_file_name = file.name
+    const form_data = new FormData()
+    form_data.append("file", file)
     try {
-      const text = await file.text()
-      const columns = parse_first_column_csv(text)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-      if (columns.length === 0) {
-        parse_error = `${selected_file_name} is empty.`
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/parse_import_file",
+        {
+          params: { path: { project_id, task_id } },
+          // Multipart uploads aren't typed by openapi-typescript; cast the
+          // FormData body as the dataset uploader does.
+          body: form_data as unknown as { file: string },
+        },
+      )
+      if (error) {
+        parse_error =
+          (error as { message?: string })?.message ??
+          "Couldn't read that file. Please try again."
         return
       }
-      // Treat the first value as a header iff it is literally "input"
-      // (case-insensitive). Otherwise treat every value as data.
-      let rows =
-        columns[0].toLowerCase() === "input" ? columns.slice(1) : columns
-      const warnings: string[] = []
-      // Drop rows over the per-example character limit — they'd be blocked at
-      // analyze time anyway, so skip them here with a heads-up.
-      const within_length = rows.filter((r) => r.length <= MAX_EXAMPLE_LENGTH)
-      const too_long = rows.length - within_length.length
-      if (too_long > 0) {
-        warnings.push(
-          `${too_long} row${too_long === 1 ? "" : "s"} over the ${MAX_EXAMPLE_LENGTH.toLocaleString()} character limit will be skipped.`,
-        )
-      }
-      rows = within_length
-      if (max_rows >= 0 && rows.length > max_rows) {
-        warnings.push(
-          `${rows.length - max_rows} row${
-            rows.length - max_rows === 1 ? "" : "s"
-          } over the entry limit will be skipped.`,
-        )
-        rows = rows.slice(0, max_rows)
-      }
-      if (rows.length === 0) {
-        parse_error = "No non-empty rows found in the first column."
+      if (!data) {
+        parse_error = "Couldn't read that file. Please try again."
         return
       }
-      parse_warning = warnings.length > 0 ? warnings.join(" ") : null
-      parsed_rows = rows
+      parse_error = data.error ?? null
+      parse_warning = data.warning ?? null
+      parsed_rows = data.rows
     } catch (e) {
       parse_error = e instanceof Error ? e.message : String(e)
     }
@@ -168,7 +126,7 @@
 <Dialog
   bind:this={dialog}
   title="Import from CSV"
-  sub_subtitle="Upload a CSV to add each row as an example input. The CSV must contain a single column, with one input per row. Do not include a header row."
+  sub_subtitle={dialog_subtitle}
   action_buttons={[
     {
       label: "Import",

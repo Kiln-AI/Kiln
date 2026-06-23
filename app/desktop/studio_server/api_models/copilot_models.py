@@ -214,3 +214,25 @@ class DataGuideJobResultApiOutput(BaseModel):
     """Result of a completed data guide draft job."""
 
     draft_guide: str = Field(description="Full draft input data guide markdown.")
+
+
+class ParseImportFileApiOutput(BaseModel):
+    """Result of parsing an uploaded bulk-import file of input examples.
+
+    Plaintext tasks parse a single-column CSV; structured-input tasks parse one
+    JSON object per line, validated against the task's input schema. A non-null
+    `error` means the whole file was rejected; `warning` means it was accepted
+    but some examples were skipped (e.g. over the length limit).
+    """
+
+    rows: list[str] = Field(
+        description="Parsed example input strings, ready to add. Empty when error is set.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Set when the whole file was rejected (invalid format/encoding).",
+    )
+    warning: str | None = Field(
+        default=None,
+        description="Set when the file was accepted but some examples were skipped.",
+    )

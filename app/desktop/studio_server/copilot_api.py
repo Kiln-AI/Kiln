@@ -1,5 +1,10 @@
+import csv
+import io
+import json
 import logging
 from typing import Annotated
+
+import jsonschema
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
@@ -19,6 +24,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     DraftInputDataGuideInput,
     GenerateBatchInput,
     GenerateBatchOutput,
+    JobStatus,
     JobType,
     RefineSpecInput,
 )
@@ -44,8 +50,10 @@ from app.desktop.studio_server.data_gen_api import (
     _resolve_task_runtime_prompt,
 )
 from app.desktop.studio_server.api_models.copilot_models import (
+    DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH,
     DataGuideJobResultApiOutput,
     DataGuideJobStatusApiOutput,
+    ParseImportFileApiOutput,
     StartDataGuideJobApiInput,
     StartDataGuideJobApiOutput,
     ClarifySpecApiInput,
@@ -65,11 +73,12 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, File, HTTPException, Path, UploadFile
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
+from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
     Spec,
     SpecStatus,
@@ -173,7 +182,16 @@ async def _start_data_guide_job(
 
 async def _get_data_guide_job_status(client: AuthenticatedClient, job_id: str) -> str:
     """Fetch the current status of a Data Guide draft job. Raises HTTPException
-    on a transport/server error."""
+    on a transport/server error.
+
+    The status endpoint can flip to `succeeded` slightly before the draft output
+    is committed and retrievable. To keep the UI honest, we hold the reported
+    status at `running` until the result is actually available — so the spinner
+    and the task-wide indicator stay "in progress" and the client never tries to
+    fetch (and error on) an unfinished result. A job that finished but produced
+    an empty draft still reports `succeeded` here: that's a real failure the
+    result fetch surfaces, not an in-flight state.
+    """
     detailed = await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed(
         job_type=JobType.DATA_GUIDE_JOB,
         job_id=job_id,
@@ -183,7 +201,31 @@ async def _get_data_guide_job_status(client: AuthenticatedClient, job_id: str) -
         detailed,
         default_detail="Failed to check the data guide job status.",
     )
+    if response.status == JobStatus.SUCCEEDED and not await _data_guide_result_ready(
+        client, job_id
+    ):
+        return JobStatus.RUNNING.value
     return response.status.value
+
+
+async def _data_guide_result_ready(client: AuthenticatedClient, job_id: str) -> bool:
+    """Whether the draft job's result endpoint reports the job as finished
+    (`succeeded`) — i.e. the draft is retrievable. False while the result
+    endpoint still reads as in-progress (it can lag the status endpoint). A
+    transport/server error is treated as "ready" so it surfaces through the
+    normal result fetch instead of pinning the UI in-progress forever."""
+    try:
+        detailed = await get_data_guide_job_result_v1_jobs_data_guide_job_job_id_result_get.asyncio_detailed(
+            job_id=job_id,
+            client=client,
+        )
+        response = unwrap_response(
+            detailed,
+            default_detail="Failed to fetch the data guide result.",
+        )
+        return response.status == JobStatus.SUCCEEDED
+    except HTTPException:
+        return True
 
 
 async def _get_data_guide_job_result(client: AuthenticatedClient, job_id: str) -> str:
@@ -197,6 +239,16 @@ async def _get_data_guide_job_result(client: AuthenticatedClient, job_id: str) -
         detailed,
         default_detail="Failed to fetch the data guide result.",
     )
+    # The result endpoint can return before the draft is actually available —
+    # the job's status can read `succeeded` slightly ahead of the output being
+    # committed. Distinguish "not finished yet" (caller should keep polling)
+    # from "finished but genuinely empty" so we don't surface a misleading
+    # empty-draft error while the job is still wrapping up.
+    if response.status != JobStatus.SUCCEEDED:
+        raise HTTPException(
+            status_code=425,  # Too Early
+            detail="The data guide draft is still being generated. Please wait.",
+        )
     draft_guide = getattr(response.output, "draft_guide", "") or ""
     if not isinstance(draft_guide, str) or not draft_guide.strip():
         raise HTTPException(
@@ -204,6 +256,122 @@ async def _get_data_guide_job_result(client: AuthenticatedClient, job_id: str) -
             detail="Copilot returned an empty draft guide.",
         )
     return draft_guide
+
+
+def _finalize_import_rows(rows: list[str], too_long: int) -> ParseImportFileApiOutput:
+    """Shared tail for both parsers: turn accepted rows + a skipped-for-length
+    count into the response, choosing a clear error when nothing remains."""
+    if not rows:
+        if too_long > 0:
+            return ParseImportFileApiOutput(
+                rows=[],
+                error=(
+                    "All examples were over the "
+                    f"{DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH:,} character limit."
+                ),
+            )
+        return ParseImportFileApiOutput(rows=[], error="No examples found in the file.")
+    warning = None
+    if too_long > 0:
+        warning = (
+            f"{too_long} example{'' if too_long == 1 else 's'} over the "
+            f"{DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH:,} character limit "
+            "will be skipped."
+        )
+    return ParseImportFileApiOutput(rows=rows, warning=warning)
+
+
+def _parse_csv_import(
+    content: str, input_json_schema: str | None
+) -> ParseImportFileApiOutput:
+    """Parse a single-column CSV of input examples with the stdlib csv reader
+    (RFC 4180 — handles quoted commas/newlines/escaped quotes).
+
+    Plaintext tasks take each cell as the raw input. Structured-input tasks take
+    each cell as a JSON object, validated against the task's input schema (author
+    these in a spreadsheet so the JSON's commas/quotes are escaped on export).
+
+    Enforces a single column: any record that parses to more than one field
+    means an unescaped separator (or a genuine multi-column file). Rather than
+    silently keep column one and drop the rest, we reject and tell the user to
+    quote values that contain commas.
+    """
+    rows_with_numbers: list[tuple[int, list[str]]] = []
+    for row_number, fields in enumerate(csv.reader(io.StringIO(content)), start=1):
+        if all(field.strip() == "" for field in fields):
+            continue  # blank record
+        rows_with_numbers.append((row_number, fields))
+
+    if not rows_with_numbers:
+        return ParseImportFileApiOutput(rows=[], error="No examples found in the file.")
+
+    # Drop an optional single-cell "input" header.
+    _, first_fields = rows_with_numbers[0]
+    if len(first_fields) == 1 and first_fields[0].strip().lower() == "input":
+        rows_with_numbers = rows_with_numbers[1:]
+
+    if any(len(fields) > 1 for _, fields in rows_with_numbers):
+        return ParseImportFileApiOutput(
+            rows=[],
+            error="Invalid CSV format. Expected only one column.",
+        )
+
+    accepted: list[str] = []
+    too_long = 0
+    for row_number, fields in rows_with_numbers:
+        value = fields[0].strip()
+        if value == "":
+            continue
+        if input_json_schema is not None:
+            # Structured task: each cell must be a JSON object matching the schema.
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return ParseImportFileApiOutput(
+                    rows=[], error=f"Row {row_number} is not valid JSON."
+                )
+            try:
+                validate_schema(parsed, input_json_schema, require_object=False)
+            except jsonschema.exceptions.ValidationError as e:
+                return ParseImportFileApiOutput(
+                    rows=[],
+                    error=(
+                        f"Row {row_number} does not match the task input schema: "
+                        f"{e.message}"
+                    ),
+                )
+            value = json.dumps(parsed)
+        if len(value) > DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH:
+            too_long += 1
+            continue
+        accepted.append(value)
+    return _finalize_import_rows(accepted, too_long)
+
+
+def _validate_structured_examples(input_json_schema: str, examples: list[str]) -> None:
+    """Validate each candidate input example against the task's input JSON
+    schema, raising HTTPException(422) listing every example that fails.
+
+    For structured-input tasks each example must be a JSON value matching the
+    schema. The web UI does only a shallow check at import time; this is the
+    authoritative gate (full schema validation, mirroring the dataset import
+    path) run before the expensive draft job kicks off.
+    """
+    errors: list[str] = []
+    for idx, raw in enumerate(examples):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            errors.append(f"Example {idx + 1} is not valid JSON.")
+            continue
+        try:
+            validate_schema(parsed, input_json_schema, require_object=False)
+        except jsonschema.exceptions.ValidationError as e:
+            errors.append(
+                f"Example {idx + 1} does not match the task input schema: {e.message}"
+            )
+    if errors:
+        raise HTTPException(status_code=422, detail=" ".join(errors))
 
 
 def connect_copilot_api(app: FastAPI):
@@ -393,6 +561,13 @@ def connect_copilot_api(app: FastAPI):
         client = get_authenticated_client(api_key)
 
         task = task_from_id(project_id, task_id)
+
+        # Structured-input tasks: validate every example against the real input
+        # schema before kicking off the draft job. The client only does a
+        # shallow check at import, so this is the authoritative gate.
+        if task.input_json_schema is not None:
+            _validate_structured_examples(task.input_json_schema, input.input_examples)
+
         resolved_task_prompt = _resolve_task_runtime_prompt(task)
 
         # Everything except the examples is derived server-side from the task:
@@ -408,6 +583,45 @@ def connect_copilot_api(app: FastAPI):
 
         job_id = await _start_data_guide_job(client, body)
         return StartDataGuideJobApiOutput(job_id=job_id)
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/parse_import_file",
+        tags=["Copilot"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def parse_import_file(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        file: Annotated[
+            UploadFile,
+            File(description="The file of input examples to parse and validate."),
+        ],
+    ) -> ParseImportFileApiOutput:
+        """Parse an uploaded bulk-import file of input examples for the data
+        guide, server-side.
+
+        Both task types use a single-column CSV (parsed with the stdlib csv
+        reader). Plaintext tasks take each cell as the raw input; structured
+        tasks take each cell as a JSON object, validated against the task's input
+        schema. Returns the parsed example strings plus any whole-file `error` or
+        partial-skip `warning` so the web UI just renders the result.
+        """
+        task = task_from_id(project_id, task_id)
+        raw = await file.read()
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=422,
+                detail="The file must be UTF-8 encoded text.",
+            )
+
+        return _parse_csv_import(content, task.input_json_schema)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/status",

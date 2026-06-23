@@ -4,7 +4,7 @@
   // extractions before send, and an optional `extraction_id` once an
   // extraction has been picked.
   export type InputExampleEntry = {
-    source: "document" | "manual" | "task_run"
+    source: "document" | "manual" | "task_run" | "csv"
     label: string
     text: string
     document_id?: string
@@ -25,9 +25,8 @@
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte"
+  import { createEventDispatcher } from "svelte"
   import type { Task, BulkCreateDocumentsResponse, TaskRun } from "$lib/types"
-  import { client } from "$lib/api_client"
   import SelectFromLibraryDialog, {
     type LibraryPick,
   } from "./select_from_library_dialog.svelte"
@@ -46,6 +45,7 @@
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
   import EditIcon from "$lib/ui/icons/edit_icon.svelte"
+  import CsvIcon from "$lib/ui/icons/csv_icon.svelte"
 
   const DOCS_LINK = "https://docs.kiln.tech/docs/synthetic-data-generation"
 
@@ -69,13 +69,6 @@
   let import_csv_dialog: ImportCsvDialog
   let add_manual_structured_dialog: AddManualStructuredDialog
 
-  // Whether the project has any documents in its library yet. Drives the
-  // "Document Library" row visibility in the source picker — no point offering
-  // it when nothing's there.
-  let library_has_docs: boolean = false
-
-  let dataset_has_runs: boolean = false
-
   const dispatch = createEventDispatcher<{
     change: { entries: InputExampleEntry[] }
   }>()
@@ -88,6 +81,7 @@
   $: doc_count = entries.filter((e) => e.source === "document").length
   $: run_count = entries.filter((e) => e.source === "task_run").length
   $: manual_count = entries.filter((e) => e.source === "manual").length
+  $: csv_count = entries.filter((e) => e.source === "csv").length
   $: existing_document_ids = entries
     .map((e) => e.document_id)
     .filter((id): id is string => !!id)
@@ -107,35 +101,6 @@
   $: over_length_count = entries.filter(
     (e) => !!e.text && e.text.length > MAX_EXAMPLE_LENGTH,
   ).length
-
-  onMount(() => {
-    refresh_library_has_docs()
-    refresh_dataset_has_runs()
-  })
-
-  async function refresh_library_has_docs() {
-    try {
-      const { data } = await client.GET(
-        "/api/projects/{project_id}/documents",
-        { params: { path: { project_id } } },
-      )
-      library_has_docs = !!data && data.length > 0
-    } catch {
-      library_has_docs = false
-    }
-  }
-
-  async function refresh_dataset_has_runs() {
-    try {
-      const { data } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/runs",
-        { params: { path: { project_id, task_id } } },
-      )
-      dataset_has_runs = !!data && data.length > 0
-    } catch {
-      dataset_has_runs = false
-    }
-  }
 
   function emit_change() {
     dispatch("change", { entries })
@@ -220,7 +185,6 @@
       document_id: d.id,
     }))
     append_with_cap(new_entries, "document", "documents", "first")
-    library_has_docs = true
   }
 
   // --- Source dialog handlers -----------------------------------------------
@@ -258,12 +222,12 @@
   function handle_csv_import(event: CustomEvent<{ rows: CsvImportRow[] }>) {
     const new_entries: InputExampleEntry[] = event.detail.rows.map(
       (r, idx) => ({
-        source: "manual",
-        label: `CSV row ${manual_count + idx + 1}`,
+        source: "csv",
+        label: `Imported example ${csv_count + idx + 1}`,
         text: r.text,
       }),
     )
-    append_with_cap(new_entries, "row", "rows", "first")
+    append_with_cap(new_entries, "example", "examples", "first")
   }
 
   function handle_structured_add(event: CustomEvent<{ text: string }>) {
@@ -283,7 +247,7 @@
 
   // --- All Samples handlers ------------------------------------------------
 
-  type FilterKey = "all" | "document" | "task_run" | "manual"
+  type FilterKey = "all" | "document" | "task_run" | "manual" | "csv"
   let initial_all_samples_filter: FilterKey = "all"
 
   function open_all_samples(filter: FilterKey = "all") {
@@ -385,11 +349,7 @@
     <!-- Structured tasks hide the Documents tile, leaving two buckets — drop to
          a 2-col grid so there's no empty third column (and the header buttons
          line up over the second bucket). -->
-    <div
-      class="grid grid-cols-1 sm:grid-cols-2 gap-3 {is_structured_task
-        ? ''
-        : 'lg:grid-cols-3'}"
-    >
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {#if !is_structured_task}
         <button
           type="button"
@@ -427,19 +387,34 @@
       <button
         type="button"
         class="stat-tile"
-        on:click={() => open_all_samples("manual")}
-        disabled={manual_count === 0}
+        on:click={() => open_all_samples("csv")}
+        disabled={csv_count === 0}
       >
         <div class="tile-head">
           <div class="tile-icon bg-blue-50 text-[#628BD9]">
-            <EditIcon />
+            <CsvIcon />
           </div>
         </div>
-        <div class="tile-count">{manual_count}</div>
-        <div class="tile-label">
-          {is_structured_task ? "Manual Entries" : "Imported Examples"}
-        </div>
+        <div class="tile-count">{csv_count}</div>
+        <div class="tile-label">CSV Imports</div>
       </button>
+
+      {#if is_structured_task}
+        <button
+          type="button"
+          class="stat-tile"
+          on:click={() => open_all_samples("manual")}
+          disabled={manual_count === 0}
+        >
+          <div class="tile-head">
+            <div class="tile-icon bg-blue-50 text-[#628BD9]">
+              <EditIcon />
+            </div>
+          </div>
+          <div class="tile-count">{manual_count}</div>
+          <div class="tile-label">Manual Entries</div>
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
@@ -447,8 +422,6 @@
 <AddSamplesPickerDialog
   bind:this={add_samples_picker}
   {is_structured_task}
-  {library_has_docs}
-  {dataset_has_runs}
   on:pick={handle_source_pick}
 />
 
@@ -470,7 +443,6 @@
   {extraction_in_progress}
   initial_filter={initial_all_samples_filter}
   on:remove={handle_all_samples_remove}
-  on:add={open_source_picker}
 />
 
 <!-- No auto_tags: picking an existing library doc must not tag it. Extraction
@@ -491,7 +463,13 @@
   on:add={handle_existing_runs_add}
 />
 
-<ImportCsvDialog bind:this={import_csv_dialog} on:add={handle_csv_import} />
+<ImportCsvDialog
+  bind:this={import_csv_dialog}
+  {project_id}
+  {task_id}
+  input_json_schema={task?.input_json_schema ?? null}
+  on:add={handle_csv_import}
+/>
 
 {#if task?.input_json_schema}
   <AddManualStructuredDialog

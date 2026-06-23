@@ -2813,6 +2813,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/parse_import_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Import File
+         * @description Parse an uploaded bulk-import file of input examples for the data
+         *     guide, server-side.
+         *
+         *     Both task types use a single-column CSV (parsed with the stdlib csv
+         *     reader). Plaintext tasks take each cell as the raw input; structured
+         *     tasks take each cell as a JSON object, validated against the task's input
+         *     schema. Returns the parsed example strings plus any whole-file `error` or
+         *     partial-skip `warning` so the web UI just renders the result.
+         */
+        post: operations["parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/status": {
         parameters: {
             query?: never;
@@ -3799,6 +3826,15 @@ export interface components {
              * @description Tags to remove from the task runs.
              */
             remove_tags?: string[] | null;
+        };
+        /** Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post */
+        Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
+            /**
+             * File
+             * Format: binary
+             * @description The file of input examples to parse and validate.
+             */
+            file: string;
         };
         /**
          * BuildPromptRequest
@@ -7685,6 +7721,32 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /**
+         * ParseImportFileApiOutput
+         * @description Result of parsing an uploaded bulk-import file of input examples.
+         *
+         *     Plaintext tasks parse a single-column CSV; structured-input tasks parse one
+         *     JSON object per line, validated against the task's input schema. A non-null
+         *     `error` means the whole file was rejected; `warning` means it was accepted
+         *     but some examples were skipped (e.g. over the length limit).
+         */
+        ParseImportFileApiOutput: {
+            /**
+             * Rows
+             * @description Parsed example input strings, ready to add. Empty when error is set.
+             */
+            rows: string[];
+            /**
+             * Error
+             * @description Set when the whole file was rejected (invalid format/encoding).
+             */
+            error?: string | null;
+            /**
+             * Warning
+             * @description Set when the file was accepted but some examples were skipped.
+             */
+            warning?: string | null;
+        };
         /** PatchDocumentRequest */
         PatchDocumentRequest: {
             /**
@@ -17184,6 +17246,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StartDataGuideJobApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParseImportFileApiOutput"];
                 };
             };
             /** @description Validation Error */

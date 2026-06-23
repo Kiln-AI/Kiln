@@ -51,7 +51,7 @@
 >
   {#if checking}
     <div class="flex justify-center my-24 md:my-36">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <span class="loading loading-spinner loading-lg"></span>
     </div>
   {:else}
     <div

@@ -10,6 +10,8 @@
   import { fetch_task_sample_candidates } from "$lib/utils/task_sample_example"
   import type { TaskRun } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import Intro from "$lib/ui/intro.svelte"
+  import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
 
   export let project_id: string
   export let task_id: string
@@ -72,6 +74,49 @@
     }),
   )
 
+  // The picker is tag-first, so untagged runs can't be selected here. When no
+  // available run is tagged we show an empty state nudging the user to tag (or
+  // create) runs instead of rendering an empty table.
+  $: has_tagged_runs = available_runs.some((r) => !!r.tags && r.tags.length > 0)
+  // Whether the dataset has any tagged eligible runs at all (before filtering
+  // out already-added ones) — lets the empty state say "you've added them all".
+  $: dataset_has_tagged = all_runs.some((r) => !!r.tags && r.tags.length > 0)
+  $: all_added = available_runs.length === 0 && all_runs.length > 0
+
+  // Empty-state copy, by reason. The action always links to the Dataset so the
+  // user can learn how to create/tag runs there.
+  $: empty_state =
+    available_runs.length === 0
+      ? all_added
+        ? {
+            title: "All Runs Added",
+            description:
+              "You've already added every eligible run from your dataset. Run your task to create more, then add them here.",
+          }
+        : {
+            title: "No Runs To Add",
+            description:
+              "Your dataset has no eligible runs yet. Run your task to create some, then add them here. (AI-generated runs can't be used as examples.)",
+          }
+      : dataset_has_tagged
+        ? {
+            title: "No Tagged Runs To Add",
+            description:
+              "You've already added all of your tagged runs. Tag more runs in your Dataset to add them here.",
+          }
+        : {
+            title: "No Tagged Runs To Add",
+            description:
+              "Only tagged runs can be added here. Add tags to runs in your Dataset, then add them here.",
+          }
+
+  // The dialog loads its run list once on open and doesn't live-refresh, so
+  // close it after sending the user to the Dataset (mirrors the library dialog).
+  function go_to_dataset() {
+    window.open(`/dataset/${project_id}/${task_id}`, "_blank", "noopener")
+    close()
+  }
+
   function handle_add(): boolean {
     if (selected_ids.length === 0) return false
     const id_set = new Set(selected_ids)
@@ -92,14 +137,16 @@
   bind:this={dialog}
   width="wide"
   title="Select from Dataset"
-  action_buttons={[
-    {
-      label: "Add",
-      action: () => handle_add(),
-      disabled: selected_ids.length === 0,
-      isPrimary: true,
-    },
-  ]}
+  action_buttons={has_tagged_runs
+    ? [
+        {
+          label: "Add",
+          action: () => handle_add(),
+          disabled: selected_ids.length === 0,
+          isPrimary: true,
+        },
+      ]
+    : []}
 >
   <p slot="subtitle" class="text-sm font-light">
     Add examples from your <a
@@ -118,14 +165,25 @@
     <div class="text-error text-sm">
       Failed to load runs: {load_error.getMessage()}
     </div>
-  {:else if available_runs.length === 0}
-    <div class="text-sm text-gray-500 py-8 text-center">
-      {#if all_runs.length > 0}
-        You've already added every eligible run from your dataset.
-      {:else}
-        No eligible runs available — synthetic (AI-generated) runs can't be used
-        as examples.
-      {/if}
+  {:else if !has_tagged_runs}
+    <!-- Empty state: no eligible runs, all already added, or runs exist but
+         none are tagged (untagged runs can't be picked tag-first). -->
+    <div class="py-8 flex justify-center">
+      <Intro
+        title={empty_state.title}
+        description_paragraphs={[empty_state.description]}
+        action_buttons={[
+          {
+            label: "Go to Dataset",
+            onClick: go_to_dataset,
+            is_primary: true,
+          },
+        ]}
+      >
+        <div slot="icon" class="h-12 w-12">
+          <DatabaseIcon />
+        </div>
+      </Intro>
     </div>
   {:else}
     <TagFirstSelector
