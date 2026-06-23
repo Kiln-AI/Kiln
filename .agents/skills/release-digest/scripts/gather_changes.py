@@ -7,6 +7,7 @@ as the source of truth, not merge dates -- a PR merged the same day a tag was cu
 may already be in that release.
 """
 
+import concurrent.futures
 import json
 import re
 import subprocess
@@ -24,8 +25,20 @@ TEAM = {
     "scosman": "Steve Cosman",
 }
 
+# PR-number markers in a mainline commit subject. Anchored so we only match a real
+# merged-PR reference -- a squash subject `Title (#456)` or a merge subject
+# `Merge pull request #456 from ...` -- rather than any `#123` issue ref that might
+# also appear mid-subject (which would pick the wrong number or misclassify a
+# direct-to-main commit as a PR).
+MERGE_RE = re.compile(r"^Merge pull request #(\d+)\b")
+SQUASH_RE = re.compile(r"\(#(\d+)\)\s*$")
+
+# Fields requested from `gh pr view` for each PR.
+PR_FIELDS = "number,title,author,url,labels,mergedAt,additions,deletions,body"
+
 
 def display_name(author: dict) -> str:
+    """Return the preferred display name for a PR/commit author dict."""
     login = author.get("login", "unknown")
     return TEAM.get(login) or author.get("name") or login
 
@@ -40,21 +53,73 @@ def login_from_email(email: str) -> str | None:
     return m.group(1) if m else None
 
 
+def pr_number_from_subject(subject: str) -> int | None:
+    """Return the merged-PR number from a mainline commit subject, or None.
+
+    Matches squash subjects (`... (#N)`) and merge-commit subjects
+    (`Merge pull request #N ...`) only; a bare `#N` elsewhere is ignored.
+    """
+    m = SQUASH_RE.search(subject) or MERGE_RE.match(subject)
+    return int(m.group(1)) if m else None
+
+
 def run(cmd: list[str]) -> str:
+    """Run a command and return its stdout, exiting with its stderr on failure."""
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"ERROR running {' '.join(cmd)}:\n{result.stderr}", file=sys.stderr)
+        sys.stderr.write(f"ERROR running {' '.join(cmd)}:\n{result.stderr}\n")
         sys.exit(1)
     return result.stdout.strip()
 
 
+def require_gh() -> None:
+    """Exit early with a clear message if `gh` is missing or unauthenticated."""
+    try:
+        status = subprocess.run(
+            ["gh", "auth", "status"], capture_output=True, text=True
+        )
+    except FileNotFoundError:
+        sys.stderr.write(
+            "ERROR: GitHub CLI (gh) is not installed. Install it from https://cli.github.com.\n"
+        )
+        sys.exit(1)
+    if status.returncode != 0:
+        sys.stderr.write(
+            "ERROR: GitHub CLI (gh) is not authenticated. Run 'gh auth login'.\n"
+        )
+        sys.exit(1)
+
+
+def fetch_pr(num: int) -> tuple[int, dict | None, str]:
+    """Fetch one PR's metadata via `gh pr view`. Returns (num, data|None, error)."""
+    view = subprocess.run(
+        ["gh", "pr", "view", str(num), "--json", PR_FIELDS],
+        capture_output=True,
+        text=True,
+    )
+    if view.returncode != 0:
+        return num, None, view.stderr.strip()
+    try:
+        return num, json.loads(view.stdout), ""
+    except json.JSONDecodeError as e:
+        return num, None, str(e)
+
+
 def main() -> None:
-    # Make sure tags and remote main are current.
-    subprocess.run(
+    """Compute the unreleased change set and print it as JSON to stdout."""
+    require_gh()
+
+    # Refresh tags + origin/main. A fetch failure isn't fatal (offline runs with
+    # recent refs are still useful), but warn loudly since the digest could be stale.
+    fetch = subprocess.run(
         ["git", "fetch", "--tags", "--quiet", "origin"],
         capture_output=True,
         text=True,
     )
+    if fetch.returncode != 0:
+        sys.stderr.write(
+            "WARNING: 'git fetch' failed -- digest may be based on stale refs/tags.\n"
+        )
 
     last_tag = run(["git", "describe", "--tags", "--abbrev=0"])
 
@@ -72,9 +137,8 @@ def main() -> None:
 
     # Subjects on the mainline only. --first-parent gives one node per merged PR
     # (the merge/squash commit) plus genuine direct-to-main commits, instead of every
-    # constituent commit inside each PR -- otherwise "unmatched" balloons with commits
-    # that are already itemized via their PR. PR numbers live in these subjects for both
-    # merge-commit ("Merge pull request #N from ...") and squash ("Title (#N)") workflows.
+    # constituent commit inside each PR -- otherwise direct commits would balloon with
+    # commits that are already itemized via their PR.
     subjects = run(
         ["git", "log", rng, "--first-parent", "--format=%H%x1f%an%x1f%ae%x1f%s"]
     )
@@ -86,9 +150,8 @@ def main() -> None:
     seen: set[int] = set()
     for line in commit_lines:
         sha, an, ae, subject = (*line.split("\x1f", 3), "", "", "")[:4]
-        m = re.search(r"#(\d+)", subject)
-        if m:
-            num = int(m.group(1))
+        num = pr_number_from_subject(subject)
+        if num is not None:
             if num not in seen:
                 seen.add(num)
                 pr_numbers.append(num)
@@ -110,24 +173,22 @@ def main() -> None:
                 {"number": None, "title": subject, "author_login": login or an}
             )
 
+    # Fetch PR metadata in parallel (network-bound), then process in PR-number order
+    # so output is deterministic regardless of completion order.
+    fetched: dict[int, tuple[dict | None, str]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        for num, data, err in executor.map(fetch_pr, pr_numbers):
+            fetched[num] = (data, err)
+
     prs = []
+    unresolved = []
     for num in pr_numbers:
-        view = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "view",
-                str(num),
-                "--json",
-                "number,title,author,url,labels,mergedAt,additions,deletions,body",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if view.returncode != 0:
-            # PR number referenced but not viewable (e.g. from a fork / different repo).
+        data, err = fetched[num]
+        if data is None:
+            # Don't silently drop a PR -- surface it so the digest is visibly partial.
+            unresolved.append({"number": num, "error": err})
+            sys.stderr.write(f"WARNING: could not load PR #{num}: {err}\n")
             continue
-        data = json.loads(view.stdout)
         author = data.get("author") or {}
         login = author.get("login", "unknown")
         if login not in TEAM:
@@ -145,7 +206,7 @@ def main() -> None:
             {
                 "number": data["number"],
                 "title": data["title"],
-                "author_login": author.get("login", "unknown"),
+                "author_login": login,
                 "author_name": display_name(author),
                 "url": data["url"],
                 "labels": [label["name"] for label in data.get("labels", [])],
@@ -165,26 +226,35 @@ def main() -> None:
         "prs": prs,
         "direct_commits": direct_commits,
         "excluded_prs": excluded,
+        "unresolved_prs": unresolved,
     }
-    print(json.dumps(output, indent=2))
+    sys.stdout.write(json.dumps(output, indent=2) + "\n")
 
     # Human summary to stderr.
-    print(
+    sys.stderr.write(
         f"\nChanges since {last_tag} on {head_ref}: "
         f"{len(prs)} PRs + {len(direct_commits)} direct commits "
-        f"across {len(commit_lines)} mainline commits.",
-        file=sys.stderr,
+        f"across {len(commit_lines)} mainline commits.\n"
     )
     if excluded:
-        print(
-            f"Excluded {len(excluded)} PR(s) from non-teammates: "
-            + ", ".join(f"#{e['number']} ({e['author_login']})" for e in excluded),
-            file=sys.stderr,
+        sys.stderr.write(
+            f"Excluded {len(excluded)} change(s) from non-teammates: "
+            + ", ".join(
+                f"#{e['number']} ({e['author_login']})"
+                if e["number"] is not None
+                else f"{e['title']!r} ({e['author_login']})"
+                for e in excluded
+            )
+            + "\n"
+        )
+    if unresolved:
+        sys.stderr.write(
+            f"WARNING: {len(unresolved)} PR(s) could not be loaded: "
+            + ", ".join(f"#{u['number']}" for u in unresolved)
+            + "\n"
         )
     if not prs and not direct_commits:
-        print(
-            "Nothing unreleased -- main is even with the latest tag.", file=sys.stderr
-        )
+        sys.stderr.write("Nothing unreleased -- main is even with the latest tag.\n")
 
 
 if __name__ == "__main__":

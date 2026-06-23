@@ -36,14 +36,18 @@ The JSON contains:
 - `pr_count`, `commit_count`
 - `prs[]` — `{number, title, author_name, author_login, url, labels, additions, deletions, body}`
 - `direct_commits[]` — teammate commits pushed straight to main, no PR — `{sha, title, author_login, author_name}`
-- `excluded_prs[]` — PRs/commits from non-teammates, dropped from the recap (see below)
+- `excluded_prs[]` — PRs/commits from non-teammates, dropped from the recap. PR entries
+  have a `number`; direct-commit entries have `number: null` and rely on `title`.
+- `unresolved_prs[]` — PRs whose `gh pr view` failed (`{number, error}`). If non-empty,
+  the change set is partial — tell the user which PRs couldn't load before posting.
 
 Only the five teammates in the script's `TEAM` map (Sam, Leonard, Daniel, Mike,
 Steve) are included in the recap. PRs from anyone else are filtered into
 `excluded_prs` rather than itemized. To add a teammate, edit `TEAM` in the script.
 
-**If `pr_count` is 0:** tell the user `main` is even with `<last_tag>` — nothing to QA
-or release yet. Do not post to Slack. Stop here.
+**If `pr_count` is 0 AND `direct_commits` is empty:** tell the user `main` is even with
+`<last_tag>` — nothing to QA or release yet. Do not post to Slack. Stop here. (Direct
+commits alone, with no PRs, still count as unreleased changes worth a digest.)
 
 ---
 
@@ -147,8 +151,10 @@ Rules:
   1. A **bold** `:bar_chart:` tally line: `:bar_chart: *<X> features · <Y> fixes · <Z> tasks*`.
   2. A blank line.
   3. If `excluded_prs` is non-empty, an **italic** `:information_source:` line noting the
-     excluded non-teammate PRs (so the omission is visible, not silent):
-     `:information_source: _<N> PR(s) from a non-teammate: #<num> (<login>)._`
+     excluded non-teammate changes (so the omission is visible, not silent). Reference a
+     PR entry by `#<num>` and a direct-commit entry (where `number` is null) by its
+     `title` — never print `#None`. E.g.
+     `:information_source: _<N> change(s) from non-teammates excluded: #1456 (ianjamesburke)._`
 - Link the PR numbers if easy (`<url|#1501>`), but plain `#1501` is fine — keep it readable.
 
 **Show the composed message to the user and get confirmation before posting** (it's an
