@@ -205,9 +205,8 @@
         <span>Forking turn {forked_turn_index}</span>
       </div>
       <p class="text-xs text-gray-500">
-        Editing this message will create a new conversation branch. The original
-        conversation it branched off from will be preserved unchanged in your
-        dataset.
+        Your next message will start a new conversation branch from this point.
+        The original conversation is preserved unchanged in your dataset.
       </p>
     </div>
   {/if}

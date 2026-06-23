@@ -60,7 +60,7 @@
   import RunSidebar from "$lib/ui/run_sidebar.svelte"
   import {
     compute_forkable_run_ids,
-    fork_target_from_user_block,
+    fork_target_from_assistant_block,
     type ForkTarget,
   } from "./fork_helpers"
 
@@ -736,10 +736,9 @@
   let fork_composer: MultiturnComposer | null = null
 
   function on_fork(clicked_run_id: string, trace_index: number) {
-    const target = fork_target_from_user_block(
+    const target = fork_target_from_assistant_block(
       clicked_run_id,
       trace_index,
-      run?.trace ?? [],
       run_chain,
     )
     if (!target) return

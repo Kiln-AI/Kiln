@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   compute_forkable_run_ids,
-  fork_target_from_user_block,
-  content_string_from_user_message,
+  fork_target_from_assistant_block,
 } from "./fork_helpers"
 import type { Trace, TraceMessage, RunChainEntry } from "$lib/types"
 
@@ -33,9 +32,11 @@ describe("compute_forkable_run_ids", () => {
       { run_id: "run-3", turn_index: 3 },
     ]
     const result = compute_forkable_run_ids(trace, chain)
-    // Indices: 0 system, 1 user(turn1, not forkable), 2 assistant, 3 user(turn2),
-    // 4 assistant, 5 user(turn3 leaf), 6 assistant.
-    expect(result).toEqual([null, null, null, "run-2", null, "run-3", null])
+    // The fork affordance sits on the assistant message that precedes each
+    // forkable user turn: turn 2 (run-2) maps onto assistant a1 (index 2) and
+    // turn 3 (run-3) maps onto assistant a2 (index 4). The leaf's trailing
+    // assistant a3 (index 6) is not forkable.
+    expect(result).toEqual([null, null, "run-2", null, "run-3", null, null])
   })
 
   it("suffix-aligns a broken chain — only the trailing user blocks are mapped", () => {
@@ -51,7 +52,8 @@ describe("compute_forkable_run_ids", () => {
     // The chain is broken above turn 3, so we only have the leaf.
     const chain: RunChainEntry[] = [{ run_id: "run-3", turn_index: 3 }]
     const result = compute_forkable_run_ids(trace, chain)
-    expect(result).toEqual([null, null, null, null, null, "run-3", null])
+    // run-3 maps onto the assistant (index 4) preceding the leaf user turn.
+    expect(result).toEqual([null, null, null, null, "run-3", null, null])
   })
 
   it("returns all nulls when chain is empty", () => {
@@ -75,64 +77,40 @@ describe("compute_forkable_run_ids", () => {
   })
 })
 
-describe("fork_target_from_user_block", () => {
-  const trace: Trace = [
-    systemMsg("s"),
-    userMsg("hello"),
-    assistantMsg("hi"),
-    userMsg("how are you?"),
-    assistantMsg("good"),
-    userMsg("ok bye"),
-    assistantMsg("bye"),
-  ]
+describe("fork_target_from_assistant_block", () => {
   const chain: RunChainEntry[] = [
     { run_id: "run-1", turn_index: 1 },
     { run_id: "run-2", turn_index: 2 },
     { run_id: "run-3", turn_index: 3 },
   ]
 
-  it("returns the parent run id and prefill for an interior turn click", () => {
-    const target = fork_target_from_user_block("run-2", 3, trace, chain)
+  it("returns the parent run id and an empty prefill for an interior assistant click", () => {
+    // Forking on turn 1's assistant (index 2) creates a new turn 2.
+    const target = fork_target_from_assistant_block("run-2", 2, chain)
     expect(target).not.toBeNull()
     expect(target?.turn_index).toBe(2)
     expect(target?.parent_run_id).toBe("run-1")
+    // Truncates just after the clicked assistant message.
     expect(target?.trace_index).toBe(3)
-    expect(target?.prefill).toBe("how are you?")
+    expect(target?.prefill).toBe("")
   })
 
-  it("returns null when the forked turn is turn 1 (no parent exists)", () => {
-    const target = fork_target_from_user_block("run-1", 1, trace, chain)
+  it("returns null when the mapped turn is turn 1 (no parent exists)", () => {
+    const target = fork_target_from_assistant_block("run-1", 0, chain)
     expect(target).toBeNull()
   })
 
-  it("returns the leaf's parent when the leaf user block is clicked", () => {
-    const target = fork_target_from_user_block("run-3", 5, trace, chain)
+  it("returns the leaf's parent when the assistant before the leaf turn is clicked", () => {
+    // Forking on turn 2's assistant (index 4) creates a new turn 3.
+    const target = fork_target_from_assistant_block("run-3", 4, chain)
     expect(target?.parent_run_id).toBe("run-2")
     expect(target?.turn_index).toBe(3)
-    expect(target?.prefill).toBe("ok bye")
+    expect(target?.trace_index).toBe(5)
+    expect(target?.prefill).toBe("")
   })
 
   it("returns null when the run id is not found in chain", () => {
-    const target = fork_target_from_user_block("unknown", 3, trace, chain)
+    const target = fork_target_from_assistant_block("unknown", 2, chain)
     expect(target).toBeNull()
-  })
-})
-
-describe("content_string_from_user_message", () => {
-  it("returns the string content of a user message", () => {
-    expect(content_string_from_user_message(userMsg("hi"))).toBe("hi")
-  })
-  it("returns an empty string for non-user messages", () => {
-    expect(content_string_from_user_message(assistantMsg("hi"))).toBe("")
-  })
-  it("returns an empty string when the message is undefined", () => {
-    expect(content_string_from_user_message(undefined)).toBe("")
-  })
-  it("returns an empty string when content is not a plain string (e.g. structured parts)", () => {
-    const msg = {
-      role: "user",
-      content: [{ type: "text", text: "hi" }],
-    } as unknown as TraceMessage
-    expect(content_string_from_user_message(msg)).toBe("")
   })
 })

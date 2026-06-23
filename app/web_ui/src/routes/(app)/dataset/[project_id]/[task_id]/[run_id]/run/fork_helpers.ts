@@ -1,4 +1,4 @@
-import type { Trace, TraceMessage, RunChainEntry } from "$lib/types"
+import type { Trace, RunChainEntry } from "$lib/types"
 
 export type ForkTarget = {
   turn_index: number
@@ -7,27 +7,14 @@ export type ForkTarget = {
   prefill: string
 }
 
-// Extract a plain-text representation of a user message's content. Mirrors
-// the trace component's "content_from_message" for the simple string case.
-// Structured content (image / audio parts) is out of scope for v1 fork
-// prefill: returning "" means the composer opens with an empty textarea and
-// the user retypes the prompt. Upgrade this when the trace editor lands.
-export function content_string_from_user_message(
-  message: TraceMessage | undefined,
-): string {
-  if (!message) return ""
-  if (message.role !== "user") return ""
-  if (typeof message.content === "string") {
-    return message.content
-  }
-  return ""
-}
-
-// Compute, for each trace index, the run id of the user turn at that index
-// (or null when no chain entry maps to it, or when the user message at that
-// index is turn 1 — turn 1 is not forkable per the functional spec). The
-// result has the same length as `trace`. Non-user messages and turn 1's
-// user message map to null.
+// Compute, for each trace index, the run id used to fork at that point. The
+// fork affordance lives on the assistant message that ends a turn (forking
+// "after" the assistant continues the conversation down a new branch). For a
+// forkable user turn K (K >= 2), we map the run id of turn K onto the
+// assistant message immediately preceding turn K's user message (i.e. turn
+// K-1's final assistant message). The result has the same length as `trace`;
+// every other index is null. Turn 1 is not forkable (no parent exists), so the
+// leaf turn's trailing assistant message is never mapped.
 export function compute_forkable_run_ids(
   trace: Trace,
   chain: RunChainEntry[],
@@ -52,35 +39,44 @@ export function compute_forkable_run_ids(
   for (let k = 0; k < chain.length; k++) {
     const entry = chain[k]
     if (entry.turn_index === 1) continue // turn 1 is not forkable
-    const trace_idx = user_trace_indices[offset + k]
-    if (trace_idx !== undefined) {
-      result[trace_idx] = entry.run_id
+    const user_idx = user_trace_indices[offset + k]
+    if (user_idx === undefined) continue
+    // Place the fork affordance on the assistant message immediately
+    // preceding this user turn (the previous turn's final assistant
+    // response), not on the user message itself.
+    const assistant_idx = user_idx - 1
+    if (assistant_idx >= 0 && trace[assistant_idx]?.role === "assistant") {
+      result[assistant_idx] = entry.run_id
     }
   }
   return result
 }
 
-// Look up the data needed to open a fork composer for a clicked user
-// block. Returns null if the click target can't be resolved (defensive —
-// the trace component only renders the fork button when a chain entry was
-// already mapped, so this should not normally happen).
-export function fork_target_from_user_block(
+// Look up the data needed to open a fork composer for a clicked assistant
+// block. `run_id` is the run mapped onto that assistant message by
+// compute_forkable_run_ids — the turn that the new branch will create
+// (turn K). Forking continues the conversation after the clicked assistant
+// message with a fresh (un-seeded) next message, so prefill is always empty.
+// Returns null if the click target can't be resolved (defensive — the trace
+// component only renders the fork button when a chain entry was mapped).
+export function fork_target_from_assistant_block(
   run_id: string,
   trace_index: number,
-  trace: Trace,
   chain: RunChainEntry[],
 ): ForkTarget | null {
   const this_turn = chain.find((c) => c.run_id === run_id)
   if (!this_turn) return null
-  // Turn 1 is not forkable (no parent exists). The trace component already
-  // filters this out via compute_forkable_run_ids; returning null here is a
-  // defensive guard against being called on turn 1 directly.
+  // The mapped run is always turn 2+ (turn 1 is filtered out upstream);
+  // guard defensively anyway.
   if (this_turn.turn_index <= 1) return null
   const parent = chain.find((c) => c.turn_index === this_turn.turn_index - 1)
   return {
     turn_index: this_turn.turn_index,
     parent_run_id: parent?.run_id ?? null,
-    trace_index,
-    prefill: content_string_from_user_message(trace[trace_index]),
+    // Truncate the displayed transcript just after the clicked assistant
+    // message, so it stays visible while everything that followed is hidden.
+    trace_index: trace_index + 1,
+    // No seeding: forking from an assistant message starts a brand-new turn.
+    prefill: "",
   }
 }

@@ -301,13 +301,15 @@ describe("ChatTrace component — layout & roles", () => {
     })
   })
 
-  it("places the user metadata row inside the user bubble", () => {
+  it("places the fork affordance on the assistant message, not the user bubble", () => {
     const trace: TraceType = [
       userMsg("hello"),
       assistantMsg("hi"),
       userMsg("again"),
     ]
-    const forkable_run_ids = [null, null, "run-2"]
+    // The fork affordance is mapped onto the assistant message (index 1) that
+    // precedes the forkable user turn.
+    const forkable_run_ids = [null, "run-2", null]
     const { container } = render(ChatTrace, {
       props: { trace, forkable_run_ids, on_fork: vi.fn() },
     })
@@ -315,9 +317,20 @@ describe("ChatTrace component — layout & roles", () => {
       "[data-testid='chat-msg-user']",
     )
     expect(userBubbles.length).toBe(2)
-    // Fork button should be inside the second user bubble.
+    // No fork button inside either user bubble.
+    userBubbles.forEach((b) => {
+      expect(
+        b.querySelector("button[aria-label='Fork from this turn']"),
+      ).toBeNull()
+    })
+    // The fork button lives on the assistant turn.
+    const assistantTurns = container.querySelectorAll(
+      "[data-testid='chat-msg-assistant-turn']",
+    )
     expect(
-      userBubbles[1].querySelector("button[aria-label='Fork from this turn']"),
+      assistantTurns[0].querySelector(
+        "button[aria-label='Fork from this turn']",
+      ),
     ).not.toBeNull()
   })
 })
@@ -554,7 +567,7 @@ describe("ChatTrace component — fork affordance", () => {
     )
   }
 
-  it("renders a fork button on user messages that are forkable", () => {
+  it("renders a fork button on assistant messages that are forkable", () => {
     const trace: TraceType = [
       systemMsg("s"),
       userMsg("u1"),
@@ -562,31 +575,33 @@ describe("ChatTrace component — fork affordance", () => {
       userMsg("u2"),
       assistantMsg("a2"),
     ]
-    const forkable_run_ids = [null, null, null, "run-2", null]
+    // Mapped onto the assistant message (index 2) preceding the forkable turn.
+    const forkable_run_ids = [null, null, "run-2", null, null]
     const { container } = render(ChatTrace, {
       props: { trace, forkable_run_ids, on_fork: vi.fn() },
     })
     expect(fork_button(container).length).toBe(1)
   })
 
-  it("does NOT render a fork button on assistant messages even if forkable_run_ids[i] is set", () => {
+  it("does NOT render a fork button on user messages even if forkable_run_ids[i] is set", () => {
     const trace: TraceType = [userMsg("u1"), assistantMsg("a1")]
     const forkable_run_ids = ["run-u", "run-a"]
     const { container } = render(ChatTrace, {
       props: { trace, forkable_run_ids, on_fork: vi.fn() },
     })
-    // Only the user msg gets a fork button.
+    // Only the assistant msg gets a fork button (the user-mapped id is ignored).
     expect(fork_button(container).length).toBe(1)
   })
 
-  it("invokes on_fork with the mapped run id and trace index", async () => {
+  it("invokes on_fork with the mapped run id and assistant trace index", async () => {
     const trace: TraceType = [
       systemMsg("s"),
       userMsg("u1"),
       assistantMsg("a1"),
       userMsg("u2"),
     ]
-    const forkable_run_ids = [null, null, null, "run-leaf"]
+    // Forking the new turn 2 is offered on the assistant message at index 2.
+    const forkable_run_ids = [null, null, "run-leaf", null]
     const on_fork = vi.fn()
     const { container } = render(ChatTrace, {
       props: { trace, forkable_run_ids, on_fork },
@@ -595,12 +610,12 @@ describe("ChatTrace component — fork affordance", () => {
     expect(button).toBeDefined()
     await fireEvent.click(button)
     expect(on_fork).toHaveBeenCalledTimes(1)
-    expect(on_fork).toHaveBeenCalledWith("run-leaf", 3)
+    expect(on_fork).toHaveBeenCalledWith("run-leaf", 2)
   })
 
   it("does NOT render any fork button when on_fork is not provided", () => {
-    const trace: TraceType = [userMsg("u1")]
-    const forkable_run_ids = ["run-1"]
+    const trace: TraceType = [userMsg("u1"), assistantMsg("a1")]
+    const forkable_run_ids = [null, "run-1"]
     const { container } = render(ChatTrace, {
       props: { trace, forkable_run_ids },
     })
