@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -5195,6 +5196,48 @@ async def test_get_documents_filtered_with_document_no_tags(
     assert len(result) == 1
     assert result[0].id == document.id
     assert result[0].id == document.id
+
+
+async def test_download_document_blocks_path_traversal(client, mock_document, tmp_path):
+    """A malicious document.kiln whose attachment path escapes the project dir
+    (e.g. delivered via project import / git sync) must not be served.
+
+    This drives the real attack path with minimal mocks: a tampered document.kiln
+    is written to disk, the real download endpoint loads it from disk via
+    Document.from_id_and_parent_path and resolves the attachment. Only
+    project_from_id is mocked (to avoid touching the global projects config)."""
+    project = mock_document["project"]
+    document = mock_document["document"]
+    assert document.path is not None
+
+    # a secret file living outside the project tree
+    secret_path = tmp_path / "secret.txt"
+    secret_content = b"TOP SECRET root:*:0:0:System Administrator"
+    secret_path.write_bytes(secret_content)
+
+    # relative ../ path from the document folder to the secret file
+    doc_dir = document.path.parent
+    traversal = os.path.relpath(secret_path, doc_dir)
+    # sanity: the path really escapes and really points at the secret, so the
+    # test is not vacuous (pre-fix, this is exactly what got served)
+    assert ".." in Path(traversal).parts
+    assert (doc_dir / traversal).resolve() == secret_path.resolve()
+
+    # tamper the persisted document.kiln to point the attachment at the secret
+    with open(document.path) as f:
+        data = json.load(f)
+    data["original_file"]["attachment"]["path"] = traversal
+    with open(document.path, "w") as f:
+        json.dump(data, f)
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+        response = client.get(
+            f"/api/projects/{project.id}/documents/{document.id}/download"
+        )
+
+    assert response.status_code != 200
+    assert secret_content not in response.content
 
 
 async def test_download_extraction_success(

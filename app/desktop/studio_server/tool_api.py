@@ -410,20 +410,10 @@ def connect_tool_servers_api(app: FastAPI):
                 )
             )
 
-        tool_sets.insert(
-            0,
-            ToolSetApiDescription(
-                type=ToolSetType.BUILTIN,
-                set_name="Kiln built-in tools",
-                tools=[
-                    ToolApiDescription(
-                        id=KilnBuiltInToolId.CALL_KILN_API.value,
-                        name="Call Kiln API",
-                        description="HTTP requests to the local Kiln API (paths under /api/...).",
-                    ),
-                ],
-            ),
-        )
+        # Note: the Call Kiln API built-in tool (KilnBuiltInToolId.CALL_KILN_API)
+        # is intentionally not listed here. It's an internal agent tool — still
+        # resolvable via tool_from_id and callable by agents, but hidden from the
+        # user-facing tool selection dropdowns.
 
         return tool_sets
 

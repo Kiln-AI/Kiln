@@ -405,10 +405,27 @@ def test_uncensored():
         assert not provider.uncensored
         assert not provider.suggested_for_uncensored_data_gen
 
-    model = get_model_by_name(ModelName.grok_4)
+    model = get_model_by_name(ModelName.dolphin_2_9_8x22b)
     for provider in model.providers:
-        assert provider.uncensored
-        assert provider.suggested_for_uncensored_data_gen
+        if not provider.deprecated:
+            assert provider.uncensored
+            assert provider.suggested_for_uncensored_data_gen
+
+
+def test_deprecated_providers_not_suggested():
+    """Deprecated providers should not be suggested for anything"""
+    for model in built_in_models:
+        for provider in model.providers:
+            if provider.deprecated:
+                assert not provider.suggested_for_evals, (
+                    f"{model.name} / {provider.name} ({provider.model_id}) is deprecated but suggested_for_evals=True"
+                )
+                assert not provider.suggested_for_data_gen, (
+                    f"{model.name} / {provider.name} ({provider.model_id}) is deprecated but suggested_for_data_gen=True"
+                )
+                assert not provider.suggested_for_uncensored_data_gen, (
+                    f"{model.name} / {provider.name} ({provider.model_id}) is deprecated but suggested_for_uncensored_data_gen=True"
+                )
 
 
 def test_no_empty_multimodal_mime_types():

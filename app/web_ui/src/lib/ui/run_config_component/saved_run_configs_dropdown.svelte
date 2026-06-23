@@ -21,6 +21,7 @@
   import {
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { isMcpRunConfig } from "$lib/types"
   import { onMount } from "svelte"
@@ -266,10 +267,17 @@
         const mcp_props = isMcpRunConfig(default_config.run_config_properties)
           ? default_config.run_config_properties
           : null
-        const description = mcp_props
+        let description = mcp_props
           ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
           : `Model: ${getRunConfigModelDisplayName(default_config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`
+        if (!mcp_props) {
+          const transformLabel =
+            getRunConfigInputTransformSummaryLabel(default_config)
+          if (transformLabel) {
+            description += `\nInput Transform: ${transformLabel}`
+          }
+        }
         saved_configuration_options.push({
           value: default_run_config_id,
           label: `${default_config.name} (Default)`,
@@ -290,10 +298,17 @@
           const mcp_props = isMcpRunConfig(config.run_config_properties)
             ? config.run_config_properties
             : null
-          const description = mcp_props
+          let description = mcp_props
             ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
             : `Model: ${getRunConfigModelDisplayName(config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`
+          if (!mcp_props) {
+            const transformLabel =
+              getRunConfigInputTransformSummaryLabel(config)
+            if (transformLabel) {
+              description += `\nInput Transform: ${transformLabel}`
+            }
+          }
           return {
             value: config.id ?? "",
             label: config.name,

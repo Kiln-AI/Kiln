@@ -32,14 +32,17 @@
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
-  import { isMcpRunConfig } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
+  import FloatingMenu from "$lib/ui/floating_menu.svelte"
+  import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -53,6 +56,7 @@
   // State management
   let columns = 2 // Start with 2 columns
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
+  let hiddenEvalIds: string[] = [] // Eval IDs hidden by the user (kiln_cost_section is never hideable)
 
   // Run configs state
   let loading_run_configs = true
@@ -94,6 +98,20 @@
 
     // Initialize selectedModels array with correct length
     selectedModels = new Array(columns).fill(null)
+
+    // Hidden evals can be restored before run configs are loaded - they are just IDs.
+    // Defensive: drop the cost section ID + dedupe in case a hand-edited URL is messy.
+    const urlHidden = urlParams.get("hidden_evals")
+    if (urlHidden) {
+      hiddenEvalIds = [
+        ...new Set(
+          urlHidden
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0 && id !== "kiln_cost_section"),
+        ),
+      ]
+    }
   }
 
   // Restore model selections from URL after data is loaded
@@ -137,13 +155,20 @@
     )
     urlParams.set("models", modelIds.join(","))
 
+    // Update hidden evals (omit param when none are hidden to keep URL clean)
+    if (hiddenEvalIds.length > 0) {
+      urlParams.set("hidden_evals", hiddenEvalIds.join(","))
+    } else {
+      urlParams.delete("hidden_evals")
+    }
+
     // Use replace to avoid creating new history entries
     const newURL = `${$page.url.pathname}?${urlParams.toString()}`
     goto(newURL, { replaceState: true })
   }
 
   // Reactive statements to update URL when state changes
-  $: if (!isInitializing && (columns || selectedModels)) {
+  $: if (!isInitializing && (columns || selectedModels || hiddenEvalIds)) {
     updateURL()
   }
 
@@ -322,6 +347,68 @@
     allRunConfigIds,
     eval_scores_cache,
   )
+
+  // Filter out user-hidden evals (cost section is never hideable). hiddenEvalIds is
+  // passed in as a parameter (rather than read via closure) so that Svelte's reactive
+  // `$:` statements track it as a dependency and re-run when it changes.
+  function filterVisibleFeatures<T extends { eval_id: string }>(
+    features: T[],
+    hidden: string[],
+  ): T[] {
+    if (hidden.length === 0) return features
+    return features.filter(
+      (section) =>
+        section.eval_id === "kiln_cost_section" ||
+        !hidden.includes(section.eval_id),
+    )
+  }
+
+  $: visibleComparisonFeatures = filterVisibleFeatures(
+    comparisonFeatures,
+    hiddenEvalIds,
+  )
+  $: visibleChartComparisonFeatures = filterVisibleFeatures(
+    chartComparisonFeatures,
+    hiddenEvalIds,
+  )
+
+  // Names of currently-hidden evals (used for the "show hidden" dropdown).
+  // chartComparisonFeatures is built from ALL run configs for the task and is a
+  // superset of comparisonFeatures (which only covers selected models), so it
+  // alone is enough to resolve display names.
+  $: hiddenEvalsInfo = hiddenEvalIds
+    .filter((id) => id !== "kiln_cost_section")
+    .map((evalId) => {
+      const feature = chartComparisonFeatures.find((s) => s.eval_id === evalId)
+      return { eval_id: evalId, category: feature?.category ?? "Unknown eval" }
+    })
+
+  function hideEval(evalId: string) {
+    if (evalId === "kiln_cost_section") return
+    if (hiddenEvalIds.includes(evalId)) return
+    hiddenEvalIds = [...hiddenEvalIds, evalId]
+  }
+
+  function showEval(evalId: string) {
+    hiddenEvalIds = hiddenEvalIds.filter((id) => id !== evalId)
+  }
+
+  function showAllHiddenEvals() {
+    hiddenEvalIds = []
+  }
+
+  $: hiddenEvalsMenuItems = [
+    { label: "Show Eval", header: true },
+    ...hiddenEvalsInfo.map(
+      (info): FloatingMenuItem => ({
+        label: info.category,
+        onclick: () => showEval(info.eval_id),
+      }),
+    ),
+    ...(hiddenEvalsInfo.length > 1
+      ? [{ label: "Show All", onclick: showAllHiddenEvals }]
+      : []),
+  ] as FloatingMenuItem[]
 
   // Reactively fetch eval templates for sections
   $: {
@@ -688,8 +775,21 @@
           <div class="text-gray-600">Loading evaluation scores...</div>
         </div>
       {:else}
-        <!-- Add Column Button - positioned above table on the right -->
-        <div class="flex justify-end mb-4">
+        <!-- Table action buttons - positioned above table on the right -->
+        <div class="flex justify-end gap-2 mb-4">
+          {#if hiddenEvalsInfo.length > 0}
+            <div class="hidden-evals-dropdown">
+              <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
+                <button
+                  slot="trigger"
+                  type="button"
+                  class="btn btn-sm btn-outline"
+                >
+                  Hidden Evals ({hiddenEvalsInfo.length})
+                </button>
+              </FloatingMenu>
+            </div>
+          {/if}
           {#if columns < MAX_COLUMNS}
             <button
               on:click={addColumn}
@@ -753,19 +853,28 @@
                     selectedModels[i],
                   )}
                   {#if selectedConfig}
-                    {@const prompt_info_text =
-                      getRunConfigPromptInfoText(selectedConfig)}
-                    {@const prompt_link_url = prompt_link(
-                      project_id,
-                      task_id,
-                      `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
-                    )}
-                    {@const prompt_display_name = getRunConfigPromptDisplayName(
-                      selectedConfig,
+                    {@const current_task_prompts =
                       $prompts_by_task_composite_id[
                         get_task_composite_id(project_id, task_id)
-                      ] || null,
+                      ] || null}
+                    {@const prompt_info_text = getRunConfigPromptInfoText(
+                      selectedConfig,
+                      current_task_prompts,
                     )}
+                    {@const config_prompt_id = isKilnAgentRunConfig(
+                      selectedConfig.run_config_properties,
+                    )
+                      ? selectedConfig.run_config_properties.prompt_id
+                      : undefined}
+                    {@const prompt_link_url = config_prompt_id
+                      ? prompt_link(project_id, task_id, config_prompt_id)
+                      : undefined}
+                    {@const prompt_display_name = getRunConfigPromptDisplayName(
+                      selectedConfig,
+                      current_task_prompts,
+                    )}
+                    {@const transformLabel =
+                      getRunConfigInputTransformSummaryLabel(selectedConfig)}
                     <div class="mt-3 text-center">
                       <div class="font-semibold text-gray-900 text-sm">
                         {#if isMcpRunConfig(selectedConfig.run_config_properties)}
@@ -799,6 +908,11 @@
                           {/if}
                         </div>
                       {/if}
+                      {#if transformLabel}
+                        <div class="text-xs text-gray-500 font-normal mt-1">
+                          Input Transform: {transformLabel}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 {/if}
@@ -808,14 +922,25 @@
 
           <!-- Comparison Data - only show if models are selected -->
           {#if validSelectedModels.length > 0}
-            {#each comparisonFeatures as section}
+            {#each visibleComparisonFeatures as section}
               <!-- Section Header -->
-              <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
+              <div
+                class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2"
+              >
                 <h4
                   class="text-sm font-semibold text-gray-900 uppercase tracking-wide"
                 >
                   {section.category}
                 </h4>
+                {#if section.eval_id !== "kiln_cost_section"}
+                  <button
+                    on:click={() => hideEval(section.eval_id)}
+                    class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                    title="Hide this eval"
+                  >
+                    ✕
+                  </button>
+                {/if}
               </div>
 
               {#if section.items.length == 0}
@@ -1032,7 +1157,7 @@
         {#if validSelectedModels.length > 0}
           <div class="mt-16">
             <CompareRadarChart
-              {comparisonFeatures}
+              comparisonFeatures={visibleComparisonFeatures}
               {getModelValueRaw}
               run_configs={current_task_run_configs || []}
               model_info={$model_info}
@@ -1046,7 +1171,7 @@
 
         <div class="mt-16">
           <CompareChart
-            comparisonFeatures={chartComparisonFeatures}
+            comparisonFeatures={visibleChartComparisonFeatures}
             {getModelValueRaw}
             run_configs={current_task_run_configs || []}
             model_info={$model_info}
@@ -1084,3 +1209,40 @@
     }
   }}
 />
+
+<style>
+  .hidden-evals-dropdown :global(ul.menu li > button),
+  .hidden-evals-dropdown :global(ul.menu li > a) {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgb(17 24 39);
+  }
+
+  /* Render a gray "+" prefix on eval rows only. Excludes the header
+     (first-child) and the "Restore All" footer (last-child at position 4+). */
+  .hidden-evals-dropdown
+    :global(
+      ul.menu
+        li:not(:first-child):not(:last-child:nth-child(n + 4))
+        > button::before
+    ) {
+    content: "+";
+    color: rgb(107 114 128);
+    margin-right: 0.375rem;
+    font-weight: 400;
+  }
+
+  /* "Restore All" footer styling — gray-500. */
+  .hidden-evals-dropdown
+    :global(ul.menu li:last-child:nth-child(n + 4) > button) {
+    color: rgb(107 114 128);
+  }
+
+  /* Divider before the "Show all hidden" footer. nth-child(n+4) ensures we
+     only render it when the list has header + 2+ evals + show-all footer. */
+  .hidden-evals-dropdown :global(ul.menu li:last-child:nth-child(n + 4)) {
+    border-top: 1px solid rgb(209 213 219);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+</style>

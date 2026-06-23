@@ -72,6 +72,10 @@ class RunTaskRequest(BaseModel):
     tags: list[str] | None = Field(
         default=None, description="Tags to apply to the resulting task run."
     )
+    task_run_config_id: str | None = Field(
+        default=None,
+        description="The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.",
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
@@ -416,7 +420,11 @@ def connect_run_api(app: FastAPI):
         adapter = adapter_for_task(
             task,
             run_config_properties=run_config_properties,
-            base_adapter_config=AdapterConfig(default_tags=request.tags, skills=skills),
+            base_adapter_config=AdapterConfig(
+                default_tags=request.tags,
+                skills=skills,
+                task_run_config_id=request.task_run_config_id,
+            ),
         )
 
         input = request.plaintext_input

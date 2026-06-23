@@ -24,6 +24,7 @@
   import {
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { tool_link } from "$lib/utils/link_builder"
   import { formatDate } from "$lib/utils/formatters"
@@ -333,6 +334,11 @@
     { key: "prompt", label: "Prompt", sortable: true, sortKey: "prompt" },
     { key: "model", label: "Model", sortable: true, sortKey: "model" },
     { key: "tools", label: "Tools", sortable: false },
+    {
+      key: "input_transform",
+      label: "Input Transform",
+      sortable: false,
+    },
     { key: "skills", label: "Skills", sortable: false },
     { key: "type", label: "Type", sortable: true, sortKey: "type" },
     {
@@ -455,6 +461,8 @@
                 {@const is_selected =
                   config.id && selected_run_configs.has(config.id)}
                 {@const is_mcp = isMcpRunConfig(config.run_config_properties)}
+                {@const transformLabel =
+                  getRunConfigInputTransformSummaryLabel(config)}
                 <tr
                   class="{select_mode ? '' : 'hover'} cursor-pointer {is_default
                     ? 'bg-base-200'
@@ -510,12 +518,19 @@
                     <BadgeList
                       items={tools_info.value}
                       links={tools_info.links}
+                      collapse
+                      modal_title="Tools"
                     />
+                  </td>
+                  <td class="text-gray-500">
+                    {transformLabel ?? "None"}
                   </td>
                   <td class="text-gray-500">
                     <BadgeList
                       items={skills_info.value}
                       links={skills_info.links}
+                      collapse
+                      modal_title="Skills"
                     />
                   </td>
                   <td>
