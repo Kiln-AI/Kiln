@@ -137,6 +137,12 @@
         run_config_component.set_model_dropdown_error("Required")
         throw new Error("You must select a model before running")
       }
+      // If the user picked a saved run config (rather than configuring inline),
+      // forward its ID so it gets recorded on the resulting TaskRun.
+      const task_run_config_id =
+        selected_run_config_id && selected_run_config_id !== "custom"
+          ? selected_run_config_id
+          : null
       const {
         data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
@@ -153,6 +159,7 @@
           // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
           structured_input: input_form.get_structured_input_data(),
           tags: ["manual_run"],
+          task_run_config_id: task_run_config_id,
         },
       })
       if (fetch_error) {

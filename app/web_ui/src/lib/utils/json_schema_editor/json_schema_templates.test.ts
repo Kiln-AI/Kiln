@@ -1174,3 +1174,175 @@ describe("round-trip conversion tests", () => {
     expect(reconstructedSchema).toEqual(objectWithRequiredArraySchema)
   })
 })
+
+// Regression tests for the "Clone Task" schema-drift bug. Clone loads a task's
+// schema into the visual editor (model_from_schema) and on Save re-serializes it
+// via schema_from_model(schema_model, creating). The Save path passes creating=false
+// so each property keeps its stored key (id). The previously hardcoded creating=true
+// recomputed keys from human titles, drifting array-of-object sub-schemas to the
+// wrong parent (or colliding) whenever a stored key != string_to_json_key(title) --
+// e.g. schemas authored via the Raw JSON editor or imported during a migration.
+describe("clone task schema fidelity", () => {
+  it("keeps array-of-object sub-schemas under their stored key when key != slug(title)", () => {
+    // Stored keys and human titles are crossed.
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        entities: {
+          title: "Audiences", // slug("Audiences") = "audiences" != key "entities"
+          type: "array",
+          items: {
+            title: "",
+            type: "object",
+            properties: {
+              type: { title: "type", type: "string" },
+              value: { title: "value", type: "string" },
+            },
+            required: [],
+            additionalProperties: false,
+          },
+        },
+        audiences: {
+          title: "Entities", // slug("Entities") = "entities" != key "audiences"
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    }
+    const model = model_from_schema(schema)
+
+    // Fixed Save path (creating=false): sub-schemas stay under their real keys.
+    const fixed = schema_from_model(model, false)
+    expect(fixed.properties?.entities?.items?.type).toBe("object")
+    expect(fixed.properties?.audiences?.items?.type).toBe("string")
+
+    // Documents the old bug: creating=true re-keys by title and drifts the
+    // {type, value} sub-schema onto "audiences" (and vice versa).
+    const drifted = schema_from_model(model, true)
+    expect(drifted.properties?.entities?.items?.type).toBe("string")
+    expect(drifted.properties?.audiences?.items?.type).toBe("object")
+  })
+
+  it("does not drop a sub-schema when two property titles slug to the same key", () => {
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        entity_type: {
+          title: "Entity Type", // slug -> "entity_type"
+          type: "array",
+          items: {
+            title: "",
+            type: "object",
+            properties: { code: { title: "code", type: "string" } },
+            required: [],
+            additionalProperties: false,
+          },
+        },
+        entity_type_legacy: {
+          title: "Entity_Type", // slug -> "entity_type" (would collide)
+          type: "string",
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    }
+    const model = model_from_schema(schema)
+
+    // Fixed Save path: distinct stored keys are preserved, sub-schema survives.
+    const fixed = schema_from_model(model, false)
+    expect(Object.keys(fixed.properties!)).toHaveLength(2)
+    expect(fixed.properties?.entity_type?.items?.type).toBe("object")
+
+    // Documents the old bug: both titles slug to "entity_type" under creating=true;
+    // the second property clobbers the first and the array sub-schema is lost.
+    const collided = schema_from_model(model, true)
+    expect(Object.keys(collided.properties!)).toHaveLength(1)
+  })
+
+  it("does not mutate an empty array-item title on round-trip", () => {
+    // Mirrors the real brand-post-analyzer output schema: array-of-object items
+    // are stored with an empty title by the editor at creation time.
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        entities: {
+          title: "entities",
+          description: "Entities mentioned in the post; each is {type, value}",
+          type: "array",
+          items: {
+            title: "",
+            type: "object",
+            properties: {
+              type: { title: "type", type: "string" },
+              value: { title: "value", type: "string" },
+            },
+            required: [],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    }
+    const model = model_from_schema(schema)
+
+    // Empty item title is preserved (previously fabricated as "items").
+    expect(schema_from_model(model, false)).toEqual(schema)
+  })
+
+  it("preserves camelCase keys (top-level and nested) on a migration-style schema", () => {
+    // Mirrors a schema imported/ported during a migration: camelCase keys with
+    // Title Case titles, so every key != string_to_json_key(title). Reproduced
+    // end-to-end: cloning this on the old creating=true path rewrote every key
+    // (and nested key) to snake_case.
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        detectedEntities: {
+          title: "Detected Entities",
+          type: "array",
+          items: {
+            title: "",
+            type: "object",
+            properties: {
+              entityType: { title: "Entity Type", type: "string" },
+              entityValue: { title: "Entity Value", type: "string" },
+            },
+            required: ["entityType", "entityValue"],
+            additionalProperties: false,
+          },
+        },
+        targetAudiences: {
+          title: "Target Audiences",
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+      required: ["detectedEntities", "targetAudiences"],
+      additionalProperties: false,
+    }
+    const model = model_from_schema(schema)
+
+    // Fixed Save path keeps every stored key, top-level and nested.
+    const fixed = schema_from_model(model, false)
+    expect(Object.keys(fixed.properties!)).toEqual([
+      "detectedEntities",
+      "targetAudiences",
+    ])
+    expect(
+      Object.keys(fixed.properties!.detectedEntities.items!.properties!),
+    ).toEqual(["entityType", "entityValue"])
+
+    // Documents the old bug: creating=true rewrites every key to snake_case.
+    const drifted = schema_from_model(model, true)
+    expect(Object.keys(drifted.properties!)).toEqual([
+      "detected_entities",
+      "target_audiences",
+    ])
+    expect(
+      Object.keys(drifted.properties!.detected_entities.items!.properties!),
+    ).toEqual(["entity_type", "entity_value"])
+  })
+})

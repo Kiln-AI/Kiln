@@ -5,6 +5,7 @@
     renameClone,
     saveConfig,
     is_stale_clone_error,
+    is_duplicate_project_error,
     isGitHubUrl,
     isGitLabUrl,
   } from "$lib/git_sync/api"
@@ -34,6 +35,7 @@
   let saving = true
   let error: KilnError | null = null
   let done = false
+  let is_conflict = false
 
   function git_host_label(url: string): string {
     if (isGitHubUrl(url)) return "github"
@@ -41,34 +43,24 @@
     return "other"
   }
 
-  onMount(async () => {
+  // Exported for test access only; callers must not invoke directly
+  // (bypasses onMount's rename-then-save sequence).
+  export async function run_save(remove_conflicting_id = false) {
+    saving = true
+    error = null
+    is_conflict = false
     try {
-      let final_clone_path = clone_path
-
-      const rename_result = await renameClone(
-        clone_path,
-        project_name,
-        project_id,
-      )
-      if (rename_result.success) {
-        final_clone_path = rename_result.new_clone_path
-        clone_path = final_clone_path
-      } else {
-        throw new Error(
-          rename_result.message || "Failed to rename clone directory",
-        )
-      }
-
       await saveConfig({
         project_id: project_id,
         project_path: project_path,
         git_url: git_url,
-        clone_path: final_clone_path,
+        clone_path: clone_path,
         branch: branch,
         pat_token: pat_token,
         oauth_token: oauth_token,
         auth_mode: auth_mode,
         sync_mode: "auto",
+        remove_conflicting_id,
       })
 
       posthog.capture("import_project", {
@@ -90,8 +82,35 @@
         on_stale_clone()
         return
       }
+      is_conflict = is_duplicate_project_error(e)
       error = createKilnError(e)
     } finally {
+      saving = false
+    }
+  }
+
+  onMount(async () => {
+    try {
+      const rename_result = await renameClone(
+        clone_path,
+        project_name,
+        project_id,
+      )
+      if (rename_result.success) {
+        clone_path = rename_result.new_clone_path
+      } else {
+        throw new Error(
+          rename_result.message || "Failed to rename clone directory",
+        )
+      }
+
+      await run_save(false)
+    } catch (e) {
+      if (is_stale_clone_error(e) && on_stale_clone) {
+        on_stale_clone()
+        return
+      }
+      error = createKilnError(e)
       saving = false
     }
   })
@@ -105,8 +124,13 @@
 {:else if error}
   <h2 class="text-xl font-medium mb-2">Setup Error</h2>
   <Warning warning_message={error.getMessage()} warning_color="error" />
-  <div class="mt-6">
+  <div class="mt-6 flex flex-row gap-3">
     <button class="btn btn-primary" on:click={on_back}> Back </button>
+    {#if is_conflict}
+      <button class="btn btn-error btn-outline" on:click={() => run_save(true)}>
+        Remove existing and sync
+      </button>
+    {/if}
   </div>
 {:else if done}
   <div class="flex flex-col items-center py-8 gap-4">
