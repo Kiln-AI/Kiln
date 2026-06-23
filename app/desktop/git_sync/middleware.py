@@ -15,6 +15,7 @@ from starlette.types import Receive, Scope, Send
 from app.desktop.git_sync.config import get_git_sync_config, project_path_from_id
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
+    GitAuthError,
     GitSyncError,
     RemoteUnreachableError,
     SyncConflictError,
@@ -46,6 +47,11 @@ class _StreamingUnderWriteLock(Exception):
 
 
 ERROR_MAP: dict[type[GitSyncError], tuple[int, str]] = {
+    GitAuthError: (
+        401,
+        "Git authentication failed or expired. Re-import the project to "
+        "reconnect with fresh credentials.",
+    ),
     RemoteUnreachableError: (
         503,
         "Cannot sync with remote. Check your connection.",
@@ -110,7 +116,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         except GitSyncError as e:
             status, message = self._map_error(e)
             error_response = Response(
-                content=json.dumps({"detail": message}, ensure_ascii=False),
+                content=json.dumps({"message": message}, ensure_ascii=False),
                 status_code=status,
                 media_type="application/json",
             )
@@ -156,7 +162,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             except GitSyncError as e:
                 status, message = self._map_error(e)
                 return Response(
-                    content=json.dumps({"detail": message}, ensure_ascii=False),
+                    content=json.dumps({"message": message}, ensure_ascii=False),
                     status_code=status,
                     media_type="application/json",
                 )
@@ -217,7 +223,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             return Response(
                 content=json.dumps(
                     {
-                        "detail": "Internal error: streaming endpoint missing @no_write_lock decorator."
+                        "message": "Internal error: streaming endpoint missing @no_write_lock decorator."
                     },
                     ensure_ascii=False,
                 ),
@@ -227,7 +233,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         except GitSyncError as e:
             status, message = self._map_error(e)
             return Response(
-                content=json.dumps({"detail": message}, ensure_ascii=False),
+                content=json.dumps({"message": message}, ensure_ascii=False),
                 status_code=status,
                 media_type="application/json",
             )
@@ -268,7 +274,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             return Response(
                 content=json.dumps(
                     {
-                        "detail": "Dev mode: this endpoint wrote files without "
+                        "message": "Dev mode: this endpoint wrote files without "
                         "holding a write lock, or a parallel request is "
                         "mid-write. See server logs for details."
                     },
@@ -318,7 +324,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                 return Response(
                     content=json.dumps(
                         {
-                            "detail": "Dev mode: a non-project-scoped endpoint wrote "
+                            "message": "Dev mode: a non-project-scoped endpoint wrote "
                             "to a synced repo without going through "
                             "GitSyncMiddleware. See server logs for details."
                         },
