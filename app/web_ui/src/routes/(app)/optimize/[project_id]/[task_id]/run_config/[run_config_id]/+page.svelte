@@ -20,11 +20,15 @@
   } from "$lib/stores/run_configs_store"
   import type { Task, TaskRunConfig } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
+  import {
+    getRunConfigUiProperties,
+    getRunConfigInputTransform,
+  } from "$lib/utils/run_config_formatters"
   import AppPage from "../../../../../app_page.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import InputTransformModal from "$lib/ui/run_config_component/input_transform_modal.svelte"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -42,6 +46,7 @@
 
   let edit_dialog: EditDialog | null = null
   let create_run_config_dialog: CreateNewRunConfigDialog | null = null
+  let input_transform_modal: InputTransformModal | null = null
 
   $: if (project_id && task_id) {
     load_task_data(project_id, task_id)
@@ -80,6 +85,10 @@
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
     null
 
+  $: input_transform = run_config
+    ? getRunConfigInputTransform(run_config)
+    : null
+
   $: properties = run_config
     ? getRunConfigUiProperties(
         project_id,
@@ -88,6 +97,7 @@
         $model_info,
         task_prompts,
         $available_tools,
+        () => input_transform_modal?.show(),
       )
     : null
 
@@ -166,3 +176,10 @@
     goto(`/optimize/${project_id}/${task_id}/run_config/${new_config.id}`)
   }}
 />
+
+{#if input_transform}
+  <InputTransformModal
+    bind:this={input_transform_modal}
+    transform={input_transform}
+  />
+{/if}

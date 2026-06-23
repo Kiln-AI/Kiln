@@ -22,6 +22,12 @@ class WriteLockTimeoutError(GitSyncError):
     pass
 
 
+class GitAuthError(GitSyncError):
+    """Git authentication failed or expired (bad/expired token, 401/403)."""
+
+    pass
+
+
 class CorruptRepoError(GitSyncError):
     """Git repo is in unexpected state after recovery attempt."""
 

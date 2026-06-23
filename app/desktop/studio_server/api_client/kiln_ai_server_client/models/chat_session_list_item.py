@@ -6,7 +6,6 @@ from typing import Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
 
 T = TypeVar("T", bound="ChatSessionListItem")
 
@@ -54,7 +53,7 @@ class ChatSessionListItem:
         d = dict(src_dict)
         id = d.pop("id")
 
-        updated_at = isoparse(d.pop("updated_at"))
+        updated_at = datetime.datetime.fromisoformat(d.pop("updated_at"))
 
         title = d.pop("title")
 

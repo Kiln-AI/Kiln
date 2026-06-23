@@ -5,4 +5,5 @@ export type FloatingMenuItem = {
   rel?: string
   onclick?: () => void
   hidden?: boolean
+  header?: boolean
 }

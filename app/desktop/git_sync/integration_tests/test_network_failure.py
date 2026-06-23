@@ -47,7 +47,10 @@ class TestNetworkFailureOnStaleRead:
 
         result = await api_ctx.do_read()
 
-        assert result.status_code == 503
+        if network_failure.name == "auth_failure":
+            assert result.status_code == 401
+        else:
+            assert result.status_code == 503
         assert result.error is not None
 
     @pytest.mark.parametrize(
@@ -220,7 +223,7 @@ class TestNetworkFailureAPIStatusCodes:
     async def test_write_fetch_failure_api_status(
         self, api_ctx, git_repos, network_failure, monkeypatch
     ):
-        """Fetch failure on write returns 503."""
+        """Fetch failure on write returns error status (401 for auth, 503 otherwise)."""
         local_path, _ = git_repos
 
         monkeypatch.setattr(
@@ -234,7 +237,10 @@ class TestNetworkFailureAPIStatusCodes:
             expect_error=True,
         )
 
-        assert result.status_code == 503
+        if network_failure.name == "auth_failure":
+            assert result.status_code == 401
+        else:
+            assert result.status_code == 503
 
     @pytest.mark.parametrize(
         "network_failure",
@@ -245,7 +251,7 @@ class TestNetworkFailureAPIStatusCodes:
     async def test_read_failure_api_status(
         self, api_ctx, git_repos, network_failure, monkeypatch
     ):
-        """Read failure when stale returns appropriate error status."""
+        """Read failure when stale returns error status (401 for auth, 503 otherwise)."""
         local_path, _ = git_repos
 
         monkeypatch.setattr(
@@ -256,4 +262,7 @@ class TestNetworkFailureAPIStatusCodes:
 
         result = await api_ctx.do_read()
 
-        assert result.status_code == 503
+        if network_failure.name == "auth_failure":
+            assert result.status_code == 401
+        else:
+            assert result.status_code == 503

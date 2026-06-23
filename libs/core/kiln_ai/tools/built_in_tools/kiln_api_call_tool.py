@@ -7,7 +7,20 @@ import httpx
 import jq
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
+from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
+
+# httpx read timeout is per-read (idle), not a wall-clock cap: it resets every
+# time a chunk arrives. So this bounds the gap *between* reads, not total
+# request duration. For SSE that's the gap between events; for regular
+# responses it's the gap between body chunks. A multi-hour eval that streams
+# progress regularly never trips it — only this long of total silence does.
+# Kiln's SSE endpoints are chatty (and emit keepalive pings), so a low bound is
+# safe for them while still letting a genuinely stalled request fail reasonably
+# fast.
+READ_TIMEOUT_SECONDS = 900.0
+# Short connection/setup timeout — server should accept quickly even when the
+# body will then stream for a long time.
+CONNECT_TIMEOUT_SECONDS = 30.0
 
 
 class KilnApiCallTool(KilnTool):
@@ -26,7 +39,9 @@ class KilnApiCallTool(KilnTool):
     def _build_description() -> str:
         return """Call the Kiln REST API. Makes an HTTP request and returns JSON with status_code and body.
 
-Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling."""
+Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling.
+
+For SSE endpoints (text/event-stream), the tool consumes the stream until it closes (or a `data: complete` sentinel) and returns body = {"event_count": N, "message": str}. The stream ending does not mean the underlying job succeeded — check the flow's status afterward. Individual event payloads are not returned."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -40,7 +55,17 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path. Correct paths are in the endpoint documentation.",
+                    "description": "API path with no query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
+                },
+                "query_params": {
+                    "type": "object",
+                    "description": "Query string params. Values are strings or arrays of strings (arrays become repeated keys, e.g. ?ids=a&ids=b). Required and optional params are listed in the endpoint doc.",
+                    "additionalProperties": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                    },
                 },
                 "body": {
                     "description": "Request body for POST/PATCH. JSON string, object, or array — auto-serialized. Schema is in the endpoint doc.",
@@ -55,11 +80,13 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
 
     async def run(  # type: ignore[override]
         self,
+        context: ToolCallContext | None = None,
+        *,
         method: str,
         url_path: str,
         body: str | dict | list | None = None,
+        query_params: dict[str, str | list[str]] | None = None,
         jq_filter: str | None = None,
-        context=None,
     ) -> ToolCallResult:
         body_str: str | None = None
         if isinstance(body, (dict, list)):
@@ -78,34 +105,66 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
         if not url_path.startswith("/"):
             raise ValueError(f"url_path must start with '/', got: {url_path}")
 
+        if "?" in url_path or "#" in url_path:
+            raise ValueError(
+                "url_path must not contain a query string or fragment ('?' or '#'). "
+                "Pass query args via query_params."
+            )
+
         if body_str is not None and method in {"GET", "DELETE"}:
             raise ValueError(f"body parameter not allowed with {method} method")
 
         # 2. Build full URL
         full_url = f"{self._api_base_url}{url_path}"
 
-        # 3. Make HTTP request
+        # 3. Make HTTP request — use stream() so we can detect SSE responses
+        # from the content-type header and drain the event stream. The same
+        # timeout applies to SSE and non-SSE responses: read is per-read (idle),
+        # so it bounds silence on the channel rather than total duration.
         headers = {"Content-Type": "application/json"}
-        # GET/DELETE: 30s, POST/PATCH: 5 minutes (may upload large data)
-        timeout_seconds = 30.0 if method in {"GET", "DELETE"} else 300.0
-        timeout = httpx.Timeout(timeout_seconds)
-
         # Per-request client: tool instances are short-lived (created per call
         # via tool_from_id), so a shared client wouldn't persist across calls anyway.
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            request_funcs = {
-                "GET": lambda: client.get(full_url, headers=headers),
-                "POST": lambda: client.post(
-                    full_url, headers=headers, content=body_str
-                ),
-                "PATCH": lambda: client.patch(
-                    full_url, headers=headers, content=body_str
-                ),
-                "DELETE": lambda: client.delete(full_url, headers=headers),
-            }
+        timeout = httpx.Timeout(
+            connect=CONNECT_TIMEOUT_SECONDS,
+            read=READ_TIMEOUT_SECONDS,
+            write=CONNECT_TIMEOUT_SECONDS,
+            pool=CONNECT_TIMEOUT_SECONDS,
+        )
+
+        stream_kwargs: dict[str, Any] = {
+            "headers": headers,
+            "params": query_params,
+            "timeout": timeout,
+        }
+        if method in {"POST", "PATCH"}:
+            stream_kwargs["content"] = body_str
+
+        async with httpx.AsyncClient() as client:
             try:
-                response = await request_funcs[method]()
-            except httpx.TimeoutException:
+                async with client.stream(method, full_url, **stream_kwargs) as response:
+                    status_code = response.status_code
+                    content_type = response.headers.get("content-type", "").lower()
+                    is_sse = content_type.startswith("text/event-stream")
+
+                    if is_sse:
+                        event_count = await _consume_sse(response)
+                        response_text = json.dumps(
+                            {
+                                "event_count": event_count,
+                                "message": "Stream finished. This does not guarantee the job completed successfully—check the status of the flow you triggered. For Eval or RAG runs, call this again if errors occur; transient failures may be retried. If errors keep happening, we advise running the flow through the web UI instead.",
+                            },
+                            ensure_ascii=False,
+                        )
+                    else:
+                        raw = await response.aread()
+                        response_text = raw.decode("utf-8", errors="replace")
+            except httpx.TimeoutException as e:
+                # Read timeouts use the read bound; connect/write/pool use the
+                # connect one. Report whichever actually fired.
+                if isinstance(e, httpx.ReadTimeout):
+                    timeout_seconds = READ_TIMEOUT_SECONDS
+                else:
+                    timeout_seconds = CONNECT_TIMEOUT_SECONDS
                 raise TimeoutError(
                     f"Request to {url_path} timed out after {timeout_seconds}s"
                 )
@@ -113,9 +172,6 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
                 raise ConnectionError(f"Could not connect to server for {url_path}")
 
         # 4. Build response
-        status_code = response.status_code
-        response_text = response.text
-
         if jq_filter and 200 <= status_code < 300:
             # Apply jq filter on successful responses
             try:
@@ -141,3 +197,39 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
 
         result = {"status_code": status_code, "body": response_body}
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
+
+
+async def _consume_sse(response: httpx.Response) -> int:
+    """Drain an SSE response, returning the number of events seen.
+
+    We count events but don't keep their payloads — a long stream (e.g. an eval
+    run) can emit thousands, and the caller only needs to know it finished.
+    A ``data: complete`` sentinel ends the stream and is not counted as an event.
+    Draining blocks until the stream closes, so the tool call returns only once
+    the underlying operation is done.
+    """
+    event_count = 0
+    data_lines: list[str] = []
+
+    async for line in response.aiter_lines():
+        line = line.rstrip("\r")
+        if line == "":
+            if data_lines:
+                payload = "\n".join(data_lines)
+                data_lines = []
+                if payload == "complete":
+                    break
+                event_count += 1
+            continue
+        if line.startswith(":"):
+            # SSE comment — ignore
+            continue
+        if line.startswith("data:"):
+            # SSE spec: strip exactly one leading space after "data:".
+            data_lines.append(line[5:].removeprefix(" "))
+
+    # Flush a trailing event if the stream closed without a final blank line.
+    if data_lines and "\n".join(data_lines) != "complete":
+        event_count += 1
+
+    return event_count

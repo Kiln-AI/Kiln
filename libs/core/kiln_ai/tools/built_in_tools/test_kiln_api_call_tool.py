@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import json
 
 import httpx
@@ -5,12 +7,59 @@ import pytest
 import respx
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.built_in_tools.kiln_api_call_tool import (
+    CONNECT_TIMEOUT_SECONDS,
+    READ_TIMEOUT_SECONDS,
+    KilnApiCallTool,
+)
 
 
 @pytest.fixture
 def tool():
     return KilnApiCallTool(api_base_url="http://test-server:8757")
+
+
+class TestRunCallingConvention:
+    """run() must work via both tool-execution paths: the adapter's
+    ``tool.run(context, **args)`` (LiteLlmAdapter.process_tool_calls) and the
+    studio_server executor's ``tool.run(**args)`` (no context)."""
+
+    @pytest.mark.asyncio
+    async def test_run_with_positional_context(self, tool):
+        # Mirrors LiteLlmAdapter.process_tool_calls: context passed positionally,
+        # call args expanded as keywords.
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            args = {"method": "GET", "url_path": "/test"}
+            result = await tool.run(ToolCallContext(allow_saving=False), **args)
+            assert json.loads(result.output)["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_run_without_context(self, tool):
+        # Mirrors studio_server.chat.stream_session.execute_tool: tool.run(**args).
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            result = await tool.run(method="GET", url_path="/test")
+            assert json.loads(result.output)["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_run_with_positional_context_and_jq(self, tool):
+        # jq_filter must still bind as a keyword-only arg when context is passed
+        # positionally — i.e. the adapter convention with the full set of args.
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"name": "v", "extra": 1})
+            )
+            args = {"method": "GET", "url_path": "/test", "jq_filter": ".name"}
+            result = await tool.run(ToolCallContext(allow_saving=False), **args)
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"] == "v"
 
 
 class TestKilnApiCallToolInit:
@@ -54,6 +103,77 @@ class TestInputValidation:
     async def test_body_with_delete(self, tool):
         with pytest.raises(ValueError, match="body parameter not allowed with DELETE"):
             await tool.run(method="DELETE", url_path="/test", body="data")
+
+    @pytest.mark.asyncio
+    async def test_url_path_with_query_string_rejected(self, tool):
+        with pytest.raises(ValueError, match="must not contain a query string"):
+            await tool.run(method="GET", url_path="/test?foo=bar")
+
+    @pytest.mark.asyncio
+    async def test_url_path_with_fragment_rejected(self, tool):
+        with pytest.raises(ValueError, match="query string or fragment"):
+            await tool.run(method="GET", url_path="/test#section")
+
+
+class TestQueryParams:
+    @pytest.mark.asyncio
+    async def test_get_with_string_params(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(
+                method="GET",
+                url_path="/api/items",
+                query_params={"tag": "v1"},
+            )
+            assert route.calls.last.request.url.query == b"tag=v1"
+
+    @pytest.mark.asyncio
+    async def test_get_with_list_params_repeated_key(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/eval/run_comparison").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(
+                method="GET",
+                url_path="/api/eval/run_comparison",
+                query_params={"run_config_ids": ["a", "b"], "all_run_configs": "false"},
+            )
+            query = route.calls.last.request.url.query.decode()
+            assert "run_config_ids=a" in query
+            assert "run_config_ids=b" in query
+            assert "all_run_configs=false" in query
+
+    @pytest.mark.asyncio
+    async def test_post_with_query_params_and_body(self, tool):
+        with respx.mock:
+            route = respx.post("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(201, json={"id": "new"})
+            )
+            await tool.run(
+                method="POST",
+                url_path="/api/items",
+                body={"name": "x"},
+                query_params={"dry_run": "true"},
+            )
+            assert route.calls.last.request.url.query == b"dry_run=true"
+            assert (
+                route.calls.last.request.content == json.dumps({"name": "x"}).encode()
+            )
+
+    @pytest.mark.asyncio
+    async def test_empty_query_params_no_query_string(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(
+                method="GET",
+                url_path="/api/items",
+                query_params=None,
+            )
+            assert route.calls.last.request.url.query == b""
 
 
 class TestHappyPath:
@@ -249,24 +369,39 @@ class TestHttpErrors:
                 await tool.run(method="GET", url_path="/test")
 
     @pytest.mark.asyncio
-    async def test_timeout(self, tool):
+    async def test_read_timeout_reports_read_bound(self, tool):
         with respx.mock:
             respx.get("http://test-server:8757/test").mock(
-                side_effect=httpx.TimeoutException("timeout")
+                side_effect=httpx.ReadTimeout("timeout")
             )
             with pytest.raises(
-                TimeoutError, match=r"Request to /test timed out after 30\.0s"
+                TimeoutError,
+                match=rf"Request to /test timed out after {READ_TIMEOUT_SECONDS}s",
             ):
                 await tool.run(method="GET", url_path="/test")
 
     @pytest.mark.asyncio
-    async def test_timeout_uses_longer_timeout_for_post(self, tool):
+    async def test_read_timeout_on_post(self, tool):
         with respx.mock:
             respx.post("http://test-server:8757/test").mock(
-                side_effect=httpx.TimeoutException("timeout")
+                side_effect=httpx.ReadTimeout("timeout")
             )
-            with pytest.raises(TimeoutError, match=r"timed out after 300\.0s"):
+            with pytest.raises(
+                TimeoutError, match=rf"timed out after {READ_TIMEOUT_SECONDS}s"
+            ):
                 await tool.run(method="POST", url_path="/test", body="{}")
+
+    @pytest.mark.asyncio
+    async def test_connect_timeout_reports_connect_bound(self, tool):
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                side_effect=httpx.ConnectTimeout("timeout")
+            )
+            with pytest.raises(
+                TimeoutError,
+                match=rf"Request to /test timed out after {CONNECT_TIMEOUT_SECONDS}s",
+            ):
+                await tool.run(method="GET", url_path="/test")
 
 
 class TestResponseConstruction:
@@ -337,3 +472,312 @@ class TestResponseConstruction:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 404
             assert parsed["body"] == err
+
+
+class TestSSEResponse:
+    """SSE responses are drained (events counted, not retained); body returns
+    {event_count, message}."""
+
+    @pytest.mark.asyncio
+    async def test_counts_events_and_excludes_complete_sentinel(self, tool):
+        body = (
+            'data: {"progress": 1, "total": 3}\n\n'
+            'data: {"progress": 2, "total": 3}\n\n'
+            'data: {"progress": 3, "total": 3}\n\n'
+            "data: complete\n\n"
+        )
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"]["event_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_incomplete_stream_counts_events(self, tool):
+        body = 'data: {"progress": 1, "total": 3}\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_sse_with_jq_filter(self, tool):
+        body = 'data: {"progress": 1}\n\ndata: {"progress": 2}\n\ndata: complete\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(
+                method="GET",
+                url_path="/api/eval/run",
+                jq_filter=".event_count",
+            )
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"] == 2
+
+    @pytest.mark.asyncio
+    async def test_non_json_data_lines_counted_not_parsed(self, tool):
+        # Non-JSON payloads are still counted as events; we don't parse or keep
+        # them.
+        body = "data: hello\n\ndata: world\n\n"
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_ignores_comments_and_non_data_fields(self, tool):
+        body = (
+            ": keepalive comment\n\n"
+            "event: ping\n\n"
+            'data: {"ok": true}\n\n'
+            "data: complete\n\n"
+        )
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_trailing_complete_sentinel_without_blank_line(self, tool):
+        # Stream ends on "data: complete" with no final blank line, exercising
+        # the post-loop flush branch rather than the in-loop break.
+        body = 'data: {"progress": 1}\n\ndata: complete'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_trailing_event_flushed_without_blank_line(self, tool):
+        # Last event has no terminating blank line; it must still be counted.
+        body = 'data: {"progress": 1}\n\ndata: {"progress": 2}'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_multiline_data_counted_as_one_event(self, tool):
+        # Consecutive data: lines form a single event (joined per the SSE spec),
+        # so the block below is two events, not four lines.
+        body = 'data: {"a": 1,\ndata: "b": 2}\n\ndata: line1\ndata: line2\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_stream(self, tool):
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content="",
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_crlf_line_endings(self, tool):
+        body = 'data: {"progress": 1}\r\n\r\ndata: complete\r\n\r\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "content_type",
+        [
+            "text/event-stream",
+            "text/event-stream; charset=utf-8",
+            "TEXT/EVENT-STREAM",
+        ],
+    )
+    async def test_content_type_variants_detected_as_sse(self, tool, content_type):
+        body = 'data: {"ok": true}\n\ndata: complete\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/stream").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": content_type},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/stream")
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_post_returns_sse(self, tool):
+        body = 'data: {"progress": 1}\n\ndata: complete\n\n'
+        with respx.mock:
+            respx.post("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(
+                method="POST", url_path="/api/eval/run", body={"id": "x"}
+            )
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_sse_with_query_params(self, tool):
+        body = 'data: {"progress": 1}\n\ndata: complete\n\n'
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(
+                method="GET",
+                url_path="/api/eval/run",
+                query_params={"run_config_ids": ["a", "b"]},
+            )
+            query = route.calls.last.request.url.query.decode()
+            assert "run_config_ids=a" in query
+            assert "run_config_ids=b" in query
+            parsed = json.loads(result.output)
+            assert parsed["body"]["event_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_non_2xx_sse_response(self, tool):
+        # An error status with an event-stream content-type is still drained as
+        # SSE (detection is content-type based); jq is skipped because the
+        # status is non-2xx.
+        body = 'data: {"type": "error", "message": "boom"}\n\n'
+        with respx.mock:
+            respx.get("http://test-server:8757/api/eval/run").mock(
+                return_value=httpx.Response(
+                    500,
+                    headers={"content-type": "text/event-stream"},
+                    content=body,
+                )
+            )
+            result = await tool.run(method="GET", url_path="/api/eval/run")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 500
+            assert parsed["body"]["event_count"] == 1
+
+
+@contextlib.asynccontextmanager
+async def _sse_test_server(handler):
+    """Run *handler* as a localhost server on an ephemeral port; yield base URL.
+
+    Used to exercise real read-timeout behavior — respx returns mocked
+    responses without going through httpx's timeout machinery, so it can't
+    simulate inter-event delays.
+    """
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    async with server:
+        yield f"http://127.0.0.1:{port}"
+
+
+class TestSSEReadTimeout:
+    """The read timeout is per-read (idle), not a wall-clock cap on the stream."""
+
+    @pytest.mark.asyncio
+    async def test_slow_steady_stream_does_not_time_out(self, monkeypatch):
+        # Read timeout 0.5s; emit 8 events 0.1s apart so the total (~0.8s)
+        # exceeds the timeout while every gap stays well under it. If the bound
+        # were a total cap this would raise TimeoutError.
+        monkeypatch.setattr(
+            "kiln_ai.tools.built_in_tools.kiln_api_call_tool.READ_TIMEOUT_SECONDS",
+            0.5,
+        )
+
+        async def handler(reader, writer):
+            await reader.read(65536)
+            writer.write(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: text/event-stream\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            await writer.drain()
+            for i in range(8):
+                await asyncio.sleep(0.1)
+                writer.write(f'data: {{"progress": {i}}}\n\n'.encode())
+                await writer.drain()
+            writer.write(b"data: complete\n\n")
+            await writer.drain()
+            writer.close()
+
+        async with _sse_test_server(handler) as base_url:
+            tool = KilnApiCallTool(api_base_url=base_url)
+            result = await tool.run(method="GET", url_path="/stream")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 200
+            assert parsed["body"]["event_count"] == 8

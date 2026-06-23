@@ -10,11 +10,23 @@ from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import mcp_server_and_tool_name_from_id
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
+from kiln_ai.utils.jinja_engine import compile_template_or_raise
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
+
+
+class ValidateInputTransformTemplateRequest(BaseModel):
+    template: str = Field(description="The Jinja2 template source to validate.")
+
+
+class ValidateInputTransformTemplateResponse(BaseModel):
+    valid: bool = Field(description="Whether the template is valid Jinja2.")
+    error: str | None = Field(
+        default=None, description="The compile error message, if invalid."
+    )
 
 
 class CreateTaskFromToolRequest(BaseModel):
@@ -191,6 +203,20 @@ def _create_mcp_run_config_properties(
 
 
 def connect_run_config_api(app: FastAPI):
+    @app.post(
+        "/api/validate_input_transform_template",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def validate_input_transform_template(
+        request: ValidateInputTransformTemplateRequest,
+    ) -> ValidateInputTransformTemplateResponse:
+        try:
+            compile_template_or_raise(request.template)
+            return ValidateInputTransformTemplateResponse(valid=True, error=None)
+        except Exception as e:
+            return ValidateInputTransformTemplateResponse(valid=False, error=str(e))
+
     @app.get(
         "/api/projects/{project_id}/tasks_compatible_with_tool",
         tags=["Tasks"],

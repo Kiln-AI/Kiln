@@ -83,6 +83,7 @@ from .mcp_run_config_properties import McpRunConfigProperties
 from .mcp_tool_reference import MCPToolReference
 from .mcp_tool_reference_input_schema_type_0 import MCPToolReferenceInputSchemaType0
 from .mcp_tool_reference_output_schema_type_0 import MCPToolReferenceOutputSchemaType0
+from .message_usage import MessageUsage
 from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
@@ -194,6 +195,7 @@ __all__ = (
     "MCPToolReference",
     "MCPToolReferenceInputSchemaType0",
     "MCPToolReferenceOutputSchemaType0",
+    "MessageUsage",
     "ModelProviderName",
     "NewProposedSpecEditApi",
     "OutputFileInfo",
