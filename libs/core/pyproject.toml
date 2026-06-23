@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "1.0.0"
+version = "1.0.3"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -24,12 +24,13 @@ dependencies = [
     "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
+    "jinja2>=3.1.0",
     "jq>=1.8.0",
     "jsonschema>=4.23.0",
     "lancedb>=0.24.2",
     "openai>=1.53.0",
     "pdoc>=15.0.0",
-    "pydantic>=2.9.2",
+    "pydantic>=2.13.0",
     "pypdf>=6.0.0",
     "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
@@ -44,7 +45,7 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
     "typer>=0.9.0",
-    "litellm>=1.81.16,<1.82.7",
+    "litellm>=1.87.0,<1.88",
 ]
 
 [project.scripts]
@@ -67,6 +68,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
 requires-python = ">=3.10"
+
+[tool.uv]
+exclude-newer = "7 days"
 
 [tool.uv.sources]
 together = { git = "https://github.com/scosman/together-python" }

@@ -11,7 +11,12 @@ from litellm.types.utils import (
     ModelResponse,
 )
 
-from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
+from kiln_ai.adapters.ml_model_list import (
+    ModelName,
+    ModelProviderName,
+    StructuredOutputMode,
+    built_in_models_from_provider,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
@@ -549,6 +554,62 @@ def test_build_extra_body_thinking_level_openrouter_anthropic(config, mock_task)
     assert "reasoning_effort" not in extra_body
 
 
+def test_build_extra_body_thinking_level_anthropic_summarized_thinking(
+    config, mock_task
+):
+    """Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text), so
+    anthropic_summarized_thinking adds an adaptive thinking object requesting the summary
+    alongside reasoning_effort (which litellm maps to output_config.effort)."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.model_id = "claude-opus-4-8"
+    mock_provider.available_thinking_levels = {"High": "high"}
+    mock_provider.anthropic_summarized_thinking = True
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "high"
+    assert extra_body.get("thinking") == {"type": "adaptive", "display": "summarized"}
+
+
+def test_build_extra_body_thinking_level_anthropic_none(config, mock_task):
+    """Anthropic's native API has no reasoning_effort="none" (litellm crashes on it),
+    so a "none" thinking level must omit reasoning_effort entirely to disable thinking."""
+    config.run_config_properties.thinking_level = "none"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.model_id = "claude-opus-4-8"
+    mock_provider.available_thinking_levels = {"Off/None": "none", "High": "high"}
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
+
+
 def test_build_extra_body_thinking_level_run_config_override(config, mock_task):
     """Test that the thinking level in the run config overrides the provider's default"""
     config.run_config_properties.thinking_level = "low"
@@ -602,6 +663,26 @@ def test_build_extra_body_thinking_level_explicit_none(config, mock_task):
     extra_body = adapter.build_extra_body(mock_provider)
 
     assert "reasoning_effort" not in extra_body
+
+
+def test_build_extra_body_thinking_level_skipped_when_provider_has_no_levels(
+    config, mock_task
+):
+    """Stale run configs may reference a thinking_level for a provider that no longer
+    supports it (e.g. Gemma 4 on gemini_api). The adapter should not send reasoning_effort."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = built_in_models_from_provider(
+        ModelProviderName.gemini_api, ModelName.gemma_4_31b
+    )
+    assert provider is not None
+    assert provider.available_thinking_levels is None
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
 
 
 def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
@@ -1755,13 +1836,13 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
     adapter.build_chat_formatter = capturing_build
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format
     ):
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": "How can I help?"})
+        # Match the real contract: mutate the caller's list in place.
+        messages.append({"role": "assistant", "content": "How can I help?"})
         return ModelTurnResult(
             assistant_message="How can I help?",
-            all_messages=extended,
+            all_messages=messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
@@ -1769,7 +1850,7 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
 
     adapter._run_model_turn = mock_run_model_turn
 
-    run_output, _ = await adapter._run("follow-up", prior_trace=prior_trace)
+    run_output, _ = await adapter._run("follow-up", [], prior_trace=prior_trace)
 
     assert len(build_chat_formatter_calls) == 1
     assert build_chat_formatter_calls[0][0] == "follow-up"
@@ -1848,14 +1929,14 @@ async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
     captured_messages = []
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format
     ):
-        captured_messages.extend(prior_messages)
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": '{"test": "response"}'})
+        captured_messages.extend(messages)
+        # Match the real contract: mutate the caller's list in place.
+        messages.append({"role": "assistant", "content": '{"test": "response"}'})
         return ModelTurnResult(
             assistant_message='{"test": "response"}',
-            all_messages=extended,
+            all_messages=messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
@@ -1863,7 +1944,7 @@ async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
 
     adapter._run_model_turn = mock_run_model_turn
 
-    run_output, _ = await adapter._run("what else?", prior_trace=prior_trace)
+    run_output, _ = await adapter._run("what else?", [], prior_trace=prior_trace)
 
     assert run_output.trace is not None
     # 7 prior trace messages + 1 new user + 1 new assistant = 9
@@ -1932,13 +2013,13 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
     call_count = 0
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format
     ):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            extended = list(prior_messages)
-            extended.append(
+            # Mutate the caller's list in place per the _run_model_turn contract.
+            messages.append(
                 {
                     "role": "assistant",
                     "content": None,
@@ -1956,7 +2037,7 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
             )
             return ModelTurnResult(
                 assistant_message="",
-                all_messages=extended,
+                all_messages=messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
@@ -1964,11 +2045,10 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
             )
         else:
             json_response = '{"test": "structured_response"}'
-            extended = list(prior_messages)
-            extended.append({"role": "assistant", "content": json_response})
+            messages.append({"role": "assistant", "content": json_response})
             return ModelTurnResult(
                 assistant_message=json_response,
-                all_messages=extended,
+                all_messages=messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
@@ -2267,8 +2347,7 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            extended = list(prior_messages)
-            extended.append(
+            prior_messages.append(
                 {
                     "role": "assistant",
                     "content": None,
@@ -2286,18 +2365,17 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
             )
             return ModelTurnResult(
                 assistant_message="",
-                all_messages=extended,
+                all_messages=prior_messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
                 interrupted_by_tool_calls=[tool_call],
             )
         json_response = '{"test": "structured_response"}'
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": json_response})
+        prior_messages.append({"role": "assistant", "content": json_response})
         return ModelTurnResult(
             assistant_message=json_response,
-            all_messages=extended,
+            all_messages=prior_messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
@@ -3067,7 +3145,7 @@ class TestUsageTracking:
             ),
             patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
         ):
-            run_output, total_usage = await adapter._run("Hi")
+            run_output, total_usage = await adapter._run("Hi", [])
 
         assert run_output.trace is not None
         assistant_messages = [
@@ -3142,7 +3220,7 @@ class TestUsageTracking:
 
         adapter._run_model_turn = mock_run_model_turn
 
-        run_output, _ = await adapter._run("follow-up", prior_trace=prior_trace)
+        run_output, _ = await adapter._run("follow-up", [], prior_trace=prior_trace)
 
         assert run_output.trace is not None
         # The seeded assistant message keeps its original usage. Equality (not

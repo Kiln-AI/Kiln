@@ -54,6 +54,10 @@ export type McpRunConfigProperties =
 export type RunConfigProperties =
   | KilnAgentRunConfigProperties
   | McpRunConfigProperties
+export type JinjaInputTransform = components["schemas"]["JinjaInputTransform"]
+export type InputTransform = NonNullable<
+  KilnAgentRunConfigProperties["input_transform"]
+>
 export type EvalResultSummary = components["schemas"]["EvalResultSummary"]
 export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
@@ -126,11 +130,12 @@ export type AvailableProviderInfo =
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]
-  | components["schemas"]["ChatCompletionUserMessageParam-Input"]
-  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
+  | components["schemas"]["ChatCompletionUserMessageParam"]
+  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"]
   | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
+export type ErrorWithTrace = components["schemas"]["ErrorWithTrace"]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
@@ -145,9 +150,9 @@ export type FeedbackSource = components["schemas"]["FeedbackSource"]
 
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
+  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
 export type SyntheticDataGenerationSessionConfigApi =
-  components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"]
+  components["schemas"]["SyntheticDataGenerationSessionConfigApi"]
 export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
 export type ReviewedExample = components["schemas"]["ReviewedExample"]
 export type SampleApi = components["schemas"]["SampleApi"]

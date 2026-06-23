@@ -82,7 +82,7 @@ def build_training_chat(
         task_run.input,
         thinking_instructions,
     )
-    # First turn already has it's content (user message)
+    # First turn already has its content (user message)
     chat_formatter.next_turn(None)
 
     # Extract the tool calls from the Traces and insert into the internal messages list
@@ -381,7 +381,7 @@ class DatasetFormatter:
         # Generate formatted output with UTF-8 encoding
         with open(output_path, "w", encoding="utf-8") as f:
             for run_id in self.dataset.split_contents[split_name]:
-                task_run = runs_by_id[run_id]
+                task_run = runs_by_id.get(run_id)
                 if task_run is None:
                     raise ValueError(
                         f"Task run {run_id} not found. This is required by this dataset."

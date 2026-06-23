@@ -132,9 +132,7 @@
   }
 
   function job_link(): string | undefined {
-    if (finetune?.finetune.provider === "openai") {
-      return `https://platform.openai.com/finetune/${finetune.finetune.provider_id}`
-    } else if (finetune?.finetune.provider === "together_ai") {
+    if (finetune?.finetune.provider === "together_ai") {
       return `https://api.together.ai/jobs/${finetune.finetune.provider_id}`
     } else if (finetune?.finetune.provider === "vertex") {
       const parts = finetune.finetune.provider_id?.split("/") || []

@@ -243,6 +243,73 @@ async def test_run_task_structured_input(client, task_run_setup):
     assert res["id"] is not None
 
 
+@pytest.mark.asyncio
+async def test_run_task_forwards_task_run_config_id(client, task_run_setup):
+    task = task_run_setup["task"]
+    run_task_request = {
+        **task_run_setup["run_task_request"],
+        "task_run_config_id": "rc_abc123",
+    }
+
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["task_run_config_id"] = base_adapter_config.task_run_config_id
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = AsyncMock(return_value=task_run_setup["task_run"])
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    assert captured["task_run_config_id"] == "rc_abc123"
+
+
+@pytest.mark.asyncio
+async def test_run_task_task_run_config_id_defaults_to_none(client, task_run_setup):
+    task = task_run_setup["task"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["task_run_config_id"] = base_adapter_config.task_run_config_id
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = AsyncMock(return_value=task_run_setup["task_run"])
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    assert captured["task_run_config_id"] is None
+
+
 def test_deep_update_with_empty_source():
     source = {}
     update = {"a": 1, "b": {"c": 2}}
@@ -902,6 +969,60 @@ async def test_get_runs_summaries_success(client, task_run_setup):
 
 
 @pytest.mark.asyncio
+async def test_get_runs_summaries_returns_only_leaf_runs(client, task_run_setup):
+    """The endpoint must hide intermediate (non-leaf) runs in multiturn chains.
+
+    Setup: starting from the fixture's lone task_run (no parent), build a
+    linear chain task_run -> mid -> leaf and a sibling branch task_run -> sib.
+    Expected: only `leaf` and `sib` come back; task_run and mid are filtered
+    out because they are parents of other runs.
+    """
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    root = task_run_setup["task_run"]
+
+    def _make_child(parent_run: TaskRun) -> TaskRun:
+        run = TaskRun(
+            parent=task,
+            parent_task_run_id=parent_run.id,
+            input="continuation",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "Test User"}
+            ),
+            output=TaskOutput(
+                output="continuation output",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "gpt_4o",
+                        "model_provider": "ollama",
+                        "adapter_name": "kiln_langchain_adapter",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                ),
+            ),
+        )
+        run.save_to_file()
+        return run
+
+    mid = _make_child(root)
+    leaf = _make_child(mid)
+    sib = _make_child(root)
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
+        )
+
+    assert response.status_code == 200
+    returned_ids = {entry["id"] for entry in response.json()}
+    assert returned_ids == {leaf.id, sib.id}
+    assert root.id not in returned_ids, "root must be filtered (has children)"
+    assert mid.id not in returned_ids, "mid must be filtered (has children)"
+
+
+@pytest.mark.asyncio
 async def test_get_runs_summaries_task_not_found(client):
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.side_effect = HTTPException(
@@ -913,6 +1034,92 @@ async def test_get_runs_summaries_task_not_found(client):
 
     assert response.status_code == 404
     assert response.json()["message"] == "Task not found"
+
+
+def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:
+    run = TaskRun(
+        parent=task,
+        parent_task_run_id=parent_run.id,
+        input=overrides.get("input", "continuation"),
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output=overrides.get("output", "continuation output"),
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                    "prompt_id": "simple_prompt_builder",
+                },
+            ),
+        ),
+        tags=overrides.get("tags", []),
+    )
+    run.save_to_file()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_get_runs_returns_only_leaf_runs(client, task_run_setup):
+    """GET /runs must hide intermediate runs for multiturn chains.
+
+    Mirrors test_get_runs_summaries_returns_only_leaf_runs against the
+    full-TaskRun endpoint (not the summaries view).
+    """
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    root = task_run_setup["task_run"]
+
+    mid = _make_child_run(task, root)
+    leaf = _make_child_run(task, mid)
+    sib = _make_child_run(task, root)
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
+
+    assert response.status_code == 200
+    returned_ids = {entry["id"] for entry in response.json()}
+    assert returned_ids == {leaf.id, sib.id}
+    assert root.id not in returned_ids, "root must be filtered (has children)"
+    assert mid.id not in returned_ids, "mid must be filtered (has children)"
+
+
+@pytest.mark.asyncio
+async def test_get_tags_counts_only_leaf_runs(client, task_run_setup):
+    """GET /tags must not count tags attached to intermediate (non-leaf) runs.
+
+    Setup: root has tag "intermediate" (will be hidden); mid has tag
+    "intermediate" (also hidden); leaf has tags "shared" + "leaf_only"; sib
+    has tag "shared".
+    Expected: only "shared" (count 2) and "leaf_only" (count 1) are returned;
+    "intermediate" is absent.
+    """
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    root = task_run_setup["task_run"]
+
+    # Tag the root in-place and re-save so the on-disk file reflects the tag.
+    root.tags = ["intermediate"]
+    root.save_to_file()
+
+    mid = _make_child_run(task, root, tags=["intermediate"])
+    _leaf = _make_child_run(task, mid, tags=["shared", "leaf_only"])
+    _sib = _make_child_run(task, root, tags=["shared"])
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")
+
+    assert response.status_code == 200
+    counts = response.json()
+    assert counts == {"shared": 2, "leaf_only": 1}
+    assert "intermediate" not in counts, (
+        "tags on intermediate (filtered) runs must not appear in the counts"
+    )
 
 
 @pytest.mark.asyncio

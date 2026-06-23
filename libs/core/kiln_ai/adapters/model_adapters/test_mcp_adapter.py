@@ -260,6 +260,91 @@ async def test_mcp_adapter_emits_single_turn_trace(
     ]
 
 
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_runtime_failure_wrapped_in_kiln_run_error(
+    mock_session_manager,
+    _mock_run_id,
+    project_with_local_mcp_server,
+    local_mcp_tool_id,
+):
+    """Runtime errors from the MCP tool invocation must surface as
+    KilnRunError with partial_trace=None so the API layer responds
+    consistently for all adapter types."""
+    from kiln_ai.adapters.errors import KilnRunError
+
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Failing MCP Task",
+        parent=project,
+        instruction="Run tests",
+    )
+
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    # Simulate the MCP tool throwing at invocation time.
+    mock_session = AsyncMock()
+    mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+        return_value=mock_session
+    )
+    mock_session.call_tool.side_effect = RuntimeError("mcp tool blew up")
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+
+    with pytest.raises(KilnRunError) as ei:
+        await adapter.invoke_returning_run_output("input")
+
+    assert isinstance(ei.value.original, RuntimeError)
+    assert ei.value.partial_trace is None
+    assert str(ei.value) == "mcp tool blew up"
+    assert ei.value.error_type == "RuntimeError"
+
+
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_output_schema_mismatch_wrapped_in_kiln_run_error(
+    mock_session_manager,
+    _mock_run_id,
+    project_with_local_mcp_server,
+    local_mcp_tool_id,
+):
+    """Post-run output schema validation failures should surface as KilnRunError."""
+    from kiln_ai.adapters.errors import KilnRunError
+
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Schema Mismatch MCP Task",
+        parent=project,
+        instruction="Return JSON",
+        output_json_schema=json.dumps(
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}},
+                "required": ["status"],
+            }
+        ),
+    )
+
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    # Tool returns non-JSON so JSON parsing fails post-run.
+    _mock_mcp_call(mock_session_manager, "not json at all")
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+
+    with pytest.raises(KilnRunError) as ei:
+        await adapter.invoke_returning_run_output("input")
+
+    assert ei.value.partial_trace is None
+    assert ei.value.error_type is not None
+
+
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_mcp_adapter_hooks_mcp_integration():
@@ -411,7 +496,7 @@ async def test_mcp_adapter_rejects_prior_trace_in_run(
     ]
 
     with pytest.raises(NotImplementedError) as exc_info:
-        await adapter._run("follow-up message", prior_trace=prior_trace)
+        await adapter._run("follow-up message", [], prior_trace=prior_trace)
 
     assert "Session continuation is not supported" in str(exc_info.value)
     assert "MCP tools are single-turn" in str(exc_info.value)

@@ -2,7 +2,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+    RunOutput,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -17,7 +21,9 @@ from kiln_ai.utils.config import Config
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(self, input: InputType, **kwargs) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, trace_ref, **kwargs
+    ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="Test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -253,7 +259,7 @@ async def test_invoke_continue_session(test_task, adapter):
             {"role": "assistant", "content": "Hi there!"},
         ]
 
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, trace_ref, **kwargs):
             prior_trace = kwargs.get("prior_trace")
             if prior_trace is not None:
                 extended_trace = [
@@ -455,7 +461,7 @@ def test_generate_run_with_parent_task_run_sets_parent_task_run_id(test_task, ad
     new_run.save_to_file()
 
     reloaded_task = Task.load_from_file(test_task.path)
-    task_runs = reloaded_task.runs()
+    task_runs = reloaded_task.runs(include_intermediate_runs=True)
     assert len(task_runs) == 2
     by_id = {r.id: r for r in task_runs}
     assert by_id[prior_run.id].parent_task_run_id is None
@@ -472,6 +478,34 @@ def test_generate_run_without_parent_task_run_defaults_to_task(test_task, adapte
     )
     assert run.parent_task_run_id is None
     assert run.parent == test_task
+
+
+def test_generate_run_records_task_run_config_id_from_adapter_config(
+    test_task, adapter
+):
+    adapter.base_adapter_config = AdapterConfig(task_run_config_id="rc_abc123")
+    run = adapter.generate_run(
+        input="input",
+        input_source=None,
+        run_output=RunOutput(output="output", intermediate_outputs=None),
+    )
+    assert run.output.source.run_config_id == "rc_abc123"
+    run.save_to_file()
+
+    reloaded_task = Task.load_from_file(test_task.path)
+    reloaded_run = reloaded_task.runs()[0]
+    assert reloaded_run.output.source.run_config_id == "rc_abc123"
+
+
+def test_generate_run_defaults_task_run_config_id_to_none(test_task, adapter):
+    # AdapterConfig() defaults task_run_config_id to None; the output's source
+    # inherits that and persists run_config_id=None.
+    run = adapter.generate_run(
+        input="input",
+        input_source=None,
+        run_output=RunOutput(output="output", intermediate_outputs=None),
+    )
+    assert run.output.source.run_config_id is None
 
 
 def test_generate_run_with_unsaved_parent_task_run_raises(adapter):
@@ -555,7 +589,7 @@ async def test_invoke_with_parent_task_run_saves_under_task_with_link(
     assert new_run.parent_task_run_id == prior_run.id
 
     reloaded_task = Task.load_from_file(test_task.path)
-    task_runs = reloaded_task.runs()
+    task_runs = reloaded_task.runs(include_intermediate_runs=True)
     assert len(task_runs) == 2
     by_id = {r.id: r for r in task_runs}
     assert by_id[new_run.id].output.output == "More details!"

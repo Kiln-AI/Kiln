@@ -410,20 +410,10 @@ def connect_tool_servers_api(app: FastAPI):
                 )
             )
 
-        tool_sets.insert(
-            0,
-            ToolSetApiDescription(
-                type=ToolSetType.BUILTIN,
-                set_name="Kiln built-in tools",
-                tools=[
-                    ToolApiDescription(
-                        id=KilnBuiltInToolId.CALL_KILN_API.value,
-                        name="Call Kiln API",
-                        description="HTTP requests to the local Kiln API (paths under /api/...).",
-                    ),
-                ],
-            ),
-        )
+        # Note: the Call Kiln API built-in tool (KilnBuiltInToolId.CALL_KILN_API)
+        # is intentionally not listed here. It's an internal agent tool — still
+        # resolvable via tool_from_id and callable by agents, but hidden from the
+        # user-facing tool selection dropdowns.
 
         return tool_sets
 
@@ -512,7 +502,7 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
-        # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
+        # Check if the tool server has missing secrets (e.g. new user syncing existing project)
         # If there are missing secrets, add a requirement to the result and skip getting available tools.
         _, missing_secrets = tool_server.retrieve_secrets()
         if missing_secrets:

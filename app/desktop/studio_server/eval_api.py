@@ -26,6 +26,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
+from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
@@ -45,6 +46,35 @@ from .correlation_calculator import (
     CorrelationResult,
     CorrelationScore,
 )
+
+
+def reusable_frozen_prompt_id(
+    task: Task,
+    project_id: ID_TYPE,
+    prompt_text: str,
+    cot_instructions: str | None,
+) -> str | None:
+    """Find an existing run config whose frozen prompt exactly matches the given
+    content, so we can reuse it instead of creating a duplicate frozen prompt.
+
+    Returns the frozen prompt id (task_run_config::...) of the match, or None if
+    there's no match. If multiple match (legacy data created before dedup), the
+    most recently created run config is used.
+    """
+    # Treat empty-string and missing chain-of-thought instructions as equivalent
+    # so prompts dedupe regardless of how "no instructions" is represented.
+    normalized_cot = cot_instructions or None
+    matches = [
+        run_config
+        for run_config in task.run_configs(readonly=True)
+        if run_config.prompt is not None
+        and run_config.prompt.prompt == prompt_text
+        and (run_config.prompt.chain_of_thought_instructions or None) == normalized_cot
+    ]
+    if not matches:
+        return None
+    most_recent = max(matches, key=lambda run_config: run_config.created_at)
+    return f"task_run_config::{project_id}::{task.id}::{most_recent.id}"
 
 
 def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
@@ -781,21 +811,37 @@ def connect_evals_api(app: FastAPI):
             )
 
         frozen_prompt: BasePrompt | None = None
+        reused_frozen_prompt_id: str | None = None
         run_config_properties = request.run_config_properties
         if isinstance(run_config_properties, KilnAgentRunConfigProperties):
             prompt_id = run_config_properties.prompt_id
             if not is_frozen_prompt(prompt_id):
                 # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentally invalidate evals if the user changes something that impacts the prompt (example: changing data for multi-shot, or changing task for basic-prompt)
-                # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
+                # We then point the task_run_config.run_properties.prompt_id to this frozen prompt
                 prompt_builder = prompt_builder_from_id(prompt_id, task)
-                prompt_name = generate_memorable_name()
-                frozen_prompt = BasePrompt(
-                    name=prompt_name,
-                    description=f"Frozen copy of prompt '{prompt_id}'.",
-                    generator_id=prompt_id,
-                    prompt=prompt_builder.build_base_prompt(),
-                    chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
+                prompt_text = prompt_builder.build_base_prompt()
+                cot_instructions = prompt_builder.chain_of_thought_prompt()
+                # Reuse an existing frozen prompt with identical content instead of
+                # creating a duplicate, to avoid cluttering the prompts list.
+                reused_frozen_prompt_id = reusable_frozen_prompt_id(
+                    task, parent_project.id, prompt_text, cot_instructions
                 )
+                if reused_frozen_prompt_id is None:
+                    # Bake the source prompt's type into the name (e.g.
+                    # "Gusty Forest - Basic (Zero Shot)") so it's identifiable
+                    # without resolving the generator at render time.
+                    label = generator_label(prompt_id)
+                    memorable_name = generate_memorable_name()
+                    prompt_name = (
+                        f"{memorable_name} - {label}" if label else memorable_name
+                    )
+                    frozen_prompt = BasePrompt(
+                        name=prompt_name,
+                        description=f"Frozen copy of prompt '{prompt_id}'.",
+                        generator_id=prompt_id,
+                        prompt=prompt_text,
+                        chain_of_thought_instructions=cot_instructions,
+                    )
         task_run_config = TaskRunConfig(
             parent=task,
             name=name,
@@ -803,12 +849,17 @@ def connect_evals_api(app: FastAPI):
             description=request.description,
             prompt=frozen_prompt,
         )
-        if frozen_prompt is not None:
-            # Set after, because the ID isn't known until the TaskRunConfig is created
-            if isinstance(
-                task_run_config.run_config_properties, KilnAgentRunConfigProperties
-            ):
+        if isinstance(
+            task_run_config.run_config_properties, KilnAgentRunConfigProperties
+        ):
+            if frozen_prompt is not None:
+                # Set after, because the ID isn't known until the TaskRunConfig is created
                 task_run_config.run_config_properties.prompt_id = f"task_run_config::{parent_project.id}::{task.id}::{task_run_config.id}"
+            elif reused_frozen_prompt_id is not None:
+                # Point at the existing frozen prompt we're reusing
+                task_run_config.run_config_properties.prompt_id = (
+                    reused_frozen_prompt_id
+                )
         task_run_config.save_to_file()
         return task_run_config
 
@@ -924,7 +975,7 @@ def connect_evals_api(app: FastAPI):
         # Load the list of run configs to use. Two options:
         run_configs: list[TaskRunConfig] = []
         if all_run_configs:
-            # special case, we cannot directly lod task.run_configs(), we need to also get all finetune run configs which lives inside the finetune model
+            # special case, we cannot directly load task.run_configs(), we need to also get all finetune run configs which live inside the finetune model
             run_configs = get_all_run_configs(project_id, task_id)
         else:
             if len(run_config_ids) == 0:

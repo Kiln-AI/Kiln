@@ -10,6 +10,7 @@ from app.desktop.studio_server.eval_api import (
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
+    reusable_frozen_prompt_id,
     task_run_config_from_id,
 )
 from fastapi import FastAPI, HTTPException
@@ -298,7 +299,7 @@ async def test_create_task_run_config_with_freezing(
     assert result["run_config_properties"]["temperature"] == 0.5
     # Check top_p gets default value 1.0 when not specified
     assert result["run_config_properties"]["top_p"] == 1.0
-    assert result["prompt"]["name"] == "Custom Name"
+    assert result["prompt"]["name"] == "Custom Name - Chain of Thought"
     assert (
         result["prompt"]["description"]
         == "Frozen copy of prompt 'simple_chain_of_thought_prompt_builder'."
@@ -313,7 +314,7 @@ async def test_create_task_run_config_with_freezing(
     # Verify temperature and top_p persist on disk
     assert configs[0]["run_config_properties"]["temperature"] == 0.5
     assert configs[0]["run_config_properties"]["top_p"] == 1.0
-    assert configs[0]["prompt"]["name"] == "Custom Name"
+    assert configs[0]["prompt"]["name"] == "Custom Name - Chain of Thought"
     assert configs[0]["prompt"]["description"] == (
         "Frozen copy of prompt 'simple_chain_of_thought_prompt_builder'."
     )
@@ -357,6 +358,135 @@ async def test_create_task_run_config_without_freezing(
     assert result["run_config_properties"]["model_provider_name"] == "openai"
     assert result["run_config_properties"]["prompt_id"] == "id::prompt_123"
     assert result["prompt"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_reuses_existing_frozen_prompt(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    def create(name: str):
+        return client.post(
+            "/api/projects/project1/tasks/task1/run_configs",
+            json={
+                "name": name,
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_chain_of_thought_prompt_builder",
+                    "structured_output_mode": "json_schema",
+                },
+            },
+        )
+
+    first = create("First")
+    assert first.status_code == 200
+    first_result = first.json()
+    # First config freezes a new prompt pointing at itself
+    assert first_result["prompt"] is not None
+    assert first_result["run_config_properties"]["prompt_id"] == (
+        "task_run_config::project1::task1::" + first_result["id"]
+    )
+
+    second = create("Second")
+    assert second.status_code == 200
+    second_result = second.json()
+    # Second config has identical content, so it reuses the first's frozen prompt
+    # instead of creating a duplicate
+    assert second_result["id"] != first_result["id"]
+    assert second_result["prompt"] is None
+    assert second_result["run_config_properties"]["prompt_id"] == (
+        "task_run_config::project1::task1::" + first_result["id"]
+    )
+
+    # Only the first config contributes a frozen prompt to the task
+    frozen_prompts = [rc.prompt for rc in mock_task.run_configs() if rc.prompt]
+    assert len(frozen_prompts) == 1
+
+
+def test_reusable_frozen_prompt_id_no_match(mock_task):
+    assert (
+        reusable_frozen_prompt_id(mock_task, "project1", "some prompt text", None)
+        is None
+    )
+
+
+def test_reusable_frozen_prompt_id_picks_most_recent(mock_task):
+    # Legacy case: multiple run configs with identical frozen content. The most
+    # recently created one should be reused.
+    older = TaskRunConfig(
+        parent=mock_task,
+        id="older",
+        name="Older",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="task_run_config::project1::task1::older",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        prompt=BasePrompt(name="Older Frozen", prompt="shared body"),
+    )
+    older.save_to_file()
+    newer = TaskRunConfig(
+        parent=mock_task,
+        id="newer",
+        name="Newer",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="task_run_config::project1::task1::newer",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        prompt=BasePrompt(name="Newer Frozen", prompt="shared body"),
+    )
+    newer.save_to_file()
+
+    # Force a deterministic ordering of created_at
+    older.created_at = older.created_at.replace(year=2020)
+    newer.created_at = newer.created_at.replace(year=2024)
+    older.save_to_file()
+    newer.save_to_file()
+
+    result = reusable_frozen_prompt_id(mock_task, "project1", "shared body", None)
+    assert result == "task_run_config::project1::task1::newer"
+
+    # Content that doesn't match returns None
+    assert (
+        reusable_frozen_prompt_id(mock_task, "project1", "different body", None) is None
+    )
+    # cot mismatch is treated as a different prompt
+    assert (
+        reusable_frozen_prompt_id(mock_task, "project1", "shared body", "cot") is None
+    )
+
+
+def test_reusable_frozen_prompt_id_normalizes_empty_cot(mock_task):
+    # An empty-string cot and a missing cot should be treated as equivalent.
+    config = TaskRunConfig(
+        parent=mock_task,
+        id="rc_empty_cot",
+        name="Empty CoT",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="task_run_config::project1::task1::rc_empty_cot",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        prompt=BasePrompt(
+            name="Empty CoT Frozen",
+            prompt="body",
+            chain_of_thought_instructions="",
+        ),
+    )
+    config.save_to_file()
+
+    assert reusable_frozen_prompt_id(mock_task, "project1", "body", None) == (
+        "task_run_config::project1::task1::rc_empty_cot"
+    )
+    assert reusable_frozen_prompt_id(mock_task, "project1", "body", "") == (
+        "task_run_config::project1::task1::rc_empty_cot"
+    )
 
 
 @pytest.mark.asyncio
@@ -1005,9 +1135,9 @@ async def test_get_eval_config_compare_summary(
 ):
     mock_task_from_id.return_value = mock_task
 
-    # structed data to make it easier to generate test cases.
+    # structured data to make it easier to generate test cases.
     @dataclass
-    class EvalCondigSummaryTestData:
+    class EvalConfigSummaryTestData:
         human_overall_rating: float | None
         score1_overall_rating: float | None
         eval_overall_rating: float
@@ -1016,10 +1146,10 @@ async def test_get_eval_config_compare_summary(
         skip_eval_run: bool = False
         skip_golden_tag: bool = False
 
-    test_data: List[EvalCondigSummaryTestData] = [
+    test_data: List[EvalConfigSummaryTestData] = [
         # Test 1: ec1
-        # Normal run, with some data to check calulations on a sinlgle run
-        EvalCondigSummaryTestData(
+        # Normal run, with some data to check calculations on a single run
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=2.0,
             eval_overall_rating=1.0,
@@ -1027,7 +1157,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec1",
         ),
         # Should be ignored as it's not in the eval set filter (golden tag). Would mess up the scores of eval_config1 if included
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=5.0,
             eval_overall_rating=4.0,
@@ -1036,14 +1166,14 @@ async def test_get_eval_config_compare_summary(
             skip_golden_tag=True,
         ),
         # Test 2: ec2 - Test multiple, and correct averaging
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=5.0,
             eval_overall_rating=4.0,
             eval__score1_rating=4.0,
             eval_config_id="ec2",
         ),
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=1.0,
             eval_overall_rating=3.0,
@@ -1051,7 +1181,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec2",
         ),
         # Test 3: Dataset item that has partial human rating
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=None,
             eval_overall_rating=3.0,
@@ -1059,7 +1189,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec3",
         ),
         # Test 4: Dataset item that has no human rating
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=None,
             score1_overall_rating=None,
             eval_overall_rating=3.0,
@@ -1067,7 +1197,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec4",
         ),
         # Test 5: skipping eval run should lower the percent complete
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=5.0,
             eval_overall_rating=4.0,

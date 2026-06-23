@@ -35,7 +35,7 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input, **kwargs):
+    async def _run(self, input, trace_ref, **kwargs):
         return None, None
 
     def adapter_name(self) -> str:
@@ -249,7 +249,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -291,6 +291,7 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
         "thinking_level": None,
         "type": None,
         "tools_config": None,
+        "input_transform": None,
     }
 
     missing_properties = []
@@ -341,6 +342,7 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
             "thinking_level": None,
             "type": None,
             "tools_config": None,
+            "input_transform": None,
         }
 
         missing_properties = []
@@ -529,7 +531,7 @@ async def test_invoke_returning_run_output_passes_prior_trace_to_run(
 
     captured_prior_trace = None
 
-    async def mock_run(input, **kwargs):
+    async def mock_run(input, messages=None, **kwargs):
         nonlocal captured_prior_trace
         captured_prior_trace = kwargs.get("prior_trace")
         return RunOutput(output="ok", intermediate_outputs=None, trace=trace), None
@@ -1058,7 +1060,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             # Check that run ID is set during _run
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -1098,7 +1100,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -1136,7 +1138,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             # Run ID should be set even when error occurs
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -1156,8 +1158,14 @@ class TestAgentRunContextLifecycle:
                 "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
             ),
         ):
-            with pytest.raises(ValueError, match="Test error"):
+            # Runtime failures from `_run` are wrapped in KilnRunError; the
+            # underlying ValueError is available via `.original`.
+            from kiln_ai.adapters.errors import KilnRunError
+
+            with pytest.raises(KilnRunError) as ei:
                 await adapter.invoke_returning_run_output({"test": "input"})
+            assert isinstance(ei.value.original, ValueError)
+            assert str(ei.value.original) == "Test error"
 
             # After error, run ID should be cleared
             assert get_agent_run_id() is None
@@ -1173,7 +1181,7 @@ class TestAgentRunContextLifecycle:
         set_agent_run_id(parent_run_id)
 
         # Mock the _run method to check inherited run ID
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             # Sub-agent should see parent's run ID
             run_id = get_agent_run_id()
             assert run_id == parent_run_id
@@ -1222,7 +1230,7 @@ class TestAgentRunContextLifecycle:
         run_id_during_run = None
 
         # Mock the _run method to capture run ID
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             nonlocal run_id_during_run
             run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -1262,7 +1270,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.adapters.run_output import RunOutput
 
         # Mock the _run method
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -1770,3 +1778,216 @@ class TestResolveSkills:
     def test_build_prompt_no_skills_section_without_skills(self, adapter):
         prompt = adapter.build_prompt()
         assert "## Skills" not in prompt
+
+
+class TestInputTransformIntegration:
+    """Adapter integration tests for input_transform per architecture section 7.4."""
+
+    @pytest.fixture
+    def object_schema(self):
+        return json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            }
+        )
+
+    def _make_adapter(self, base_task, input_transform=None, input_schema=None):
+        run_config = KilnAgentRunConfigProperties(
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            input_transform=input_transform,
+        )
+        adapter = MockAdapter(task=base_task, run_config=run_config)
+        if input_schema is not None:
+            adapter.input_schema = input_schema
+        return adapter
+
+    async def _invoke_with_capture(self, adapter, task_input):
+        captured_input = None
+
+        async def mock_run(input, trace_ref, **kwargs):
+            nonlocal captured_input
+            captured_input = input
+            return RunOutput(output="ok", intermediate_outputs={}, trace=None), None
+
+        adapter._run = mock_run
+
+        provider = MagicMock()
+        provider.formatter = None
+        provider.parser = "test_parser"
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=MagicMock(
+                parse_output=MagicMock(
+                    return_value=RunOutput(
+                        output="ok", intermediate_outputs={}, trace=None
+                    )
+                )
+            ),
+        ):
+            run, _ = await adapter.invoke_returning_run_output(task_input)
+
+        return run, captured_input
+
+    @pytest.mark.asyncio
+    async def test_input_transform_object_schema(self, base_task, object_schema):
+        """Object-schema task with JinjaInputTransform: rendered string passed to _run,
+        raw dict preserved in TaskRun.input."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(
+            template="Hello {{ input.name }}, you are {{ input.age }}."
+        )
+        adapter = self._make_adapter(
+            base_task, input_transform=transform, input_schema=object_schema
+        )
+
+        run, captured_input = await self._invoke_with_capture(
+            adapter, {"name": "Alice", "age": 30}
+        )
+
+        assert captured_input == "Hello Alice, you are 30."
+        assert run.input == json.dumps({"name": "Alice", "age": 30}, ensure_ascii=False)
+
+    @pytest.mark.asyncio
+    async def test_input_transform_plaintext_json(self, base_task):
+        """Plaintext JSON input is parsed and templated correctly."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="Key: {{ input.key }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+
+        run, captured_input = await self._invoke_with_capture(
+            adapter, '{"key": "value"}'
+        )
+
+        assert captured_input == "Key: value"
+        assert run.input == '{"key": "value"}'
+
+    @pytest.mark.asyncio
+    async def test_input_transform_plaintext_non_json(self, base_task):
+        """Non-JSON plaintext exposed via {{ input }}."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="You said: {{ input }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+
+        run, captured_input = await self._invoke_with_capture(adapter, "hello world")
+
+        assert captured_input == "You said: hello world"
+        assert run.input == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_input_transform_array_schema(self, base_task):
+        """List input exposed via {{ input[0] }}."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        array_schema = json.dumps({"type": "array", "items": {"type": "integer"}})
+        transform = JinjaInputTransform(
+            template="First: {{ input[0] }}, Count: {{ input | length }}"
+        )
+        adapter = self._make_adapter(
+            base_task, input_transform=transform, input_schema=array_schema
+        )
+
+        run, captured_input = await self._invoke_with_capture(adapter, [10, 20, 30])
+
+        assert captured_input == "First: 10, Count: 3"
+        assert run.input == json.dumps([10, 20, 30])
+
+    @pytest.mark.asyncio
+    async def test_input_transform_none_identity(self, base_task):
+        """RunConfig with input_transform=None: adapter behavior is identical to no-transform."""
+        adapter = self._make_adapter(base_task, input_transform=None)
+
+        run, captured_input = await self._invoke_with_capture(adapter, "raw input")
+
+        assert captured_input == "raw input"
+        assert run.input == "raw input"
+
+    def test_input_transform_streaming_parity(self, base_task):
+        """_prepare_stream applies the transform the same way as the sync path."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="Rendered: {{ input.x }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+
+        captured_stream_input = None
+
+        def mock_create_run_stream(input, prior_trace=None):
+            nonlocal captured_stream_input
+            captured_stream_input = input
+            return MagicMock()
+
+        adapter._create_run_stream = mock_create_run_stream
+
+        provider = MagicMock()
+        provider.formatter = None
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter._prepare_stream({"x": 42}, prior_trace=None)
+
+        assert captured_stream_input == "Rendered: 42"
+
+    @pytest.mark.asyncio
+    async def test_input_transform_undefined_error_pre_inference(self, base_task):
+        """UndefinedError raised before inference — _run never called."""
+        from jinja2.exceptions import UndefinedError
+
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="{{ input.missing_key }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+
+        with pytest.raises(ValueError, match="Input transform failed:") as exc_info:
+            await self._invoke_with_capture(adapter, {"foo": "bar"})
+        assert "missing_key" in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, UndefinedError)
+
+    def test_apply_input_transform_success(self, base_task):
+        """Successful transform returns the rendered string unchanged."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="Hello {{ input.name }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+        result = adapter._apply_input_transform({"name": "world"})
+        assert result == "Hello world"
+
+    def test_apply_input_transform_error_wraps_with_prefix(self, base_task):
+        """Runtime errors from the template are wrapped with a descriptive prefix."""
+        from kiln_ai.datamodel.input_transform import JinjaInputTransform
+
+        transform = JinjaInputTransform(template="{{ input.x.no_such_attr }}")
+        adapter = self._make_adapter(base_task, input_transform=transform)
+
+        with pytest.raises(ValueError, match="Input transform failed:"):
+            adapter._apply_input_transform({"x": "a string"})
+
+    @pytest.mark.asyncio
+    async def test_input_transform_mcp_unchanged(self, base_task):
+        """MCP run config: pipeline behavior unchanged (no input_transform field)."""
+        from kiln_ai.datamodel.run_config import (
+            McpRunConfigProperties,
+            MCPToolReference,
+        )
+
+        mcp_config = McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server::tool"),
+        )
+        adapter = MockAdapter(task=base_task, run_config=mcp_config)
+
+        result = adapter._apply_input_transform("some input")
+        assert result == "some input"
+
+        result_dict = adapter._apply_input_transform({"key": "val"})
+        assert result_dict == {"key": "val"}

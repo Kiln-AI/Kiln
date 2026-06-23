@@ -43,7 +43,6 @@ from app.desktop.studio_server.provider_api import (
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
     KilnEmbeddingModel,
@@ -66,6 +65,7 @@ from kiln_ai.adapters.reranker_list import (
     built_in_rerankers,
 )
 from kiln_ai.utils.config import Config
+from kiln_server.custom_errors import connect_custom_errors
 
 
 @pytest.fixture
@@ -2747,7 +2747,7 @@ async def test_connect_vertex_success(mock_config_shared, mock_litellm_acompleti
     assert response.status_code == 200
     assert "Connected to Vertex" in response.body.decode()
     mock_litellm_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-2.0-flash",
+        model="vertex_ai/gemini-3.5-flash",
         messages=[{"content": "Hello, how are you?", "role": "user"}],
         vertex_project="test-project-id",
         vertex_location="us-central1",
@@ -2772,7 +2772,7 @@ async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompleti
     assert "Failed to connect to Vertex" in response.body.decode()
     assert "Invalid project ID" in response.body.decode()
     mock_litellm_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-2.0-flash",
+        model="vertex_ai/gemini-3.5-flash",
         messages=[{"content": "Hello, how are you?", "role": "user"}],
         vertex_project="invalid-project-id",
         vertex_location="us-central1",
@@ -2786,6 +2786,60 @@ async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompleti
         not hasattr(mock_config, "vertex_location")
         or mock_config.vertex_location != "us-central1"
     )
+
+
+@pytest.mark.paid
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_vertex_live(mock_config_shared):
+    """End-to-end check that the Vertex (Gemini Enterprise Agent Platform)
+    Connect button flow still works against the real API. Run before a
+    release: a green run means a user with valid credentials clicking
+    "Connect" in the Kiln UI will succeed.
+
+    Prerequisites for running locally:
+
+    1. A Google Cloud project with the Vertex AI API enabled
+       (``gcloud services enable aiplatform.googleapis.com --project=<id>``).
+    2. Your account has ``roles/aiplatform.user`` on that project.
+    3. Application Default Credentials set up as a plain user credential
+       (NOT impersonating a service account that lacks access). Run
+       ``gcloud auth application-default login`` while a gcloud config
+       without ``auth/impersonate_service_account`` is active. Verify with::
+
+           cat ~/.config/gcloud/application_default_credentials.json | \\
+             jq '{type, service_account_impersonation_url}'
+
+       Want ``type: "authorized_user"`` and no impersonation URL.
+    4. Export the project ID:
+       ``KILN_TEST_VERTEX_PROJECT_ID=<your-project-id>``.
+       Optionally override location with ``KILN_TEST_VERTEX_LOCATION``
+       (defaults to ``global`` — what the UI suggests).
+
+    Skipped if ``KILN_TEST_VERTEX_PROJECT_ID`` is unset so the test doesn't
+    fire blindly in CI without credentials.
+
+    CMD:
+    KILN_TEST_VERTEX_PROJECT_ID=YOUR_PROJECT_ID uv run python3 -m pytest app/desktop/studio_server/test_provider_api.py -k connect_vertex_live --runpaid
+    """
+    import os
+
+    project_id = os.environ.get("KILN_TEST_VERTEX_PROJECT_ID")
+    if not project_id:
+        pytest.skip("KILN_TEST_VERTEX_PROJECT_ID not set")
+    location = os.environ.get("KILN_TEST_VERTEX_LOCATION", "global")
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    response = await connect_vertex(project_id, location)
+
+    assert response.status_code == 200, (
+        f"Vertex connect failed ({response.status_code}): {response.body.decode()}"
+    )
+    assert "Connected to Vertex" in response.body.decode()
+    assert mock_config.vertex_project_id == project_id
+    assert mock_config.vertex_location == location
 
 
 @pytest.mark.asyncio
@@ -3213,6 +3267,7 @@ async def test_get_embedding_providers(app, client):
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": True,
                     "suggested_for_chunk_embedding": True,
+                    "deprecated": False,
                 }
             ],
         },
@@ -3227,6 +3282,7 @@ async def test_get_embedding_providers(app, client):
                     "max_input_tokens": None,
                     "supports_custom_dimensions": False,
                     "suggested_for_chunk_embedding": False,
+                    "deprecated": False,
                 }
             ],
         },
@@ -3241,6 +3297,71 @@ async def test_get_embedding_providers(app, client):
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": False,
                     "suggested_for_chunk_embedding": True,
+                    "deprecated": False,
+                }
+            ],
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_available_embedding_models_surfaces_deprecated(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.openai: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_embedding_models = [
+        KilnEmbeddingModel(
+            name="model1",
+            friendly_name="Model 1",
+            family="",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="oai1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=True,
+                    suggested_for_chunk_embedding=True,
+                    deprecated=True,
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_embedding_models",
+            mock_built_in_embedding_models,
+        ),
+    ):
+        response = client.get("/api/available_embedding_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "openai",
+            "provider_name": "OpenAI",
+            "models": [
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": True,
+                    "suggested_for_chunk_embedding": True,
+                    "deprecated": True,
                 }
             ],
         },
@@ -3433,6 +3554,46 @@ async def test_available_ollama_embedding_models_unit():
     assert model.suggested_for_chunk_embedding is True
 
 
+@patch(
+    "app.desktop.studio_server.provider_api.built_in_embedding_models",
+    [
+        KilnEmbeddingModel(
+            family="gemma",
+            name="embeddinggemma",
+            friendly_name="embeddinggemma",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.ollama,
+                    model_id="embeddinggemma:300m",
+                    n_dimensions=768,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=False,
+                    suggested_for_chunk_embedding=True,
+                    ollama_model_aliases=["embeddinggemma"],
+                    deprecated=True,
+                )
+            ],
+        )
+    ],
+)
+@pytest.mark.asyncio
+async def test_available_ollama_embedding_models_surfaces_deprecated():
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_ollama",
+        return_value=OllamaConnection(
+            message="Connected",
+            supported_models=[],
+            untested_models=[],
+            supported_embedding_models=["embeddinggemma:300m"],
+        ),
+    ):
+        provider = await available_ollama_embedding_models()
+
+    assert provider is not None
+    model = next(m for m in provider.models if m.id == "embeddinggemma")
+    assert model.deprecated is True
+
+
 def test_available_embedding_models_endpoint_includes_ollama(client):
     # Return only the Ollama provider, no key-required providers
     fake_provider = {
@@ -3564,10 +3725,12 @@ async def test_get_available_reranker_models(app, client):
                 {
                     "id": "reranker1",
                     "name": "Reranker 1",
+                    "deprecated": False,
                 },
                 {
                     "id": "reranker2",
                     "name": "Reranker 2",
+                    "deprecated": False,
                 },
             ],
         },
@@ -3578,6 +3741,62 @@ async def test_get_available_reranker_models(app, client):
                 {
                     "id": "reranker2",
                     "name": "Reranker 2",
+                    "deprecated": False,
+                }
+            ],
+        },
+    ]
+
+
+async def test_get_available_reranker_models_surfaces_deprecated(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.together_ai: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_rerankers = [
+        KilnRerankerModel(
+            name="reranker1",
+            friendly_name="Reranker 1",
+            family="family1",
+            providers=[
+                KilnRerankerModelProvider(
+                    name=ModelProviderName.together_ai,
+                    model_id="together_reranker1",
+                    deprecated=True,
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_rerankers",
+            mock_built_in_rerankers,
+        ),
+    ):
+        response = client.get("/api/available_reranker_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "together_ai",
+            "provider_name": "Together AI",
+            "models": [
+                {
+                    "id": "reranker1",
+                    "name": "Reranker 1",
+                    "deprecated": True,
                 }
             ],
         },

@@ -20,6 +20,8 @@ import {
   deleteConfig,
   oauthStart,
   oauthStatus,
+  GitSyncRequestError,
+  is_duplicate_project_error,
 } from "./api"
 
 const mockFetch = vi.fn()
@@ -420,6 +422,27 @@ describe("getConfig", () => {
       expect.stringContaining("/api/git_sync/config/proj_1"),
     )
   })
+
+  it("returns null for 404", async () => {
+    mockFetch.mockResolvedValue(jsonResponse(null, 404))
+
+    const result = await getConfig("missing")
+    expect(result).toBeNull()
+  })
+
+  it("throws on non-404 error", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ detail: "Server error" }, 500))
+
+    await expect(getConfig("proj_1")).rejects.toThrow("Server error")
+  })
+
+  it("prefers message over detail in error response", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ message: "Bad request", detail: "fallback" }, 400),
+    )
+
+    await expect(getConfig("proj_1")).rejects.toThrow("Bad request")
+  })
 })
 
 describe("updateConfig", () => {
@@ -455,6 +478,16 @@ describe("deleteConfig", () => {
     mockFetch.mockResolvedValue(jsonResponse({ detail: "Not found" }, 404))
 
     await expect(deleteConfig("nonexistent")).rejects.toThrow("Not found")
+  })
+
+  it("prefers message over detail in error response", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ message: "Config not found", detail: "fallback" }, 404),
+    )
+
+    await expect(deleteConfig("nonexistent")).rejects.toThrow(
+      "Config not found",
+    )
   })
 })
 
@@ -525,5 +558,120 @@ describe("oauthStatus", () => {
     await expect(oauthStatus("bad_state")).rejects.toThrow(
       "Failed to check OAuth status",
     )
+  })
+})
+
+describe("GitSyncRequestError", () => {
+  it("is an Error subclass with status", () => {
+    const err = new GitSyncRequestError("conflict", 409)
+    expect(err).toBeInstanceOf(Error)
+    expect(err).toBeInstanceOf(GitSyncRequestError)
+    expect(err.message).toBe("conflict")
+    expect(err.status).toBe(409)
+    expect(err.name).toBe("GitSyncRequestError")
+  })
+
+  it("is thrown by request() on non-ok response", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ message: "Duplicate project" }, 409),
+    )
+
+    const thrown = await testAccess("https://github.com/org/repo.git").catch(
+      (e) => e,
+    )
+    expect(thrown).toBeInstanceOf(GitSyncRequestError)
+    expect(thrown.status).toBe(409)
+    expect(thrown.message).toBe("Duplicate project")
+  })
+
+  it("preserves status for different error codes", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "Auth failed" }, 401))
+
+    const thrown = await testAccess("https://github.com/org/repo.git").catch(
+      (e) => e,
+    )
+    expect(thrown).toBeInstanceOf(GitSyncRequestError)
+    expect(thrown.status).toBe(401)
+  })
+})
+
+describe("is_duplicate_project_error", () => {
+  it("returns true for 409 GitSyncRequestError", () => {
+    expect(
+      is_duplicate_project_error(new GitSyncRequestError("conflict", 409)),
+    ).toBe(true)
+  })
+
+  it("returns false for non-409 GitSyncRequestError", () => {
+    expect(
+      is_duplicate_project_error(new GitSyncRequestError("error", 500)),
+    ).toBe(false)
+    expect(
+      is_duplicate_project_error(new GitSyncRequestError("error", 401)),
+    ).toBe(false)
+  })
+
+  it("returns false for plain Error", () => {
+    expect(is_duplicate_project_error(new Error("conflict"))).toBe(false)
+  })
+
+  it("returns false for non-Error values", () => {
+    expect(is_duplicate_project_error("conflict")).toBe(false)
+    expect(is_duplicate_project_error(null)).toBe(false)
+    expect(is_duplicate_project_error(undefined)).toBe(false)
+  })
+})
+
+describe("saveConfig with remove_conflicting_id", () => {
+  it("sends remove_conflicting_id in body when provided", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        sync_mode: "auto",
+        remote_name: "origin",
+        branch: "main",
+        clone_path: "/tmp/clone",
+        git_url: "https://github.com/org/repo.git",
+        has_pat_token: true,
+        has_oauth_token: false,
+      }),
+    )
+
+    await saveConfig({
+      project_id: "proj_1",
+      project_path: "project.kiln",
+      git_url: "https://github.com/org/repo.git",
+      clone_path: "/tmp/clone",
+      branch: "main",
+      pat_token: "token",
+      remove_conflicting_id: true,
+    })
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.remove_conflicting_id).toBe(true)
+  })
+
+  it("omits remove_conflicting_id when not provided", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        sync_mode: "auto",
+        remote_name: "origin",
+        branch: "main",
+        clone_path: "/tmp/clone",
+        git_url: "https://github.com/org/repo.git",
+        has_pat_token: true,
+        has_oauth_token: false,
+      }),
+    )
+
+    await saveConfig({
+      project_id: "proj_1",
+      project_path: "project.kiln",
+      git_url: "https://github.com/org/repo.git",
+      clone_path: "/tmp/clone",
+      branch: "main",
+    })
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.remove_conflicting_id).toBeUndefined()
   })
 })

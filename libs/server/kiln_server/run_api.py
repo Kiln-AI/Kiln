@@ -9,6 +9,7 @@ from typing import Annotated, Any, Dict
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.errors import ErrorWithTrace
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
@@ -70,6 +71,10 @@ class RunTaskRequest(BaseModel):
     )
     tags: list[str] | None = Field(
         default=None, description="Tags to apply to the resulting task run."
+    )
+    task_run_config_id: str | None = Field(
+        default=None,
+        description="The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.",
     )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
@@ -250,6 +255,12 @@ def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="List Runs",
+        description=(
+            "For multiturn tasks, only leaf TaskRuns (those that are not the "
+            "parent of another run via parent_task_run_id) are returned. "
+            "Intermediate runs in a chain are filtered out. For single-turn "
+            "tasks this is equivalent to listing every run."
+        ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
@@ -312,6 +323,10 @@ def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         summary="List Run Summaries",
+        description=(
+            "For multiturn tasks, only leaf TaskRuns (those that are not the "
+            "parent of another run via parent_task_run_id) are summarized."
+        ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
@@ -378,6 +393,13 @@ def connect_run_api(app: FastAPI):
         summary="Execute Run",
         tags=["Runs"],
         openapi_extra=agent_policy_require_approval("Run task with LLM?"),
+        responses={
+            # Adapter failures (e.g., LLM rate limit, tool crash) return
+            # ErrorWithTrace with the partial conversation trace so the UI
+            # can show what happened before the error. Other 500s and 4xx
+            # errors use the standard error shape.
+            500: {"model": ErrorWithTrace},
+        },
     )
     async def run_task(
         project_id: Annotated[
@@ -398,7 +420,11 @@ def connect_run_api(app: FastAPI):
         adapter = adapter_for_task(
             task,
             run_config_properties=run_config_properties,
-            base_adapter_config=AdapterConfig(default_tags=request.tags, skills=skills),
+            base_adapter_config=AdapterConfig(
+                default_tags=request.tags,
+                skills=skills,
+                task_run_config_id=request.task_run_config_id,
+            ),
         )
 
         input = request.plaintext_input
@@ -572,6 +598,10 @@ def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/tags",
         summary="List Run Tags",
+        description=(
+            "Counts only include tags from leaf TaskRuns. For multiturn tasks, "
+            "tags attached to intermediate runs in a chain are not included."
+        ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )

@@ -265,6 +265,125 @@ def test_import_project_duplicate_different_path(client):
     assert "remove project" in response.json()["message"]
 
 
+def test_import_project_duplicate_remove_conflicting_id_success(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    conflicting_project = Project(
+        name="Existing Project",
+        description="Already imported",
+        id="dup-id",
+        path="/old/path/project.kiln",
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                'You already have a project with this ID. You must remove project "Existing" before adding this.',
+                same_path=False,
+            ),
+        ),
+        patch(
+            "kiln_server.project_api.project_from_id_core",
+            return_value=conflicting_project,
+        ),
+        patch("kiln_server.project_api.remove_project_from_config") as mock_remove,
+        patch("kiln_server.project_api.add_project_to_config") as mock_add,
+    ):
+        response = client.post(
+            "/api/import_project?project_path=/new/path/project.kiln&remove_conflicting_id=true"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["name"] == "Imported Project"
+    mock_remove.assert_called_once_with("/old/path/project.kiln")
+    mock_add.assert_called_once_with("/new/path/project.kiln")
+
+
+def test_import_project_duplicate_remove_conflicting_id_false_still_409(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                "You already have a project with this ID.",
+                same_path=False,
+            ),
+        ),
+    ):
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=false"
+        )
+
+    assert response.status_code == 409
+
+
+def test_import_project_duplicate_same_path_remove_conflicting_id(client):
+    """Re-importing the exact same path with remove_conflicting_id=true is a
+    benign de-register + re-add of the same path."""
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    conflicting_project = Project(
+        name="Imported Project",
+        description="An imported project",
+        id="dup-id",
+        path="/path/to/project.kiln",
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                "This project is already imported.", same_path=True
+            ),
+        ),
+        patch(
+            "kiln_server.project_api.project_from_id_core",
+            return_value=conflicting_project,
+        ),
+        patch("kiln_server.project_api.remove_project_from_config") as mock_remove,
+        patch("kiln_server.project_api.add_project_to_config") as mock_add,
+    ):
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=true"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["name"] == "Imported Project"
+    mock_remove.assert_called_once_with("/path/to/project.kiln")
+    mock_add.assert_called_once_with("/path/to/project.kiln")
+
+
+def test_import_project_remove_conflicting_id_no_conflict(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch("kiln_server.project_api.check_duplicate_project_id"),
+        patch("kiln_server.project_api.add_project_to_config") as mock_add,
+    ):
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=true"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["name"] == "Imported Project"
+    mock_add.assert_called_once_with("/path/to/project.kiln")
+
+
 def test_import_project_missing_path(client):
     response = client.post("/api/import_project")
 

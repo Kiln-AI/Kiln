@@ -204,9 +204,11 @@ export interface paths {
         put?: never;
         /**
          * Build Prompt With Examples
-         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         * @description Build a prompt with the task's prompt, requirements, and optional custom examples.
          *
          *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         *     When the task has a default run config, that run config's prompt is used as the base
+         *     (so synthetic data reflects the production prompt) instead of the task instruction.
          */
         post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
         delete?: never;
@@ -278,7 +280,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Runs */
+        /**
+         * List Runs
+         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+         */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
         /**
@@ -299,7 +304,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Run Summaries */
+        /**
+         * List Run Summaries
+         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized.
+         */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
         post?: never;
@@ -387,7 +395,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Run Tags */
+        /**
+         * List Run Tags
+         * @description Counts only include tags from leaf TaskRuns. For multiturn tasks, tags attached to intermediate runs in a chain are not included.
+         */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
         post?: never;
@@ -1055,6 +1066,33 @@ export interface paths {
          *     chunk_overlap defaults to 0 when not provided.
          */
         post: operations["ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compute Statistics
+         * @description Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
+         *
+         *     - "proportion_ci": confidence interval + standard error for ONE proportion (e.g. an "85% pass, n=200" cell). Params: `proportion` (a fraction in [0,1]) and `n`.
+         *     - "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`, `n_a`, `proportion_b`, `n_b`.
+         *     - "mcnemar_paired": the PAIRED test for two binary pass/fail conditions scored over the SAME items — more powerful than compare_proportions; prefer it when comparing run configs on one eval dataset. Params: `outcomes_a`, `outcomes_b` — two aligned 0/1 arrays (fetch per-item eval results and pair on dataset_id).
+         *     - "compare_paired": paired comparison of two numeric arrays for continuous/count metrics (latency, tokens, cost) — NOT binary pass/fail. Params: `values_a`, `values_b`.
+         *
+         *     Returns JSON with the statistic, a confidence interval, a boolean `significant`, and a one-sentence `interpretation`. `confidence` defaults to 0.95.
+         */
+        post: operations["compute_statistics_api_statistics_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2060,6 +2098,23 @@ export interface paths {
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/validate_input_transform_template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Input Transform Template */
+        post: operations["validate_input_transform_template_api_validate_input_transform_template_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3494,7 +3549,11 @@ export interface components {
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
         };
-        /** Audio */
+        /**
+         * Audio
+         * @description Data about a previous audio response from the model.
+         *     [Learn more](https://platform.openai.com/docs/guides/audio).
+         */
         Audio: {
             /** Id */
             id: string;
@@ -3712,7 +3771,7 @@ export interface components {
          *
          *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
-        "ChatCompletionAssistantMessageParamWrapper-Input": {
+        ChatCompletionAssistantMessageParamWrapper: {
             /**
              * Role
              * @constant
@@ -3735,37 +3794,9 @@ export interface components {
             usage?: components["schemas"]["MessageUsage"] | null;
         };
         /**
-         * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
-         *
-         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
-         *
-         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
+         * ChatCompletionContentPartImageParam
+         * @description Learn about [image inputs](https://platform.openai.com/docs/guides/vision).
          */
-        "ChatCompletionAssistantMessageParamWrapper-Output": {
-            /**
-             * Role
-             * @constant
-             */
-            role: "assistant";
-            audio?: components["schemas"]["Audio"] | null;
-            /** Content */
-            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
-            /** Reasoning Content */
-            reasoning_content?: string | null;
-            function_call?: components["schemas"]["FunctionCall"] | null;
-            /** Name */
-            name?: string;
-            /** Refusal */
-            refusal?: string | null;
-            /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
-            /** Latency Ms */
-            latency_ms?: number | null;
-            usage?: components["schemas"]["MessageUsage"] | null;
-        };
-        /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
             image_url: components["schemas"]["ImageURL"];
             /**
@@ -3774,7 +3805,10 @@ export interface components {
              */
             type: "image_url";
         };
-        /** ChatCompletionContentPartInputAudioParam */
+        /**
+         * ChatCompletionContentPartInputAudioParam
+         * @description Learn about [audio inputs](https://platform.openai.com/docs/guides/audio).
+         */
         ChatCompletionContentPartInputAudioParam: {
             input_audio: components["schemas"]["InputAudio"];
             /**
@@ -3793,7 +3827,10 @@ export interface components {
              */
             type: "refusal";
         };
-        /** ChatCompletionContentPartTextParam */
+        /**
+         * ChatCompletionContentPartTextParam
+         * @description Learn about [text inputs](https://platform.openai.com/docs/guides/text-generation).
+         */
         ChatCompletionContentPartTextParam: {
             /** Text */
             text: string;
@@ -3803,7 +3840,12 @@ export interface components {
              */
             type: "text";
         };
-        /** ChatCompletionDeveloperMessageParam */
+        /**
+         * ChatCompletionDeveloperMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, `developer` messages
+         *     replace the previous `system` messages.
+         */
         ChatCompletionDeveloperMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3827,7 +3869,10 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageFunctionToolCallParam */
+        /**
+         * ChatCompletionMessageFunctionToolCallParam
+         * @description A call to a function tool created by the model.
+         */
         ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
@@ -3838,7 +3883,12 @@ export interface components {
              */
             type: "function";
         };
-        /** ChatCompletionSystemMessageParam */
+        /**
+         * ChatCompletionSystemMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, use `developer` messages
+         *     for this purpose instead.
+         */
         ChatCompletionSystemMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3868,20 +3918,12 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
-        /** ChatCompletionUserMessageParam */
-        "ChatCompletionUserMessageParam-Input": {
-            /** Content */
-            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
-            /**
-             * Role
-             * @constant
-             */
-            role: "user";
-            /** Name */
-            name?: string;
-        };
-        /** ChatCompletionUserMessageParam */
-        "ChatCompletionUserMessageParam-Output": {
+        /**
+         * ChatCompletionUserMessageParam
+         * @description Messages sent by an end user, containing prompts or additional context
+         *     information.
+         */
+        ChatCompletionUserMessageParam: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
             /**
@@ -4038,8 +4080,8 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
         };
         /**
          * CloneRequest
@@ -4489,8 +4531,8 @@ export interface components {
             evaluate_full_trace: boolean;
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
-            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
             /**
              * Task Description
              * @default
@@ -4809,7 +4851,7 @@ export interface components {
          *     model information, for human sources this includes creator information, for file imports
          *     this includes file information.
          */
-        "DataSource-Input": {
+        DataSource: {
             /** @description The type of data source. */
             type: components["schemas"]["DataSourceType"];
             /**
@@ -4821,30 +4863,10 @@ export interface components {
                 [key: string]: string | number;
             };
             /**
-             * Run Config
-             * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
+             * Run Config Id
+             * @description The ID of the saved TaskRunConfig used to produce this data, if any. Only present when the run was initiated from a saved TaskRunConfig (e.g. via the saved-config dropdown or a tool call); runs configured ad-hoc from the run page leave this unset. Not validated against the file system: a TaskRunConfig may be deleted without invalidating historical runs that reference it.
              */
-            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
-        };
-        /**
-         * DataSource
-         * @description Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
-         *
-         *     Properties vary based on the source type - for synthetic/tool_call sources this includes
-         *     model information, for human sources this includes creator information, for file imports
-         *     this includes file information.
-         */
-        "DataSource-Output": {
-            /** @description The type of data source. */
-            type: components["schemas"]["DataSourceType"];
-            /**
-             * Properties
-             * @description Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.
-             * @default {}
-             */
-            properties: {
-                [key: string]: string | number;
-            };
+            run_config_id?: string | null;
             /**
              * Run Config
              * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
@@ -5128,6 +5150,11 @@ export interface components {
             supports_custom_dimensions: boolean;
             /** Suggested For Chunk Embedding */
             suggested_for_chunk_embedding: boolean;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /**
          * EmbeddingModelName
@@ -5188,6 +5215,22 @@ export interface components {
              * @description The resulting chunks.
              */
             chunks: components["schemas"]["EphemeralSplitChunk"][];
+        };
+        /**
+         * ErrorWithTrace
+         * @description Structured error response pairing a user-friendly message with the
+         *     partial conversation trace built up before the failure.
+         *
+         *     Returned by endpoints that run a task adapter when the adapter throws
+         *     after starting a run (LLM calls made, tools invoked, etc.).
+         */
+        ErrorWithTrace: {
+            /** Message */
+            message: string;
+            /** Error Type */
+            error_type: string;
+            /** Trace */
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * Eval
@@ -6122,7 +6165,10 @@ export interface components {
              */
             output: string;
         };
-        /** File */
+        /**
+         * File
+         * @description Learn about [file inputs](https://platform.openai.com/docs/guides/text) for text generation.
+         */
         File: {
             file: components["schemas"]["FileFile"];
             /**
@@ -6496,14 +6542,22 @@ export interface components {
             /** Improper Formatting Examples */
             improper_formatting_examples?: string;
         };
-        /** Function */
+        /**
+         * Function
+         * @description The function that the model called.
+         */
         Function: {
             /** Arguments */
             arguments: string;
             /** Name */
             name: string;
         };
-        /** FunctionCall */
+        /**
+         * FunctionCall
+         * @description Deprecated and replaced by `tool_calls`.
+         *
+         *     The name and arguments of a function that should be called, as generated by the model.
+         */
         FunctionCall: {
             /** Arguments */
             arguments: string;
@@ -6522,7 +6576,7 @@ export interface components {
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
         };
         /**
          * GenerateBatchApiOutput
@@ -6720,6 +6774,25 @@ export interface components {
             jailbroken_examples: string;
         };
         /**
+         * JinjaInputTransform
+         * @description Render the task input via a Jinja2 template, producing the first user
+         *     message sent to the model. See specs/projects/templates/functional_spec.md
+         *     for the full contract.
+         */
+        JinjaInputTransform: {
+            /**
+             * Type
+             * @default jinja
+             * @constant
+             */
+            type: "jinja";
+            /**
+             * Template
+             * @description Jinja2 template source. Validated at save time.
+             */
+            template: string;
+        };
+        /**
          * JobStatus
          * @enum {string}
          */
@@ -6770,6 +6843,11 @@ export interface components {
             thinking_level?: string | null;
             /** @description The tools config to use for this run config, defining which tools are available to the model. */
             tools_config?: components["schemas"]["ToolsRunConfig"] | null;
+            /**
+             * Input Transform
+             * @description Optional transform applied to the task input at run time, producing the first user message sent to the model. Default None preserves the identity path.
+             */
+            input_transform?: components["schemas"]["JinjaInputTransform"] | null;
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -8444,6 +8522,11 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /** RerankerProvider */
         RerankerProvider: {
@@ -8595,6 +8678,11 @@ export interface components {
              * @description Tags to apply to the resulting task run.
              */
             tags?: string[] | null;
+            /**
+             * Task Run Config Id
+             * @description The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.
+             */
+            task_run_config_id?: string | null;
         };
         /**
          * SampleApi
@@ -8666,6 +8754,12 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "auto" | "manual";
+            /**
+             * Remove Conflicting Id
+             * @description When true and a duplicate project ID conflict is detected, remove the existing project registration before saving.
+             * @default false
+             */
+            remove_conflicting_id: boolean;
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -9077,6 +9171,74 @@ export interface components {
             eval_ids: string[];
         };
         /**
+         * StatisticsRequest
+         * @description Input for ``POST /api/statistics``. Set ``operation`` and the params it needs.
+         */
+        StatisticsRequest: {
+            /**
+             * Operation
+             * @description Which test to run (see the per-field [operation] tags for the params each one takes).
+             * @enum {string}
+             */
+            operation: "proportion_ci" | "compare_proportions" | "mcnemar_paired" | "compare_paired";
+            /**
+             * Confidence
+             * @description Confidence level in (0,1). Default 0.95.
+             * @default 0.95
+             */
+            confidence: number;
+            /**
+             * Proportion
+             * @description [proportion_ci] the proportion as a fraction in [0,1] (e.g. 0.85).
+             */
+            proportion?: number | null;
+            /**
+             * N
+             * @description [proportion_ci] sample size (> 0).
+             */
+            n?: number | null;
+            /**
+             * Proportion A
+             * @description [compare_proportions] baseline proportion in [0,1].
+             */
+            proportion_a?: number | null;
+            /**
+             * N A
+             * @description [compare_proportions] baseline sample size (> 0).
+             */
+            n_a?: number | null;
+            /**
+             * Proportion B
+             * @description [compare_proportions] treatment proportion in [0,1].
+             */
+            proportion_b?: number | null;
+            /**
+             * N B
+             * @description [compare_proportions] treatment sample size (> 0).
+             */
+            n_b?: number | null;
+            /**
+             * Outcomes A
+             * @description [mcnemar_paired] per-item baseline outcomes (0=fail, 1=pass). outcomes_a[i] and outcomes_b[i] must be the SAME item.
+             */
+            outcomes_a?: number[] | null;
+            /**
+             * Outcomes B
+             * @description [mcnemar_paired] per-item treatment outcomes (0/1), positionally paired with outcomes_a.
+             */
+            outcomes_b?: number[] | null;
+            /**
+             * Values A
+             * @description [compare_paired] per-case baseline values (null allowed — that pair is skipped). values_a[i] and values_b[i] must be the same case.
+             */
+            values_a?: (number | null)[] | null;
+            /**
+             * Values B
+             * @description [compare_paired] per-case treatment values (null allowed), positionally paired with values_a.
+             */
+            values_b?: (number | null)[] | null;
+        };
+        /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
          *
@@ -9140,19 +9302,10 @@ export interface components {
          * SyntheticDataGenerationSessionConfigApi
          * @description Configuration for a synthetic data generation session
          */
-        "SyntheticDataGenerationSessionConfigApi-Input": {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-        };
-        /**
-         * SyntheticDataGenerationSessionConfigApi
-         * @description Configuration for a synthetic data generation session
-         */
-        "SyntheticDataGenerationSessionConfigApi-Output": {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+        SyntheticDataGenerationSessionConfigApi: {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
         };
         /**
          * SyntheticDataGenerationStepConfig
@@ -9179,16 +9332,7 @@ export interface components {
          * SyntheticDataGenerationStepConfigApi
          * @description Configuration for a synthetic data generation step.
          */
-        "SyntheticDataGenerationStepConfigApi-Input": {
-            task_metadata: components["schemas"]["TaskMetadataApi"];
-            /** Prompt */
-            prompt: string;
-        };
-        /**
-         * SyntheticDataGenerationStepConfigApi
-         * @description Configuration for a synthetic data generation step.
-         */
-        "SyntheticDataGenerationStepConfigApi-Output": {
+        SyntheticDataGenerationStepConfigApi: {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
@@ -9359,7 +9503,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource-Input"] | null;
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
         };
@@ -9404,7 +9548,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource-Output"] | null;
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /** Model Type */
@@ -9617,7 +9761,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource-Input"] | null;
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Input"];
             /**
@@ -9648,7 +9792,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -9696,7 +9840,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource-Output"] | null;
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Output"];
             /**
@@ -9727,7 +9871,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -9923,6 +10067,12 @@ export interface components {
              * @default false
              */
             auth_required: boolean;
+            /**
+             * Write Denied
+             * @description True when the user authenticated but the remote rejected the push due to insufficient write permissions.
+             * @default false
+             */
+            write_denied: boolean;
             /**
              * Auth Method
              * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
@@ -10309,6 +10459,27 @@ export interface components {
             /** Id */
             id?: string;
         };
+        /** ValidateInputTransformTemplateRequest */
+        ValidateInputTransformTemplateRequest: {
+            /**
+             * Template
+             * @description The Jinja2 template source to validate.
+             */
+            template: string;
+        };
+        /** ValidateInputTransformTemplateResponse */
+        ValidateInputTransformTemplateResponse: {
+            /**
+             * Valid
+             * @description Whether the template is valid Jinja2.
+             */
+            valid: boolean;
+            /**
+             * Error
+             * @description The compile error message, if invalid.
+             */
+            error?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -10533,6 +10704,8 @@ export interface operations {
             query: {
                 /** @description File path to the project.kiln file to import. */
                 project_path: string;
+                /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
+                remove_conflicting_id?: boolean;
             };
             header?: never;
             path?: never;
@@ -11454,6 +11627,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorWithTrace"];
                 };
             };
         };
@@ -13119,6 +13301,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EphemeralSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compute_statistics_api_statistics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatisticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -15398,6 +15615,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_input_transform_template_api_validate_input_transform_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidateInputTransformTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidateInputTransformTemplateResponse"];
                 };
             };
             /** @description Validation Error */

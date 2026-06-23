@@ -17,8 +17,10 @@
     AvailableModels,
     Task,
     TaskRunConfig,
+    InputTransform,
   } from "$lib/types"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
+  import { inputTransformsEqual } from "$lib/utils/run_config_formatters"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
@@ -76,6 +78,7 @@
 
   let structured_output_mode: StructuredOutputMode = "default"
   let thinking_level: string | null = null
+  let input_transform: InputTransform | null = null
   $: current_model_details = available_model_details(
     model_name,
     provider,
@@ -187,6 +190,7 @@
     top_p = config_properties.top_p
     structured_output_mode = config_properties.structured_output_mode
     thinking_level = config_properties.thinking_level ?? null
+    input_transform = config_properties.input_transform ?? null
     run_config_just_loaded = true
   }
 
@@ -205,6 +209,7 @@
   top_p,
   structured_output_mode,
   thinking_level,
+  input_transform,
   tools,
   skills,
   $available_models,
@@ -212,8 +217,8 @@
   debounce_update_for_state_changes())
 
   // Since some changes can make many other fields change (eg run config), we debounce the updates to avoid excessive updates.
-  // Just mark as dirty, and run again only once, after the update is once.
-  // Knowning only 1 is called in parallel also makes it simpler to reason about.
+  // Just mark as dirty, and run again only once, after the update is done.
+  // Knowing only 1 is called in parallel also makes it simpler to reason about.
   let running: boolean = false
   let run_again: boolean = false
   async function debounce_update_for_state_changes() {
@@ -268,7 +273,11 @@
     await reset_to_custom_options_if_needed()
   }
 
+  let last_applied_pending_run_config_id: string | null = null
   async function apply_pending_run_config_if_needed() {
+    if (pending_run_config_id === last_applied_pending_run_config_id) {
+      return
+    }
     if (!pending_run_config_id || !current_task?.id) {
       return
     }
@@ -281,6 +290,12 @@
     if (exists) {
       selected_run_config_id = pending_run_config_id
     }
+    // Apply each deep-linked run config only once (tracked by ID). Otherwise it
+    // keeps re-forcing selected_run_config_id back on every reactive pass,
+    // fighting the user's manual changes (e.g. changing the model) and causing
+    // an infinite loop. Tracking the ID (rather than a boolean) still lets a new
+    // deep link applied within the same session take effect.
+    last_applied_pending_run_config_id = pending_run_config_id
   }
 
   let pending_tool_selection_applied = false
@@ -367,7 +382,11 @@
       !arrays_equal(config_properties.tools_config?.tools ?? [], [
         ...tools,
         ...skills,
-      ])
+      ]) ||
+      !inputTransformsEqual(
+        config_properties.input_transform ?? null,
+        input_transform,
+      )
     ) {
       // The user has changed something, so deselect the run config - it no longer matches the selected run config
       selected_run_config_id = "custom"
@@ -390,6 +409,7 @@
       top_p: top_p,
       structured_output_mode: structured_output_mode,
       thinking_level: thinking_level,
+      input_transform: input_transform,
       tools_config: {
         tools: all_tool_ids,
       },
@@ -542,6 +562,7 @@
           bind:top_p
           bind:structured_output_mode
           bind:thinking_level
+          bind:input_transform
           available_thinking_levels={current_model_details?.available_thinking_levels ??
             null}
           has_structured_output={requires_structured_output}
@@ -570,6 +591,7 @@
           bind:top_p
           bind:structured_output_mode
           bind:thinking_level
+          bind:input_transform
           available_thinking_levels={current_model_details?.available_thinking_levels ??
             null}
           has_structured_output={requires_structured_output}

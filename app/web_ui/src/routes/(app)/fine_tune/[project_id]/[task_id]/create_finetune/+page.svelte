@@ -10,7 +10,10 @@
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
-  import { fine_tune_target_model as model_provider } from "$lib/stores"
+  import {
+    fine_tune_target_model as model_provider,
+    current_task,
+  } from "$lib/stores"
   import {
     available_tuning_models,
     available_models_error,
@@ -28,6 +31,7 @@
     FineTuneParameter,
     KilnAgentRunConfigProperties,
     ModelProviderName,
+    Task,
   } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
@@ -255,9 +259,12 @@
     state_initialized = true
   })
 
-  $: build_available_model_select($available_tuning_models)
+  $: build_available_model_select($available_tuning_models, $current_task)
 
-  function build_available_model_select(models: FinetuneProvider[] | null) {
+  function build_available_model_select(
+    models: FinetuneProvider[] | null,
+    task: Task | null,
+  ) {
     if (!models) {
       return
     }
@@ -323,34 +330,15 @@
       })
     }
 
+    const has_structured_output = !!task?.output_json_schema
+
     available_model_select.push({
       label: "Download Dataset",
-      options: [
-        {
-          value: "download_jsonl_msg",
-          label: "OpenAI chat format (JSONL)",
-        },
-        {
-          value: "download_jsonl_json_schema_msg",
-          label: "OpenAI chat format with JSON response (JSONL)",
-        },
-        {
-          value: "download_jsonl_toolcall",
-          label: "OpenAI chat format with tool call response (JSONL)",
-        },
-        {
-          value: "download_huggingface_chat_template",
-          label: "HuggingFace chat template (JSONL)",
-        },
-        {
-          value: "download_huggingface_chat_template_toolcall",
-          label: "HuggingFace chat template with tool calls (JSONL)",
-        },
-        {
-          value: "download_vertex_gemini",
-          label: "Google Vertex-AI Gemini format (JSONL)",
-        },
-      ],
+      options: has_structured_output
+        ? download_options
+        : download_options.filter(
+            (o) => !structured_only_formats.has(o.value as string),
+          ),
     })
 
     // Check if the model provider is in the available model select
@@ -372,6 +360,39 @@
       "huggingface_chat_template_toolcall_jsonl",
     download_vertex_gemini: "vertex_gemini",
   }
+
+  const download_options: Option[] = [
+    {
+      value: "download_jsonl_msg",
+      label: "OpenAI chat format (JSONL)",
+    },
+    {
+      value: "download_jsonl_json_schema_msg",
+      label: "OpenAI chat format with JSON response (JSONL)",
+    },
+    {
+      value: "download_jsonl_toolcall",
+      label: "OpenAI chat format with tool call response (JSONL)",
+    },
+    {
+      value: "download_huggingface_chat_template",
+      label: "HuggingFace chat template (JSONL)",
+    },
+    {
+      value: "download_huggingface_chat_template_toolcall",
+      label: "HuggingFace chat template with tool calls (JSONL)",
+    },
+    {
+      value: "download_vertex_gemini",
+      label: "Google Vertex-AI Gemini format (JSONL)",
+    },
+  ]
+
+  const structured_only_formats = new Set([
+    "download_jsonl_json_schema_msg",
+    "download_jsonl_toolcall",
+    "download_huggingface_chat_template_toolcall",
+  ])
 
   $: get_hyperparameters(provider_id)
 
@@ -762,7 +783,7 @@
             on:click={go_to_providers_settings}
           >
             <Warning
-              warning_message="For 1-click fine-tuning connect OpenAI, Fireworks, Together, or Google Vertex."
+              warning_message="For 1-click fine-tuning connect Fireworks, Together, or Google Vertex."
               warning_icon="info"
               warning_color="success"
               tight={true}
@@ -779,6 +800,8 @@
             info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: [OpenAI Docs](https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts)."
             exclude_cot={true}
             custom_prompt_name="Custom Fine Tuning Prompt"
+            {project_id}
+            {task_id}
           />
           {#if system_prompt_method === "custom"}
             <div class="p-4 border-l-4 border-gray-300">

@@ -709,7 +709,7 @@ When generating model inputs, generate inputs that are likely to cause the model
 
 IMPORTANT FOR TOP-LEVEL TOPICS: When generating top-level topics (no parent topic path), aim for a 50/50 balance between:
 - Topics that relate to the "appropriate tool use" guidelines (in-domain queries where the tool should be used)
-- Topics that relate to scenarios where the tool should not be called. It is important that a breadth of scenarios are built. Optionally user's may help you here by providing some "inappropriate tool use" guidelines 
+- Topics that relate to scenarios where the tool should not be called. It is important that a breadth of scenarios are built. Optionally users may help you here by providing some "inappropriate tool use" guidelines 
 
 IMPORTANT FOR SUBTOPICS: When generating subtopics (with a parent topic path), generate subtopics that are naturally relevant to the parent topic.
 

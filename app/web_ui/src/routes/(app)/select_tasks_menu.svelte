@@ -5,11 +5,13 @@
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createEventDispatcher } from "svelte"
+  import { createKilnError } from "$lib/utils/error_handlers"
 
   const dispatch = createEventDispatcher()
 
   export let new_project_url = "/settings/create_project"
   export let new_task_url = "/settings/create_task"
+  export let import_project_url = "/settings/import_project"
 
   $: project_list = $projects?.projects || []
   let manually_selected_project: Project | null | undefined = undefined
@@ -82,7 +84,8 @@
       if (request_id !== load_request_counter) {
         return
       }
-      tasks_loading_error = "Tasks failed to load: " + error
+      tasks_loading_error =
+        "Tasks failed to load: " + createKilnError(error).getMessage()
       selected_project_tasks = []
       last_loaded_project_id = null
     } finally {
@@ -237,6 +240,13 @@
                 <div class="text-sm text-base-content/60">
                   {tasks_loading_error}
                 </div>
+                <a
+                  href={import_project_url}
+                  class="text-xs text-gray-500 hover:underline mt-4 inline-block"
+                  on:click={() => dispatch("dismiss")}
+                >
+                  Re-import project?
+                </a>
               </div>
             </div>
           {:else}

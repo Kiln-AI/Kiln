@@ -336,7 +336,7 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="link">fine-grained access tokens</a
-                >, however they are harder to setup and may require approval by
+                >, however they are harder to set up and may require approval by
                 an org administrator.</span
               >
             </div>

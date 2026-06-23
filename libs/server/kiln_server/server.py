@@ -15,6 +15,7 @@ from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
 from .spec_api import connect_spec_api
+from .statistics_api import connect_statistics_api
 from .task_api import connect_task_api
 from .utils.agent_checks.policy import ALLOW_AGENT
 
@@ -65,6 +66,10 @@ tags_metadata = [
         "description": "Create and run evaluations for tasks.",
     },
     {
+        "name": "Statistics",
+        "description": "Confidence intervals and significance tests on eval metrics.",
+    },
+    {
         "name": "Synthetic Data",
         "description": "Generate synthetic data for evals and fine-tuning.",
     },
@@ -107,7 +112,7 @@ tags_metadata = [
 ]
 
 
-def make_app(lifespan=None):
+def make_app(lifespan=None, extra_middleware: list[type] | None = None):
     app = FastAPI(
         title="Kiln AI API",
         summary="A REST API for Kiln AI.",
@@ -134,6 +139,7 @@ def make_app(lifespan=None):
     connect_run_api(app)
     connect_feedback_api(app)
     connect_document_api(app)
+    connect_statistics_api(app)
     connect_custom_errors(app)
 
     frontend_port = os.environ.get("KILN_FRONTEND_PORT", "5173")
@@ -143,6 +149,16 @@ def make_app(lifespan=None):
         f"https://localhost:{frontend_port}",
         f"https://127.0.0.1:{frontend_port}",
     ]
+
+    # Install any caller-provided middleware BEFORE CORS so it ends up inner to
+    # CORS. CORS must remain the outermost middleware: Starlette makes the
+    # last-added middleware outermost, and CORS only adds its headers to
+    # responses that pass back out through it. Inner middleware that
+    # short-circuits a response (e.g. GitSyncMiddleware returning a git-sync
+    # error) would otherwise bypass CORS entirely, and the browser would block
+    # the response with "origin not allowed".
+    for middleware_class in extra_middleware or []:
+        app.add_middleware(middleware_class)
 
     app.add_middleware(
         # Type issue https://github.com/astral-sh/ty/issues/1635
@@ -157,7 +173,7 @@ def make_app(lifespan=None):
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Kiln AI  REST Server.")
+    parser = argparse.ArgumentParser(description="Run the Kiln AI REST Server.")
     parser.add_argument("--host", default=None, help="Host for network transports.")
     parser.add_argument(
         "--port", type=int, default=None, help="Port for network transports."

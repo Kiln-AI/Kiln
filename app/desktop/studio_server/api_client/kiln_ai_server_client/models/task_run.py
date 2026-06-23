@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
 
 from ..types import UNSET, Unset
 
@@ -18,6 +17,7 @@ if TYPE_CHECKING:
     from ..models.chat_completion_tool_message_param_wrapper import ChatCompletionToolMessageParamWrapper
     from ..models.chat_completion_user_message_param import ChatCompletionUserMessageParam
     from ..models.data_source import DataSource
+    from ..models.message_usage import MessageUsage
     from ..models.task_output import TaskOutput
     from ..models.task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType0
     from ..models.usage import Usage
@@ -59,6 +59,9 @@ class TaskRun:
                 reporting.
             usage (None | Unset | Usage): Usage information for the task run. This includes the number of input tokens,
                 output tokens, and total tokens used.
+            cumulative_usage (MessageUsage | None | Unset): Sum of per-message token usage and cost across the entire trace,
+                including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded)
+                run, the token / cost fields equal those of `usage`.
             trace (list[ChatCompletionAssistantMessageParamWrapper | ChatCompletionDeveloperMessageParam |
                 ChatCompletionFunctionMessageParam | ChatCompletionSystemMessageParam | ChatCompletionToolMessageParamWrapper |
                 ChatCompletionUserMessageParam] | None | Unset): The trace of the task run in OpenAI format. This is the list of
@@ -81,6 +84,7 @@ class TaskRun:
     intermediate_outputs: None | TaskRunIntermediateOutputsType0 | Unset = UNSET
     tags: list[str] | Unset = UNSET
     usage: None | Unset | Usage = UNSET
+    cumulative_usage: MessageUsage | None | Unset = UNSET
     trace: (
         list[
             ChatCompletionAssistantMessageParamWrapper
@@ -103,6 +107,7 @@ class TaskRun:
         from ..models.chat_completion_tool_message_param_wrapper import ChatCompletionToolMessageParamWrapper
         from ..models.chat_completion_user_message_param import ChatCompletionUserMessageParam
         from ..models.data_source import DataSource
+        from ..models.message_usage import MessageUsage
         from ..models.task_output import TaskOutput
         from ..models.task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType0
         from ..models.usage import Usage
@@ -175,6 +180,14 @@ class TaskRun:
         else:
             usage = self.usage
 
+        cumulative_usage: dict[str, Any] | None | Unset
+        if isinstance(self.cumulative_usage, Unset):
+            cumulative_usage = UNSET
+        elif isinstance(self.cumulative_usage, MessageUsage):
+            cumulative_usage = self.cumulative_usage.to_dict()
+        else:
+            cumulative_usage = self.cumulative_usage
+
         trace: list[dict[str, Any]] | None | Unset
         if isinstance(self.trace, Unset):
             trace = UNSET
@@ -237,6 +250,8 @@ class TaskRun:
             field_dict["tags"] = tags
         if usage is not UNSET:
             field_dict["usage"] = usage
+        if cumulative_usage is not UNSET:
+            field_dict["cumulative_usage"] = cumulative_usage
         if trace is not UNSET:
             field_dict["trace"] = trace
         if parent_task_run_id is not UNSET:
@@ -253,6 +268,7 @@ class TaskRun:
         from ..models.chat_completion_tool_message_param_wrapper import ChatCompletionToolMessageParamWrapper
         from ..models.chat_completion_user_message_param import ChatCompletionUserMessageParam
         from ..models.data_source import DataSource
+        from ..models.message_usage import MessageUsage
         from ..models.task_output import TaskOutput
         from ..models.task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType0
         from ..models.usage import Usage
@@ -289,7 +305,7 @@ class TaskRun:
         if isinstance(_created_at, Unset):
             created_at = UNSET
         else:
-            created_at = isoparse(_created_at)
+            created_at = datetime.datetime.fromisoformat(_created_at)
 
         created_by = d.pop("created_by", UNSET)
 
@@ -371,6 +387,23 @@ class TaskRun:
             return cast(None | Unset | Usage, data)
 
         usage = _parse_usage(d.pop("usage", UNSET))
+
+        def _parse_cumulative_usage(data: object) -> MessageUsage | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                cumulative_usage_type_0 = MessageUsage.from_dict(data)
+
+                return cumulative_usage_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MessageUsage | None | Unset, data)
+
+        cumulative_usage = _parse_cumulative_usage(d.pop("cumulative_usage", UNSET))
 
         def _parse_trace(
             data: object,
@@ -500,6 +533,7 @@ class TaskRun:
             intermediate_outputs=intermediate_outputs,
             tags=tags,
             usage=usage,
+            cumulative_usage=cumulative_usage,
             trace=trace,
             parent_task_run_id=parent_task_run_id,
         )

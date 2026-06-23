@@ -15,6 +15,9 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
+  import ErrorWithTraceComponent from "$lib/ui/error_with_trace.svelte"
+  import type { ErrorWithTrace } from "$lib/types"
+  import { is_error_with_trace } from "./error_with_trace_detection"
 
   $: agentInfo.set({
     name: "Run",
@@ -22,6 +25,7 @@
   })
 
   let run_error: KilnError | null = null
+  let error_with_trace: ErrorWithTrace | null = null
   let submitting = false
   let run_complete = false
 
@@ -39,7 +43,7 @@
   let set_default_error: KilnError | null = null
 
   let response: TaskRun | null = null
-  $: run_focus = !response
+  $: run_focus = !response && !error_with_trace
 
   $: project_id = $current_project?.id ?? ""
   $: task_id = $current_task?.id ?? ""
@@ -61,6 +65,7 @@
     try {
       submitting = true
       run_error = null
+      error_with_trace = null
       response = null
       run_complete = false
       if (!run_config_component) {
@@ -78,6 +83,12 @@
         run_config_component.set_model_dropdown_error("Required")
         throw new Error("You must select a model before running")
       }
+      // If the user picked a saved run config (rather than configuring inline),
+      // forward its ID so it gets recorded on the resulting TaskRun.
+      const task_run_config_id =
+        selected_run_config_id && selected_run_config_id !== "custom"
+          ? selected_run_config_id
+          : null
       const {
         data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
@@ -94,9 +105,19 @@
           // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
           structured_input: input_form.get_structured_input_data(),
           tags: ["manual_run"],
+          task_run_config_id: task_run_config_id,
         },
       })
       if (fetch_error) {
+        // openapi-fetch already parses the error body into fetch_error, so we
+        // can inspect it directly to decide whether this is the new structured
+        // ErrorWithTrace shape (HTTP 500 from an adapter failure) or a plain
+        // HTTPException. Calling response.json() here would throw because the
+        // body stream has already been consumed during parsing.
+        if (is_error_with_trace(fetch_error)) {
+          error_with_trace = fetch_error
+          return
+        }
         throw fetch_error
       }
       if (is_mcp_run) {
@@ -131,6 +152,7 @@
   function clear_all() {
     input_form.clear_input()
     response = null
+    error_with_trace = null
     run_complete = false
   }
 
@@ -182,6 +204,9 @@
   function handle_input_change() {
     if (response) {
       response = null
+    }
+    if (error_with_trace) {
+      error_with_trace = null
     }
   }
 </script>
@@ -238,18 +263,31 @@
         </div>
       {/if}
     </div>
-    {#if $current_task && !submitting && response != null && project_id}
-      <div class="mt-8 xl:mt-12" bind:this={output_section} id="output-section">
-        <Run
-          initial_run={response}
-          task={$current_task}
-          {project_id}
-          bind:model_name
-          bind:provider
-          bind:run_complete
-          focus_repair_on_appear={true}
-        />
-      </div>
+    {#if $current_task && !submitting && project_id}
+      {#if error_with_trace}
+        <div class="mt-8 xl:mt-12">
+          <ErrorWithTraceComponent
+            error={error_with_trace}
+            error_title="Run Failed"
+          />
+        </div>
+      {:else if response != null}
+        <div
+          class="mt-8 xl:mt-12"
+          bind:this={output_section}
+          id="output-section"
+        >
+          <Run
+            initial_run={response}
+            task={$current_task}
+            {project_id}
+            bind:model_name
+            bind:provider
+            bind:run_complete
+            focus_repair_on_appear={true}
+          />
+        </div>
+      {/if}
     {/if}
   </AppPage>
 </div>

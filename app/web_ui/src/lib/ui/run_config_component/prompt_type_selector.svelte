@@ -22,8 +22,8 @@
   export let fine_tune_prompt_id: string | undefined = undefined
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
-  export let project_id: string | null = null
-  export let task_id: string | null = null
+  export let project_id: string | null
+  export let task_id: string | null
 
   let has_rated_data = false
   let has_repair_data = false
@@ -314,6 +314,6 @@
 
 {#if is_fine_tune_model && prompt_method != fine_tune_prompt_id}
   <Warning
-    warning_message="We strongly recommend using prompt the model was trained on when running a fine-tuned model."
+    warning_message="We strongly recommend using the prompt the model was trained on when running a fine-tuned model."
   />
 {/if}

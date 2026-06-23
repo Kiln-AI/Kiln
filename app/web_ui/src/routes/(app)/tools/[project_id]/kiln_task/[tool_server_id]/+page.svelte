@@ -27,12 +27,16 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
-  import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
+  import {
+    getRunConfigUiProperties,
+    getRunConfigInputTransform,
+  } from "$lib/utils/run_config_formatters"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import type { UiProperty } from "$lib/ui/property_list"
+  import InputTransformModal from "$lib/ui/run_config_component/input_transform_modal.svelte"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -55,6 +59,7 @@
   let archive_loading = false
   let run_config_properties: UiProperty[] = []
   let task_id_for_run_config: string | null = null
+  let input_transform_modal: InputTransformModal | null = null
 
   onMount(async () => {
     await fetch_tool_server()
@@ -222,6 +227,10 @@
     ]
   }
 
+  $: input_transform = run_config
+    ? getRunConfigInputTransform(run_config)
+    : null
+
   $: {
     if (task_id_for_run_config && run_config) {
       const task_prompts =
@@ -235,6 +244,7 @@
         $model_info,
         task_prompts,
         $available_tools,
+        () => input_transform_modal?.show(),
       )
     } else {
       run_config_properties = []
@@ -407,3 +417,10 @@
     {/if}
   </AppPage>
 </div>
+
+{#if input_transform}
+  <InputTransformModal
+    bind:this={input_transform_modal}
+    transform={input_transform}
+  />
+{/if}

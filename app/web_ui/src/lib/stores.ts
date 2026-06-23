@@ -187,7 +187,7 @@ export const available_tools = writable<
 let loading_project_tools: string[] = []
 
 export function uncache_available_tools(project_id: string) {
-  // Delete the project_id from the available_tools, so next load it needs to load a updated list.
+  // Delete the project_id from the available_tools, so next load it needs to load an updated list.
   const { [project_id]: _, ...remaining } = get(available_tools)
   available_tools.set(remaining)
 }
@@ -551,7 +551,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   gemini_api: "Gemini API",
   azure_openai: "Azure OpenAI",
   huggingface: "Hugging Face",
-  vertex: "Google Vertex AI",
+  vertex: "Gemini Enterprise Agent Platform (formerly Vertex AI)",
   together_ai: "Together AI",
   siliconflow_cn: "SiliconFlow CN",
   cerebras: "Cerebras",

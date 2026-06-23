@@ -3,8 +3,10 @@
   // as pass/fail, and flying out. Originally written for the spec builder; the
   // copy below is now parameterized so other flows (e.g. data guide preview
   // generation) can reuse the visual.
+  import Warning from "$lib/ui/warning.svelte"
   export let title: string
   export let description: string
+  export let warning: string | null = null
 </script>
 
 <div class="flex flex-col items-center justify-center">
@@ -775,4 +777,15 @@
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
     {description}
   </div>
+  {#if warning}
+    <div class="mt-6">
+      <Warning
+        warning_message={warning}
+        warning_color="warning"
+        warning_icon="exclaim"
+        text_size="base"
+        tight
+      />
+    </div>
+  {/if}
 </div>

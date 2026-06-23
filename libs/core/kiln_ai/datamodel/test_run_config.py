@@ -7,6 +7,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
+from kiln_ai.datamodel.input_transform import JinjaInputTransform
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -119,6 +120,27 @@ class TestKilnAgentRunConfigProperties:
         assert "thinking_level" in config_with_value.model_fields_set
         data_value = config_with_value.model_dump(exclude_unset=True)
         assert data_value["thinking_level"] == "low"
+
+    def test_thinking_level_deserializes_even_if_provider_drops_support(self):
+        """Run configs with a thinking_level must still deserialize after the
+        provider removes that level from available_thinking_levels. The
+        thinking_level field is a free-form string with no cross-validation
+        against the provider config."""
+        raw_json = json.dumps(
+            {
+                "type": "kiln_agent",
+                "model_name": "gemma_4_31b",
+                "model_provider_name": "gemini_api",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "default",
+                "thinking_level": "high",
+            }
+        )
+        config = run_config_adapter.validate_json(raw_json)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.thinking_level == "high"
+        assert config.model_name == "gemma_4_31b"
+        assert config.model_provider_name == ModelProviderName.gemini_api
 
     def test_thinking_level_normalizes_and_rejects_blank(self):
         config = KilnAgentRunConfigProperties(
@@ -385,3 +407,69 @@ class TestSaveLoadBothTypes:
         dumped = json.loads(wrapper.model_dump_json())
         restored = RunConfigWrapper.model_validate(dumped)
         assert isinstance(restored.run_config_properties, McpRunConfigProperties)
+
+
+class TestInputTransformField:
+    def test_input_transform_defaults_to_none(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        )
+        assert config.input_transform is None
+
+    def test_input_transform_accepts_valid_jinja(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            input_transform=JinjaInputTransform(template="{{ input.name }}"),
+        )
+        assert config.input_transform is not None
+        assert isinstance(config.input_transform, JinjaInputTransform)
+        assert config.input_transform.template == "{{ input.name }}"
+
+    def test_input_transform_dict_dispatch(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            input_transform={"type": "jinja", "template": "{{ input }}"},
+        )
+        assert isinstance(config.input_transform, JinjaInputTransform)
+        assert config.input_transform.template == "{{ input }}"
+
+    def test_backcompat_no_input_transform_key(self):
+        raw = {
+            "type": "kiln_agent",
+            "model_name": "gpt-4",
+            "model_provider_name": "openai",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        }
+        config = run_config_adapter.validate_python(raw)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.input_transform is None
+
+    def test_mcp_has_no_input_transform(self):
+        config = McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name"),
+        )
+        assert not hasattr(config, "input_transform")
+
+    def test_roundtrip_with_input_transform(self):
+        original = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            input_transform=JinjaInputTransform(template="{{ input.x }}"),
+        )
+        dumped = json.loads(json.dumps(original.model_dump()))
+        restored = run_config_adapter.validate_python(dumped)
+        assert isinstance(restored, KilnAgentRunConfigProperties)
+        assert isinstance(restored.input_transform, JinjaInputTransform)
+        assert restored.input_transform.template == "{{ input.x }}"

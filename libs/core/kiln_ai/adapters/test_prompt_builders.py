@@ -8,11 +8,13 @@ from kiln_ai.adapters.model_adapters.test_structured_output import (
     build_structured_output_test_task,
 )
 from kiln_ai.adapters.prompt_builders import (
+    CustomExamplePromptBuilder,
     FewShotChainOfThoughtPromptBuilder,
     FewShotPromptBuilder,
     FineTunePromptBuilder,
     MultiShotChainOfThoughtPromptBuilder,
     MultiShotPromptBuilder,
+    PromptExample,
     RepairsPromptBuilder,
     SavedPromptBuilder,
     SimpleChainOfThoughtPromptBuilder,
@@ -60,7 +62,9 @@ def test_simple_prompt_builder(tmp_path):
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(self, input: InputType, **kwargs) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, trace_ref, **kwargs
+    ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="mock response", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -683,3 +687,56 @@ def test_build_prompt_for_ui_with_skills(tmp_path):
     ui_prompt = builder.build_prompt_for_ui(skills=skills)
     assert "my-skill" in ui_prompt
     assert "Does something" in ui_prompt
+
+
+def test_custom_example_prompt_builder_uses_instruction(tmp_path):
+    task = build_test_task(tmp_path)
+    examples = [PromptExample(input="2 + 2", output="[4]")]
+    builder = CustomExamplePromptBuilder(task, examples)
+    prompt = builder.build_prompt(include_json_instructions=False)
+
+    assert "# Instruction" in prompt
+    assert task.instruction in prompt
+    # Requirements are included from the task
+    assert task.requirements[0].instruction in prompt
+    assert "# Example Outputs" in prompt
+    assert "Input: 2 + 2" in prompt
+    assert "Output: [4]" in prompt
+
+
+def test_custom_example_prompt_builder_no_examples(tmp_path):
+    task = build_test_task(tmp_path)
+    builder = CustomExamplePromptBuilder(task)
+    prompt = builder.build_prompt(include_json_instructions=False)
+
+    assert task.instruction in prompt
+    assert "# Example Outputs" not in prompt
+
+
+def test_custom_example_prompt_builder_base_prompt_override(tmp_path):
+    task = build_test_task(tmp_path)
+    override = "PRODUCTION PROMPT: translate the input to French."
+    examples = [PromptExample(input="hello", output="bonjour")]
+    builder = CustomExamplePromptBuilder(task, examples, base_prompt_override=override)
+    prompt = builder.build_prompt(include_json_instructions=False)
+
+    # Override replaces the task instruction and requirements
+    assert override in prompt
+    assert "# Instruction" not in prompt
+    assert task.instruction not in prompt
+    assert task.requirements[0].instruction not in prompt
+    # Examples are still appended, with separation
+    assert "# Example Outputs" in prompt
+    assert "Input: hello" in prompt
+    assert "Output: bonjour" in prompt
+    assert override + "\n\n# Example Outputs" in prompt
+
+
+def test_custom_example_prompt_builder_override_no_examples(tmp_path):
+    task = build_test_task(tmp_path)
+    override = "PRODUCTION PROMPT: do the thing."
+    builder = CustomExamplePromptBuilder(task, base_prompt_override=override)
+    prompt = builder.build_prompt(include_json_instructions=False)
+
+    assert prompt == override
+    assert "# Example Outputs" not in prompt

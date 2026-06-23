@@ -883,7 +883,7 @@ def test_task_runs_multiple_levels_via_parent_task_run_id(task: Task):
 
     assert task.path is not None
     loaded_task = Task.load_from_file(task.path)
-    all_runs = {r.id: r for r in loaded_task.runs()}
+    all_runs = {r.id: r for r in loaded_task.runs(include_intermediate_runs=True)}
     assert len(all_runs) == 3
     assert all_runs[run2.id].parent_task_run_id == run1.id
     assert all_runs[run3.id].parent_task_run_id == run2.id
@@ -949,6 +949,74 @@ def test_find_root_task_run_by_id_given_task(task: Task):
     assert found is not None
     assert found.id == target_id
     assert found.input == "in"
+
+
+def test_data_source_default_run_config_id_is_none():
+    source = DataSource(type=DataSourceType.human, properties={"created_by": "u"})
+    assert source.run_config_id is None
+
+
+def test_data_source_run_config_id_round_trips(task: Task):
+    run = TaskRun(
+        input="in",
+        output=TaskOutput(
+            output="out",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "openai",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+                run_config_id="rc_abc123",
+            ),
+        ),
+        parent=task,
+    )
+    run.save_to_file()
+
+    assert task.path is not None
+    loaded_task = Task.load_from_file(task.path)
+    loaded = next(r for r in loaded_task.runs() if r.id == run.id)
+    assert loaded.output.source.run_config_id == "rc_abc123"
+
+
+def test_data_source_normalizes_empty_run_config_id_to_none():
+    # Tool callers default missing IDs to "". Coerce empty strings to None so
+    # the on-disk field is either a real ID or unset, never an ambiguous "".
+    source = DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "gpt_4o",
+            "model_provider": "openai",
+            "adapter_name": "kiln_langchain_adapter",
+        },
+        run_config_id="",
+    )
+    assert source.run_config_id is None
+
+
+def test_data_source_does_not_validate_run_config_id_existence(task: Task):
+    # Per the ticket: a TaskRunConfig may be manually deleted from disk without
+    # invalidating historical TaskRuns that reference it.
+    run = TaskRun(
+        input="in",
+        output=TaskOutput(
+            output="out",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "openai",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+                run_config_id="rc_does_not_exist",
+            ),
+        ),
+        parent=task,
+    )
+    run.save_to_file()
+    assert run.output.source.run_config_id == "rc_does_not_exist"
 
 
 def test_comprehensive_flat_task_run_hierarchy(tmp_path):
@@ -1017,7 +1085,7 @@ def test_comprehensive_flat_task_run_hierarchy(tmp_path):
     loaded_project = Project.load_from_file(project_path)
     loaded_task = loaded_project.tasks()[0]
 
-    all_runs = {r.id: r for r in loaded_task.runs()}
+    all_runs = {r.id: r for r in loaded_task.runs(include_intermediate_runs=True)}
     assert len(all_runs) == 8
 
     assert all_runs[run1_l1.id].parent_task_run_id is None
@@ -1087,7 +1155,7 @@ def test_task_run_runs_on_disk(tmp_path):
     child_run.save_to_file()
 
     loaded_task = Task.load_from_file(task.path)
-    children = loaded_task.runs()
+    children = loaded_task.runs(include_intermediate_runs=True)
     assert len(children) == 2
     by_id = {r.id: r for r in children}
     assert by_id[child_run.id].parent_task_run_id == parent_run.id
