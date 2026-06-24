@@ -262,11 +262,7 @@ describe("fetchTaskRuns", () => {
     mockGet.mockResolvedValue({ data: runs, error: undefined })
 
     const result = await fetchTaskRuns("p", "t")
-    expect(result.map((r) => r.id)).toEqual([
-      "new",
-      "mid",
-      "old",
-    ])
+    expect(result.map((r) => r.id)).toEqual(["new", "mid", "old"])
   })
 
   it("returns empty array when data is null", async () => {

@@ -14,11 +14,19 @@
     return properties
   }
 
-  // TODO(pre-ship 5.3): The "Reference Data Key" source option below lets users configure
-  // set_check to compare against reference_data, but in V2.0 no UI path populates
-  // reference_data on EvalInputs — so this eval will always silently skip at runtime.
-  // Before shipping to main: either wire reference_data population into the UI,
-  // or remove the "reference_key" source option from this form.
+  export function validate(): string | null {
+    if (
+      source === "expected_set" &&
+      (!properties.expected_set || properties.expected_set.length === 0)
+    ) {
+      return "Expected set must contain at least one value."
+    }
+    if (source === "reference_key" && !properties.reference_key) {
+      return "Reference key is required."
+    }
+    return null
+  }
+
   let source: "expected_set" | "reference_key" = properties.reference_key
     ? "reference_key"
     : "expected_set"
@@ -85,7 +93,7 @@
   <FormElement
     id="set_check_value_expression"
     label="Value Expression"
-    description="Optional JSONPath or expression to extract the value from the output before comparison."
+    description="Optional Jinja2 expression to extract a value from the eval input before comparison. Leave blank to use the full model output."
     inputType="input"
     optional={true}
     bind:value={properties.value_expression}

@@ -2,6 +2,7 @@
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   type ToolCallSpec = components["schemas"]["ToolCallSpec"]
 
@@ -61,6 +62,18 @@
     return properties
   }
 
+  export function validate(): string | null {
+    if (!properties.expected_tools || properties.expected_tools.length === 0) {
+      return "At least one expected tool must be defined."
+    }
+    for (const tool of properties.expected_tools) {
+      if (!tool.tool_name.trim()) {
+        return "All expected tools must have a name."
+      }
+    }
+    return null
+  }
+
   function add_arg(tool_index: number) {
     while (arg_rows.length <= tool_index) {
       arg_rows.push([])
@@ -95,17 +108,19 @@
     ]}
   />
 
-  <FormElement
-    id="tool_call_check_on_unexpected"
-    label="On Unexpected Tools"
-    description="What to do when the model calls tools not in the expected list."
-    inputType="select"
-    bind:value={properties.on_unexpected_tools}
-    select_options={[
-      ["ignore", "Ignore"],
-      ["fail", "Fail"],
-    ]}
-  />
+  {#if properties.match_mode !== "never"}
+    <FormElement
+      id="tool_call_check_on_unexpected"
+      label="On Unexpected Tools"
+      description="What to do when the model calls tools not in the expected list."
+      inputType="select"
+      bind:value={properties.on_unexpected_tools}
+      select_options={[
+        ["ignore", "Ignore"],
+        ["fail", "Fail"],
+      ]}
+    />
+  {/if}
 
   <FormList
     bind:content={properties.expected_tools}
@@ -122,54 +137,59 @@
         bind:value={properties.expected_tools[item_index].tool_name}
       />
 
-      {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
-        <div class="flex gap-2 items-end">
-          <div class="flex-1">
-            <FormElement
-              id="arg_name_{item_index}_{arg_index}"
-              label={arg_index === 0 ? "Arg Name" : ""}
-              inputType="input"
-              placeholder="arg name"
-              bind:value={arg_row.name}
-            />
-          </div>
-          <div class="flex-1">
-            <FormElement
-              id="arg_value_{item_index}_{arg_index}"
-              label={arg_index === 0 ? "Expected Value (JSON)" : ""}
-              inputType="input"
-              placeholder={'e.g. "hello" or 42'}
-              bind:value={arg_row.value}
-            />
-          </div>
-          <div class="w-32">
-            <FormElement
-              id="arg_match_{item_index}_{arg_index}"
-              label={arg_index === 0 ? "Match" : ""}
-              inputType="select"
-              bind:value={arg_row.match_mode}
-              select_options={[
-                ["exact", "Exact"],
-                ["contains", "Contains"],
-                ["regex", "Regex"],
-              ]}
-            />
-          </div>
-          <button
-            class="btn btn-ghost btn-sm btn-square"
-            on:click={() => remove_arg(item_index, arg_index)}
-            title="Remove argument"
-          >
-            ✕
-          </button>
-        </div>
-      {/each}
-      <button
-        class="btn btn-ghost btn-sm self-start"
-        on:click={() => add_arg(item_index)}
+      <Collapse
+        title="Expected Arguments"
+        open={(arg_rows[item_index] ?? []).length > 0}
       >
-        + Add Expected Argument
-      </button>
+        {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
+          <div class="flex gap-2 items-end">
+            <div class="flex-1">
+              <FormElement
+                id="arg_name_{item_index}_{arg_index}"
+                label={arg_index === 0 ? "Arg Name" : ""}
+                inputType="input"
+                placeholder="arg name"
+                bind:value={arg_row.name}
+              />
+            </div>
+            <div class="flex-1">
+              <FormElement
+                id="arg_value_{item_index}_{arg_index}"
+                label={arg_index === 0 ? "Expected Value (JSON)" : ""}
+                inputType="input"
+                placeholder={'e.g. "hello" or 42'}
+                bind:value={arg_row.value}
+              />
+            </div>
+            <div class="w-32">
+              <FormElement
+                id="arg_match_{item_index}_{arg_index}"
+                label={arg_index === 0 ? "Match" : ""}
+                inputType="select"
+                bind:value={arg_row.match_mode}
+                select_options={[
+                  ["exact", "Exact"],
+                  ["contains", "Contains"],
+                  ["regex", "Regex"],
+                ]}
+              />
+            </div>
+            <button
+              class="btn btn-ghost btn-sm btn-square"
+              on:click={() => remove_arg(item_index, arg_index)}
+              title="Remove argument"
+            >
+              ✕
+            </button>
+          </div>
+        {/each}
+        <button
+          class="btn btn-ghost btn-sm self-start"
+          on:click={() => add_arg(item_index)}
+        >
+          + Add Expected Argument
+        </button>
+      </Collapse>
     </div>
   </FormList>
 </div>

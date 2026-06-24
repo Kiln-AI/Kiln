@@ -34,7 +34,7 @@ _V2_TYPE_TO_PROPS = {
     V2EvalType.exact_match: ExactMatchProperties(expected_value="test"),
     V2EvalType.pattern_match: PatternMatchProperties(pattern=".*"),
     V2EvalType.contains: ContainsProperties(substring="test"),
-    V2EvalType.set_check: SetCheckProperties(expected_set=["a"]),
+    V2EvalType.set_check: SetCheckProperties(expected_set=["a"], mode="subset"),
     V2EvalType.tool_call_check: ToolCallCheckProperties(
         expected_tools=[ToolCallSpec(tool_name="t")],
     ),

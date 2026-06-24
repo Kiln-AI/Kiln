@@ -14,11 +14,16 @@
     return properties
   }
 
-  // TODO(pre-ship 5.3): The "Reference Data Key" source option below lets users configure
-  // exact_match to compare against reference_data, but in V2.0 no UI path populates
-  // reference_data on EvalInputs — so this eval will always silently skip at runtime.
-  // Before shipping to main: either wire reference_data population into the UI,
-  // or remove the "reference_key" source option from this form.
+  export function validate(): string | null {
+    if (source === "expected_value" && !properties.expected_value) {
+      return "Expected value is required."
+    }
+    if (source === "reference_key" && !properties.reference_key) {
+      return "Reference key is required."
+    }
+    return null
+  }
+
   let source: "expected_value" | "reference_key" = properties.expected_value
     ? "expected_value"
     : properties.reference_key
@@ -67,7 +72,7 @@
   <FormElement
     id="exact_match_value_expression"
     label="Value Expression"
-    description="Optional JSONPath or expression to extract the value from the output before comparing."
+    description="Optional Jinja2 expression to extract a value from the eval input before comparison. Leave blank to use the full model output."
     inputType="input"
     optional={true}
     bind:value={properties.value_expression}

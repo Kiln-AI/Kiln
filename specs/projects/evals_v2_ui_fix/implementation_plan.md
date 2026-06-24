@@ -36,7 +36,7 @@ flow only**. Run the standard web + python check suites before each phase's code
   to bake from the builder input, arch §3.3). **Shape-validity gates Save** (fix `test_has_run`).
   Score results render V1-parity floats (no badge). Target: `70 §1`/`§2`.
 
-- [ ] **Phase 4 — Deterministic form correctness + picker.**
+- [x] **Phase 4 — Deterministic form correctness + picker.**
   `set_check.mode` **required** (drop the `= "subset"` default; UI sends explicit; audit other
   mode enums; regen schema) — double-robustness. "JSONPath"→"Jinja2" wording + help across forms.
   On-blur validation (regex, min≤max, XOR). `tool_call_check`: hide `on_unexpected_tools` on

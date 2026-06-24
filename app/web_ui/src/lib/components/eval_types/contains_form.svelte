@@ -15,11 +15,16 @@
     return properties
   }
 
-  // TODO(pre-ship 5.3): The "Reference Data Key" source option below lets users configure
-  // contains to compare against reference_data, but in V2.0 no UI path populates
-  // reference_data on EvalInputs — so this eval will always silently skip at runtime.
-  // Before shipping to main: either wire reference_data population into the UI,
-  // or remove the "reference_key" source option from this form.
+  export function validate(): string | null {
+    if (source === "substring" && !properties.substring) {
+      return "Substring is required."
+    }
+    if (source === "reference_key" && !properties.reference_key) {
+      return "Reference key is required."
+    }
+    return null
+  }
+
   let source: "substring" | "reference_key" = properties.reference_key
     ? "reference_key"
     : "substring"
@@ -78,7 +83,7 @@
   <FormElement
     id="contains_value_expression"
     label="Value Expression"
-    description="Optional JSONPath or expression to extract the value from the output before searching."
+    description="Optional Jinja2 expression to extract a value from the eval input before searching. Leave blank to use the full model output."
     inputType="input"
     optional={true}
     bind:value={properties.value_expression}

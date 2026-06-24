@@ -2160,13 +2160,26 @@ def test_set_check_xor_validator():
     with pytest.raises(
         ValueError, match="Exactly one of expected_set or reference_key"
     ):
-        SetCheckProperties(expected_set=["a"], reference_key="b")
+        SetCheckProperties(expected_set=["a"], reference_key="b", mode="equal")
     with pytest.raises(
         ValueError, match="Exactly one of expected_set or reference_key"
     ):
-        SetCheckProperties()
+        SetCheckProperties(mode="subset")
 
-    assert SetCheckProperties(expected_set=["x"]).expected_set == ["x"]
+    assert SetCheckProperties(expected_set=["x"], mode="equal").expected_set == ["x"]
+
+
+def test_set_check_mode_required():
+    """SetCheckProperties.mode is required (no silent default)."""
+    with pytest.raises(ValidationError, match="mode"):
+        SetCheckProperties(expected_set=["a"])
+
+
+def test_set_check_mode_explicit_values():
+    """Each mode value works when explicitly provided."""
+    for m in ("subset", "superset", "equal"):
+        props = SetCheckProperties(expected_set=["a"], mode=m)
+        assert props.mode == m
 
 
 def test_step_count_check_bounds():
@@ -2606,7 +2619,9 @@ class TestV2TemplateValidation:
         [
             PatternMatchProperties(pattern="ok", value_expression="final_message"),
             ContainsProperties(substring="yes", value_expression="final_message"),
-            SetCheckProperties(expected_set=["a"], value_expression="final_message"),
+            SetCheckProperties(
+                expected_set=["a"], value_expression="final_message", mode="equal"
+            ),
         ],
         ids=["pattern_match", "contains", "set_check"],
     )

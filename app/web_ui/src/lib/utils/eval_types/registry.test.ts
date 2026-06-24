@@ -54,13 +54,13 @@ describe("getV2EvalTypeMetadata", () => {
   it("returns correct label for each type", () => {
     const expectedLabels: Record<V2EvalType, string> = {
       exact_match: "Exact Match",
-      pattern_match: "Pattern Match",
+      pattern_match: "Pattern Match (regex)",
       contains: "Contains",
       set_check: "Set Check",
       tool_call_check: "Tool Call Check",
       step_count_check: "Step Count Check",
       llm_judge: "LLM as Judge (recommended)",
-      code_eval: "Code Eval",
+      code_eval: "Code: Custom Python Code Eval",
     }
     for (const [type, label] of Object.entries(expectedLabels)) {
       expect(getV2EvalTypeMetadata(type as V2EvalType).label).toBe(label)

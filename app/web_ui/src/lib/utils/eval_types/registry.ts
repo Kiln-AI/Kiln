@@ -38,13 +38,13 @@ export type V2EvalType =
 
 export const ALL_V2_EVAL_TYPES: readonly V2EvalType[] = [
   "llm_judge",
+  "code_eval",
   "exact_match",
   "pattern_match",
   "contains",
   "set_check",
   "tool_call_check",
   "step_count_check",
-  "code_eval",
 ] as const
 
 /**
@@ -83,7 +83,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       }
     case "pattern_match":
       return {
-        label: "Pattern Match",
+        label: "Pattern Match (regex)",
         description:
           "Passes when the output matches (or does not match) a regular expression.",
         icon: "bi bi-regex",
@@ -143,7 +143,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       }
     case "code_eval":
       return {
-        label: "Code Eval",
+        label: "Code: Custom Python Code Eval",
         description:
           "Runs a custom Python scoring function against the output.",
         icon: "bi bi-code-slash",
