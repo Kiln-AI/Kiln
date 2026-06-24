@@ -17,7 +17,7 @@ Holding project for the **important-but-small** fixes from the Evals V2 spec-fid
 
 - [`../evals_v2/components/27_type_code_eval.md`](../evals_v2/components/27_type_code_eval.md) — §2 scorer contract + `KilnEvalHelpers` library (D14/D15/D16).
 - [`../evals_v2/components/22_type_deterministic_basics.md`](../evals_v2/components/22_type_deterministic_basics.md) + [`../evals_v2/components/40_template_and_extraction.md`](../evals_v2/components/40_template_and_extraction.md) — save-time validation (D27–D30).
-- [`../evals_v2/components/70_builder_and_onboarding.md`](../evals_v2/components/70_builder_and_onboarding.md) §4 — results/view surfaces (D31, D32).
+- [`../evals_v2/components/70_builder_and_onboarding.md`](../evals_v2/components/70_builder_and_onboarding.md) §4 — results/view surfaces (D31). _(D32 read-only config-detail view moved to its own project — `specs/projects/evals_v2_readonly_views/` — since it reuses Project 1's per-type forms.)_
 - [`../evals_v2/components/85_observability_and_audit.md`](../evals_v2/components/85_observability_and_audit.md) §3.4 — `n_excluded` surfacing (D35).
 
 Evidence: [`confirm_K.md`](../evals_v2/spec_fidelity_review/confirm_K.md) (code-eval), [`confirm_J.md`](../evals_v2/spec_fidelity_review/confirm_J.md) (validators), [`confirm_H.md`](../evals_v2/spec_fidelity_review/confirm_H.md) (view surfaces), [`confirm_L.md`](../evals_v2/spec_fidelity_review/confirm_L.md) (observability).
@@ -33,7 +33,6 @@ Evidence: [`confirm_K.md`](../evals_v2/spec_fidelity_review/confirm_K.md) (code-
 | **D28** | Compile `ArgMatch` regex values at save time (`eval.py:154-156`). | Insidious: invalid regex silently never matches at runtime. |
 | **D30** | AST-based useless-template check (currently a surface `{{`-scan) so a `reference_data`-only template can't pass save (`eval.py:706-712`). | Insidious: such a template never reads model output → meaningless eval. |
 | **D31** | Surface V2 `llm_judge`/`code_eval` **reasoning** in results (Thinking is currently hidden for all V2 configs; `intermediate_outputs` not passed to V2 renderers). `run_result/+page.svelte`, `llm_judge_result.svelte`. | **Non-prescriptive** — find the right way to show it; don't over-engineer. |
-| **D32** | Read-only **config-detail view** for V2 configs: show a saved config's type + key properties so a user can see what a candidate does before cloning (today non-`llm_judge` V2 configs show "No description provided"). | Largest item; net-new small view. View surface — no create-container conflict. |
 | **D35** | Warning icon (warning color) + tooltip on aggregate-results surfaces (esp. the **compare view**) when `n_excluded > 0`, showing how many cases were excluded/skipped. Data already in API (`ScoreSummary.n_excluded`). | |
 
 ### Post-ship
@@ -46,7 +45,7 @@ Evidence: [`confirm_K.md`](../evals_v2/spec_fidelity_review/confirm_K.md) (code-
 ## Notes
 
 - D14/D15/D16/D27/D28/D29/D30 are **backend-only** (datamodel/helpers/endpoint) — safe to do anytime, no UI-branch conflict.
-- D31/D32/D35 are **results/view** surfaces (run-result page, eval-detail, compare view) — distinct from the create container owned by Project 1.
+- D31/D35 are **results/view** surfaces (run-result page, eval-detail, compare view) — distinct from the create container owned by Project 1. (D32 also a view surface, but it reuses the per-type forms → moved to its own project, sequenced after Project 1.)
 - Consider splitting execution into a pre-ship batch (D14/D15/D16/D28/D30/D31/D32/D35) and a post-ship batch (D27/D29).
 
 ## Out of scope
