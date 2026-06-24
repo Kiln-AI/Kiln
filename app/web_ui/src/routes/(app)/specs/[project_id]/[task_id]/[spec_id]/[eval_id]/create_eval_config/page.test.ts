@@ -176,6 +176,7 @@ vi.mock("$lib/utils/eval_types/registry", async (importOriginal) => {
 // Mock the v2_eval_api functions
 const mockTestV2Eval = vi.fn()
 const mockCreateEvalConfig = vi.fn()
+const mockCreateLlmJudgeConfig = vi.fn()
 const mockCheckCodeEvalTrust = vi.fn()
 const mockGrantCodeEvalTrust = vi.fn()
 
@@ -185,6 +186,8 @@ vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
     ...original,
     testV2Eval: (...args: unknown[]) => mockTestV2Eval(...args),
     createEvalConfig: (...args: unknown[]) => mockCreateEvalConfig(...args),
+    createLlmJudgeConfig: (...args: unknown[]) =>
+      mockCreateLlmJudgeConfig(...args),
     checkCodeEvalTrust: (...args: unknown[]) => mockCheckCodeEvalTrust(...args),
     grantCodeEvalTrust: (...args: unknown[]) => mockGrantCodeEvalTrust(...args),
   }
@@ -411,6 +414,7 @@ describe("EvalConfigBuilder", () => {
     resetCalls()
     mockTestV2Eval.mockReset()
     mockCreateEvalConfig.mockReset()
+    mockCreateLlmJudgeConfig.mockReset()
     mockCheckCodeEvalTrust.mockReset()
     mockGrantCodeEvalTrust.mockReset()
   })

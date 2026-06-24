@@ -21,6 +21,8 @@ export type TestV2EvalRequest = components["schemas"]["TestV2EvalRequest"]
 export type TestV2EvalResponse = components["schemas"]["TestV2EvalResponse"]
 export type CreateEvalConfigRequest =
   components["schemas"]["CreateEvalConfigRequest"]
+export type CreateLlmJudgeConfigRequest =
+  components["schemas"]["CreateLlmJudgeConfigRequest"]
 
 /**
  * Run a V2 eval config test without persisting.
@@ -76,6 +78,36 @@ export async function createEvalConfig(
   )
   if (error) {
     throw new Error(`create_eval_config failed: ${extractErrorMessage(error)}`)
+  }
+  return data
+}
+
+/**
+ * Create a V2 llm_judge eval config with server-baked template.
+ */
+export async function createLlmJudgeConfig(
+  projectId: string,
+  taskId: string,
+  evalId: string,
+  request: CreateLlmJudgeConfigRequest,
+): Promise<components["schemas"]["EvalConfig"]> {
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+          eval_id: evalId,
+        },
+      },
+      body: request,
+    },
+  )
+  if (error) {
+    throw new Error(
+      `create_llm_judge_config failed: ${extractErrorMessage(error)}`,
+    )
   }
   return data
 }

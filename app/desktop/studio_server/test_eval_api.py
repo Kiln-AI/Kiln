@@ -3798,6 +3798,108 @@ class TestTestV2Eval:
         assert response.status_code == 404
 
 
+class TestCreateLlmJudgeConfig:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/create_llm_judge_config"
+
+    def test_success(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["config_type"] == "v2"
+        props = body["properties"]
+        assert props["type"] == "llm_judge"
+        assert props["model_name"] == "gpt-4o"
+        assert props["model_provider"] == "openai"
+        assert props["g_eval"] is False
+        assert "{{ task_input }}" in props["prompt_template"]
+        assert "{{ final_message }}" in props["prompt_template"]
+        assert props["system_prompt"] is not None
+        assert props["thinking_instruction"] is not None
+        assert props["required_var"] == []
+
+    def test_g_eval_true(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": True,
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["g_eval"] is True
+
+    def test_persisted_to_disk(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        configs = mock_v2_eval.configs()
+        assert len(configs) == 1
+        cfg = configs[0]
+        assert cfg.config_type.value == "v2"
+        assert cfg.properties.type.value == "llm_judge"
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.post(
+                self._url("bad_id"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 404
+
+    def test_missing_model(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 422
+
+    def test_with_custom_name(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "name": "My Custom Judge",
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My Custom Judge"
+
+
 class TestV1CoexistenceAPI:
     """V1 coexistence regression guards at the API layer.
 

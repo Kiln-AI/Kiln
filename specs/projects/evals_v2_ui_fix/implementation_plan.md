@@ -20,7 +20,7 @@ flow only**. Run the standard web + python check suites before each phase's code
   Left/right two-column layout. **Behavior of forms + existing test inputs preserved** (the
   dataset picker lands in Phase 3; llm_judge still V1 until Phase 2). Target: `70 §1`.
 
-- [ ] **Phase 2 — Manual `llm_judge` emits V2 (ship-blocker).**
+- [x] **Phase 2 — Manual `llm_judge` emits V2 (ship-blocker).**
   Core helpers (arch §2.2): extract `score_scale_instruction()` (refactor `build_score_schema`
   to use it); add `build_llm_judge_prompt_template()` (the owner-approved template) +
   `materialize_llm_judge_properties()` (explicit `system_prompt`/`thinking_instruction`/

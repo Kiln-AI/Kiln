@@ -15,6 +15,7 @@
   } from "$lib/utils/eval_types/registry"
   import {
     createEvalConfig,
+    createLlmJudgeConfig,
     testV2Eval,
     checkCodeEvalTrust,
     grantCodeEvalTrust,
@@ -206,19 +207,19 @@
       create_evaluator_loading = true
       create_evaluator_error = null
 
-      let config_type: EvalConfigType
-      let properties: Record<string, unknown>
-      let model_name: string | undefined
-      let provider: string | undefined
+      let data: components["schemas"]["EvalConfig"]
 
-      if (is_llm_judge && llmJudgeFormComponent) {
-        config_type = llmJudgeFormComponent.getConfigType() ?? "llm_as_judge"
-        properties = llmJudgeFormComponent.getProperties()
-        model_name = llm_model_name
-        provider = llm_provider_name
-        if (!model_name || !provider) {
-          throw new Error("No model selected")
+      if (is_llm_judge) {
+        if (!llm_model_name || !llm_provider_name || !llm_selected_algo) {
+          throw new Error("No model or algorithm selected")
         }
+        const g_eval = llm_selected_algo === "g_eval"
+        data = await createLlmJudgeConfig(project_id, task_id, eval_id, {
+          model_name: llm_model_name,
+          provider:
+            llm_provider_name as components["schemas"]["ModelProviderName"],
+          g_eval,
+        })
       } else if (eval_config_type && v2FormComponent) {
         if (v2FormComponent.validate) {
           const validation_error = v2FormComponent.validate()
@@ -226,25 +227,26 @@
             throw new Error(validation_error)
           }
         }
-        config_type = "v2"
-        properties = v2FormComponent.getProperties() as Record<string, unknown>
+        const properties = v2FormComponent.getProperties() as Record<
+          string,
+          unknown
+        >
+        data = await createEvalConfig(project_id, task_id, eval_id, {
+          type: "v2",
+          properties,
+          model_name: null,
+          provider: null,
+        })
       } else {
         throw new Error("No eval type selected")
       }
 
-      const data = await createEvalConfig(project_id, task_id, eval_id, {
-        type: config_type,
-        properties,
-        model_name: model_name ?? null,
-        provider:
-          (provider as components["schemas"]["ModelProviderName"]) ?? null,
-      })
-
       posthog.capture("create_eval_config", {
-        config_type,
+        config_type: "v2",
         v2_type: eval_config_type,
-        model_name: model_name,
-        provider_name: provider,
+        ...(is_llm_judge
+          ? { model_name: llm_model_name, provider_name: llm_provider_name }
+          : {}),
       })
 
       const save_as_default = $page.url.searchParams.get("save_as_default")
@@ -297,9 +299,6 @@
   {#if is_llm_judge}
     <LlmJudgeForm
       bind:this={llmJudgeFormComponent}
-      {evaluator}
-      {task}
-      {spec}
       {task_id}
       bind:model_name={llm_model_name}
       bind:provider_name={llm_provider_name}
