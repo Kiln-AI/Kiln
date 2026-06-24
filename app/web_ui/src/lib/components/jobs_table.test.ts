@@ -84,37 +84,41 @@ describe("JobsTable", () => {
     })
   })
 
-  it("renders a dismiss button (not a Delete label) for terminal rows", () => {
+  it("offers a Clear action (not a Delete label) for terminal rows", async () => {
     jobs.set([makeJob({ id: "succeeded", status: "succeeded" })])
-    const { getByLabelText, queryByText } = render(JobsTable)
-    expect(getByLabelText("Dismiss job")).not.toBeNull()
+    const { getByLabelText, getByText, queryByText } = render(JobsTable)
+    await fireEvent.click(getByLabelText("More options"))
+    expect(getByText("Clear")).not.toBeNull()
     expect(queryByText("Delete")).toBeNull()
   })
 
-  it("gates row actions on status: running with pause shows Pause + Cancel", () => {
+  it("gates row actions on status: running with pause shows Pause + Cancel", async () => {
     jobs.set([
       makeJob({ id: "running", status: "running", supports_pause: true }),
     ])
-    const { getByText, queryByLabelText } = render(JobsTable)
+    const { getByLabelText, getByText, queryByText } = render(JobsTable)
+    await fireEvent.click(getByLabelText("More options"))
     expect(getByText("Pause")).not.toBeNull()
     expect(getByText("Cancel")).not.toBeNull()
-    expect(queryByLabelText("Dismiss job")).toBeNull()
+    expect(queryByText("Clear")).toBeNull()
   })
 
-  it("gates row actions on status: paused shows Resume + Cancel", () => {
+  it("gates row actions on status: paused shows Resume + Cancel", async () => {
     jobs.set([makeJob({ id: "paused", status: "paused" })])
-    const { getByText } = render(JobsTable)
+    const { getByLabelText, getByText } = render(JobsTable)
+    await fireEvent.click(getByLabelText("More options"))
     expect(getByText("Resume")).not.toBeNull()
     expect(getByText("Cancel")).not.toBeNull()
   })
 
-  it("gates row actions on status: pending shows only Cancel", () => {
+  it("gates row actions on status: pending shows only Cancel", async () => {
     jobs.set([makeJob({ id: "pending", status: "pending" })])
-    const { getByText, queryByText, queryByLabelText } = render(JobsTable)
+    const { getByLabelText, getByText, queryByText } = render(JobsTable)
+    await fireEvent.click(getByLabelText("More options"))
     expect(getByText("Cancel")).not.toBeNull()
     expect(queryByText("Pause")).toBeNull()
     expect(queryByText("Resume")).toBeNull()
-    expect(queryByLabelText("Dismiss job")).toBeNull()
+    expect(queryByText("Clear")).toBeNull()
   })
 
   it("shows the loading spinner before the first sync", () => {
