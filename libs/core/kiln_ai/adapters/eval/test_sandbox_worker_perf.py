@@ -186,3 +186,54 @@ def test_benchmark_import_eval_helpers_direct(benchmark):
     assert mean < 0.5, (
         f"Direct eval_helpers import averaged {mean:.2f}s — expected under 0.5s"
     )
+
+
+# ---------------------------------------------------------------------------
+# Heavy-__main__ benchmark: faithful reproduction of the real server cost
+# ---------------------------------------------------------------------------
+
+_HEAVY_MAIN_SCRIPT = Path(__file__).resolve().parent / "_heavy_main_bench.py"
+
+
+@pytest.mark.benchmark
+@pytest.mark.slow
+def test_benchmark_run_scorer_heavy_main():
+    """run_scorer called from a process whose __main__ imports litellm.
+
+    This faithfully reproduces the real ``POST .../test_v2_eval`` cost:
+    the helper script imports ``litellm`` at module level (the heaviest
+    dep in the server chain, ~0.8-1.5 s), so when multiprocessing
+    "spawn" tries to re-import ``__main__`` in the child, the heavy
+    import would be re-executed -- unless the fix in ``run_scorer``
+    prevents the heavy re-import.
+
+    Pre-fix: each call takes ~1-3s (child re-imports the heavy main).
+    Post-fix: each call takes ~50ms (child skips the heavy main).
+    Assertion bound: 250ms (generous CI buffer; local expectation ~50ms).
+
+    Source-only: uses ``sys.executable`` which is the Python interpreter
+    from source, not the app bundle.  This benchmark is never run in a
+    frozen (PyInstaller) build.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(_HEAVY_MAIN_SCRIPT)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, (
+        f"Heavy-main benchmark failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
+    )
+
+    lines = [ln for ln in proc.stdout.strip().splitlines() if ln.strip()]
+    assert len(lines) == 2, f"Expected 2 result lines, got {len(lines)}: {lines}"
+
+    for line in lines:
+        data = json.loads(line)
+        assert "elapsed" in data, f"Unexpected output: {data}"
+        elapsed = data["elapsed"]
+        assert elapsed < 0.25, (
+            f"run_scorer call {data['call']} took {elapsed:.3f}s — "
+            f"expected <0.25s (local ~0.05s, CI buffer 0.25s). "
+            f"The spawn child is likely re-importing the heavy __main__."
+        )

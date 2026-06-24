@@ -79,7 +79,7 @@ def score(output, trace, reference_data, task_input):
 
     return {
         "used_search": KilnEvalHelpers.pass_fail(used_search),
-        "search_count": KilnEvalHelpers.five_star(min(call_count, 5)),
+        "search_count": KilnEvalHelpers.five_star(max(min(call_count, 5), 1)),
     }
 `,
     },

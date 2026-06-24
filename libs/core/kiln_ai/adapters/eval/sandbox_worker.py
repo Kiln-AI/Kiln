@@ -106,7 +106,35 @@ def run_scorer(
     q: multiprocessing.Queue = ctx.Queue()  # type: ignore[type-arg]
     with _spawn_lock:
         p = ctx.Process(target=_execute_scorer, args=(code, inputs, q), daemon=True)
-        p.start()
+        # Prevent the spawn child from re-importing the parent's heavy
+        # ``__main__`` module (e.g. dev_server.py which transitively pulls
+        # in litellm, google.cloud.aiplatform, etc.).
+        #
+        # ``multiprocessing.spawn.get_preparation_data`` reads
+        # ``sys.modules['__main__']`` to decide what to re-execute in the
+        # child.  By swapping in a lightweight stub before ``p.start()``
+        # (which pickles the prep data), neither ``init_main_from_name``
+        # nor ``init_main_from_path`` is set, so the child skips the
+        # heavy re-import entirely.  ``_execute_scorer`` only needs
+        # stdlib, so this is safe.
+        #
+        # This stays within ``multiprocessing.spawn``'s existing
+        # bootstrap, so ``freeze_support()`` and PyInstaller frozen
+        # builds continue to work.
+        #
+        # Thread safety: the swap is process-global, but the window is
+        # sub-millisecond (only spans ``p.start()``), is serialized by
+        # ``_spawn_lock``, and ``__main__`` is not read by request-
+        # handling code, so cross-thread visibility is benign.
+        import types
+
+        _real_main = sys.modules["__main__"]
+        _light_main = types.ModuleType("__kiln_stub_main__")
+        sys.modules["__main__"] = _light_main
+        try:
+            p.start()
+        finally:
+            sys.modules["__main__"] = _real_main
     p.join(timeout=timeout)
 
     if p.is_alive():
