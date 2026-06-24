@@ -265,6 +265,7 @@
   inputType="input"
   bind:value={model.description}
   light_label={true}
+  optional={true}
 />
 
 <!-- Per type fields -->

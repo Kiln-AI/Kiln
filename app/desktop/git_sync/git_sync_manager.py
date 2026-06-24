@@ -15,6 +15,8 @@ from app.desktop.git_sync.commit_message import generate_commit_message
 from app.desktop.git_sync.config import AuthMode
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
+    GitAuthError,
+    GitSyncError,
     RemoteUnreachableError,
     SyncConflictError,
     WriteLockTimeoutError,
@@ -31,6 +33,23 @@ _settings.server_timeout = 30_000
 T = TypeVar("T")
 
 FRESHNESS_THRESHOLD = 15.0
+
+_AUTH_ERROR_MARKERS = (
+    "authentication",
+    "authoriz",
+    "credential",
+    "401",
+    "403",
+    "too many redirects",
+    "invalid username or password",
+    "password authentication",
+)
+
+
+def _is_auth_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(marker in msg for marker in _AUTH_ERROR_MARKERS)
+
 
 _cached_committer_name: str | None = None
 _cached_committer_email: str | None = None
@@ -215,7 +234,7 @@ class GitSyncManager:
 
         try:
             await self.fetch()
-        except RemoteUnreachableError:
+        except GitSyncError:
             raise
         except Exception as e:
             raise RemoteUnreachableError(f"Cannot sync with remote: {e}") from e
@@ -238,7 +257,7 @@ class GitSyncManager:
 
         try:
             await self.fetch()
-        except RemoteUnreachableError:
+        except GitSyncError:
             raise
         except Exception as e:
             raise RemoteUnreachableError(f"Cannot sync with remote: {e}") from e
@@ -269,6 +288,7 @@ class GitSyncManager:
                 first_push_error,
             )
             try:
+                # Auth classification on the push-retry path is out of scope (see spec Part B).
                 await self.fetch()
             except Exception as fetch_err:
                 raise RemoteUnreachableError(
@@ -312,6 +332,8 @@ class GitSyncManager:
         try:
             await self._run_git(self._fetch_sync)
         except pygit2.GitError as e:
+            if _is_auth_error(e):
+                raise GitAuthError(f"Git authentication failed: {e}") from e
             raise RemoteUnreachableError(f"Cannot sync with remote: {e}") from e
 
     async def has_new_remote_commits(self) -> bool:
