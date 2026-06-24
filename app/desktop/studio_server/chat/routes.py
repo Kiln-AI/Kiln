@@ -32,7 +32,7 @@ from fastapi.responses import StreamingResponse
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 def _build_upstream_headers(api_key: str) -> dict[str, str]:
@@ -200,7 +200,9 @@ def connect_chat_api(app: FastAPI) -> None:
             return ClientVersionPolicy()
         try:
             return ClientVersionPolicy.model_validate(resp.json())
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValidationError):
+            # Pydantic v2 ValidationError is not a ValueError, so catch it
+            # explicitly — a malformed upstream body degrades to "no banner".
             return ClientVersionPolicy()
 
     @app.get(
