@@ -42,7 +42,7 @@ _V2_TYPE_TO_PROPS = {
         count_type="tool_calls", min_count=1
     ),
     V2EvalType.code_eval: CodeEvalProperties(
-        code="def score(output, trace, reference_data, task_input, kiln):\n    return {'score': 1.0}\n"
+        code="def score(output, trace, reference_data, task_input):\n    return {'score': 1.0}\n"
     ),
 }
 

@@ -74,9 +74,9 @@ function example_value(
     case "pass_fail":
     case "pass_fail_critical":
     case "custom":
-      return `kiln.pass_fail(${bool_expr})`
+      return `KilnEvalHelpers.pass_fail(${bool_expr})`
     case "five_star":
-      return `kiln.five_star(${rating_expr})`
+      return `KilnEvalHelpers.five_star(${rating_expr})`
     default:
       return assertNever(type)
   }
@@ -136,7 +136,7 @@ export function generate_default_code(
   const low_dict = build_return_dict(scores, "low")
   const passing_dict = build_return_dict(scores, "passing")
 
-  return `def score(output, trace, reference_data, task_input, kiln):
+  return `def score(output, trace, reference_data, task_input):
     """Score the model output.
 
     Args:
@@ -144,7 +144,6 @@ export function generate_default_code(
         trace: List of message dicts from the conversation.
         reference_data: Dict of reference/expected data (if any).
         task_input: The original task input string.
-        kiln: KilnEvalHelpers with utility methods.
 
     Returns:
         ${returns_doc}
@@ -180,8 +179,9 @@ export function generate_examples(
     {
       label: "Parse JSON",
       code: `import json
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input, kiln):
+def score(output, trace, reference_data, task_input):
     """Check if the output is valid JSON with required fields."""
     try:
         data = json.loads(output)
@@ -196,22 +196,26 @@ def score(output, trace, reference_data, task_input, kiln):
     },
     {
       label: "Check tool usage",
-      code: `def score(output, trace, reference_data, task_input, kiln):
+      code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output, trace, reference_data, task_input):
     """Verify the model used the expected tools."""
-    tool_calls = kiln.get_tool_calls(trace)
-    used_search = kiln.has_tool_call(tool_calls, "search")
-    call_count = kiln.count_tool_calls(tool_calls, "search")
+    tool_calls = KilnEvalHelpers.get_tool_calls(trace)
+    used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
+    call_count = KilnEvalHelpers.count_tool_calls(tool_calls, "search")
 
     ${tool_return}
 `,
     },
     {
       label: "Domain-specific grading",
-      code: `def score(output, trace, reference_data, task_input, kiln):
+      code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output, trace, reference_data, task_input):
     """Grade output against domain-specific criteria."""
     expected = (reference_data or {}).get("expected_answer", "")
 
-    contains = kiln.assert_contains(output, expected) if expected else True
+    contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
 
     word_count = len(output.split())
 

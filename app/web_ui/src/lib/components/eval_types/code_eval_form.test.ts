@@ -63,7 +63,7 @@ describe("CodeEvalForm", () => {
   it("displays the score function signature hint", () => {
     const { container } = render(CodeEvalForm)
     expect(container.textContent).toContain(
-      "score(output, trace, reference_data, task_input, kiln)",
+      "score(output, trace, reference_data, task_input)",
     )
   })
 
@@ -116,7 +116,7 @@ describe("CodeEvalForm", () => {
   it("accepts initial properties via props", () => {
     const customProps = {
       type: "code_eval" as const,
-      code: 'def score(output, trace, reference_data, task_input, kiln):\n    return {"custom": 0.5}\n',
+      code: 'def score(output, trace, reference_data, task_input):\n    return {"custom": 0.5}\n',
       timeout_seconds: 120,
     }
     const { component } = render(CodeEvalForm, {
@@ -132,7 +132,7 @@ describe("CodeEvalForm", () => {
     const { component } = render(CodeEvalForm)
     const props = component.getProperties()
     expect(props.code).toContain(
-      "def score(output, trace, reference_data, task_input, kiln)",
+      "def score(output, trace, reference_data, task_input)",
     )
   })
 
@@ -198,12 +198,12 @@ describe("example code correctness", () => {
     return container.querySelector(".whitespace-pre")?.textContent ?? ""
   }
 
-  it("Domain-specific grading uses kiln.pass_fail with assert_contains result", async () => {
+  it("Domain-specific grading uses KilnEvalHelpers.pass_fail with assert_contains result", async () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll(".tab")
     await fireEvent.click(tabs[2])
     const domainCode = get_example_code(container)
-    expect(domainCode).toContain("kiln.pass_fail(contains)")
+    expect(domainCode).toContain("KilnEvalHelpers.pass_fail(contains)")
   })
 
   it("Domain-specific grading handles empty expected gracefully", async () => {
@@ -225,10 +225,10 @@ describe("example code correctness", () => {
     expect(toolCode).toContain("max(min(call_count, 5), 1)")
   })
 
-  it("Parse JSON example uses kiln.pass_fail(passed)", () => {
+  it("Parse JSON example uses KilnEvalHelpers.pass_fail(passed)", () => {
     const { container } = render(CodeEvalForm)
     const parseCode = get_example_code(container)
-    expect(parseCode).toContain("kiln.pass_fail(passed)")
+    expect(parseCode).toContain("KilnEvalHelpers.pass_fail(passed)")
   })
 
   it("examples use fallback quality key when no output_scores", () => {

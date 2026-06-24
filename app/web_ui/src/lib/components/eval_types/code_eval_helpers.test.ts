@@ -128,11 +128,11 @@ describe("generate_default_code", () => {
     const scores = [make_score("Test", "pass_fail")]
     const code = generate_default_code(scores)
     expect(code).toContain(
-      "def score(output, trace, reference_data, task_input, kiln):",
+      "def score(output, trace, reference_data, task_input):",
     )
     expect(code).toContain("Args:")
     expect(code).toContain("output: The model's final output string.")
-    expect(code).toContain("kiln: KilnEvalHelpers with utility methods.")
+    expect(code).not.toContain("kiln:")
   })
 
   describe("custom score type", () => {
@@ -187,25 +187,25 @@ describe("generate_examples", () => {
       make_score("Rating", "five_star"),
     ]
 
-    it("uses kiln.pass_fail for pass_fail scores", () => {
+    it("uses KilnEvalHelpers.pass_fail for pass_fail scores", () => {
       const examples = generate_examples(scores)
       for (const ex of examples) {
-        expect(ex.code).toContain('"check": kiln.pass_fail(')
+        expect(ex.code).toContain('"check": KilnEvalHelpers.pass_fail(')
       }
     })
 
-    it("uses kiln.five_star for five_star scores", () => {
+    it("uses KilnEvalHelpers.five_star for five_star scores", () => {
       const examples = generate_examples(scores)
       for (const ex of examples) {
-        expect(ex.code).toContain('"rating": kiln.five_star(')
+        expect(ex.code).toContain('"rating": KilnEvalHelpers.five_star(')
       }
     })
 
-    it("uses kiln.pass_fail for pass_fail_critical scores", () => {
+    it("uses KilnEvalHelpers.pass_fail for pass_fail_critical scores", () => {
       const scores_pfc = [make_score("Safety", "pass_fail_critical")]
       const examples = generate_examples(scores_pfc)
       for (const ex of examples) {
-        expect(ex.code).toContain('"safety": kiln.pass_fail(')
+        expect(ex.code).toContain('"safety": KilnEvalHelpers.pass_fail(')
       }
     })
   })
@@ -220,7 +220,7 @@ describe("generate_examples", () => {
 
     it("uses passed as the bool expression", () => {
       const examples = generate_examples(undefined)
-      expect(examples[0].code).toContain("kiln.pass_fail(passed)")
+      expect(examples[0].code).toContain("KilnEvalHelpers.pass_fail(passed)")
     })
 
     it("returns error dict on parse failure with low values", () => {
@@ -243,7 +243,9 @@ describe("generate_examples", () => {
 
     it("uses used_search as the bool expression", () => {
       const examples = generate_examples(undefined)
-      expect(examples[1].code).toContain("kiln.pass_fail(used_search)")
+      expect(examples[1].code).toContain(
+        "KilnEvalHelpers.pass_fail(used_search)",
+      )
     })
   })
 
@@ -255,14 +257,14 @@ describe("generate_examples", () => {
 
     it("uses contains as the bool expression", () => {
       const examples = generate_examples(undefined)
-      expect(examples[2].code).toContain("kiln.pass_fail(contains)")
+      expect(examples[2].code).toContain("KilnEvalHelpers.pass_fail(contains)")
     })
 
     it("uses word_count-based rating expression for five_star", () => {
       const scores = [make_score("R", "five_star")]
       const examples = generate_examples(scores)
       expect(examples[2].code).toContain(
-        "kiln.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1)",
+        "KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1)",
       )
     })
   })
@@ -272,7 +274,7 @@ describe("generate_examples", () => {
       const scores = [make_score("Quality", "pass_fail")]
       const examples = generate_examples(scores)
       expect(examples[1].code).toContain(
-        'return {"quality": kiln.pass_fail(used_search)}',
+        'return {"quality": KilnEvalHelpers.pass_fail(used_search)}',
       )
     })
 
