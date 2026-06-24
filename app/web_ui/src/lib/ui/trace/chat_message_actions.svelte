@@ -23,29 +23,25 @@
   data-testid="chat-msg-meta"
 >
   {#if show_usage}
-    <div class="tooltip tooltip-top" data-tip="View turn usage">
-      <button
-        type="button"
-        class="btn btn-xs btn-ghost gap-1 text-gray-400 hover:text-gray-700"
-        aria-label="View turn usage"
-        on:click={on_usage}
-      >
-        <span class="block h-4 w-4"><DollarIcon /></span>
-        Usage
-      </button>
-    </div>
+    <button
+      type="button"
+      class="btn btn-xs btn-ghost gap-1 text-gray-400 hover:text-gray-700"
+      aria-label="View turn usage"
+      on:click={on_usage}
+    >
+      <span class="block h-4 w-4"><DollarIcon /></span>
+      Usage
+    </button>
   {/if}
   {#if show_fork}
-    <div class="tooltip tooltip-top" data-tip="Fork from here">
-      <button
-        type="button"
-        class="btn btn-xs btn-ghost gap-1 text-gray-400 hover:text-gray-700"
-        aria-label="Fork from this turn"
-        on:click={on_fork}
-      >
-        <span class="block h-4 w-4"><ForkIcon /></span>
-        Fork
-      </button>
-    </div>
+    <button
+      type="button"
+      class="btn btn-xs btn-ghost gap-1 text-gray-400 hover:text-gray-700"
+      aria-label="Fork from this turn"
+      on:click={on_fork}
+    >
+      <span class="block h-4 w-4"><ForkIcon /></span>
+      Fork
+    </button>
   {/if}
 </div>

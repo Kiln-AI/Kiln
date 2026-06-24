@@ -9,6 +9,7 @@
   import {
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
 
@@ -122,6 +123,8 @@
     const promptName = getRunConfigPromptDisplayName(config, prompts)
     const parts = [`{sub|Model: ${modelName}}`]
     if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
+    const transformLabel = getRunConfigInputTransformSummaryLabel(config)
+    if (transformLabel) parts.push(`{sub|Input Transform: ${transformLabel}}`)
     return parts.join("\n")
   }
 
@@ -158,6 +161,12 @@
       html += `<div>Model: ${modelName}</div>`
       if (promptName) {
         html += `<div>Prompt: ${promptName}</div>`
+      }
+      if (config) {
+        const transformLabel = getRunConfigInputTransformSummaryLabel(config)
+        if (transformLabel) {
+          html += `<div>Input Transform: ${transformLabel}</div>`
+        }
       }
     }
     html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`

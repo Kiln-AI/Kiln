@@ -31,7 +31,9 @@
     getRunConfigModelDisplayName,
     getDetailedModelNameFromParts,
     getRunConfigUiProperties,
+    getRunConfigInputTransform,
   } from "$lib/utils/run_config_formatters"
+  import InputTransformModal from "$lib/ui/run_config_component/input_transform_modal.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -106,6 +108,7 @@
 
   let loading = true
   $: error = task_load_error || copilot_check_error
+  $: is_multiturn = current_task?.turn_mode === "multiturn"
 
   type EvalWithConfig = {
     eval: Eval
@@ -733,6 +736,12 @@
     }
   }
 
+  let input_transform_modal: InputTransformModal | null = null
+
+  $: input_transform = selected_run_config
+    ? getRunConfigInputTransform(selected_run_config)
+    : null
+
   $: run_config_properties = selected_run_config
     ? getRunConfigUiProperties(
         project_id,
@@ -741,6 +750,7 @@
         $model_info,
         task_prompts,
         $available_tools,
+        () => input_transform_modal?.show(),
       )
     : null
 </script>
@@ -783,6 +793,14 @@
         button_text="View Optimizer Jobs"
         link={`/prompt_optimization/${project_id}/${task_id}/prompt_optimization_job/${created_job.id}`}
       />
+    {:else if is_multiturn}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Warning
+          warning_message="Prompt optimization is not supported for multi-turn tasks."
+          warning_color="warning"
+          warning_icon="info"
+        />
+      </div>
     {:else if current_task}
       <FormContainer
         submit_visible={true}
@@ -859,7 +877,10 @@
                     <div class="text-md font-semibold text-left mb-4">
                       Details
                     </div>
-                    <PropertyList properties={run_config_properties} />
+                    <PropertyList
+                      properties={run_config_properties}
+                      open_links_in_new_tab={true}
+                    />
                   </div>
                 </div>
               {/if}
@@ -1189,4 +1210,11 @@
       }
     }}
   />
+
+  {#if input_transform}
+    <InputTransformModal
+      bind:this={input_transform_modal}
+      transform={input_transform}
+    />
+  {/if}
 </div>

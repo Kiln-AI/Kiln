@@ -9,6 +9,7 @@
     send_multiturn,
     type RunConfigController,
   } from "$lib/services/multiturn_send"
+  import type { TaskRun } from "$lib/types"
 
   export let mode: "append" | "fork" = "append"
   export let project_id: string
@@ -21,13 +22,25 @@
   // Fork-mode only.
   export let prefill_text: string = ""
   export let forked_turn_index: number | undefined = undefined
-  export let on_success: (new_run_id: string) => void | Promise<void>
+  export let on_success: (
+    new_run_id: string,
+    created_run?: TaskRun,
+  ) => void | Promise<void>
   export let on_cancel: (() => void) | undefined = undefined
   // Append-mode optimistic hooks: on_send_start fires with the message text
   // the moment a send begins (so the parent can show it in the transcript
-  // right away), and on_send_settled fires once the send resolves or fails.
+  // right away), and on_send_settled fires once the send resolves or fails
+  // (ok=false means it errored). on success the parent keeps the composer
+  // busy until the new run renders.
   export let on_send_start: ((text: string) => void) | undefined = undefined
-  export let on_send_settled: (() => void) | undefined = undefined
+  export let on_send_settled: ((ok: boolean) => void) | undefined = undefined
+  // Externally-driven busy state: keeps the composer disabled after a
+  // successful send while the parent navigates to / loads the new run, so the
+  // user can't fire a second send against the stale parent run.
+  export let busy: boolean = false
+  // When true, sending with no parent_task_run_id starts a new root
+  // conversation (the first turn). Used by the /run page.
+  export let allow_root_turn: boolean = false
 
   // forked_turn_index is required when mode is "fork" — it's used for both
   // the context-strip heading and dirty-tracking baseline. Callers always
@@ -116,8 +129,14 @@
   async function handle_submit() {
     run_error = null
     submitting = true
-    // Surface the message in the transcript optimistically while we wait.
-    on_send_start?.(current_text())
+    // Capture the text, surface it optimistically, and clear the textarea
+    // immediately so the composer reads as "sent". The text is passed to
+    // send_multiturn explicitly so clearing doesn't drop the in-flight
+    // message; on failure we put it back so the user can retry.
+    const text = current_text()
+    on_send_start?.(text)
+    input_form?.clear_input?.()
+    let ok = false
     try {
       const result = await send_multiturn({
         project_id,
@@ -126,16 +145,26 @@
         run_config_component,
         input_form,
         on_success,
+        allow_root_turn,
+        plaintext: text,
       })
-      if (!result.ok) {
+      if (result.ok) {
+        ok = true
+      } else {
         run_error = createKilnError(result.error)
       }
     } catch (e) {
-      // on_success threw (e.g. goto/load_run failed). Input is intentionally
-      // not cleared in that case so the user does not lose their typed text.
+      // on_success threw (e.g. goto/load_run failed).
       run_error = createKilnError(e)
     } finally {
-      on_send_settled?.()
+      if (!ok) {
+        // Restore the message so it isn't lost, and surface the failure.
+        input_form?.set_plaintext_input?.(text)
+        if (!run_error) {
+          run_error = createKilnError(new Error("Failed to send message."))
+        }
+      }
+      on_send_settled?.(ok)
       submitting = false
       await tick()
     }
@@ -180,9 +209,8 @@
         <span>Forking turn {forked_turn_index}</span>
       </div>
       <p class="text-xs text-gray-500">
-        Editing this message will create a new conversation branch. The original
-        conversation it branched off from will be preserved unchanged in your
-        dataset.
+        Your next message will start a new conversation branch from this point.
+        The original conversation is preserved unchanged in your dataset.
       </p>
     </div>
   {/if}
@@ -220,7 +248,7 @@
       <svelte:fragment slot="submit_left">
         <button
           type="button"
-          class="btn btn-ghost"
+          class="btn"
           data-testid="multiturn-composer-cancel"
           on:click={handle_cancel_click}
           disabled={submitting}
@@ -235,8 +263,9 @@
       on:submit={handle_submit}
       bind:error={run_error}
       bind:submitting
+      submit_disabled={busy}
       primary={true}
-      keyboard_submit={true}
+      keyboard_submit={!busy}
       focus_on_mount={false}
     >
       <div data-testid="multiturn-composer-input">
@@ -246,7 +275,7 @@
           label="Message"
           placeholder="Write a message…"
           hide_label={true}
-          disabled={submitting}
+          disabled={submitting || busy}
           height="medium"
         />
       </div>

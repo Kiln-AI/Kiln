@@ -129,6 +129,7 @@ class ModelName(str, Enum):
     gemma_3_27b = "gemma_3_27b"
     gemma_3n_2b = "gemma_3n_2b"
     gemma_3n_4b = "gemma_3n_4b"
+    claude_fable_5 = "claude_fable_5"
     claude_3_5_haiku = "claude_3_5_haiku"
     claude_4_5_haiku = "claude_4_5_haiku"
     claude_3_5_sonnet = "claude_3_5_sonnet"
@@ -158,6 +159,7 @@ class ModelName(str, Enum):
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3_ultra = "nemotron_3_ultra"
     nemotron_3_super = "nemotron_3_super"
     nemotron_3_nano = "nemotron_3_nano"
     mixtral_8x7b = "mixtral_8x7b"
@@ -196,6 +198,7 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_3p7_plus = "qwen_3p7_plus"
     qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
@@ -239,6 +242,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_2 = "glm_5_2"
     glm_5_1 = "glm_5_1"
     glm_5_turbo = "glm_5_turbo"
     glm_5v_turbo = "glm_5v_turbo"
@@ -256,6 +260,7 @@ class ModelName(str, Enum):
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
+    minimax_m3 = "minimax_m3"
     minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
     minimax_m2_1 = "minimax_m2_1"
@@ -266,10 +271,13 @@ class ModelName(str, Enum):
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
+    stepfun_step3_7_flash = "stepfun_step3_7_flash"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
     mimo_v2_flash = "mimo_v2_flash"
     mimo_v2_omni = "mimo_v2_omni"
+    mimo_v2_5 = "mimo_v2_5"
+    mimo_v2_5_pro = "mimo_v2_5_pro"
 
 
 class ModelParserID(str, Enum):
@@ -351,6 +359,9 @@ class KilnModelProvider(BaseModel):
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
+    # Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text, signature
+    # only). Set this for those models to request the readable reasoning summary.
+    anthropic_summarized_thinking: bool = False
     gemini_reasoning_enabled: bool = False
     # Can only specify top_p or temp, not both. Opus 4.1 and Sonnet 4.5 for example.
     temp_top_p_exclusive: bool = False
@@ -509,12 +520,24 @@ CLAUDE_OPENROUTER_THINKING_LEVELS = {
 }
 
 CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
 }
 
+# Fable 5 requires reasoning and cannot disable it, so "none" is omitted (unlike
+# the standard Claude OpenRouter levels which default to "none").
+CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS = {
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
 CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -523,6 +546,15 @@ CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -1684,6 +1716,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-120b",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -1792,6 +1830,53 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels={"High": "high"},
                 default_thinking_level="high",
+            ),
+        ],
+    ),
+    # Claude Fable 5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_fable_5,
+        friendly_name="Claude Fable 5",
+        editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class). State-of-the-art across software engineering, knowledge work, and vision.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-fable-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-fable-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                anthropic_summarized_thinking=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -2046,6 +2131,7 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_OPUS_4_8_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
+                anthropic_summarized_thinking=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -2093,6 +2179,7 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
+                anthropic_summarized_thinking=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2258,6 +2345,13 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
                 gemini_reasoning_enabled=True,
@@ -2329,6 +2423,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -2419,6 +2520,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -2571,6 +2679,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2671,6 +2786,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2741,6 +2863,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2807,6 +2936,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -2871,6 +3007,13 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -3099,6 +3242,27 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=False,
+            ),
+        ],
+    ),
+    # Nemotron 3 Ultra
+    KilnModel(
+        family=ModelFamily.nemotron,
+        name=ModelName.nemotron_3_ultra,
+        friendly_name="Nemotron 3 Ultra",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3-ultra-550b-a55b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="nvidia/nemotron-3-ultra-550b-a55b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
             ),
         ],
     ),
@@ -5501,6 +5665,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5555,6 +5722,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5582,8 +5752,44 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.7 Plus
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p7_plus,
+        friendly_name="Qwen 3.7 Plus",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.7-plus",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3p7-plus",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
             ),
         ],
     ),
@@ -5608,6 +5814,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5641,6 +5850,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -5669,6 +5881,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -6879,13 +7094,37 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.2
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_2,
+        friendly_name="GLM 5.2",
+        featured_rank=4,
+        editorial_notes="Z.ai's newest flagship, with a 1M token context window. Benchmarks land near Claude Opus 4.8, with strong long-horizon agentic and coding performance.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-5p2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+        ],
+    ),
     # GLM 5.1
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_5_1,
         friendly_name="GLM 5.1",
-        featured_rank=4,
-        editorial_notes="Z.ai's newest flagship for long-horizon agentic tasks. Coding performance on par with Claude Opus 4.6, and can autonomously execute complex engineering work for up to 8 hours.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6936,6 +7175,9 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -7010,7 +7252,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cerebras,
                 model_id="zai-glm-4.7",
-                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
@@ -7054,6 +7295,9 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -7586,6 +7830,51 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Minimax M3
+    # 1M context, native multimodal (text/image/video input), sparse attention
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m3,
+        friendly_name="Minimax M3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m3",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents (via PDF-as-image)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+            ),
+            # Fireworks exposes M3 as a text-only endpoint (no vision/video input).
+            # Unlike OpenRouter, Fireworks does not emit reasoning unless a reasoning
+            # effort is explicitly requested, so we treat it as a standard model here
+            # and let Kiln drive chain-of-thought via the multi-turn COT strategy.
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # Minimax M2.7
     KilnModel(
         family=ModelFamily.minimax,
@@ -7829,7 +8118,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # StepFun
+    # StepFun Step 3.7 Flash
+    KilnModel(
+        family=ModelFamily.stepfun,
+        name=ModelName.stepfun_step3_7_flash,
+        friendly_name="StepFun Step 3.7 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="stepfun/step-3.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_vision=True,
+            ),
+        ],
+    ),
+    # StepFun Step3 (deprecated)
     KilnModel(
         family=ModelFamily.stepfun,
         name=ModelName.stepfun_step3,
@@ -7874,6 +8192,47 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
                 supports_vision=True,
+            ),
+        ],
+    ),
+    # MiMo-V2.5-Pro
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_5_pro,
+        friendly_name="MiMo-V2.5-Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.5-pro",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # MiMo-V2.5
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_5,
+        friendly_name="MiMo-V2.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.5",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),

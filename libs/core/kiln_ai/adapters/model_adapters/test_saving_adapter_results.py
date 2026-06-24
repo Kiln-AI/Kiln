@@ -2,7 +2,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+    RunOutput,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -481,6 +485,34 @@ def test_generate_run_without_parent_task_run_defaults_to_task(test_task, adapte
     )
     assert run.parent_task_run_id is None
     assert run.parent == test_task
+
+
+def test_generate_run_records_task_run_config_id_from_adapter_config(
+    test_task, adapter
+):
+    adapter.base_adapter_config = AdapterConfig(task_run_config_id="rc_abc123")
+    run = adapter.generate_run(
+        input="input",
+        input_source=None,
+        run_output=RunOutput(output="output", intermediate_outputs=None),
+    )
+    assert run.output.source.run_config_id == "rc_abc123"
+    run.save_to_file()
+
+    reloaded_task = Task.load_from_file(test_task.path)
+    reloaded_run = reloaded_task.runs()[0]
+    assert reloaded_run.output.source.run_config_id == "rc_abc123"
+
+
+def test_generate_run_defaults_task_run_config_id_to_none(test_task, adapter):
+    # AdapterConfig() defaults task_run_config_id to None; the output's source
+    # inherits that and persists run_config_id=None.
+    run = adapter.generate_run(
+        input="input",
+        input_source=None,
+        run_output=RunOutput(output="output", intermediate_outputs=None),
+    )
+    assert run.output.source.run_config_id is None
 
 
 def test_generate_run_with_unsaved_parent_task_run_raises(adapter):

@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/validate_input_transform_template",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

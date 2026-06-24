@@ -307,6 +307,73 @@ async def test_run_task_structured_input(client, task_run_setup):
     assert res["id"] is not None
 
 
+@pytest.mark.asyncio
+async def test_run_task_forwards_task_run_config_id(client, task_run_setup):
+    task = task_run_setup["task"]
+    run_task_request = {
+        **task_run_setup["run_task_request"],
+        "task_run_config_id": "rc_abc123",
+    }
+
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["task_run_config_id"] = base_adapter_config.task_run_config_id
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = AsyncMock(return_value=task_run_setup["task_run"])
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    assert captured["task_run_config_id"] == "rc_abc123"
+
+
+@pytest.mark.asyncio
+async def test_run_task_task_run_config_id_defaults_to_none(client, task_run_setup):
+    task = task_run_setup["task"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["task_run_config_id"] = base_adapter_config.task_run_config_id
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = AsyncMock(return_value=task_run_setup["task_run"])
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    assert captured["task_run_config_id"] is None
+
+
 def test_deep_update_with_empty_source():
     source = {}
     update = {"a": 1, "b": {"c": 2}}

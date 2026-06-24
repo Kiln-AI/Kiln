@@ -121,6 +121,9 @@ class KilnEmbeddingModelProvider(BaseModel):
 
     ollama_model_aliases: List[str] | None = None
 
+    # The model is deprecated and no longer supported on a specific provider
+    deprecated: bool = False
+
 
 class KilnEmbeddingModel(BaseModel):
     """

@@ -124,8 +124,12 @@ def make_app(tk_root: tk.Tk | None = None):
     if not should_skip_remote_model_list():
         refresh_model_list_background()
 
-    app = kiln_server.make_app(lifespan=lifespan)
-    app.add_middleware(GitSyncMiddleware)
+    # GitSyncMiddleware must be installed INNER to CORS (via extra_middleware)
+    # so that its short-circuit error responses still pass back out through
+    # CORSMiddleware and receive CORS headers. Adding it here with
+    # app.add_middleware() would make it outermost, bypassing CORS and causing
+    # the browser to block git-sync error responses ("origin not allowed").
+    app = kiln_server.make_app(lifespan=lifespan, extra_middleware=[GitSyncMiddleware])
     connect_provider_api(app)
     connect_prompt_api(app)
     connect_repair_api(app)

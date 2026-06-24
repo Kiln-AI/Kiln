@@ -691,8 +691,7 @@
                       <span class="truncate">{tagDisplay.firstTag}</span>
                       {#if tagDisplay.othersCount > 0}
                         <span class="ml-1 font-medium text-nowrap">
-                          +{tagDisplay.othersCount}
-                          {tagDisplay.othersCount === 1 ? "other" : "others"}
+                          +{tagDisplay.othersCount} more
                         </span>
                       {/if}
                     </div>

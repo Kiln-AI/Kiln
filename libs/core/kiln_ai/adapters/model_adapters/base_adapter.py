@@ -68,6 +68,7 @@ from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.jinja_engine import render_input_transform
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
@@ -87,6 +88,14 @@ class AdapterConfig:
     allow_saving: bool = True
     top_logprobs: int | None = None
     default_tags: list[str] | None = None
+
+    """
+    The ID of the TaskRunConfig that originated this run, if any. Stored on the
+    resulting TaskRun so the run can be traced back to its originating saved config
+    (in addition to the inline run_config snapshot). None for ad-hoc/inline runs
+    that were not initiated from a saved TaskRunConfig.
+    """
+    task_run_config_id: str | None = None
 
     """
     A custom prompt builder can be injected to override the system prompt building process.
@@ -233,14 +242,18 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
+        # Apply input transform if configured. The original `input` is preserved
+        # for TaskRun.input persistence; `model_input` is what the model sees.
+        model_input = self._apply_input_transform(input)
+
         # Format model input for model call (we save the original input in the
         # task without formatting). This runs in the adapter but before any
         # trace is built, so it also stays outside the wrapped region.
-        formatted_input = input
+        formatted_input = model_input
         formatter_id = self.model_provider().formatter
         if formatter_id is not None:
             formatter = request_formatter_from_id(formatter_id)
-            formatted_input = formatter.format_input(input)
+            formatted_input = formatter.format_input(model_input)
 
         # Allocate the trace-so-far list here so the reference survives any
         # exception thrown from inside `_run` (or the post-processing that
@@ -427,11 +440,13 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
-        formatted_input = input
+        model_input = self._apply_input_transform(input)
+
+        formatted_input = model_input
         formatter_id = self.model_provider().formatter
         if formatter_id is not None:
             formatter = request_formatter_from_id(formatter_id)
-            formatted_input = formatter.format_input(input)
+            formatted_input = formatter.format_input(model_input)
 
         return self._create_run_stream(formatted_input, prior_trace)
 
@@ -510,6 +525,22 @@ class BaseAdapter(metaclass=ABCMeta):
             run.id = None
 
         return run
+
+    def _apply_input_transform(self, input: InputType) -> InputType:
+        """If the run config has an input_transform, render it and return the
+        resulting string. Otherwise return input unchanged.
+
+        MCP run configs (no input_transform field) are a no-op.
+        """
+        if not isinstance(self.run_config, KilnAgentRunConfigProperties):
+            return input
+        transform = self.run_config.input_transform
+        if transform is None:
+            return input
+        try:
+            return render_input_transform(transform, input)
+        except Exception as e:
+            raise ValueError(f"Input transform failed: {e}") from e
 
     def has_structured_output(self) -> bool:
         return self.output_schema is not None
@@ -705,6 +736,7 @@ class BaseAdapter(metaclass=ABCMeta):
             source=DataSource(
                 type=output_source_type,
                 properties=self._properties_for_task_output(),
+                run_config_id=self.base_adapter_config.task_run_config_id,
                 run_config=self.run_config,
             ),
         )
