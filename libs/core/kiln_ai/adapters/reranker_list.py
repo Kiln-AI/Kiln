@@ -60,6 +60,9 @@ built_in_rerankers: List[KilnRerankerModel] = [
             KilnRerankerModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Salesforce/Llama-Rank-V1",
+                # Together moved all rerank models (incl. Llama-Rank-V1) to
+                # dedicated-endpoint-only; no serverless rerank remains.
+                deprecated=True,
             ),
         ],
     ),
