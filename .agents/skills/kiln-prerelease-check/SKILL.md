@@ -74,11 +74,17 @@ This whitelist is the thing most likely to go stale, so it's the main target of 
 ```bash
 TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 OUT=".prerelease/${TS}"
-mkdir -p "${OUT}"
+SCRATCH="${OUT}/_scratch"
+mkdir -p "${SCRATCH}"
 echo "Writing prerelease results to ${OUT}"
 ```
 
-`.prerelease/` is gitignored. Keep all log files, raw pytest output, and the final report inside this timestamped folder so re-runs don't clobber prior data. This folder is the **only** place this skill writes.
+`.prerelease/` is gitignored. This timestamped folder is the **only** place this skill writes. Keep it tidy — the top level should hold just the human-readable artifacts:
+
+- `REPORT.md` — the deliverable.
+- `checks.log`, `prerelease.log`, `retry.log` — raw run logs (kept for drill-down).
+
+Everything else — the grep/collect/diff intermediates used while diagnosing (`current_model_ids.txt`, `prerelease_test_files.txt`, `paid_tests.txt`, `prod_probes.txt`, etc.) — goes in `${SCRATCH}` (`${OUT}/_scratch`), **not** the top level. Don't scatter raw filename dumps where the user has to wade through them; the report is what they read.
 
 ---
 
@@ -209,7 +215,7 @@ Anything not `OK` is stale and goes in the sweep table with a recommended replac
 ```bash
 grep -oE '^[[:space:]]+[a-z][a-z0-9_]+ = "[a-z0-9_]+"' \
   libs/core/kiln_ai/adapters/ml_model_list.py | \
-  awk -F'"' '{print $2}' | sort -u > "${OUT}/current_model_ids.txt"
+  awk -F'"' '{print $2}' | sort -u > "${SCRATCH}/current_model_ids.txt"
 ```
 
 Examples of the judgment call:
@@ -223,7 +229,7 @@ Rule of thumb: if `ml_model_list.py` ordering puts a newer sibling above the cur
 
 ```bash
 uv run python3 -m pytest --runprerelease --collect-only -q -o "addopts=" \
-  2>&1 | grep '::' | awk -F'::' '{print $1}' | sort -u > "${OUT}/prerelease_test_files.txt"
+  2>&1 | grep '::' | awk -F'::' '{print $1}' | sort -u > "${SCRATCH}/prerelease_test_files.txt"
 ```
 
 Cross-reference each pinned slug against `current_model_ids.txt` and the deprecation status. Report any obsolete pins as recommendations.
@@ -260,11 +266,11 @@ If a new provider/family in `ml_model_list.py` isn't represented in the prerelea
 Also list recently added `@pytest.mark.paid` tests that are *not* `@pytest.mark.prerelease`-tagged, so the user can decide if any should be promoted:
 
 ```bash
-grep -rn "@pytest.mark.paid" --include="*.py" | awk -F: '{print $1":"$2}' > "${OUT}/paid_tests.txt"
-grep -rn "@pytest.mark.prerelease" --include="*.py" | awk -F: '{print $1":"$2}' > "${OUT}/prerelease_tests.txt"
-diff <(sort "${OUT}/paid_tests.txt") <(sort "${OUT}/prerelease_tests.txt") | grep '^<' > "${OUT}/paid_only.txt"
+grep -rn "@pytest.mark.paid" --include="*.py" | awk -F: '{print $1":"$2}' > "${SCRATCH}/paid_tests.txt"
+grep -rn "@pytest.mark.prerelease" --include="*.py" | awk -F: '{print $1":"$2}' > "${SCRATCH}/prerelease_tests.txt"
+diff <(sort "${SCRATCH}/paid_tests.txt") <(sort "${SCRATCH}/prerelease_tests.txt") | grep '^<' > "${SCRATCH}/paid_only.txt"
 git log --since="3 months ago" --diff-filter=AM --name-only --pretty=format: -- \
-  $(awk -F: '{print $1}' "${OUT}/paid_only.txt" | sort -u) | sort -u | head -50
+  $(awk -F: '{print $1}' "${SCRATCH}/paid_only.txt" | sort -u) | sort -u | head -50
 ```
 
 ### 4d. Prod-code model probes (flag only)
@@ -280,7 +286,7 @@ grep -rnE 'model=["'\''][^"'\'']*((gemini|gpt|claude|llama)[^"'\'']*)["'\''']' \
   app/desktop libs/core/kiln_ai libs/server/kiln_server \
   --include="*.py" 2>/dev/null \
   | grep -v "test_" | grep -v "/build/" \
-  | tee "${OUT}/prod_probes.txt"
+  | tee "${SCRATCH}/prod_probes.txt"
 ```
 
 For each hit:
@@ -305,6 +311,29 @@ Create `.prerelease/<timestamp>/REPORT.md`. Lead with the verdict; make every fi
 - prerelease pytest: <N passed, M failed, K skipped>
 - Retries: <none needed | "X of M first-run failures were retried (Phase 4a); Y passed on retry (transient/flaky), Z reproduced" — omit if no test was retried>
 - Headline: <one sentence — the single most important thing the user must know before tagging>
+
+## Test results
+One scannable table covering **every prerelease test that ran**, grouped by coverage area, with an emoji outcome and a short note where it helps — this is the at-a-glance summary the user reads first. Aggregate parametrized cases into one row with per-case emoji counts (e.g. `✅×8 ❌×1`); don't spell out long node-id / filename lists here (raw lists live in the logs and `_scratch/`). Outcome legend: ✅ pass · ❌ fail · ⏭️ skip (missing key / N/A) · 🔁 transient (failed then passed on retry). Leave the Notes cell blank when the row is a clean all-pass; use it to name the failing case, why it skipped, or the retry result.
+
+| Area | Test(s) | Result | Notes |
+|---|---|---|---|
+| OpenAI basic call | `test_openai` | ✅ | |
+| Groq | `test_groq` | ✅ | |
+| OpenRouter multi-model | `test_openrouter` (9) | ✅×9 | |
+| Amazon Bedrock | `test_amazon_bedrock` | ✅ | |
+| Structured output | `test_structured_output_*` (6) | ✅×6 | |
+| Streaming | `test_invoke_openai_stream_chunks` / `test_invoke_ai_sdk_stream` (N) | ✅×N | |
+| Tool calling | `test_tools_gpt_4_1_mini` | ✅ | |
+| Thinking-level reasoning | `…reasoning_content_prerelease_smoke` (N) | ✅×N | <which case failed/skipped, if any> |
+| Embeddings | `…embeddings_basic_prerelease_smoke` (6) | ✅×4 ⏭️×2 | <which providers skipped + why> |
+| Reranker | `test_reranker_integration_success` (N) | ✅×1 ❌×2 | <which provider failed + one-line cause> |
+| Prompt caching | `test_prompt_caching_cache_hit` (7) | ✅×7 | |
+| Document extraction | `…extract_document_*_prerelease_smoke` (N) | ✅×N | |
+| Semantic chunker | `test_semantic_chunker_real_integration` | ✅ | |
+| Vertex live connect | `test_connect_vertex_live` | ❌ | <one-line cause> |
+| Fireworks fine-tune | `test_fetch_all_deployments` | ✅ | |
+
+Use the real areas/tests/counts from this run (mirror the coverage table in Phase 4c). Put 🔁 on anything that needed a retry and add the retry detail in the Notes cell + under Failures.
 
 ## Failures — what broke, why, and what to do
 One block per failing test. Sorted most-actionable first (real regressions before stale pins).
