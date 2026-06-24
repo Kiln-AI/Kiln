@@ -429,6 +429,17 @@
         <li class="mt-auto pt-2 bg-transparent">
           <ProgressWidget />
         </li>
+        {#if $update_info.update_result && $update_info.update_result.has_update}
+          <li class="menu-sm mt-2">
+            <a
+              href="/settings/check_for_update"
+              class="px-4 text-xs font-medium"
+            >
+              <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App
+              Update Available</a
+            >
+          </li>
+        {/if}
         <li class="menu-sm">
           <button
             type="button"
@@ -446,17 +457,6 @@
             <SidebarJobsIndicator variant="inline" />
           </button>
         </li>
-        {#if $update_info.update_result && $update_info.update_result.has_update}
-          <li class="menu-sm mt-2">
-            <a
-              href="/settings/check_for_update"
-              class="px-4 text-xs font-medium"
-            >
-              <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App
-              Update Available</a
-            >
-          </li>
-        {/if}
         <li class="menu-sm">
           <a
             href="/settings"
