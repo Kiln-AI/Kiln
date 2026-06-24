@@ -8,6 +8,8 @@
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import {
     chatSessionStore,
     type ChatSessionStore,
@@ -1040,39 +1042,37 @@
 
     {#if versionRequired}
       <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
-        <div
-          class="flex items-center gap-3 rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-sm text-error"
-        >
-          <span class="flex-1">
-            A newer version of Kiln is required to continue using chat.
-            <a
-              href="/settings/check_for_update"
-              class="underline font-medium hover:text-error/80"
-              >Check for updates</a
-            >
-          </span>
+        <div class="rounded-lg border border-error/40 bg-error/5 px-3 py-2">
+          <Warning
+            warning_color="error"
+            tight
+            markdown
+            trusted
+            warning_message={"A newer version of Kiln is required to continue using chat. [Check for updates](/settings/check_for_update)"}
+          />
         </div>
       </div>
     {:else if upgradeNudgeVersion}
       <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
         <div
-          class="flex items-center gap-3 rounded-lg bg-warning/10 border border-warning/40 px-3 py-2 text-sm"
+          class="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2"
         >
-          <span class="flex-1 text-warning">
-            A newer version of Kiln ({upgradeNudgeVersion}) is available.
-            <a
-              href="/settings/check_for_update"
-              class="underline font-medium hover:text-warning/80"
-              >Check for updates</a
-            >
-          </span>
+          <div class="flex-1 min-w-0">
+            <Warning
+              warning_color="warning"
+              tight
+              markdown
+              trusted
+              warning_message={`A newer version of Kiln (${upgradeNudgeVersion}) is available. [Check for updates](/settings/check_for_update)`}
+            />
+          </div>
           <button
             type="button"
-            class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-warning/80 hover:bg-warning/20 hover:text-warning transition-colors"
+            class="shrink-0 text-base-content/40 hover:text-base-content/70 transition-colors"
             on:click={dismissUpgradeNudge}
             aria-label="Dismiss upgrade notice"
           >
-            Dismiss
+            <span class="size-4 block"><CloseIcon /></span>
           </button>
         </div>
       </div>
