@@ -37,13 +37,13 @@ export type V2EvalType =
   | "code_eval"
 
 export const ALL_V2_EVAL_TYPES: readonly V2EvalType[] = [
+  "llm_judge",
   "exact_match",
   "pattern_match",
   "contains",
   "set_check",
   "tool_call_check",
   "step_count_check",
-  "llm_judge",
   "code_eval",
 ] as const
 
@@ -133,7 +133,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       }
     case "llm_judge":
       return {
-        label: "LLM Judge",
+        label: "LLM as Judge (recommended)",
         description:
           "Uses an LLM to evaluate output quality via a custom prompt template.",
         icon: "bi bi-robot",

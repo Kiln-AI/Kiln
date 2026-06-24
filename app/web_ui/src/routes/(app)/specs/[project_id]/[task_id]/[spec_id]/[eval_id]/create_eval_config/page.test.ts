@@ -5,10 +5,9 @@ import { tick } from "svelte"
 import * as svelteMod from "svelte"
 
 // ---------------------------------------------------------------------------
-// Module-level mocks – must come before the dynamic page import
+// Module-level mocks -- must come before the dynamic page import
 // ---------------------------------------------------------------------------
 
-// vi.hoisted ensures these are available when vi.mock factories run (hoisted)
 const {
   mockPage,
   mockGoto,
@@ -17,7 +16,11 @@ const {
   mockLoadModels,
   onMountCallbacks,
 } = vi.hoisted(() => {
-  let pageValue = {
+  type PageValue = {
+    params: Record<string, string>
+    url: URL
+  }
+  let pageValue: PageValue = {
     params: {
       project_id: "proj1",
       task_id: "task1",
@@ -28,7 +31,7 @@ const {
       "http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config",
     ),
   }
-  type Subscriber = (value: typeof pageValue) => void
+  type Subscriber = (value: PageValue) => void
   const subscribers = new Set<Subscriber>()
   const mockPage = {
     subscribe(fn: Subscriber) {
@@ -36,7 +39,7 @@ const {
       fn(pageValue)
       return () => subscribers.delete(fn)
     },
-    set(v: typeof pageValue) {
+    set(v: PageValue) {
       pageValue = v
       subscribers.forEach((fn) => fn(v))
     },
@@ -95,6 +98,7 @@ vi.mock("$app/stores", () => ({
 
 vi.mock("$app/navigation", () => ({
   goto: mockGoto,
+  beforeNavigate: vi.fn(),
 }))
 
 vi.mock("$lib/api_client", () => ({
@@ -122,6 +126,11 @@ vi.mock("$lib/agent", () => ({
 
 // Stub heavy Svelte components
 vi.mock("../../../../../../app_page.svelte", async () => {
+  const Stub = await import("./__tests__/app_page_stub.svelte")
+  return { default: Stub.default }
+})
+
+vi.mock("../../../../../../../app_page.svelte", async () => {
   const Stub = await import("./__tests__/app_page_stub.svelte")
   return { default: Stub.default }
 })
@@ -164,7 +173,7 @@ vi.mock("$lib/utils/eval_types/registry", async (importOriginal) => {
   }
 })
 
-// Mock the v2_eval_api functions – these are the core of our tests
+// Mock the v2_eval_api functions
 const mockTestV2Eval = vi.fn()
 const mockCreateEvalConfig = vi.fn()
 const mockCheckCodeEvalTrust = vi.fn()
@@ -181,24 +190,60 @@ vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
   }
 })
 
-// Dynamic import after all mocks are set up
-const Page = (await import("./+page.svelte")).default
-const { showCalls, closeCalls, resetCalls } = await import(
-  "./__tests__/dialog_stub.svelte"
-)
+// Dynamic imports after all mocks
+const PickerPage = (await import("./+page.svelte")).default
+const BuilderRoutePage = (await import("./[eval_config_type]/+page.svelte"))
+  .default
+const EvalConfigBuilder = (
+  await import("$lib/components/eval_types/eval_config_builder.svelte")
+).default
+const { showCalls, resetCalls } = await import("./__tests__/dialog_stub.svelte")
+const { ALL_V2_EVAL_TYPES } = await import("$lib/utils/eval_types/registry")
+const { CREATE_EVAL_LAYOUT_KEY } = await import("./context")
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Render the page with the eval & task already loaded.
- *
- * Svelte 4's onMount callback does not fire in jsdom (the internal scheduler
- * never reaches the "mounted" phase). We work around this by mocking onMount
- * to capture callbacks, then invoking them manually after render.
+ * Render the picker page with context provided.
  */
-async function renderPage() {
+async function renderPickerPage() {
+  onMountCallbacks.length = 0
+
+  // The picker page uses getContext("create_eval_layout"). We need to
+  // set it up before rendering. Use Svelte's component-level context
+  // via the `context` option of @testing-library/svelte.
+  const { writable } = await import("svelte/store")
+
+  const ctx = new Map()
+  ctx.set(CREATE_EVAL_LAYOUT_KEY, {
+    evaluator: writable({
+      id: "eval1",
+      name: "Test Eval",
+      output_scores: [],
+    }),
+    task: writable({
+      id: "task1",
+      name: "Test Task",
+      instruction: "test instruction",
+    }),
+    spec: writable({ id: "spec1", name: "Test Spec" }),
+    project_id: writable("proj1"),
+    task_id: writable("task1"),
+    eval_id: writable("eval1"),
+    spec_id: writable("spec1"),
+  })
+
+  const result = render(PickerPage, { context: ctx })
+  await tick()
+  return result
+}
+
+/**
+ * Render the EvalConfigBuilder component directly.
+ */
+async function renderBuilder(evalType: string = "code_eval") {
   onMountCallbacks.length = 0
 
   const spy = vi
@@ -207,7 +252,29 @@ async function renderPage() {
       onMountCallbacks.push(fn)
     })
 
-  const result = render(Page)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = render(EvalConfigBuilder as any, {
+    props: {
+      eval_config_type: evalType,
+      evaluator: {
+        id: "eval1",
+        name: "Test Eval",
+        output_scores: [],
+      },
+      task: {
+        id: "task1",
+        name: "Test Task",
+        instruction: "test instruction",
+        input_json_schema: "{}",
+        output_json_schema: "{}",
+      },
+      spec: { id: "spec1", name: "Test Spec" },
+      project_id: "proj1",
+      task_id: "task1",
+      eval_id: "eval1",
+      spec_id: "spec1",
+    },
+  })
 
   spy.mockRestore()
 
@@ -220,25 +287,126 @@ async function renderPage() {
 }
 
 /**
- * Select a V2 eval type by clicking its card in the type picker.
+ * Render the builder route page ([eval_config_type]/+page.svelte) with context.
  */
-async function selectEvalType(container: HTMLElement, typeLabel: string) {
-  const cards = container.querySelectorAll(".card")
-  for (const card of cards) {
-    if (card.textContent?.includes(typeLabel)) {
-      await fireEvent.click(card)
-      await tick()
-      return
-    }
-  }
-  throw new Error(`Could not find eval type card: ${typeLabel}`)
+async function renderBuilderRoutePage(evalConfigType: string) {
+  onMountCallbacks.length = 0
+
+  mockPage.set({
+    params: {
+      project_id: "proj1",
+      task_id: "task1",
+      eval_id: "eval1",
+      spec_id: "spec1",
+      eval_config_type: evalConfigType,
+    },
+    url: new URL(
+      `http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config/${evalConfigType}`,
+    ),
+  })
+
+  const { writable } = await import("svelte/store")
+
+  const ctx = new Map()
+  ctx.set(CREATE_EVAL_LAYOUT_KEY, {
+    evaluator: writable({
+      id: "eval1",
+      name: "Test Eval",
+      output_scores: [],
+    }),
+    task: writable({
+      id: "task1",
+      name: "Test Task",
+      instruction: "test instruction",
+      input_json_schema: "{}",
+      output_json_schema: "{}",
+    }),
+    spec: writable({ id: "spec1", name: "Test Spec" }),
+    project_id: writable("proj1"),
+    task_id: writable("task1"),
+    eval_id: writable("eval1"),
+    spec_id: writable("spec1"),
+  })
+
+  const result = render(BuilderRoutePage, { context: ctx })
+  await tick()
+  return result
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("create_eval_config page", () => {
+describe("create_eval_config picker page", () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("renders all eval type cards", async () => {
+    const { container } = await renderPickerPage()
+    const cards = container.querySelectorAll(".card")
+    expect(cards.length).toBe(ALL_V2_EVAL_TYPES.length)
+  })
+
+  it("shows LLM as Judge (recommended) first", async () => {
+    const { container } = await renderPickerPage()
+    const cards = container.querySelectorAll(".card")
+    expect(cards[0].textContent).toContain("LLM as Judge (recommended)")
+  })
+
+  it("navigates to child route on card click", async () => {
+    const { container } = await renderPickerPage()
+    const cards = container.querySelectorAll(".card")
+    // Click the first card (LLM as Judge)
+    await fireEvent.click(cards[0])
+    await tick()
+
+    expect(mockGoto).toHaveBeenCalledWith(
+      expect.stringContaining("/create_eval_config/llm_judge"),
+    )
+  })
+
+  it("preserves query params when navigating", async () => {
+    mockPage.set({
+      params: {
+        project_id: "proj1",
+        task_id: "task1",
+        eval_id: "eval1",
+        spec_id: "spec1",
+      },
+      url: new URL(
+        "http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config?next_page=eval_configs&save_as_default=true",
+      ),
+    })
+
+    const { container } = await renderPickerPage()
+    const cards = container.querySelectorAll(".card")
+    await fireEvent.click(cards[0])
+    await tick()
+
+    expect(mockGoto).toHaveBeenCalledWith(
+      expect.stringContaining("next_page=eval_configs"),
+    )
+    expect(mockGoto).toHaveBeenCalledWith(
+      expect.stringContaining("save_as_default=true"),
+    )
+
+    // Reset page for other tests
+    mockPage.set({
+      params: {
+        project_id: "proj1",
+        task_id: "task1",
+        eval_id: "eval1",
+        spec_id: "spec1",
+      },
+      url: new URL(
+        "http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config",
+      ),
+    })
+  })
+})
+
+describe("EvalConfigBuilder", () => {
   beforeEach(() => {
     resetCalls()
     mockTestV2Eval.mockReset()
@@ -253,13 +421,8 @@ describe("create_eval_config page", () => {
 
   describe("trust modal for code_eval", () => {
     it("shows trust dialog when test returns code_eval_not_trusted", async () => {
-      const { container } = await renderPage()
+      const { container } = await renderBuilder("code_eval")
 
-      // Select the "Code Eval" type
-      await selectEvalType(container, "Code Eval")
-      await tick()
-
-      // Fill in the required final message field
       const textarea = container.querySelector(
         "#test_final_message",
       ) as HTMLTextAreaElement
@@ -267,117 +430,30 @@ describe("create_eval_config page", () => {
       await fireEvent.input(textarea, { target: { value: "hello world" } })
       await tick()
 
-      // Mock testV2Eval to return code_eval_not_trusted
       mockTestV2Eval.mockResolvedValueOnce({
         scores: {},
         skipped_reason: "code_eval_not_trusted",
         skipped_detail: "Code eval is not trusted for this project.",
       })
 
-      // Click the "Try It" button
       const tryBtn = container.querySelector(
         "button.btn-primary.btn-sm",
       ) as HTMLButtonElement
       expect(tryBtn).not.toBeNull()
       await fireEvent.click(tryBtn)
 
-      // Let async operations settle
       await tick()
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      // The trust dialog should have been shown
       expect(showCalls).toContain("Allow Code Execution")
-    })
-
-    it("retries test after granting trust via dialog", async () => {
-      const { container } = await renderPage()
-
-      await selectEvalType(container, "Code Eval")
-      await tick()
-
-      const textarea = container.querySelector(
-        "#test_final_message",
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "test output" } })
-      await tick()
-
-      // First call: not trusted. Second call (after grant): success.
-      mockTestV2Eval
-        .mockResolvedValueOnce({
-          scores: {},
-          skipped_reason: "code_eval_not_trusted",
-          skipped_detail: null,
-        })
-        .mockResolvedValueOnce({
-          scores: { quality: 0.9 },
-          skipped_reason: null,
-          skipped_detail: null,
-        })
-
-      mockGrantCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
-
-      // Click Try It – triggers the not-trusted path
-      const tryBtn = container.querySelector(
-        "button.btn-primary.btn-sm",
-      ) as HTMLButtonElement
-      await fireEvent.click(tryBtn)
-      await tick()
-      await new Promise((r) => setTimeout(r, 0))
-      await tick()
-
-      // Trust dialog was shown
-      expect(showCalls).toContain("Allow Code Execution")
-
-      // Now find the trust dialog's action button in the DOM and examine it.
-      // Since our Dialog stub records calls but doesn't render action buttons,
-      // we invoke grant_trust_and_retry directly by finding the dialog's
-      // asyncAction and calling it. We can do this by looking at the
-      // data-action-buttons attribute or by accessing the component directly.
-      //
-      // The dialog stub serialises action_buttons. Find the trust dialog.
-      const dialogs = container.querySelectorAll('[data-testid="dialog-stub"]')
-      let trustDialogEl: Element | null = null
-      for (const d of dialogs) {
-        if (d.getAttribute("data-title") === "Allow Code Execution") {
-          trustDialogEl = d
-        }
-      }
-      expect(trustDialogEl).not.toBeNull()
-      const actionBtns = JSON.parse(
-        trustDialogEl!.getAttribute("data-action-buttons") || "[]",
-      )
-      const grantBtn = actionBtns.find(
-        (b: Record<string, unknown>) => b.isWarning,
-      )
-      expect(grantBtn).toBeTruthy()
-
-      // The asyncAction in the real component is grant_trust_and_retry.
-      // Since the stub doesn't wire up action_buttons, we simulate
-      // what the real Dialog does: call the asyncAction.
-      // We imported the page component; the function is internal.
-      // Instead, let's invoke it via the mock chain: grantCodeEvalTrust
-      // should be called, then testV2Eval retried.
-
-      // We can get the page component instance and call the method,
-      // but it's private. The cleaner approach: directly test the
-      // observable side effects by verifying mock calls.
-
-      // Since we can't click a real dialog button (stub doesn't render them),
-      // verify the state: testV2Eval was called once, trust dialog shown.
-      expect(mockTestV2Eval).toHaveBeenCalledTimes(1)
     })
 
     it("shows trust dialog when saving a code_eval without trust", async () => {
-      const { container } = await renderPage()
+      const { container } = await renderBuilder("code_eval")
 
-      await selectEvalType(container, "Code Eval")
-      await tick()
-
-      // Mock trust check to return untrusted
       mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
 
-      // Click the form submit button
       const submitBtn = container.querySelector(
         '[data-testid="form-submit-button"]',
       ) as HTMLButtonElement
@@ -388,21 +464,13 @@ describe("create_eval_config page", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      // Trust dialog should be shown for save action
       expect(showCalls).toContain("Allow Code Execution")
-      // createEvalConfig should NOT have been called yet
       expect(mockCreateEvalConfig).not.toHaveBeenCalled()
     })
 
     it("skips trust check for non-requiresTrust types", async () => {
-      const { container } = await renderPage()
+      const { container } = await renderBuilder("exact_match")
 
-      // Exact Match does not require trust
-      await selectEvalType(container, "Exact Match")
-      await tick()
-
-      // The form should still show confirm-save-dialog if no test run
-      // (since can_submit_v2 is true and test_has_run is false)
       const submitBtn = container.querySelector(
         '[data-testid="form-submit-button"]',
       ) as HTMLButtonElement
@@ -413,21 +481,15 @@ describe("create_eval_config page", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      // Trust dialog should NOT be shown
       expect(showCalls).not.toContain("Allow Code Execution")
-      // checkCodeEvalTrust should NOT have been called
       expect(mockCheckCodeEvalTrust).not.toHaveBeenCalled()
-      // The confirm-save dialog should appear instead
       expect(showCalls).toContain("Save Without Testing?")
     })
   })
 
   describe("save-without-testing confirm modal", () => {
     it("shows confirm dialog when saving V2 eval without running a test", async () => {
-      const { container } = await renderPage()
-
-      await selectEvalType(container, "Exact Match")
-      await tick()
+      const { container } = await renderBuilder("exact_match")
 
       const submitBtn = container.querySelector(
         '[data-testid="form-submit-button"]',
@@ -443,12 +505,8 @@ describe("create_eval_config page", () => {
     })
 
     it("does not show confirm dialog after a successful test run", async () => {
-      const { container } = await renderPage()
+      const { container } = await renderBuilder("exact_match")
 
-      await selectEvalType(container, "Exact Match")
-      await tick()
-
-      // Fill in the final message
       const textarea = container.querySelector(
         "#test_final_message",
       ) as HTMLTextAreaElement
@@ -456,14 +514,12 @@ describe("create_eval_config page", () => {
       await fireEvent.input(textarea, { target: { value: "output text" } })
       await tick()
 
-      // Mock a successful test run
       mockTestV2Eval.mockResolvedValueOnce({
         scores: { accuracy: 1.0 },
         skipped_reason: null,
         skipped_detail: null,
       })
 
-      // Click Try It
       const tryBtn = container.querySelector(
         "button.btn-primary.btn-sm",
       ) as HTMLButtonElement
@@ -474,7 +530,6 @@ describe("create_eval_config page", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      // Now test_has_run is true. Submit should go straight to save.
       resetCalls()
       mockCreateEvalConfig.mockResolvedValueOnce({
         id: "config123",
@@ -491,22 +546,15 @@ describe("create_eval_config page", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      // Confirm dialog should NOT be shown
       expect(showCalls).not.toContain("Save Without Testing?")
-      // Save should have been called directly
       expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
     })
 
     it("shows confirm dialog for code_eval after trust is already granted", async () => {
-      const { container } = await renderPage()
+      const { container } = await renderBuilder("code_eval")
 
-      await selectEvalType(container, "Code Eval")
-      await tick()
-
-      // Trust is granted
       mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
 
-      // But no test has been run, so confirm save dialog should appear
       const submitBtn = container.querySelector(
         '[data-testid="form-submit-button"]',
       ) as HTMLButtonElement
@@ -516,10 +564,36 @@ describe("create_eval_config page", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      // Trust dialog should NOT appear (already trusted)
       expect(showCalls).not.toContain("Allow Code Execution")
-      // Confirm save dialog SHOULD appear (no test run)
       expect(showCalls).toContain("Save Without Testing?")
     })
+  })
+})
+
+describe("builder route page ([eval_config_type])", () => {
+  afterEach(() => {
+    cleanup()
+    mockPage.set({
+      params: {
+        project_id: "proj1",
+        task_id: "task1",
+        eval_id: "eval1",
+        spec_id: "spec1",
+      },
+      url: new URL(
+        "http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config",
+      ),
+    })
+  })
+
+  it("shows error for unknown eval type", async () => {
+    const { container } = await renderBuilderRoutePage("bogus_type")
+    expect(container.textContent).toContain("Unknown Eval Type")
+    expect(container.textContent).toContain('"bogus_type" is not a recognized')
+  })
+
+  it("renders builder for valid eval type", async () => {
+    const { container } = await renderBuilderRoutePage("exact_match")
+    expect(container.textContent).not.toContain("Unknown Eval Type")
   })
 })

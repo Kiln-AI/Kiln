@@ -59,7 +59,7 @@ describe("getV2EvalTypeMetadata", () => {
       set_check: "Set Check",
       tool_call_check: "Tool Call Check",
       step_count_check: "Step Count Check",
-      llm_judge: "LLM Judge",
+      llm_judge: "LLM as Judge (recommended)",
       code_eval: "Code Eval",
     }
     for (const [type, label] of Object.entries(expectedLabels)) {
