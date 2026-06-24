@@ -65,7 +65,7 @@ def _props_for_type(v2_type: V2EvalType):  # type: ignore[no-untyped-def]
             )
         case V2EvalType.code_eval:
             return CodeEvalProperties(
-                code="def score(output, trace, reference_data, task_input, kiln):\n    return {'score': 1.0}\n"
+                code="def score(output, trace, reference_data, task_input):\n    return {'score': 1.0}\n"
             )
         case _:
             return ExactMatchProperties(expected_value="test")

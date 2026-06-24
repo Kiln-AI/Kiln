@@ -95,7 +95,7 @@
     />
     <div class="text-xs text-gray-400 mt-1">
       Define a <code class="font-mono text-gray-500"
-        >score(output, trace, reference_data, task_input, kiln)</code
+        >score(output, trace, reference_data, task_input)</code
       >
       function that returns a dict of score names to score values. Ranges vary by
       type: pass/fail uses 0.0–1.0, pass/fail/critical uses -1.0–1.0, and five-star

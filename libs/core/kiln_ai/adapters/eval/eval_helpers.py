@@ -1,4 +1,8 @@
-"""Pure-Python helper class injected as the `kiln` argument to user scorer functions.
+"""Pure-Python helper utilities for user-authored scorer functions.
+
+Users who need these helpers import them explicitly in their scorer code::
+
+    from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
 Stdlib only -- no Pydantic, no Kiln-model/DB/UI imports.
 """

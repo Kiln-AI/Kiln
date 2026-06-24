@@ -2633,7 +2633,7 @@ class TestV2TemplateValidation:
 
 
 class TestCodeEvalPropertiesValidation:
-    VALID_CODE = "def score(output, trace, reference_data, task_input, helpers):\n    return {'accuracy': 1.0}\n"
+    VALID_CODE = "def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
 
     def test_valid_code(self):
         props = CodeEvalProperties(code=self.VALID_CODE)
@@ -2662,7 +2662,7 @@ class TestCodeEvalPropertiesValidation:
 
     def test_code_too_large(self):
         big_code = (
-            "def score(output, trace, reference_data, task_input, helpers):\n    return {'x': 1.0}\n"
+            "def score(output, trace, reference_data, task_input):\n    return {'x': 1.0}\n"
             + ("# padding\n" * 10000)
         )
         if len(big_code.encode("utf-8")) <= 64 * 1024:
@@ -2671,12 +2671,12 @@ class TestCodeEvalPropertiesValidation:
             CodeEvalProperties(code=big_code)
 
     def test_nested_score_function_rejected(self):
-        code = "def wrapper():\n    def score(output, trace, reference_data, task_input, helpers):\n        return {}\n"
+        code = "def wrapper():\n    def score(output, trace, reference_data, task_input):\n        return {}\n"
         with pytest.raises(ValidationError, match="module-level 'score' function"):
             CodeEvalProperties(code=code)
 
     def test_async_score_function_accepted(self):
-        code = "async def score(output, trace, reference_data, task_input, helpers):\n    return {'accuracy': 1.0}\n"
+        code = "async def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
         props = CodeEvalProperties(code=code)
         assert props.code == code
 

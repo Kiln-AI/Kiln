@@ -107,8 +107,9 @@ EXAMPLE_KEYS_PF_FS_PFC = {"check", "rating", "safety"}
 # Mirror of code_eval_helpers.ts "Parse JSON" example (multi-score).
 PARSE_JSON_CODE = """\
 import json
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input, kiln):
+def score(output, trace, reference_data, task_input):
     \"\"\"Check if the output is valid JSON with required fields.\"\"\"
     try:
         data = json.loads(output)
@@ -119,39 +120,43 @@ def score(output, trace, reference_data, task_input, kiln):
     has_all = all(k in data for k in required)
     passed = isinstance(data, dict) and has_all
     return {  # Adjust each score's logic for your eval
-        "check": kiln.pass_fail(passed),
-        "rating": kiln.five_star(5 if passed else 1),
+        "check": KilnEvalHelpers.pass_fail(passed),
+        "rating": KilnEvalHelpers.five_star(5 if passed else 1),
     }
 """
 
 # Mirror of code_eval_helpers.ts "Check tool usage" example (multi-score).
 CHECK_TOOL_USAGE_CODE = """\
-def score(output, trace, reference_data, task_input, kiln):
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output, trace, reference_data, task_input):
     \"\"\"Verify the model used the expected tools.\"\"\"
-    tool_calls = kiln.get_tool_calls(trace)
-    used_search = kiln.has_tool_call(tool_calls, "search")
-    call_count = kiln.count_tool_calls(tool_calls, "search")
+    tool_calls = KilnEvalHelpers.get_tool_calls(trace)
+    used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
+    call_count = KilnEvalHelpers.count_tool_calls(tool_calls, "search")
 
     return {  # Adjust each score's logic for your eval
-        "check": kiln.pass_fail(used_search),
-        "rating": kiln.five_star(max(min(call_count, 5), 1)),
+        "check": KilnEvalHelpers.pass_fail(used_search),
+        "rating": KilnEvalHelpers.five_star(max(min(call_count, 5), 1)),
     }
 """
 
 # Mirror of code_eval_helpers.ts "Domain-specific grading" example (3-score).
 DOMAIN_GRADING_CODE = """\
-def score(output, trace, reference_data, task_input, kiln):
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output, trace, reference_data, task_input):
     \"\"\"Grade output against domain-specific criteria.\"\"\"
     expected = (reference_data or {}).get("expected_answer", "")
 
-    contains = kiln.assert_contains(output, expected) if expected else True
+    contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
 
     word_count = len(output.split())
 
     return {  # Adjust each score's logic for your eval
-        "check": kiln.pass_fail(contains),
-        "rating": kiln.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1),
-        "safety": kiln.pass_fail(contains),
+        "check": KilnEvalHelpers.pass_fail(contains),
+        "rating": KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1),
+        "safety": KilnEvalHelpers.pass_fail(contains),
     }
 """
 
@@ -165,7 +170,7 @@ def score(output, trace, reference_data, task_input, kiln):
 def _default_code_single(key: str, passing: str, low: str) -> str:
     """Build a minimal default-code snippet for a single output score."""
     return (
-        "def score(output, trace, reference_data, task_input, kiln):\n"
+        "def score(output, trace, reference_data, task_input):\n"
         '    """Score the model output."""\n'
         "    if not output:\n"
         f'        return {{"{key}": {low}}}\n'
@@ -178,7 +183,7 @@ DEFAULT_FIVE_STAR_CODE = _default_code_single("quality", "5.0", "1.0")
 DEFAULT_PASS_FAIL_CRITICAL_CODE = _default_code_single("quality", "1.0", "0.0")
 
 DEFAULT_MULTI_CODE = (
-    "def score(output, trace, reference_data, task_input, kiln):\n"
+    "def score(output, trace, reference_data, task_input):\n"
     '    """Score the model output."""\n'
     "    if not output:\n"
     '        return {"accuracy": 0.0, "depth": 1.0, "safety": 0.0}\n'
