@@ -54,9 +54,9 @@ This whitelist is the thing most likely to go stale, so it's the main target of 
 
 - **Read-only. Make no edits.** Do not modify test files, the whitelist, prod source, config, or anything else. Every actionable finding is a *recommendation* in the report. If you catch yourself about to call Edit/Write on anything other than files under `.prerelease/<timestamp>/`, stop.
 - **Network access is required.** Every test phase makes real API calls or hits remote model-list endpoints. If you are running this skill inside a sandboxed Bash session, request `required_permissions: ["all"]` for the test commands.
-- **Env vars:** Source `.env` before running anything that needs API keys:
+- **Env vars:** Source `.env` before running anything that needs API keys. Use a real sourcing pass (not `export $(... | xargs)`, which mangles any value containing spaces or quotes):
   ```bash
-  export $(grep -v '^#' .env | xargs)
+  set -a; . ./.env; set +a
   ```
   Provider-specific env vars the prerelease set may touch: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `TOGETHER_API_KEY`, `SILICONFLOW_CN_API_KEY`, `COHERE_API_KEY`, `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, plus `KILN_TEST_VERTEX_PROJECT_ID` (+ optional `KILN_TEST_VERTEX_LOCATION`) for the Vertex live check, which also requires `gcloud auth application-default login` against a project with `aiplatform.googleapis.com` enabled.
 - **A missing key is a coverage gap, not a failure.** Each missing key makes the relevant test `pytest.skip(...)`. That isn't a prerelease failure — surface it in the report so the user can decide whether to provide the key and re-run.
@@ -266,11 +266,18 @@ If a new provider/family in `ml_model_list.py` isn't represented in the prerelea
 Also list recently added `@pytest.mark.paid` tests that are *not* `@pytest.mark.prerelease`-tagged, so the user can decide if any should be promoted:
 
 ```bash
-grep -rn "@pytest.mark.paid" --include="*.py" | awk -F: '{print $1":"$2}' > "${SCRATCH}/paid_tests.txt"
-grep -rn "@pytest.mark.prerelease" --include="*.py" | awk -F: '{print $1":"$2}' > "${SCRATCH}/prerelease_tests.txt"
-diff <(sort "${SCRATCH}/paid_tests.txt") <(sort "${SCRATCH}/prerelease_tests.txt") | grep '^<' > "${SCRATCH}/paid_only.txt"
-git log --since="3 months ago" --diff-filter=AM --name-only --pretty=format: -- \
-  $(awk -F: '{print $1}' "${SCRATCH}/paid_only.txt" | sort -u) | sort -u | head -50
+# Compare collected test NODE IDs, not marker line numbers: a test carrying both
+# markers on different lines would be misclassified by a file:line diff. Marker
+# expressions select by marker regardless of the skip gates, so collect-only works.
+# `sed 's/\[.*//'` collapses parametrized cases to one row per test function
+# (the paid fan-out tests expand to thousands of cases otherwise).
+uv run python3 -m pytest --collect-only -q -m "paid and not prerelease" -o "addopts=" \
+  2>/dev/null | grep '::' | sed 's/\[.*//' | sort -u > "${SCRATCH}/paid_only_nodes.txt"
+# Recently added files among those paid-only tests (pipe to xargs to avoid
+# "argument list too long" on a large list):
+awk -F'::' '{print $1}' "${SCRATCH}/paid_only_nodes.txt" | sort -u | \
+  xargs git log --since="3 months ago" --diff-filter=AM --name-only --pretty=format: -- \
+  2>/dev/null | sort -u | head -50 > "${SCRATCH}/recent_paid_only_files.txt"
 ```
 
 ### 4d. Prod-code model probes (flag only)
