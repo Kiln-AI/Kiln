@@ -808,6 +808,33 @@ async def test_create_task_run_minimal(client, task_run_setup):
 
 
 @pytest.mark.asyncio
+async def test_create_task_run_human(client, task_run_setup):
+    """Test creating a TaskRun with a human data source."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs",
+            json={
+                "input": "Human input",
+                "output": "Human output",
+                "input_source_type": "human",
+                "created_by": "tester",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["input"] == "Human input"
+    assert result["output"]["output"] == "Human output"
+    assert result["output"]["source"]["type"] == "human"
+    assert result["output"]["source"]["properties"]["created_by"] == "tester"
+
+
+@pytest.mark.asyncio
 async def test_delete_run(client, task_run_setup):
     project = task_run_setup["project"]
     task = task_run_setup["task"]
