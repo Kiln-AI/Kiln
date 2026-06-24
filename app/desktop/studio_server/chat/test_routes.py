@@ -1134,14 +1134,11 @@ def test_execute_tools_has_no_write_lock(app):
 PATCH_ROUTES_ASYNC_CLIENT = "app.desktop.studio_server.chat.routes.httpx.AsyncClient"
 
 
-def _mock_version_policy_client(*, json_body=None, status_code=200, raise_exc=None):
+def _mock_version_policy_client(*, json_body=None, status_code=200):
     """Build a mock httpx.AsyncClient whose async .get() returns a fake response."""
     resp = MagicMock()
     resp.status_code = status_code
-    if raise_exc is not None:
-        resp.json.side_effect = raise_exc
-    else:
-        resp.json.return_value = json_body
+    resp.json.return_value = json_body
     http_client = MagicMock()
     http_client.get = AsyncMock(return_value=resp)
     http_client.__aenter__ = AsyncMock(return_value=http_client)
