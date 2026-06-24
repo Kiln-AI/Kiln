@@ -237,7 +237,7 @@
             <td>
               <div class="flex flex-col gap-2 w-full max-w-[360px] min-w-48">
                 <span
-                  class="badge px-3 py-1 self-start {job_status_display_badge_class(
+                  class="badge h-auto px-3 py-1 self-start whitespace-normal text-center leading-tight {job_status_display_badge_class(
                     job,
                   )}"
                 >
