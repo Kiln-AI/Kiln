@@ -58,9 +58,8 @@
 </script>
 
 <AppPage
-  title="Jobs"
-  subtitle="Background work for the current project."
-  sub_subtitle="Jobs keep running even if you navigate away or close this panel."
+  title="Jobs (temporary test page)"
+  subtitle="This page is a placeholder test to trigger jobs - will be removed before merging"
   {action_buttons}
 >
   {#if action_error}

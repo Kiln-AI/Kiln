@@ -22,7 +22,6 @@
   import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
   import JobsDialog from "$lib/components/jobs_dialog.svelte"
   import { jobs_dialog } from "$lib/stores/jobs_dialog"
-  import { active_jobs_count } from "$lib/stores/jobs_store"
   import { Section } from "$lib/ui/section"
   import Dialog from "$lib/ui/dialog.svelte"
   import SidebarRail from "./sidebar_rail.svelte"
@@ -30,6 +29,11 @@
   import { chatBarExpanded } from "$lib/stores/chat_ui_state"
   import { derived } from "svelte/store"
   import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
+  import { env } from "$env/dynamic/public"
+
+  // Feature flag: the background Jobs UI (sidebar entry + dialog) only renders
+  // when PUBLIC_ENABLE_JOBS is explicitly "true". See .env.example.
+  const jobs_enabled = env.PUBLIC_ENABLE_JOBS === "true"
 
   // Rail-eligibility predicate: lg breakpoint, narrow viewport (< 1550px),
   // and chat bar expanded. See functional_spec.md "Trigger".
@@ -166,7 +170,11 @@
     ></label>
 
     {#if showRail}
-      <SidebarRail {section} openTaskDialog={() => taskDialog?.show()} />
+      <SidebarRail
+        {section}
+        {jobs_enabled}
+        openTaskDialog={() => taskDialog?.show()}
+      />
     {:else}
       <ul
         class="sidebar-menu menu bg-base-200 text-base-content w-72 md:w-52 2xl:w-56 p-3 pt-1 lg:pt-3 min-h-full text-xs"
@@ -440,23 +448,21 @@
             >
           </li>
         {/if}
-        <li class="menu-sm">
-          <button
-            type="button"
-            class="text-xs {$active_jobs_count > 0
-              ? 'text-base-content'
-              : 'text-base-content/60'}"
-            on:click={() => jobs_dialog.open()}
-          >
-            <div
-              class="sidebar-icon {$active_jobs_count > 0 ? '' : 'opacity-60'}"
+        {#if jobs_enabled}
+          <li class="menu-sm">
+            <button
+              type="button"
+              class="text-xs text-base-content"
+              on:click={() => jobs_dialog.open()}
             >
-              <JobsIcon />
-            </div>
-            Jobs
-            <SidebarJobsIndicator variant="inline" />
-          </button>
-        </li>
+              <div class="sidebar-icon">
+                <JobsIcon />
+              </div>
+              Jobs
+              <SidebarJobsIndicator variant="inline" />
+            </button>
+          </li>
+        {/if}
         <li class="menu-sm">
           <a
             href="/settings"
@@ -495,7 +501,9 @@
   <SelectTasksMenu on:dismiss={() => taskDialog?.close()} />
 </Dialog>
 
-<JobsDialog />
+{#if jobs_enabled}
+  <JobsDialog />
+{/if}
 
 <style>
   :global(ul > li.menu-nested) {

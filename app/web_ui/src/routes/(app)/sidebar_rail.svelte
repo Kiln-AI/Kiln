@@ -14,6 +14,7 @@
 
   export let section: Section = Section.None
   export let openTaskDialog: () => void
+  export let jobs_enabled: boolean = false
 </script>
 
 <nav
@@ -118,12 +119,14 @@
 
   <SidebarRailProgress />
 
-  <SidebarRailItem on_click={() => jobs_dialog.open()} label="Jobs">
-    <div slot="icon" class="w-full h-full relative">
-      <JobsIcon />
-      <SidebarJobsIndicator variant="rail" />
-    </div>
-  </SidebarRailItem>
+  {#if jobs_enabled}
+    <SidebarRailItem on_click={() => jobs_dialog.open()} label="Jobs">
+      <div slot="icon" class="w-full h-full relative">
+        <JobsIcon />
+        <SidebarJobsIndicator variant="rail" />
+      </div>
+    </SidebarRailItem>
+  {/if}
 
   <SidebarRailSettings active={section === Section.Settings} />
 </nav>
