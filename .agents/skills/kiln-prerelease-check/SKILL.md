@@ -139,6 +139,19 @@ If you can't confidently distinguish a stale-pin cause (2) from a real regressio
 
 Record, per failure: test ID · provider · cause class · the model slug involved (if any) and its `ml_model_list.py` status · a short excerpt of the actual error · recommended action.
 
+**Retry likely-transient failures once before finalizing.** Live-API tests are flaky: rate limits, 5xx, timeouts, dropped streams, and occasional empty/under-populated responses (e.g. a thinking model returning no reasoning content on one call but not the next) routinely fail a single run without indicating any real breakage. So before you write up the failures, re-run the failing tests in isolation **once** to separate flakes from real defects:
+
+- **Retry these cause classes:** auth/quota/rate-limit/transient (class 3) and ambiguous behavioral/streaming mismatches (class 4) — anything that could plausibly be a one-off. **Do not retry** failures with a deterministic, self-explanatory cause: a deprecated/removed model slug (class 2), a Kiln-code traceback (class 5), or a missing-credential skip. Retrying those just burns money and time.
+- **How:** re-run only the failing node IDs, serially, into a separate log so the original run is preserved:
+  ```bash
+  uv run python3 -m pytest --runprerelease -v --tb=short -o "addopts=" \
+    "<failing::node::id>" "<failing::node::id>" ... \
+    2>&1 | tee "${OUT}/retry.log"
+  ```
+  One retry pass is enough — this is a flake filter, not a stability loop. Don't retry a test more than once.
+- **Reclassify by the retry outcome:** a test that **passes on retry** is **transient/flaky**, not a release blocker — move it out of the hard-failure set. A test that **fails again** is **reproducible** — diagnose it as a real finding per the tree above.
+- **Always disclose the retry in the report.** Never silently swap a first-run FAIL for a PASS. Every retried test must show its first-run result, its retry result, and the verdict (transient vs. reproducible) — see the report template's "Failures" section and the retry note in the Verdict. A green retry is evidence the suite is flaky here, which the user needs to know before tagging.
+
 ### 4b. Model-pin staleness sweep (mandatory every run, even when green)
 
 Independent of failures, every hardcoded model slug the prerelease set depends on must be checked against the model list and reported. A pin can be perfectly green today and still be worth bumping because a newer sibling shipped — prerelease only catches what real users hit if it tracks what real users actually use.
@@ -290,15 +303,18 @@ Create `.prerelease/<timestamp>/REPORT.md`. Lead with the verdict; make every fi
 - Overall: PASS / FAIL / PASS WITH RECOMMENDATIONS
 - checks.sh: <pass|fail>
 - prerelease pytest: <N passed, M failed, K skipped>
+- Retries: <none needed | "X of M first-run failures were retried (Phase 4a); Y passed on retry (transient/flaky), Z reproduced" — omit if no test was retried>
 - Headline: <one sentence — the single most important thing the user must know before tagging>
 
 ## Failures — what broke, why, and what to do
 One block per failing test. Sorted most-actionable first (real regressions before stale pins).
+If any failures were retried (Phase 4a), open this section with a small first-run-vs-retry table so transient flakes are visible at a glance, then write a block only for the tests that **reproduced** (note retried-and-passed ones as transient — don't dignify them with a full diagnosis block).
 
 ### <test ID>
 - Provider: <provider>
 - Cause: <deprecated model | model no longer exists at provider | provider behavior change (regression) | Kiln code regression | auth/quota/transient>
 - Model slug: <slug> — `ml_model_list.py` status: <OK | deprecated | no-provider-entry | n/a>
+- Retry: <not retried (deterministic cause) | retried once — reproduced | retried once — passed (transient, flaky)>
 - Evidence: <short excerpt of the actual error / failed assertion>
 - Recommended action: <concrete next step — e.g. "bump PRERELEASE_CHAT_MODELS pin from X to Y (newest sibling)"; or "investigate prod path Z — response shape changed"; or "mark this entry deprecated=True in ml_model_list.py and bump the pin". Recommendation only — this skill makes no edits.>
 
@@ -362,6 +378,8 @@ Remember: the skill never made any edits. If the report recommends pin bumps or 
 - [ ] `.prerelease/<timestamp>/` directory created (the only place anything was written)
 - [ ] `checks.sh --agent-mode` run, log captured
 - [ ] `--runprerelease` pytest run, log captured
+- [ ] Likely-transient failures (auth/quota/transient + ambiguous behavioral) retried once in isolation; deterministic failures (deprecated/removed slug, Kiln-code traceback) not retried
+- [ ] Every retried test disclosed in the report (first-run result, retry result, transient-vs-reproducible verdict) — no silent FAIL→PASS swaps
 - [ ] Every failure diagnosed with a cause class and a concrete recommended action (regression vs. deprecated-model vs. model-gone vs. auth/transient)
 - [ ] Model-pin staleness sweep table filled for **every** in-scope slug, including current ones needing no action
 - [ ] Newer-sibling recommendations included even for green pins

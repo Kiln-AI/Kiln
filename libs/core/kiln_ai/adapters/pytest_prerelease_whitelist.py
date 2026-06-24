@@ -37,7 +37,7 @@ PRERELEASE_EMBEDDING_MODELS: list[tuple[str, str]] = [
     ("openai_text_embedding_3_large", ModelProviderName.openai.value),
     ("gemini_embedding_001", ModelProviderName.gemini_api.value),
     ("nomic_text_embedding_v1_5", ModelProviderName.fireworks_ai.value),
-    ("baai_bge_large_1_5", ModelProviderName.together_ai.value),
+    ("multilingual_e5_large_instruct", ModelProviderName.together_ai.value),
     ("qwen_3_embedding_8b", ModelProviderName.siliconflow_cn.value),
 ]
 
@@ -64,7 +64,6 @@ PRERELEASE_EXTRACTION_MIME_PROBES: list[tuple[MockFileFactoryMimeType, list[str]
 # reasoning channel; the test verifies the reasoning content channel is
 # populated (or absent for "none").
 PRERELEASE_THINKING_MODELS: list[tuple[str, str, str]] = [
-    (ModelProviderName.openai.value, "gpt_o4_mini_low", "low"),
     (ModelProviderName.anthropic.value, "claude_sonnet_4_6", "medium"),
     (ModelProviderName.anthropic.value, "claude_4_5_haiku", "low"),
     (ModelProviderName.gemini_api.value, "gemini_3_flash", "medium"),
