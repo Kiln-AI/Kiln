@@ -192,7 +192,7 @@
     <Intro
       title="No jobs yet"
       description_paragraphs={[
-        "Long-running work like eval runs shows up here. Jobs keep running in the background, even if you leave this page.",
+        "Long-running workloads show up here. Manage them from this page, or leave — they'll keep running in the background.",
       ]}
     >
       <div slot="icon" class="w-12 h-12 text-gray-400" aria-hidden="true">
