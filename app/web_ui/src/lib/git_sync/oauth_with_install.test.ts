@@ -106,6 +106,7 @@ describe("createOAuthWithInstall", () => {
       success: true,
       message: "",
       auth_required: false,
+      write_denied: false,
       auth_method: "github_oauth",
     })
 
@@ -128,6 +129,7 @@ describe("createOAuthWithInstall", () => {
       success: false,
       message: "No access",
       auth_required: true,
+      write_denied: false,
       auth_method: null,
     })
 
@@ -247,6 +249,7 @@ describe("createOAuthWithInstall", () => {
       success: true,
       message: "",
       auth_required: false,
+      write_denied: false,
       auth_method: "github_oauth",
     })
     staleCallbacks.onSuccess("ghu_stale_token")
@@ -272,6 +275,7 @@ describe("createOAuthWithInstall", () => {
       success: true,
       message: "",
       auth_required: false,
+      write_denied: false,
       auth_method: "github_oauth",
     })
     firstCallbacks.onSuccess("ghu_stale")
@@ -313,6 +317,7 @@ describe("createOAuthWithInstall", () => {
       success: false,
       message: "No access",
       auth_required: true,
+      write_denied: false,
       auth_method: null,
     })
     getCallbacks().onSuccess("ghu_token123")
@@ -324,6 +329,7 @@ describe("createOAuthWithInstall", () => {
       success: true,
       message: "",
       auth_required: false,
+      write_denied: false,
       auth_method: "github_oauth",
     })
     await flow.verify_access()

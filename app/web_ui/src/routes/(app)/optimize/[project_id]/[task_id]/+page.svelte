@@ -518,6 +518,8 @@
                     <BadgeList
                       items={tools_info.value}
                       links={tools_info.links}
+                      collapse
+                      modal_title="Tools"
                     />
                   </td>
                   <td class="text-gray-500">
@@ -527,6 +529,8 @@
                     <BadgeList
                       items={skills_info.value}
                       links={skills_info.links}
+                      collapse
+                      modal_title="Skills"
                     />
                   </td>
                   <td>

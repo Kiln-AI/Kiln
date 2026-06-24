@@ -204,9 +204,11 @@ export interface paths {
         put?: never;
         /**
          * Build Prompt With Examples
-         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         * @description Build a prompt with the task's prompt, requirements, and optional custom examples.
          *
          *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         *     When the task has a default run config, that run config's prompt is used as the base
+         *     (so synthetic data reflects the production prompt) instead of the task instruction.
          */
         post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
         delete?: never;
@@ -3547,7 +3549,11 @@ export interface components {
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
         };
-        /** Audio */
+        /**
+         * Audio
+         * @description Data about a previous audio response from the model.
+         *     [Learn more](https://platform.openai.com/docs/guides/audio).
+         */
         Audio: {
             /** Id */
             id: string;
@@ -3787,7 +3793,10 @@ export interface components {
             latency_ms?: number | null;
             usage?: components["schemas"]["MessageUsage"] | null;
         };
-        /** ChatCompletionContentPartImageParam */
+        /**
+         * ChatCompletionContentPartImageParam
+         * @description Learn about [image inputs](https://platform.openai.com/docs/guides/vision).
+         */
         ChatCompletionContentPartImageParam: {
             image_url: components["schemas"]["ImageURL"];
             /**
@@ -3796,7 +3805,10 @@ export interface components {
              */
             type: "image_url";
         };
-        /** ChatCompletionContentPartInputAudioParam */
+        /**
+         * ChatCompletionContentPartInputAudioParam
+         * @description Learn about [audio inputs](https://platform.openai.com/docs/guides/audio).
+         */
         ChatCompletionContentPartInputAudioParam: {
             input_audio: components["schemas"]["InputAudio"];
             /**
@@ -3815,7 +3827,10 @@ export interface components {
              */
             type: "refusal";
         };
-        /** ChatCompletionContentPartTextParam */
+        /**
+         * ChatCompletionContentPartTextParam
+         * @description Learn about [text inputs](https://platform.openai.com/docs/guides/text-generation).
+         */
         ChatCompletionContentPartTextParam: {
             /** Text */
             text: string;
@@ -3825,7 +3840,12 @@ export interface components {
              */
             type: "text";
         };
-        /** ChatCompletionDeveloperMessageParam */
+        /**
+         * ChatCompletionDeveloperMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, `developer` messages
+         *     replace the previous `system` messages.
+         */
         ChatCompletionDeveloperMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3849,7 +3869,10 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageFunctionToolCallParam */
+        /**
+         * ChatCompletionMessageFunctionToolCallParam
+         * @description A call to a function tool created by the model.
+         */
         ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
@@ -3860,7 +3883,12 @@ export interface components {
              */
             type: "function";
         };
-        /** ChatCompletionSystemMessageParam */
+        /**
+         * ChatCompletionSystemMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, use `developer` messages
+         *     for this purpose instead.
+         */
         ChatCompletionSystemMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3890,7 +3918,11 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
-        /** ChatCompletionUserMessageParam */
+        /**
+         * ChatCompletionUserMessageParam
+         * @description Messages sent by an end user, containing prompts or additional context
+         *     information.
+         */
         ChatCompletionUserMessageParam: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
@@ -4831,6 +4863,11 @@ export interface components {
                 [key: string]: string | number;
             };
             /**
+             * Run Config Id
+             * @description The ID of the saved TaskRunConfig used to produce this data, if any. Only present when the run was initiated from a saved TaskRunConfig (e.g. via the saved-config dropdown or a tool call); runs configured ad-hoc from the run page leave this unset. Not validated against the file system: a TaskRunConfig may be deleted without invalidating historical runs that reference it.
+             */
+            run_config_id?: string | null;
+            /**
              * Run Config
              * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
              */
@@ -5113,6 +5150,11 @@ export interface components {
             supports_custom_dimensions: boolean;
             /** Suggested For Chunk Embedding */
             suggested_for_chunk_embedding: boolean;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /**
          * EmbeddingModelName
@@ -6123,7 +6165,10 @@ export interface components {
              */
             output: string;
         };
-        /** File */
+        /**
+         * File
+         * @description Learn about [file inputs](https://platform.openai.com/docs/guides/text) for text generation.
+         */
         File: {
             file: components["schemas"]["FileFile"];
             /**
@@ -6497,14 +6542,22 @@ export interface components {
             /** Improper Formatting Examples */
             improper_formatting_examples?: string;
         };
-        /** Function */
+        /**
+         * Function
+         * @description The function that the model called.
+         */
         Function: {
             /** Arguments */
             arguments: string;
             /** Name */
             name: string;
         };
-        /** FunctionCall */
+        /**
+         * FunctionCall
+         * @description Deprecated and replaced by `tool_calls`.
+         *
+         *     The name and arguments of a function that should be called, as generated by the model.
+         */
         FunctionCall: {
             /** Arguments */
             arguments: string;
@@ -8469,6 +8522,11 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /** RerankerProvider */
         RerankerProvider: {
@@ -8620,6 +8678,11 @@ export interface components {
              * @description Tags to apply to the resulting task run.
              */
             tags?: string[] | null;
+            /**
+             * Task Run Config Id
+             * @description The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.
+             */
+            task_run_config_id?: string | null;
         };
         /**
          * SampleApi
@@ -8691,6 +8754,12 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "auto" | "manual";
+            /**
+             * Remove Conflicting Id
+             * @description When true and a duplicate project ID conflict is detected, remove the existing project registration before saving.
+             * @default false
+             */
+            remove_conflicting_id: boolean;
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -9999,6 +10068,12 @@ export interface components {
              */
             auth_required: boolean;
             /**
+             * Write Denied
+             * @description True when the user authenticated but the remote rejected the push due to insufficient write permissions.
+             * @default false
+             */
+            write_denied: boolean;
+            /**
              * Auth Method
              * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
              */
@@ -10629,6 +10704,8 @@ export interface operations {
             query: {
                 /** @description File path to the project.kiln file to import. */
                 project_path: string;
+                /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
+                remove_conflicting_id?: boolean;
             };
             header?: never;
             path?: never;

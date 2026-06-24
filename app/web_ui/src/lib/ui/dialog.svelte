@@ -89,7 +89,11 @@
   on:close={() => dispatch("close")}
   on:cancel={(e) => dispatch("cancel", e)}
 >
-  <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
+  <div
+    class="modal-box text-base-content {width === 'wide'
+      ? 'w-11/12 max-w-3xl'
+      : ''}"
+  >
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
     <div class="flex flex-row gap-2 items-start">

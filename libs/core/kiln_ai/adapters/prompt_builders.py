@@ -247,21 +247,37 @@ class FewShotPromptBuilder(MultiShotPromptBuilder):
 
 
 class CustomExamplePromptBuilder(FewShotPromptBuilder):
-    """A prompt builder that uses custom examples instead of collecting from the dataset."""
+    """A prompt builder that uses custom examples instead of collecting from the dataset.
 
-    def __init__(self, task: Task, examples: list[PromptExample] | None = None):
+    The base prompt is normally built from the task's instruction and requirements. A
+    base_prompt_override can be supplied (e.g. the task's default run config prompt) to
+    use the real production prompt as the base instead, with the custom examples appended.
+    """
+
+    def __init__(
+        self,
+        task: Task,
+        examples: list[PromptExample] | None = None,
+        base_prompt_override: str | None = None,
+    ):
         super().__init__(task)
         self._custom_examples = examples or []
+        self._base_prompt_override = base_prompt_override
 
     def collect_examples(self) -> list[TaskRun]:
         """Override to return an empty list - we handle examples separately."""
         return []
 
     def build_base_prompt(self) -> str:
-        """Build a prompt with instruction, requirements, and custom examples."""
-        base_prompt = self.build_instruction_and_requirements()
+        """Build a prompt with instruction (or override), requirements, and custom examples."""
+        if self._base_prompt_override is not None:
+            base_prompt = self._base_prompt_override
+        else:
+            base_prompt = self.build_instruction_and_requirements()
 
         if self._custom_examples:
+            if not base_prompt.endswith("\n\n"):
+                base_prompt = base_prompt.rstrip("\n") + "\n\n"
             base_prompt += "# Example Outputs\n\n"
             for i, example in enumerate(self._custom_examples):
                 base_prompt += f"## Example {i + 1}\n\nInput: {example.input}\nOutput: {example.output}\n\n"
