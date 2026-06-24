@@ -5,6 +5,7 @@ evals, eval configs, and task runs as part of the copilot-assisted
 spec creation workflow.
 """
 
+import logging
 import random
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -25,7 +26,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
-from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
+from kiln_ai.datamodel import Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -35,6 +36,14 @@ from kiln_ai.datamodel.task_output import (
     TaskOutputRating,
 )
 from kiln_ai.utils.config import Config
+
+logger = logging.getLogger(__name__)
+
+# Tag prefix the multi-turn synthetic-user runner stamps on each chain's leaf
+# TaskRun — see kiln_ai.synthetic_user.runner._TAG_PREFIX_SU_BATCH. Kept in
+# sync manually; if the runner ever changes its tag scheme this constant
+# moves too.
+_TAG_PREFIX_SU_BATCH = "synthetic_user_batch:"
 
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
@@ -298,3 +307,65 @@ def create_dataset_task_runs(
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 
     return result
+
+
+def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
+    """Return the leaf TaskRuns of all chains tagged with the given batch_tag.
+
+    The multi-turn runner tags only the leaf of each chain with
+    "synthetic_user_batch:{batch_tag}". Walking parent_task_run_id from the
+    leaf reconstructs the full conversation if a caller needs it; for eval
+    purposes the leaf alone is enough because its `.trace` field already
+    holds the cumulative OpenAI-format conversation.
+    """
+    target_tag = f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"
+    return [run for run in task.runs() if target_tag in (run.tags or [])]
+
+
+def tag_multi_turn_chains_for_eval(
+    leaves: list[TaskRun],
+    eval_tag: str,
+    golden_tag: str,
+    tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
+) -> None:
+    """Add eval and golden filter tags to existing chain leaves.
+
+    Every leaf gets BOTH eval and golden tags so the chain is part of the
+    eval dataset AND the golden ratings set — no train tag is applied
+    (multi-turn evals don't have a train set in MVP — see
+    specs/projects/eval_builder_v2/design.md).
+
+    If `tagged_out` is provided, each leaf actually mutated is appended as
+    `(leaf, set_of_tags_added_by_this_call)`. The caller can reverse the
+    mutation on failure via `untag_multi_turn_chains_for_eval` without
+    removing tags that already existed on the leaf.
+
+    Mutates each leaf in place and persists via save_to_file.
+    """
+    for leaf in leaves:
+        current = set(leaf.tags or [])
+        added = {eval_tag, golden_tag} - current
+        if not added:
+            continue
+        leaf.tags = sorted(current | added)
+        leaf.save_to_file()
+        if tagged_out is not None:
+            tagged_out.append((leaf, added))
+
+
+def untag_multi_turn_chains_for_eval(
+    tagged_leaves: list[tuple[TaskRun, set[str]]],
+) -> None:
+    """Reverse the tagging done by tag_multi_turn_chains_for_eval.
+
+    Removes only the tags that THIS run added (passed in via `tagged_out`),
+    so pre-existing tags on the leaf are preserved. Best-effort: a per-leaf
+    save failure is logged and the loop continues — the original save error
+    that triggered cleanup is the one the user needs to see.
+    """
+    for leaf, added_tags in tagged_leaves:
+        try:
+            leaf.tags = sorted(set(leaf.tags or []) - added_tags)
+            leaf.save_to_file()
+        except Exception:
+            logger.exception(f"Failed to untag leaf {leaf.id} during cleanup")
