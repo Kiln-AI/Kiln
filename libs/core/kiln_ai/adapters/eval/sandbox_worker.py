@@ -112,11 +112,18 @@ def run_scorer(
         #
         # ``multiprocessing.spawn.get_preparation_data`` reads
         # ``sys.modules['__main__']`` to decide what to re-execute in the
-        # child.  By swapping in a lightweight stub before ``p.start()``
+        # child.  By swapping in a lightweight stub named ``"__main__"``
+        # (with no ``__file__`` or ``__spec__``) before ``p.start()``
         # (which pickles the prep data), neither ``init_main_from_name``
         # nor ``init_main_from_path`` is set, so the child skips the
         # heavy re-import entirely.  ``_execute_scorer`` only needs
         # stdlib, so this is safe.
+        #
+        # The stub is named ``"__main__"`` (not ``"__mp_main__"``, which
+        # would collide with multiprocessing's internal main-module
+        # name).  Third-party code that inspects
+        # ``sys.modules["__main__"].__name__`` during the brief swap
+        # window sees the expected ``"__main__"`` value.
         #
         # This stays within ``multiprocessing.spawn``'s existing
         # bootstrap, so ``freeze_support()`` and PyInstaller frozen
@@ -128,13 +135,16 @@ def run_scorer(
         # handling code, so cross-thread visibility is benign.
         import types
 
-        _real_main = sys.modules["__main__"]
-        _light_main = types.ModuleType("__kiln_stub_main__")
-        sys.modules["__main__"] = _light_main
-        try:
+        _real_main = sys.modules.get("__main__")
+        if _real_main is not None:
+            _light_main = types.ModuleType("__main__")
+            sys.modules["__main__"] = _light_main
+            try:
+                p.start()
+            finally:
+                sys.modules["__main__"] = _real_main
+        else:
             p.start()
-        finally:
-            sys.modules["__main__"] = _real_main
     p.join(timeout=timeout)
 
     if p.is_alive():

@@ -64,4 +64,4 @@ if __name__ == "__main__":
             )
             sys.exit(1)
 
-        print(json.dumps({"call": i, "elapsed": round(elapsed, 4)}), flush=True)
+        print(json.dumps({"call": i, "elapsed": elapsed}), flush=True)
