@@ -29,7 +29,7 @@ flow only**. Run the standard web + python check suites before each phase's code
   model picker + algo→`g_eval`; `do_save` sends `{model_name, provider, g_eval}`. Regenerate
   OpenAPI schema. Verify a V2 `llm_judge` round-trips save/load/run. Target: `components/21`.
 
-- [ ] **Phase 3 — Test Run dataset-item harness.**
+- [x] **Phase 3 — Test Run dataset-item harness.**
   Replace the four inputs with a **recent-`TaskRun` picker** (reuse `TaskRunPicker`; `GET /runs`);
   client `TaskRun→EvalTaskInput` mapping; **Advanced** reference_data; **empty-dataset** state →
   Save-Without-Testing only; spinner/Cancel kept. **Include `llm_judge`** (extend `test_v2_eval`

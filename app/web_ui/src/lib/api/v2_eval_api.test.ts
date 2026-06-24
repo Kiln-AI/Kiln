@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import {
   testV2Eval,
+  testV2EvalLlmJudge,
+  fetchTaskRuns,
   createEvalConfig,
   checkCodeEvalTrust,
   grantCodeEvalTrust,
@@ -180,6 +182,108 @@ describe("grantCodeEvalTrust", () => {
 
     const result = await grantCodeEvalTrust("proj-1")
     expect(result.trusted).toBe(true)
+  })
+})
+
+describe("testV2EvalLlmJudge", () => {
+  it("sends llm_judge_builder_input and eval_input to testV2Eval", async () => {
+    const responseData = { scores: { accuracy: 1.0 }, skipped_reason: null }
+    mockPost.mockResolvedValue({ data: responseData, error: undefined })
+
+    const builderInput = {
+      model_name: "gpt-4o",
+      provider: "openai" as const,
+      g_eval: false,
+    }
+    const evalInput = { final_message: "test output" }
+
+    const result = await testV2EvalLlmJudge(
+      "proj-1",
+      "task-2",
+      "eval-3",
+      builderInput,
+      evalInput,
+    )
+
+    expect(mockPost).toHaveBeenCalledTimes(1)
+    const [path, options] = mockPost.mock.calls[0]
+    expect(path).toBe(
+      "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval",
+    )
+    expect(options.body).toEqual({
+      eval_input: evalInput,
+      llm_judge_builder_input: builderInput,
+    })
+    expect(result.scores).toEqual({ accuracy: 1.0 })
+  })
+
+  it("forwards abort signal", async () => {
+    mockPost.mockResolvedValue({
+      data: { scores: {}, skipped_reason: null },
+      error: undefined,
+    })
+
+    const controller = new AbortController()
+    await testV2EvalLlmJudge(
+      "p",
+      "t",
+      "e",
+      { model_name: "m", provider: "openai" as const, g_eval: false },
+      { final_message: "x" },
+      controller.signal,
+    )
+
+    const [, options] = mockPost.mock.calls[0]
+    expect(options.signal).toBe(controller.signal)
+  })
+})
+
+describe("fetchTaskRuns", () => {
+  it("calls client.GET with correct path and params", async () => {
+    mockGet.mockResolvedValue({ data: [], error: undefined })
+
+    await fetchTaskRuns("proj-1", "task-2")
+
+    expect(mockGet).toHaveBeenCalledTimes(1)
+    const [path, options] = mockGet.mock.calls[0]
+    expect(path).toBe("/api/projects/{project_id}/tasks/{task_id}/runs")
+    expect(options.params.path).toEqual({
+      project_id: "proj-1",
+      task_id: "task-2",
+    })
+  })
+
+  it("sorts runs by created_at descending", async () => {
+    const runs = [
+      { id: "old", created_at: "2024-01-01T00:00:00Z" },
+      { id: "new", created_at: "2024-06-15T00:00:00Z" },
+      { id: "mid", created_at: "2024-03-10T00:00:00Z" },
+    ]
+    mockGet.mockResolvedValue({ data: runs, error: undefined })
+
+    const result = await fetchTaskRuns("p", "t")
+    expect(result.map((r) => r.id)).toEqual([
+      "new",
+      "mid",
+      "old",
+    ])
+  })
+
+  it("returns empty array when data is null", async () => {
+    mockGet.mockResolvedValue({ data: null, error: undefined })
+
+    const result = await fetchTaskRuns("p", "t")
+    expect(result).toEqual([])
+  })
+
+  it("throws on error response", async () => {
+    mockGet.mockResolvedValue({
+      data: undefined,
+      error: { message: "Not found" },
+    })
+    await expect(fetchTaskRuns("p", "t")).rejects.toThrow(
+      "Failed to fetch task runs: Not found",
+    )
   })
 })
 

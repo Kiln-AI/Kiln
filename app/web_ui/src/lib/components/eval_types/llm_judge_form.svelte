@@ -1,8 +1,5 @@
 <script lang="ts">
-  import type {
-    EvalConfigType,
-    AvailableModels,
-  } from "$lib/types"
+  import type { EvalConfigType, AvailableModels } from "$lib/types"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { get_provider_image } from "$lib/ui/provider_image"
   import { available_models } from "$lib/stores"
@@ -242,5 +239,4 @@
       </div>
     </div>
   {/if}
-
 </div>

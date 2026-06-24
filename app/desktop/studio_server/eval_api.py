@@ -201,22 +201,32 @@ class CreateEvalConfigRequest(BaseModel):
     )
 
 
-class CreateLlmJudgeConfigRequest(BaseModel):
-    """Request to create a V2 llm_judge eval config with server-baked template."""
+class LlmJudgeBuilderInput(BaseModel):
+    """Shared fields for llm_judge: model, provider, g_eval."""
 
-    name: str | None = Field(default=None, description="The name of the eval config.")
     model_name: str = Field(description="The LLM model to use as judge.")
     provider: ModelProviderName = Field(description="The model provider.")
     g_eval: bool = Field(description="Whether to use G-Eval logprob scoring.")
 
 
+class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
+    """Request to create a V2 llm_judge eval config with server-baked template."""
+
+    name: str | None = Field(default=None, description="The name of the eval config.")
+
+
 class TestV2EvalRequest(BaseModel):
     """Request to test-run a V2 eval config without persisting."""
 
-    properties: V2EvalConfigProperties = Field(
-        description="The V2 eval config properties to test."
+    properties: V2EvalConfigProperties | None = Field(
+        default=None,
+        description="The V2 eval config properties to test. Required unless llm_judge_builder_input is set.",
     )
     eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+    llm_judge_builder_input: LlmJudgeBuilderInput | None = Field(
+        default=None,
+        description="Builder input for llm_judge; when set, the server bakes the full properties from the eval's output_scores.",
+    )
 
 
 class TestV2EvalResponse(BaseModel):
@@ -1037,10 +1047,27 @@ def connect_evals_api(app: FastAPI):
     ) -> TestV2EvalResponse:
         try:
             eval_obj = eval_from_id(project_id, task_id, eval_id)
+
+            if request.llm_judge_builder_input is not None:
+                builder = request.llm_judge_builder_input
+                properties = materialize_llm_judge_properties(
+                    eval=eval_obj,
+                    model_name=builder.model_name,
+                    model_provider=builder.provider,
+                    g_eval=builder.g_eval,
+                )
+            elif request.properties is not None:
+                properties = request.properties
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either properties or llm_judge_builder_input must be provided.",
+                )
+
             transient_config = EvalConfig(
                 name="test_run",
                 config_type=EvalConfigType.v2,
-                properties=request.properties,
+                properties=properties,
                 parent=eval_obj,
             )
             adapter = v2_eval_adapter_from_config(transient_config)

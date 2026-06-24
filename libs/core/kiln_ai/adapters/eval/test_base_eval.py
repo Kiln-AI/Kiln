@@ -596,7 +596,7 @@ def test_build_llm_judge_prompt_template_injection_safety():
     template = build_llm_judge_prompt_template(tricky_scores)
     compiled = _template_env.from_string(template)
     rendered = compiled.render(task_input="input", final_message="output")
-    assert '{{ final_message }}' in rendered
+    assert "{{ final_message }}" in rendered
     assert "output" in rendered
 
 
@@ -621,7 +621,9 @@ def test_materialize_llm_judge_properties_defaults():
     assert props.g_eval is False
     assert props.required_var == []
     assert props.system_prompt == "You are an evaluator."
-    assert props.thinking_instruction == "Think step by step, explaining your reasoning."
+    assert (
+        props.thinking_instruction == "Think step by step, explaining your reasoning."
+    )
     assert "{{ task_input }}" in props.prompt_template
     assert "{{ final_message }}" in props.prompt_template
 

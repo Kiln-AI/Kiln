@@ -1,11 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
-  import type { TaskRun } from "$lib/types"
+  import type { TaskRun, TaskRunOutput } from "$lib/types"
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
-  export let available_runs: TaskRun[] = []
+  export let available_runs: (TaskRun | TaskRunOutput)[] = []
 
   const PAGE_SIZE = 5
   let current_page = 0
@@ -17,7 +17,7 @@
   let see_all_dialog: SeeAllDialog
 
   const dispatch = createEventDispatcher<{
-    select: TaskRun
+    select: TaskRun | TaskRunOutput
   }>()
 </script>
 

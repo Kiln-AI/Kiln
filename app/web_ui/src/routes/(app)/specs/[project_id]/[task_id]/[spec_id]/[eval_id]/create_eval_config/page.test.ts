@@ -155,6 +155,12 @@ vi.mock("$lib/components/eval_types/llm_judge_form.svelte", async () => {
   return { default: Stub.default }
 })
 
+// Stub TaskRunPicker
+vi.mock("$lib/utils/task_run_picker.svelte", async () => {
+  const Stub = await import("./__tests__/task_run_picker_stub.svelte")
+  return { default: Stub.default }
+})
+
 // Mock the registry so that svelte:component uses our lightweight V2 form stub
 const V2FormStubModule = await import("./__tests__/v2_form_stub.svelte")
 vi.mock("$lib/utils/eval_types/registry", async (importOriginal) => {
@@ -179,19 +185,47 @@ const mockCreateEvalConfig = vi.fn()
 const mockCreateLlmJudgeConfig = vi.fn()
 const mockCheckCodeEvalTrust = vi.fn()
 const mockGrantCodeEvalTrust = vi.fn()
+const mockFetchTaskRuns = vi.fn()
+const mockTestV2EvalLlmJudge = vi.fn()
+
+const sampleTaskRun = {
+  v: 1,
+  id: "run1",
+  input: "test input",
+  output: { output: "test output", source: { type: "human" as const } },
+  tags: [],
+  created_at: new Date().toISOString(),
+}
 
 vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
   const original = (await importOriginal()) as Record<string, unknown>
   return {
     ...original,
     testV2Eval: (...args: unknown[]) => mockTestV2Eval(...args),
+    testV2EvalLlmJudge: (...args: unknown[]) => mockTestV2EvalLlmJudge(...args),
     createEvalConfig: (...args: unknown[]) => mockCreateEvalConfig(...args),
     createLlmJudgeConfig: (...args: unknown[]) =>
       mockCreateLlmJudgeConfig(...args),
     checkCodeEvalTrust: (...args: unknown[]) => mockCheckCodeEvalTrust(...args),
     grantCodeEvalTrust: (...args: unknown[]) => mockGrantCodeEvalTrust(...args),
+    fetchTaskRuns: (...args: unknown[]) => mockFetchTaskRuns(...args),
   }
 })
+
+// Mock string_to_json_key
+vi.mock("$lib/utils/json_schema_editor/json_schema_templates", () => ({
+  string_to_json_key: (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/ /g, "_")
+      .replace(/[^a-z0-9_.]/g, ""),
+}))
+
+// Mock format_expanded_content
+vi.mock("$lib/utils/format_expanded_content", () => ({
+  formatExpandedContent: (text: string) => ({ isJson: false, value: text }),
+}))
 
 // Dynamic imports after all mocks
 const PickerPage = (await import("./+page.svelte")).default
@@ -413,10 +447,13 @@ describe("EvalConfigBuilder", () => {
   beforeEach(() => {
     resetCalls()
     mockTestV2Eval.mockReset()
+    mockTestV2EvalLlmJudge.mockReset()
     mockCreateEvalConfig.mockReset()
     mockCreateLlmJudgeConfig.mockReset()
     mockCheckCodeEvalTrust.mockReset()
     mockGrantCodeEvalTrust.mockReset()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
   })
 
   afterEach(() => {
@@ -427,11 +464,17 @@ describe("EvalConfigBuilder", () => {
     it("shows trust dialog when test returns code_eval_not_trusted", async () => {
       const { container } = await renderBuilder("code_eval")
 
-      const textarea = container.querySelector(
-        "#test_final_message",
-      ) as HTMLTextAreaElement
-      expect(textarea).not.toBeNull()
-      await fireEvent.input(textarea, { target: { value: "hello world" } })
+      // Wait for task runs to load
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Select a run from the picker
+      const selectBtn = container.querySelector(
+        '[data-testid="select-run-0"]',
+      ) as HTMLButtonElement
+      expect(selectBtn).not.toBeNull()
+      await fireEvent.click(selectBtn)
       await tick()
 
       mockTestV2Eval.mockResolvedValueOnce({
@@ -511,11 +554,17 @@ describe("EvalConfigBuilder", () => {
     it("does not show confirm dialog after a successful test run", async () => {
       const { container } = await renderBuilder("exact_match")
 
-      const textarea = container.querySelector(
-        "#test_final_message",
-      ) as HTMLTextAreaElement
-      expect(textarea).not.toBeNull()
-      await fireEvent.input(textarea, { target: { value: "output text" } })
+      // Wait for task runs to load
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Select a run from the picker
+      const selectBtn = container.querySelector(
+        '[data-testid="select-run-0"]',
+      ) as HTMLButtonElement
+      expect(selectBtn).not.toBeNull()
+      await fireEvent.click(selectBtn)
       await tick()
 
       mockTestV2Eval.mockResolvedValueOnce({

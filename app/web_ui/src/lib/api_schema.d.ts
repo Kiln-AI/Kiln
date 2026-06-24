@@ -4462,11 +4462,6 @@ export interface components {
          */
         CreateLlmJudgeConfigRequest: {
             /**
-             * Name
-             * @description The name of the eval config.
-             */
-            name?: string | null;
-            /**
              * Model Name
              * @description The LLM model to use as judge.
              */
@@ -4478,6 +4473,11 @@ export interface components {
              * @description Whether to use G-Eval logprob scoring.
              */
             g_eval: boolean;
+            /**
+             * Name
+             * @description The name of the eval config.
+             */
+            name?: string | null;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -7284,6 +7284,24 @@ export interface components {
             prompt_video: string;
             /** Prompt Audio */
             prompt_audio: string;
+        };
+        /**
+         * LlmJudgeBuilderInput
+         * @description Shared fields for llm_judge: model, provider, g_eval.
+         */
+        LlmJudgeBuilderInput: {
+            /**
+             * Model Name
+             * @description The LLM model to use as judge.
+             */
+            model_name: string;
+            /** @description The model provider. */
+            provider: components["schemas"]["ModelProviderName"];
+            /**
+             * G Eval
+             * @description Whether to use G-Eval logprob scoring.
+             */
+            g_eval: boolean;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -10243,11 +10261,13 @@ export interface components {
         TestV2EvalRequest: {
             /**
              * Properties
-             * @description The V2 eval config properties to test.
+             * @description The V2 eval config properties to test. Required unless llm_judge_builder_input is set.
              */
-            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | null;
             /** @description The input to evaluate. */
             eval_input: components["schemas"]["EvalTaskInput"];
+            /** @description Builder input for llm_judge; when set, the server bakes the full properties from the eval's output_scores. */
+            llm_judge_builder_input?: components["schemas"]["LlmJudgeBuilderInput"] | null;
         };
         /**
          * TestV2EvalResponse
