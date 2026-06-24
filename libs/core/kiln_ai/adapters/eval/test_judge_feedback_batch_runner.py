@@ -595,6 +595,51 @@ async def test_non_transient_error_not_retried(mock_task, data_source):
 
 
 @pytest.mark.asyncio
+async def test_transient_retries_back_off_exponentially(mock_task, data_source):
+    # Rate-limit-class errors retry with EXPONENTIAL backoff (delay, 2x, ...) — a fixed gap just
+    # re-floods a throttled provider, so each retry waits longer.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=1, max_samples=1
+    )
+    make_train_run(mock_task, data_source, "fail-item")
+
+    attempts = {"n": 0}
+
+    def score_fn(task_run):
+        attempts["n"] += 1
+        if attempts["n"] <= 2:
+            # Classified as transient by the eval runner's retry predicate.
+            raise ValueError("This task requires a specific output schema")
+        return {"accuracy": 0.0}
+
+    delays: list[float] = []
+
+    async def fake_sleep(d):
+        delays.append(d)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
+            lambda _type: scripted_evaluator_factory(score_fn, generate=False),
+        )
+        mp.setattr(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.asyncio.sleep",
+            fake_sleep,
+        )
+        runner = JudgeFeedbackBatchRunner(
+            job, eval_config, rng=random.Random(1), retry_delay=1.0
+        )
+        result = await runner.run(concurrency=1)
+
+    # Two transient failures → two retries → backoff of 1*2^0 then 1*2^1.
+    assert attempts["n"] == 3
+    assert delays == [1.0, 2.0]
+    assert len(result.judged_runs) == 1
+
+
+@pytest.mark.asyncio
 async def test_generate_mode_runs_config_and_judges_fresh_output(
     mock_task, data_source
 ):

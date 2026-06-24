@@ -200,7 +200,7 @@ class JudgeFeedbackBatchRunner:
         save_context: SaveContext | None = None,
         rng: random.Random | None = None,
         max_retries: int = 2,
-        retry_delay: float = 1.0,
+        retry_delay: float = 2.0,
     ):
         task = judge_feedback_batch.parent_task()
         if task is None:
@@ -478,6 +478,9 @@ class JudgeFeedbackBatchRunner:
                 last_error = e
                 if not (_is_retryable_error(e) and attempt < self._max_retries):
                     break
-                await asyncio.sleep(self._retry_delay)
+                # Exponential backoff: rate limits don't clear on a fixed 1s gap, and several
+                # generate+judge calls retrying in lockstep just re-floods a throttled provider.
+                # Back off progressively (delay, 2x, 4x, ...) so a 429 gets room to recover.
+                await asyncio.sleep(self._retry_delay * (2**attempt))
         assert last_error is not None  # the loop runs at least once
         raise last_error
