@@ -1,13 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, setContext } from "svelte"
   import { writable } from "svelte/store"
   import type { Eval, Task, Spec } from "$lib/types"
   import { load_task, load_available_models } from "$lib/stores"
-  import { ALL_V2_EVAL_TYPES } from "$lib/utils/eval_types/registry"
   import {
     CREATE_EVAL_LAYOUT_KEY,
     type CreateEvalLayoutContext,
@@ -60,39 +58,9 @@
   setContext(CREATE_EVAL_LAYOUT_KEY, layoutContext)
 
   onMount(async () => {
-    await handle_legacy_redirect()
     await Promise.all([load_eval(), get_spec(), load_available_models()])
     await load_task_local()
   })
-
-  async function handle_legacy_redirect() {
-    const config_type_param = $page.url.searchParams.get("config_type")
-    if (!config_type_param) return
-
-    let target_type: string | null = null
-    if (
-      config_type_param === "g_eval" ||
-      config_type_param === "llm_as_judge"
-    ) {
-      target_type = "llm_judge"
-    } else if (
-      ALL_V2_EVAL_TYPES.includes(
-        config_type_param as (typeof ALL_V2_EVAL_TYPES)[number],
-      )
-    ) {
-      target_type = config_type_param
-    }
-
-    if (target_type) {
-      const params = new URLSearchParams($page.url.searchParams)
-      params.delete("config_type")
-      const query = params.toString()
-      const base = $page.url.pathname.replace(/\/$/, "")
-      await goto(`${base}/${target_type}${query ? "?" + query : ""}`, {
-        replaceState: true,
-      })
-    }
-  }
 
   async function get_spec() {
     if (spec_id === "legacy") {
