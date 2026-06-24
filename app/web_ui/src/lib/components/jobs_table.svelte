@@ -1,6 +1,8 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import Intro from "$lib/ui/intro.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
   import { jobs, synced, connection } from "$lib/stores/jobs_store"
   import {
@@ -141,6 +143,24 @@
       result_loading = false
     }
   }
+
+  // The row's overflow menu: view actions first, then lifecycle actions.
+  function row_menu_items(job: JobRecord): FloatingMenuItem[] {
+    const items: FloatingMenuItem[] = []
+    if (has_result(job)) {
+      items.push({ label: "View results", onclick: () => open_result(job) })
+    }
+    if (has_errors(job)) {
+      items.push({ label: "View errors", onclick: () => open_errors(job) })
+    }
+    for (const action of available_actions(job)) {
+      items.push({
+        label: action === "delete" ? "Clear" : action_labels[action],
+        onclick: () => run_action(action, job.id),
+      })
+    }
+    return items
+  }
 </script>
 
 {#if action_error}
@@ -252,49 +272,9 @@
                 {/if}
               </div>
             </td>
-            <td>
-              <div
-                class="flex flex-row gap-1 justify-end flex-wrap items-center"
-              >
-                {#if has_result(job)}
-                  <button
-                    class="btn btn-xs btn-ghost"
-                    on:click={() => open_result(job)}
-                  >
-                    View results
-                  </button>
-                {/if}
-                {#if has_errors(job)}
-                  <button
-                    class="btn btn-xs btn-ghost"
-                    on:click={() => open_errors(job)}
-                  >
-                    View errors
-                  </button>
-                {/if}
-                {#each available_actions(job) as action}
-                  {#if action === "delete"}
-                    <button
-                      class="btn btn-xs btn-ghost"
-                      disabled={in_flight[job.id]}
-                      aria-label="Dismiss job"
-                      title="Dismiss job"
-                      on:click={() => run_action(action, job.id)}
-                    >
-                      Clear
-                    </button>
-                  {:else}
-                    <button
-                      class="btn btn-xs {action === 'cancel'
-                        ? 'btn-ghost text-error'
-                        : 'btn-ghost'}"
-                      disabled={in_flight[job.id]}
-                      on:click={() => run_action(action, job.id)}
-                    >
-                      {action_labels[action]}
-                    </button>
-                  {/if}
-                {/each}
+            <td class="align-top">
+              <div class="flex flex-row justify-end items-start">
+                <TableActionMenu items={row_menu_items(job)} />
               </div>
             </td>
           </tr>
