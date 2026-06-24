@@ -1,13 +1,19 @@
 ---
 name: kiln-prerelease-check
-description: Run the Kiln pre-release smoke test suite, the standard CI checks (checks.sh), and audit the prerelease test set for stale model pins or coverage gaps. Use when the user wants to validate a release candidate, run prerelease tests, or asks for a "prerelease check / smoke / audit / housekeeping".
+description: Run the Kiln pre-release smoke test suite plus the standard CI checks (checks.sh), diagnose every prerelease test that broke (and why), and write a clean readable report with recommended actions. Read-only — it never edits code. Use when the user wants to validate a release candidate, run prerelease tests, or asks for a "prerelease check / smoke / audit".
 ---
 
 # Kiln Pre-release Check
 
-End-to-end pre-release verification: run the curated `@pytest.mark.prerelease` smoke set, run the standard CI checks (lint / format / typecheck / unit tests), and audit the prerelease set itself for staleness (e.g., a test pinned to a removed model, or a new provider with no smoke coverage).
+End-to-end pre-release verification and **diagnosis**. This skill:
 
-The output of this skill is a written report dropped in `.prerelease/<timestamp>/` (this directory is gitignored).
+1. Runs the standard CI checks (`checks.sh` — lint / format / typecheck / unit tests).
+2. Runs the curated `@pytest.mark.prerelease` smoke set (real, paid API calls).
+3. For every test that broke, works out **what** broke and **why** — including whether the cause is a model that's gone deprecated (per `ml_model_list.py`) or that the provider no longer recognizes the slug.
+4. Sweeps the prerelease model pins for staleness and newer model versions.
+5. Writes a clean, scan-readable report with a clear **recommended action** for each finding.
+
+**This skill is read-only. It does not change any code, tests, whitelists, or prod source — ever.** Its entire output is a report at `.prerelease/<timestamp>/REPORT.md` (this directory is gitignored). When the right action is to bump a model pin or update the whitelist, the report *recommends* it; the user makes the change.
 
 ---
 
@@ -40,34 +46,26 @@ Whitelisted lists:
 - `PRERELEASE_EXTRACTION_MIME_PROBES` — three mime probes (PDF, PNG, MP3) for the extraction smoke; the full paid test sweeps all 13 mime types per model.
 - `PRERELEASE_THINKING_MODELS` — five (provider, model, thinking_level) triples covering reasoning content + a "none" negation case.
 
-When you maintain the prerelease set, **widen these lists** rather than tagging more fan-out tests. Conversely, if you add a brand-new family or provider, add one representative entry to the relevant list — not the entire fan-out.
-
-The fan-out tests (e.g. `test_extract_document_success` over every model × mime type, `test_paid_generate_embeddings_basic` over every embedding) are **only `@pytest.mark.paid`** — they still exist for full paid-suite runs and for the per-model integration in `claude-maintain-models`. They do NOT carry `@pytest.mark.prerelease`.
+This whitelist is the thing most likely to go stale, so it's the main target of the pin sweep in Phase 4. The fan-out tests (e.g. `test_extract_document_success` over every model × mime type, `test_paid_generate_embeddings_basic` over every embedding) are **only `@pytest.mark.paid`** — not `@pytest.mark.prerelease` — and are out of scope for this skill.
 
 ---
 
 ## Global rules
 
-- **Network access is required.** Every phase here makes real API calls or hits remote model-list endpoints. If you are running this skill inside a sandboxed Bash session, request `required_permissions: ["all"]` for the test commands.
+- **Read-only. Make no edits.** Do not modify test files, the whitelist, prod source, config, or anything else. Every actionable finding is a *recommendation* in the report. If you catch yourself about to call Edit/Write on anything other than files under `.prerelease/<timestamp>/`, stop.
+- **Network access is required.** Every test phase makes real API calls or hits remote model-list endpoints. If you are running this skill inside a sandboxed Bash session, request `required_permissions: ["all"]` for the test commands.
 - **Env vars:** Source `.env` before running anything that needs API keys:
   ```bash
   export $(grep -v '^#' .env | xargs)
   ```
   Provider-specific env vars the prerelease set may touch: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `TOGETHER_API_KEY`, `SILICONFLOW_CN_API_KEY`, `COHERE_API_KEY`, `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, plus `KILN_TEST_VERTEX_PROJECT_ID` (+ optional `KILN_TEST_VERTEX_LOCATION`) for the Vertex live check, which also requires `gcloud auth application-default login` against a project with `aiplatform.googleapis.com` enabled.
-- **Each missing key just skips the relevant test** (`pytest.skip(...)`). That isn't a prerelease failure — it's a coverage gap. Surface it in the report so the user can decide whether to provide the key and re-run.
-- **`ml_model_list.py` never deletes entries — it only marks them `deprecated=True`.** So a slug missing from our list isn't a real signal you'll encounter. The signals that matter are:
+- **A missing key is a coverage gap, not a failure.** Each missing key makes the relevant test `pytest.skip(...)`. That isn't a prerelease failure — surface it in the report so the user can decide whether to provide the key and re-run.
+- **`ml_model_list.py` never deletes entries — it only marks them `deprecated=True`.** So a slug missing from our list is not a signal you'll normally encounter. The signals that matter when diagnosing a break or staleness are:
   1. The provider entry has `deprecated=True` in our list.
-  2. The provider itself rejects the slug at runtime (4xx / "model not found") — note our list trails provider deprecations, so this can happen *before* we've marked it deprecated.
-  3. A newer non-deprecated sibling in the same family now exists in our list, regardless of whether the current pin is still working.
-- **DO NOT touch real prod-path code to make a prerelease test pass.** This includes hardcoded model **probes** in prod (e.g. the connectivity check inside `connect_vertex` — see Phase 4d). The skill is allowed to *flag* a probe whose pinned model has a newer sibling, but bumping the prod slug is the user's call, not yours — write it up in the report findings and wait. A test failure tells you something. Two flavors:
-  1. **Real regression** (the prod code is now wrong, or the provider broke in a way we should adapt to): **leave it broken**, write it up clearly in the report, do not silently patch the production source.
-  2. **Stale test housekeeping** (the test hardcodes a model slug we lazily picked, and one of the three signals above applies). **You can update the test.** Pick a current non-deprecated model from the same family and update the parametrization or assertion. Keep these test-only changes scoped and clearly noted in the report.
-  If you cannot confidently tell flavor 1 from flavor 2, treat it as flavor 1 and report it.
-- **The newer-sibling sweep is mandatory, not "only when something fails."** Even on a fully green run, every hardcoded slug in `pytest_prerelease_whitelist.py` and in prerelease test parametrize lists must be cross-checked against `ml_model_list.py`. If a newer non-deprecated member of the same family exists, swap and re-run. Examples: `test_connect_vertex_live` pinned to Gemini 2.x while Gemini 3 is in our list → upgrade. `PRERELEASE_CHAT_MODELS` on `gpt_4o_mini` while `gpt_5_x_mini` exists → upgrade. Prerelease only catches what real users hit if prerelease tracks what real users use. Apply this only to test pins / whitelists, never to prod model defaults.
-- **Verify every swap with run-old-then-run-new.** When you update a slug, first run the **old** parametrization once and capture the actual outcome (PASS or FAIL with detail), then run with the **new** slug and capture the outcome. Record both in the report. If both fail in the same way, the swap didn't fix anything — revert and treat the failure as flavor 1. If the old run also passed (newer-sibling upgrade on a green test), the new run must also pass to keep the swap.
-- **Document the whole sweep, not just the swaps.** The report's "Model pin sweep" section must list, for every whitelist entry and every hardcoded prerelease slug: what was checked, whether a newer sibling exists, and what action was taken (kept / upgraded / reverted). Zero silent edits and zero silent "looks fine, moving on" calls.
-- **Single source of truth for the model list** is `libs/core/kiln_ai/adapters/ml_model_list.py`. When auditing test pins, grep there.
-- **Don't auto-commit changes.** Surface them in the report and let the user commit.
+  2. The provider itself rejects the slug at runtime (4xx / "model not found") — note our list trails provider deprecations, so this can happen *before* we've marked it deprecated. This is how you'd discover a model "no longer exists" even when our list still lists it.
+  3. A newer non-deprecated sibling in the same family now exists in our list, regardless of whether the current pin still works.
+- **Single source of truth for the model list** is `libs/core/kiln_ai/adapters/ml_model_list.py` (chat) and `ml_embedding_model_list.py` (embeddings). Cross-reference there when diagnosing.
+- **The pin sweep is mandatory, not "only when something fails."** Even on a fully green run, every hardcoded slug in `pytest_prerelease_whitelist.py` and in prerelease test parametrize lists must be cross-checked against the model list and reported (kept-and-current vs. has-newer-sibling vs. deprecated). Zero silent "looks fine, moving on" calls.
 
 ---
 
@@ -80,7 +78,7 @@ mkdir -p "${OUT}"
 echo "Writing prerelease results to ${OUT}"
 ```
 
-`.prerelease/` is gitignored. Keep all log files, raw pytest output, and the final report inside this timestamped folder so re-runs don't clobber prior data.
+`.prerelease/` is gitignored. Keep all log files, raw pytest output, and the final report inside this timestamped folder so re-runs don't clobber prior data. This folder is the **only** place this skill writes.
 
 ---
 
@@ -92,7 +90,7 @@ These are not paid but are mandatory for any release. If they fail, the prerelea
 uv run ./checks.sh --agent-mode 2>&1 | tee "${OUT}/checks.log"
 ```
 
-Capture the exit code. If it's non-zero, **don't bail** — keep going with the paid tests so the report covers everything in one pass, but mark the run as failed.
+Capture the exit code. If it's non-zero, **don't bail** — keep going with the paid tests so the report covers everything in one pass, but mark the overall run as failed.
 
 ---
 
@@ -107,11 +105,11 @@ uv run python3 -m pytest --runprerelease -v --tb=short \
 Notes:
 
 - `--runprerelease` is registered in the top-level `conftest.py`. It runs only `@pytest.mark.prerelease` tests and implies `--runpaid` for them.
-- `-o "addopts="` overrides the project default of `-n auto` (xdist). xdist is incompatible with some of the live-API tests (especially anything that touches global litellm state), so run serially. If a specific test relies on xdist parallelism, override per-invocation.
-- This will be slow. Many of the parametrized tests (embeddings across all providers, structured output across providers, streaming across thinking levels) fan out to dozens of cases.
+- `-o "addopts="` overrides the project default of `-n auto` (xdist). xdist is incompatible with some of the live-API tests (especially anything that touches global litellm state), so run serially.
+- This will be slow. Many of the parametrized tests fan out to dozens of cases.
 - Tests with missing API keys will `skip`, not fail. Capture skip counts.
 
-If the user wants a faster narrowed run (e.g. only OpenAI + Anthropic checks), use `-k` to filter:
+If the user wants a faster narrowed run (e.g. only OpenAI + Anthropic), use `-k` to filter:
 
 ```bash
 uv run python3 -m pytest --runprerelease -v --tb=short -o "addopts=" \
@@ -121,35 +119,40 @@ uv run python3 -m pytest --runprerelease -v --tb=short -o "addopts=" \
 
 ---
 
-## Phase 4 — Audit the prerelease set itself
+## Phase 4 — Diagnose
 
-This is the housekeeping pass: the test selection itself can rot. Three things to check.
+This is where the skill earns its keep: for every failure, explain the cause; for every pin, report staleness. No edits — only findings and recommendations.
 
-### 4a. Stale model pins in prerelease tests
+### 4a. Diagnose each failure (what broke, why, recommended action)
 
-`ml_model_list.py` only ever grows — entries are marked `deprecated=True`, never removed. So the only stale signals you actually need to look for are:
+For every test that did **not** pass in Phase 3, build one finding. Walk the failure through this decision tree to land on a cause and a recommended action:
 
-- Slug's provider entry has `deprecated=True` in `ml_model_list.py` / `ml_embedding_model_list.py`.
-- Slug isn't (yet) marked deprecated in our list, but the **provider** returned 4xx / "model not found" during Phase 3's run. (Our curated list trails provider deprecations — being present and non-deprecated is not proof of usability.)
-- Slug works fine, but a **newer non-deprecated sibling** in the same family exists in our list. Prerelease should track what real users hit; keeping prerelease pinned at obsolete versions defeats the point. **Always upgrade in this case, even on a fully green run.**
+1. **Missing credentials → skip, not failure.** (`pytest.skip` for absent key.) Don't list under failures; list under "Skipped tests". Recommended action: add the key and re-run if that coverage matters.
+2. **Provider rejected the model slug** — error mentions `model not found`, `does not exist`, `404`, `model_not_found`, `invalid model`, decommissioned, etc. Cross-reference the slug against `ml_model_list.py`:
+   - If our list marks that provider entry `deprecated=True` → cause: **deprecated model, provider has dropped it**. Recommended action: bump the pin/whitelist to the newest non-deprecated sibling in the same family (name the candidate).
+   - If our list still lists it as non-deprecated → cause: **model no longer exists at the provider; our list trails reality**. Recommended action: (a) bump the test pin/whitelist to a current sibling, and (b) flag that `ml_model_list.py` should mark this entry `deprecated=True`. Name both.
+3. **Auth / quota / rate-limit / transient network** — 401/403/429/5xx, timeouts. Cause: environment or provider-side, not our code. Recommended action: check the key/quota and re-run; only escalate if it reproduces.
+4. **Behavioral assertion mismatch** — the call succeeded but the response shape, content, token/cache fields, streaming chunks, or reasoning output changed. Cause: **provider changed behavior we depend on (real regression)**. Recommended action: investigate the prod path that relies on this; do not assume it's a stale pin. This is the highest-signal failure class — call it out prominently.
+5. **Our-code error** — traceback originates in `libs/core` / `app/` rather than the provider response. Cause: **regression in Kiln**. Recommended action: investigate the implicated code; name the file/function from the traceback.
 
-**Scope — what this sweep covers and what it does NOT cover.**
+If you can't confidently distinguish a stale-pin cause (2) from a real regression (4 or 5), **report it as a possible regression** and say what additional check would disambiguate (e.g. "try the same call with a current sibling slug to see if it's the model or the code"). Never recommend a silent pin bump for an ambiguous failure.
 
-In scope (hit these every run):
-- Entries in `libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py`.
-- Hardcoded model slugs inside the body or parametrize list of any test marked `@pytest.mark.prerelease`.
-- Hardcoded prod-code probes (covered separately in Phase 4d).
+Record, per failure: test ID · provider · cause class · the model slug involved (if any) and its `ml_model_list.py` status · a short excerpt of the actual error · recommended action.
 
-Out of scope (leave alone):
-- Hardcoded slugs in **mock-only unit tests** — tests with no `@pytest.mark.paid` / `@pytest.mark.prerelease`, that patch out `litellm.acompletion` / `LiteLlmAdapter.acompletion_checking_response` / etc. The slug there is just a string used for assertions, no real API call happens, so a deprecated/old slug has zero behavior impact. Don't churn it.
-- Slugs in test data fixtures, recorded VCR cassettes, snapshot files.
-- Slugs inside `@pytest.mark.paid` tests that are NOT also `@pytest.mark.prerelease` — those run only on the full paid suite and are not the prerelease's responsibility to keep current.
+### 4b. Model-pin staleness sweep (mandatory every run, even when green)
 
-When in doubt: if the test runs offline / makes no network call / isn't in the prerelease set, the slug is a label, not a dependency. Skip it.
+Independent of failures, every hardcoded model slug the prerelease set depends on must be checked against the model list and reported. A pin can be perfectly green today and still be worth bumping because a newer sibling shipped — prerelease only catches what real users hit if it tracks what real users actually use.
 
-Two places to look:
+**In scope (check these every run):**
+- Every entry in `libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py`.
+- Hardcoded model slugs inside the body or parametrize list of any `@pytest.mark.prerelease` test (notably `libs/core/kiln_ai/adapters/test_prompt_adaptors.py::test_openrouter`).
 
-1. **The whitelist file** — `libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py`. Every entry must still resolve to a non-deprecated `(model, provider)` in `ml_model_list.py` / `ml_embedding_model_list.py`. Run this check:
+**Out of scope (don't report as stale):**
+- Hardcoded slugs in mock-only unit tests (no `@pytest.mark.paid` / `@pytest.mark.prerelease`) — the slug is a label, no real call happens.
+- Slugs in fixtures, recorded VCR cassettes, snapshot files.
+- Slugs in `@pytest.mark.paid` tests that aren't also `@pytest.mark.prerelease`.
+
+**Step 1 — status of each whitelist entry.** Run:
 
 ```bash
 uv run python3 - <<'PYEOF'
@@ -164,10 +167,8 @@ def chat_status(name, provider):
     for m in built_in_models:
         if m.name == name:
             p = next((p for p in m.providers if p.name.value == provider), None)
-            # ml_model_list.py never removes entries, but a model can lose
-            # support for a specific provider (NO_PROVIDER) or be marked deprecated.
             return 'NO_PROVIDER' if p is None else ('DEPRECATED' if p.deprecated else 'OK')
-    return 'MODEL_REMOVED_OR_RENAMED'  # extremely rare; only happens if the enum changed
+    return 'MODEL_REMOVED_OR_RENAMED'
 
 def emb_status(name, provider):
     for m in built_in_embedding_models:
@@ -176,75 +177,47 @@ def emb_status(name, provider):
             return 'NO_PROVIDER' if p is None else 'OK'
     return 'MODEL_REMOVED_OR_RENAMED'
 
-bad = []
+print('== chat / extraction ==')
 for n,p in PRERELEASE_CHAT_MODELS + PRERELEASE_EXTRACTION_MODELS:
-    s = chat_status(n,p)
-    if s != 'OK': bad.append(('chat', n, p, s))
+    print(f'{chat_status(n,p):>22}  {n}  ({p})')
+print('== embedding ==')
 for n,p in PRERELEASE_EMBEDDING_MODELS:
-    s = emb_status(n,p)
-    if s != 'OK': bad.append(('embedding', n, p, s))
+    print(f'{emb_status(n,p):>22}  {n}  ({p})')
+print('== thinking ==')
 for prov,name,lvl in PRERELEASE_THINKING_MODELS:
-    s = chat_status(name, prov)
-    if s != 'OK': bad.append(('thinking', name, prov, s))
-if bad:
-    for entry in bad: print('STALE:', entry)
-else:
-    print('All whitelist entries OK')
+    print(f'{chat_status(name,prov):>22}  {name}  ({prov}, level={lvl})')
 PYEOF
 ```
 
-If any entries are stale (deprecated / missing / failed at the provider in Phase 3), **update them in place in `pytest_prerelease_whitelist.py`** — swap to a current model from the same family (latest small variant from the same vendor). This is scoped test-only housekeeping and is exactly what the user expects on a prerelease run.
+Anything not `OK` is stale and goes in the sweep table with a recommended replacement (newest non-deprecated sibling in the same family).
 
-**Also do a "newer sibling" pass.** For each non-stale whitelist entry, check whether `ml_model_list.py` has a newer member of the same family. Examples:
-
-- `test_connect_vertex_live` is implemented in `app/desktop/studio_server/provider_api.py::connect_vertex`. If its hardcoded probe model is Gemini 2.x and `ml_model_list.py` has Gemini 3, upgrade the probe.
-- `PRERELEASE_CHAT_MODELS` entry on `gpt_4o_mini` — is `gpt_5_x_mini` available? Move forward.
-- `PRERELEASE_CHAT_MODELS` entry on `claude_sonnet_4_5` — is `claude_sonnet_4_6` / `4_7` available? Move forward.
-- `PRERELEASE_EXTRACTION_MODELS` entry on an older multimodal model — is there a newer multimodal-capable model from the same vendor? Move forward.
-
-Rule of thumb: if `ml_model_list.py` ordering puts a newer sibling above the current pin, upgrade. If unsure, ask the user; don't churn aggressively.
-
-**Verify every swap with run-old-then-run-new.** Before you accept any swap, run the test under the old slug and capture the actual result, then run under the new slug and capture the result. Record both in the report. If both fail with the same error, the swap accomplished nothing — **revert it and reclassify as flavor 1** (real failure to investigate).
+**Step 2 — newer-sibling pass for the `OK` entries.** For each entry that's `OK`, scan `ml_model_list.py` for a newer member of the same family. List the canonical model ids to compare against:
 
 ```bash
-# Pattern for a single test that you're about to swap:
-uv run python3 -m pytest --runprerelease -v --tb=short -o "addopts=" \
-  "<path>::<test_name>[<old-param-id>]" 2>&1 | tee "${OUT}/swap_<slug>_before.log"
-# … edit the whitelist / parametrize to the new slug …
-uv run python3 -m pytest --runprerelease -v --tb=short -o "addopts=" \
-  "<path>::<test_name>[<new-param-id>]" 2>&1 | tee "${OUT}/swap_<slug>_after.log"
+grep -oE '^[[:space:]]+[a-z][a-z0-9_]+ = "[a-z0-9_]+"' \
+  libs/core/kiln_ai/adapters/ml_model_list.py | \
+  awk -F'"' '{print $2}' | sort -u > "${OUT}/current_model_ids.txt"
 ```
 
-2. **Per-test hardcoded slugs**. The most likely culprit is `libs/core/kiln_ai/adapters/test_prompt_adaptors.py::test_openrouter`, which has a long parametrized list including `gemini_1_5_*` family members and other older slugs.
+Examples of the judgment call:
+- `PRERELEASE_CHAT_MODELS` on `gpt_4o_mini` while `gpt_5_x_mini` exists → recommend bump.
+- `PRERELEASE_CHAT_MODELS` on `claude_sonnet_4_5` while `claude_sonnet_4_6`/`4_7` exists → recommend bump.
+- `gemini_1_5_*` → `gemini_2_5_*` / `gemini_3_*`; `claude_3_5_*` → `claude_sonnet_4_*` / `claude_4_5_haiku`; `llama_3_x` → `llama_3_3_70b` / `llama_4_*`.
 
-Find all hardcoded model strings inside prerelease-marked tests:
+Rule of thumb: if `ml_model_list.py` ordering puts a newer sibling above the current pin, recommend the bump. If it's genuinely ambiguous which sibling is "current", say so and let the user pick — don't assert a churny recommendation.
+
+**Step 3 — per-test hardcoded slugs.** Enumerate the prerelease test files and scan them for slugs not in `current_model_ids.txt`:
 
 ```bash
 uv run python3 -m pytest --runprerelease --collect-only -q -o "addopts=" \
   2>&1 | grep '::' | awk -F'::' '{print $1}' | sort -u > "${OUT}/prerelease_test_files.txt"
 ```
 
-For each file in `prerelease_test_files.txt`, grep model slugs and cross-reference against `ml_model_list.py`:
+Cross-reference each pinned slug against `current_model_ids.txt` and the deprecation status. Report any obsolete pins as recommendations.
 
-```bash
-# Pull the canonical set of current model enum values
-grep -oE '^[[:space:]]+[a-z][a-z0-9_]+ = "[a-z0-9_]+"' \
-  libs/core/kiln_ai/adapters/ml_model_list.py | \
-  awk -F'"' '{print $2}' | sort -u > "${OUT}/current_model_ids.txt"
+Every in-scope pin lands in the sweep table — including the ones that are current and need no action. Silent omission is not allowed.
 
-# Now manually scan each prerelease test file for string literals
-# that look like model IDs but aren't in current_model_ids.txt.
-```
-
-Treat any pinned slug **not** in the current model list as a candidate for housekeeping. **Update the test** (replace the dead slug with a current model from the same family), as long as it's clearly a "we hardcoded a slug we were too lazy to revisit" situation. If the slug is being asserted for some specific reason (e.g., testing legacy behavior), leave it alone and flag it.
-
-Common families to map old → new:
-- `gemini_1_5_*` → `gemini_2_5_*` or `gemini_3_*` (check `ml_model_list.py` for current available).
-- `claude_3_5_*` → `claude_sonnet_4_*` / `claude_opus_4_*` / `claude_4_5_haiku`.
-- `llama_3_1_*`, `llama_3_2_*` → `llama_3_3_70b` / `llama_4_*` (only if the test isn't specifically about the older model).
-- `nemotron_70b` → `nemotron_3_*`.
-
-### 4b. Coverage gaps
+### 4c. Coverage gaps
 
 The prerelease set should cover, at minimum:
 
@@ -269,41 +242,25 @@ The prerelease set should cover, at minimum:
 | Fireworks fine-tune | `test_fetch_all_deployments` |
 | Prompt caching (Anthropic + OpenAI + Gemini + Fireworks + Together) | `test_prompt_caching_cache_hit` |
 
-If you find a new provider/family in `ml_model_list.py` that isn't represented in the prerelease set — flag it. (Don't add new tests unsolicited; propose the gap in the report and let the user decide.)
+If a new provider/family in `ml_model_list.py` isn't represented in the prerelease set, note the gap as a recommendation.
 
-### 4c. New paid tests that should arguably be prerelease
-
-List recently added `@pytest.mark.paid` tests that are *not* `@pytest.mark.prerelease`-tagged, so the user can decide if any should be promoted:
+Also list recently added `@pytest.mark.paid` tests that are *not* `@pytest.mark.prerelease`-tagged, so the user can decide if any should be promoted:
 
 ```bash
-# all paid test locations
 grep -rn "@pytest.mark.paid" --include="*.py" | awk -F: '{print $1":"$2}' > "${OUT}/paid_tests.txt"
-# all prerelease test locations
 grep -rn "@pytest.mark.prerelease" --include="*.py" | awk -F: '{print $1":"$2}' > "${OUT}/prerelease_tests.txt"
-# show paid tests that are NOT prerelease, sorted by recency
-diff <(sort "${OUT}/paid_tests.txt") <(sort "${OUT}/prerelease_tests.txt") | \
-  grep '^<' > "${OUT}/paid_only.txt"
+diff <(sort "${OUT}/paid_tests.txt") <(sort "${OUT}/prerelease_tests.txt") | grep '^<' > "${OUT}/paid_only.txt"
 git log --since="3 months ago" --diff-filter=AM --name-only --pretty=format: -- \
-  $(awk -F: '{print $1}' "${OUT}/paid_only.txt" | sort -u) | sort -u | \
-  head -50 > "${OUT}/recent_paid_files.txt"
+  $(awk -F: '{print $1}' "${OUT}/paid_only.txt" | sort -u) | sort -u | head -50
 ```
 
-In the report, list the few files in `recent_paid_files.txt` and ask the user whether any of their tests are prerelease-worthy.
+### 4d. Prod-code model probes (flag only)
 
-### 4d. Prod-code model probes (flag for user, don't edit)
+Some prod-code paths hardcode a model slug as a **probe** — a narrow connectivity/auth check where the model is just a vehicle to hit the API, not a feature the user picked. The canonical example is `app/desktop/studio_server/provider_api.py::connect_vertex`, which calls `litellm.acompletion(model="vertex_ai/gemini-X.Y-flash", …)` to verify Vertex credentials when the user clicks "Connect".
 
-Some prod-code paths hardcode a model slug as a **probe** — a narrow connectivity / auth check where the model is just a vehicle to hit the API, not a feature the user picked. Today the canonical example is `app/desktop/studio_server/provider_api.py::connect_vertex`, which calls `litellm.acompletion(model="vertex_ai/gemini-X.Y-flash", …)` to verify the user's Vertex credentials when they click "Connect" in the UI.
+These should stay on the latest available model in their family, otherwise the Connect button drifts toward a deprecated/removed model. **This skill only flags them** — it does not edit prod code, and the recommendation in the report is the artifact the user acts on.
 
-Probes like this should be **kept on the latest available model in their family**, otherwise the Connect button quietly drifts toward calling a deprecated/removed model. But **this skill never edits prod code directly** — it flags the situation in the report so the user can decide and make the change.
-
-How to tell a probe from real prod-path code:
-
-- ✅ Probe: a connectivity / auth check whose only job is to issue a tiny request to see if credentials work. The model choice is incidental; any current model from the same family would work.
-- ❌ Not a probe: code where the model is part of the user-visible behavior (defaults the user could see, fine-tune flows, eval scoring, etc.). Leave these alone — they're flavor 1 if broken.
-
-#### Sweep
-
-Grep for any hardcoded inference-probe slugs that target a vendor model directly (string with `gemini`/`gpt`/`claude`/`llama`, inside a `model="…"` kwarg, in non-test prod files):
+Sweep for hardcoded inference-probe slugs in non-test prod files:
 
 ```bash
 grep -rnE 'model=["'\''][^"'\'']*((gemini|gpt|claude|llama)[^"'\'']*)["'\''']' \
@@ -314,119 +271,103 @@ grep -rnE 'model=["'\''][^"'\'']*((gemini|gpt|claude|llama)[^"'\'']*)["'\''']' \
 ```
 
 For each hit:
+1. Decide whether it's a probe (connectivity/auth check, model incidental) or real prod behavior (a default the user sees, fine-tune flow, eval scoring). If unsure, treat it as real prod behavior.
+2. For probes, check `ml_model_list.py` for the newest non-deprecated sibling at that provider.
+3. Record in the probe table: file:line · current slug · suggested newer slug (or "none — already latest") · the verifying live test and its result.
 
-1. Confirm it's a probe (see ✅ / ❌ above). If you're not sure, treat it as not a probe.
-2. Check `ml_model_list.py` for the newest non-deprecated member of the same family at that provider (e.g. for `vertex_ai/gemini-X.Y-flash`, find the highest-versioned `gemini_*_flash` with a non-deprecated vertex provider entry).
-3. Record the finding in the report's "Prod-code probe sweep" table: file:line, current slug, suggested newer slug (or "none — already latest"), and the verifying live test (e.g. `test_connect_vertex_live`).
-4. **Do not edit prod code.** Leave the decision to the user. The verdict line at the end of the run should call out any flagged probes explicitly.
-
-If the prerelease test that exercises a probe fails outright (e.g. `test_connect_vertex_live` returns 4xx), that's a flavor-1 failure — list it under "Failures" in addition to flagging the probe.
-
-Every grep hit goes in the sweep table even when no newer sibling exists (`Suggested` = "none"). Silent "looks fine" is not allowed.
+Every grep hit goes in the table even when no newer sibling exists. If the verifying live test failed outright, also list it under Failures (it's a real-failure signal).
 
 ---
 
 ## Phase 5 — Write the report
 
-Create `.prerelease/<timestamp>/REPORT.md` with these sections:
+Create `.prerelease/<timestamp>/REPORT.md`. Lead with the verdict; make every finding skim-readable with an explicit recommended action. This is the only artifact the skill produces.
 
 ```markdown
 # Kiln Prerelease Check — <timestamp>
 
-## Summary
-- Overall: PASS / FAIL / PASS WITH GAPS
+## Verdict
+- Overall: PASS / FAIL / PASS WITH RECOMMENDATIONS
 - checks.sh: <pass|fail>
 - prerelease pytest: <N passed, M failed, K skipped>
-- Audit findings: <count of stale pins>, <count of coverage gaps>
+- Headline: <one sentence — the single most important thing the user must know before tagging>
 
-## Failures
-For each failure:
-- Test ID
-- Provider
-- Failure flavor: regression OR test-housekeeping
-- Excerpt of the relevant stderr / assertion
-- Recommended action (do not silently patch prod code)
+## Failures — what broke, why, and what to do
+One block per failing test. Sorted most-actionable first (real regressions before stale pins).
+
+### <test ID>
+- Provider: <provider>
+- Cause: <deprecated model | model no longer exists at provider | provider behavior change (regression) | Kiln code regression | auth/quota/transient>
+- Model slug: <slug> — `ml_model_list.py` status: <OK | deprecated | no-provider-entry | n/a>
+- Evidence: <short excerpt of the actual error / failed assertion>
+- Recommended action: <concrete next step — e.g. "bump PRERELEASE_CHAT_MODELS pin from X to Y (newest sibling)"; or "investigate prod path Z — response shape changed"; or "mark this entry deprecated=True in ml_model_list.py and bump the pin". Recommendation only — this skill makes no edits.>
 
 ## Skipped tests (missing credentials)
-List by provider so the user can decide what keys to add.
+List by provider, with which env var is missing, so the user can decide what to add and re-run.
 
-## Model pin sweep (mandatory, every run)
-Full table of every hardcoded slug in prerelease whitelists / parametrize lists, what was checked, and what was done. Even on a green run this section is required — silent "looks fine" is not allowed.
+## Model-pin staleness sweep (mandatory, every run)
+Every in-scope hardcoded slug — including current ones needing no action.
 
-| Location (file:line) | Current slug | `ml_model_list.py` status | Newer sibling? | Action |
+| Location (file:line) | Current slug | `ml_model_list.py` status | Newer sibling? | Recommendation |
 |---|---|---|---|---|
-| `…/pytest_prerelease_whitelist.py:NN` | `claude_sonnet_4_5` | OK, not deprecated | yes — `claude_sonnet_4_6` | upgraded (see Test updates applied) |
-| `…/pytest_prerelease_whitelist.py:NN` | `gpt_4o_mini` | OK, not deprecated | no (still the latest mini) | kept |
-| `…/test_prompt_adaptors.py:NN` | `phi_3_5` (openrouter) | provider entry deprecated=True | n/a (deprecated) | upgraded to `phi_4` (see Test updates applied) |
+| `…/pytest_prerelease_whitelist.py:NN` | `claude_sonnet_4_5` | OK | yes — `claude_sonnet_4_6` | bump to `claude_sonnet_4_6` |
+| `…/pytest_prerelease_whitelist.py:NN` | `gpt_4o_mini` | OK | no | keep (current) |
+| `…/test_prompt_adaptors.py:NN` | `gemini_1_5_flash` (openrouter) | deprecated | n/a | bump to `gemini_2_5_flash` |
 
-`ml_model_list.py status` is one of: `OK`, `deprecated`, `no-provider-entry`. `Newer sibling?` says yes/no and names the candidate. `Action` is `kept` or `upgraded`.
+`status` ∈ {OK, deprecated, no-provider-entry, removed/renamed}. `Recommendation` ∈ {keep (current), bump to <slug>, investigate}.
 
-## Stale pins not auto-fixed
-Cases where you spotted staleness but did NOT swap (you weren't confident, the family map is ambiguous, or it crosses into prod-path territory). For each: file:line, current slug, suggested replacement, reason for deferring.
+## Prod-code probe sweep (flag only — no edits)
+Every hardcoded inference-probe slug found in prod code (Phase 4d).
+
+| File:line | Current slug | Suggested newer slug | Verifying test | Test result | Notes |
+|---|---|---|---|---|---|
+| `app/desktop/studio_server/provider_api.py:NNNN` | `vertex_ai/gemini-2.5-flash` | `vertex_ai/gemini-3-flash` | `test_connect_vertex_live` | PASS | probe still works; newer family member exists |
+| `path/to/file.py:NN` | `…` | none — already latest | `test_…` | PASS | no action |
 
 ## Coverage gaps
-- New providers in ml_model_list.py with no prerelease test
-- Recently added paid tests not in the prerelease set (with a one-line rationale for why each MIGHT be prerelease-worthy)
-
-## Test updates applied (housekeeping, scoped to test files / whitelist only)
-Every test/whitelist swap goes here with both run outcomes. One row per swap:
-
-| File:line | Old slug | New slug | Reason | Old run | New run |
-|---|---|---|---|---|---|
-| `…/pytest_prerelease_whitelist.py:NN` | `claude_sonnet_4_5` | `claude_sonnet_4_6` | newer-sibling-available | PASS | PASS |
-| `…/test_prompt_adaptors.py:NN` | `phi_3_5` | `phi_4` | deprecated-in-our-list | FAIL (provider 404) | PASS |
-
-`Reason` is one of: `provider-rejected` (4xx at provider), `deprecated-in-our-list`, `newer-sibling-available`. `Old run` and `New run` are both required — they prove the swap actually changed behavior (or that an upgrade-on-green stayed green). If both columns say FAIL, **the swap should have been reverted** — explain why it wasn't in a row below the table.
-
-## Prod-code probe sweep (flag for user review — no edits)
-Mandatory every run. Lists every hardcoded inference-probe model slug found in prod code (Phase 4d). The skill does NOT edit prod code; this section is the artifact the user reads to decide whether to bump a probe.
-
-| File:line | Current slug | Suggested newer slug | Verifying test | Verifying test result | Notes |
-|---|---|---|---|---|---|
-| `app/desktop/studio_server/provider_api.py:NNNN` | `vertex_ai/gemini-3.5-flash` | `vertex_ai/gemini-3.X-flash` (from `ml_model_list.py`) | `test_connect_vertex_live` | PASS | current probe still works; newer family member available |
-| `path/to/file.py:NN` | `…` | none — already latest | `test_…` | PASS | no action needed |
-
-`Suggested newer slug` is "none — already latest" if `ml_model_list.py` doesn't have a newer non-deprecated sibling at that provider. If the verifying live test failed, also list it under "Failures" — that's a flavor-1 signal regardless of whether a newer slug is available.
-
-If a grep hit looks like real prod-path behavior rather than a probe, record it under "Flagged for user review" below — do not include it in this table.
+- Providers/families in `ml_model_list.py` with no prerelease test.
+- Recently added paid tests not in the prerelease set (one line each on why it MIGHT be prerelease-worthy).
 
 ## Flagged for user review
-Things you noticed (test pins you weren't confident to swap, prod-path code that isn't a probe, suspicious failures you couldn't safely touch) that the user should look at. Each row: file:line, what's stale/suspicious, why you didn't change it.
+Anything you noticed but couldn't safely classify: ambiguous failures (model-vs-code unclear), prod-path code that isn't a probe, suspicious behavior. Each row: file:line / test · what's suspicious · what would disambiguate.
 
 ## Suggested next steps
-What the user should do before tagging the release.
+Ordered checklist of what the user should do before tagging the release (apply recommended pin bumps, investigate regression X, add key for skipped provider Y, etc.).
 ```
 
-Keep the report scan-readable. Lead with the verdict. Don't bury failures.
+Keep it scan-readable. Lead with the verdict. Don't bury real regressions under pin-housekeeping.
 
 ---
 
 ## Phase 6 — Hand back to the user
 
-Print the path to the report and a one-line verdict:
+Print the report path and a one-line verdict:
 
 ```bash
 echo "Prerelease check complete. Report: ${OUT}/REPORT.md"
 ```
 
-Then summarize the verdict in chat (one or two sentences):
+Then summarize in chat (one or two sentences):
 
-- If everything passed: `Prerelease check: PASS. <N> tests passed, <K> skipped (missing keys: <providers>). Report at <path>.`
-- If anything failed: `Prerelease check: FAIL. <X> tests failed across <providers>. See <path>/REPORT.md before tagging.`
-- If the only "failures" are stale pins that you've fixed: `Prerelease check: PASS WITH HOUSEKEEPING. Updated <N> stale model pins; no prod code touched. Report at <path>.`
+- All green, nothing stale: `Prerelease check: PASS. <N> passed, <K> skipped (missing keys: <providers>). No stale pins. Report at <path>.`
+- Green but recommendations exist: `Prerelease check: PASS WITH RECOMMENDATIONS. <N> passed; <M> stale/older pins to consider bumping (no changes made). Report at <path>.`
+- Something failed: `Prerelease check: FAIL. <X> failed across <providers> — <one-line dominant cause>. See <path>/REPORT.md before tagging.`
+
+Remember: the skill never made any edits. If the report recommends pin bumps or a prod-probe change, those are for the user to apply.
 
 ---
 
 ## Checklist
 
-- [ ] `.prerelease/<timestamp>/` directory created
+- [ ] `.prerelease/<timestamp>/` directory created (the only place anything was written)
 - [ ] `checks.sh --agent-mode` run, log captured
 - [ ] `--runprerelease` pytest run, log captured
-- [ ] "Model pin sweep" table filled out for **every** whitelist entry and every hardcoded prerelease slug — including the ones that were kept (silent "looks fine" not allowed)
-- [ ] Newer-sibling upgrades applied even when the old slug was green
-- [ ] Every applied test/whitelist swap verified with run-old-then-run-new, both outcomes in the "Test updates applied" table
-- [ ] Phase 4d prod-probe sweep done; every grep hit listed in the "Prod-code probe sweep" table with `Suggested newer slug` (or "none — already latest")
-- [ ] Coverage-gap audit done (Phase 4b + 4c)
-- [ ] No prod source code was modified (probe bumps left for the user to apply)
-- [ ] `REPORT.md` written with verdict, sweep table, swaps, probe table, failures, skips, gaps
-- [ ] Verdict surfaced to the user with the report path; any probe with a newer suggested slug called out explicitly
+- [ ] Every failure diagnosed with a cause class and a concrete recommended action (regression vs. deprecated-model vs. model-gone vs. auth/transient)
+- [ ] Model-pin staleness sweep table filled for **every** in-scope slug, including current ones needing no action
+- [ ] Newer-sibling recommendations included even for green pins
+- [ ] Prod-probe sweep done; every grep hit in the probe table with a suggested slug (or "none — already latest")
+- [ ] Coverage-gap audit done
+- [ ] Skipped tests listed by provider + missing env var
+- [ ] **No files edited outside `.prerelease/<timestamp>/`** — all fixes are recommendations
+- [ ] `REPORT.md` written, verdict first, recommended actions explicit
+- [ ] Verdict surfaced to the user with the report path
