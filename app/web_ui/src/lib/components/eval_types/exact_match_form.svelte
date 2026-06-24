@@ -32,42 +32,70 @@
 </script>
 
 <div class="flex flex-col gap-4">
-  <FormElement
-    id="exact_match_source"
-    label="Match Source"
-    description="Choose what value to compare the output against."
-    inputType="select"
-    bind:value={source}
-    select_options={[
-      ["expected_value", "Fixed Expected Value"],
-      ["reference_key", "Reference Data Key"],
-    ]}
-    on_select={() => {
-      if (source === "expected_value") {
-        properties.reference_key = null
-      } else {
-        properties.expected_value = null
-      }
-    }}
-  />
-
-  {#if source === "expected_value"}
-    <FormElement
-      id="exact_match_expected_value"
-      label="Expected Value"
-      description="The exact value the output must match."
-      inputType="input"
-      bind:value={properties.expected_value}
-    />
-  {:else}
-    <FormElement
-      id="exact_match_reference_key"
-      label="Reference Key"
-      description="The key in the reference data whose value the output must match."
-      inputType="input"
-      bind:value={properties.reference_key}
-    />
-  {/if}
+  <div role="group" aria-labelledby="exact_match_source_label">
+    <span id="exact_match_source_label" class="text-sm font-medium"
+      >Match Source</span
+    >
+    <p class="text-xs text-gray-500 pb-1">
+      Choose what value to compare the output against.
+    </p>
+    <div class="flex flex-col gap-3 pl-1">
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="exact_match_source"
+          class="radio radio-sm mt-0.5"
+          value="expected_value"
+          bind:group={source}
+          on:change={() => {
+            properties.reference_key = null
+          }}
+        />
+        <span class="flex flex-col gap-1 flex-1">
+          <span class="text-sm">Fixed Expected Value</span>
+          <p class="text-xs text-gray-500">
+            The exact value the output must match.
+          </p>
+          <FormElement
+            id="exact_match_expected_value"
+            label="Expected Value"
+            hide_label={true}
+            aria_label="Expected Value"
+            inputType="input"
+            bind:value={properties.expected_value}
+            disabled={source !== "expected_value"}
+          />
+        </span>
+      </label>
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="exact_match_source"
+          class="radio radio-sm mt-0.5"
+          value="reference_key"
+          bind:group={source}
+          on:change={() => {
+            properties.expected_value = null
+          }}
+        />
+        <span class="flex flex-col gap-1 flex-1">
+          <span class="text-sm">Reference Data Key</span>
+          <p class="text-xs text-gray-500">
+            The key in the reference data whose value the output must match.
+          </p>
+          <FormElement
+            id="exact_match_reference_key"
+            label="Reference Key"
+            hide_label={true}
+            aria_label="Reference Key"
+            inputType="input"
+            bind:value={properties.reference_key}
+            disabled={source !== "reference_key"}
+          />
+        </span>
+      </label>
+    </div>
+  </div>
 
   <FormElement
     id="exact_match_value_expression"

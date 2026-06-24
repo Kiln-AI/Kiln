@@ -14,6 +14,8 @@
   export let max: number | null = null
   export let placeholder: string | null = null
   export let hide_optional_badge: boolean = false
+  export let hide_label: boolean = false
+  export let aria_label: string | null = null
 
   export let validator: (value: unknown) => string | null = () => null
   export function run_validator() {

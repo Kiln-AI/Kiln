@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import TagInput from "./tag_input.svelte"
 
   export let properties: components["schemas"]["SetCheckProperties"] = {
     type: "set_check",
@@ -11,7 +12,10 @@
   }
 
   export function getProperties(): components["schemas"]["SetCheckProperties"] {
-    return properties
+    if (source === "reference_key") {
+      return { ...properties, expected_set: null }
+    }
+    return { ...properties, reference_key: null }
   }
 
   export function validate(): string | null {
@@ -31,12 +35,8 @@
     ? "reference_key"
     : "expected_set"
 
-  let expected_set_text: string = (properties.expected_set ?? []).join("\n")
-
-  $: properties.expected_set = expected_set_text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+  let expected_set_tags: string[] = properties.expected_set ?? []
+  $: properties.expected_set = expected_set_tags
 </script>
 
 <div class="flex flex-col gap-4">
@@ -53,42 +53,70 @@
     ]}
   />
 
-  <FormElement
-    id="set_check_source"
-    label="Expected Set Source"
-    description="Choose where the expected set values come from."
-    inputType="select"
-    bind:value={source}
-    select_options={[
-      ["expected_set", "Fixed Expected Set"],
-      ["reference_key", "Reference Data Key"],
-    ]}
-    on_select={() => {
-      if (source === "expected_set") {
-        properties.reference_key = null
-      } else {
-        properties.expected_set = null
-      }
-    }}
-  />
-
-  {#if source === "expected_set"}
-    <FormElement
-      id="set_check_expected_set"
-      label="Expected Set"
-      description="One value per line. The output will be parsed and compared as a set."
-      inputType="textarea"
-      bind:value={expected_set_text}
-    />
-  {:else}
-    <FormElement
-      id="set_check_reference_key"
-      label="Reference Key"
-      description="The key in the reference data containing the expected set."
-      inputType="input"
-      bind:value={properties.reference_key}
-    />
-  {/if}
+  <div role="group" aria-labelledby="set_check_source_label">
+    <span id="set_check_source_label" class="text-sm font-medium"
+      >Expected Set Source</span
+    >
+    <p class="text-xs text-gray-500 pb-1">
+      Choose where the expected set values come from.
+    </p>
+    <div class="flex flex-col gap-3 pl-1">
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="set_check_source"
+          class="radio radio-sm mt-0.5"
+          value="expected_set"
+          bind:group={source}
+          on:change={() => {
+            properties.reference_key = null
+          }}
+        />
+        <span class="flex flex-col gap-1 flex-1">
+          <span class="text-sm">Fixed Expected Set</span>
+          <div class="pt-0.5">
+            <TagInput
+              id="set_check_expected_set"
+              bind:tags={expected_set_tags}
+              placeholder="Type a value and press Enter"
+              disabled={source !== "expected_set"}
+            />
+            <p class="text-xs text-gray-500 pt-1">
+              Add items by typing and pressing Enter or comma.
+            </p>
+          </div>
+        </span>
+      </label>
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="set_check_source"
+          class="radio radio-sm mt-0.5"
+          value="reference_key"
+          bind:group={source}
+          on:change={() => {
+            properties.expected_set = null
+            expected_set_tags = []
+          }}
+        />
+        <span class="flex flex-col gap-1 flex-1">
+          <span class="text-sm">Reference Data Key</span>
+          <p class="text-xs text-gray-500">
+            The key in the reference data containing the expected set.
+          </p>
+          <FormElement
+            id="set_check_reference_key"
+            label="Reference Key"
+            hide_label={true}
+            aria_label="Reference Key"
+            inputType="input"
+            bind:value={properties.reference_key}
+            disabled={source !== "reference_key"}
+          />
+        </span>
+      </label>
+    </div>
+  </div>
 
   <FormElement
     id="set_check_value_expression"

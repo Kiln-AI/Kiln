@@ -43,42 +43,71 @@
     ]}
   />
 
-  <FormElement
-    id="contains_source"
-    label="Match Source"
-    description="Choose what value to search for in the output."
-    inputType="select"
-    bind:value={source}
-    select_options={[
-      ["substring", "Fixed Substring"],
-      ["reference_key", "Reference Data Key"],
-    ]}
-    on_select={() => {
-      if (source === "substring") {
-        properties.reference_key = null
-      } else {
-        properties.substring = null
-      }
-    }}
-  />
-
-  {#if source === "substring"}
-    <FormElement
-      id="contains_substring"
-      label="Substring"
-      description="The substring to search for in the output."
-      inputType="input"
-      bind:value={properties.substring}
-    />
-  {:else}
-    <FormElement
-      id="contains_reference_key"
-      label="Reference Key"
-      description="The key in the reference data whose value to search for in the output."
-      inputType="input"
-      bind:value={properties.reference_key}
-    />
-  {/if}
+  <div role="group" aria-labelledby="contains_source_label">
+    <span id="contains_source_label" class="text-sm font-medium"
+      >Search String Source</span
+    >
+    <p class="text-xs text-gray-500 pb-1">
+      Choose what value to search for in the output.
+    </p>
+    <div class="flex flex-col gap-3 pl-1">
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="contains_source"
+          class="radio radio-sm mt-0.5"
+          value="substring"
+          bind:group={source}
+          on:change={() => {
+            properties.reference_key = null
+          }}
+        />
+        <span class="flex flex-col gap-1 flex-1">
+          <span class="text-sm">Fixed Substring</span>
+          <p class="text-xs text-gray-500">
+            The substring to search for in the output.
+          </p>
+          <FormElement
+            id="contains_substring"
+            label="Substring"
+            hide_label={true}
+            aria_label="Substring"
+            inputType="input"
+            bind:value={properties.substring}
+            disabled={source !== "substring"}
+          />
+        </span>
+      </label>
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="contains_source"
+          class="radio radio-sm mt-0.5"
+          value="reference_key"
+          bind:group={source}
+          on:change={() => {
+            properties.substring = null
+          }}
+        />
+        <span class="flex flex-col gap-1 flex-1">
+          <span class="text-sm">Reference Data Key</span>
+          <p class="text-xs text-gray-500">
+            The key in the reference data whose value to search for in the
+            output.
+          </p>
+          <FormElement
+            id="contains_reference_key"
+            label="Reference Key"
+            hide_label={true}
+            aria_label="Reference Key"
+            inputType="input"
+            bind:value={properties.reference_key}
+            disabled={source !== "reference_key"}
+          />
+        </span>
+      </label>
+    </div>
+  </div>
 
   <FormElement
     id="contains_value_expression"

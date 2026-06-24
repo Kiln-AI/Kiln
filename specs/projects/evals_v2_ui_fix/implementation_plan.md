@@ -43,7 +43,7 @@ flow only**. Run the standard web + python check suites before each phase's code
   "Never", collapse `expected_args`. Type picker order + "(recommended)" + labels. Target:
   `70 §3.1`/`§3.2`, `§1`; shapes in `22`.
 
-- [ ] **Phase 5 — Form polish (droppable, LOW).**
+- [x] **Phase 5 — Form polish (droppable, LOW).**
   Radio groups (disable inactive) for the literal-vs-reference XOR; `set_check.expected_set`
   tag-input. Cleanly droppable without affecting the structural fixes.
 
