@@ -385,10 +385,10 @@ describe("create_eval_config picker page", () => {
     expect(cards.length).toBe(ALL_V2_EVAL_TYPES.length)
   })
 
-  it("shows LLM as Judge (recommended) first", async () => {
+  it("shows LLM as Judge first", async () => {
     const { container } = await renderPickerPage()
     const cards = container.querySelectorAll(".card")
-    expect(cards[0].textContent).toContain("LLM as Judge (recommended)")
+    expect(cards[0].textContent).toContain("LLM as Judge")
   })
 
   it("navigates to child route on card click", async () => {
