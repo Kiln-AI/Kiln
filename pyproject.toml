@@ -1,6 +1,6 @@
 [project]
 name = "kiln-root"
-version = "1.0.0"
+version = "1.0.3"
 description = "uv workspace project for Kiln AI. See kiln-ai package on pypi for our library (libs/core)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,7 +21,7 @@ dev = [
     "pytest>=8.3.3",
     "respx>=0.22.0",
     "pytest-xdist>=3.5",
-    "python-dotenv>=1.0.1",
+    "python-dotenv>=1.2.2",
     "ruff>=0.15.0",
     "watchfiles>=1.1.0",
     "scalar-fastapi>=1.4.3",

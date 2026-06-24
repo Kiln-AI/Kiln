@@ -87,7 +87,10 @@
           <li>
             <button
               tabindex="0"
-              on:click={onShowArchived}
+              on:click={(e) => {
+                onShowArchived?.()
+                e.currentTarget.blur()
+              }}
               class={show_archived ? "active" : ""}
             >
               Show Archived

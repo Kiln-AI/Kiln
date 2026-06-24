@@ -35,6 +35,9 @@ class KilnRerankerModelProvider(BaseModel):
         min_length=1,
     )
 
+    # The model is deprecated and no longer supported on a specific provider
+    deprecated: bool = False
+
 
 class KilnRerankerModel(BaseModel):
     """

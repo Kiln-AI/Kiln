@@ -31,7 +31,9 @@
     getRunConfigModelDisplayName,
     getDetailedModelNameFromParts,
     getRunConfigUiProperties,
+    getRunConfigInputTransform,
   } from "$lib/utils/run_config_formatters"
+  import InputTransformModal from "$lib/ui/run_config_component/input_transform_modal.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -733,6 +735,12 @@
     }
   }
 
+  let input_transform_modal: InputTransformModal | null = null
+
+  $: input_transform = selected_run_config
+    ? getRunConfigInputTransform(selected_run_config)
+    : null
+
   $: run_config_properties = selected_run_config
     ? getRunConfigUiProperties(
         project_id,
@@ -741,6 +749,7 @@
         $model_info,
         task_prompts,
         $available_tools,
+        () => input_transform_modal?.show(),
       )
     : null
 </script>
@@ -859,7 +868,10 @@
                     <div class="text-md font-semibold text-left mb-4">
                       Details
                     </div>
-                    <PropertyList properties={run_config_properties} />
+                    <PropertyList
+                      properties={run_config_properties}
+                      open_links_in_new_tab={true}
+                    />
                   </div>
                 </div>
               {/if}
@@ -1189,4 +1201,11 @@
       }
     }}
   />
+
+  {#if input_transform}
+    <InputTransformModal
+      bind:this={input_transform_modal}
+      transform={input_transform}
+    />
+  {/if}
 </div>

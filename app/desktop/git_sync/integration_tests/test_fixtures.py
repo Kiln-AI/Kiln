@@ -238,9 +238,11 @@ class TestNetworkFailure:
     async def test_break_network_causes_fetch_failure(
         self, git_repos, manager, break_network
     ):
-        from app.desktop.git_sync.errors import RemoteUnreachableError
+        from app.desktop.git_sync.errors import GitAuthError, RemoteUnreachableError
 
-        with pytest.raises((RemoteUnreachableError, pygit2.GitError, TimeoutError)):
+        with pytest.raises(
+            (RemoteUnreachableError, GitAuthError, pygit2.GitError, TimeoutError)
+        ):
             await manager.fetch()
 
     @pytest.mark.asyncio

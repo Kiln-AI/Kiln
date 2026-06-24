@@ -13,7 +13,7 @@ from kiln_ai.adapters.extractors.base_extractor import (
     ExtractionInput,
     ExtractionOutput,
 )
-from kiln_ai.adapters.extractors.encoding import to_base64_url
+from kiln_ai.adapters.extractors.encoding import to_base64, to_base64_url
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     built_in_models_from_provider,
@@ -55,11 +55,46 @@ MIME_TYPES_SUPPORTED = {
 }
 
 
-def encode_file_litellm_format(path: Path, mime_type: str) -> dict[str, Any]:
+# OpenAI-style `input_audio` blocks take a bare format string, not a MIME type.
+AUDIO_MIME_TO_INPUT_AUDIO_FORMAT = {
+    "audio/wav": "wav",
+    "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
+}
+
+
+def encode_file_litellm_format(
+    path: Path, mime_type: str, provider_name: ModelProviderName
+) -> dict[str, Any]:
     # There are different formats that LiteLLM supports, the docs are scattered
     # and incomplete:
     # - https://docs.litellm.ai/docs/completion/document_understanding#base64
     # - https://docs.litellm.ai/docs/completion/vision#explicitly-specify-image-type
+
+    # OpenRouter rejects the generic `file` block for audio and video (upstream
+    # providers return a 400 "file type is not supported"). It expects the OpenAI-style
+    # `input_audio` block for audio and a `video_url` block for video. Other providers
+    # (e.g. Gemini/Vertex) work with the generic `file` block via LiteLLM's per-provider
+    # transform, so we only special-case OpenRouter here.
+    if provider_name == ModelProviderName.openrouter:
+        if mime_type.startswith("audio/"):
+            audio_format = AUDIO_MIME_TO_INPUT_AUDIO_FORMAT.get(mime_type)
+            if audio_format is None:
+                raise ValueError(f"Unsupported audio MIME type: {mime_type} for {path}")
+            return {
+                "type": "input_audio",
+                "input_audio": {
+                    "data": to_base64(path.read_bytes()),
+                    "format": audio_format,
+                },
+            }
+        if mime_type.startswith("video/"):
+            return {
+                "type": "video_url",
+                "video_url": {
+                    "url": to_base64_url(mime_type, path.read_bytes()),
+                },
+            }
 
     # this is the most generic format that seems to work for all / most mime types
     if mime_type in [
@@ -317,7 +352,9 @@ class LitellmExtractor(BaseExtractor):
                     "content": [
                         {"type": "text", "text": prompt},
                         encode_file_litellm_format(
-                            Path(extraction_input.path), extraction_input.mime_type
+                            Path(extraction_input.path),
+                            extraction_input.mime_type,
+                            self.model_provider.name,
                         ),
                     ],
                 }

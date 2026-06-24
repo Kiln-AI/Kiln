@@ -32,8 +32,9 @@
     getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
+    getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
-  import { isMcpRunConfig } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
@@ -852,19 +853,28 @@
                     selectedModels[i],
                   )}
                   {#if selectedConfig}
-                    {@const prompt_info_text =
-                      getRunConfigPromptInfoText(selectedConfig)}
-                    {@const prompt_link_url = prompt_link(
-                      project_id,
-                      task_id,
-                      `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
-                    )}
-                    {@const prompt_display_name = getRunConfigPromptDisplayName(
-                      selectedConfig,
+                    {@const current_task_prompts =
                       $prompts_by_task_composite_id[
                         get_task_composite_id(project_id, task_id)
-                      ] || null,
+                      ] || null}
+                    {@const prompt_info_text = getRunConfigPromptInfoText(
+                      selectedConfig,
+                      current_task_prompts,
                     )}
+                    {@const config_prompt_id = isKilnAgentRunConfig(
+                      selectedConfig.run_config_properties,
+                    )
+                      ? selectedConfig.run_config_properties.prompt_id
+                      : undefined}
+                    {@const prompt_link_url = config_prompt_id
+                      ? prompt_link(project_id, task_id, config_prompt_id)
+                      : undefined}
+                    {@const prompt_display_name = getRunConfigPromptDisplayName(
+                      selectedConfig,
+                      current_task_prompts,
+                    )}
+                    {@const transformLabel =
+                      getRunConfigInputTransformSummaryLabel(selectedConfig)}
                     <div class="mt-3 text-center">
                       <div class="font-semibold text-gray-900 text-sm">
                         {#if isMcpRunConfig(selectedConfig.run_config_properties)}
@@ -896,6 +906,11 @@
                               no_pad={true}
                             />
                           {/if}
+                        </div>
+                      {/if}
+                      {#if transformLabel}
+                        <div class="text-xs text-gray-500 font-normal mt-1">
+                          Input Transform: {transformLabel}
                         </div>
                       {/if}
                     </div>
