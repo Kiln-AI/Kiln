@@ -17,7 +17,6 @@ from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
 from .registry import JobNotFoundError, JobOperationError, job_registry
-from .workers.eval import EvalJobWorker
 from .workers.noop import NoopJobWorker
 
 KEEPALIVE_SECONDS = 15.0
@@ -98,7 +97,6 @@ def connect_jobs_api(app: FastAPI) -> None:
     # Register the workers this server exposes. register_type overwrites by
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
     job_registry.register_type(NoopJobWorker)
-    job_registry.register_type(EvalJobWorker)
 
     @app.get(
         "/api/jobs/events",
