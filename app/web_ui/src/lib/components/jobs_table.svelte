@@ -1,5 +1,6 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
+  import Intro from "$lib/ui/intro.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
   import { jobs, synced, connection } from "$lib/stores/jobs_store"
   import {
@@ -167,18 +168,17 @@
     <div class="loading loading-spinner loading-lg"></div>
   </div>
 {:else if $jobs.length === 0}
-  <div
-    class="flex flex-col items-center justify-center min-h-[55vh] text-center max-w-md mx-auto"
-  >
-    <div class="w-12 h-12 text-gray-400 mb-4" aria-hidden="true">
-      <JobsIcon />
-    </div>
-    <h3 class="text-lg font-medium">No jobs yet</h3>
-    <p class="text-sm text-gray-500 mt-2">
-      Long-running work like eval runs shows up here. Jobs run in the background
-      — you can leave this page and they'll keep going. Come back any time to
-      check progress, pause, or cancel them.
-    </p>
+  <div class="flex justify-center items-center min-h-[55vh]">
+    <Intro
+      title="No jobs yet"
+      description_paragraphs={[
+        "Long-running work like eval runs shows up here. Jobs keep running in the background, even if you leave this page.",
+      ]}
+    >
+      <div slot="icon" class="w-12 h-12 text-gray-400" aria-hidden="true">
+        <JobsIcon />
+      </div>
+    </Intro>
   </div>
 {:else}
   <div class="flex flex-row justify-end mb-3">
