@@ -195,4 +195,46 @@ describe("streamChat", () => {
 
     vi.unstubAllGlobals()
   })
+
+  it("calls onVersionNudge for kiln_client_upgrade_nudge events", async () => {
+    const lines = [
+      'data: {"type":"kiln_client_upgrade_nudge","preferred_version":"1.2.3"}\n\n',
+      'data: {"type":"kiln_chat_trace","trace_id":"trace-1"}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (i >= lines.length) {
+              return Promise.resolve({ done: true, value: undefined })
+            }
+            const value = new TextEncoder().encode(lines[i])
+            i += 1
+            return Promise.resolve({ done: false, value })
+          },
+        }),
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const versionNudgeSpy = vi.fn()
+    const errorSpy = vi.fn()
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onVersionNudge: versionNudgeSpy,
+      onFinish: () => {},
+      onError: errorSpy,
+    })
+
+    expect(versionNudgeSpy).toHaveBeenCalledOnce()
+    expect(versionNudgeSpy).toHaveBeenCalledWith("1.2.3")
+    expect(errorSpy).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+  })
 })

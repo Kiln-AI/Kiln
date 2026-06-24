@@ -82,6 +82,8 @@ interface StreamEvent {
   messageMetadata?: { finishReason?: string; usage?: unknown }
   items?: ToolCallsPendingItem[]
   tool_count?: number
+  /** Preferred client version from a ``kiln_client_upgrade_nudge`` event */
+  preferred_version?: string
 }
 
 export interface ToolCallsPendingItem {
@@ -107,6 +109,12 @@ export interface StreamChatOptions {
   onChatTrace?: (traceId: string) => void
   /** Fired when backend sends an inline error event */
   onInlineError?: (message: string, traceId?: string, code?: string) => void
+  /**
+   * Fired when the server nudges the client to upgrade (non-blocking): the
+   * client is older than the server's preferred version but still above the
+   * enforced minimum. ``preferredVersion`` is the version to suggest.
+   */
+  onVersionNudge?: (preferredVersion: string) => void
   /**
    * After ``tool-calls-pending`` the stream ends; return whether to run each
    * tool that requires approval (toolCallId → allowed).
@@ -176,6 +184,7 @@ class StreamEventProcessor {
     traceId?: string,
     code?: string,
   ) => void
+  private onVersionNudge?: (preferredVersion: string) => void
   private onToolExecutionStart?: (toolCount: number) => void
   private onToolExecutionEnd?: (toolCount: number) => void
   private onShowActivityIndicator?: (show: boolean) => void
@@ -186,6 +195,7 @@ class StreamEventProcessor {
     onAssistantMessage: (update: (draft: ChatMessage) => void) => void
     onChatTrace?: (traceId: string) => void
     onInlineError?: (message: string, traceId?: string, code?: string) => void
+    onVersionNudge?: (preferredVersion: string) => void
     onToolExecutionStart?: (toolCount: number) => void
     onToolExecutionEnd?: (toolCount: number) => void
     onShowActivityIndicator?: (show: boolean) => void
@@ -193,6 +203,7 @@ class StreamEventProcessor {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
     this.onInlineError = opts.onInlineError
+    this.onVersionNudge = opts.onVersionNudge
     this.onToolExecutionStart = opts.onToolExecutionStart
     this.onToolExecutionEnd = opts.onToolExecutionEnd
     this.onShowActivityIndicator = opts.onShowActivityIndicator
@@ -225,6 +236,7 @@ class StreamEventProcessor {
       "tool-output-available": (e) => this.handleToolOutputAvailable(e),
       "tool-output-error": (e) => this.handleToolOutputError(e),
       kiln_chat_trace: (e) => this.handleChatTrace(e),
+      kiln_client_upgrade_nudge: (e) => this.handleVersionNudge(e),
       "kiln-tool-execution-start": (e) => {
         this.onShowActivityIndicator?.(true)
         this.onToolExecutionStart?.(e.tool_count ?? 0)
@@ -411,6 +423,13 @@ class StreamEventProcessor {
     }
   }
 
+  private handleVersionNudge(event: StreamEvent): void {
+    const preferred = event.preferred_version
+    if (typeof preferred === "string" && preferred) {
+      this.onVersionNudge?.(preferred)
+    }
+  }
+
   private handleError(event: StreamEvent): void {
     this.onInlineError?.(
       event.message ?? "An error occurred.",
@@ -452,6 +471,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onAssistantMessage,
     onChatTrace,
     onInlineError,
+    onVersionNudge,
     onToolCallsPending,
     onToolExecutionStart,
     onToolExecutionEnd,
@@ -529,6 +549,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       onChatTrace?.(tid)
     },
     onInlineError,
+    onVersionNudge,
     onToolExecutionStart,
     onToolExecutionEnd,
     onShowActivityIndicator,
