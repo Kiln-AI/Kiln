@@ -12,6 +12,7 @@ from kiln_ai.datamodel.judge_feedback_batch import (
     JudgeFeedbackBatchRun,
 )
 from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
@@ -173,6 +174,23 @@ class JudgeFeedbackBatchRunResponse(BaseModel):
         default=None,
         description="Mean of mean_normalized_scores across dimensions (null if nothing was judged).",
     )
+    total_usage: Usage | None = Field(
+        default=None,
+        description="Summed token usage, cost (USD), and LLM latency for generating the judged "
+        "outputs. Populated only in generate_outputs mode (null when existing outputs were judged). "
+        "The deterministic counterpart to mean_normalized_scores — weigh quality against cost/latency "
+        "(a Pareto axis), and accumulate cost/elapsed across calls for an advisory budget readout.",
+    )
+    mean_cost: float | None = Field(
+        default=None,
+        description="Mean generation cost (USD) per judged item, over the items that reported cost "
+        "(null in judge-only mode). Per-item cost lives on each judged_runs[].usage.",
+    )
+    mean_latency_ms: float | None = Field(
+        default=None,
+        description="Mean generation LLM latency (ms) per judged item, over the items that reported "
+        "latency (null in judge-only mode). Per-item latency lives on each judged_runs[].usage.",
+    )
 
 
 def _build_judge_feedback_batch(
@@ -210,6 +228,9 @@ async def _run_judge_feedback_batch(
         errors=result.errors,
         mean_normalized_scores=result.mean_normalized_scores,
         mean_normalized_score=result.mean_normalized_score,
+        total_usage=result.total_usage,
+        mean_cost=result.mean_cost,
+        mean_latency_ms=result.mean_latency_ms,
     )
 
 

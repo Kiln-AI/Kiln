@@ -29,6 +29,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.usage import Usage
 
 BASE = "/api/projects/project1/tasks/task1/judge_feedback_batches"
 
@@ -310,6 +311,7 @@ def test_run_judge_feedback_batch(
         task_run_id="d3",
         scores={"accuracy": 1.0},
         passed=True,
+        usage=Usage(cost=0.01, total_llm_latency_ms=200, total_tokens=120),
     )
     result = JudgeFeedbackBatchRunResult(
         failing_runs=[failing_run],
@@ -325,6 +327,9 @@ def test_run_judge_feedback_batch(
         ],
         mean_normalized_scores={"accuracy": 0.5},
         mean_normalized_score=0.5,
+        total_usage=Usage(cost=0.01, total_llm_latency_ms=200, total_tokens=120),
+        mean_cost=0.01,
+        mean_latency_ms=200,
     )
     with patched_runner(result):
         resp = client.post(f"{BASE}/jj1/run")
@@ -351,6 +356,14 @@ def test_run_judge_feedback_batch(
     # Continuous loss signal (P1) flows through for gating.
     assert body["mean_normalized_scores"] == {"accuracy": 0.5}
     assert body["mean_normalized_score"] == 0.5
+    # Deterministic signal: per-run usage + aggregate cost/latency flow through for the Pareto axis.
+    judged_by_id = {r["task_run_id"]: r for r in body["judged_runs"]}
+    assert judged_by_id["d3"]["usage"]["cost"] == 0.01
+    assert judged_by_id["d1"]["usage"] is None
+    assert body["total_usage"]["cost"] == 0.01
+    assert body["total_usage"]["total_tokens"] == 120
+    assert body["mean_cost"] == 0.01
+    assert body["mean_latency_ms"] == 200
 
 
 def test_run_judge_feedback_batch_404(

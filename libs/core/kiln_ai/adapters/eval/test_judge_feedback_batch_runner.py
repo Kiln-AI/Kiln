@@ -7,6 +7,7 @@ from kiln_ai.adapters.eval import judge_feedback_batch_runner
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
     JudgeFeedbackBatchRunner,
+    aggregate_usage,
     example_fails,
     feedback_from_intermediate_outputs,
     score_passes,
@@ -32,6 +33,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.usage import Usage
 
 
 @pytest.fixture
@@ -136,6 +138,7 @@ def scripted_evaluator_factory(
     calls: list[str] | None = None,
     feedback: Dict[str, str] | None = None,
     generate: bool = False,
+    fresh_usage: Usage | None = None,
 ):
     def _feedback(task_run):
         return (
@@ -157,8 +160,14 @@ def scripted_evaluator_factory(
             if calls is not None:
                 calls.append(eval_job_item.id)
             # Stand in for "ran the config to produce a fresh output, then judged it." The fresh
-            # TaskRun is discarded by the runner, so a placeholder is fine here.
-            return eval_job_item, score_fn(eval_job_item), _feedback(eval_job_item)
+            # TaskRun is discarded by the runner (only its usage is kept), so a placeholder carrying
+            # the scripted usage is fine here.
+            fresh_run = (
+                eval_job_item.model_copy(update={"usage": fresh_usage})
+                if fresh_usage is not None
+                else eval_job_item
+            )
+            return fresh_run, score_fn(eval_job_item), _feedback(eval_job_item)
 
     return lambda *args, **kwargs: ScriptedEvaluator(*args, **kwargs)
 
@@ -171,12 +180,16 @@ async def run_job(
     seed=1,
     concurrency=25,
     retry_delay=0,
+    fresh_usage=None,
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
             "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
             lambda _type: scripted_evaluator_factory(
-                score_fn, calls=calls, generate=judge_feedback_batch.generate_outputs
+                score_fn,
+                calls=calls,
+                generate=judge_feedback_batch.generate_outputs,
+                fresh_usage=fresh_usage,
             ),
         )
         runner = JudgeFeedbackBatchRunner(
@@ -624,6 +637,108 @@ async def test_generate_mode_runs_config_and_judges_fresh_output(
     assert all(r.run_config_id == run_config.id for r in result.judged_runs)
     # The generated outputs are ephemeral — no new dataset TaskRuns were created.
     assert len(mock_task.runs()) == runs_before
+
+
+@pytest.mark.asyncio
+async def test_generate_mode_surfaces_usage(mock_task, data_source):
+    # In generate mode the candidate's token/cost/latency must flow through to each run and aggregate.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    run_config = make_run_config(mock_task)
+
+    val_ids = {
+        make_train_run(mock_task, data_source, f"val-{i}", tags=["val"]).id
+        for i in range(2)
+    }
+
+    job = JudgeFeedbackBatch(
+        name="gate",
+        target_tags=["val"],
+        eval_config_id=eval_config.id,
+        run_config_id=run_config.id,
+        generate_outputs=True,
+        stop_after_failures=None,
+        max_samples=10,
+        parent=mock_task,
+    )
+    job.save_to_file()
+
+    fresh_usage = Usage(
+        input_tokens=100,
+        output_tokens=20,
+        total_tokens=120,
+        cost=0.005,
+        total_llm_latency_ms=250,
+    )
+    result = await run_job(
+        job, eval_config, lambda _r: {"accuracy": 1.0}, fresh_usage=fresh_usage
+    )
+
+    # Each judged run carries the generation's usage, keyed by task_run_id for pairing.
+    assert {r.task_run_id for r in result.judged_runs} == val_ids
+    assert all(
+        r.usage is not None and r.usage.cost == 0.005 for r in result.judged_runs
+    )
+    # Two items, so the total sums and the means equal the per-item value.
+    assert result.total_usage is not None
+    assert result.total_usage.cost == pytest.approx(0.01)
+    assert result.total_usage.total_tokens == 240
+    assert result.mean_cost == pytest.approx(0.005)
+    assert result.mean_latency_ms == pytest.approx(250)
+
+
+@pytest.mark.asyncio
+async def test_judge_only_mode_has_no_usage(mock_task, data_source):
+    # Judging existing outputs generates nothing — no usage to surface, on runs or aggregates.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    make_train_run(mock_task, data_source, "item", tags=["train"])
+
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )  # target_tags defaults to ["train"], generate_outputs to False
+
+    result = await run_job(job, eval_config, lambda _r: {"accuracy": 1.0})
+
+    assert result.judged_runs and all(r.usage is None for r in result.judged_runs)
+    assert result.total_usage is None
+    assert result.mean_cost is None
+    assert result.mean_latency_ms is None
+
+
+def test_aggregate_usage_sums_and_means():
+    # Sums field-wise across runs that carried usage; means divide only by runs reporting that field.
+    runs = [
+        JudgeFeedbackBatchRun(
+            task_run_id="a",
+            scores={"accuracy": 1.0},
+            passed=True,
+            usage=Usage(cost=0.01, total_llm_latency_ms=100, total_tokens=50),
+        ),
+        JudgeFeedbackBatchRun(
+            task_run_id="b",
+            scores={"accuracy": 1.0},
+            passed=True,
+            usage=Usage(cost=0.03, total_llm_latency_ms=None, total_tokens=70),
+        ),
+        # A run with no usage (e.g. a cached judge-only result) is ignored by the aggregate.
+        JudgeFeedbackBatchRun(task_run_id="c", scores={"accuracy": 1.0}, passed=True),
+    ]
+    total, mean_cost, mean_latency = aggregate_usage(runs)
+    assert total is not None
+    assert total.cost == pytest.approx(0.04)
+    assert total.total_tokens == 120
+    # Two runs reported cost → mean over 2; only one reported latency → mean over 1.
+    assert mean_cost == pytest.approx(0.02)
+    assert mean_latency == pytest.approx(100)
+
+
+def test_aggregate_usage_empty_is_none():
+    runs = [
+        JudgeFeedbackBatchRun(task_run_id="a", scores={"accuracy": 1.0}, passed=True)
+    ]
+    assert aggregate_usage(runs) == (None, None, None)
+    assert aggregate_usage([]) == (None, None, None)
 
 
 def test_reference_answer_eval_rejected_for_existing_outputs(mock_task):

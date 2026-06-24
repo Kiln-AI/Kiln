@@ -38,6 +38,7 @@ from kiln_ai.datamodel.judge_feedback_batch import (
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,34 @@ def aggregate_normalized_scores(
     return aggregated
 
 
+def aggregate_usage(
+    runs: list[JudgeFeedbackBatchRun],
+) -> tuple[Usage | None, float | None, float | None]:
+    """Sum token/cost/latency across the runs that carried usage (generate_outputs mode).
+
+    The deterministic counterpart to ``aggregate_normalized_scores`` — lets the caller weigh a
+    candidate's quality against its cost/latency (a Pareto axis) instead of quality alone. Returns
+    ``(total_usage, mean_cost, mean_latency_ms)``. ``total_usage`` is the field-wise sum (via
+    ``Usage.__add__``) over runs whose ``usage`` is set; the means divide only by the runs that
+    actually reported that field. All three are ``None`` when no run carried usage (judge-only mode).
+    """
+    usages = [run.usage for run in runs if run.usage is not None]
+    if not usages:
+        return None, None, None
+
+    total: Usage = Usage()
+    for usage in usages:
+        total = total + usage
+
+    costs = [u.cost for u in usages if u.cost is not None]
+    mean_cost = sum(costs) / len(costs) if costs else None
+    latencies = [
+        u.total_llm_latency_ms for u in usages if u.total_llm_latency_ms is not None
+    ]
+    mean_latency_ms = sum(latencies) / len(latencies) if latencies else None
+    return total, mean_cost, mean_latency_ms
+
+
 def feedback_from_intermediate_outputs(
     intermediate_outputs: dict[str, str] | None,
 ) -> str | None:
@@ -143,6 +172,12 @@ class JudgeFeedbackBatchRunResult:
     # Continuous signal (P1): mean normalized score per dimension over judged_runs, and overall.
     mean_normalized_scores: dict[str, float] = field(default_factory=dict)
     mean_normalized_score: float | None = None
+    # Deterministic signal: token/cost/latency for generating the judged outputs (generate_outputs
+    # mode only — None when existing dataset outputs were judged, since nothing was generated). The
+    # total is the sum across judged_runs; the means divide by the count that actually carried usage.
+    total_usage: Usage | None = None
+    mean_cost: float | None = None
+    mean_latency_ms: float | None = None
 
 
 @dataclass
@@ -318,6 +353,7 @@ class JudgeFeedbackBatchRunner:
         overall = (
             sum(per_dimension.values()) / len(per_dimension) if per_dimension else None
         )
+        total_usage, mean_cost, mean_latency_ms = aggregate_usage(judged_runs)
 
         return JudgeFeedbackBatchRunResult(
             failing_runs=returned_failing,
@@ -329,6 +365,9 @@ class JudgeFeedbackBatchRunner:
             errors=errors,
             mean_normalized_scores=per_dimension,
             mean_normalized_score=overall,
+            total_usage=total_usage,
+            mean_cost=mean_cost,
+            mean_latency_ms=mean_latency_ms,
         )
 
     async def _score_one(
@@ -348,7 +387,7 @@ class JudgeFeedbackBatchRunner:
             return _ScoredItem(run=existing, passed=existing.passed)
 
         try:
-            scores, intermediate_outputs = await self._judge_with_retry(
+            scores, intermediate_outputs, usage = await self._judge_with_retry(
                 evaluator, task_run
             )
         except Exception as e:
@@ -380,6 +419,7 @@ class JudgeFeedbackBatchRunner:
             scores=scores,
             feedback=feedback,
             passed=passed,
+            usage=usage,
         )
 
         # Best-effort persistence: a save failure must not crash the whole concurrent batch. We keep
@@ -406,28 +446,34 @@ class JudgeFeedbackBatchRunner:
 
     async def _judge_with_retry(
         self, evaluator: BaseEval, task_run: TaskRun
-    ) -> tuple[EvalScores, dict[str, str] | None]:
+    ) -> tuple[EvalScores, dict[str, str] | None, Usage | None]:
         """Judge one item, retrying transient (rate-limit / connection) errors.
 
         Generating or judging invokes a model, so transient failures are expected; without a retry
         they'd be collected as per-item errors and silently shrink coverage (skewing a gate). Reuses
         the eval runner's transient-error classification. Raises on a non-transient error or once
         retries are exhausted — the caller turns that into a collected JudgeFeedbackBatchItemError.
+
+        Returns the judge's scores, its intermediate outputs, and — in generate_outputs mode — the
+        generation's token/cost/latency Usage (None when an existing output was judged, since nothing
+        was generated). The fresh TaskRun is still discarded (never persisted); only its usage is kept.
         """
         last_error: Exception | None = None
         for attempt in range(1 + self._max_retries):
             try:
                 if self.judge_feedback_batch.generate_outputs:
                     # Run the candidate config to produce a fresh output, then judge it. The fresh
-                    # TaskRun is returned un-saved (allow_saving=False) and intentionally discarded
-                    # here — we keep only the JudgeFeedbackBatchRun, never polluting the dataset.
+                    # TaskRun is returned un-saved (allow_saving=False) and not persisted — we keep
+                    # only the JudgeFeedbackBatchRun (and the run's usage), never polluting the
+                    # dataset.
                     (
-                        _fresh_run,
+                        fresh_run,
                         scores,
                         intermediate,
                     ) = await evaluator.run_task_and_eval(task_run)
-                    return scores, intermediate
-                return await evaluator.run_eval(task_run)
+                    return scores, intermediate, fresh_run.usage
+                scores, intermediate = await evaluator.run_eval(task_run)
+                return scores, intermediate, None
             except Exception as e:
                 last_error = e
                 if not (_is_retryable_error(e) and attempt < self._max_retries):

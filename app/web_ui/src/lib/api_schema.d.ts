@@ -7125,6 +7125,8 @@ export interface components {
              * @description If the judged output was generated (generate_outputs), the run config that produced it. None when the item's existing dataset output was judged.
              */
             run_config_id?: string | null;
+            /** @description Token usage, cost, and LLM latency for generating this item's output. Populated only when generate_outputs=true (the candidate config was run to produce a fresh output); None when an existing dataset output was judged (nothing was generated). */
+            usage?: components["schemas"]["Usage"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7182,6 +7184,18 @@ export interface components {
              * @description Mean of mean_normalized_scores across dimensions (null if nothing was judged).
              */
             mean_normalized_score?: number | null;
+            /** @description Summed token usage, cost (USD), and LLM latency for generating the judged outputs. Populated only in generate_outputs mode (null when existing outputs were judged). The deterministic counterpart to mean_normalized_scores — weigh quality against cost/latency (a Pareto axis), and accumulate cost/elapsed across calls for an advisory budget readout. */
+            total_usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Mean Cost
+             * @description Mean generation cost (USD) per judged item, over the items that reported cost (null in judge-only mode). Per-item cost lives on each judged_runs[].usage.
+             */
+            mean_cost?: number | null;
+            /**
+             * Mean Latency Ms
+             * @description Mean generation LLM latency (ms) per judged item, over the items that reported latency (null in judge-only mode). Per-item latency lives on each judged_runs[].usage.
+             */
+            mean_latency_ms?: number | null;
         };
         /**
          * KilnAgentRunConfigProperties

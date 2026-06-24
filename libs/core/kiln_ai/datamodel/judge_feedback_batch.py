@@ -9,6 +9,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.eval import EvalScores
+from kiln_ai.datamodel.usage import Usage
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -34,6 +35,12 @@ class JudgeFeedbackBatchRun(KilnParentedModel):
         default=None,
         description="If the judged output was generated (generate_outputs), the run config that "
         "produced it. None when the item's existing dataset output was judged.",
+    )
+    usage: Usage | None = Field(
+        default=None,
+        description="Token usage, cost, and LLM latency for generating this item's output. "
+        "Populated only when generate_outputs=true (the candidate config was run to produce a "
+        "fresh output); None when an existing dataset output was judged (nothing was generated).",
     )
 
     def parent_judge_feedback_batch(self) -> Union["JudgeFeedbackBatch", None]:
