@@ -3,30 +3,25 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import type { EvalOutputScore } from "$lib/types"
+  import { generate_default_code, generate_examples } from "./code_eval_helpers"
 
-  const DEFAULT_CODE = `def score(output, trace, reference_data, task_input):
-    """Score the model output.
-
-    Args:
-        output: The model's final output string.
-        trace: List of message dicts from the conversation.
-        reference_data: Dict of reference/expected data (if any).
-        task_input: The original task input string.
-
-    Returns:
-        A dict of score names to float values (0.0 to 1.0).
-    """
-    if not output:
-        return {"quality": 0.0}
-    return {"quality": 1.0}
-`
+  export let output_scores: EvalOutputScore[] | undefined = undefined
 
   export let properties: components["schemas"]["CodeEvalProperties"] & {
     timeout_seconds?: number
   } = {
     type: "code_eval",
-    code: DEFAULT_CODE,
+    code: generate_default_code(output_scores),
     timeout_seconds: 30,
+  }
+
+  let user_has_edited = false
+
+  $: if (output_scores && !user_has_edited) {
+    const new_code = generate_default_code(output_scores)
+    properties.code = new_code
+    code_editor?.setValue(new_code)
   }
 
   let timeout_seconds: number = properties.timeout_seconds ?? 30
@@ -46,66 +41,7 @@
   let examples_dialog: Dialog
   let active_example_tab: number = 0
 
-  const examples = [
-    {
-      label: "Parse JSON",
-      code: `import json
-from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output, trace, reference_data, task_input):
-    """Check if the output is valid JSON with required fields."""
-    try:
-        data = json.loads(output)
-    except (json.JSONDecodeError, TypeError):
-        return {"valid_json": 0.0, "has_fields": 0.0}
-
-    required = ["name", "description"]
-    has_all = all(k in data for k in required)
-    return {
-        "valid_json": 1.0,
-        "has_fields": KilnEvalHelpers.pass_fail(has_all),
-    }
-`,
-    },
-    {
-      label: "Check tool usage",
-      code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output, trace, reference_data, task_input):
-    """Verify the model used the expected tools."""
-    tool_calls = KilnEvalHelpers.get_tool_calls(trace)
-    used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
-    call_count = KilnEvalHelpers.count_tool_calls(tool_calls, "search")
-
-    return {
-        "used_search": KilnEvalHelpers.pass_fail(used_search),
-        "search_count": KilnEvalHelpers.five_star(max(min(call_count, 5), 1)),
-    }
-`,
-    },
-    {
-      label: "Domain-specific grading",
-      code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output, trace, reference_data, task_input):
-    """Grade output against domain-specific criteria."""
-    expected = (reference_data or {}).get("expected_answer", "")
-
-    contains = KilnEvalHelpers.assert_contains(output, expected)
-
-    word_count = len(output.split())
-    concise = 10 <= word_count <= 200
-
-    return {
-        "contains_answer": KilnEvalHelpers.pass_fail(contains),
-        "conciseness": KilnEvalHelpers.pass_fail(concise),
-        "length_score": KilnEvalHelpers.five_star(
-            5 if word_count < 50 else 3 if word_count < 150 else 1
-        ),
-    }
-`,
-    },
-  ]
+  $: examples = generate_examples(output_scores)
 
   function show_examples() {
     active_example_tab = 0
@@ -115,6 +51,7 @@ def score(output, trace, reference_data, task_input):
   function use_example(): boolean {
     properties.code = examples[active_example_tab].code
     code_editor?.setValue(examples[active_example_tab].code)
+    user_has_edited = true
     return true
   }
 
@@ -122,6 +59,7 @@ def score(output, trace, reference_data, task_input):
 
   function on_code_change(e: CustomEvent<string>) {
     properties.code = e.detail
+    user_has_edited = true
   }
 </script>
 
@@ -151,14 +89,17 @@ def score(output, trace, reference_data, task_input):
     </div>
     <CodeEditor
       bind:this={code_editor}
-      value={properties.code || DEFAULT_CODE}
+      value={properties.code || generate_default_code(output_scores)}
       min_height="300px"
       on:change={on_code_change}
     />
     <div class="text-xs text-gray-400 mt-1">
       Define a <code class="font-mono text-gray-500"
         >score(output, trace, reference_data, task_input)</code
-      > function that returns a dict of score names to floats (0.0 - 1.0).
+      >
+      function that returns a dict of score names to score values. Ranges vary by
+      type: pass/fail uses 0.0–1.0, pass/fail/critical uses -1.0–1.0, and five-star
+      uses 1.0–5.0.
     </div>
   </div>
 
