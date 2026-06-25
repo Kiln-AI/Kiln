@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormSection from "./form_parts/form_section.svelte"
+  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
+  import OutputValueField from "./form_parts/output_value_field.svelte"
   import TagInput from "./tag_input.svelte"
 
   export let properties: components["schemas"]["SetCheckProperties"] = {
@@ -35,95 +38,97 @@
     ? "reference_key"
     : "expected_set"
 
+  function on_source_change() {
+    if (source === "expected_set") {
+      properties.reference_key = null
+    } else {
+      properties.expected_set = null
+      expected_set_tags = []
+    }
+  }
+
   let expected_set_tags: string[] = properties.expected_set ?? []
   $: properties.expected_set = expected_set_tags
 </script>
 
-<div class="flex flex-col gap-4">
-  <FormElement
-    id="set_check_mode"
-    label="Set Comparison Mode"
-    description="How to compare the output set against the expected set."
-    inputType="select"
-    bind:value={properties.mode}
-    select_options={[
-      ["equal", "Equal (exact same elements)"],
-      ["subset", "Subset (output is subset of expected)"],
-      ["superset", "Superset (output is superset of expected)"],
-    ]}
-  />
+<div class="flex flex-col gap-6">
+  <FormSection
+    title="Expected Set"
+    subtitle="Define the set of values to compare against the output."
+    testid="set-check-expected-section"
+  >
+    <DisclosureRadioGroup
+      name="set_check_source"
+      options={[
+        {
+          value: "expected_set",
+          label: "Fixed set",
+          description: "Specify the expected set of values directly.",
+        },
+        {
+          value: "reference_key",
+          label: "Value from reference data",
+          description:
+            "Use a key from the reference data containing the expected set.",
+        },
+      ]}
+      bind:selected={source}
+      on:change={on_source_change}
+    />
 
-  <div role="group" aria-labelledby="set_check_source_label">
-    <span id="set_check_source_label" class="text-sm font-medium"
-      >Expected Set Source</span
-    >
-    <p class="text-xs text-gray-500 pb-1">
-      Choose where the expected set values come from.
-    </p>
-    <div class="flex flex-col gap-3 pl-1">
-      <label class="flex items-start gap-2 cursor-pointer">
-        <input
-          type="radio"
-          name="set_check_source"
-          class="radio radio-sm mt-0.5"
-          value="expected_set"
-          bind:group={source}
-          on:change={() => {
-            properties.reference_key = null
-          }}
-        />
-        <span class="flex flex-col gap-1 flex-1">
-          <span class="text-sm">Fixed Expected Set</span>
-          <div class="pt-0.5">
-            <TagInput
-              id="set_check_expected_set"
-              bind:tags={expected_set_tags}
-              placeholder="Type a value and press Enter"
-              disabled={source !== "expected_set"}
-            />
-            <p class="text-xs text-gray-500 pt-1">
-              Add items by typing and pressing Enter or comma.
-            </p>
-          </div>
-        </span>
-      </label>
-      <label class="flex items-start gap-2 cursor-pointer">
-        <input
-          type="radio"
-          name="set_check_source"
-          class="radio radio-sm mt-0.5"
-          value="reference_key"
-          bind:group={source}
-          on:change={() => {
-            properties.expected_set = null
-            expected_set_tags = []
-          }}
-        />
-        <span class="flex flex-col gap-1 flex-1">
-          <span class="text-sm">Reference Data Key</span>
-          <p class="text-xs text-gray-500">
-            The key in the reference data containing the expected set.
-          </p>
-          <FormElement
-            id="set_check_reference_key"
-            label="Reference Key"
-            hide_label={true}
-            aria_label="Reference Key"
-            inputType="input"
-            bind:value={properties.reference_key}
-            disabled={source !== "reference_key"}
-          />
-        </span>
-      </label>
-    </div>
-  </div>
+    {#if source === "expected_set"}
+      <TagInput
+        id="set_check_expected_set"
+        bind:tags={expected_set_tags}
+        placeholder="Type a value and press Enter"
+      />
+      <p class="text-xs text-gray-500 -mt-2">
+        Add items by typing and pressing Enter or comma.
+      </p>
+    {:else}
+      <FormElement
+        id="set_check_reference_key"
+        label="Reference Key"
+        description="The key in the reference data containing the expected set."
+        inputType="input"
+        bind:value={properties.reference_key}
+      />
+    {/if}
+  </FormSection>
 
-  <FormElement
-    id="set_check_value_expression"
-    label="Value Expression"
-    description="Optional Jinja2 expression to extract a value from the eval input before comparison. Leave blank to use the full model output."
-    inputType="input"
-    optional={true}
+  <FormSection
+    title="Comparison Mode"
+    subtitle="How to compare the output set against the expected set."
+    testid="set-check-mode-section"
+  >
+    <DisclosureRadioGroup
+      name="set_check_mode"
+      options={[
+        {
+          value: "equal",
+          label: "Equal",
+          description:
+            "The output set must contain exactly the same elements as the expected set.",
+        },
+        {
+          value: "subset",
+          label: "Subset",
+          description:
+            "The output set must be a subset of the expected set (all output values appear in expected).",
+        },
+        {
+          value: "superset",
+          label: "Superset",
+          description:
+            "The output set must be a superset of the expected set (all expected values appear in output).",
+        },
+      ]}
+      bind:selected={properties.mode}
+    />
+  </FormSection>
+
+  <OutputValueField
+    id_prefix="set_check"
     bind:value={properties.value_expression}
   />
 </div>

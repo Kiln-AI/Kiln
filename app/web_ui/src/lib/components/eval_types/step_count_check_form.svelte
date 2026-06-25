@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormSection from "./form_parts/form_section.svelte"
+  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
 
   export let properties: components["schemas"]["StepCountCheckProperties"] = {
     type: "step_count_check",
@@ -51,45 +53,67 @@
   }
 </script>
 
-<div class="flex flex-col gap-4">
-  <FormElement
-    id="step_count_check_count_type"
-    label="Count Type"
-    description="What type of conversation step to count."
-    inputType="select"
-    bind:value={properties.count_type}
-    select_options={[
-      ["tool_calls", "Tool Calls"],
-      ["model_responses", "Model Responses"],
-      ["turns", "Turns"],
-    ]}
-  />
-
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div on:blur={on_bounds_blur}>
-    <FormElement
-      id="step_count_check_min"
-      label="Minimum Count"
-      description="The minimum number of steps required (leave empty for no minimum)."
-      inputType="input_number"
-      optional={true}
-      bind:value={properties.min_count}
-      error_message={bounds_error}
-      min={0}
+<div class="flex flex-col gap-6">
+  <FormSection
+    title="What to Count"
+    subtitle="Choose what type of step to count in the agent's trace."
+    testid="step-count-type-section"
+  >
+    <DisclosureRadioGroup
+      name="step_count_check_count_type"
+      options={[
+        {
+          value: "tool_calls",
+          label: "Tool calls",
+          description:
+            "Count the number of tool/function calls the agent made.",
+        },
+        {
+          value: "model_responses",
+          label: "Model responses",
+          description: "Count the number of responses the model generated.",
+        },
+        {
+          value: "turns",
+          label: "Turns",
+          description: "Count the number of conversational turns in the trace.",
+        },
+      ]}
+      bind:selected={properties.count_type}
     />
-  </div>
+  </FormSection>
 
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div on:blur={on_bounds_blur}>
-    <FormElement
-      id="step_count_check_max"
-      label="Maximum Count"
-      description="The maximum number of steps allowed (leave empty for no maximum)."
-      inputType="input_number"
-      optional={true}
-      bind:value={properties.max_count}
-      error_message={bounds_error}
-      min={0}
-    />
-  </div>
+  <FormSection
+    title="Bounds"
+    subtitle="Set a minimum and/or maximum count. At least one is required."
+    testid="step-count-bounds-section"
+  >
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div on:blur={on_bounds_blur}>
+      <FormElement
+        id="step_count_check_min"
+        label="Minimum Count"
+        description="The minimum number of steps required (leave empty for no minimum)."
+        inputType="input_number"
+        optional={true}
+        bind:value={properties.min_count}
+        error_message={bounds_error}
+        min={0}
+      />
+    </div>
+
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div on:blur={on_bounds_blur}>
+      <FormElement
+        id="step_count_check_max"
+        label="Maximum Count"
+        description="The maximum number of steps allowed (leave empty for no maximum)."
+        inputType="input_number"
+        optional={true}
+        bind:value={properties.max_count}
+        error_message={bounds_error}
+        min={0}
+      />
+    </div>
+  </FormSection>
 </div>

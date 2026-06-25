@@ -972,3 +972,504 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
     )
   })
 })
+
+// Phase 8: Redesigned set_check, tool_call_check, step_count_check forms.
+// Tests verify new section structure, radio groups, progressive disclosure,
+// and that getProperties()/validate() contracts are preserved exactly.
+
+describe("Phase 8: SetCheckForm section structure and progressive disclosure", () => {
+  it("renders Expected Set section with testid", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="set-check-expected-section"]'),
+    ).toBeTruthy()
+  })
+
+  it("renders Comparison Mode section with radio group", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="set-check-mode-section"]'),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-set_check_mode"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("renders disclosure radio group for expected set source", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-set_check_source"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("shows tag input when fixed set selected, hides reference key input", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a", "b"],
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="tag-input-set_check_expected_set"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-set_check_reference_key"]',
+      ),
+    ).toBeNull()
+  })
+
+  it("shows reference key input when reference data selected, hides tag input", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-set_check_reference_key"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="tag-input-set_check_expected_set"]',
+      ),
+    ).toBeNull()
+  })
+
+  it("has 'Output Value to Compare' label with Jinja tooltip", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-set_check_value_expression"]',
+    )
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-label")).toBe(
+      "Output Value to Compare",
+    )
+    expect(formElement?.getAttribute("data-info-description")).toContain(
+      "Jinja",
+    )
+  })
+
+  it("renders all three comparison mode options", () => {
+    const { getAllByText } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    expect(getAllByText("Equal").length).toBeGreaterThan(0)
+    expect(getAllByText("Subset").length).toBeGreaterThan(0)
+    expect(getAllByText("Superset").length).toBeGreaterThan(0)
+  })
+
+  it("validate returns error when reference_key source is selected but empty", async () => {
+    const { component } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "key",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(component as any).$set({
+      properties: {
+        type: "set_check" as const,
+        mode: "equal" as const,
+        value_expression: null,
+        expected_set: null,
+        reference_key: null,
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBe("Reference key is required.")
+  })
+
+  it("getProperties nulls expected_set when reference_key source selected", () => {
+    const { component } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.expected_set).toBeNull()
+    expect(props.reference_key).toBe("my_key")
+  })
+
+  it("getProperties nulls reference_key when expected_set source selected", () => {
+    const { component } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a", "b"],
+          reference_key: null,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.reference_key).toBeNull()
+    expect(props.expected_set).toEqual(["a", "b"])
+  })
+})
+
+describe("Phase 8: ToolCallCheckForm section structure and progressive disclosure", () => {
+  it("renders Match Mode section with radio group", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="tool-call-match-mode-section"]'),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-tool_call_check_match_mode"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("renders all four match mode options", () => {
+    const { getAllByText } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    expect(getAllByText("Any").length).toBeGreaterThan(0)
+    expect(getAllByText("All").length).toBeGreaterThan(0)
+    expect(getAllByText("Ordered").length).toBeGreaterThan(0)
+    expect(getAllByText("Never").length).toBeGreaterThan(0)
+  })
+
+  it("shows On Unexpected Tools section when match_mode is not 'never'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="tool-call-unexpected-section"]'),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-tool_call_check_on_unexpected"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("hides On Unexpected Tools section when match_mode is 'never'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "never" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="tool-call-unexpected-section"]'),
+    ).toBeNull()
+  })
+
+  it("renders Expected Tools section with testid", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="tool-call-expected-tools-section"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("getProperties returns current match_mode", () => {
+    const { component } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "ordered" as const,
+          on_unexpected_tools: "fail" as const,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.match_mode).toBe("ordered")
+    expect(props.on_unexpected_tools).toBe("fail")
+  })
+
+  it("getProperties syncs arg rows to properties", async () => {
+    const initProps = {
+      type: "tool_call_check" as const,
+      expected_tools: [
+        {
+          tool_name: "search",
+          expected_args: {
+            query: { value: "hello world", match_mode: "exact" as const },
+          },
+        },
+      ],
+      match_mode: "all" as const,
+      on_unexpected_tools: "ignore" as const,
+    }
+    const { component } = render(ToolCallCheckForm, {
+      props: { properties: initProps },
+    })
+    // Null out expected_args on properties directly, diverging from
+    // the internal arg_rows (which still hold the deserialized "query" row).
+    // If sync_args_to_properties is unwired, getProperties returns this null.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(initProps.expected_tools[0] as any).expected_args = null
+    await tick()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    // sync_args_to_properties must have restored args from internal arg_rows
+    expect(props.expected_tools[0].expected_args).not.toBeNull()
+    expect(props.expected_tools[0].expected_args.query).toEqual({
+      value: "hello world",
+      match_mode: "exact",
+    })
+  })
+})
+
+describe("Phase 8: StepCountCheckForm section structure and progressive disclosure", () => {
+  it("renders What to Count section with radio group", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: 1,
+          max_count: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="step-count-type-section"]'),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-step_count_check_count_type"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("renders all three count type options with descriptions", () => {
+    const { getAllByText } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    expect(getAllByText("Tool calls").length).toBeGreaterThan(0)
+    expect(getAllByText("Model responses").length).toBeGreaterThan(0)
+    expect(getAllByText("Turns").length).toBeGreaterThan(0)
+  })
+
+  it("renders Bounds section with testid", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector('[data-testid="step-count-bounds-section"]'),
+    ).toBeTruthy()
+  })
+
+  it("getProperties returns correct count_type", () => {
+    const { component } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "model_responses" as const,
+          min_count: 2,
+          max_count: 10,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.count_type).toBe("model_responses")
+    expect(props.min_count).toBe(2)
+    expect(props.max_count).toBe(10)
+  })
+
+  it("getProperties returns properties directly (not a copy with nulled fields)", () => {
+    const { component } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "turns" as const,
+          min_count: 5,
+          max_count: null,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.type).toBe("step_count_check")
+    expect(props.count_type).toBe("turns")
+    expect(props.min_count).toBe(5)
+    expect(props.max_count).toBeNull()
+  })
+
+  it("renders min and max count form elements", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-step_count_check_min"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-step_count_check_max"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("renders count type descriptions", () => {
+    const { getAllByText } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    expect(
+      getAllByText("Count the number of tool/function calls the agent made.")
+        .length,
+    ).toBeGreaterThan(0)
+    expect(
+      getAllByText("Count the number of responses the model generated.").length,
+    ).toBeGreaterThan(0)
+    expect(
+      getAllByText("Count the number of conversational turns in the trace.")
+        .length,
+    ).toBeGreaterThan(0)
+  })
+})

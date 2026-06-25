@@ -53,7 +53,7 @@ suite and regenerates the OpenAPI client.
   Preserve each form's `getProperties()`/`validate()` + on-blur checks. (arch §7, functional
   spec §8)
 
-- [ ] **Phase 8 — Deterministic forms II.** Redesign `set_check` (tag-input set + comparison
+- [x] **Phase 8 — Deterministic forms II.** Redesign `set_check` (tag-input set + comparison
   mode), `tool_call_check` (expected-tools + match mode + on_unexpected_tools), `step_count_check`
   (count type + bounds) using the same `form_parts` and principles. (arch §7, functional spec §8)
 
