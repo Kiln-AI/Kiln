@@ -6,7 +6,7 @@
     flip,
     shift,
   } from "@floating-ui/dom"
-  import { onDestroy } from "svelte"
+  import { onDestroy, tick } from "svelte"
   import type { ContextUsage } from "$lib/chat/streaming_chat"
 
   // ``null`` before the first assistant turn completes — the gauge is hidden
@@ -30,8 +30,19 @@
   let isVisible = false
   let cleanupAutoUpdate: (() => void) | null = null
 
-  function showTooltip() {
+  async function showTooltip() {
     if (!triggerElement || !tooltipElement) return
+    // Avoid leaking/overwriting a previous autoUpdate registration.
+    if (cleanupAutoUpdate) {
+      cleanupAutoUpdate()
+      cleanupAutoUpdate = null
+    }
+    isVisible = true
+    // Wait for Svelte to render the tooltip (remove ``hidden``) so Floating UI
+    // can measure its real size instead of 0×0.
+    await tick()
+    // The pointer may have left during the await; bail if we hid in the meantime.
+    if (!isVisible) return
     const updatePosition = () => {
       if (!triggerElement || !tooltipElement) return
       computePosition(triggerElement, tooltipElement, {
@@ -53,7 +64,6 @@
       tooltipElement,
       updatePosition,
     )
-    isVisible = true
   }
 
   function hideTooltip() {
