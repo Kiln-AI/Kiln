@@ -4,6 +4,7 @@
   import { agentInfo } from "$lib/agent"
   import {
     ALL_V2_EVAL_TYPES,
+    getV2EvalTypeMetadata,
     type V2EvalType,
   } from "$lib/utils/eval_types/registry"
   import EvalConfigBuilder from "$lib/components/eval_types/eval_config_builder.svelte"
@@ -32,6 +33,7 @@
   $: valid_type = ALL_V2_EVAL_TYPES.includes(raw_type as V2EvalType)
     ? (raw_type as V2EvalType)
     : null
+  $: type_metadata = valid_type ? getV2EvalTypeMetadata(valid_type) : null
 
   $: agentInfo.set({
     name: "Create Eval Config",
@@ -65,10 +67,8 @@
 {:else if evaluator && task}
   <div class="max-w-[1400px]">
     <AppPage
-      title="Add a Judge"
-      subtitle="A judge evaluates task outputs with a model, evaluation prompt, and algorithm."
-      sub_subtitle="Read the Docs"
-      sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
+      title={type_metadata?.pageTitle ?? "Add a Judge"}
+      subtitle={type_metadata?.pageSubtitle ?? ""}
       {breadcrumbs}
     >
       <EvalConfigBuilder

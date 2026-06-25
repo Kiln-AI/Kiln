@@ -6,6 +6,6 @@
   export let breadcrumbs: Array<Record<string, unknown>> = []
 </script>
 
-<div data-testid="app-page-stub" data-title={title}>
+<div data-testid="app-page-stub" data-title={title} data-subtitle={subtitle}>
   <slot />
 </div>

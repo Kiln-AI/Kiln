@@ -235,7 +235,9 @@ const EvalConfigBuilder = (
   await import("$lib/components/eval_types/eval_config_builder.svelte")
 ).default
 const { showCalls, resetCalls } = await import("./__tests__/dialog_stub.svelte")
-const { ALL_V2_EVAL_TYPES } = await import("$lib/utils/eval_types/registry")
+const { ALL_V2_EVAL_TYPES, getV2EvalTypeMetadata } = await import(
+  "$lib/utils/eval_types/registry"
+)
 const { CREATE_EVAL_LAYOUT_KEY } = await import("./context")
 
 // ---------------------------------------------------------------------------
@@ -666,5 +668,101 @@ describe("builder route page ([eval_config_type])", () => {
   it("renders builder for valid eval type", async () => {
     const { container } = await renderBuilderRoutePage("exact_match")
     expect(container.textContent).not.toContain("Unknown Eval Type")
+  })
+
+  it("sets per-type pageTitle on AppPage for each eval type", async () => {
+    for (const evalType of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(evalType)
+      const { container } = await renderBuilderRoutePage(evalType)
+      const appPage = container.querySelector("[data-testid='app-page-stub']")
+      expect(appPage?.getAttribute("data-title")).toBe(meta.pageTitle)
+      cleanup()
+    }
+  })
+
+  it("sets per-type pageSubtitle on AppPage", async () => {
+    const meta = getV2EvalTypeMetadata("exact_match")
+    const { container } = await renderBuilderRoutePage("exact_match")
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    expect(appPage?.getAttribute("data-subtitle")).toBe(meta.pageSubtitle)
+  })
+
+  it("does not render sub_subtitle (Read the Docs link removed)", async () => {
+    const { container } = await renderBuilderRoutePage("exact_match")
+    expect(container.textContent).not.toContain("Read the Docs")
+  })
+})
+
+describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
+  beforeEach(() => {
+    resetCalls()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("uses xl breakpoint two-column layout (not lg)", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const flexRow = container.querySelector(".xl\\:flex-row")
+    expect(flexRow).not.toBeNull()
+    const lgFlexRow = container.querySelector(
+      ".lg\\:flex-row:not(.xl\\:flex-row)",
+    )
+    expect(lgFlexRow).toBeNull()
+  })
+
+  it("does not render secondary-title block (icon + label heading)", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const secondaryTitle = container.querySelector(
+      ".flex.items-center.gap-2.pt-4.mb-2",
+    )
+    expect(secondaryTitle).toBeNull()
+  })
+
+  it("right column has no bordered box wrapper", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const borderedBox = container.querySelector(".rounded-lg.border.bg-base-100")
+    expect(borderedBox).toBeNull()
+  })
+
+  it("renders Test Run heading with app standard font style", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const heading = container.querySelector(".text-xl.font-bold")
+    expect(heading).not.toBeNull()
+    expect(heading?.textContent).toContain("Test Run")
+  })
+
+  it("renders eval_type_intro with explainer text", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    expect(intro).not.toBeNull()
+    const meta = getV2EvalTypeMetadata("exact_match")
+    expect(intro?.textContent).toContain(meta.explainer!)
+  })
+
+  it("renders eval_type_intro with type label", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    expect(intro?.textContent).toContain("Exact Match")
+  })
+
+  it("renders eval_type_intro with example when available", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    const meta = getV2EvalTypeMetadata("exact_match")
+    expect(meta.example).toBeTruthy()
+    expect(intro?.textContent).toContain(meta.example!)
+  })
+
+  it("renders eval_type_intro without example when not available", async () => {
+    const { container } = await renderBuilder("contains")
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    expect(intro).not.toBeNull()
+    const meta = getV2EvalTypeMetadata("contains")
+    expect(meta.example).toBeFalsy()
+    expect(intro?.textContent).toContain(meta.explainer!)
   })
 })

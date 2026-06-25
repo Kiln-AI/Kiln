@@ -37,6 +37,7 @@
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
   import { onMount } from "svelte"
   import { formatExpandedContent } from "$lib/utils/format_expanded_content"
+  import EvalTypeIntro from "$lib/components/eval_types/eval_type_intro.svelte"
 
   export let eval_config_type: V2EvalType
   export let evaluator: Eval
@@ -401,15 +402,12 @@
   bind:submitting={create_evaluator_loading}
   warn_before_unload={!complete && !!eval_config_type}
 >
-  <div class="flex flex-col lg:flex-row gap-6">
+  <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
     <!-- Left: form -->
     <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 pt-4 mb-2">
-        {#if metadata}
-          <i class="{metadata.icon} text-lg text-primary"></i>
-          <span class="text-lg font-bold">{metadata.label}</span>
-        {/if}
-      </div>
+      {#if metadata}
+        <EvalTypeIntro {metadata} />
+      {/if}
 
       {#if is_llm_judge}
         <LlmJudgeForm
@@ -435,9 +433,9 @@
     </div>
 
     <!-- Right: test run pane -->
-    <div class="lg:w-[400px] flex-shrink-0">
-      <div class="rounded-lg border bg-base-100 p-4 flex flex-col gap-3">
-        <div class="font-medium text-sm">Test Run</div>
+    <div class="w-72 2xl:w-96 flex-none">
+      <div class="flex flex-col gap-3">
+        <div class="text-xl font-bold">Test Run</div>
         <p class="text-xs text-gray-500">
           Pick a recent task output to test your evaluator before saving.
         </p>

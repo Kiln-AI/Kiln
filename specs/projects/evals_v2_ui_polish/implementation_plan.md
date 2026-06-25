@@ -24,7 +24,7 @@ suite and regenerates the OpenAPI client.
   types" list, data-driven from `ALL_V2_EVAL_TYPES`; new header copy; drop the secondary heading
   and the "Read the Docs" sub-subtitle. (arch §2, design_specs/select_screen.md)
 
-- [ ] **Phase 3 — Container shell + titles + intro.** Per-page `pageTitle`/`pageSubtitle` in the
+- [x] **Phase 3 — Container shell + titles + intro.** Per-page `pageTitle`/`pageSubtitle` in the
   `[eval_config_type]` route; `/run`-style two-column shell in `eval_config_builder`; remove the
   secondary-title block (fixes indent globally); new `eval_type_intro` at the top of the left
   column. (arch §3)
