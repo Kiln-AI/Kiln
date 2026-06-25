@@ -194,7 +194,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         pageTitle: "Add an LLM Judge",
         pageSubtitle: "Grade outputs with a model and rubric.",
         explainer:
-          "Uses a language model to evaluate output quality against criteria you define in a prompt template. Supports graded scoring across the full score range.",
+          "Uses a language model to evaluate output quality against criteria you define in a prompt template.",
         createFormComponent: LlmJudgeForm,
         resultRendererComponent: LlmJudgeResult,
       }

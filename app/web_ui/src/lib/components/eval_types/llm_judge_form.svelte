@@ -130,6 +130,11 @@
     }
   }
 
+  $: available_algorithms = evaluator_algorithms.filter(
+    (algo) => !unsupported_algos[algo.id],
+  )
+  $: show_algorithm_section = model_name && available_algorithms.length > 1
+
   function select_evaluator(algo: EvalConfigType) {
     selected_algo = algo
   }
@@ -153,7 +158,7 @@
         {#each suggested_models as model}
           {@const provider_image = get_provider_image(model.provider_id)}
           <button
-            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[120px] p-3 flex flex-col justify-center items-center text-center group cursor-pointer"
+            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[120px] min-h-[120px] p-3 flex flex-col justify-center items-center text-center group cursor-pointer"
             on:click={() => {
               model_name = model.model_name
               provider_name = model.provider_name
@@ -204,8 +209,8 @@
     />
   {/if}
 
-  {#if model_name}
-    <div>
+  {#if show_algorithm_section}
+    <div data-testid="algorithm-section">
       <div class="text-xl font-bold mb-2">Select Judge Algorithm</div>
 
       <div class="form-control flex flex-row gap-4 flex-wrap">
@@ -214,13 +219,13 @@
           {#if !is_unsupported}
             <label class="label cursor-pointer">
               <div
-                class="card card-bordered border-base-300 shadow-md flex flex-col gap-2 p-4 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[156px]"
+                class="card card-bordered border-base-300 shadow-md flex flex-col gap-2 p-6 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[260px] aspect-[5/6]"
               >
                 <div class="flex flex-col gap-2 text-center items-center">
                   <input
                     type="radio"
                     name="radio-evaluator"
-                    class="radio checked:bg-primary mx-auto my-4"
+                    class="radio checked:bg-primary mx-auto my-8"
                     checked={selected_algo === algo.id}
                     disabled={is_unsupported}
                     on:change={() => select_evaluator(algo.id)}
