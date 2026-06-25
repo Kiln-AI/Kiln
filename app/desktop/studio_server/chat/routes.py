@@ -102,9 +102,36 @@ class TaskRunSnapshot(BaseModel):
     trace: list[TraceMessage] | None = None
 
 
+class ContextUsage(BaseModel):
+    """Proxy mirror of the kiln_server ``ContextUsage`` value object.
+
+    Carries only the gauge numbers and the ``compacted`` flag — never any trace
+    content — so it is safe to surface to the web UI. Every field is optional so
+    an older upstream that doesn't emit ``context_usage`` (or emits a partial
+    object) never 500s the proxy; the web UI hides the gauge when it's absent.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    context_tokens: int | None = None
+    context_limit: int | None = None
+    context_percent: float | None = None
+    compacted: bool | None = None
+
+
 class ChatSessionSnapshot(BaseModel):
+    # ``extra="ignore"`` (explicit, matching Pydantic v2's default) is the
+    # containment boundary (functional_spec.md §7.3): the upstream JSON is
+    # re-emitted by the generated SDK's ``to_dict()`` and may carry the
+    # server-only ``compacted_trace``; ``ignore`` silently DROPS that unknown key
+    # so the full uncompacted ``task_run.trace`` is the only conversation the web
+    # UI ever receives. Do NOT change to ``extra="forbid"`` — forbid does not
+    # strip, it RAISES ValidationError, which would turn a leaked key into a 500.
+    model_config = ConfigDict(extra="ignore")
+
     id: str
     task_run: TaskRunSnapshot
+    context_usage: ContextUsage | None = None
 
 
 class ChatRequestMessage(BaseModel):
