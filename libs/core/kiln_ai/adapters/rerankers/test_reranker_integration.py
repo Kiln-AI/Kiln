@@ -54,6 +54,11 @@ def get_all_reranker_model_combinations() -> List[
     reranker_model_combinations = []
     for reranker in built_in_rerankers:
         for provider in reranker.providers:
+            # Skip deprecated provider entries (e.g. Together dropped serverless
+            # rerank) — they're surfaced-but-flagged in the product and would
+            # always fail a live call.
+            if provider.deprecated:
+                continue
             reranker_model_combinations.append((provider.name, reranker.name))
     return reranker_model_combinations
 
@@ -62,6 +67,7 @@ class TestRerankerIntegrationSuccess:
     """Test cases for Reranker integration success."""
 
     @pytest.mark.paid
+    @pytest.mark.prerelease
     @pytest.mark.parametrize(
         "model_provider_name, model_name", get_all_reranker_model_combinations()
     )

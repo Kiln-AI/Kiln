@@ -19,6 +19,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models_from_provider,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_EMBEDDING_MODELS
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 
@@ -1234,3 +1235,60 @@ def test_openrouter_transformed_into_openai_compatible(provider_name, model_name
     assert "openrouter" not in adapter.litellm_model_id, (
         f"Final slug {adapter.litellm_model_id} contains openrouter, which should not be present - unless LiteLLM has added support for openrouter embeddings, it should not contain openrouter/ prefix because LiteLLM rejects it"
     )
+
+
+# Curated prerelease smoke tests: same behavior as the fan-out variants above
+# (test_paid_generate_embeddings_basic / ..._with_custom_dimensions_supported)
+# but restricted to a small whitelist so --runprerelease stays fast.
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize("model_name,provider", PRERELEASE_EMBEDDING_MODELS)
+@pytest.mark.asyncio
+async def test_paid_generate_embeddings_basic_prerelease_smoke(provider, model_name):
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="paid-embedding",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={},
+        )
+    )
+    text = ["Kiln is an open-source evaluation platform for LLMs."]
+    result = await adapter.generate_embeddings(text)
+    assert len(result.embeddings) == 1
+    assert isinstance(result.embeddings[0].vector, list)
+    assert len(result.embeddings[0].vector) == model_provider.n_dimensions
+    assert all(isinstance(x, float) for x in result.embeddings[0].vector)
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize("model_name,provider", PRERELEASE_EMBEDDING_MODELS)
+@pytest.mark.asyncio
+async def test_paid_generate_embeddings_custom_dimensions_prerelease_smoke(
+    provider, model_name
+):
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    if not model_provider.supports_custom_dimensions:
+        pytest.skip("Model does not support custom dimensions")
+    max_dimensions = model_provider.n_dimensions
+    custom_dimensions = max_dimensions // 2
+
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="paid-embedding",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={"dimensions": custom_dimensions},
+        )
+    )
+    text = ["Kiln is an open-source evaluation platform for LLMs."]
+    result = await adapter.generate_embeddings(text)
+    assert len(result.embeddings) == 1
+    assert len(result.embeddings[0].vector) == custom_dimensions
+    assert all(isinstance(x, float) for x in result.embeddings[0].vector)
