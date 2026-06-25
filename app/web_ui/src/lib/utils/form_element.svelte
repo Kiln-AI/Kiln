@@ -172,14 +172,14 @@
         {disabled}
       />
     {/if}
-    {#if !hide_label && (label || inline_action || info_description || error_message || description)}
+    {#if label || inline_action || info_description || error_message || description}
       <label
         for={id}
         class="text-sm font-medium text-left flex flex-col gap-1 w-full"
       >
         {#if label || inline_action || info_description || error_message}
           <div class="flex flex-row items-center">
-            {#if label}
+            {#if label && !hide_label}
               <span class={light_label ? "text-xs text-gray-500 h-4" : ""}
                 >{label}</span
               >

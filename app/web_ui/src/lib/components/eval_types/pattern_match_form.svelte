@@ -55,8 +55,7 @@
 
 <div class="flex flex-col gap-6">
   <FormSection
-    title="Pattern"
-    subtitle="Define the regular expression to test against the output."
+    title="Regular Expression"
     testid="pattern-match-pattern-section"
   >
     <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -64,20 +63,18 @@
       <FormElement
         id="pattern_match_pattern"
         label="Regular Expression"
-        description="The regex pattern to test against the output. Example: ^hello.*world$"
-        info_description="A regular expression (regex) is a pattern that describes a set of strings. Use it to check if the output matches a specific format or contains certain patterns."
+        description="The pattern to test against the output."
+        info_description="A regular expression (regex) is a sequence of characters that defines a search pattern. For example, ^yes$ matches only the exact string 'yes', while \\d+ matches one or more digits."
         inputType="input"
+        hide_label={true}
+        placeholder="e.g. ^(yes|no)$"
         bind:value={properties.pattern}
         error_message={regex_error}
       />
     </div>
   </FormSection>
 
-  <FormSection
-    title="Match Mode"
-    subtitle="Choose whether the output should match or not match the pattern."
-    testid="pattern-match-mode-section"
-  >
+  <FormSection title="Match Mode" testid="pattern-match-mode-section">
     <FormElement
       id="pattern_match_mode"
       inputType="radio"
@@ -85,13 +82,12 @@
         {
           value: "must_match",
           label: "Must match",
-          description: "The output must match the regular expression to pass.",
+          description: "The output must match the pattern to pass.",
         },
         {
           value: "must_not_match",
           label: "Must not match",
-          description:
-            "The output must NOT match the regular expression to pass.",
+          description: "The output must NOT match the pattern to pass.",
         },
       ]}
       bind:value={properties.mode}

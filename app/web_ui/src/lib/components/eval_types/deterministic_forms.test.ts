@@ -1461,3 +1461,583 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
     ).toBeGreaterThan(0)
   })
 })
+
+// UI polish tests: hidden duplicate labels, indent wrappers, moved controls,
+// placeholders, renamed sections, and regex tooltip content.
+
+describe("UI polish: hidden duplicate labels", () => {
+  it("OutputValueField hides inner FormElement label (section title is the sole heading)", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const valueExprField = container.querySelector(
+      '[data-testid="form-element-exact_match_value_expression"]',
+    )
+    expect(valueExprField?.getAttribute("data-hide-label")).toBe("true")
+  })
+
+  it("ExactMatch expected_value field hides its label (section title carries it)", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_expected_value"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+  })
+
+  it("ExactMatch reference_key field hides its label", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_reference_key"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+  })
+
+  it("PatternMatch regex field hides its label (section title is 'Regular Expression')", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+  })
+
+  it("Contains substring field hides its label", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_substring"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+  })
+
+  it("Contains reference_key field hides its label", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_reference_key"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+  })
+})
+
+describe("UI polish: conditional inputs indented under radio selection", () => {
+  it("ExactMatch expected_value input is wrapped in indent container", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_expected_value"]',
+    )
+    const parent = field?.parentElement
+    expect(parent?.classList.contains("ml-4")).toBe(true)
+    expect(parent?.classList.contains("border-l")).toBe(true)
+    expect(parent?.classList.contains("pl-4")).toBe(true)
+  })
+
+  it("ExactMatch reference_key input is wrapped in indent container", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_reference_key"]',
+    )
+    const parent = field?.parentElement
+    expect(parent?.classList.contains("ml-4")).toBe(true)
+    expect(parent?.classList.contains("border-l")).toBe(true)
+  })
+
+  it("Contains substring input is wrapped in indent container", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_substring"]',
+    )
+    const parent = field?.parentElement
+    expect(parent?.classList.contains("ml-4")).toBe(true)
+    expect(parent?.classList.contains("border-l")).toBe(true)
+  })
+
+  it("Contains reference_key input is wrapped in indent container", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_reference_key"]',
+    )
+    const parent = field?.parentElement
+    expect(parent?.classList.contains("ml-4")).toBe(true)
+    expect(parent?.classList.contains("border-l")).toBe(true)
+  })
+})
+
+describe("UI polish: case-sensitive moved out of OutputValueField", () => {
+  it("ExactMatch has case-sensitive in its own Comparison Options section", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const optionsSection = container.querySelector(
+      '[data-testid="exact-match-options-section"]',
+    )
+    expect(optionsSection).toBeTruthy()
+    const caseSensitive = optionsSection?.querySelector(
+      '[data-testid="form-element-exact_match_case_sensitive"]',
+    )
+    expect(caseSensitive).toBeTruthy()
+  })
+
+  it("ExactMatch case-sensitive is NOT inside OutputValueField section", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const outputSection = container.querySelector(
+      '[data-testid="output-value-section"]',
+    )
+    const caseSensitive = outputSection?.querySelector(
+      '[data-testid="form-element-exact_match_case_sensitive"]',
+    )
+    expect(caseSensitive).toBeNull()
+  })
+
+  it("Contains has case-sensitive in its own Comparison Options section", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const optionsSection = container.querySelector(
+      '[data-testid="contains-options-section"]',
+    )
+    expect(optionsSection).toBeTruthy()
+    const caseSensitive = optionsSection?.querySelector(
+      '[data-testid="form-element-contains_case_sensitive"]',
+    )
+    expect(caseSensitive).toBeTruthy()
+  })
+
+  it("Contains case-sensitive is NOT inside OutputValueField section", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const outputSection = container.querySelector(
+      '[data-testid="output-value-section"]',
+    )
+    const caseSensitive = outputSection?.querySelector(
+      '[data-testid="form-element-contains_case_sensitive"]',
+    )
+    expect(caseSensitive).toBeNull()
+  })
+})
+
+describe("UI polish: placeholders on inputs", () => {
+  it("ExactMatch expected_value has placeholder", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_expected_value"]',
+    )
+    expect(field?.getAttribute("data-placeholder")).toBe("e.g. yes")
+  })
+
+  it("ExactMatch reference_key has placeholder", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_reference_key"]',
+    )
+    expect(field?.getAttribute("data-placeholder")).toBe("e.g. expected_answer")
+  })
+
+  it("PatternMatch regex field has placeholder", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    expect(field?.getAttribute("data-placeholder")).toBe("e.g. ^(yes|no)$")
+  })
+
+  it("Contains substring has placeholder", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_substring"]',
+    )
+    expect(field?.getAttribute("data-placeholder")).toBe("e.g. success")
+  })
+
+  it("Contains reference_key has placeholder", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_reference_key"]',
+    )
+    expect(field?.getAttribute("data-placeholder")).toBe(
+      "e.g. expected_keyword",
+    )
+  })
+})
+
+describe("UI polish: PatternMatch section renamed to Regular Expression", () => {
+  it("Pattern section has title 'Regular Expression' (not 'Pattern')", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const section = container.querySelector(
+      '[data-testid="pattern-match-pattern-section"]',
+    )
+    expect(section).toBeTruthy()
+    const heading = section?.querySelector("h3")
+    expect(heading?.textContent).toBe("Regular Expression")
+  })
+})
+
+describe("UI polish: regex tooltip is educational", () => {
+  it("PatternMatch regex tooltip explains what regex is with an example", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    const tooltip = field?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("regular expression")
+    expect(tooltip).toContain("regex")
+    expect(tooltip).toContain("^yes$")
+  })
+})
+
+describe("UI polish: reference key info tooltips", () => {
+  it("ExactMatch reference_key has info_description about reference data", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_reference_key"]',
+    )
+    const tooltip = field?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("Reference data")
+    expect(tooltip).toContain("ground-truth")
+  })
+
+  it("Contains reference_key has info_description about reference data", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_reference_key"]',
+    )
+    const tooltip = field?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("Reference data")
+    expect(tooltip).toContain("ground-truth")
+  })
+})
+
+describe("UI polish: OutputValueField section structure", () => {
+  it("OutputValueField renders with section testid and subtitle", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const section = container.querySelector(
+      '[data-testid="output-value-section"]',
+    )
+    expect(section).toBeTruthy()
+    const heading = section?.querySelector("h3")
+    expect(heading?.textContent).toBe("Output Extraction")
+  })
+})
+
+describe("UI polish: hide_label preserves description, info_description, and error indicators", () => {
+  it("OutputValueField description and Jinja tooltip survive hide_label", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_value_expression"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-description")).toContain(
+      "Jinja expression",
+    )
+    expect(field?.getAttribute("data-info-description")).toContain("Jinja")
+  })
+
+  it("PatternMatch regex field description and tooltip survive hide_label", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-description")).toContain("pattern")
+    expect(field?.getAttribute("data-info-description")).toContain(
+      "regular expression",
+    )
+  })
+
+  it("ExactMatch reference_key info tooltip survives hide_label", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-exact_match_reference_key"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-info-description")).toContain(
+      "Reference data",
+    )
+  })
+
+  it("Contains reference_key info tooltip survives hide_label", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-contains_reference_key"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-info-description")).toContain(
+      "Reference data",
+    )
+  })
+})

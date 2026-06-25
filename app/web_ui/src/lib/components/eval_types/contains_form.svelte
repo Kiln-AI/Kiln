@@ -41,26 +41,21 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection
-    title="Expected Substring"
-    subtitle="Choose what value to search for in the output."
-    testid="contains-expected-section"
-  >
+  <FormSection title="Expected Substring" testid="contains-expected-section">
     <FormElement
       id="contains_source"
       inputType="radio"
       radio_options={[
         {
           value: "substring",
-          label: "Fixed substring",
-          description:
-            "Specify the exact substring to search for in the output.",
+          label: "Fixed value",
+          description: "Enter the text to search for in the output.",
         },
         {
           value: "reference_key",
-          label: "Value from reference data",
+          label: "From reference data",
           description:
-            "Use a key from the reference data whose value to search for in the output.",
+            "Look up the search text from your dataset's reference fields.",
         },
       ]}
       bind:value={source}
@@ -69,28 +64,32 @@
     />
 
     {#if source === "substring"}
-      <FormElement
-        id="contains_substring"
-        label="Substring"
-        inputType="input"
-        bind:value={properties.substring}
-      />
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <FormElement
+          id="contains_substring"
+          label="Substring"
+          inputType="input"
+          hide_label={true}
+          placeholder="e.g. success"
+          bind:value={properties.substring}
+        />
+      </div>
     {:else}
-      <FormElement
-        id="contains_reference_key"
-        label="Reference Key"
-        description="The key in the reference data whose value to search for."
-        inputType="input"
-        bind:value={properties.reference_key}
-      />
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <FormElement
+          id="contains_reference_key"
+          label="Reference Key"
+          inputType="input"
+          hide_label={true}
+          placeholder="e.g. expected_keyword"
+          info_description="Reference data is the ground-truth data attached to each dataset example. Enter the key name whose value should be used as the expected substring."
+          bind:value={properties.reference_key}
+        />
+      </div>
     {/if}
   </FormSection>
 
-  <FormSection
-    title="Match Mode"
-    subtitle="Choose whether the output should contain or not contain the value."
-    testid="contains-mode-section"
-  >
+  <FormSection title="Match Mode" testid="contains-mode-section">
     <FormElement
       id="contains_mode"
       inputType="radio"
@@ -98,12 +97,12 @@
         {
           value: "must_contain",
           label: "Must contain",
-          description: "The output must contain the substring to pass.",
+          description: "The output must contain the value to pass.",
         },
         {
           value: "must_not_contain",
           label: "Must not contain",
-          description: "The output must NOT contain the substring to pass.",
+          description: "The output must NOT contain the value to pass.",
         },
       ]}
       bind:value={properties.mode}
@@ -111,15 +110,17 @@
     />
   </FormSection>
 
-  <OutputValueField
-    id_prefix="contains"
-    bind:value={properties.value_expression}
-  >
+  <FormSection title="Comparison Options" testid="contains-options-section">
     <FormElement
       id="contains_case_sensitive"
       label="Case Sensitive"
       inputType="checkbox"
       bind:value={properties.case_sensitive}
     />
-  </OutputValueField>
+  </FormSection>
+
+  <OutputValueField
+    id_prefix="contains"
+    bind:value={properties.value_expression}
+  />
 </div>

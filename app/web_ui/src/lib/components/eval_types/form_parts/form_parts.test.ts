@@ -93,11 +93,16 @@ describe("OutputValueField", () => {
     )
   })
 
-  it("renders section title 'Output Value to Compare'", () => {
-    const { getAllByText } = render(OutputValueField, {
+  it("renders section title 'Output Extraction'", () => {
+    const { container } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
-    expect(getAllByText("Output Value to Compare").length).toBeGreaterThan(0)
+    const section = container.querySelector(
+      '[data-testid="output-value-section"]',
+    )
+    expect(section).toBeTruthy()
+    const heading = section?.querySelector("h3")
+    expect(heading?.textContent).toBe("Output Extraction")
   })
 
   it("renders description text about Jinja expressions", () => {
@@ -109,6 +114,39 @@ describe("OutputValueField", () => {
     )
     expect(formElement?.getAttribute("data-description")).toContain(
       "Jinja expression",
+    )
+  })
+
+  it("hides the inner FormElement label (section title is sole heading)", () => {
+    const { container } = render(OutputValueField, {
+      props: { id_prefix: "test", value: null },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    expect(formElement?.getAttribute("data-hide-label")).toBe("true")
+  })
+
+  it("renders subtitle about extracting fields", () => {
+    const { container } = render(OutputValueField, {
+      props: { id_prefix: "test", value: null },
+    })
+    const subtitle = container.querySelector(
+      '[data-testid="form-section-subtitle"]',
+    )
+    expect(subtitle).toBeTruthy()
+    expect(subtitle?.textContent).toContain("extract")
+  })
+
+  it("renders placeholder on value expression input", () => {
+    const { container } = render(OutputValueField, {
+      props: { id_prefix: "test", value: null },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    expect(formElement?.getAttribute("data-placeholder")).toBe(
+      "e.g. result.answer",
     )
   })
 })

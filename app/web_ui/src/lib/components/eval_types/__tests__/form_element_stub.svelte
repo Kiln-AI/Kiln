@@ -38,6 +38,8 @@
   data-description={description}
   data-info-description={info_description}
   data-inline-action-label={inline_action?.label || ""}
+  data-hide-label={hide_label ? "true" : "false"}
+  data-placeholder={placeholder || ""}
 >
   {#if inputType === "radio"}
     <div data-testid="radio-group-{id}">

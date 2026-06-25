@@ -42,11 +42,7 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection
-    title="Expected Value"
-    subtitle="Choose what value to compare the output against."
-    testid="exact-match-expected-section"
-  >
+  <FormSection title="Expected Value" testid="exact-match-expected-section">
     <FormElement
       id="exact_match_source"
       inputType="radio"
@@ -54,13 +50,13 @@
         {
           value: "expected_value",
           label: "Fixed value",
-          description: "Specify the exact value the output must match.",
+          description: "Enter the exact value the output should match.",
         },
         {
           value: "reference_key",
-          label: "Value from reference data",
+          label: "From reference data",
           description:
-            "Use a key from the reference data whose value the output must match.",
+            "Look up the expected value from your dataset's reference fields.",
         },
       ]}
       bind:value={source}
@@ -69,32 +65,42 @@
     />
 
     {#if source === "expected_value"}
-      <FormElement
-        id="exact_match_expected_value"
-        label="Expected Value"
-        inputType="input"
-        bind:value={properties.expected_value}
-      />
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <FormElement
+          id="exact_match_expected_value"
+          label="Expected Value"
+          inputType="input"
+          hide_label={true}
+          placeholder="e.g. yes"
+          bind:value={properties.expected_value}
+        />
+      </div>
     {:else}
-      <FormElement
-        id="exact_match_reference_key"
-        label="Reference Key"
-        description="The key in the reference data to compare against."
-        inputType="input"
-        bind:value={properties.reference_key}
-      />
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <FormElement
+          id="exact_match_reference_key"
+          label="Reference Key"
+          inputType="input"
+          hide_label={true}
+          placeholder="e.g. expected_answer"
+          info_description="Reference data is the ground-truth data attached to each dataset example. Enter the key name whose value should be used as the expected answer."
+          bind:value={properties.reference_key}
+        />
+      </div>
     {/if}
   </FormSection>
 
-  <OutputValueField
-    id_prefix="exact_match"
-    bind:value={properties.value_expression}
-  >
+  <FormSection title="Comparison Options" testid="exact-match-options-section">
     <FormElement
       id="exact_match_case_sensitive"
       label="Case Sensitive"
       inputType="checkbox"
       bind:value={properties.case_sensitive}
     />
-  </OutputValueField>
+  </FormSection>
+
+  <OutputValueField
+    id_prefix="exact_match"
+    bind:value={properties.value_expression}
+  />
 </div>
