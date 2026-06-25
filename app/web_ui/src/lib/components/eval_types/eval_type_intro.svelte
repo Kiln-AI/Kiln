@@ -1,14 +1,16 @@
 <script lang="ts">
   import type { V2EvalTypeMetadata } from "$lib/utils/eval_types/registry"
   import EvalTypeTags from "./select/eval_type_tags.svelte"
+  import CalloutCard from "$lib/ui/callout_card.svelte"
 
   export let metadata: V2EvalTypeMetadata
 </script>
 
 <div class="pb-6" data-testid="eval-type-intro">
-  <div class="flex items-start gap-3">
+  <CalloutCard testid="eval-type-intro-card">
     <div
-      class="flex items-center justify-center w-9 h-9 rounded-lg bg-base-200 flex-none mt-0.5"
+      slot="icon"
+      class="flex items-center justify-center w-9 h-9 rounded-lg flex-none"
     >
       <i class="{metadata.icon} text-lg text-primary"></i>
     </div>
@@ -29,5 +31,5 @@
         </p>
       {/if}
     </div>
-  </div>
+  </CalloutCard>
 </div>

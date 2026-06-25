@@ -34,6 +34,16 @@ describe("EvalTypeIntro", () => {
     ).not.toBeNull()
   })
 
+  it("B6: wraps content in a CalloutCard", () => {
+    const metadata = getV2EvalTypeMetadata("code_eval")
+    const { container } = render(EvalTypeIntro, { props: { metadata } })
+    const card = container.querySelector('[data-testid="eval-type-intro-card"]')
+    expect(card).not.toBeNull()
+    expect(card?.classList.contains("card-bordered")).toBe(true)
+    expect(card?.textContent).toContain(metadata.label)
+    expect(card?.textContent).toContain(metadata.explainer)
+  })
+
   it("renders tags for code_eval including Beta", () => {
     const metadata = getV2EvalTypeMetadata("code_eval")
     const { container } = render(EvalTypeIntro, { props: { metadata } })

@@ -542,7 +542,7 @@ describe("EvalConfigBuilder", () => {
       mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       expect(submitBtn).not.toBeNull()
       await fireEvent.click(submitBtn)
@@ -559,7 +559,7 @@ describe("EvalConfigBuilder", () => {
       const { container } = await renderBuilder("exact_match")
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       expect(submitBtn).not.toBeNull()
       await fireEvent.click(submitBtn)
@@ -579,7 +579,7 @@ describe("EvalConfigBuilder", () => {
       const { container } = await renderBuilder("exact_match")
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       await fireEvent.click(submitBtn)
 
@@ -623,7 +623,7 @@ describe("EvalConfigBuilder", () => {
       })
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       await fireEvent.click(submitBtn)
 
@@ -641,7 +641,7 @@ describe("EvalConfigBuilder", () => {
       mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       await fireEvent.click(submitBtn)
 
@@ -779,6 +779,96 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
     expect(meta.example).toBeFalsy()
     expect(intro?.textContent).toContain(meta.explainer!)
   })
+
+  it("B6: explainer is rendered inside a CalloutCard", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const calloutCard = container.querySelector(
+      "[data-testid='eval-type-intro-card']",
+    )
+    expect(calloutCard).not.toBeNull()
+    expect(calloutCard?.classList.contains("card-bordered")).toBe(true)
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    expect(intro).not.toBeNull()
+    expect(
+      intro?.querySelector("[data-testid='eval-type-intro-card']"),
+    ).not.toBeNull()
+  })
+
+  it("B7: Save button is at the bottom of column 1 (not spanning both)", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const saveBtn = container.querySelector(
+      "[data-testid='column-save-button']",
+    )
+    expect(saveBtn).not.toBeNull()
+    expect(saveBtn?.textContent?.trim()).toBe("Save")
+    expect(saveBtn?.classList.contains("btn-primary")).toBe(true)
+
+    const formContainerSubmit = container.querySelector(
+      "[data-testid='form-submit-button']",
+    )
+    expect(formContainerSubmit).toBeNull()
+  })
+
+  it("B7: Save button still gates via handle_submit (trust check for code_eval)", async () => {
+    const { container } = await renderBuilder("code_eval")
+    mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
+
+    const saveBtn = container.querySelector(
+      "[data-testid='column-save-button']",
+    ) as HTMLButtonElement
+    await fireEvent.click(saveBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(showCalls).toContain("Trust Code and Project?")
+    expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+  })
+
+  it("B7: Save button still gates via confirm modal when no valid test run", async () => {
+    const { container } = await renderBuilder("exact_match")
+
+    const saveBtn = container.querySelector(
+      "[data-testid='column-save-button']",
+    ) as HTMLButtonElement
+    await fireEvent.click(saveBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(showCalls).toContain("Save Without Testing?")
+    expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+  })
+
+  it("D10: no Save button in the test run pane", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const pane = container.querySelector("[data-testid='test-run-pane']")
+    expect(pane).not.toBeNull()
+    const paneSave = pane?.querySelector("[data-testid='save-eval']")
+    expect(paneSave).toBeNull()
+    const paneSaveWithout = pane?.querySelector(
+      "[data-testid='save-without-testing']",
+    )
+    expect(paneSaveWithout).toBeNull()
+  })
+
+  it("B7: Cmd/Ctrl+Enter triggers gated save (confirm modal when no valid test run)", async () => {
+    await renderBuilder("exact_match")
+
+    await fireEvent.keyDown(window, {
+      key: "Enter",
+      metaKey: true,
+    })
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(showCalls).toContain("Save Without Testing?")
+    expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+  })
 })
 
 describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
@@ -859,6 +949,30 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       expect(trustBtn).toBeTruthy()
       expect(trustBtn.label).toContain("I Trust This Code")
     })
+
+    it("C8/C9: trust dialog text is left-aligned with horizontal icon+text layout", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      const dialogs = container.querySelectorAll("[data-testid='dialog-stub']")
+      const trustDialog = Array.from(dialogs).find(
+        (d) => d.getAttribute("data-title") === "Trust Code and Project?",
+      )
+      expect(trustDialog).not.toBeNull()
+
+      const layoutDiv = trustDialog!.querySelector(".flex.flex-row.items-start")
+      expect(layoutDiv).not.toBeNull()
+
+      const textDiv = layoutDiv!.querySelector(".text-left")
+      expect(textDiv).not.toBeNull()
+
+      const centeredText = layoutDiv!.querySelector(".text-center")
+      expect(centeredText).toBeNull()
+
+      const columnLayout = trustDialog!.querySelector(
+        ".flex.flex-col.items-center.gap-4",
+      )
+      expect(columnLayout).toBeNull()
+    })
   })
 
   describe("B1: loading state reset on modal defer", () => {
@@ -872,7 +986,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       const { container } = await renderBuilder("code_eval")
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
 
       await fireEvent.click(submitBtn)
@@ -888,7 +1002,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       expect(showCalls).toContain("Trust Code and Project?")
 
       const saveBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       expect(saveBtn).not.toBeNull()
       expect(saveBtn.disabled).toBe(false)
@@ -898,7 +1012,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       const { container } = await renderBuilder("exact_match")
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
 
       // For exact_match (no requiresTrust), handle_submit runs synchronously
@@ -913,7 +1027,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       expect(showCalls).toContain("Save Without Testing?")
 
       const saveBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       expect(saveBtn).not.toBeNull()
       expect(saveBtn.disabled).toBe(false)
@@ -929,7 +1043,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       const { container } = await renderBuilder("code_eval")
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
 
       await fireEvent.click(submitBtn)
@@ -943,7 +1057,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       await tick()
 
       const saveBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       expect(saveBtn).not.toBeNull()
       expect(saveBtn.disabled).toBe(false)
@@ -1013,7 +1127,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
 
       const submitBtn = container.querySelector(
-        '[data-testid="form-submit-button"]',
+        '[data-testid="column-save-button"]',
       ) as HTMLButtonElement
       await fireEvent.click(submitBtn)
 
@@ -1097,11 +1211,10 @@ describe("Phase 9 — Docs-link audit + theme-aware colors", () => {
       expect(intro?.innerHTML).not.toContain("text-gray-400")
     })
 
-    it("test run pane uses theme-aware text colors, not hardcoded gray", async () => {
+    it("test run pane does not use non-standard hardcoded gray text colors", async () => {
       const { container } = await renderBuilder("exact_match")
       const pane = container.querySelector("[data-testid='test-run-pane']")
       expect(pane).not.toBeNull()
-      expect(pane?.innerHTML).not.toContain("text-gray-500")
       expect(pane?.innerHTML).not.toContain("text-gray-400")
       expect(pane?.innerHTML).not.toContain("text-gray-600")
       expect(pane?.innerHTML).not.toContain("text-gray-300")

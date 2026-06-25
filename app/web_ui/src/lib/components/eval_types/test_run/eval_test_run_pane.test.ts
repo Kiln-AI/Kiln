@@ -95,7 +95,7 @@ describe("EvalTestRunPane", () => {
       expect(goToRunLink?.textContent?.trim()).toContain("Go to Run")
     })
 
-    it("shows Save Without Testing button", () => {
+    it("does NOT show Save Without Testing button (D10)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: { available_runs: [], runs_loading: false },
@@ -103,28 +103,13 @@ describe("EvalTestRunPane", () => {
       const saveBtn = container.querySelector(
         '[data-testid="save-without-testing"]',
       )
-      expect(saveBtn).not.toBeNull()
-      expect(saveBtn?.textContent?.trim()).toContain("Save Without Testing")
-    })
-
-    it("dispatches saveWithoutTesting event on button click", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { container, component } = render(EvalTestRunPane as any, {
-        props: { available_runs: [], runs_loading: false },
-      })
-      const handler = vi.fn()
-      component.$on("saveWithoutTesting", handler)
-
-      const saveBtn = container.querySelector(
-        '[data-testid="save-without-testing"]',
-      ) as HTMLButtonElement
-      await fireEvent.click(saveBtn)
-      expect(handler).toHaveBeenCalled()
+      expect(saveBtn).toBeNull()
+      expect(container.textContent).not.toContain("Save Without Testing")
     })
   })
 
   describe("State 2: Ready (pick input)", () => {
-    it("renders selected run card and quick-picks", () => {
+    it("renders selected run card without quick-picks (D15)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -143,28 +128,10 @@ describe("EvalTestRunPane", () => {
       const quickPicks = container.querySelectorAll(
         '[data-testid="quick-pick-card"]',
       )
-      expect(quickPicks.length).toBe(2)
+      expect(quickPicks.length).toBe(0)
     })
 
-    it("shows max 2 quick-picks excluding selected", () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { container } = render(EvalTestRunPane as any, {
-        props: {
-          available_runs: [run1, run2, run3, run4],
-          selected_run: run1,
-          runs_loading: false,
-        },
-      })
-
-      const quickPicks = container.querySelectorAll(
-        '[data-testid="quick-pick-card"]',
-      )
-      expect(quickPicks.length).toBe(2)
-      expect(quickPicks[0].textContent).toContain("input two")
-      expect(quickPicks[1].textContent).toContain("input three")
-    })
-
-    it("always shows Browse all dataset inputs link", () => {
+    it("does NOT show Browse all dataset inputs link (D15)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -177,11 +144,10 @@ describe("EvalTestRunPane", () => {
       const browseLink = container.querySelector(
         '[data-testid="browse-all-link"]',
       )
-      expect(browseLink).not.toBeNull()
-      expect(browseLink?.textContent?.trim()).toBe("Browse all dataset inputs")
+      expect(browseLink).toBeNull()
     })
 
-    it("shows Run button", () => {
+    it("shows Run button with btn-primary btn-outline style (D11)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -191,12 +157,16 @@ describe("EvalTestRunPane", () => {
         },
       })
 
-      const runBtn = container.querySelector('[data-testid="run-test-btn"]')
+      const runBtn = container.querySelector(
+        '[data-testid="run-test-btn"]',
+      ) as HTMLButtonElement
       expect(runBtn).not.toBeNull()
       expect(runBtn?.textContent?.trim()).toContain("Run")
+      expect(runBtn?.classList.contains("btn-primary")).toBe(true)
+      expect(runBtn?.classList.contains("btn-outline")).toBe(true)
     })
 
-    it("shows results placeholder", () => {
+    it("does NOT show results placeholder (D12)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -209,8 +179,8 @@ describe("EvalTestRunPane", () => {
       const placeholder = container.querySelector(
         '[data-testid="results-placeholder"]',
       )
-      expect(placeholder).not.toBeNull()
-      expect(placeholder?.textContent).toContain("Run to see scores")
+      expect(placeholder).toBeNull()
+      expect(container.textContent).not.toContain("Run to see scores")
     })
 
     it("dispatches run event on Run button click", async () => {
@@ -232,25 +202,6 @@ describe("EvalTestRunPane", () => {
       expect(handler).toHaveBeenCalled()
     })
 
-    it("dispatches select event when clicking a quick-pick", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { container, component } = render(EvalTestRunPane as any, {
-        props: {
-          available_runs: [run1, run2, run3],
-          selected_run: run1,
-          runs_loading: false,
-        },
-      })
-      const handler = vi.fn()
-      component.$on("select", handler)
-
-      const quickPicks = container.querySelectorAll(
-        '[data-testid="quick-pick-card"]',
-      )
-      await fireEvent.click(quickPicks[0])
-      expect(handler).toHaveBeenCalled()
-    })
-
     it("shows reference data field", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
@@ -265,6 +216,25 @@ describe("EvalTestRunPane", () => {
         '[data-testid="reference-data-field"]',
       )
       expect(refField).not.toBeNull()
+    })
+
+    it("selected card shows Change button that opens browse dialog (D15)", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1, run2],
+          selected_run: run1,
+          runs_loading: false,
+        },
+      })
+
+      const selectedCard = container.querySelector(
+        '[data-testid="selected-run-card"]',
+      )
+      expect(selectedCard).not.toBeNull()
+      const changeBtn = selectedCard?.querySelector("button")
+      expect(changeBtn).not.toBeNull()
+      expect(changeBtn?.textContent?.trim()).toBe("Change")
     })
   })
 
@@ -421,7 +391,7 @@ describe("EvalTestRunPane", () => {
       expect(container.textContent).toContain("Missing expected scores")
     })
 
-    it("shows Run again and Save buttons", () => {
+    it("shows Run again button with btn-primary btn-outline style (D11) and no Save button (D10)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -436,35 +406,18 @@ describe("EvalTestRunPane", () => {
         },
       })
 
-      const runAgainBtn = container.querySelector('[data-testid="run-again"]')
+      const runAgainBtn = container.querySelector(
+        '[data-testid="run-again"]',
+      ) as HTMLButtonElement
       expect(runAgainBtn).not.toBeNull()
+      expect(runAgainBtn?.classList.contains("btn-primary")).toBe(true)
+      expect(runAgainBtn?.classList.contains("btn-outline")).toBe(true)
 
       const saveBtn = container.querySelector('[data-testid="save-eval"]')
-      expect(saveBtn).not.toBeNull()
+      expect(saveBtn).toBeNull()
     })
 
-    it("Save is disabled when test_has_valid_run is false", () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { container } = render(EvalTestRunPane as any, {
-        props: {
-          available_runs: [run1],
-          selected_run: run1,
-          runs_loading: false,
-          test_result: {
-            scores: { wrong: 1.0 },
-            skipped_reason: null,
-          },
-          test_has_valid_run: false,
-        },
-      })
-
-      const saveBtn = container.querySelector(
-        '[data-testid="save-eval"]',
-      ) as HTMLButtonElement
-      expect(saveBtn?.disabled).toBe(true)
-    })
-
-    it("shows score-range warning and gates Save when test_score_range_warning is set", () => {
+    it("shows score-range warning when test_score_range_warning is set", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -488,11 +441,6 @@ describe("EvalTestRunPane", () => {
       expect(rangeWarning?.textContent).toContain("Score Out of Range")
       expect(rangeWarning?.textContent).toContain("pass_fail")
       expect(rangeWarning?.textContent).toContain("5.0")
-
-      const saveBtn = container.querySelector(
-        '[data-testid="save-eval"]',
-      ) as HTMLButtonElement
-      expect(saveBtn?.disabled).toBe(true)
     })
 
     it("does not show score-range warning when prop is null", () => {
@@ -515,56 +463,6 @@ describe("EvalTestRunPane", () => {
         '[data-testid="score-range-warning"]',
       )
       expect(rangeWarning).toBeNull()
-
-      const saveBtn = container.querySelector(
-        '[data-testid="save-eval"]',
-      ) as HTMLButtonElement
-      expect(saveBtn?.disabled).toBe(false)
-    })
-
-    it("Save is enabled when test_has_valid_run is true", () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { container } = render(EvalTestRunPane as any, {
-        props: {
-          available_runs: [run1],
-          selected_run: run1,
-          runs_loading: false,
-          test_result: {
-            scores: { accuracy: 1.0 },
-            skipped_reason: null,
-          },
-          test_has_valid_run: true,
-        },
-      })
-
-      const saveBtn = container.querySelector(
-        '[data-testid="save-eval"]',
-      ) as HTMLButtonElement
-      expect(saveBtn?.disabled).toBe(false)
-    })
-
-    it("dispatches save event on Save click", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { container, component } = render(EvalTestRunPane as any, {
-        props: {
-          available_runs: [run1],
-          selected_run: run1,
-          runs_loading: false,
-          test_result: {
-            scores: { accuracy: 1.0 },
-            skipped_reason: null,
-          },
-          test_has_valid_run: true,
-        },
-      })
-      const handler = vi.fn()
-      component.$on("save", handler)
-
-      const saveBtn = container.querySelector(
-        '[data-testid="save-eval"]',
-      ) as HTMLButtonElement
-      await fireEvent.click(saveBtn)
-      expect(handler).toHaveBeenCalled()
     })
 
     it("dispatches runAgain event on Run again click", async () => {
@@ -619,7 +517,7 @@ describe("EvalTestRunPane", () => {
     })
   })
 
-  describe("Test Run heading and subtitle", () => {
+  describe("Test Run heading and subtitle (D13)", () => {
     it("renders Test Run heading", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
@@ -631,15 +529,34 @@ describe("EvalTestRunPane", () => {
       expect(heading?.textContent).toContain("Test Run")
     })
 
-    it("renders orienting subtitle", () => {
+    it("renders updated subtitle text", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: { available_runs: [], runs_loading: false },
       })
 
-      expect(container.textContent).toContain(
-        "Pick a recent task output to test your evaluator before saving",
+      const subtitle = container.querySelector(
+        '[data-testid="test-run-subtitle"]',
       )
+      expect(subtitle).not.toBeNull()
+      expect(subtitle?.textContent).toBe(
+        "Test your judge on real data before saving.",
+      )
+    })
+
+    it("subtitle uses standard secondary text style (text-sm text-gray-500)", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: { available_runs: [], runs_loading: false },
+      })
+
+      const subtitle = container.querySelector(
+        '[data-testid="test-run-subtitle"]',
+      )
+      expect(subtitle).not.toBeNull()
+      expect(subtitle?.classList.contains("text-sm")).toBe(true)
+      expect(subtitle?.classList.contains("text-gray-500")).toBe(true)
+      expect(subtitle?.classList.contains("text-xs")).toBe(false)
     })
   })
 })
@@ -653,7 +570,7 @@ describe("TestRunInputCard", () => {
     cleanup()
   })
 
-  it("renders selected variant with truncated 2-line input and output", () => {
+  it("renders selected variant with 'Selected Test Run' label in non-grey (D14)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunInputCard as any, {
       props: {
@@ -665,7 +582,27 @@ describe("TestRunInputCard", () => {
 
     const card = container.querySelector('[data-testid="selected-run-card"]')
     expect(card).not.toBeNull()
-    expect(card?.textContent).toContain("Selected Run")
+    expect(card?.textContent).toContain("Selected Test Run")
+    expect(card?.textContent).not.toContain("Selected Run\n")
+
+    const label = card?.querySelector("span.font-medium")
+    expect(label).not.toBeNull()
+    expect(label?.classList.contains("text-base-content")).toBe(true)
+    expect(label?.classList.contains("text-base-content/60")).toBe(false)
+  })
+
+  it("renders truncated 2-line input and output", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(TestRunInputCard as any, {
+      props: {
+        run: run1,
+        variant: "selected",
+        disabled: false,
+      },
+    })
+
+    const card = container.querySelector('[data-testid="selected-run-card"]')
+    expect(card).not.toBeNull()
     expect(card?.textContent).toContain("input one")
     expect(card?.textContent).toContain("output one")
 
@@ -1286,7 +1223,7 @@ describe("Auto-select integration", () => {
     expect(container.textContent).toContain("Select a run to get started")
   })
 
-  it("does not show quick-picks when only 1 run, but shows browse link", () => {
+  it("does not show quick-picks when only 1 run (D15)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(EvalTestRunPane as any, {
       props: {
@@ -1304,7 +1241,7 @@ describe("Auto-select integration", () => {
     const browseLink = container.querySelector(
       '[data-testid="browse-all-link"]',
     )
-    expect(browseLink).not.toBeNull()
+    expect(browseLink).toBeNull()
   })
 
   it("Go to Run link uses flat /run route", () => {

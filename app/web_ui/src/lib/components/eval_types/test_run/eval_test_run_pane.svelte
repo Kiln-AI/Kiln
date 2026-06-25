@@ -24,16 +24,13 @@
   let browse_dialog: TestRunBrowseDialog
 
   $: has_runs = available_runs.length > 0
-  $: quick_picks = available_runs.filter((r) => r !== selected_run).slice(0, 2)
 
   const dispatch = createEventDispatcher<{
     select: TaskRunOutput
     run: void
     cancel: void
-    saveWithoutTesting: void
     updateReferenceData: string
     runAgain: void
-    save: void
   }>()
 
   function handle_browse_select(e: CustomEvent<TaskRunOutput>) {
@@ -44,8 +41,8 @@
 <div class="flex flex-col gap-3" data-testid="test-run-pane">
   <div>
     <div class="text-xl font-bold">Test Run</div>
-    <p class="text-xs text-base-content/40 mt-0.5">
-      Pick a recent task output to test your evaluator before saving.
+    <p class="text-sm text-gray-500 mt-0.5" data-testid="test-run-subtitle">
+      Test your judge on real data before saving.
     </p>
   </div>
 
@@ -81,16 +78,6 @@
         here.
       </p>
       <a href="/run" class="btn btn-sm btn-outline mt-1"> Go to Run </a>
-    </div>
-    <div class="border-t border-base-200 pt-3">
-      <button
-        type="button"
-        class="btn btn-sm btn-outline w-full"
-        on:click={() => dispatch("saveWithoutTesting")}
-        data-testid="save-without-testing"
-      >
-        Save Without Testing
-      </button>
     </div>
   {:else if test_loading}
     <!-- State 3: Running -->
@@ -189,25 +176,14 @@
       </div>
     {/if}
 
-    <div class="flex items-center gap-2 border-t border-base-200 pt-3">
-      <button
-        type="button"
-        class="btn btn-sm btn-outline"
-        on:click={() => dispatch("runAgain")}
-        data-testid="run-again"
-      >
-        Run again
-      </button>
-      <button
-        type="button"
-        class="btn btn-sm btn-primary flex-1"
-        disabled={!test_has_valid_run}
-        on:click={() => dispatch("save")}
-        data-testid="save-eval"
-      >
-        Save
-      </button>
-    </div>
+    <button
+      type="button"
+      class="btn btn-sm btn-primary btn-outline"
+      on:click={() => dispatch("runAgain")}
+      data-testid="run-again"
+    >
+      Run again
+    </button>
   {:else if selected_run}
     <!-- State 2: Ready -->
     <TestRunInputCard
@@ -217,23 +193,6 @@
       on:change={() => browse_dialog?.show()}
     />
 
-    {#each quick_picks as pick_run}
-      <TestRunInputCard
-        run={pick_run}
-        variant="pick"
-        on:select={(e) => dispatch("select", e.detail)}
-      />
-    {/each}
-
-    <button
-      type="button"
-      class="text-xs text-primary hover:underline text-left"
-      on:click={() => browse_dialog?.show()}
-      data-testid="browse-all-link"
-    >
-      Browse all dataset inputs
-    </button>
-
     <ReferenceDataField
       {reference_data}
       on:change={(e) => dispatch("updateReferenceData", e.detail)}
@@ -241,7 +200,7 @@
 
     <button
       type="button"
-      class="btn btn-primary btn-sm w-full"
+      class="btn btn-primary btn-outline btn-sm w-full"
       disabled={is_llm_judge && !can_submit_llm}
       on:click={() => dispatch("run")}
       data-testid="run-test-btn"
@@ -256,16 +215,6 @@
         <span>{test_error.getMessage()}</span>
       </div>
     {/if}
-
-    <div class="border-t border-base-200 pt-3">
-      <div
-        class="flex items-center justify-center gap-2 py-4 text-xs text-base-content/40"
-        data-testid="results-placeholder"
-      >
-        <i class="bi bi-bar-chart text-base-content/30"></i>
-        Run to see scores
-      </div>
-    </div>
   {:else}
     <!-- Fallback: has runs but none selected (shouldn't happen with auto-select) -->
     <p class="text-sm text-base-content/40">Select a run to get started.</p>

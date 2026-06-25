@@ -21,7 +21,9 @@
     data-testid="selected-run-card"
   >
     <div class="flex items-center justify-between">
-      <span class="text-xs font-medium text-base-content/60">Selected Run</span>
+      <span class="text-xs font-medium text-base-content"
+        >Selected Test Run</span
+      >
       <button
         type="button"
         class="btn btn-xs btn-ghost text-primary"
