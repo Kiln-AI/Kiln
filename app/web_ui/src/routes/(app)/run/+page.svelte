@@ -16,7 +16,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
-  import ChatLoading from "../assistant/chat_loading.svelte"
+  import ChatLoading from "$lib/ui/conversation/chat_thinking_loading.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
@@ -92,8 +92,19 @@
       mt_awaiting_response = false
     }
   }
-  async function handle_first_turn_success(new_run_id: string) {
-    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`)
+  async function handle_first_turn_success(
+    new_run_id: string,
+    created_run?: TaskRun,
+  ) {
+    // Hand the freshly-created run to the dataset run page via navigation
+    // state so it can render the conversation immediately instead of flashing
+    // the full-page loading spinner while it re-fetches the run. noScroll keeps
+    // the page from jumping to the top before the transcript pins to the
+    // latest turn.
+    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
+      state: created_run ? { created_run } : {},
+      noScroll: true,
+    })
   }
 
   onMount(() => {
@@ -182,10 +193,6 @@
         })
       }
       response = data
-      if ($current_task?.turn_mode === "multiturn" && data?.id) {
-        await goto(`/dataset/${project_id}/${task_id}/${data.id}/run`)
-        return
-      }
     } catch (e) {
       run_error = createKilnError(e)
     } finally {
@@ -258,9 +265,9 @@
   }
 </script>
 
-<!-- Multi-turn uses the full width (sidebar pinned right, chat centered);
-     single-turn keeps the capped reading width. -->
-<div class={is_multiturn ? "" : "max-w-[1400px]"}>
+<!-- Both layouts use the same capped width with the chat/input on the left and
+     the Options sidebar on the right. -->
+<div class="max-w-[1400px]">
   <AppPage
     title="Run"
     bind:subtitle
@@ -273,18 +280,13 @@
       <!-- Multi-turn: a chat-style new conversation that mirrors the in-run
            multiturn page. The first message starts a root run, then we
            redirect to the dataset run page to continue the conversation. -->
-      <div
-        class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
-      >
-        <!-- Full-width column so the scrollbar sits at the right boundary;
-             content is centered inside via max-w + mx-auto. -->
-        <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
-          <div
-            class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden"
-          >
-            <div
-              class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
-            >
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+        <!-- The whole page scrolls; the composer is pinned to the bottom of the
+             viewport via position:sticky. The min-height keeps the composer at
+             the bottom of the screen for the (empty) new-conversation state. -->
+        <div class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]">
+          <div class="min-w-0 xl:flex-1 xl:flex xl:flex-col">
+            <div class="flex w-full flex-col gap-6 xl:flex-1">
               {#if mt_awaiting_response}
                 <ChatTrace
                   trace={mt_display_trace}
@@ -312,8 +314,8 @@
               {/if}
             </div>
           </div>
-          <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4">
-            <div class="mx-auto w-full max-w-3xl">
+          <div class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4">
+            <div class="w-full">
               <MultiturnComposer
                 mode="append"
                 {project_id}
@@ -329,9 +331,7 @@
             </div>
           </div>
         </div>
-        <div
-          class="w-72 2xl:w-96 flex-none flex flex-col gap-4 chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-6"
-        >
+        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
           <div class="text-xl font-bold">Options</div>
           <SavedRunConfigurationsDropdown
             {project_id}
@@ -433,28 +433,3 @@
     {/if}
   </AppPage>
 </div>
-
-<style>
-  /* Match the Assistant chat transcript scrollbar. */
-  .chat-messages-scroll::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-thumb {
-    background-color: oklch(var(--bc) / 0.2);
-    border-radius: 3px;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(var(--bc) / 0.35);
-  }
-
-  .chat-messages-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
-  }
-</style>

@@ -321,23 +321,21 @@
   }
 
   function get_usage_properties(
-    run: TaskRun | null,
+    base_cost: number,
+    base_tokens: number,
+    base_latency_ms: number,
     subtask_cost: number | null,
     subtask_usage_loading: boolean,
     subtask_tokens: number | null,
     subtask_latency_ms: number | null,
-    final_turn_usage: boolean,
   ) {
     let properties = []
 
-    // In multiturn the usage shown here is just the final turn's run, so drop
-    // the "Total" prefix that implies a whole-conversation aggregate.
-    const label = (metric: string) =>
-      final_turn_usage ? metric : "Total " + metric
+    const label = (metric: string) => "Total " + metric
 
-    const run_cost = run?.usage?.cost ?? 0
-    const run_tokens = run?.usage?.total_tokens ?? 0
-    const run_latency = run?.usage?.total_llm_latency_ms ?? 0
+    const run_cost = base_cost
+    const run_tokens = base_tokens
+    const run_latency = base_latency_ms
 
     if (subtask_usage_loading) {
       properties.push({
@@ -425,13 +423,48 @@
 
   $: is_multiturn = task?.turn_mode === "multiturn"
   $: load_subtask_usage(run?.trace)
+
+  // Total latency across the whole conversation. cumulative_usage carries
+  // cost/tokens but not latency, so sum each message's latency_ms from the
+  // trace (the leaf run's trace is the full transcript).
+  function sum_trace_latency_ms(trace: Trace | null | undefined): number {
+    if (!trace) return 0
+    let total = 0
+    for (const message of trace) {
+      if (
+        "latency_ms" in message &&
+        typeof message.latency_ms === "number" &&
+        message.latency_ms > 0
+      ) {
+        total += message.latency_ms
+      }
+    }
+    return total
+  }
+
+  // Base (non-subtask) usage for the Usage panel. Multiturn shows the whole
+  // conversation via the run's cumulative_usage (sum across every turn in the
+  // trace, including seeded prior turns); single-turn shows the run's own
+  // usage. cumulative_usage can be null on records predating the field, so
+  // fall back to the run's usage.
+  $: base_cost = is_multiturn
+    ? run?.cumulative_usage?.cost ?? run?.usage?.cost ?? 0
+    : run?.usage?.cost ?? 0
+  $: base_tokens = is_multiturn
+    ? run?.cumulative_usage?.total_tokens ?? run?.usage?.total_tokens ?? 0
+    : run?.usage?.total_tokens ?? 0
+  $: base_latency_ms = is_multiturn
+    ? sum_trace_latency_ms(run?.trace)
+    : run?.usage?.total_llm_latency_ms ?? 0
+
   $: usage_properties = get_usage_properties(
-    run,
+    base_cost,
+    base_tokens,
+    base_latency_ms,
     subtask_cost,
     subtask_usage_loading,
     subtask_tokens,
     subtask_latency_ms,
-    is_multiturn,
   )
 
   // ---- Feedback ----
@@ -726,7 +759,7 @@
     {#if usage_properties && usage_properties.length > 0}
       <PropertyList
         properties={usage_properties}
-        title={is_multiturn ? "Final Turn Usage" : "Usage"}
+        title={is_multiturn ? "Total Usage" : "Usage"}
       />
     {/if}
   </div>

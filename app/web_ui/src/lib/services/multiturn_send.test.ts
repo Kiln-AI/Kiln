@@ -103,7 +103,7 @@ describe("send_multiturn", () => {
     expect(body.tags).toEqual(["manual_run"])
     expect(body.structured_input).toBeNull()
     expect(body.run_config_properties).toBeDefined()
-    expect(on_success).toHaveBeenCalledWith("new-run-99")
+    expect(on_success).toHaveBeenCalledWith("new-run-99", { id: "new-run-99" })
   })
 
   it("forwards custom tags when provided", async () => {
@@ -168,7 +168,7 @@ describe("send_multiturn", () => {
     })
 
     expect(result.ok).toBe(true)
-    expect(on_success).toHaveBeenCalledWith("new-run-99")
+    expect(on_success).toHaveBeenCalledWith("new-run-99", { id: "new-run-99" })
   })
 
   it("returns ok:false and does NOT clear input when the API returns an error", async () => {

@@ -251,6 +251,22 @@
       }
     }
 
+    // Multi-turn tasks are plain-text conversations (no input/output schema),
+    // so the example is a generic chat assistant rather than the structured
+    // joke generator used for single-turn.
+    if (is_multiturn) {
+      // @ts-expect-error This is a partial task, which is fine.
+      task = {
+        name: "Chat Assistant",
+        description: "An example multi-turn task from the KilnAI team.",
+        instruction:
+          "You are a helpful assistant. Have a natural back-and-forth conversation with the user: answer their questions clearly and concisely, ask for clarification when you need it, and use the context from earlier in the conversation.",
+        requirements: [],
+      }
+      turn_mode = "multiturn"
+      return
+    }
+
     // @ts-expect-error This is a partial task, which is fine.
     task = {
       name: "Joke Generator",
@@ -436,94 +452,85 @@
       {/if}
     </div>
 
-    <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold">Part 3: Input Schema</div>
-      <div class="text-xs text-gray-500">
-        What kind of input will the model receive?
+    <!-- Multi-turn tasks are plain-text conversations with no input/output
+         schema, so these sections are hidden entirely for them. -->
+    {#if !is_multiturn}
+      <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+        <div class="text-xl font-bold">Part 3: Input Schema</div>
+        <div class="text-xs text-gray-500">
+          What kind of input will the model receive?
+        </div>
       </div>
-    </div>
 
-    <div>
-      {#if is_multiturn}
-        <div
-          class="text-sm text-gray-500"
-          data-testid="multiturn-input-schema-note"
-        >
-          Multi-turn tasks use plain-text input.
-        </div>
-      {:else if editing}
-        <div>
-          <div class="text-sm mb-2 flex flex-col gap-1">
-            <p>
-              You can't edit an existing task's input format, as existing
-              dataset items would not conform to the new schema.
-            </p>
-            <p>
-              You can
-              <a
-                class="link"
-                href="/settings/clone_task/{target_project_id}/{task.id}"
-                >clone this task</a
-              >
-              instead.
-            </p>
+      <div>
+        {#if editing}
+          <div>
+            <div class="text-sm mb-2 flex flex-col gap-1">
+              <p>
+                You can't edit an existing task's input format, as existing
+                dataset items would not conform to the new schema.
+              </p>
+              <p>
+                You can
+                <a
+                  class="link"
+                  href="/settings/clone_task/{target_project_id}/{task.id}"
+                  >clone this task</a
+                >
+                instead.
+              </p>
+            </div>
+            <Output
+              raw_output={task.input_json_schema || "Input Format: Plain text"}
+            />
           </div>
-          <Output
-            raw_output={task.input_json_schema || "Input Format: Plain text"}
+        {:else}
+          <SchemaSection
+            bind:this={inputSchemaSection}
+            bind:schema_string={task.input_json_schema}
           />
-        </div>
-      {:else}
-        <SchemaSection
-          bind:this={inputSchemaSection}
-          bind:schema_string={task.input_json_schema}
-        />
-      {/if}
-    </div>
-
-    <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold">Part 4: Output Schema</div>
-      <div class="text-xs text-gray-500">
-        What kind of output will the model produce?
+        {/if}
       </div>
-    </div>
 
-    <div>
-      {#if is_multiturn}
-        <div
-          class="text-sm text-gray-500"
-          data-testid="multiturn-output-schema-note"
-        >
-          Structured output is not supported for multi-turn tasks yet.
+      <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+        <div class="text-xl font-bold">Part 4: Output Schema</div>
+        <div class="text-xs text-gray-500">
+          What kind of output will the model produce?
         </div>
-      {:else if editing}
-        <div>
-          <div class="text-sm mb-2 flex flex-col gap-1">
-            <p>
-              You can't edit an existing task's output format, as existing
-              dataset items would not conform to the new schema.
-            </p>
-            <p>
-              You can
-              <a
-                class="link"
-                href="/settings/clone_task/{target_project_id}/{task.id}"
-                >clone this task</a
-              >
-              instead.
-            </p>
+      </div>
+
+      <div>
+        {#if editing}
+          <div>
+            <div class="text-sm mb-2 flex flex-col gap-1">
+              <p>
+                You can't edit an existing task's output format, as existing
+                dataset items would not conform to the new schema.
+              </p>
+              <p>
+                You can
+                <a
+                  class="link"
+                  href="/settings/clone_task/{target_project_id}/{task.id}"
+                  >clone this task</a
+                >
+                instead.
+              </p>
+            </div>
+            <Output
+              raw_output={task.output_json_schema ||
+                "Output Format: Plain text"}
+            />
           </div>
-          <Output
-            raw_output={task.output_json_schema || "Output Format: Plain text"}
+        {:else}
+          <SchemaSection
+            bind:this={outputSchemaSection}
+            bind:schema_string={task.output_json_schema}
+            warn_about_required={true}
           />
-        </div>
-      {:else}
-        <SchemaSection
-          bind:this={outputSchemaSection}
-          bind:schema_string={task.output_json_schema}
-          warn_about_required={true}
-        />
-      {/if}
-    </div>
+        {/if}
+      </div>
+    {/if}
 
     {#if show_requirements}
       <div class="pt-6">

@@ -14,6 +14,7 @@
     load_available_models,
     load_available_tools,
     available_tools,
+    current_task,
   } from "$lib/stores"
   import {
     prompts_by_task_composite_id,
@@ -51,7 +52,7 @@
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
-  import ChatLoading from "../../../../../assistant/chat_loading.svelte"
+  import ChatLoading from "$lib/ui/conversation/chat_thinking_loading.svelte"
   import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
@@ -60,7 +61,7 @@
   import RunSidebar from "$lib/ui/run_sidebar.svelte"
   import {
     compute_forkable_run_ids,
-    fork_target_from_user_block,
+    fork_target_from_assistant_block,
     type ForkTarget,
   } from "./fork_helpers"
 
@@ -398,6 +399,26 @@
     ]
   }
 
+  // The /run page hands the just-created first-turn run over via navigation
+  // state. Seed it (plus the task, from the current-task store set on /run) so
+  // we render the conversation immediately instead of flashing the full-page
+  // loading spinner while load_run / load_task re-fetch them (both still run
+  // below to refresh). We only drop `loading` once both are present, so we
+  // never briefly render the "Run not found" branch (which needs run && task).
+  $: {
+    // @ts-expect-error created_run is not a declared property of PageState
+    const seeded_run = $page.state?.created_run as TaskRun | undefined
+    if (seeded_run?.id && seeded_run.id === run_id && run === null) {
+      run = seeded_run
+      if (!task && $current_task?.id === task_id) {
+        task = $current_task
+      }
+      if (run && task) {
+        loading = false
+      }
+    }
+  }
+
   $: if (project_id && task_id && run_id) {
     load_run(project_id, task_id, run_id)
     load_task_for_page(project_id, task_id)
@@ -509,14 +530,19 @@
     // mounted while we navigate avoids the blank full-page spinner flash.
     // `awaiting_response` keeps the composer disabled until the new run
     // renders, and the run-load reactive clears the optimistic state then.
+    // noScroll: SvelteKit otherwise jumps to the top of the page on navigate,
+    // which would flash the top before our pin scrolls back to the latest turn.
     await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
       replaceState: true,
+      noScroll: true,
     })
   }
 
-  // The transcript scroll container (the chat-style scrollview on xl+).
+  // The transcript content element. The whole page scrolls (no inner scroll
+  // region) — we observe this element for content mutations and pin the window
+  // scroll to the bottom while things settle.
   let transcript_scroll_el: HTMLElement | null = null
-  // Scroll the transcript to the latest turn whenever a run renders — both on
+  // Scroll the page to the latest turn whenever a run renders — both on
   // initial load and after sending a new turn. The composer is pinned
   // separately, so "bottom" lands on the newest message, not the textbox.
   let scrolled_for_run_id: string | null = null
@@ -598,9 +624,9 @@
     if (!el || typeof MutationObserver === "undefined") return
     stop_pinning_transcript()
     const stick = () => {
-      if (transcript_scroll_el) {
-        transcript_scroll_el.scrollTop = transcript_scroll_el.scrollHeight
-      }
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+      })
     }
     stick()
     settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
@@ -734,10 +760,9 @@
   let fork_composer: MultiturnComposer | null = null
 
   function on_fork(clicked_run_id: string, trace_index: number) {
-    const target = fork_target_from_user_block(
+    const target = fork_target_from_assistant_block(
       clicked_run_id,
       trace_index,
-      run?.trace ?? [],
       run_chain,
     )
     if (!target) return
@@ -766,9 +791,22 @@
     await handle_send(new_run_id)
   }
 
+  function new_chat() {
+    goto(`/run`)
+  }
+
   let buttons: ActionButton[] = []
   $: {
     buttons = []
+    // Multiturn: start a fresh conversation (the /run page is the new-chat
+    // entry point), mirroring the Kiln Assistant's "New Chat" button.
+    if (is_multiturn) {
+      buttons.push({
+        label: "New Chat",
+        icon: "/images/new_chat.svg",
+        handler: new_chat,
+      })
+    }
     if (!deleted[run_id]) {
       buttons.push({
         icon: "/images/delete.svg",
@@ -826,9 +864,9 @@
   }
 </script>
 
-<!-- Multi-turn uses the full width (sidebar pinned to the right edge, chat
-     centered); single-turn keeps the capped reading width. -->
-<div class={is_multiturn ? "" : "max-w-[1400px]"}>
+<!-- Both layouts use the same capped width with the chat/input on the left and
+     the Options sidebar on the right. -->
+<div class="max-w-[1400px]">
   <AppPage
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
@@ -847,27 +885,20 @@
     {:else if run && task}
       {#if task.turn_mode === "multiturn" && task.id}
         {@const multiturn_task_id = task.id}
-        <!-- Chat-style layout: on xl+ the whole row is bounded to the viewport
-             height. Both the centered chat column and the right-pinned Options
-             sidebar fill that height and scroll independently. The chat
-             transcript scrolls with the composer pinned below it. Below xl this
-             falls back to normal document flow. The 100vh offset clears the app
-             header above. -->
+        <!-- Chat-style layout: the whole page scrolls (no inner scroll
+             regions). The conversation flows top-to-bottom with the composer
+             pinned to the bottom of the viewport via position:sticky; the
+             Options sidebar sits at the top of the page in normal flow. -->
         <div data-testid="multiturn-layout">
-          <div
-            class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:h-[calc(100vh-11rem)]"
-          >
-            <!-- The chat column is full width so its scrollbar sits at the
-                 right boundary; the conversation + composer are centered
-                 inside via max-w + mx-auto. -->
-            <div class="grow flex flex-col min-w-0 xl:h-full xl:min-h-0">
-              <div
-                bind:this={transcript_scroll_el}
-                class="chat-messages-scroll min-w-0 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-4"
-              >
-                <div
-                  class="mx-auto flex w-full max-w-3xl flex-col gap-6 xl:min-h-full"
-                >
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+            <!-- The chat/input fills the left column. The min-height keeps the
+                 sticky composer at the bottom of the viewport even for short
+                 conversations. -->
+            <div
+              class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]"
+            >
+              <div bind:this={transcript_scroll_el} class="min-w-0 xl:flex-1">
+                <div class="flex w-full flex-col gap-6">
                   {#if run_has_children}
                     <div role="alert" data-testid="run-has-children-banner">
                       <Warning
@@ -898,16 +929,19 @@
                       />
                     </div>
                   {/if}
-                  {#key run.id}
-                    <ChatTrace
-                      trace={display_trace}
-                      {project_id}
-                      {forkable_run_ids}
-                      truncate_at_trace_index={fork_target?.trace_index ?? null}
-                      {on_fork}
-                      show_per_message_usage={task?.turn_mode === "multiturn"}
-                    />
-                  {/key}
+                  <!-- Intentionally NOT keyed on run.id: each turn loads a new
+                       leaf run whose trace is a superset of the previous one,
+                       so letting ChatTrace diff (append the new messages)
+                       avoids tearing down and rebuilding the whole transcript
+                       on every send — which caused a visible flash. -->
+                  <ChatTrace
+                    trace={display_trace}
+                    {project_id}
+                    {forkable_run_ids}
+                    truncate_at_trace_index={fork_target?.trace_index ?? null}
+                    {on_fork}
+                    show_per_message_usage={task?.turn_mode === "multiturn"}
+                  />
                   {#if awaiting_response}
                     <div data-testid="multiturn-pending-response">
                       <ChatLoading />
@@ -915,8 +949,8 @@
                   {/if}
                 </div>
               </div>
-              <div class="mt-6 xl:mt-0 xl:flex-none xl:pt-4 xl:pr-4">
-                <div class="mx-auto w-full max-w-3xl">
+              <div class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4">
+                <div class="flex w-full flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
                       bind:this={fork_composer}
@@ -943,23 +977,19 @@
                       on_send_settled={handle_send_settled}
                     />
                   {/if}
-                </div>
-              </div>
-              <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
-              <div class="xl:flex-none mt-2 xl:pr-4">
-                <div class="mx-auto w-full max-w-3xl">
-                  <button
-                    class="text-xs link"
-                    on:click={() => raw_data_dialog?.show()}
-                  >
-                    Show Raw Data
-                  </button>
+                  <!-- Raw data opens in a modal so it doesn't reflow the chat. -->
+                  <div>
+                    <button
+                      class="text-xs link"
+                      on:click={() => raw_data_dialog?.show()}
+                    >
+                      Show Raw Data
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-            <div
-              class="w-72 2xl:w-96 flex-none flex flex-col chat-messages-scroll xl:h-full xl:min-h-0 xl:overflow-y-auto xl:px-4 xl:pb-6"
-            >
+            <div class="w-72 2xl:w-96 flex-none flex flex-col xl:pl-4">
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
@@ -1052,39 +1082,3 @@
     </div>
   {/if}
 </Dialog>
-
-<style>
-  /* Match the Assistant chat transcript scrollbar. Overlay style: the thumb
-     stays invisible until you hover (or scroll) the zone, so the two adjacent
-     scroll regions don't both show persistent bars. */
-  .chat-messages-scroll::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .chat-messages-scroll::-webkit-scrollbar-thumb {
-    background-color: transparent;
-    border-radius: 3px;
-    transition: background-color 0.2s ease;
-  }
-
-  .chat-messages-scroll:hover::-webkit-scrollbar-thumb {
-    background-color: oklch(var(--bc) / 0.2);
-  }
-
-  .chat-messages-scroll:hover::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(var(--bc) / 0.35);
-  }
-
-  .chat-messages-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-  }
-
-  .chat-messages-scroll:hover {
-    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
-  }
-</style>

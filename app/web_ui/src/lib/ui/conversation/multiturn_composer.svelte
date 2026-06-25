@@ -9,6 +9,7 @@
     send_multiturn,
     type RunConfigController,
   } from "$lib/services/multiturn_send"
+  import type { TaskRun } from "$lib/types"
 
   export let mode: "append" | "fork" = "append"
   export let project_id: string
@@ -21,7 +22,10 @@
   // Fork-mode only.
   export let prefill_text: string = ""
   export let forked_turn_index: number | undefined = undefined
-  export let on_success: (new_run_id: string) => void | Promise<void>
+  export let on_success: (
+    new_run_id: string,
+    created_run?: TaskRun,
+  ) => void | Promise<void>
   export let on_cancel: (() => void) | undefined = undefined
   // Append-mode optimistic hooks: on_send_start fires with the message text
   // the moment a send begins (so the parent can show it in the transcript
@@ -205,9 +209,8 @@
         <span>Forking turn {forked_turn_index}</span>
       </div>
       <p class="text-xs text-gray-500">
-        Editing this message will create a new conversation branch. The original
-        conversation it branched off from will be preserved unchanged in your
-        dataset.
+        Your next message will start a new conversation branch from this point.
+        The original conversation is preserved unchanged in your dataset.
       </p>
     </div>
   {/if}

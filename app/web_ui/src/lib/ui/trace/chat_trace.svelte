@@ -171,7 +171,7 @@
   {#each trace as message, index}
     {#if (truncate_at_trace_index === null || index < truncate_at_trace_index) && message.role !== "tool" && message.role !== "system" && message.role !== "developer"}
       {@const fork_run_id = forkable_run_ids?.[index] ?? null}
-      {@const show_fork = !!(message.role === "user" && fork_run_id && on_fork)}
+      {@const show_fork = !!(message.role !== "user" && fork_run_id && on_fork)}
       {@const show_info = show_per_message_usage && has_usage_info(message)}
       {@const content = content_from_message(message)}
       {@const reasoning = reasoning_from_message(message)}
@@ -195,15 +195,12 @@
               <span class="text-gray-400 italic">(empty message)</span>
             {/if}
           </div>
-          {#if show_info || show_fork}
+          {#if show_info}
             <ChatMessageActions
               align="end"
               show_usage={show_info}
-              show_fork={!!show_fork}
+              show_fork={false}
               on_usage={() => open_usage_dialog(message)}
-              on_fork={() => {
-                if (fork_run_id) on_fork?.(fork_run_id, index)
-              }}
             />
           {/if}
         </div>
@@ -396,15 +393,18 @@
               </div>
             {/if}
           </div>
-          {#if show_info}
-            <!-- Constrain to the bubble width so the right-aligned action sits
+          {#if show_info || show_fork}
+            <!-- Constrain to the bubble width so the right-aligned actions sit
                  at the bubble's right edge, not the far column edge. -->
             <div class="w-[70%]">
               <ChatMessageActions
                 align="end"
-                show_usage={true}
-                show_fork={false}
+                show_usage={show_info}
+                show_fork={!!show_fork}
                 on_usage={() => open_usage_dialog(message)}
+                on_fork={() => {
+                  if (fork_run_id) on_fork?.(fork_run_id, index)
+                }}
               />
             </div>
           {/if}
