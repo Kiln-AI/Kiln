@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncGenerator, Callable, Literal
+from typing import Any, AsyncGenerator, Callable, Literal, TypeVar
 
 from pydantic import BaseModel
 
 from .models import JobRecord
+
+_T = TypeVar("_T")
 
 
 class JobEvent(BaseModel):
@@ -28,9 +30,9 @@ KEEPALIVE_PING = KeepalivePing()
 
 
 async def iter_with_keepalive(
-    subscription: AsyncGenerator[JobEvent, None],
+    subscription: AsyncGenerator[_T, None],
     timeout_seconds: float,
-) -> AsyncGenerator[JobEvent | KeepalivePing, None]:
+) -> AsyncGenerator[_T | KeepalivePing, None]:
     """Yield each event from `subscription`, injecting `KEEPALIVE_PING` on quiet.
 
     Why a feeder task instead of `asyncio.wait_for(subscription.__anext__(),
@@ -48,7 +50,7 @@ async def iter_with_keepalive(
     feeder pushes a `None` sentinel when the subscription ends so this generator
     can break. Teardown cancels the feeder and closes the subscription.
     """
-    local_queue: asyncio.Queue[JobEvent | None] = asyncio.Queue()
+    local_queue: asyncio.Queue[_T | None] = asyncio.Queue()
 
     async def _feed() -> None:
         try:

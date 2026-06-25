@@ -55,7 +55,7 @@
     {/if}
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div
-      class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+      class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
       on:click|stopPropagation
     >
       <TableActionMenu

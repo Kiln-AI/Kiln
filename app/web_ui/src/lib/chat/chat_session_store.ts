@@ -496,7 +496,14 @@ export function createChatSessionStore(
   async function handleAutoModeConsent(
     payload: AutoModeConsentRequiredPayload,
   ): Promise<void> {
-    const traceId = payload.traceId ?? continuationTraceId
+    // payload.traceId is nullable; continuationTraceId is only set by
+    // loadSession(), so in a normal live chat fall back to the trace
+    // setLastAssistantTraceId() wrote onto the last assistant message before
+    // using continuationTraceId.
+    const traceId =
+      payload.traceId ??
+      traceIdForNextChatRequest(get(persisted).messages) ??
+      continuationTraceId
     if (!traceId) return
     const accepted = onAutoModeConsentNeeded
       ? await onAutoModeConsentNeeded(payload)

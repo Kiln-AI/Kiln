@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 from pydantic import BaseModel, Field
@@ -56,7 +56,9 @@ class InboundMessage(BaseModel):
     (appended to the continuation as a ``role:"user"`` message); when the run is
     idle it seeds a fresh burst."""
 
-    role: str = "user"
+    # Fixed to the user role: /message is documented as user-message input only,
+    # so the schema enforces it rather than trusting a client-supplied role.
+    role: Literal["user"] = "user"
     content: str
     trace_id: str | None = None
 

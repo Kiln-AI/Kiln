@@ -53,29 +53,31 @@
   async function openManualAutoMode() {
     if (consentPending) return
     consentPending = true
-    let accepted = false
+    // Hold consentPending (the button's only disable guard) through the whole
+    // flow — including the awaited requestEnable() — so a slow enable can't
+    // re-enable the button and dispatch a duplicate enable.
     try {
-      accepted = await consentDialog.prompt(null)
+      const accepted = await consentDialog.prompt(null)
+      if (!accepted) return
+      const traceId = traceIdForNextChatRequest(messages)
+      if (!traceId) {
+        // Brand-new conversation (Revision R2): no trace to key a server run, so
+        // arm client-side. The indicator turns on ("waiting for you"); the first
+        // message creates the run (enable seeded with that message, no trace_id).
+        auto_run_store.arm()
+        return
+      }
+      // Existing conversation: enable arms a server-owned run keyed by the trace
+      // id (functional spec §4.1(2)). Surface enable failures (e.g. 429) instead
+      // of silently swallowing them — the dialog has already closed.
+      const result = await auto_run_store.requestEnable({ trace_id: traceId })
+      if (!result.ok) {
+        store.pushInlineError(
+          `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+        )
+      }
     } finally {
       consentPending = false
-    }
-    if (!accepted) return
-    const traceId = traceIdForNextChatRequest(messages)
-    if (!traceId) {
-      // Brand-new conversation (Revision R2): no trace to key a server run, so
-      // arm client-side. The indicator turns on ("waiting for you"); the first
-      // message creates the run (enable seeded with that message, no trace_id).
-      auto_run_store.arm()
-      return
-    }
-    // Existing conversation: enable arms a server-owned run keyed by the trace
-    // id (functional spec §4.1(2)). Surface enable failures (e.g. 429) instead
-    // of silently swallowing them — the dialog has already closed.
-    const result = await auto_run_store.requestEnable({ trace_id: traceId })
-    if (!result.ok) {
-      store.pushInlineError(
-        `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
-      )
     }
   }
 

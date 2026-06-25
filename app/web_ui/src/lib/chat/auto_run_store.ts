@@ -478,12 +478,17 @@ export function createAutoRunStore(): AutoRunStore {
         },
       )
     } catch (err) {
+      // The optimistic working flag must be cleared on failure: no burst
+      // started, so no auto-mode-idle/off event will arrive to clear it and the
+      // thinking indicator would stay stuck on.
+      setWorking(false)
       return {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       }
     }
     if (!response.ok) {
+      setWorking(false)
       let message = `Could not send the message (${response.status}).`
       try {
         const parsed = (await response.json()) as { detail?: string }
