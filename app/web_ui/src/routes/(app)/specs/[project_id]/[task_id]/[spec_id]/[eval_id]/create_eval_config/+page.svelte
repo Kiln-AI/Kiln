@@ -10,7 +10,6 @@
   } from "$lib/utils/eval_types/registry"
   import { buildCreateEvalBreadcrumbs } from "./breadcrumbs"
   import { getCreateEvalLayoutContext } from "./context"
-  import EvalTypeHero from "$lib/components/eval_types/select/eval_type_hero.svelte"
   import EvalTypeRow from "$lib/components/eval_types/select/eval_type_row.svelte"
 
   const ctx = getCreateEvalLayoutContext()
@@ -43,9 +42,7 @@
     $page.url.searchParams.get("next_page"),
   )
 
-  const heroType = ALL_V2_EVAL_TYPES[0]
-  const heroMetadata = getV2EvalTypeMetadata(heroType)
-  const listTypes = ALL_V2_EVAL_TYPES.slice(1)
+  const recommendedType = ALL_V2_EVAL_TYPES[0]
 
   function preserved_query_string(): string {
     const params = new URLSearchParams()
@@ -65,29 +62,20 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Add a Judge"
-    subtitle="Select a judge type — every type produces the same scores, it just changes how they're computed."
+    title="Select a Judge Type"
+    subtitle="Every type produces the same scores — it just changes how they're computed."
     {breadcrumbs}
   >
     <div class="pt-6 max-w-3xl">
-      <EvalTypeHero
-        metadata={heroMetadata}
-        on:continue={() => select_v2_type(heroType)}
-      />
-
-      <div class="mt-8">
-        <h2 class="text-sm font-medium text-base-content/60 mb-3">
-          All judge types
-        </h2>
-        <div class="flex flex-col gap-2">
-          {#each listTypes as evalType}
-            {@const metadata = getV2EvalTypeMetadata(evalType)}
-            <EvalTypeRow
-              {metadata}
-              on:select={() => select_v2_type(evalType)}
-            />
-          {/each}
-        </div>
+      <div class="flex flex-col gap-2">
+        {#each ALL_V2_EVAL_TYPES as evalType}
+          {@const metadata = getV2EvalTypeMetadata(evalType)}
+          <EvalTypeRow
+            {metadata}
+            recommended={evalType === recommendedType}
+            on:select={() => select_v2_type(evalType)}
+          />
+        {/each}
       </div>
     </div>
   </AppPage>

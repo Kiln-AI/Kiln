@@ -4,30 +4,48 @@
   import EvalTypeTags from "./eval_type_tags.svelte"
 
   export let metadata: V2EvalTypeMetadata
+  export let recommended: boolean = false
 
   const dispatch = createEventDispatcher<{ select: void }>()
 </script>
 
 <button
   data-testid="eval-type-row"
-  class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 p-4 w-full text-left cursor-pointer"
+  class="card card-bordered shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-full text-left cursor-pointer {recommended
+    ? 'border-base-300 border-2 bg-base-200 p-5'
+    : 'border-base-300 p-4'}"
   on:click={() => dispatch("select")}
 >
   <div class="flex items-center gap-4">
     <div
-      class="flex items-center justify-center w-9 h-9 rounded-lg bg-base-200 flex-none"
+      class="flex items-center justify-center rounded-lg flex-none {recommended
+        ? 'w-12 h-12 bg-base-100'
+        : 'w-9 h-9 bg-base-200'}"
     >
-      <i class="{metadata.icon} text-lg text-primary"></i>
+      <i
+        class="{metadata.icon} text-primary {recommended
+          ? 'text-2xl'
+          : 'text-lg'}"
+      ></i>
     </div>
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="font-medium text-sm whitespace-nowrap"
-          >{metadata.label}</span
+        <span
+          class="whitespace-nowrap {recommended
+            ? 'font-medium text-base'
+            : 'font-medium text-sm'}">{metadata.label}</span
         >
+        {#if recommended}
+          <span class="badge badge-sm badge-primary">&#9733; Recommended</span>
+        {/if}
         <EvalTypeTags tags={metadata.tags} />
       </div>
-      <p class="text-xs text-base-content/60 mt-0.5">
+      <p
+        class="text-base-content/60 mt-0.5 {recommended
+          ? 'text-sm'
+          : 'text-xs'}"
+      >
         {metadata.description}
       </p>
     </div>
@@ -38,7 +56,8 @@
       height="16"
       viewBox="0 0 16 16"
       fill="currentColor"
-      class="flex-none text-base-content/40"
+      class="flex-none ml-auto text-base-content/40"
+      aria-hidden="true"
     >
       <path
         fill-rule="evenodd"

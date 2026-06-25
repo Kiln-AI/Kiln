@@ -383,27 +383,55 @@ describe("create_eval_config picker page", () => {
     cleanup()
   })
 
-  it("renders hero card and all remaining type rows", async () => {
+  it("renders all eval types as rows in a single list", async () => {
     const { container } = await renderPickerPage()
-    const cards = container.querySelectorAll(".card")
-    expect(cards.length).toBe(ALL_V2_EVAL_TYPES.length)
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    expect(rows.length).toBe(ALL_V2_EVAL_TYPES.length)
   })
 
-  it("shows LLM as Judge in the hero card", async () => {
+  it("does not render an 'All judge types' section heading", async () => {
     const { container } = await renderPickerPage()
-    const cards = container.querySelectorAll(".card")
-    expect(cards[0].textContent).toContain("LLM as Judge")
-    expect(cards[0].textContent).toContain("Recommended")
+    expect(container.textContent).not.toContain("All judge types")
   })
 
-  it("navigates to llm_judge on hero Continue click", async () => {
+  it("shows page title 'Select a Judge Type'", async () => {
     const { container } = await renderPickerPage()
-    const continueBtn = container.querySelector(
-      ".btn-primary",
-    ) as HTMLButtonElement
-    expect(continueBtn).not.toBeNull()
-    expect(continueBtn.textContent).toContain("Continue")
-    await fireEvent.click(continueBtn)
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    expect(appPage?.getAttribute("data-title")).toBe("Select a Judge Type")
+  })
+
+  it("recommended item is first and rendered with emphasis", async () => {
+    const { container } = await renderPickerPage()
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const firstRow = rows[0]
+    expect(firstRow.textContent).toContain("LLM as Judge")
+    expect(firstRow.textContent).toContain("Recommended")
+    expect(firstRow.classList.contains("border-2")).toBe(true)
+    expect(firstRow.classList.contains("bg-base-200")).toBe(true)
+  })
+
+  it("recommended item is a clickable button (no Continue button)", async () => {
+    const { container } = await renderPickerPage()
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const firstRow = rows[0]
+    expect(firstRow.tagName).toBe("BUTTON")
+    expect(firstRow.textContent).not.toContain("Continue")
+  })
+
+  it("every row has a right-aligned chevron", async () => {
+    const { container } = await renderPickerPage()
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    for (const row of rows) {
+      const svg = row.querySelector("svg")
+      expect(svg).not.toBeNull()
+      expect(svg?.classList.contains("ml-auto")).toBe(true)
+    }
+  })
+
+  it("navigates to llm_judge on recommended row click", async () => {
+    const { container } = await renderPickerPage()
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    await fireEvent.click(rows[0])
     await tick()
 
     expect(mockGoto).toHaveBeenCalledWith(
@@ -414,8 +442,8 @@ describe("create_eval_config picker page", () => {
   it("navigates to type on list row click", async () => {
     const { container } = await renderPickerPage()
     const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
-    expect(rows.length).toBe(ALL_V2_EVAL_TYPES.length - 1)
-    await fireEvent.click(rows[0])
+    expect(rows.length).toBe(ALL_V2_EVAL_TYPES.length)
+    await fireEvent.click(rows[1])
     await tick()
 
     expect(mockGoto).toHaveBeenCalledWith(
@@ -437,10 +465,8 @@ describe("create_eval_config picker page", () => {
     })
 
     const { container } = await renderPickerPage()
-    const continueBtn = container.querySelector(
-      ".btn-primary",
-    ) as HTMLButtonElement
-    await fireEvent.click(continueBtn)
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    await fireEvent.click(rows[0])
     await tick()
 
     expect(mockGoto).toHaveBeenCalledWith(
@@ -1045,6 +1071,7 @@ describe("Phase 9 — Docs-link audit + theme-aware colors", () => {
       const { container } = await renderPickerPage()
       expect(container.textContent).not.toContain("Read the Docs")
       expect(container.textContent).not.toContain("Read the docs")
+      expect(container.textContent).not.toContain("All judge types")
     })
 
     it("builder route does not render Read the Docs or sub_subtitle", async () => {
