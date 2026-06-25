@@ -542,12 +542,14 @@
   // region) — we observe this element for content mutations and pin the window
   // scroll to the bottom while things settle.
   let transcript_scroll_el: HTMLElement | null = null
-  // The left chat column (transcript + composer). On small screens the Options
-  // sidebar wraps to below this column, so the document's total height extends
-  // past the conversation. We scroll to this column's bottom rather than the
-  // document's so "bottom" always lands on the latest turn (with the composer
-  // just below it), not the wrapped sidebar below it.
-  let chat_column_el: HTMLElement | null = null
+  // The composer block (the last message's composer + "Show Raw Data"). We
+  // scroll to the bottom of THIS element rather than the document's or the
+  // chat column's: the document height is dominated by the Options sidebar
+  // when the conversation is short, and the chat column itself stretches to
+  // the sidebar's height (flex-row align-items: stretch), so neither of their
+  // bottoms tracks the conversation. The composer block's bottom always lands
+  // just past "Show Raw Data", keeping the latest turn and composer in view.
+  let composer_block_el: HTMLElement | null = null
   // Scroll the page to the latest turn whenever a run renders — both on
   // initial load and after sending a new turn.
   let scrolled_for_run_id: string | null = null
@@ -629,16 +631,18 @@
     if (!el || typeof MutationObserver === "undefined") return
     stop_pinning_transcript()
     const stick = () => {
-      const col = chat_column_el
-      if (!col) {
+      const block = composer_block_el
+      if (!block) {
         window.scrollTo({ top: document.documentElement.scrollHeight })
         return
       }
-      // Scroll so the bottom of the chat column (the composer's resting spot)
-      // sits at the bottom of the viewport, regardless of any sidebar that
-      // wrapped below it in the mobile layout.
+      // Scroll so the bottom of the composer block ("Show Raw Data") sits at
+      // the bottom of the viewport, regardless of how tall the Options sidebar
+      // is or whether it wrapped below in the mobile layout.
       const target =
-        window.scrollY + col.getBoundingClientRect().bottom - window.innerHeight
+        window.scrollY +
+        block.getBoundingClientRect().bottom -
+        window.innerHeight
       window.scrollTo({ top: Math.max(0, target) })
     }
     stick()
@@ -904,7 +908,7 @@
              Options sidebar sits at the top of the page in normal flow. -->
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-            <div bind:this={chat_column_el} class="grow flex flex-col min-w-0">
+            <div class="grow flex flex-col min-w-0">
               <div bind:this={transcript_scroll_el} class="min-w-0">
                 <div class="flex w-full flex-col gap-6">
                   {#if run_has_children}
@@ -957,7 +961,7 @@
                   {/if}
                 </div>
               </div>
-              <div class="mt-6 bg-base-100 pb-6 pt-4">
+              <div bind:this={composer_block_el} class="mt-2 bg-base-100 pb-6 pt-4">
                 <div class="flex w-full flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
