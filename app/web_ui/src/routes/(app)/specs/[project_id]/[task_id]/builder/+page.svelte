@@ -19,6 +19,12 @@
   import RefineSpec from "../spec_builder/refine_spec.svelte"
   import ReviewExamples from "../spec_builder/review_examples.svelte"
   import MultiTurnReviewPaginator from "./multi_turn_review_paginator.svelte"
+  // Reuse v1's themed loading animations on the wizard's transition screens
+  // instead of bare dot-spinners, so the two builders feel consistent.
+  import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
+  import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
+  import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import type { SuggestedEdit, ReviewRow } from "../spec_utils"
   import { KilnError } from "$lib/utils/error_handlers"
@@ -838,6 +844,43 @@
     goto(`/specs/${project_id}/${task_id}`)
   }
 
+  // Escape hatch from Step 1 to the legacy manual builder (template carousel),
+  // for users who'd rather author the eval themselves than use the assistant.
+  function create_manually() {
+    posthog.capture("eval_v2_create_manually_clicked")
+    goto(`/specs/${project_id}/${task_id}/select_template`)
+  }
+
+  // Cmd/Ctrl-Enter fires the current step's primary action — but only the
+  // steps with bespoke buttons. FormContainer-backed steps (clarify, single-
+  // turn refine/review) already handle it; skipping them avoids double-firing.
+  function handle_global_keydown(event: KeyboardEvent) {
+    if (!((event.metaKey || event.ctrlKey) && event.key === "Enter")) return
+    if (current_step === "describe") {
+      if (description.trim() && !classifying) {
+        event.preventDefault()
+        classify_then_continue()
+      }
+    } else if (
+      current_step === "refine" &&
+      is_multi_turn &&
+      !refined_preview_loading
+    ) {
+      if (
+        name.trim() &&
+        (refined_property_values.issue_description ?? "").trim()
+      ) {
+        event.preventDefault()
+        on_refine_submit()
+      }
+    } else if (current_step === "review" && is_multi_turn) {
+      if (all_chains_reviewed) {
+        event.preventDefault()
+        on_advance_to_save()
+      }
+    }
+  }
+
   // Auto-load questions when entering Step 2
   $: if (current_step === "clarify" && !question_set && !questions_loading) {
     load_questions()
@@ -899,7 +942,23 @@
   $: page_title = page_title_for(current_step)
   $: page_subtitle = page_subtitle_for(current_step)
   $: page_max_w = page_max_w_for(current_step)
+
+  // Step 4 animation caption. Multi-turn routes its live "X of N ready" count
+  // through here since the shared animation has no progress bar of its own.
+  $: generate_animation_description = is_multi_turn
+    ? multi_turn_phase === "generating_cases"
+      ? `Generating ${NUM_CASES} synthetic-user cases…`
+      : `Driving conversations — ${multi_turn_progress} of ${multi_turn_total} ready.`
+    : "Kiln is generating example data to review and creating a judge. Hold tight!"
+
+  // Multi-turn save tags existing chains rather than generating a dataset, so
+  // the save copy differs from single-turn's generate-then-save.
+  $: save_animation_description = is_multi_turn
+    ? "Kiln is saving your eval and tagging the generated conversations. Hold tight!"
+    : "Kiln is generating test and training data for your eval before saving. Hold tight!"
 </script>
+
+<svelte:window on:keydown={handle_global_keydown} />
 
 <!-- Constrain AppPage (title + body) to page_max_w, matching v1 spec_builder.
      Centring v1's inner content is handled by AppPage's own header/slot
@@ -964,13 +1023,21 @@
               {/if}
             </button>
           </div>
+
+          <div class="text-center mt-6 text-sm text-gray-500">
+            Prefer to set it up yourself?
+            <button
+              class="link link-hover text-primary"
+              on:click={create_manually}>Create manually</button
+            >
+          </div>
         {:else if current_step === "clarify"}
           <!-- ── Step 2 — Clarify (uses v1's Questions component) ── -->
           {#if questions_loading}
-            <div class="text-center text-gray-500 py-8">
-              <span class="loading loading-dots loading-md"></span>
-              <div class="text-sm mt-2">Generating clarifying questions…</div>
-            </div>
+            <QuestioningAnimation
+              title="Preparing Clarifying Questions"
+              description="Kiln is analyzing your criteria to identify areas that could use more clarity. Hold tight!"
+            />
             <div class="mt-4">
               <button
                 class="btn btn-ghost btn-sm"
@@ -1017,10 +1084,10 @@
         {:else if current_step === "refine"}
           <!-- ── Step 3 — Refine ── -->
           {#if refined_preview_loading}
-            <div class="text-center py-12">
-              <span class="loading loading-dots loading-lg"></span>
-              <div class="text-sm mt-4 text-gray-500">Refining your eval…</div>
-            </div>
+            <RefiningAnimation
+              title="Refining Eval"
+              description="Kiln is refining your eval with the feedback you provided. Hold tight!"
+            />
             <div class="mt-4">
               <button
                 class="btn btn-ghost btn-sm"
@@ -1123,22 +1190,13 @@
             />
           {/if}
           {#if generation_loading}
-            <div class="text-center py-12">
-              <span class="loading loading-dots loading-lg"></span>
-              {#if is_multi_turn && multi_turn_phase === "generating_cases"}
-                <div class="text-sm mt-4 text-gray-500">
-                  Generating {NUM_CASES} cases…
-                </div>
-              {:else if is_multi_turn}
-                <div class="text-sm mt-4 text-gray-500">
-                  {multi_turn_progress} of {multi_turn_total} ready
-                </div>
-              {:else}
-                <div class="text-sm mt-4 text-gray-500">
-                  Generating examples…
-                </div>
-              {/if}
-            </div>
+            <AnalyzingAnimation
+              title={is_multi_turn
+                ? "Generating Conversations"
+                : "Analyzing Eval"}
+              description={generate_animation_description}
+              warning={is_multi_turn ? null : "This may take a while"}
+            />
           {/if}
 
           {#if generation_error}
@@ -1208,10 +1266,10 @@
         {:else if current_step === "save"}
           <!-- ── Step 6 — Save ── -->
           {#if saving}
-            <div class="text-center py-12">
-              <span class="loading loading-dots loading-lg"></span>
-              <div class="text-sm mt-4 text-gray-500">Saving…</div>
-            </div>
+            <SavingAnimation
+              title="Creating Eval"
+              description={save_animation_description}
+            />
           {:else if save_error}
             <Warning warning_color="error" warning_message={save_error} />
             <div class="text-center py-4">
