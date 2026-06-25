@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 from app.desktop.studio_server.chat.constants import (
@@ -10,6 +10,7 @@ from app.desktop.studio_server.chat.constants import (
     DENIED_TOOL_OUTPUT,
     FUNCTION_NAME_TO_TOOL_ID,
     MAX_TOOL_ROUNDS,
+    SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
     SSE_TYPE_TOOL_CALLS_PENDING,
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
@@ -21,20 +22,70 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_requires_user_approval,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
+    DISABLE_AUTO_MODE_TOOL_NAME,
+)
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
+    ENABLE_AUTO_MODE_TOOL_NAME,
+)
 from kiln_ai.tools.tool_registry import tool_from_id
 from pydantic import BaseModel, ConfigDict, Field
+
+# The tool result the app server resolves an intercepted disable_auto_mode call
+# to, fed back to the backend so it continues interactively.
+DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class RoundState:
-    """Accumulated state from one upstream round."""
+    """Accumulated state from one upstream round.
+
+    The first four fields are the public per-round outputs the caller reads.
+    The trailing two carry the small amount of cross-round/error context that
+    ``iter_upstream_round`` needs so it can own the non-200 / RemoteProtocolError
+    handling that used to be inline in ``ChatStreamSession.stream()``:
+
+    - ``trace_id_for_error``: the last trace id seen so far (seeded from the
+      caller's known trace id), stamped onto error payloads so the UI can
+      correlate. ``trace_id`` is the trace id observed *this* round.
+    - ``seen_upstream_error``: whether an upstream ``error`` event was already
+      forwarded, so a subsequent connection close isn't reported as a duplicate
+      generic error.
+    """
 
     finish_tool_calls: bool = False
     tool_input_events: list[ToolInputAvailableEvent] = field(default_factory=list)
     assistant_text: str = ""
     trace_id: str | None = None
+    trace_id_for_error: str | None = None
+    seen_upstream_error: bool = False
+    # Set when iter_upstream_round itself yielded a terminal `error` SSE payload
+    # (non-200 response, or a RemoteProtocolError with no finish boundary). The
+    # caller uses this to stop the loop — distinct from a forwarded upstream
+    # `error` event, which is non-terminal and leaves the loop free to continue.
+    emitted_terminal_error: bool = False
+
+    @property
+    def is_terminal_upstream_error(self) -> bool:
+        """Single source of truth for "this round ended on an upstream error and
+        the loop must stop." Two distinct cases collapse here:
+
+        - ``emitted_terminal_error``: iter_upstream_round already yielded a
+          terminal error SSE (non-200, or RemoteProtocolError with no finish
+          boundary) — nothing left to drive.
+        - a forwarded upstream ``error`` event followed by a connection close
+          with no tool-call finish boundary (``seen_upstream_error and not
+          finish_tool_calls``): the duplicate generic error was suppressed and
+          there is nothing more to continue from.
+
+        Both the interactive ``ChatStreamSession.stream()`` and the auto-run
+        ``AutoChatRunner`` consult this so the two paths can't drift.
+        """
+        return self.emitted_terminal_error or (
+            self.seen_upstream_error and not self.finish_tool_calls
+        )
 
 
 class ToolCallInfo(BaseModel):
@@ -65,6 +116,126 @@ def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> byt
     items = [_pending_item_from_event(e) for e in events]
     payload = {"type": SSE_TYPE_TOOL_CALLS_PENDING, "items": items}
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+def _format_consent_required_sse(
+    trace_id: str | None,
+    enable_tool_call_id: str,
+    reason: str | None,
+    siblings: list[ToolInputAvailableEvent],
+) -> bytes:
+    """Format the ``auto-mode-consent-required`` SSE the interactive stream emits
+    when the model calls ``enable_auto_mode``.
+
+    ``sibling_tool_calls`` carries any other (non-server) client tool calls from
+    the same round so the accept/decline paths can resolve every ``tool_call_id``
+    the backend is waiting on. The model is instructed to call ``enable_auto_mode``
+    alone, so this is normally empty.
+    """
+    payload = {
+        "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
+        "trace_id": trace_id,
+        "enable_tool_call_id": enable_tool_call_id,
+        "reason": reason,
+        "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
+    }
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+async def iter_upstream_round(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    round_state: RoundState,
+) -> AsyncIterator[bytes]:
+    """POST one upstream round; yield forward-bytes as they stream; mutate
+    ``round_state`` in place.
+
+    Shared by the interactive ``ChatStreamSession.stream()`` and the auto-run
+    ``AutoChatRunner``. It owns exactly the per-round upstream mechanics that
+    used to be inline in ``stream()``: open the upstream POST, parse the SSE,
+    forward the bytes, accumulate ``finish_tool_calls`` / ``tool_input_events`` /
+    ``assistant_text`` / ``trace_id`` onto ``round_state``, and handle non-200
+    responses and ``RemoteProtocolError`` by yielding the standard ``error`` SSE
+    bytes and returning. It does NOT apply any post-round policy (approval gate,
+    tool execution, continuation) — that stays caller-specific.
+
+    ``round_state.trace_id_for_error`` should be seeded by the caller with the
+    last known trace id before the first round; this generator updates it as new
+    trace ids stream in and reads it when building error payloads.
+    """
+    parser = EventParser()
+
+    async with client.stream(
+        "POST",
+        url,
+        content=json.dumps(body, ensure_ascii=False).encode(),
+        headers=headers,
+    ) as upstream:
+        if upstream.status_code != 200:
+            error_body = await upstream.aread()
+            detail = "Chat request failed."
+            code: str | None = None
+            if error_body.startswith(b"{"):
+                try:
+                    parsed = json.loads(error_body)
+                    detail = parsed.get("message", detail) or detail
+                    code = parsed.get("code")
+                except json.JSONDecodeError:
+                    pass
+            error_payload: dict[str, Any] = {
+                "type": "error",
+                "message": detail,
+            }
+            if code:
+                error_payload["code"] = code
+            if round_state.trace_id_for_error:
+                error_payload["trace_id"] = round_state.trace_id_for_error
+            round_state.emitted_terminal_error = True
+            yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+            return
+
+        try:
+            async for chunk in upstream.aiter_bytes():
+                result = parser.parse(chunk)
+                if result.has_error_event:
+                    round_state.seen_upstream_error = True
+                if result.finish_tool_calls:
+                    round_state.finish_tool_calls = True
+                round_state.tool_input_events.extend(result.tool_input_events)
+                round_state.assistant_text += result.text_delta
+                if result.chat_trace_id is not None:
+                    round_state.trace_id = result.chat_trace_id
+                    round_state.trace_id_for_error = result.chat_trace_id
+                if result.lines_to_forward:
+                    yield b"\n".join(result.lines_to_forward) + b"\n"
+        except httpx.RemoteProtocolError:
+            if round_state.finish_tool_calls:
+                logger.debug(
+                    "Connection closed after streamed tool boundary "
+                    "(AI SDK tool-calls finish; expected)"
+                )
+            elif round_state.seen_upstream_error:
+                # we already passed on an error coming out of upstream server, the UI should be rendering it
+                # we don't need to also tell it the stream was closed by the upstream server
+                logger.debug(
+                    "Connection closed after upstream error event; "
+                    "suppressing duplicate error"
+                )
+            else:
+                trace_id = round_state.trace_id_for_error or str(uuid.uuid4())
+                error_payload = {
+                    "type": "error",
+                    "message": "Something went wrong.",
+                    "trace_id": trace_id,
+                }
+                round_state.emitted_terminal_error = True
+                yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+                logger.exception(
+                    "RemoteProtocolError during streaming (trace_id=%s)",
+                    trace_id,
+                )
 
 
 async def execute_tool_batch(
@@ -100,84 +271,28 @@ class ChatStreamSession:
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
         trace_id_for_error: str | None = self._initial_trace_id
-        seen_upstream_error = False
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(MAX_TOOL_ROUNDS):
-                round_state = RoundState()
-                parser = EventParser()
+                round_state = RoundState(trace_id_for_error=trace_id_for_error)
 
-                async with client.stream(
-                    "POST",
+                async for forward_bytes in iter_upstream_round(
+                    client,
                     self._upstream_url,
-                    content=json.dumps(self._body, ensure_ascii=False).encode(),
-                    headers=self._headers,
-                ) as upstream:
-                    if upstream.status_code != 200:
-                        error_body = await upstream.aread()
-                        detail = "Chat request failed."
-                        code: str | None = None
-                        if error_body.startswith(b"{"):
-                            try:
-                                parsed = json.loads(error_body)
-                                detail = parsed.get("message", detail) or detail
-                                code = parsed.get("code")
-                            except json.JSONDecodeError:
-                                pass
-                        error_payload: dict[str, Any] = {
-                            "type": "error",
-                            "message": detail,
-                        }
-                        if code:
-                            error_payload["code"] = code
-                        if trace_id_for_error:
-                            error_payload["trace_id"] = trace_id_for_error
-                        yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
-                        return
+                    self._headers,
+                    self._body,
+                    round_state,
+                ):
+                    yield forward_bytes
 
-                    try:
-                        async for chunk in upstream.aiter_bytes():
-                            result = parser.parse(chunk)
-                            if result.has_error_event:
-                                seen_upstream_error = True
-                            if result.finish_tool_calls:
-                                round_state.finish_tool_calls = True
-                            round_state.tool_input_events.extend(
-                                result.tool_input_events
-                            )
-                            round_state.assistant_text += result.text_delta
-                            if result.chat_trace_id is not None:
-                                round_state.trace_id = result.chat_trace_id
-                                trace_id_for_error = result.chat_trace_id
-                            forward_bytes = b"\n".join(result.lines_to_forward)
-                            if result.lines_to_forward:
-                                yield forward_bytes + b"\n"
-                    except httpx.RemoteProtocolError:
-                        if round_state.finish_tool_calls:
-                            logger.debug(
-                                "Connection closed after streamed tool boundary "
-                                "(AI SDK tool-calls finish; expected)"
-                            )
-                        elif seen_upstream_error:
-                            # we already passed on an error coming out of upstream server, the UI should be rendering it
-                            # we don't need to also tell it the stream was closed by the upstream server
-                            logger.debug(
-                                "Connection closed after upstream error event; "
-                                "suppressing duplicate error"
-                            )
-                            return
-                        else:
-                            trace_id = trace_id_for_error or str(uuid.uuid4())
-                            error_payload = {
-                                "type": "error",
-                                "message": "Something went wrong.",
-                                "trace_id": trace_id,
-                            }
-                            yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
-                            logger.exception(
-                                "RemoteProtocolError during streaming (trace_id=%s)",
-                                trace_id,
-                            )
-                            return
+                trace_id_for_error = round_state.trace_id_for_error
+
+                # A terminal upstream error (iter_upstream_round already emitted
+                # the error SSE, or a forwarded upstream error followed by a
+                # connection close with no finish boundary) means there's nothing
+                # more to drive — end the stream, matching the pre-refactor
+                # `return`s.
+                if round_state.is_terminal_upstream_error:
+                    return
 
                 if round_state.trace_id:
                     self._body = {
@@ -192,6 +307,85 @@ class ChatStreamSession:
                         for e in round_state.tool_input_events
                         if not tool_input_executor_is_server(e)
                     ]
+
+                    # enable_auto_mode interception (architecture §3.4): the model
+                    # asked to enable auto mode. Surface a consent request and
+                    # return WITHOUT executing it — enable_auto_mode is a signal,
+                    # never run as a tool. Accept/decline is handled out-of-band by
+                    # the auto-mode endpoints. This must run before the approval
+                    # gate so the consent UI takes precedence.
+                    enable_evt = next(
+                        (
+                            e
+                            for e in client_events
+                            if e.toolName == ENABLE_AUTO_MODE_TOOL_NAME
+                        ),
+                        None,
+                    )
+                    if enable_evt is not None:
+                        siblings = [e for e in client_events if e is not enable_evt]
+                        yield _format_consent_required_sse(
+                            trace_id=round_state.trace_id,
+                            enable_tool_call_id=enable_evt.toolCallId,
+                            reason=enable_evt.input.get("reason"),
+                            siblings=siblings,
+                        )
+                        return
+
+                    # disable_auto_mode interception (architecture §13.3): never
+                    # execute it. Clear the conversation auto-mode flag (publishing
+                    # auto-mode-off(user_disabled) to any observer), resolve the
+                    # call as {"status":"disabled"}, and CONTINUE streaming
+                    # interactively so the backend proceeds without auto mode. Any
+                    # siblings in the same turn are executed through the normal
+                    # approval gate (requiresApproval per tool) — on this
+                    # interactive path consent still applies. The model is
+                    # instructed to call disable_auto_mode alone so siblings are
+                    # normally empty.
+                    disable_evt = next(
+                        (
+                            e
+                            for e in client_events
+                            if e.toolName == DISABLE_AUTO_MODE_TOOL_NAME
+                        ),
+                        None,
+                    )
+                    if disable_evt is not None:
+                        await self._clear_auto_mode_flag(round_state.trace_id)
+                        non_disable = [e for e in client_events if e is not disable_evt]
+                        # Interactive path: gate siblings normally. A sibling that
+                        # requires approval is denied here (no decisions passed, so
+                        # execute_tool_batch returns DENIED_TOOL_OUTPUT) rather than
+                        # run without consent. Auto-mode auto-approval is the
+                        # runner's job, not this path's.
+                        sibling_results = await execute_tool_batch(
+                            [
+                                ToolCallInfo(
+                                    toolCallId=e.toolCallId,
+                                    toolName=e.toolName,
+                                    input=e.input,
+                                    requiresApproval=tool_requires_user_approval(e),
+                                )
+                                for e in non_disable
+                            ],
+                            {},
+                        )
+                        tool_results = {
+                            disable_evt.toolCallId: DISABLE_AUTO_MODE_RESULT,
+                            **sibling_results,
+                        }
+                        yield self._format_tool_exec_start(len(tool_results))
+                        for tc_id, output in tool_results.items():
+                            yield self._format_tool_output(tc_id, output)
+                        yield self._format_tool_exec_end(len(tool_results))
+                        self._body = _build_openai_tool_continuation(
+                            self._body,
+                            round_state.assistant_text,
+                            round_state.tool_input_events,
+                            tool_results,
+                        )
+                        continue
+
                     needs_approval = [
                         e for e in client_events if tool_requires_user_approval(e)
                     ]
@@ -251,6 +445,17 @@ class ChatStreamSession:
                 )
             )
         return await execute_tool_batch(tool_calls, approval_decisions or {})
+
+    @staticmethod
+    async def _clear_auto_mode_flag(trace_id: str | None) -> None:
+        """Clear the conversation's auto-mode flag for an intercepted
+        disable_auto_mode call. Imported lazily to avoid a circular import
+        (the auto registry depends on this module's round mechanics)."""
+        if not trace_id:
+            return
+        from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
+
+        await auto_chat_registry.disable_for_trace(trace_id)
 
     @staticmethod
     def _format_tool_output(tc_id: str, output: str) -> bytes:
