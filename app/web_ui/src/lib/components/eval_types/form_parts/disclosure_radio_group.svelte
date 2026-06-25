@@ -40,7 +40,7 @@
       <span class="flex flex-col gap-0.5">
         <span class="text-sm font-medium">{option.label}</span>
         {#if option.description}
-          <span class="text-xs text-gray-500">{option.description}</span>
+          <span class="text-xs text-base-content/60">{option.description}</span>
         {/if}
       </span>
     </label>

@@ -27,7 +27,7 @@
         >
         <EvalTypeTags tags={metadata.tags} />
       </div>
-      <p class="text-xs text-gray-500 mt-0.5">
+      <p class="text-xs text-base-content/60 mt-0.5">
         {metadata.description}
       </p>
     </div>
@@ -38,7 +38,7 @@
       height="16"
       viewBox="0 0 16 16"
       fill="currentColor"
-      class="flex-none text-gray-400"
+      class="flex-none text-base-content/40"
     >
       <path
         fill-rule="evenodd"

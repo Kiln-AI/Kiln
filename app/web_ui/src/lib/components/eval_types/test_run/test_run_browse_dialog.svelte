@@ -77,7 +77,7 @@
     <div class="overflow-x-auto">
       <table class="table table-fixed w-full" data-testid="browse-table">
         <thead>
-          <tr class="bg-base-200 text-xs uppercase text-gray-500">
+          <tr class="bg-base-200 text-xs uppercase text-base-content/60">
             <th class="w-8"></th>
             <th>Input preview</th>
             <th>Output preview</th>
@@ -104,7 +104,7 @@
               </td>
               <td class="py-2">
                 <span
-                  class="text-xs text-gray-600 font-mono"
+                  class="text-xs text-base-content/70 font-mono"
                   title={run.input ?? ""}
                 >
                   {truncate(run.input ?? "")}
@@ -112,13 +112,13 @@
               </td>
               <td class="py-2">
                 <span
-                  class="text-xs text-gray-600 font-mono"
+                  class="text-xs text-base-content/70 font-mono"
                   title={run.output?.output ?? ""}
                 >
                   {truncate(run.output?.output ?? "")}
                 </span>
               </td>
-              <td class="py-2 text-xs text-gray-400">
+              <td class="py-2 text-xs text-base-content/40">
                 {format_date(run.created_at)}
               </td>
             </tr>
@@ -128,7 +128,9 @@
     </div>
 
     {#if total_pages > 1}
-      <div class="flex items-center justify-center gap-2 text-xs text-gray-500">
+      <div
+        class="flex items-center justify-center gap-2 text-xs text-base-content/60"
+      >
         <span>{page_start + 1}-{page_end} of {available_runs.length}</span>
         <div class="flex gap-1">
           <button
@@ -154,7 +156,7 @@
     <div
       class="flex items-center justify-between border-t border-base-200 pt-3"
     >
-      <span class="text-xs text-gray-400">
+      <span class="text-xs text-base-content/40">
         {available_runs.length}
         {available_runs.length === 1 ? "input" : "inputs"}
       </span>

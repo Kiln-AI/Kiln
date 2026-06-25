@@ -507,7 +507,7 @@
     },
   ]}
 >
-  <p class="text-sm text-gray-600">
+  <p class="text-sm text-base-content/70">
     You haven't tested this judge yet. Running a quick test helps catch issues
     before saving. Are you sure you want to save without testing?
   </p>

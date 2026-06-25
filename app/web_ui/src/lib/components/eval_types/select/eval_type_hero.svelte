@@ -25,7 +25,7 @@
           <span class="badge badge-sm badge-primary">&#9733; Recommended</span>
         {/if}
       </div>
-      <p class="text-sm text-gray-500 mb-2">
+      <p class="text-sm text-base-content/60 mb-2">
         {metadata.description}
       </p>
       <EvalTypeTags tags={metadata.tags} />

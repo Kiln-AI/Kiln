@@ -57,7 +57,7 @@ suite and regenerates the OpenAPI client.
   mode), `tool_call_check` (expected-tools + match mode + on_unexpected_tools), `step_count_check`
   (count type + bounds) using the same `form_parts` and principles. (arch §7, functional spec §8)
 
-- [ ] **Phase 9 — Docs-link audit + final polish.** Audit/remove non-salient/dead docs links
+- [x] **Phase 9 — Docs-link audit + final polish.** Audit/remove non-salient/dead docs links
   (B2), incl. `[eval_id]/+page.svelte` `docs_link()`; verify liveness where possible. Final
   cross-flow consistency pass (headings, spacing, copy) against the Kiln design guide. (arch §8-B2)
 

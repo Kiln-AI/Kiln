@@ -1028,3 +1028,66 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
     })
   })
 })
+
+describe("Phase 9 — Docs-link audit + theme-aware colors", () => {
+  beforeEach(() => {
+    resetCalls()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  describe("docs-link audit", () => {
+    it("select screen does not render Read the Docs or sub_subtitle", async () => {
+      const { container } = await renderPickerPage()
+      expect(container.textContent).not.toContain("Read the Docs")
+      expect(container.textContent).not.toContain("Read the docs")
+    })
+
+    it("builder route does not render Read the Docs or sub_subtitle", async () => {
+      const { container } = await renderBuilderRoutePage("exact_match")
+      expect(container.textContent).not.toContain("Read the Docs")
+      expect(container.textContent).not.toContain("Read the docs")
+    })
+
+    it("builder route does not pass sub_subtitle to AppPage", async () => {
+      const { container } = await renderBuilderRoutePage("exact_match")
+      const appPage = container.querySelector("[data-testid='app-page-stub']")
+      expect(appPage).not.toBeNull()
+      expect(appPage?.innerHTML).not.toContain("sub_subtitle")
+    })
+  })
+
+  describe("theme-aware colors in create-flow components", () => {
+    it("eval_type_intro uses theme-aware text colors, not hardcoded gray", async () => {
+      const { container } = await renderBuilder("exact_match")
+      const intro = container.querySelector("[data-testid='eval-type-intro']")
+      expect(intro).not.toBeNull()
+      expect(intro?.innerHTML).not.toContain("text-gray-500")
+      expect(intro?.innerHTML).not.toContain("text-gray-400")
+    })
+
+    it("test run pane uses theme-aware text colors, not hardcoded gray", async () => {
+      const { container } = await renderBuilder("exact_match")
+      const pane = container.querySelector("[data-testid='test-run-pane']")
+      expect(pane).not.toBeNull()
+      expect(pane?.innerHTML).not.toContain("text-gray-500")
+      expect(pane?.innerHTML).not.toContain("text-gray-400")
+      expect(pane?.innerHTML).not.toContain("text-gray-600")
+      expect(pane?.innerHTML).not.toContain("text-gray-300")
+    })
+
+    it("confirm save dialog uses theme-aware text color", async () => {
+      const { container } = await renderBuilder("exact_match")
+      const dialogs = container.querySelectorAll("[data-testid='dialog-stub']")
+      const confirmDialog = Array.from(dialogs).find(
+        (d) => d.getAttribute("data-title") === "Save Without Testing?",
+      )
+      expect(confirmDialog).not.toBeNull()
+      expect(confirmDialog?.innerHTML).not.toContain("text-gray-600")
+    })
+  })
+})

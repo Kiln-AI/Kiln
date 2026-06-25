@@ -21,7 +21,7 @@
     data-testid="selected-run-card"
   >
     <div class="flex items-center justify-between">
-      <span class="text-xs font-medium text-gray-500">Selected Run</span>
+      <span class="text-xs font-medium text-base-content/60">Selected Run</span>
       <button
         type="button"
         class="btn btn-xs btn-ghost text-primary"
@@ -33,18 +33,18 @@
     </div>
     <div class="flex flex-col gap-1.5">
       <div class="text-xs">
-        <span class="font-medium text-gray-500">Input</span>
+        <span class="font-medium text-base-content/60">Input</span>
         <p
-          class="text-gray-600 break-words mt-0.5 line-clamp-2"
+          class="text-base-content/70 break-words mt-0.5 line-clamp-2"
           title={input_text}
         >
           {input_text}
         </p>
       </div>
       <div class="text-xs">
-        <span class="font-medium text-gray-500">Output</span>
+        <span class="font-medium text-base-content/60">Output</span>
         <p
-          class="text-gray-600 break-words mt-0.5 line-clamp-2"
+          class="text-base-content/70 break-words mt-0.5 line-clamp-2"
           title={output_text}
         >
           {output_text}
@@ -60,18 +60,18 @@
     on:click={() => dispatch("select", run)}
   >
     <div class="text-xs">
-      <span class="font-medium text-gray-400">Input</span>
+      <span class="font-medium text-base-content/40">Input</span>
       <p
-        class="text-gray-600 break-words mt-0.5 line-clamp-2"
+        class="text-base-content/70 break-words mt-0.5 line-clamp-2"
         title={input_text}
       >
         {input_text}
       </p>
     </div>
     <div class="text-xs">
-      <span class="font-medium text-gray-400">Output</span>
+      <span class="font-medium text-base-content/40">Output</span>
       <p
-        class="text-gray-600 break-words mt-0.5 line-clamp-2"
+        class="text-base-content/70 break-words mt-0.5 line-clamp-2"
         title={output_text}
       >
         {output_text}

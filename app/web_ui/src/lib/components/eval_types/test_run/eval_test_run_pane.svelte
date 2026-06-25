@@ -43,14 +43,14 @@
 <div class="flex flex-col gap-3" data-testid="test-run-pane">
   <div>
     <div class="text-xl font-bold">Test Run</div>
-    <p class="text-xs text-gray-400 mt-0.5">
+    <p class="text-xs text-base-content/40 mt-0.5">
       Pick a recent task output to test your evaluator before saving.
     </p>
   </div>
 
   {#if runs_loading}
     <div
-      class="flex items-center gap-2 text-sm text-gray-400 py-4"
+      class="flex items-center gap-2 text-sm text-base-content/40 py-4"
       data-testid="runs-loading"
     >
       <span class="loading loading-spinner loading-xs"></span>
@@ -70,10 +70,12 @@
       <div
         class="flex items-center justify-center w-12 h-12 rounded-full bg-base-200"
       >
-        <i class="bi bi-inbox text-xl text-gray-400"></i>
+        <i class="bi bi-inbox text-xl text-base-content/40"></i>
       </div>
-      <div class="text-sm font-medium text-gray-600">No sample inputs yet</div>
-      <p class="text-xs text-gray-400 max-w-[240px]">
+      <div class="text-sm font-medium text-base-content/70">
+        No sample inputs yet
+      </div>
+      <p class="text-xs text-base-content/40 max-w-[240px]">
         Run your task to generate inputs in the dataset, then test against them
         here.
       </p>
@@ -102,7 +104,9 @@
     >
       <span class="loading loading-spinner loading-md text-primary"></span>
       <div class="text-sm font-medium">Running...</div>
-      <p class="text-xs text-gray-400">Executing the scorer on your input</p>
+      <p class="text-xs text-base-content/40">
+        Executing the scorer on your input
+      </p>
       <button
         type="button"
         class="btn btn-sm btn-outline mt-1"
@@ -137,7 +141,7 @@
       <div class="flex flex-col gap-2" data-testid="scores-section">
         <div class="flex items-center justify-between">
           <span class="text-sm font-medium">Scores</span>
-          <span class="text-xs text-gray-400 italic"
+          <span class="text-xs text-base-content/40 italic"
             >preview &middot; not saved</span
           >
         </div>
@@ -241,16 +245,16 @@
 
     <div class="border-t border-base-200 pt-3">
       <div
-        class="flex items-center justify-center gap-2 py-4 text-xs text-gray-400"
+        class="flex items-center justify-center gap-2 py-4 text-xs text-base-content/40"
         data-testid="results-placeholder"
       >
-        <i class="bi bi-bar-chart text-gray-300"></i>
+        <i class="bi bi-bar-chart text-base-content/30"></i>
         Run to see scores
       </div>
     </div>
   {:else}
     <!-- Fallback: has runs but none selected (shouldn't happen with auto-select) -->
-    <p class="text-sm text-gray-400">Select a run to get started.</p>
+    <p class="text-sm text-base-content/40">Select a run to get started.</p>
   {/if}
 </div>
 

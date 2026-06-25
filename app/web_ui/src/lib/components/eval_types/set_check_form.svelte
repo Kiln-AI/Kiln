@@ -82,7 +82,7 @@
         bind:tags={expected_set_tags}
         placeholder="Type a value and press Enter"
       />
-      <p class="text-xs text-gray-500 -mt-2">
+      <p class="text-xs text-base-content/60 -mt-2">
         Add items by typing and pressing Enter or comma.
       </p>
     {:else}

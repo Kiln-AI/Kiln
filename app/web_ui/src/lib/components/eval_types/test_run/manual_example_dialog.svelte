@@ -53,7 +53,7 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <p class="text-sm text-gray-500">
+    <p class="text-sm text-base-content/60">
       Create a temporary input/output pair to test this scorer. This example
       won't be saved to your dataset.
     </p>

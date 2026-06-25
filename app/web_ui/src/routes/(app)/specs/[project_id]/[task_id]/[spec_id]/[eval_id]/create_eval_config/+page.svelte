@@ -76,7 +76,9 @@
       />
 
       <div class="mt-8">
-        <h2 class="text-sm font-medium text-gray-500 mb-3">All judge types</h2>
+        <h2 class="text-sm font-medium text-base-content/60 mb-3">
+          All judge types
+        </h2>
         <div class="flex flex-col gap-2">
           {#each listTypes as evalType}
             {@const metadata = getV2EvalTypeMetadata(evalType)}

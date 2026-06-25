@@ -8,7 +8,12 @@
   <div>
     <h3 class="text-sm font-medium">{title}</h3>
     {#if subtitle}
-      <p class="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+      <p
+        class="text-xs text-base-content/60 mt-0.5"
+        data-testid="form-section-subtitle"
+      >
+        {subtitle}
+      </p>
     {/if}
   </div>
   <slot />

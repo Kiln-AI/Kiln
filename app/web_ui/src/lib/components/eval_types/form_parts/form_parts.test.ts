@@ -37,21 +37,28 @@ describe("FormSection", () => {
   })
 
   it("renders subtitle text when provided", () => {
-    const { getByText } = render(FormSection, {
+    const { container, getByText } = render(FormSection, {
       props: {
         title: "Test",
         subtitle: "Choose what value to compare.",
       },
     })
     expect(getByText("Choose what value to compare.")).toBeTruthy()
+    const subtitle = container.querySelector(
+      '[data-testid="form-section-subtitle"]',
+    )
+    expect(subtitle).not.toBeNull()
+    expect(subtitle?.textContent).toBe("Choose what value to compare.")
   })
 
   it("does not render subtitle element when not provided", () => {
     const { container } = render(FormSection, {
       props: { title: "Test" },
     })
-    const subtitles = container.querySelectorAll(".text-xs.text-gray-500")
-    expect(subtitles).toHaveLength(0)
+    const subtitle = container.querySelector(
+      '[data-testid="form-section-subtitle"]',
+    )
+    expect(subtitle).toBeNull()
   })
 
   it("renders with testid when provided", () => {
