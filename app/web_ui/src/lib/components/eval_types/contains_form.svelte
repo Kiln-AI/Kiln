@@ -2,7 +2,6 @@
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormSection from "./form_parts/form_section.svelte"
-  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["ContainsProperties"] = {
@@ -47,9 +46,10 @@
     subtitle="Choose what value to search for in the output."
     testid="contains-expected-section"
   >
-    <DisclosureRadioGroup
-      name="contains_source"
-      options={[
+    <FormElement
+      id="contains_source"
+      inputType="radio"
+      radio_options={[
         {
           value: "substring",
           label: "Fixed substring",
@@ -63,8 +63,9 @@
             "Use a key from the reference data whose value to search for in the output.",
         },
       ]}
-      bind:selected={source}
-      on:change={on_source_change}
+      bind:value={source}
+      on_radio_change={on_source_change}
+      hide_label
     />
 
     {#if source === "substring"}
@@ -90,9 +91,10 @@
     subtitle="Choose whether the output should contain or not contain the value."
     testid="contains-mode-section"
   >
-    <DisclosureRadioGroup
-      name="contains_mode"
-      options={[
+    <FormElement
+      id="contains_mode"
+      inputType="radio"
+      radio_options={[
         {
           value: "must_contain",
           label: "Must contain",
@@ -104,7 +106,8 @@
           description: "The output must NOT contain the substring to pass.",
         },
       ]}
-      bind:selected={properties.mode}
+      bind:value={properties.mode}
+      hide_label
     />
   </FormSection>
 

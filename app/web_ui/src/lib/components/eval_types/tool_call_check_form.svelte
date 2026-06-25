@@ -4,7 +4,6 @@
   import FormList from "$lib/utils/form_list.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import FormSection from "./form_parts/form_section.svelte"
-  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
 
   type ToolCallSpec = components["schemas"]["ToolCallSpec"]
 
@@ -101,9 +100,10 @@
     subtitle="How to match the expected tool calls against the trace."
     testid="tool-call-match-mode-section"
   >
-    <DisclosureRadioGroup
-      name="tool_call_check_match_mode"
-      options={[
+    <FormElement
+      id="tool_call_check_match_mode"
+      inputType="radio"
+      radio_options={[
         {
           value: "any",
           label: "Any",
@@ -126,7 +126,8 @@
           description: "Pass if none of the expected tools were called.",
         },
       ]}
-      bind:selected={properties.match_mode}
+      bind:value={properties.match_mode}
+      hide_label
     />
   </FormSection>
 
@@ -136,9 +137,10 @@
       subtitle="What to do when the model calls tools not in the expected list."
       testid="tool-call-unexpected-section"
     >
-      <DisclosureRadioGroup
-        name="tool_call_check_on_unexpected"
-        options={[
+      <FormElement
+        id="tool_call_check_on_unexpected"
+        inputType="radio"
+        radio_options={[
           {
             value: "ignore",
             label: "Ignore",
@@ -152,7 +154,8 @@
               "Fail if any tool is called that is not in the expected list.",
           },
         ]}
-        bind:selected={properties.on_unexpected_tools}
+        bind:value={properties.on_unexpected_tools}
+        hide_label
       />
     </FormSection>
   {/if}

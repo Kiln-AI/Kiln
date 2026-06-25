@@ -2,7 +2,6 @@
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormSection from "./form_parts/form_section.svelte"
-  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["ExactMatchProperties"] = {
@@ -48,9 +47,10 @@
     subtitle="Choose what value to compare the output against."
     testid="exact-match-expected-section"
   >
-    <DisclosureRadioGroup
-      name="exact_match_source"
-      options={[
+    <FormElement
+      id="exact_match_source"
+      inputType="radio"
+      radio_options={[
         {
           value: "expected_value",
           label: "Fixed value",
@@ -63,8 +63,9 @@
             "Use a key from the reference data whose value the output must match.",
         },
       ]}
-      bind:selected={source}
-      on:change={on_source_change}
+      bind:value={source}
+      on_radio_change={on_source_change}
+      hide_label
     />
 
     {#if source === "expected_value"}

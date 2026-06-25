@@ -2,7 +2,6 @@
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormSection from "./form_parts/form_section.svelte"
-  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
 
   export let properties: components["schemas"]["StepCountCheckProperties"] = {
     type: "step_count_check",
@@ -59,9 +58,10 @@
     subtitle="Choose what type of step to count in the agent's trace."
     testid="step-count-type-section"
   >
-    <DisclosureRadioGroup
-      name="step_count_check_count_type"
-      options={[
+    <FormElement
+      id="step_count_check_count_type"
+      inputType="radio"
+      radio_options={[
         {
           value: "tool_calls",
           label: "Tool calls",
@@ -79,7 +79,8 @@
           description: "Count the number of conversational turns in the trace.",
         },
       ]}
-      bind:selected={properties.count_type}
+      bind:value={properties.count_type}
+      hide_label
     />
   </FormSection>
 

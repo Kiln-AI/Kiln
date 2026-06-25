@@ -2,7 +2,6 @@
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormSection from "./form_parts/form_section.svelte"
-  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
   import TagInput from "./tag_input.svelte"
 
@@ -57,9 +56,10 @@
     subtitle="Define the set of values to compare against the output."
     testid="set-check-expected-section"
   >
-    <DisclosureRadioGroup
-      name="set_check_source"
-      options={[
+    <FormElement
+      id="set_check_source"
+      inputType="radio"
+      radio_options={[
         {
           value: "expected_set",
           label: "Fixed set",
@@ -72,8 +72,9 @@
             "Use a key from the reference data containing the expected set.",
         },
       ]}
-      bind:selected={source}
-      on:change={on_source_change}
+      bind:value={source}
+      on_radio_change={on_source_change}
+      hide_label
     />
 
     {#if source === "expected_set"}
@@ -101,9 +102,10 @@
     subtitle="How to compare the output set against the expected set."
     testid="set-check-mode-section"
   >
-    <DisclosureRadioGroup
-      name="set_check_mode"
-      options={[
+    <FormElement
+      id="set_check_mode"
+      inputType="radio"
+      radio_options={[
         {
           value: "equal",
           label: "Equal",
@@ -123,7 +125,8 @@
             "The output set must be a superset of the expected set (all expected values appear in output).",
         },
       ]}
-      bind:selected={properties.mode}
+      bind:value={properties.mode}
+      hide_label
     />
   </FormSection>
 

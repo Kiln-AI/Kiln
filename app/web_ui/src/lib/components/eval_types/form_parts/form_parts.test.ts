@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest"
-import { render, fireEvent } from "@testing-library/svelte"
+import { render } from "@testing-library/svelte"
 
 vi.mock("$lib/utils/form_element.svelte", async () => {
   const { default: Stub } = await import(
@@ -10,8 +10,6 @@ vi.mock("$lib/utils/form_element.svelte", async () => {
 })
 
 const FormSection = (await import("./form_section.svelte")).default
-const DisclosureRadioGroup = (await import("./disclosure_radio_group.svelte"))
-  .default
 const OutputValueField = (await import("./output_value_field.svelte")).default
 
 beforeAll(() => {
@@ -66,82 +64,6 @@ describe("FormSection", () => {
       props: { title: "Test", testid: "my-section" },
     })
     expect(getByTestId("my-section")).toBeTruthy()
-  })
-})
-
-describe("DisclosureRadioGroup", () => {
-  const options = [
-    {
-      value: "fixed",
-      label: "Fixed value",
-      description: "Specify the value directly.",
-    },
-    {
-      value: "reference",
-      label: "Value from reference data",
-      description: "Use a key from reference data.",
-    },
-  ]
-
-  it("renders all option labels", () => {
-    const { getByText } = render(DisclosureRadioGroup, {
-      props: { name: "test_group", options, selected: "fixed" },
-    })
-    expect(getByText("Fixed value")).toBeTruthy()
-    expect(getByText("Value from reference data")).toBeTruthy()
-  })
-
-  it("renders option descriptions", () => {
-    const { getAllByText } = render(DisclosureRadioGroup, {
-      props: { name: "test_group", options, selected: "fixed" },
-    })
-    expect(getAllByText("Specify the value directly.").length).toBeGreaterThan(
-      0,
-    )
-    expect(
-      getAllByText("Use a key from reference data.").length,
-    ).toBeGreaterThan(0)
-  })
-
-  it("selects the default option", () => {
-    const { container } = render(DisclosureRadioGroup, {
-      props: { name: "test_group", options, selected: "fixed" },
-    })
-    const radios = container.querySelectorAll('input[type="radio"]')
-    expect(radios).toHaveLength(2)
-    expect((radios[0] as HTMLInputElement).checked).toBe(true)
-    expect((radios[1] as HTMLInputElement).checked).toBe(false)
-  })
-
-  it("updates selected value on click", async () => {
-    const { container } = render(DisclosureRadioGroup, {
-      props: { name: "test_group", options, selected: "fixed" },
-    })
-    const radios = container.querySelectorAll('input[type="radio"]')
-    await fireEvent.click(radios[1])
-    expect((radios[1] as HTMLInputElement).checked).toBe(true)
-  })
-
-  it("renders with correct testid", () => {
-    const { container } = render(DisclosureRadioGroup, {
-      props: { name: "test_group", options, selected: "fixed" },
-    })
-    const groups = container.querySelectorAll(
-      '[data-testid="disclosure-radio-group-test_group"]',
-    )
-    expect(groups.length).toBeGreaterThan(0)
-  })
-
-  it("renders without descriptions when not provided", () => {
-    const simpleOptions = [
-      { value: "a", label: "Option A" },
-      { value: "b", label: "Option B" },
-    ]
-    const { getByText } = render(DisclosureRadioGroup, {
-      props: { name: "simple", options: simpleOptions, selected: "a" },
-    })
-    expect(getByText("Option A")).toBeTruthy()
-    expect(getByText("Option B")).toBeTruthy()
   })
 })
 

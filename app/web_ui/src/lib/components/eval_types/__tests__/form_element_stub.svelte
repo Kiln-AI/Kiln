@@ -23,6 +23,7 @@
   export let aria_label: string | null = null
   export let inline_action: InlineAction | null = null
   export let radio_options: RadioOption[] = []
+  export let on_radio_change: (() => void) | null = null
 
   export let validator: (value: unknown) => string | null = () => null
   export function run_validator() {
@@ -38,5 +39,27 @@
   data-info-description={info_description}
   data-inline-action-label={inline_action?.label || ""}
 >
+  {#if inputType === "radio"}
+    <div data-testid="radio-group-{id}">
+      {#each radio_options as option}
+        <label>
+          <input
+            type="radio"
+            name={id}
+            value={option.value}
+            checked={value === option.value}
+            on:change={() => {
+              value = option.value
+              if (on_radio_change) on_radio_change()
+            }}
+          />
+          <span>{option.label}</span>
+          {#if option.description}
+            <span>{option.description}</span>
+          {/if}
+        </label>
+      {/each}
+    </div>
+  {/if}
   <slot />
 </div>

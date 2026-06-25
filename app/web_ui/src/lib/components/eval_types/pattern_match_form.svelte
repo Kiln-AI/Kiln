@@ -2,7 +2,6 @@
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormSection from "./form_parts/form_section.svelte"
-  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["PatternMatchProperties"] = {
@@ -79,9 +78,10 @@
     subtitle="Choose whether the output should match or not match the pattern."
     testid="pattern-match-mode-section"
   >
-    <DisclosureRadioGroup
-      name="pattern_match_mode"
-      options={[
+    <FormElement
+      id="pattern_match_mode"
+      inputType="radio"
+      radio_options={[
         {
           value: "must_match",
           label: "Must match",
@@ -94,7 +94,8 @@
             "The output must NOT match the regular expression to pass.",
         },
       ]}
-      bind:selected={properties.mode}
+      bind:value={properties.mode}
+      hide_label
     />
   </FormSection>
 

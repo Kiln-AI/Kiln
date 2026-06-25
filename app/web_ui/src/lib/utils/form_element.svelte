@@ -58,6 +58,7 @@
   export let hide_label: boolean = false
   export let min: number | null = null
   export let max: number | null = null
+  export let on_radio_change: (() => void) | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -340,6 +341,7 @@
               checked={value === option.value}
               on:change={() => {
                 value = option.value
+                if (on_radio_change) on_radio_change()
               }}
               {disabled}
             />

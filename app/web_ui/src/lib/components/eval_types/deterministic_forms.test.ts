@@ -815,9 +815,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       ),
     ).toBeNull()
     expect(
-      container.querySelector(
-        '[data-testid="disclosure-radio-group-exact_match_source"]',
-      ),
+      container.querySelector('[data-testid="radio-group-exact_match_source"]'),
     ).toBeTruthy()
     expect(
       container.querySelector('[data-testid="exact-match-expected-section"]'),
@@ -872,9 +870,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       ),
     ).toBeNull()
     expect(
-      container.querySelector(
-        '[data-testid="disclosure-radio-group-contains_source"]',
-      ),
+      container.querySelector('[data-testid="radio-group-contains_source"]'),
     ).toBeTruthy()
     expect(
       container.querySelector('[data-testid="contains-expected-section"]'),
@@ -918,9 +914,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       },
     })
     expect(
-      container.querySelector(
-        '[data-testid="disclosure-radio-group-pattern_match_mode"]',
-      ),
+      container.querySelector('[data-testid="radio-group-pattern_match_mode"]'),
     ).toBeTruthy()
     expect(
       container.querySelector('[data-testid="pattern-match-pattern-section"]'),
@@ -944,9 +938,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       },
     })
     expect(
-      container.querySelector(
-        '[data-testid="disclosure-radio-group-contains_mode"]',
-      ),
+      container.querySelector('[data-testid="radio-group-contains_mode"]'),
     ).toBeTruthy()
     expect(
       container.querySelector('[data-testid="contains-mode-section"]'),
@@ -1011,9 +1003,7 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
       container.querySelector('[data-testid="set-check-mode-section"]'),
     ).toBeTruthy()
     expect(
-      container.querySelector(
-        '[data-testid="disclosure-radio-group-set_check_mode"]',
-      ),
+      container.querySelector('[data-testid="radio-group-set_check_mode"]'),
     ).toBeTruthy()
   })
 
@@ -1030,9 +1020,7 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
       },
     })
     expect(
-      container.querySelector(
-        '[data-testid="disclosure-radio-group-set_check_source"]',
-      ),
+      container.querySelector('[data-testid="radio-group-set_check_source"]'),
     ).toBeTruthy()
   })
 
@@ -1206,7 +1194,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
     ).toBeTruthy()
     expect(
       container.querySelector(
-        '[data-testid="disclosure-radio-group-tool_call_check_match_mode"]',
+        '[data-testid="radio-group-tool_call_check_match_mode"]',
       ),
     ).toBeTruthy()
   })
@@ -1244,7 +1232,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
     ).toBeTruthy()
     expect(
       container.querySelector(
-        '[data-testid="disclosure-radio-group-tool_call_check_on_unexpected"]',
+        '[data-testid="radio-group-tool_call_check_on_unexpected"]',
       ),
     ).toBeTruthy()
   })
@@ -1352,7 +1340,7 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
     ).toBeTruthy()
     expect(
       container.querySelector(
-        '[data-testid="disclosure-radio-group-step_count_check_count_type"]',
+        '[data-testid="radio-group-step_count_check_count_type"]',
       ),
     ).toBeTruthy()
   })
