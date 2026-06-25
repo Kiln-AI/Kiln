@@ -379,27 +379,43 @@ describe("create_eval_config picker page", () => {
     cleanup()
   })
 
-  it("renders all eval type cards", async () => {
+  it("renders hero card and all remaining type rows", async () => {
     const { container } = await renderPickerPage()
     const cards = container.querySelectorAll(".card")
     expect(cards.length).toBe(ALL_V2_EVAL_TYPES.length)
   })
 
-  it("shows LLM as Judge first", async () => {
+  it("shows LLM as Judge in the hero card", async () => {
     const { container } = await renderPickerPage()
     const cards = container.querySelectorAll(".card")
     expect(cards[0].textContent).toContain("LLM as Judge")
+    expect(cards[0].textContent).toContain("Recommended")
   })
 
-  it("navigates to child route on card click", async () => {
+  it("navigates to llm_judge on hero Continue click", async () => {
     const { container } = await renderPickerPage()
-    const cards = container.querySelectorAll(".card")
-    // Click the first card (LLM as Judge)
-    await fireEvent.click(cards[0])
+    const continueBtn = container.querySelector(
+      ".btn-primary",
+    ) as HTMLButtonElement
+    expect(continueBtn).not.toBeNull()
+    expect(continueBtn.textContent).toContain("Continue")
+    await fireEvent.click(continueBtn)
     await tick()
 
     expect(mockGoto).toHaveBeenCalledWith(
       expect.stringContaining("/create_eval_config/llm_judge"),
+    )
+  })
+
+  it("navigates to type on list row click", async () => {
+    const { container } = await renderPickerPage()
+    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    expect(rows.length).toBe(ALL_V2_EVAL_TYPES.length - 1)
+    await fireEvent.click(rows[0])
+    await tick()
+
+    expect(mockGoto).toHaveBeenCalledWith(
+      expect.stringContaining("/create_eval_config/code_eval"),
     )
   })
 
@@ -417,8 +433,10 @@ describe("create_eval_config picker page", () => {
     })
 
     const { container } = await renderPickerPage()
-    const cards = container.querySelectorAll(".card")
-    await fireEvent.click(cards[0])
+    const continueBtn = container.querySelector(
+      ".btn-primary",
+    ) as HTMLButtonElement
+    await fireEvent.click(continueBtn)
     await tick()
 
     expect(mockGoto).toHaveBeenCalledWith(

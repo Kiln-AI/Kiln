@@ -5,10 +5,12 @@ status: complete
 # Implementation Plan: Evals V2 — Create-Flow UI Polish
 
 Dependency-ordered checklist (follows `architecture.md §12`). Detail lives in
-`functional_spec.md`, `architecture.md`, and `design_specs/` — not restated here. Frontend-only.
+`functional_spec.md`, `architecture.md`, and `design_specs/` — not restated here. Frontend-only
+**except the final Phase 10 (D16)**, which adds a small backend validation + one response field.
 The coding agent writes `phase_plans/phase_N.md` before each phase. Run the web check suite
 (`npm run check`, `lint`, `format_check`, `test_run`, `build`) before each phase's code review;
-no OpenAPI schema change is expected.
+no OpenAPI schema change is expected before Phase 10. Phase 10 additionally runs the Python check
+suite and regenerates the OpenAPI client.
 
 ## Phases
 
@@ -17,7 +19,7 @@ no OpenAPI schema change is expected.
   (functional spec §1 cards/descriptions/tags, §2 titles); drop the qualifier suffixes from
   `label`. Update `registry.test.ts` invariants. Unblocks all later phases. (arch §1)
 
-- [ ] **Phase 2 — Select Eval Type screen.** New `eval_type_hero`, `eval_type_row`,
+- [x] **Phase 2 — Select Eval Type screen.** New `eval_type_hero`, `eval_type_row`,
   `eval_type_tags`; rebuild `create_eval_config/+page.svelte` as recommended-hero + "All judge
   types" list, data-driven from `ALL_V2_EVAL_TYPES`; new header copy; drop the secondary heading
   and the "Read the Docs" sub-subtitle. (arch §2, design_specs/select_screen.md)
@@ -59,6 +61,18 @@ no OpenAPI schema change is expected.
   (B2), incl. `[eval_id]/+page.svelte` `docs_link()`; verify liveness where possible. Final
   cross-flow consistency pass (headings, spacing, copy) against the Kiln design guide. (arch §8-B2)
 
+- [ ] **Phase 10 — Test-pane score-range validation (D16).** *The one backend phase.* Extract the
+  per-rating-type range checks from `EvalRun.validate_scores`
+  (`libs/core/kiln_ai/datamodel/eval.py:531-587`) into a shared
+  `validate_scores_against_output_scores(scores, output_scores)`; refactor `EvalRun` to call it (no
+  behavior change — existing tests stay green). Call it from `test_v2_eval`
+  (`app/desktop/studio_server/eval_api.py:1037-1083`) on a **non-skipped** adapter result and
+  return any out-of-range problems on a new optional `TestV2EvalResponse.score_range_errors`
+  (scores still returned so the pane can show them). In `eval_config_builder.run_test`, fold those
+  errors into the score warning and force `test_has_valid_run=false` so Save is gated through the
+  confirm modal — same UX as a shape mismatch. Regenerate the OpenAPI client; add core + API +
+  frontend regression tests. Run the Python check suite alongside the web suite. (arch §13)
+
 ## Notes
 
 - Phases 1–3 are low-risk and unblock the rest; **4, 5, 7** carry the most risk.
@@ -69,6 +83,6 @@ no OpenAPI schema change is expected.
 
 ## Out of scope (see functional_spec §12)
 
-Eval engine / save contract; typed score badges & fail-loud view binding; view/run-result/
-comparison surfaces; copilot/eval-builder/questionnaire; persisting manual examples; backend
-changes.
+Eval engine / save contract (beyond the Phase 10 / D16 score-range extraction); typed score badges
+& fail-loud view binding; view/run-result/comparison surfaces; copilot/eval-builder/questionnaire;
+persisting manual examples; backend changes (other than the Phase 10 / D16 validation).

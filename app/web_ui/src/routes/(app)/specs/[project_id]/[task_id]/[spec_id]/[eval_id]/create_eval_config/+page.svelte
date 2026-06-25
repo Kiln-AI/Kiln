@@ -10,6 +10,8 @@
   } from "$lib/utils/eval_types/registry"
   import { buildCreateEvalBreadcrumbs } from "./breadcrumbs"
   import { getCreateEvalLayoutContext } from "./context"
+  import EvalTypeHero from "$lib/components/eval_types/select/eval_type_hero.svelte"
+  import EvalTypeRow from "$lib/components/eval_types/select/eval_type_row.svelte"
 
   const ctx = getCreateEvalLayoutContext()
 
@@ -41,6 +43,10 @@
     $page.url.searchParams.get("next_page"),
   )
 
+  const heroType = ALL_V2_EVAL_TYPES[0]
+  const heroMetadata = getV2EvalTypeMetadata(heroType)
+  const listTypes = ALL_V2_EVAL_TYPES.slice(1)
+
   function preserved_query_string(): string {
     const params = new URLSearchParams()
     const next_page = $page.url.searchParams.get("next_page")
@@ -60,40 +66,26 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Add a Judge"
-    subtitle="A judge evaluates task outputs with a model, evaluation prompt, and algorithm."
-    sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
+    subtitle="Select a judge type — every type produces the same scores, it just changes how they're computed."
     {breadcrumbs}
   >
-    <div class="pt-6">
-      <div class="text-xl font-bold mb-2">Select Eval Type</div>
-      <div class="text-xs text-gray-500 mb-6">
-        Choose the type of evaluator to create. Different types are suited for
-        different evaluation needs.
-      </div>
+    <div class="pt-6 max-w-3xl">
+      <EvalTypeHero
+        metadata={heroMetadata}
+        on:continue={() => select_v2_type(heroType)}
+      />
 
-      <div class="flex flex-wrap gap-4">
-        {#each ALL_V2_EVAL_TYPES as evalType}
-          {@const metadata = getV2EvalTypeMetadata(evalType)}
-          <button
-            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[220px] p-5 flex flex-col items-center text-center group cursor-pointer"
-            on:click={() => select_v2_type(evalType)}
-          >
-            <div class="flex flex-col gap-3 items-center">
-              <i
-                class="{metadata.icon} text-2xl text-primary group-hover:scale-110 transition-transform"
-              ></i>
-              <div class="flex flex-col gap-1">
-                <div class="font-medium text-sm leading-tight">
-                  {metadata.label}
-                </div>
-                <div class="text-xs text-gray-500">
-                  {metadata.description}
-                </div>
-              </div>
-            </div>
-          </button>
-        {/each}
+      <div class="mt-8">
+        <h2 class="text-sm font-medium text-gray-500 mb-3">All judge types</h2>
+        <div class="flex flex-col gap-2">
+          {#each listTypes as evalType}
+            {@const metadata = getV2EvalTypeMetadata(evalType)}
+            <EvalTypeRow
+              {metadata}
+              on:select={() => select_v2_type(evalType)}
+            />
+          {/each}
+        </div>
       </div>
     </div>
   </AppPage>
