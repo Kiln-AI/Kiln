@@ -554,6 +554,62 @@ def test_build_extra_body_thinking_level_openrouter_anthropic(config, mock_task)
     assert "reasoning_effort" not in extra_body
 
 
+def test_build_extra_body_thinking_level_anthropic_summarized_thinking(
+    config, mock_task
+):
+    """Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text), so
+    anthropic_summarized_thinking adds an adaptive thinking object requesting the summary
+    alongside reasoning_effort (which litellm maps to output_config.effort)."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.model_id = "claude-opus-4-8"
+    mock_provider.available_thinking_levels = {"High": "high"}
+    mock_provider.anthropic_summarized_thinking = True
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "high"
+    assert extra_body.get("thinking") == {"type": "adaptive", "display": "summarized"}
+
+
+def test_build_extra_body_thinking_level_anthropic_none(config, mock_task):
+    """Anthropic's native API has no reasoning_effort="none" (litellm crashes on it),
+    so a "none" thinking level must omit reasoning_effort entirely to disable thinking."""
+    config.run_config_properties.thinking_level = "none"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.model_id = "claude-opus-4-8"
+    mock_provider.available_thinking_levels = {"Off/None": "none", "High": "high"}
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
+
+
 def test_build_extra_body_thinking_level_run_config_override(config, mock_task):
     """Test that the thinking level in the run config overrides the provider's default"""
     config.run_config_properties.thinking_level = "low"

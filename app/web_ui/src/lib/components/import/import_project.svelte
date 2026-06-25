@@ -110,6 +110,8 @@
     if (step === "local_file") {
       import_project_path = ""
       import_error = null
+      import_conflict = false
+      conflict_path = null
       select_file_unavailable = false
       import_done = false
     }
@@ -233,12 +235,24 @@
   // Local file import logic
   let select_file_unavailable = false
   $: show_select_file = !select_file_unavailable && !import_project_path
-  $: import_submit_visible = !show_select_file
+  $: import_submit_visible = !show_select_file && !import_conflict
   let import_project_path = ""
   let import_error: KilnError | null = null
   let import_submitting = false
   let import_saved = false
   let import_done = false
+  let import_conflict = false
+  let conflict_path: string | null = null
+
+  // conflict_path is set equal to import_project_path when a 409 fires, so the
+  // guard `import_project_path !== conflict_path` is false at that moment and the
+  // reactive block does NOT wipe the conflict on the initial 409. It only clears
+  // once the user actually changes the path (via typing or the file picker).
+  $: if (conflict_path !== null && import_project_path !== conflict_path) {
+    import_conflict = false
+    import_error = null
+    conflict_path = null
+  }
 
   async function select_project_file() {
     try {
@@ -264,21 +278,29 @@
     }
   }
 
-  const import_project = async () => {
+  const import_project = async (remove_conflicting_id = false) => {
     try {
       import_submitting = true
       import_saved = false
-      const { data, error: post_error } = await client.POST(
-        "/api/import_project",
-        {
-          params: {
-            query: {
-              project_path: import_project_path,
-            },
+      import_error = null
+      import_conflict = false
+      const {
+        data,
+        error: post_error,
+        response,
+      } = await client.POST("/api/import_project", {
+        params: {
+          query: {
+            project_path: import_project_path,
+            ...(remove_conflicting_id && { remove_conflicting_id: true }),
           },
         },
-      )
+      })
       if (post_error) {
+        if (response?.status === 409) {
+          import_conflict = true
+          conflict_path = import_project_path
+        }
         throw post_error
       }
 
@@ -360,7 +382,7 @@
     {#if !import_done}
       <FormContainer
         submit_label="Import Project"
-        on:submit={import_project}
+        on:submit={() => import_project()}
         bind:submitting={import_submitting}
         bind:error={import_error}
         bind:saved={import_saved}
@@ -379,6 +401,15 @@
             inputType="input"
             bind:value={import_project_path}
           />
+        {/if}
+        {#if import_conflict}
+          <button
+            type="button"
+            class="btn btn-error btn-outline"
+            on:click={() => import_project(true)}
+          >
+            Remove existing and re-import
+          </button>
         {/if}
       </FormContainer>
     {/if}

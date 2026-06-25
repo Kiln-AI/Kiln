@@ -19,6 +19,23 @@ def project_from_id(project_id: str) -> Project | None:
     return None
 
 
+def remove_project_from_config(project_path: str) -> str | None:
+    """Remove a project from Kiln config. Does NOT delete files from disk.
+
+    Returns the git-sync clone_path if the project was git-synced, else None.
+    """
+    projects = Config.shared().projects or []
+    Config.shared().save_setting("projects", [p for p in projects if p != project_path])
+
+    git_sync = Config.shared().git_sync_projects or {}
+    clone_path = None
+    if project_path in git_sync:
+        clone_path = git_sync[project_path].get("clone_path")
+        git_sync.pop(project_path)
+        Config.shared().save_setting("git_sync_projects", git_sync)
+    return clone_path
+
+
 class DuplicateProjectError(Exception):
     """Raised when trying to import a project whose ID is already registered."""
 

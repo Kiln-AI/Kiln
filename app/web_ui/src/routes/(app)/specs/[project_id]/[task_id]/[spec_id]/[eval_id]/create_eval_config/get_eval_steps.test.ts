@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import type { EvalTemplateId, Task, Eval } from "$lib/types"
+import type { EvalTemplateId, Task, Eval, Spec } from "$lib/types"
 import { get_eval_steps } from "./eval_steps_utils"
 
 // Test helper functions to create mock objects
@@ -58,6 +58,30 @@ function createMockRequirement(
     instruction,
     priority,
     type: "five_star",
+  }
+}
+
+function createMockSpec(definition: string): Spec {
+  return {
+    v: 1,
+    id: "test-spec-id",
+    name: "Test Spec",
+    definition,
+    properties: {
+      spec_type: "reference_answer_accuracy",
+      core_requirement: "Core requirement",
+      reference_answer_accuracy_description: "Reference answer accuracy",
+      accurate_examples: "Accurate example",
+      inaccurate_examples: "Inaccurate example",
+    },
+    priority: 1,
+    status: "active",
+    tags: [],
+    eval_id: "test-eval-id",
+    model_type: "Spec",
+    path: "/test/spec",
+    created_at: "2024-01-01T00:00:00Z",
+    created_by: "test-user",
   }
 }
 
@@ -331,6 +355,32 @@ describe("get_eval_steps", () => {
         "Is the model's output similar to this example of a failing output: \n<failure_example>\nThis is terrible!\n</failure_example>",
         "Is the model's output similar to this example of a passing output: \n<pass_example>\nThis is good.\n</pass_example>",
         "Considering the above, does the model's output contain the issue described? It should pass if it does not contain the issue, and fail if it does contain the issue.",
+      ])
+    })
+  })
+
+  describe("rag template", () => {
+    it("should return the generic reference-answer step when no spec is provided", () => {
+      const task = createMockTask()
+      const evaluator = createMockEval("rag")
+      const result = get_eval_steps("rag", task, evaluator)
+
+      expect(result).toEqual([
+        "Evaluate if the model's output is accurate as per the reference answer.",
+      ])
+    })
+
+    it("should return a spec-based step embedding the spec definition when a spec is provided", () => {
+      const task = createMockTask()
+      const evaluator = createMockEval("rag")
+      const spec = createMockSpec("The answer must cite the source document.")
+      const result = get_eval_steps("rag", task, evaluator, spec)
+
+      expect(result).toEqual([
+        `Look at the "output" for the task run. Evaluate if the model's output meets the <spec_description>. The eval should pass if the model's output meets all requirements of the spec, and fail if any requirements of the spec are not met.
+<spec_description>
+The answer must cite the source document.
+</spec_description>`,
       ])
     })
   })

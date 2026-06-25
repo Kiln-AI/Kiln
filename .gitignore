@@ -28,6 +28,7 @@ test_output/
 /.worktreeinclude
 .worktrees/
 reviews/
+.prerelease/
 
 # ActRight discover local state
 .act_right
