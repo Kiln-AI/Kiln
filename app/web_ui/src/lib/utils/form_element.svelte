@@ -6,6 +6,12 @@
     loading_text?: string
     disabled?: boolean
   }
+
+  export type RadioOption = {
+    value: string
+    label: string
+    description?: string
+  }
 </script>
 
 <script lang="ts">
@@ -22,7 +28,8 @@
     | "fancy_select"
     | "multi_select"
     | "header_only"
-    | "checkbox" = "input"
+    | "checkbox"
+    | "radio" = "input"
   export let id: string
   export let label: string = ""
   export let value: unknown
@@ -37,6 +44,7 @@
   export let select_options: [unknown, string][] = []
   export let select_options_grouped: [string, [unknown, string][]][] = []
   export let fancy_select_options: OptionGroup[] = []
+  export let radio_options: RadioOption[] = []
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
@@ -307,6 +315,44 @@
         {empty_state_subtitle}
         {empty_state_link}
       />
+    {:else if inputType === "radio"}
+      <div
+        role="radiogroup"
+        aria-label={aria_label || label}
+        class="flex flex-col gap-2"
+        {id}
+        data-testid="radio-group-{id}"
+      >
+        {#each radio_options as option}
+          <label
+            class="flex items-start gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors
+              {value === option.value
+              ? 'border-primary/30 bg-primary/[0.03]'
+              : 'border-base-300 hover:border-base-content/20'}
+              {disabled ? 'opacity-50 pointer-events-none' : ''}
+              {error_message ? 'border-error/50' : ''}"
+          >
+            <input
+              type="radio"
+              name={id}
+              class="radio radio-sm radio-primary mt-0.5 flex-none"
+              value={option.value}
+              checked={value === option.value}
+              on:change={() => {
+                value = option.value
+              }}
+              {disabled}
+            />
+            <span class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium">{option.label}</span>
+              {#if option.description}
+                <span class="text-xs text-gray-500">{option.description}</span>
+              {/if}
+            </span>
+          </label>
+        {/each}
+      </div>
+      <input type="hidden" class={error_message ? "input-error" : ""} />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

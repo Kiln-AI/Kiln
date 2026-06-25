@@ -1,5 +1,8 @@
 <script lang="ts">
-  import type { InlineAction } from "$lib/utils/form_element.svelte"
+  import type {
+    InlineAction,
+    RadioOption,
+  } from "$lib/utils/form_element.svelte"
 
   export let id: string = ""
   export let label: string = ""
@@ -19,6 +22,7 @@
   export let hide_label: boolean = false
   export let aria_label: string | null = null
   export let inline_action: InlineAction | null = null
+  export let radio_options: RadioOption[] = []
 
   export let validator: (value: unknown) => string | null = () => null
   export function run_validator() {
