@@ -16,6 +16,7 @@
 
 <script lang="ts">
   export let title: string = ""
+  export let subtitle: string = ""
   export let width: string = ""
   export let action_buttons: Array<Record<string, unknown>> = []
 
@@ -32,6 +33,7 @@
 <div
   data-testid="dialog-stub"
   data-title={title}
+  data-subtitle={subtitle}
   data-width={width}
   data-action-buttons={JSON.stringify(action_buttons)}
 >

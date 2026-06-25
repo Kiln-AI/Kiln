@@ -34,7 +34,7 @@ suite and regenerates the OpenAPI client.
   (reset `create_evaluator_loading` when deferring to confirm/trust dialog). Regression tests.
   (arch §4, §8-B1)
 
-- [ ] **Phase 5 — Test Run pane (extraction + states).** Extract `eval_test_run_pane` (builder
+- [x] **Phase 5 — Test Run pane (extraction + states).** Extract `eval_test_run_pane` (builder
   stays orchestrator, pane is presentational + event-driven); implement the 5 states;
   `test_run_input_card` (selected + 2 quick-picks, 2-line input+output + tooltips);
   `test_run_browse_dialog` (wide, no search, input+output, "Add manual example");

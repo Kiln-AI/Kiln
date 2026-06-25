@@ -5,7 +5,6 @@
   import type {
     Eval,
     Task,
-    TaskRun,
     EvalConfigType,
     Spec,
     TaskRunOutput,
@@ -33,11 +32,9 @@
   } from "$lib/api/v2_eval_api"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import Dialog from "$lib/ui/dialog.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
   import { onMount } from "svelte"
-  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
   import EvalTypeIntro from "$lib/components/eval_types/eval_type_intro.svelte"
+  import EvalTestRunPane from "$lib/components/eval_types/test_run/eval_test_run_pane.svelte"
 
   export let eval_config_type: V2EvalType
   export let evaluator: Eval
@@ -91,9 +88,8 @@
   $: is_llm_judge = eval_config_type === "llm_judge"
   $: can_submit_v2 = !!eval_config_type && !is_llm_judge
   $: can_submit_llm =
-    is_llm_judge && llm_selected_algo && llm_combined_model_name
+    is_llm_judge && !!llm_selected_algo && !!llm_combined_model_name
   $: can_submit = can_submit_v2 || can_submit_llm
-  $: has_runs = available_runs.length > 0
 
   onMount(async () => {
     await load_task_runs()
@@ -104,6 +100,7 @@
       runs_loading = true
       runs_error = null
       available_runs = await fetchTaskRuns(project_id, task_id)
+      selected_task_run = available_runs[0] ?? null
     } catch (e) {
       runs_error = createKilnError(e)
     } finally {
@@ -380,16 +377,8 @@
     }
   }
 
-  function select_task_run(run: TaskRunOutput | TaskRun) {
-    selected_task_run = run as TaskRunOutput
-    test_result = null
-    test_has_valid_run = false
-    test_shape_warning = null
-    test_error = null
-  }
-
-  function clear_selection() {
-    selected_task_run = null
+  function select_task_run(run: TaskRunOutput) {
+    selected_task_run = run
     test_result = null
     test_has_valid_run = false
     test_shape_warning = null
@@ -437,169 +426,27 @@
 
     <!-- Right: test run pane -->
     <div class="w-72 2xl:w-96 flex-none">
-      <div class="flex flex-col gap-3">
-        <div class="text-xl font-bold">Test Run</div>
-        <p class="text-xs text-gray-500">
-          Pick a recent task output to test your evaluator before saving.
-        </p>
-
-        {#if runs_loading}
-          <div class="flex items-center gap-2 text-sm text-gray-400 py-4">
-            <span class="loading loading-spinner loading-xs"></span>
-            Loading task runs...
-          </div>
-        {:else if runs_error}
-          <div class="alert alert-error text-sm">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <span>{runs_error.getMessage()}</span>
-          </div>
-        {:else if !has_runs}
-          <div class="flex flex-col items-center gap-2 py-6 text-center">
-            <i class="bi bi-inbox text-2xl text-gray-300"></i>
-            <div class="text-sm text-gray-500">
-              No task runs found. Run your task to generate sample inputs for
-              testing.
-            </div>
-          </div>
-        {:else if !selected_task_run}
-          <TaskRunPicker
-            {available_runs}
-            on:select={(e) => select_task_run(e.detail)}
-          />
-        {:else}
-          {@const input_text = selected_task_run.input ?? ""}
-          {@const output_text = selected_task_run.output?.output ?? ""}
-          {@const input_content = formatExpandedContent(input_text)}
-          {@const output_content = formatExpandedContent(output_text)}
-          <div class="rounded border bg-base-200 p-3 flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-medium text-gray-500">Selected Run</span
-              >
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost"
-                on:click={clear_selection}
-              >
-                Change
-              </button>
-            </div>
-            <div class="text-xs">
-              <span class="font-medium">Input:</span>
-              <span class="text-gray-600 break-words"
-                >{@html input_content.isJson
-                  ? input_content.value
-                  : ""}{input_content.isJson
-                  ? ""
-                  : input_content.value.length > 100
-                    ? input_content.value.substring(0, 100) + "..."
-                    : input_content.value}</span
-              >
-            </div>
-            <div class="text-xs">
-              <span class="font-medium">Output:</span>
-              <span class="text-gray-600 break-words"
-                >{@html output_content.isJson
-                  ? output_content.value
-                  : ""}{output_content.isJson
-                  ? ""
-                  : output_content.value.length > 100
-                    ? output_content.value.substring(0, 100) + "..."
-                    : output_content.value}</span
-              >
-            </div>
-          </div>
-
-          <Collapse title="Advanced" open={false}>
-            <div class="form-control pt-2">
-              <label for="advanced_reference_data" class="label">
-                <span class="label-text text-xs">Reference Data</span>
-                <span class="label-text-alt text-gray-400 text-xs"
-                  >Optional JSON object</span
-                >
-              </label>
-              <textarea
-                id="advanced_reference_data"
-                class="textarea textarea-bordered w-full font-mono text-xs"
-                rows="3"
-                placeholder={'{"expected_answer": "..."}'}
-                bind:value={advanced_reference_data}
-              ></textarea>
-            </div>
-          </Collapse>
-
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              disabled={test_loading || (is_llm_judge && !can_submit_llm)}
-              on:click={run_test}
-            >
-              {#if test_loading}
-                <span class="loading loading-spinner loading-xs"></span>
-                Running...
-              {:else}
-                <i class="bi bi-play-fill"></i>
-                Run Test
-              {/if}
-            </button>
-            {#if test_loading}
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm"
-                on:click={cancel_test}
-              >
-                Cancel
-              </button>
-            {/if}
-          </div>
-
-          {#if test_error}
-            <div class="alert alert-error text-sm">
-              <i class="bi bi-exclamation-triangle-fill"></i>
-              <span>{test_error.getMessage()}</span>
-            </div>
-          {/if}
-
-          {#if test_shape_warning}
-            <div class="alert alert-warning text-sm">
-              <i class="bi bi-exclamation-triangle-fill"></i>
-              <div>
-                <div class="font-medium">Score Shape Mismatch</div>
-                <div class="text-xs">{test_shape_warning}</div>
-              </div>
-            </div>
-          {/if}
-
-          {#if test_result}
-            {#if test_result.skipped_reason}
-              <div class="alert alert-warning text-sm">
-                <i class="bi bi-skip-forward-fill"></i>
-                <div>
-                  <div class="font-medium">Skipped</div>
-                  <div>
-                    {test_result.skipped_detail || test_result.skipped_reason}
-                  </div>
-                </div>
-              </div>
-            {:else if test_result.scores}
-              <div class="alert alert-success text-sm">
-                <i class="bi bi-check-circle-fill"></i>
-                <div>
-                  <div class="font-medium mb-1">Scores</div>
-                  <div
-                    class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs"
-                  >
-                    {#each Object.entries(test_result.scores) as [name, value]}
-                      <span class="font-mono font-medium">{name}</span>
-                      <span>{value}</span>
-                    {/each}
-                  </div>
-                </div>
-              </div>
-            {/if}
-          {/if}
-        {/if}
-      </div>
+      <EvalTestRunPane
+        {runs_loading}
+        {runs_error}
+        {available_runs}
+        selected_run={selected_task_run}
+        reference_data={advanced_reference_data}
+        {test_loading}
+        {test_result}
+        {test_error}
+        {test_shape_warning}
+        {test_has_valid_run}
+        {is_llm_judge}
+        {can_submit_llm}
+        on:select={(e) => select_task_run(e.detail)}
+        on:run={run_test}
+        on:cancel={cancel_test}
+        on:saveWithoutTesting={() => handle_submit()}
+        on:updateReferenceData={(e) => (advanced_reference_data = e.detail)}
+        on:runAgain={run_test}
+        on:save={handle_submit}
+      />
     </div>
   </div>
 </FormContainer>

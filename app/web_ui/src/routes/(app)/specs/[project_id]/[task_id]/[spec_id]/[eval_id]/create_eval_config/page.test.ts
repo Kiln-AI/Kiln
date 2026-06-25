@@ -486,17 +486,9 @@ describe("EvalConfigBuilder", () => {
     it("shows trust dialog when test returns code_eval_not_trusted", async () => {
       const { container } = await renderBuilder("code_eval")
 
-      // Wait for task runs to load
+      // Wait for task runs to load (auto-selects first run)
       await tick()
       await new Promise((r) => setTimeout(r, 0))
-      await tick()
-
-      // Select a run from the picker
-      const selectBtn = container.querySelector(
-        '[data-testid="select-run-0"]',
-      ) as HTMLButtonElement
-      expect(selectBtn).not.toBeNull()
-      await fireEvent.click(selectBtn)
       await tick()
 
       mockTestV2Eval.mockResolvedValueOnce({
@@ -506,7 +498,7 @@ describe("EvalConfigBuilder", () => {
       })
 
       const tryBtn = container.querySelector(
-        "button.btn-primary.btn-sm",
+        '[data-testid="run-test-btn"]',
       ) as HTMLButtonElement
       expect(tryBtn).not.toBeNull()
       await fireEvent.click(tryBtn)
@@ -576,17 +568,9 @@ describe("EvalConfigBuilder", () => {
     it("does not show confirm dialog after a successful test run", async () => {
       const { container } = await renderBuilder("exact_match")
 
-      // Wait for task runs to load
+      // Wait for task runs to load (auto-selects first run)
       await tick()
       await new Promise((r) => setTimeout(r, 0))
-      await tick()
-
-      // Select a run from the picker
-      const selectBtn = container.querySelector(
-        '[data-testid="select-run-0"]',
-      ) as HTMLButtonElement
-      expect(selectBtn).not.toBeNull()
-      await fireEvent.click(selectBtn)
       await tick()
 
       mockTestV2Eval.mockResolvedValueOnce({
@@ -596,7 +580,7 @@ describe("EvalConfigBuilder", () => {
       })
 
       const tryBtn = container.querySelector(
-        "button.btn-primary.btn-sm",
+        '[data-testid="run-test-btn"]',
       ) as HTMLButtonElement
       expect(tryBtn).not.toBeNull()
       await fireEvent.click(tryBtn)
@@ -944,15 +928,9 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
     it("grant_trust fires run_test without awaiting it", async () => {
       const { container } = await renderBuilder("code_eval")
 
+      // Wait for task runs to load (auto-selects first run)
       await tick()
       await new Promise((r) => setTimeout(r, 0))
-      await tick()
-
-      const selectBtn = container.querySelector(
-        '[data-testid="select-run-0"]',
-      ) as HTMLButtonElement
-      expect(selectBtn).not.toBeNull()
-      await fireEvent.click(selectBtn)
       await tick()
 
       mockTestV2Eval.mockResolvedValueOnce({
@@ -962,8 +940,9 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       })
 
       const tryBtn = container.querySelector(
-        "button.btn-primary.btn-sm",
+        '[data-testid="run-test-btn"]',
       ) as HTMLButtonElement
+      expect(tryBtn).not.toBeNull()
       await fireEvent.click(tryBtn)
 
       await tick()
