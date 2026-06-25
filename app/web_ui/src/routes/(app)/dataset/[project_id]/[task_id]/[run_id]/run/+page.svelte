@@ -542,6 +542,12 @@
   // region) — we observe this element for content mutations and pin the window
   // scroll to the bottom while things settle.
   let transcript_scroll_el: HTMLElement | null = null
+  // The left chat column (transcript + sticky composer). On small screens the
+  // Options sidebar wraps to below this column, so the document's total height
+  // extends past the conversation. We scroll to this column's bottom rather
+  // than the document's so "bottom" always lands on the latest turn (just above
+  // the sticky composer), not the wrapped sidebar below it.
+  let chat_column_el: HTMLElement | null = null
   // Scroll the page to the latest turn whenever a run renders — both on
   // initial load and after sending a new turn. The composer is pinned
   // separately, so "bottom" lands on the newest message, not the textbox.
@@ -624,9 +630,17 @@
     if (!el || typeof MutationObserver === "undefined") return
     stop_pinning_transcript()
     const stick = () => {
-      window.scrollTo({
-        top: document.documentElement.scrollHeight,
-      })
+      const col = chat_column_el
+      if (!col) {
+        window.scrollTo({ top: document.documentElement.scrollHeight })
+        return
+      }
+      // Scroll so the bottom of the chat column (the composer's resting spot)
+      // sits at the bottom of the viewport, regardless of any sidebar that
+      // wrapped below it in the mobile layout.
+      const target =
+        window.scrollY + col.getBoundingClientRect().bottom - window.innerHeight
+      window.scrollTo({ top: Math.max(0, target) })
     }
     stick()
     settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
@@ -895,6 +909,7 @@
                  sticky composer at the bottom of the viewport even for short
                  conversations. -->
             <div
+              bind:this={chat_column_el}
               class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]"
             >
               <div bind:this={transcript_scroll_el} class="min-w-0 xl:flex-1">
