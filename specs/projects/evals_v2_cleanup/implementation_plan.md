@@ -15,7 +15,7 @@ Two phases. Phase 1 is all `libs/core`/API and contains the manual real-trace ga
   - D27/D28/D29/D30 save-time validators in `eval.py` (arch §3) — coordinate with Project 1 (different classes, same file).
   - D31 backend: `llm_judge` populates `V2EvalResult.intermediate_outputs`; `_run_v2_job` persists it to `EvalRun` (arch §4).
 
-- [ ] **Phase 2 — Frontend + API surface**
+- [x] **Phase 2 — Frontend + API surface**
   - Add `intermediate_outputs` to `TestV2EvalResponse`; regenerate OpenAPI client + commit (arch §6).
   - D31 UI: thread `intermediate_outputs` into the run-result renderer; "View reasoning" → `Dialog` modal in `llm_judge_result.svelte` (arch §5).
   - D35 UI: `n_excluded` (i) indicator on the compare view (and judge-comparison view if it renders aggregate scores) — yellow ≤20%, red >20% (arch §7).

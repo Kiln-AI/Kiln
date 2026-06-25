@@ -10222,6 +10222,10 @@ export interface components {
             skipped_reason?: string | null;
             /** Skipped Detail */
             skipped_detail?: string | null;
+            /** Intermediate Outputs */
+            intermediate_outputs?: {
+                [key: string]: string;
+            } | null;
         };
         /**
          * TestWriteAccessRequest
