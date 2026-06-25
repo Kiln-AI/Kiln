@@ -587,8 +587,8 @@ describe("TestRunInputCard", () => {
 
     const label = card?.querySelector("span.font-medium")
     expect(label).not.toBeNull()
-    expect(label?.classList.contains("text-base-content")).toBe(true)
-    expect(label?.classList.contains("text-base-content/60")).toBe(false)
+    expect(label?.classList.contains("text-base")).toBe(true)
+    expect(label?.classList.contains("text-gray-500")).toBe(false)
   })
 
   it("renders truncated 2-line input and output", () => {

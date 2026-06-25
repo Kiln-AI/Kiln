@@ -41,11 +41,7 @@
         {/if}
         <EvalTypeTags tags={metadata.tags} />
       </div>
-      <p
-        class="text-base-content/60 mt-0.5 {recommended
-          ? 'text-sm'
-          : 'text-xs'}"
-      >
+      <p class="text-gray-500 mt-0.5 {recommended ? 'text-sm' : 'text-xs'}">
         {metadata.description}
       </p>
     </div>
@@ -56,7 +52,7 @@
       height="16"
       viewBox="0 0 16 16"
       fill="currentColor"
-      class="flex-none ml-auto text-base-content/40"
+      class="flex-none ml-auto text-gray-500"
       aria-hidden="true"
     >
       <path

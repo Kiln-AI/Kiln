@@ -22,11 +22,11 @@
           <EvalTypeTags tags={metadata.tags} />
         {/if}
       </div>
-      <p class="text-sm text-base-content/60 leading-relaxed">
+      <p class="text-sm text-gray-500 leading-relaxed">
         {metadata.explainer || metadata.description}
       </p>
       {#if metadata.example}
-        <p class="text-sm text-base-content/40 italic mt-1.5">
+        <p class="text-sm text-gray-500 italic mt-1.5">
           {metadata.example}
         </p>
       {/if}

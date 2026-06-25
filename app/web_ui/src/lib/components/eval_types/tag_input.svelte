@@ -51,11 +51,11 @@
   data-testid="tag-input-{id}"
 >
   {#each tags as tag (tag)}
-    <span class="badge bg-base-300 text-base-content/70 gap-1 py-2.5 px-2.5">
+    <span class="badge bg-base-200 text-gray-500 gap-1 py-2.5 px-2.5">
       <span class="truncate max-w-[200px]">{tag}</span>
       <button
         type="button"
-        class="font-medium text-base-content/40 hover:text-base-content/70"
+        class="font-medium text-gray-500 hover:text-gray-700"
         on:click={() => remove_tag(tag)}
         {disabled}
         aria-label="Remove {tag}"

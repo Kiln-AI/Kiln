@@ -57,10 +57,10 @@
   class="flex items-center justify-between text-sm py-1"
   data-testid="reference-data-field"
 >
-  <span class="text-base-content/60">Reference Data</span>
+  <span class="text-gray-500">Reference Data</span>
   <button
     type="button"
-    class="link text-sm text-base-content/60 hover:text-primary"
+    class="link text-sm text-gray-500 hover:text-primary"
     on:click={open_editor}
     data-testid="reference-data-edit"
   >
