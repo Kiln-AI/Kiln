@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { get, writable } from "svelte/store"
-import type { ChatMessage, StreamChatOptions } from "./streaming_chat"
+import type {
+  ChatMessage,
+  ContextUsage,
+  StreamChatOptions,
+} from "./streaming_chat"
 
 vi.mock("./streaming_chat", () => ({
   streamChat: vi.fn(),
@@ -1464,5 +1468,88 @@ describe("chatSessionStore global instance", () => {
     const state = get(chatSessionStore)
     expect(state.messages).toEqual([])
     expect(state.status).toBe("ready")
+  })
+})
+
+describe("contextUsage", () => {
+  const usage: ContextUsage = {
+    context_tokens: 90_000,
+    context_limit: 150_000,
+    context_percent: 0.6,
+    compacted: false,
+  }
+
+  it("is null initially", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    expect(get(store).contextUsage).toBeNull()
+  })
+
+  it("is set via the onContextUsage stream callback", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onContextUsage!(usage)
+
+    expect(get(store).contextUsage).toEqual(usage)
+  })
+
+  it("persists contextUsage to sessionStorage", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore("ctx_session")
+
+    await store.sendMessage("hi")
+    capture.options!.onContextUsage!(usage)
+
+    const stored = JSON.parse(storage.store["ctx_session"])
+    expect(stored.contextUsage).toEqual(usage)
+  })
+
+  it("restores persisted contextUsage on a fresh store", async () => {
+    storage.store["ctx_restore"] = JSON.stringify({
+      messages: [],
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+      contextUsage: usage,
+    })
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore("ctx_restore")
+    expect(get(store).contextUsage).toEqual(usage)
+  })
+
+  it("sets contextUsage on loadSession", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    store.loadSession([], "trace-load", usage)
+    expect(get(store).contextUsage).toEqual(usage)
+  })
+
+  it("defaults contextUsage to null when loadSession omits it", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    store.loadSession([], "trace-load")
+    expect(get(store).contextUsage).toBeNull()
+  })
+
+  it("clears contextUsage on reset", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onContextUsage!(usage)
+    expect(get(store).contextUsage).toEqual(usage)
+
+    store.reset()
+    expect(get(store).contextUsage).toBeNull()
   })
 })

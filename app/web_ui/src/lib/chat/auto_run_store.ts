@@ -19,6 +19,7 @@ import {
   StreamEventProcessor,
   consumeSseStream,
   type ChatMessage,
+  type ContextUsage,
   type StreamEvent,
   type ToolCallsPendingItem,
 } from "./streaming_chat"
@@ -43,6 +44,8 @@ export interface AutoRunChatSink {
   beginAssistantTurn: () => void
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace: (traceId: string) => void
+  /** Fired when an auto-burst snapshot event carries ``context_usage``. */
+  onContextUsage: (usage: ContextUsage) => void
   onInlineError: (message: string, traceId?: string, code?: string) => void
   onToolExecutionStart: (toolCount: number) => void
   onToolExecutionEnd: (toolCount: number) => void
@@ -177,6 +180,7 @@ export function createAutoRunStore(): AutoRunStore {
     return new StreamEventProcessor({
       onAssistantMessage: (update) => sink?.onAssistantMessage(update),
       onChatTrace: (tid) => sink?.onChatTrace(tid),
+      onContextUsage: (usage) => sink?.onContextUsage(usage),
       onInlineError: (message, traceId, code) =>
         sink?.onInlineError(message, traceId, code),
       onToolExecutionStart: (count) => sink?.onToolExecutionStart(count),

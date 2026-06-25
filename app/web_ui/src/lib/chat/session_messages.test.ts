@@ -231,3 +231,41 @@ describe("stripAppUiContext", () => {
     expect(stripAppUiContext("")).toBe("")
   })
 })
+
+describe("hydrateSessionFromSnapshot context_usage", () => {
+  it("returns normalized contextUsage from snapshot.context_usage", () => {
+    const snapshot: ChatSessionSnapshot = {
+      id: "trace-ctx",
+      task_run: { trace: [{ role: "user", content: "hi" }] },
+      context_usage: {
+        context_tokens: 120,
+        context_limit: 200,
+        context_percent: 0.6,
+        compacted: true,
+      },
+    }
+    const { contextUsage } = hydrateSessionFromSnapshot(snapshot)
+    expect(contextUsage).toEqual({
+      context_tokens: 120,
+      context_limit: 200,
+      context_percent: 0.6,
+      compacted: true,
+    })
+  })
+
+  it("returns null contextUsage when the field is absent", () => {
+    const { contextUsage } = hydrateSessionFromSnapshot(
+      snap("trace-no-ctx", [{ role: "user", content: "hi" }]),
+    )
+    expect(contextUsage).toBeNull()
+  })
+
+  it("returns null contextUsage when the field carries no numbers", () => {
+    const snapshot: ChatSessionSnapshot = {
+      id: "trace-empty-ctx",
+      task_run: { trace: [{ role: "user", content: "hi" }] },
+      context_usage: { compacted: false },
+    }
+    expect(hydrateSessionFromSnapshot(snapshot).contextUsage).toBeNull()
+  })
+})

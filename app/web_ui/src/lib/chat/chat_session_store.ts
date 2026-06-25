@@ -6,6 +6,7 @@ import {
   chatGenerateId,
   traceIdForNextChatRequest,
   type ChatMessage,
+  type ContextUsage,
   type ToolCallsPendingItem,
   type ToolCallsPendingPayload,
 } from "./streaming_chat"
@@ -33,6 +34,11 @@ export interface PersistedChatSession {
   messages: ChatMessage[]
   collapsedPartKeys: Record<string, boolean>
   lastSentAppState: AppState | null
+  /**
+   * Approximate context-window usage for the gauge. Persisted so a
+   * sessionStorage reload keeps the gauge. ``null`` before the first turn.
+   */
+  contextUsage: ContextUsage | null
 }
 
 export interface ToolApprovalWaiter {
@@ -68,7 +74,11 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   stop(): void
   retryLastRequest(): void
   reset(): void
-  loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  loadSession(
+    messages: ChatMessage[],
+    continuationTraceId: string,
+    contextUsage?: ContextUsage | null,
+  ): void
   /**
    * Resync the restored-from-sessionStorage conversation back to its true
    * auto-mode state after a hard refresh. If the conversation has an active
@@ -91,6 +101,7 @@ const EMPTY_PERSISTED: PersistedChatSession = {
   messages: [],
   collapsedPartKeys: {},
   lastSentAppState: null,
+  contextUsage: null,
 }
 
 export function createChatSessionStore(
@@ -136,6 +147,7 @@ export function createChatSessionStore(
       messages: $persisted.messages,
       collapsedPartKeys: $persisted.collapsedPartKeys,
       lastSentAppState: $persisted.lastSentAppState,
+      contextUsage: $persisted.contextUsage,
     }))
   })
 
@@ -211,6 +223,10 @@ export function createChatSessionStore(
     })
   }
 
+  function setContextUsage(usage: ContextUsage) {
+    persisted.update((p) => ({ ...p, contextUsage: usage }))
+  }
+
   // Append a fresh empty assistant message so the next streamed burst (auto run
   // or declined-resume) renders into a new turn rather than the prior one.
   function beginAssistantTurn() {
@@ -245,6 +261,7 @@ export function createChatSessionStore(
     beginAssistantTurn,
     onAssistantMessage: updateLastAssistant,
     onChatTrace: setLastAssistantTraceId,
+    onContextUsage: setContextUsage,
     onInlineError: (message, traceId, code) =>
       pushInlineError(message, traceId, code),
     onToolExecutionStart: () =>
@@ -312,6 +329,10 @@ export function createChatSessionStore(
       onChatTrace: (tid) => {
         if (isStale()) return
         setLastAssistantTraceId(tid)
+      },
+      onContextUsage: (usage) => {
+        if (isStale()) return
+        setContextUsage(usage)
       },
       onInlineError: (message, traceId, code) => {
         if (isStale()) return
@@ -442,6 +463,10 @@ export function createChatSessionStore(
       onChatTrace: (traceId) => {
         if (isStale()) return
         setLastAssistantTraceId(traceId)
+      },
+      onContextUsage: (usage) => {
+        if (isStale()) return
+        setContextUsage(usage)
       },
       onAutoModeConsentRequired: async (payload) => {
         if (isStale()) return
@@ -671,6 +696,7 @@ export function createChatSessionStore(
       messages: [],
       collapsedPartKeys: {},
       lastSentAppState: null,
+      contextUsage: null,
     })
     combined.update((s) => ({
       ...s,
@@ -680,7 +706,11 @@ export function createChatSessionStore(
     setRuntimeState("ready", null)
   }
 
-  function loadSession(messages: ChatMessage[], traceId: string): void {
+  function loadSession(
+    messages: ChatMessage[],
+    traceId: string,
+    contextUsage: ContextUsage | null = null,
+  ): void {
     if (abortController) {
       abortController.abort()
     }
@@ -690,7 +720,12 @@ export function createChatSessionStore(
     autoRunStore.detach()
     clearToolApprovalState()
     continuationTraceId = traceId
-    persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
+    persisted.set({
+      messages,
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+      contextUsage,
+    })
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
@@ -754,11 +789,14 @@ export function createChatSessionStore(
       // no live stream) in the snapshot-error case while the throw case
       // correctly re-attaches.
       if (!error && snapshot) {
-        const { messages, continuationTraceId: traceId } =
-          hydrateSessionFromSnapshot(snapshot)
+        const {
+          messages,
+          continuationTraceId: traceId,
+          contextUsage,
+        } = hydrateSessionFromSnapshot(snapshot)
         // loadSession detaches any prior observer, sets the messages + trace id,
         // and resets runtime state — identical to the history-restore apply path.
-        loadSession(messages, traceId)
+        loadSession(messages, traceId, contextUsage)
       }
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at

@@ -5,7 +5,11 @@ import {
   resumePendingToolCalls,
   chatExecuteToolsUrl,
   traceIdForNextChatRequest,
+  normalizeContextUsage,
+  StreamEventProcessor,
   type ChatMessage,
+  type ContextUsage,
+  type StreamEvent,
 } from "./streaming_chat"
 
 describe("traceIdForNextChatRequest", () => {
@@ -271,5 +275,102 @@ describe("resumePendingToolCalls (graceful-stop handoff)", () => {
     expect(finishSpy).toHaveBeenCalledOnce()
 
     vi.unstubAllGlobals()
+  })
+})
+
+describe("normalizeContextUsage", () => {
+  it("returns null for absent payload", () => {
+    expect(normalizeContextUsage(null)).toBeNull()
+    expect(normalizeContextUsage(undefined)).toBeNull()
+    expect(normalizeContextUsage({})).toBeNull()
+  })
+
+  it("normalizes a full payload", () => {
+    expect(
+      normalizeContextUsage({
+        context_tokens: 100,
+        context_limit: 1000,
+        context_percent: 0.1,
+        compacted: true,
+      }),
+    ).toEqual({
+      context_tokens: 100,
+      context_limit: 1000,
+      context_percent: 0.1,
+      compacted: true,
+    })
+  })
+
+  it("defaults missing numbers to 0 and compacted to false", () => {
+    expect(normalizeContextUsage({ context_percent: 0.5 })).toEqual({
+      context_tokens: 0,
+      context_limit: 0,
+      context_percent: 0.5,
+      compacted: false,
+    })
+  })
+})
+
+describe("StreamEventProcessor context_usage", () => {
+  function makeProcessor(onContextUsage: (u: ContextUsage) => void) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onContextUsage,
+    })
+  }
+
+  it("fires onContextUsage when kiln_chat_trace carries context_usage", () => {
+    const usages: ContextUsage[] = []
+    const traces: string[] = []
+    const processor = new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onChatTrace: (t) => traces.push(t),
+      onContextUsage: (u) => usages.push(u),
+    })
+    const event: StreamEvent = {
+      type: "kiln_chat_trace",
+      trace_id: "trace-1",
+      context_usage: {
+        context_tokens: 90,
+        context_limit: 100,
+        context_percent: 0.9,
+        compacted: true,
+      },
+    }
+    processor.handleEvent(event)
+    expect(traces).toEqual(["trace-1"])
+    expect(usages).toEqual([
+      {
+        context_tokens: 90,
+        context_limit: 100,
+        context_percent: 0.9,
+        compacted: true,
+      },
+    ])
+  })
+
+  it("does not fire onContextUsage when context_usage is absent", () => {
+    const usages: ContextUsage[] = []
+    const processor = makeProcessor((u) => usages.push(u))
+    processor.handleEvent({ type: "kiln_chat_trace", trace_id: "trace-2" })
+    expect(usages).toHaveLength(0)
+  })
+
+  it("normalizes a partial context_usage without throwing", () => {
+    const usages: ContextUsage[] = []
+    const processor = makeProcessor((u) => usages.push(u))
+    processor.handleEvent({
+      type: "kiln_chat_trace",
+      trace_id: "trace-3",
+      context_usage: { context_percent: 0.42 },
+    })
+    expect(usages).toEqual([
+      {
+        context_tokens: 0,
+        context_limit: 0,
+        context_percent: 0.42,
+        compacted: false,
+      },
+    ])
   })
 })

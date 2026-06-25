@@ -5,6 +5,7 @@
   import posthog from "posthog-js"
   import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
+  import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
@@ -22,6 +23,7 @@
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
+  import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -103,6 +105,7 @@
   // affordances (thinking dots / animated icon) as interactive streaming, while
   // leaving the input usable for inject-on-send.
   $: autoWorking = $store.autoWorking
+  $: contextUsage = $store.contextUsage
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -380,13 +383,12 @@
     store.stop()
   }
 
-  function onChatHistoryApply(
-    e: CustomEvent<{
-      messages: ChatMessage[]
-      continuationTraceId: string
-    }>,
-  ) {
-    store.loadSession(e.detail.messages, e.detail.continuationTraceId)
+  function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
+    store.loadSession(
+      e.detail.messages,
+      e.detail.continuationTraceId,
+      e.detail.contextUsage,
+    )
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -803,6 +805,11 @@
           <span aria-hidden="true">⏵⏵</span>
           Auto mode
         </button>
+      {/if}
+      {#if contextUsage}
+        <div class="ml-auto">
+          <ContextUsageGauge usage={contextUsage} />
+        </div>
       {/if}
     </div>
   </div>
