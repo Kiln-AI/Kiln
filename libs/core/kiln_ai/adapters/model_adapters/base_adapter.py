@@ -90,6 +90,14 @@ class AdapterConfig:
     default_tags: list[str] | None = None
 
     """
+    The ID of the TaskRunConfig that originated this run, if any. Stored on the
+    resulting TaskRun so the run can be traced back to its originating saved config
+    (in addition to the inline run_config snapshot). None for ad-hoc/inline runs
+    that were not initiated from a saved TaskRunConfig.
+    """
+    task_run_config_id: str | None = None
+
+    """
     A custom prompt builder can be injected to override the system prompt building process.
     If not provided, the prompt builder will be created from the run_config.prompt_id which
     may load additional files from disk.
@@ -728,6 +736,7 @@ class BaseAdapter(metaclass=ABCMeta):
             source=DataSource(
                 type=output_source_type,
                 properties=self._properties_for_task_output(),
+                run_config_id=self.base_adapter_config.task_run_config_id,
                 run_config=self.run_config,
             ),
         )

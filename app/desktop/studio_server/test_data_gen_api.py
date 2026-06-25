@@ -258,7 +258,7 @@ def test_save_sample_success_paid_run(
     assert response.status_code == 200
     # Verify TaskRun was created with correct properties
     mock_task_from_id.assert_called_once_with("proj-ID", "task-ID")
-    saved_runs = test_task.runs()
+    saved_runs = test_task.runs(include_intermediate_runs=True)
     assert len(saved_runs) == 1
     saved_run = saved_runs[0]
 
@@ -330,7 +330,7 @@ def test_generate_sample_success_with_mock_invoke(
     mock_task_from_id.assert_called_once_with("proj-ID", "task-ID")
 
     # Check none are saved before calling save
-    saved_runs = test_task.runs()
+    saved_runs = test_task.runs(include_intermediate_runs=True)
     assert len(saved_runs) == 0
 
     # Call save
@@ -341,7 +341,7 @@ def test_generate_sample_success_with_mock_invoke(
     assert response.status_code == 200
 
     # Check one is saved after calling save
-    saved_runs = test_task.runs()
+    saved_runs = test_task.runs(include_intermediate_runs=True)
     assert len(saved_runs) == 1
     saved_run = saved_runs[0]
     assert saved_run.input_source.type == DataSourceType.synthetic
@@ -645,7 +645,7 @@ def test_save_qna_pair_persists_task_run(
     assert response.status_code == 200
     mock_task_from_id.assert_called_once_with("proj-ID", "task-ID")
 
-    saved_runs = test_task.runs()
+    saved_runs = test_task.runs(include_intermediate_runs=True)
     assert len(saved_runs) == 1
     run = saved_runs[0]
 

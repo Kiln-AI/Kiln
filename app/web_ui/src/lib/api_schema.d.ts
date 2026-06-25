@@ -204,9 +204,11 @@ export interface paths {
         put?: never;
         /**
          * Build Prompt With Examples
-         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         * @description Build a prompt with the task's prompt, requirements, and optional custom examples.
          *
          *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         *     When the task has a default run config, that run config's prompt is used as the base
+         *     (so synthetic data reflects the production prompt) instead of the task instruction.
          */
         post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
         delete?: never;
@@ -271,6 +273,23 @@ export interface paths {
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Chain */
+        get: operations["get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs": {
         parameters: {
             query?: never;
@@ -280,7 +299,7 @@ export interface paths {
         };
         /**
          * List Runs
-         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
          */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
@@ -304,7 +323,7 @@ export interface paths {
         };
         /**
          * List Run Summaries
-         * @description For multiturn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized.
+         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
          */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
@@ -395,7 +414,7 @@ export interface paths {
         };
         /**
          * List Run Tags
-         * @description Counts only include tags from leaf TaskRuns. For multiturn tasks, tags attached to intermediate runs in a chain are not included.
+         * @description Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
          */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
@@ -3547,7 +3566,11 @@ export interface components {
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
         };
-        /** Audio */
+        /**
+         * Audio
+         * @description Data about a previous audio response from the model.
+         *     [Learn more](https://platform.openai.com/docs/guides/audio).
+         */
         Audio: {
             /** Id */
             id: string;
@@ -3755,6 +3778,11 @@ export interface components {
              * @description The number of task runs imported.
              */
             imported_count: number;
+            /**
+             * Imported Conversation Count
+             * @description The number of conversations imported. None for single-turn uploads; set for multiturn uploads (where one row = one conversation that materializes as multiple TaskRuns linked via parent_task_run_id).
+             */
+            imported_conversation_count?: number | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3787,7 +3815,10 @@ export interface components {
             latency_ms?: number | null;
             usage?: components["schemas"]["MessageUsage"] | null;
         };
-        /** ChatCompletionContentPartImageParam */
+        /**
+         * ChatCompletionContentPartImageParam
+         * @description Learn about [image inputs](https://platform.openai.com/docs/guides/vision).
+         */
         ChatCompletionContentPartImageParam: {
             image_url: components["schemas"]["ImageURL"];
             /**
@@ -3796,7 +3827,10 @@ export interface components {
              */
             type: "image_url";
         };
-        /** ChatCompletionContentPartInputAudioParam */
+        /**
+         * ChatCompletionContentPartInputAudioParam
+         * @description Learn about [audio inputs](https://platform.openai.com/docs/guides/audio).
+         */
         ChatCompletionContentPartInputAudioParam: {
             input_audio: components["schemas"]["InputAudio"];
             /**
@@ -3815,7 +3849,10 @@ export interface components {
              */
             type: "refusal";
         };
-        /** ChatCompletionContentPartTextParam */
+        /**
+         * ChatCompletionContentPartTextParam
+         * @description Learn about [text inputs](https://platform.openai.com/docs/guides/text-generation).
+         */
         ChatCompletionContentPartTextParam: {
             /** Text */
             text: string;
@@ -3825,7 +3862,12 @@ export interface components {
              */
             type: "text";
         };
-        /** ChatCompletionDeveloperMessageParam */
+        /**
+         * ChatCompletionDeveloperMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, `developer` messages
+         *     replace the previous `system` messages.
+         */
         ChatCompletionDeveloperMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3849,7 +3891,10 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageFunctionToolCallParam */
+        /**
+         * ChatCompletionMessageFunctionToolCallParam
+         * @description A call to a function tool created by the model.
+         */
         ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
@@ -3860,7 +3905,12 @@ export interface components {
              */
             type: "function";
         };
-        /** ChatCompletionSystemMessageParam */
+        /**
+         * ChatCompletionSystemMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, use `developer` messages
+         *     for this purpose instead.
+         */
         ChatCompletionSystemMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3890,7 +3940,11 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
-        /** ChatCompletionUserMessageParam */
+        /**
+         * ChatCompletionUserMessageParam
+         * @description Messages sent by an end user, containing prompts or additional context
+         *     information.
+         */
         ChatCompletionUserMessageParam: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
@@ -4830,6 +4884,11 @@ export interface components {
             properties: {
                 [key: string]: string | number;
             };
+            /**
+             * Run Config Id
+             * @description The ID of the saved TaskRunConfig used to produce this data, if any. Only present when the run was initiated from a saved TaskRunConfig (e.g. via the saved-config dropdown or a tool call); runs configured ad-hoc from the run page leave this unset. Not validated against the file system: a TaskRunConfig may be deleted without invalidating historical runs that reference it.
+             */
+            run_config_id?: string | null;
             /**
              * Run Config
              * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
@@ -6128,7 +6187,10 @@ export interface components {
              */
             output: string;
         };
-        /** File */
+        /**
+         * File
+         * @description Learn about [file inputs](https://platform.openai.com/docs/guides/text) for text generation.
+         */
         File: {
             file: components["schemas"]["FileFile"];
             /**
@@ -6502,14 +6564,22 @@ export interface components {
             /** Improper Formatting Examples */
             improper_formatting_examples?: string;
         };
-        /** Function */
+        /**
+         * Function
+         * @description The function that the model called.
+         */
         Function: {
             /** Arguments */
             arguments: string;
             /** Name */
             name: string;
         };
-        /** FunctionCall */
+        /**
+         * FunctionCall
+         * @description Deprecated and replaced by `tool_calls`.
+         *
+         *     The name and arguments of a function that should be called, as generated by the model.
+         */
         FunctionCall: {
             /** Arguments */
             arguments: string;
@@ -8509,6 +8579,47 @@ export interface components {
             feedback: string;
         };
         /**
+         * RunChainEntry
+         * @description A single entry in a multi-turn run's conversation chain.
+         */
+        RunChainEntry: {
+            /**
+             * Run Id
+             * @description The TaskRun id at this turn position in the chain.
+             */
+            run_id: string | null;
+            /**
+             * Turn Index
+             * @description 1-based turn index in the leaf's conversation (turn 1 = root, turn N = leaf). Derived from the leaf trace's user-message count.
+             */
+            turn_index: number;
+        };
+        /**
+         * RunChainResponse
+         * @description Ordered conversation chain for a multi-turn TaskRun.
+         *
+         *     The chain is rooted at the conversation start and ends with the requested
+         *     run itself (the requested run is always the final entry, even if it is the
+         *     only entry).
+         */
+        RunChainResponse: {
+            /**
+             * Chain
+             * @description Ordered root-to-leaf, includes the requested run itself as the final entry. If chain_broken is true, the list contains only the intact suffix from the leaf back to (and excluding) the break point.
+             */
+            chain: components["schemas"]["RunChainEntry"][];
+            /**
+             * Chain Broken
+             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
+             */
+            chain_broken: boolean;
+            /**
+             * Has Children
+             * @description True if at least one other TaskRun in the task references the requested run via parent_task_run_id (i.e. the requested run is an intermediate node in the chain, not a leaf). Used by the UI to warn that sending a new message from this run will create a new branch rather than extending an existing one.
+             */
+            has_children: boolean;
+        };
+        /**
          * RunConfigEvalResult
          * @description Eval results for a specific run config.
          */
@@ -8630,6 +8741,16 @@ export interface components {
              * @description Tags to apply to the resulting task run.
              */
             tags?: string[] | null;
+            /**
+             * Parent Task Run Id
+             * @description Continue the conversation started by this parent run. Multi-turn tasks only.
+             */
+            parent_task_run_id?: string | null;
+            /**
+             * Task Run Config Id
+             * @description The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.
+             */
+            task_run_config_id?: string | null;
         };
         /**
          * SampleApi
@@ -8701,6 +8822,12 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "auto" | "manual";
+            /**
+             * Remove Conflicting Id
+             * @description When true and a duplicate project ID conflict is detected, remove the existing project registration before saving.
+             * @default false
+             */
+            remove_conflicting_id: boolean;
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -9366,6 +9493,11 @@ export interface components {
              * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
              */
             default_run_config_id?: string | null;
+            /**
+             * @description Whether this task is single-turn (each run independent) or multi-turn (runs continue prior runs). Immutable after construction: changing it would invalidate existing TaskRuns. To change, clone the task.
+             * @default single_turn
+             */
+            turn_mode: components["schemas"]["TurnMode"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -10009,6 +10141,12 @@ export interface components {
              */
             auth_required: boolean;
             /**
+             * Write Denied
+             * @description True when the user authenticated but the remote rejected the push due to insufficient write permissions.
+             * @default false
+             */
+            write_denied: boolean;
+            /**
              * Auth Method
              * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
              */
@@ -10179,6 +10317,12 @@ export interface components {
             /** Arguments */
             arguments: string;
         };
+        /**
+         * TurnMode
+         * @description Whether a Task runs as a single turn or as a multiturn conversation.
+         * @enum {string}
+         */
+        TurnMode: "single_turn" | "multiturn";
         /**
          * UpdateConfigRequest
          * @description Request to partially update a git sync configuration.
@@ -10639,6 +10783,8 @@ export interface operations {
             query: {
                 /** @description File path to the project.kiln file to import. */
                 project_path: string;
+                /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
+                remove_conflicting_id?: boolean;
             };
             header?: never;
             path?: never;
@@ -11369,6 +11515,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run whose chain to return. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunChainResponse"];
                 };
             };
             /** @description Validation Error */
