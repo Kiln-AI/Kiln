@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormSection from "./form_parts/form_section.svelte"
+  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
+  import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["PatternMatchProperties"] = {
     type: "pattern_match",
@@ -51,37 +54,52 @@
   }
 </script>
 
-<div class="flex flex-col gap-4">
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div on:blur={on_pattern_blur}>
-    <FormElement
-      id="pattern_match_pattern"
-      label="Regular Expression"
-      description="The regex pattern to test against the output."
-      inputType="input"
-      bind:value={properties.pattern}
-      error_message={regex_error}
+<div class="flex flex-col gap-6">
+  <FormSection
+    title="Pattern"
+    subtitle="Define the regular expression to test against the output."
+    testid="pattern-match-pattern-section"
+  >
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div on:blur={on_pattern_blur}>
+      <FormElement
+        id="pattern_match_pattern"
+        label="Regular Expression"
+        description="The regex pattern to test against the output. Example: ^hello.*world$"
+        info_description="A regular expression (regex) is a pattern that describes a set of strings. Use it to check if the output matches a specific format or contains certain patterns."
+        inputType="input"
+        bind:value={properties.pattern}
+        error_message={regex_error}
+      />
+    </div>
+  </FormSection>
+
+  <FormSection
+    title="Match Mode"
+    subtitle="Choose whether the output should match or not match the pattern."
+    testid="pattern-match-mode-section"
+  >
+    <DisclosureRadioGroup
+      name="pattern_match_mode"
+      options={[
+        {
+          value: "must_match",
+          label: "Must match",
+          description: "The output must match the regular expression to pass.",
+        },
+        {
+          value: "must_not_match",
+          label: "Must not match",
+          description:
+            "The output must NOT match the regular expression to pass.",
+        },
+      ]}
+      bind:selected={properties.mode}
     />
-  </div>
+  </FormSection>
 
-  <FormElement
-    id="pattern_match_mode"
-    label="Mode"
-    description="Whether the output must match or must not match the pattern."
-    inputType="select"
-    bind:value={properties.mode}
-    select_options={[
-      ["must_match", "Must Match"],
-      ["must_not_match", "Must Not Match"],
-    ]}
-  />
-
-  <FormElement
-    id="pattern_match_value_expression"
-    label="Value Expression"
-    description="Optional Jinja2 expression to extract a value from the eval input before matching. Leave blank to use the full model output."
-    inputType="input"
-    optional={true}
+  <OutputValueField
+    id_prefix="pattern_match"
     bind:value={properties.value_expression}
   />
 </div>

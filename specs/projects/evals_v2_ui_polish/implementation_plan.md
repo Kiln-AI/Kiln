@@ -46,7 +46,7 @@ suite and regenerates the OpenAPI client.
   consolidate the redundant top badge/line. LLM judge: shrink model + algorithm cards ~40% with
   smaller icons. (arch §6, functional spec §5/§7)
 
-- [ ] **Phase 7 — Deterministic forms I (shared parts + value-expression family).** New
+- [x] **Phase 7 — Deterministic forms I (shared parts + value-expression family).** New
   `form_parts`: `form_section`, `disclosure_radio_group`, `output_value_field`. Redesign
   `exact_match`, `pattern_match`, `contains` (info via intro, section titles, progressive
   disclosure replacing nested radios, relabeled "Output Value to Compare" + Jinja tooltip).

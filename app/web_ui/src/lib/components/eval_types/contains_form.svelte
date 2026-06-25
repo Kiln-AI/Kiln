@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormSection from "./form_parts/form_section.svelte"
+  import DisclosureRadioGroup from "./form_parts/disclosure_radio_group.svelte"
+  import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["ContainsProperties"] = {
     type: "contains",
@@ -28,100 +31,92 @@
   let source: "substring" | "reference_key" = properties.reference_key
     ? "reference_key"
     : "substring"
+
+  function on_source_change() {
+    if (source === "substring") {
+      properties.reference_key = null
+    } else {
+      properties.substring = null
+    }
+  }
 </script>
 
-<div class="flex flex-col gap-4">
-  <FormElement
-    id="contains_mode"
-    label="Mode"
-    description="Whether the output must contain or must not contain the value."
-    inputType="select"
-    bind:value={properties.mode}
-    select_options={[
-      ["must_contain", "Must Contain"],
-      ["must_not_contain", "Must Not Contain"],
-    ]}
-  />
+<div class="flex flex-col gap-6">
+  <FormSection
+    title="Expected Substring"
+    subtitle="Choose what value to search for in the output."
+    testid="contains-expected-section"
+  >
+    <DisclosureRadioGroup
+      name="contains_source"
+      options={[
+        {
+          value: "substring",
+          label: "Fixed substring",
+          description:
+            "Specify the exact substring to search for in the output.",
+        },
+        {
+          value: "reference_key",
+          label: "Value from reference data",
+          description:
+            "Use a key from the reference data whose value to search for in the output.",
+        },
+      ]}
+      bind:selected={source}
+      on:change={on_source_change}
+    />
 
-  <div role="group" aria-labelledby="contains_source_label">
-    <span id="contains_source_label" class="text-sm font-medium"
-      >Search String Source</span
-    >
-    <p class="text-xs text-gray-500 pb-1">
-      Choose what value to search for in the output.
-    </p>
-    <div class="flex flex-col gap-3 pl-1">
-      <label class="flex items-start gap-2 cursor-pointer">
-        <input
-          type="radio"
-          name="contains_source"
-          class="radio radio-sm mt-0.5"
-          value="substring"
-          bind:group={source}
-          on:change={() => {
-            properties.reference_key = null
-          }}
-        />
-        <span class="flex flex-col gap-1 flex-1">
-          <span class="text-sm">Fixed Substring</span>
-          <p class="text-xs text-gray-500">
-            The substring to search for in the output.
-          </p>
-          <FormElement
-            id="contains_substring"
-            label="Substring"
-            hide_label={true}
-            aria_label="Substring"
-            inputType="input"
-            bind:value={properties.substring}
-            disabled={source !== "substring"}
-          />
-        </span>
-      </label>
-      <label class="flex items-start gap-2 cursor-pointer">
-        <input
-          type="radio"
-          name="contains_source"
-          class="radio radio-sm mt-0.5"
-          value="reference_key"
-          bind:group={source}
-          on:change={() => {
-            properties.substring = null
-          }}
-        />
-        <span class="flex flex-col gap-1 flex-1">
-          <span class="text-sm">Reference Data Key</span>
-          <p class="text-xs text-gray-500">
-            The key in the reference data whose value to search for in the
-            output.
-          </p>
-          <FormElement
-            id="contains_reference_key"
-            label="Reference Key"
-            hide_label={true}
-            aria_label="Reference Key"
-            inputType="input"
-            bind:value={properties.reference_key}
-            disabled={source !== "reference_key"}
-          />
-        </span>
-      </label>
-    </div>
-  </div>
+    {#if source === "substring"}
+      <FormElement
+        id="contains_substring"
+        label="Substring"
+        inputType="input"
+        bind:value={properties.substring}
+      />
+    {:else}
+      <FormElement
+        id="contains_reference_key"
+        label="Reference Key"
+        description="The key in the reference data whose value to search for."
+        inputType="input"
+        bind:value={properties.reference_key}
+      />
+    {/if}
+  </FormSection>
 
-  <FormElement
-    id="contains_value_expression"
-    label="Value Expression"
-    description="Optional Jinja2 expression to extract a value from the eval input before searching. Leave blank to use the full model output."
-    inputType="input"
-    optional={true}
+  <FormSection
+    title="Match Mode"
+    subtitle="Choose whether the output should contain or not contain the value."
+    testid="contains-mode-section"
+  >
+    <DisclosureRadioGroup
+      name="contains_mode"
+      options={[
+        {
+          value: "must_contain",
+          label: "Must contain",
+          description: "The output must contain the substring to pass.",
+        },
+        {
+          value: "must_not_contain",
+          label: "Must not contain",
+          description: "The output must NOT contain the substring to pass.",
+        },
+      ]}
+      bind:selected={properties.mode}
+    />
+  </FormSection>
+
+  <OutputValueField
+    id_prefix="contains"
     bind:value={properties.value_expression}
-  />
-
-  <FormElement
-    id="contains_case_sensitive"
-    label="Case Sensitive"
-    inputType="checkbox"
-    bind:value={properties.case_sensitive}
-  />
+  >
+    <FormElement
+      id="contains_case_sensitive"
+      label="Case Sensitive"
+      inputType="checkbox"
+      bind:value={properties.case_sensitive}
+    />
+  </OutputValueField>
 </div>

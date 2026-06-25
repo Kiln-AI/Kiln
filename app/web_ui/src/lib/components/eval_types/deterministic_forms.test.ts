@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render, fireEvent } from "@testing-library/svelte"
+import { tick } from "svelte"
 
 vi.mock("$lib/utils/form_element.svelte", async () => {
   const { default: Stub } = await import("./__tests__/form_element_stub.svelte")
@@ -650,5 +651,324 @@ describe("ToolCallCheckForm", () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).validate()).toBeNull()
+  })
+})
+
+// Phase 7: Redesigned forms — genuinely new tests for relabel, tooltips,
+// progressive disclosure, section structure, and reference_key validation path.
+// Pre-existing contract tests (getProperties shape, validate pass/fail for
+// expected_value/substring sources, radio switching) are NOT duplicated here.
+
+describe("Phase 7: reference_key validation path", () => {
+  it("ExactMatch validate returns error when reference_key source is selected but empty", async () => {
+    const { component } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "key",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(component as any).$set({
+      properties: {
+        type: "exact_match" as const,
+        case_sensitive: true,
+        value_expression: null,
+        expected_value: null,
+        reference_key: null,
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBe("Reference key is required.")
+  })
+
+  it("Contains validate returns error when reference_key source is selected but empty", async () => {
+    const { component } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "key",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(component as any).$set({
+      properties: {
+        type: "contains" as const,
+        case_sensitive: true,
+        mode: "must_contain" as const,
+        value_expression: null,
+        substring: null,
+        reference_key: null,
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBe("Reference key is required.")
+  })
+})
+
+describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
+  it("ExactMatch has 'Output Value to Compare' label with Jinja tooltip", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-exact_match_value_expression"]',
+    )
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-label")).toBe(
+      "Output Value to Compare",
+    )
+    expect(formElement?.getAttribute("data-info-description")).toContain(
+      "Jinja",
+    )
+  })
+
+  it("PatternMatch has 'Output Value to Compare' label with Jinja tooltip", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-pattern_match_value_expression"]',
+    )
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-label")).toBe(
+      "Output Value to Compare",
+    )
+    expect(formElement?.getAttribute("data-info-description")).toContain(
+      "Jinja",
+    )
+  })
+
+  it("Contains has 'Output Value to Compare' label with Jinja tooltip", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-contains_value_expression"]',
+    )
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-label")).toBe(
+      "Output Value to Compare",
+    )
+    expect(formElement?.getAttribute("data-info-description")).toContain(
+      "Jinja",
+    )
+  })
+})
+
+describe("Phase 7: Progressive disclosure and section structure", () => {
+  it("ExactMatch shows only expected_value input when fixed value selected", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-exact_match_expected_value"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-exact_match_reference_key"]',
+      ),
+    ).toBeNull()
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-exact_match_source"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector('[data-testid="exact-match-expected-section"]'),
+    ).toBeTruthy()
+  })
+
+  it("ExactMatch shows only reference_key input when reference data selected", () => {
+    const { container } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "my_key",
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-exact_match_expected_value"]',
+      ),
+    ).toBeNull()
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-exact_match_reference_key"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("Contains shows only substring input when fixed substring selected", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-contains_substring"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-contains_reference_key"]',
+      ),
+    ).toBeNull()
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-contains_source"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector('[data-testid="contains-expected-section"]'),
+    ).toBeTruthy()
+  })
+
+  it("Contains shows only reference_key input when reference data selected", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-contains_substring"]',
+      ),
+    ).toBeNull()
+    expect(
+      container.querySelector(
+        '[data-testid="form-element-contains_reference_key"]',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("PatternMatch renders match mode radio group and section titles", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-pattern_match_mode"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector('[data-testid="pattern-match-pattern-section"]'),
+    ).toBeTruthy()
+    expect(
+      container.querySelector('[data-testid="pattern-match-mode-section"]'),
+    ).toBeTruthy()
+  })
+
+  it("Contains renders match mode radio group and section titles", () => {
+    const { container } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      container.querySelector(
+        '[data-testid="disclosure-radio-group-contains_mode"]',
+      ),
+    ).toBeTruthy()
+    expect(
+      container.querySelector('[data-testid="contains-mode-section"]'),
+    ).toBeTruthy()
+  })
+
+  it("PatternMatch has regex tooltip", () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "test",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    expect(formElement?.getAttribute("data-info-description")).toContain(
+      "regular expression",
+    )
   })
 })
