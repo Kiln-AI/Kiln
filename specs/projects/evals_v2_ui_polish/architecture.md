@@ -293,4 +293,46 @@ Svelte component tests via the existing `__tests__` stubs (`app_page_stub`, `dia
 8. Deterministic forms: shared `form_parts` + per-form redesign (largest).
 9. Docs-link audit (B2) + final polish pass.
 
-Steps 4 and 8 are the riskiest; 1–3 are low-risk and unblock the rest.
+Steps 4 and 8 are the riskiest; 1–3 are low-risk and unblock the rest. Step 10 (D16) is the lone
+backend change and is independent of 1–9 — it can land last.
+
+---
+
+## 13. Test-pane score-range validation (D16)
+
+The project's **only backend change** — appended from the evals_v2 cleanup project because all the
+create-flow UI it surfaces through lives here.
+
+**Problem (D16 / 27-R14).** A code scorer can return a float outside its rating-type's range —
+e.g. `6.0` for a `five_star` (valid `1.0–5.0`; `pass_fail` `0.0–1.0`; `pass_fail_critical`
+`-1.0–1.0`). That range is only enforced when the **batch runner** persists an `EvalRun`
+(`eval.py:531-587`); the **test pane** (`test_v2_eval`) returns scores straight from the adapter
+with no range check, so an out-of-range preview looks valid and Save proceeds — the failure only
+appears later on a real run. (`v2_eval_code_eval._validate_scores` checks keys + float-type only;
+deterministic types emit 0/1 and `llm_judge` is constrained, so this practically only bites
+`code_eval`, but the check is generic.)
+
+**Backend.** Files: `libs/core/kiln_ai/datamodel/eval.py` (`EvalRun.validate_scores`, 531-587),
+`app/desktop/studio_server/eval_api.py` (`test_v2_eval`, 1037-1083), `TestV2EvalResponse`.
+- Extract the per-type range loop into a shared
+  `validate_scores_against_output_scores(scores, output_scores) -> list[str]` (returns
+  human-readable problems; empty = OK). Refactor `EvalRun.validate_scores` to call it and raise as
+  before — **no behavior change**, covered by existing `test_eval_model` tests.
+- In `test_v2_eval`, after a non-skipped adapter result, run the validator against
+  `eval_obj.output_scores` and return any problems on a new optional
+  `TestV2EvalResponse.score_range_errors: list[str] | None`. Keep returning `scores` so the pane
+  can still display the offending values.
+
+**Frontend (surfacing).** Files: `eval_config_builder.svelte` (`run_test`) + the Results state of
+`eval_test_run_pane` (§5 State 5).
+- When `score_range_errors` is non-empty: render the scores **and** an inline error in the same
+  visual family as `test_shape_warning`, and set `test_has_valid_run = false` so `handle_submit`
+  routes Save through the confirm modal — identical gating to a shape mismatch (§5/§10).
+
+**Schema.** The new response field is the project's single OpenAPI change — regenerate the client
+(`app/web_ui/src/lib/generate_schema.sh`) and keep the schema check green.
+
+**Tests.** Core: `validate_scores_against_output_scores` flags each rating type's bounds and
+`EvalRun` validation is unchanged. API: `test_v2_eval` returns `score_range_errors` for an
+out-of-range code result, none for in-range. Frontend: an out-of-range result shows the error and
+leaves Save gated (`test_has_valid_run=false`).

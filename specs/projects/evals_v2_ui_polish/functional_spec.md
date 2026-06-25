@@ -233,6 +233,12 @@ Advanced collapse textarea; small inline Run spinner; scores in an `alert-succes
 - Score rows: name + value, **V1-parity float rendering** (no typed badge — out of scope per
   prior project). Skipped scores shown dim with reason; existing score-shape warning preserved
   (missing keys = warning) and gates Save as today (`test_has_valid_run`).
+- **Score-range check (D16):** if a returned score falls outside its rating-type range (e.g. `6.0`
+  for a five_star — valid 1.0–5.0; pass_fail 0.0–1.0; pass_fail_critical −1.0–1.0), the pane shows
+  the scores **and** an inline error, and Save is gated (`test_has_valid_run=false`) — same
+  treatment as a shape mismatch. New in this project (implementation Phase 10; backend detail in
+  architecture §13). Previously the range was only enforced at persist time, so the test pane
+  silently accepted out-of-range scores.
 - Footer: **Run again** (default) + primary **Save**. Successful valid test enables Save.
 
 ### State 5 — Browse modal ("Browse all dataset inputs")
@@ -404,11 +410,14 @@ From `test_run_sidebar.md`:
 
 ## 12. Out of scope
 
-- The eval engine, save/round-trip contract, V2 `llm_judge` baking (done in `evals_v2_ui_fix`).
+- The eval engine and save/round-trip contract (done in `evals_v2_ui_fix`), **except** the D16
+  score-range validation appended as Phase 10 (a small reuse of the existing persist-time range
+  check in the test endpoint). V2 `llm_judge` baking is out of scope.
 - Typed score badges / fail-loud view binding (explicitly deferred by the prior project).
 - View / run-result / comparison surfaces; copilot / eval-builder / questionnaire flows.
 - Persisting manual examples to the dataset (manual examples are ephemeral, test-only).
-- Backend changes (this is frontend-only, barring trivial registry/string support).
+- Backend changes (this is frontend-only, barring trivial registry/string support **and the
+  Phase 10 / D16 score-range validation**).
 
 ---
 
@@ -423,3 +432,7 @@ From `test_run_sidebar.md`:
 - Trust modal: new copy/icon; dismiss-on-trust; run on main pane.
 - Bugs: reset submitting on modal-defer (B1); docs-link audit + drop generic "Read the Docs"
   (B2).
+- **D16** Test-pane score-range validation appended as Phase 10 — the project's one backend change:
+  extract the per-type range check from `EvalRun.validate_scores` into a shared validator, reuse it
+  in `test_v2_eval`, and gate Save on out-of-range scores. Moved here from the evals_v2 cleanup
+  project because all the create-flow UI it surfaces through lives in this project.
