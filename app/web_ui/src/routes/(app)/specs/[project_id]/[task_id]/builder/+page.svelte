@@ -349,6 +349,12 @@
   let multi_turn_chains: Chain[] = []
   let multi_turn_progress = 0 // 0..N as cases complete
   const multi_turn_total = NUM_CASES
+  // Total assistant turns streamed so far (one per turn_completed event),
+  // across all cases. Drives a smooth progress indicator: cases complete in
+  // concurrency-limited waves, so a case-only count sits still then jumps —
+  // counting turns instead makes steady progress visible while the backend
+  // works in parallel.
+  let multi_turn_turns_done = 0
   // Sub-phase for the Step 4 UI: distinguishes the up-front LLM call
   // (generate_cases) from the longer batch-run stream so the user sees
   // distinct progress instead of one ambiguous spinner.
@@ -458,6 +464,7 @@
     generation_loading = true
     generation_error = null
     multi_turn_progress = 0
+    multi_turn_turns_done = 0
     multi_turn_chains = []
     multi_turn_batch_tag = null
     multi_turn_phase = "idle"
@@ -593,6 +600,9 @@
                 (t: ChainTurn) => t.role === "user" || t.role === "assistant",
               )
             traces_by_case[event.case_index] = turns
+            // One turn_completed == one assistant turn finished, across all
+            // cases — drives the smooth progress indicator.
+            multi_turn_turns_done += 1
           } else if (event.event === "case_completed") {
             multi_turn_chains = [
               ...multi_turn_chains,
@@ -943,12 +953,17 @@
   $: page_subtitle = page_subtitle_for(current_step)
   $: page_max_w = page_max_w_for(current_step)
 
-  // Step 4 animation caption. Multi-turn routes its live "X of N ready" count
-  // through here since the shared animation has no progress bar of its own.
+  // Total assistant turns expected across the whole batch — the denominator
+  // for the smooth turn-level progress (cases run in parallel waves, so this
+  // climbs steadily where the case count would sit still then jump).
+  $: multi_turn_total_turns = multi_turn_total * TURNS_PER_CASE
+
+  // Step 4 animation caption. Multi-turn shows turn-level progress while the
+  // batch runs (smooth), then how many full conversations are ready.
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "generating_cases"
       ? `Generating ${NUM_CASES} synthetic-user cases…`
-      : `Driving conversations — ${multi_turn_progress} of ${multi_turn_total} ready.`
+      : `Driving ${multi_turn_total} conversations — ${multi_turn_turns_done} of ${multi_turn_total_turns} turns (${multi_turn_progress} ready).`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
@@ -1197,6 +1212,17 @@
               description={generate_animation_description}
               warning={is_multi_turn ? null : "This may take a while"}
             />
+            {#if is_multi_turn && multi_turn_phase === "running_batch"}
+              <!-- Turn-level bar: fills steadily as turns stream in, so the
+                   parallel-but-wavy case completions don't read as stalled. -->
+              <div class="max-w-md mx-auto mt-4">
+                <progress
+                  class="progress progress-primary w-full"
+                  value={multi_turn_turns_done}
+                  max={multi_turn_total_turns}
+                ></progress>
+              </div>
+            {/if}
           {/if}
 
           {#if generation_error}
