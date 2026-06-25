@@ -16,14 +16,14 @@
 
   export function validate(): string | null {
     if (properties.min_count == null && properties.max_count == null) {
-      return "At least one of minimum or maximum count must be set."
+      return "At least one bound must be set."
     }
     if (
       properties.min_count != null &&
       properties.max_count != null &&
       properties.min_count > properties.max_count
     ) {
-      return "Minimum count must be less than or equal to maximum count."
+      return "Minimum must be less than or equal to maximum."
     }
     return null
   }
@@ -55,7 +55,7 @@
 <div class="flex flex-col gap-6">
   <FormSection
     title="What to Count"
-    subtitle="Choose what type of step to count in the agent's trace."
+    subtitle="Choose what to count in the agent's trace."
     testid="step-count-type-section"
   >
     <FormElement
@@ -65,18 +65,19 @@
         {
           value: "tool_calls",
           label: "Tool calls",
-          description:
-            "Count the number of tool/function calls the agent made.",
+          description: "Count each tool or function call the agent made.",
         },
         {
           value: "model_responses",
           label: "Model responses",
-          description: "Count the number of responses the model generated.",
+          description:
+            "Count each response the model generated (one per inference call).",
         },
         {
           value: "turns",
           label: "Turns",
-          description: "Count the number of conversational turns in the trace.",
+          description:
+            "Count conversational turns (each user-then-assistant exchange counts as one turn).",
         },
       ]}
       bind:value={properties.count_type}
@@ -86,35 +87,42 @@
 
   <FormSection
     title="Bounds"
-    subtitle="Set a minimum and/or maximum count. At least one is required."
+    subtitle="Set a minimum and/or maximum. At least one is required."
     testid="step-count-bounds-section"
   >
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div on:blur={on_bounds_blur}>
-      <FormElement
-        id="step_count_check_min"
-        label="Minimum Count"
-        description="The minimum number of steps required (leave empty for no minimum)."
-        inputType="input_number"
-        optional={true}
-        bind:value={properties.min_count}
-        error_message={bounds_error}
-        min={0}
-      />
-    </div>
-
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div on:blur={on_bounds_blur}>
-      <FormElement
-        id="step_count_check_max"
-        label="Maximum Count"
-        description="The maximum number of steps allowed (leave empty for no maximum)."
-        inputType="input_number"
-        optional={true}
-        bind:value={properties.max_count}
-        error_message={bounds_error}
-        min={0}
-      />
+    <div class="ml-4 border-l border-base-300 pl-4">
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div on:blur={on_bounds_blur}>
+        <div class="flex gap-4" data-testid="bounds-row">
+          <div class="flex-1">
+            <FormElement
+              id="step_count_check_min"
+              label="Minimum"
+              inputType="input_number"
+              optional={true}
+              placeholder="No minimum"
+              bind:value={properties.min_count}
+              min={0}
+            />
+          </div>
+          <div class="flex-1">
+            <FormElement
+              id="step_count_check_max"
+              label="Maximum"
+              inputType="input_number"
+              optional={true}
+              placeholder="No maximum"
+              bind:value={properties.max_count}
+              min={0}
+            />
+          </div>
+        </div>
+        {#if bounds_error}
+          <p class="text-error text-xs mt-1" data-testid="bounds-error">
+            {bounds_error}
+          </p>
+        {/if}
+      </div>
     </div>
   </FormSection>
 </div>

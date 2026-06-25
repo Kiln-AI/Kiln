@@ -52,8 +52,8 @@
 
 <div class="flex flex-col gap-6">
   <FormSection
-    title="Expected Set"
-    subtitle="Define the set of values to compare against the output."
+    title="Expected Values"
+    subtitle="Define what the output should contain."
     testid="set-check-expected-section"
   >
     <FormElement
@@ -62,14 +62,14 @@
       radio_options={[
         {
           value: "expected_set",
-          label: "Fixed set",
-          description: "Specify the expected set of values directly.",
+          label: "Fixed values",
+          description: "Enter the expected values directly.",
         },
         {
           value: "reference_key",
-          label: "Value from reference data",
+          label: "From reference data",
           description:
-            "Use a key from the reference data containing the expected set.",
+            "Look up the expected values from your dataset's reference fields.",
         },
       ]}
       bind:value={source}
@@ -78,30 +78,39 @@
     />
 
     {#if source === "expected_set"}
-      <TagInput
-        id="set_check_expected_set"
-        bind:tags={expected_set_tags}
-        placeholder="Type a value and press Enter"
-      />
-      <p class="text-xs text-gray-500 -mt-2">
-        Add items by typing and pressing Enter or comma.
-      </p>
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <label
+          for="set_check_expected_set"
+          class="text-sm font-medium"
+          data-testid="tag-input-label"
+        >
+          Expected Values
+        </label>
+        <p class="text-xs text-gray-500 mt-0.5 mb-1.5">
+          Add items by typing and pressing Enter or comma.
+        </p>
+        <TagInput
+          id="set_check_expected_set"
+          bind:tags={expected_set_tags}
+          placeholder="Type a value and press Enter"
+        />
+      </div>
     {:else}
-      <FormElement
-        id="set_check_reference_key"
-        label="Reference Key"
-        description="The key in the reference data containing the expected set."
-        inputType="input"
-        bind:value={properties.reference_key}
-      />
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <FormElement
+          id="set_check_reference_key"
+          label="Reference Key"
+          info_description="Reference data is the ground-truth data attached to each dataset example. Enter the key name whose value should be used as the expected values."
+          inputType="input"
+          hide_label={true}
+          placeholder="e.g. expected_values"
+          bind:value={properties.reference_key}
+        />
+      </div>
     {/if}
   </FormSection>
 
-  <FormSection
-    title="Comparison Mode"
-    subtitle="How to compare the output set against the expected set."
-    testid="set-check-mode-section"
-  >
+  <FormSection title="Comparison Mode" testid="set-check-mode-section">
     <FormElement
       id="set_check_mode"
       inputType="radio"
@@ -110,19 +119,19 @@
           value: "equal",
           label: "Equal",
           description:
-            "The output set must contain exactly the same elements as the expected set.",
+            "The output must contain exactly the expected values, with no extras and nothing missing.",
         },
         {
           value: "subset",
           label: "Subset",
           description:
-            "The output set must be a subset of the expected set (all output values appear in expected).",
+            "Every output value must appear in the expected values (extras in expected are OK).",
         },
         {
           value: "superset",
           label: "Superset",
           description:
-            "The output set must be a superset of the expected set (all expected values appear in output).",
+            "Every expected value must appear in the output (extra output values are OK).",
         },
       ]}
       bind:value={properties.mode}

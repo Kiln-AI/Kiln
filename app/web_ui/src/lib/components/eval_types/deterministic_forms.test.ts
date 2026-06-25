@@ -253,7 +253,7 @@ describe("StepCountCheckForm", () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).validate()).toBe(
-      "At least one of minimum or maximum count must be set.",
+      "At least one bound must be set.",
     )
   })
 
@@ -270,7 +270,7 @@ describe("StepCountCheckForm", () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).validate()).toBe(
-      "Minimum count must be less than or equal to maximum count.",
+      "Minimum must be less than or equal to maximum.",
     )
   })
 
@@ -621,7 +621,7 @@ describe("ToolCallCheckForm", () => {
     )
   })
 
-  it("validate returns error when a tool has empty name", () => {
+  it("validate returns error when a tool has empty name, with tool index", () => {
     const { component } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -634,7 +634,27 @@ describe("ToolCallCheckForm", () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).validate()).toBe(
-      "All expected tools must have a name.",
+      "Expected Tool #1 is missing a name.",
+    )
+  })
+
+  it("validate error identifies the correct tool index", () => {
+    const { component } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            { tool_name: "search", expected_args: null },
+            { tool_name: "", expected_args: null },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBe(
+      "Expected Tool #2 is missing a name.",
     )
   })
 
@@ -970,7 +990,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
 // and that getProperties()/validate() contracts are preserved exactly.
 
 describe("Phase 8: SetCheckForm section structure and progressive disclosure", () => {
-  it("renders Expected Set section with testid", () => {
+  it("renders Expected Values section with testid", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -1211,12 +1231,12 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
       },
     })
     expect(getAllByText("Any").length).toBeGreaterThan(0)
-    expect(getAllByText("All").length).toBeGreaterThan(0)
-    expect(getAllByText("Ordered").length).toBeGreaterThan(0)
+    expect(getAllByText("All (any order)").length).toBeGreaterThan(0)
+    expect(getAllByText("Ordered (in list order)").length).toBeGreaterThan(0)
     expect(getAllByText("Never").length).toBeGreaterThan(0)
   })
 
-  it("shows On Unexpected Tools section when match_mode is not 'never'", () => {
+  it("shows Unlisted Tool Calls section when match_mode is not 'never'", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -1237,7 +1257,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
     ).toBeTruthy()
   })
 
-  it("hides On Unexpected Tools section when match_mode is 'never'", () => {
+  it("hides Unlisted Tool Calls section when match_mode is 'never'", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -1449,15 +1469,17 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
       },
     })
     expect(
-      getAllByText("Count the number of tool/function calls the agent made.")
-        .length,
+      getAllByText("Count each tool or function call the agent made.").length,
     ).toBeGreaterThan(0)
     expect(
-      getAllByText("Count the number of responses the model generated.").length,
+      getAllByText(
+        "Count each response the model generated (one per inference call).",
+      ).length,
     ).toBeGreaterThan(0)
     expect(
-      getAllByText("Count the number of conversational turns in the trace.")
-        .length,
+      getAllByText(
+        "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+      ).length,
     ).toBeGreaterThan(0)
   })
 })
@@ -2039,5 +2061,515 @@ describe("UI polish: hide_label preserves description, info_description, and err
     expect(field?.getAttribute("data-info-description")).toContain(
       "Reference data",
     )
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────
+// Phase 9: set_check, tool_call_check, step_count_check UI polish
+// ──────────────────────────────────────────────────────────────────
+
+describe("SetCheckForm UI polish", () => {
+  it("tag input has a visible label when fixed values source is selected", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    const label = container.querySelector('[data-testid="tag-input-label"]')
+    expect(label).toBeTruthy()
+    expect(label?.textContent).toBe("Expected Values")
+  })
+
+  it("comparison mode descriptions use plain language", () => {
+    const { getAllByText } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    expect(
+      getAllByText(
+        "The output must contain exactly the expected values, with no extras and nothing missing.",
+      ).length,
+    ).toBeGreaterThan(0)
+    expect(
+      getAllByText(
+        "Every output value must appear in the expected values (extras in expected are OK).",
+      ).length,
+    ).toBeGreaterThan(0)
+    expect(
+      getAllByText(
+        "Every expected value must appear in the output (extra output values are OK).",
+      ).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it("reference key field has info_description tooltip", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-set_check_reference_key"]',
+    )
+    const tooltip = field?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("Reference data")
+    expect(tooltip).toContain("ground-truth")
+  })
+
+  it("conditional tag input is wrapped in indent container", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    const tagInput = container.querySelector(
+      '[data-testid="tag-input-set_check_expected_set"]',
+    )
+    const indent = tagInput?.closest(".ml-4.border-l.pl-4")
+    expect(indent).toBeTruthy()
+  })
+
+  it("conditional reference key input is wrapped in indent container", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-set_check_reference_key"]',
+    )
+    const parent = field?.parentElement
+    expect(parent?.classList.contains("ml-4")).toBe(true)
+    expect(parent?.classList.contains("border-l")).toBe(true)
+    expect(parent?.classList.contains("pl-4")).toBe(true)
+  })
+
+  it("section title is 'Expected Values' not 'Expected Set'", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    const section = container.querySelector(
+      '[data-testid="set-check-expected-section"]',
+    )
+    const heading = section?.querySelector("h3")
+    expect(heading?.textContent).toBe("Expected Values")
+  })
+})
+
+describe("ToolCallCheckForm UI polish", () => {
+  it("Expected Tools section appears before Match Mode section in DOM", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const sections = container.querySelectorAll("[data-testid]")
+    const sectionIds = Array.from(sections).map((s) =>
+      s.getAttribute("data-testid"),
+    )
+    const toolsIdx = sectionIds.indexOf("tool-call-expected-tools-section")
+    const matchIdx = sectionIds.indexOf("tool-call-match-mode-section")
+    expect(toolsIdx).toBeGreaterThanOrEqual(0)
+    expect(matchIdx).toBeGreaterThanOrEqual(0)
+    expect(toolsIdx).toBeLessThan(matchIdx)
+  })
+
+  it("does not duplicate 'Expected Tools' as both section title and item header", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const toolsSection = container.querySelector(
+      '[data-testid="tool-call-expected-tools-section"]',
+    )
+    expect(toolsSection).toBeTruthy()
+    const headings = toolsSection?.querySelectorAll("h3")
+    const headingTexts = Array.from(headings || []).map(
+      (h) => h.textContent || "",
+    )
+    expect(headingTexts.filter((t) => t === "Expected Tools")).toHaveLength(1)
+  })
+
+  it("arg row header says 'Comparison' not 'Match'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: {
+                query: { value: "test", match_mode: "exact" as const },
+              },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const argMatchField = container.querySelector(
+      '[data-testid="form-element-arg_match_0_0"]',
+    )
+    expect(argMatchField?.getAttribute("data-label")).toBe("Comparison")
+  })
+
+  it("tool fields are nested with indent pattern", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const toolNameField = container.querySelector(
+      '[data-testid="form-element-tool_name_0"]',
+    )
+    const indent = toolNameField?.closest(".ml-4.border-l.pl-4")
+    expect(indent).toBeTruthy()
+  })
+
+  it("match mode descriptions distinguish 'any order' vs 'in list order'", () => {
+    const { getAllByText } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    expect(getAllByText("All (any order)").length).toBeGreaterThan(0)
+    expect(getAllByText("Ordered (in list order)").length).toBeGreaterThan(0)
+  })
+
+  it("subtitle contextualizes for 'never' mode", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "never" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const section = container.querySelector(
+      '[data-testid="tool-call-expected-tools-section"]',
+    )
+    const subtitle = section?.querySelector(
+      '[data-testid="form-section-subtitle"]',
+    )
+    expect(subtitle?.textContent).toContain("must NOT call")
+  })
+
+  it("subtitle for non-never mode says 'expected to call'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const section = container.querySelector(
+      '[data-testid="tool-call-expected-tools-section"]',
+    )
+    const subtitle = section?.querySelector(
+      '[data-testid="form-section-subtitle"]',
+    )
+    expect(subtitle?.textContent).toContain("expected to call")
+  })
+
+  it("section title is 'Unlisted Tool Calls' not 'On Unexpected Tools'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const section = container.querySelector(
+      '[data-testid="tool-call-unexpected-section"]',
+    )
+    const heading = section?.querySelector("h3")
+    expect(heading?.textContent).toBe("Unlisted Tool Calls")
+  })
+
+  it("Expected Arguments collapse has a description", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const collapse = container.querySelector('[data-testid="collapse-stub"]')
+    expect(collapse?.getAttribute("data-title")).toBe("Expected Arguments")
+  })
+
+  it("arg value field has info_description about JSON format", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: {
+                query: { value: "test", match_mode: "exact" as const },
+              },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const argValueField = container.querySelector(
+      '[data-testid="form-element-arg_value_0_0"]',
+    )
+    const tooltip = argValueField?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("JSON")
+    expect(tooltip).toContain("quoted")
+  })
+})
+
+describe("StepCountCheckForm UI polish", () => {
+  it("min and max inputs are in a side-by-side flex row", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    const boundsRow = container.querySelector('[data-testid="bounds-row"]')
+    expect(boundsRow).toBeTruthy()
+    expect(boundsRow?.classList.contains("flex")).toBe(true)
+    const minField = boundsRow?.querySelector(
+      '[data-testid="form-element-step_count_check_min"]',
+    )
+    const maxField = boundsRow?.querySelector(
+      '[data-testid="form-element-step_count_check_max"]',
+    )
+    expect(minField).toBeTruthy()
+    expect(maxField).toBeTruthy()
+  })
+
+  it("bounds error is shown once, not duplicated on both inputs", async () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: 10,
+          max_count: 5,
+        },
+      },
+    })
+    // Before blur, no error is shown (bounds_touched is false)
+    expect(
+      container.querySelectorAll('[data-testid="bounds-error"]'),
+    ).toHaveLength(0)
+
+    // Fire blur on the wrapper div to trigger on_bounds_blur
+    const boundsRow = container.querySelector('[data-testid="bounds-row"]')
+    const blurWrapper = boundsRow?.parentElement
+    expect(blurWrapper).toBeTruthy()
+    await fireEvent.blur(blurWrapper!)
+    await tick()
+
+    // Error should appear exactly once (not on each input individually)
+    const errorElements = container.querySelectorAll(
+      '[data-testid="bounds-error"]',
+    )
+    expect(errorElements).toHaveLength(1)
+    expect(errorElements[0].textContent).toContain("Minimum must be")
+  })
+
+  it("min field has placeholder 'No minimum'", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    const minField = container.querySelector(
+      '[data-testid="form-element-step_count_check_min"]',
+    )
+    expect(minField?.getAttribute("data-placeholder")).toBe("No minimum")
+  })
+
+  it("max field has placeholder 'No maximum'", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    const maxField = container.querySelector(
+      '[data-testid="form-element-step_count_check_max"]',
+    )
+    expect(maxField?.getAttribute("data-placeholder")).toBe("No maximum")
+  })
+
+  it("min label is 'Minimum' not 'Minimum Count'", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    const minField = container.querySelector(
+      '[data-testid="form-element-step_count_check_min"]',
+    )
+    expect(minField?.getAttribute("data-label")).toBe("Minimum")
+  })
+
+  it("max label is 'Maximum' not 'Maximum Count'", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    const maxField = container.querySelector(
+      '[data-testid="form-element-step_count_check_max"]',
+    )
+    expect(maxField?.getAttribute("data-label")).toBe("Maximum")
+  })
+
+  it("bounds are nested with indent pattern", () => {
+    const { container } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "tool_calls" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    const boundsRow = container.querySelector('[data-testid="bounds-row"]')
+    const indent = boundsRow?.closest(".ml-4.border-l.pl-4")
+    expect(indent).toBeTruthy()
+  })
+
+  it("turns description clarifies user-then-assistant exchange", () => {
+    const { getAllByText } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "turns" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    expect(
+      getAllByText(
+        "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+      ).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it("model_responses description clarifies one per inference call", () => {
+    const { getAllByText } = render(StepCountCheckForm, {
+      props: {
+        properties: {
+          type: "step_count_check" as const,
+          count_type: "model_responses" as const,
+          min_count: null,
+          max_count: null,
+        },
+      },
+    })
+    expect(
+      getAllByText(
+        "Count each response the model generated (one per inference call).",
+      ).length,
+    ).toBeGreaterThan(0)
   })
 })

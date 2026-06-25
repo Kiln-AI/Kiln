@@ -67,9 +67,9 @@
     if (!properties.expected_tools || properties.expected_tools.length === 0) {
       return "At least one expected tool must be defined."
     }
-    for (const tool of properties.expected_tools) {
-      if (!tool.tool_name.trim()) {
-        return "All expected tools must have a name."
+    for (let i = 0; i < properties.expected_tools.length; i++) {
+      if (!properties.expected_tools[i].tool_name.trim()) {
+        return `Expected Tool #${i + 1} is missing a name.`
       }
     }
     return null
@@ -96,8 +96,93 @@
 
 <div class="flex flex-col gap-6">
   <FormSection
+    title="Expected Tools"
+    subtitle={properties.match_mode === "never"
+      ? "Define the tools the agent must NOT call. Tool calls are function calls the model makes during its reasoning trace."
+      : "Define the tools the agent is expected to call. Tool calls are function calls the model makes during its reasoning trace."}
+    testid="tool-call-expected-tools-section"
+  >
+    <FormList
+      bind:content={properties.expected_tools}
+      content_label="Expected Tool"
+      empty_content={structuredClone(empty_tool)}
+      let:item_index
+    >
+      <div class="ml-4 border-l border-base-300 pl-4">
+        <div class="flex flex-col gap-2">
+          <FormElement
+            id="tool_name_{item_index}"
+            label="Tool Name"
+            description="The name of the tool that should be called."
+            inputType="input"
+            bind:value={properties.expected_tools[item_index].tool_name}
+          />
+
+          <Collapse
+            title="Expected Arguments"
+            description="Optionally check specific argument values passed to this tool."
+            open={(arg_rows[item_index] ?? []).length > 0}
+          >
+            {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
+              <div class="flex gap-2 items-end">
+                <div class="flex-1">
+                  <FormElement
+                    id="arg_name_{item_index}_{arg_index}"
+                    label={arg_index === 0 ? "Arg Name" : ""}
+                    inputType="input"
+                    placeholder="arg name"
+                    bind:value={arg_row.name}
+                  />
+                </div>
+                <div class="flex-1">
+                  <FormElement
+                    id="arg_value_{item_index}_{arg_index}"
+                    label={arg_index === 0 ? "Expected Value (JSON)" : ""}
+                    info_description={arg_index === 0
+                      ? 'Values must be valid JSON. Strings must be quoted (e.g. "hello"), numbers and booleans are bare (e.g. 42, true).'
+                      : ""}
+                    inputType="input"
+                    placeholder={'"hello", 42, true'}
+                    bind:value={arg_row.value}
+                  />
+                </div>
+                <div class="w-32">
+                  <FormElement
+                    id="arg_match_{item_index}_{arg_index}"
+                    label={arg_index === 0 ? "Comparison" : ""}
+                    inputType="select"
+                    bind:value={arg_row.match_mode}
+                    select_options={[
+                      ["exact", "Exact"],
+                      ["contains", "Contains"],
+                      ["regex", "Regex"],
+                    ]}
+                  />
+                </div>
+                <button
+                  class="link text-xs text-gray-500"
+                  on:click={() => remove_arg(item_index, arg_index)}
+                  title="Remove argument"
+                >
+                  remove
+                </button>
+              </div>
+            {/each}
+            <button
+              class="btn btn-ghost btn-sm self-start"
+              on:click={() => add_arg(item_index)}
+            >
+              + Add Expected Argument
+            </button>
+          </Collapse>
+        </div>
+      </div>
+    </FormList>
+  </FormSection>
+
+  <FormSection
     title="Match Mode"
-    subtitle="How to match the expected tool calls against the trace."
+    subtitle="How to match tools against the trace."
     testid="tool-call-match-mode-section"
   >
     <FormElement
@@ -111,19 +196,19 @@
         },
         {
           value: "all",
-          label: "All",
-          description: "Pass if every expected tool was called.",
+          label: "All (any order)",
+          description: "Pass if every expected tool was called, in any order.",
         },
         {
           value: "ordered",
-          label: "Ordered",
+          label: "Ordered (in list order)",
           description:
-            "Pass if all expected tools were called in the specified order.",
+            "Pass if all expected tools were called in the order listed.",
         },
         {
           value: "never",
           label: "Never",
-          description: "Pass if none of the expected tools were called.",
+          description: "Pass if none of the listed tools were called.",
         },
       ]}
       bind:value={properties.match_mode}
@@ -133,8 +218,8 @@
 
   {#if properties.match_mode !== "never"}
     <FormSection
-      title="On Unexpected Tools"
-      subtitle="What to do when the model calls tools not in the expected list."
+      title="Unlisted Tool Calls"
+      subtitle="What happens when the model calls tools not in your list."
       testid="tool-call-unexpected-section"
     >
       <FormElement
@@ -143,7 +228,7 @@
         radio_options={[
           {
             value: "ignore",
-            label: "Ignore",
+            label: "Allow",
             description:
               "Extra tool calls beyond the expected list are allowed.",
           },
@@ -159,81 +244,4 @@
       />
     </FormSection>
   {/if}
-
-  <FormSection
-    title="Expected Tools"
-    subtitle="Define the tools the agent is expected to call."
-    testid="tool-call-expected-tools-section"
-  >
-    <FormList
-      bind:content={properties.expected_tools}
-      content_label="Expected Tool"
-      empty_content={structuredClone(empty_tool)}
-      let:item_index
-    >
-      <div class="flex flex-col gap-2">
-        <FormElement
-          id="tool_name_{item_index}"
-          label="Tool Name"
-          description="The name of the tool that should be called."
-          inputType="input"
-          bind:value={properties.expected_tools[item_index].tool_name}
-        />
-
-        <Collapse
-          title="Expected Arguments"
-          open={(arg_rows[item_index] ?? []).length > 0}
-        >
-          {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
-            <div class="flex gap-2 items-end">
-              <div class="flex-1">
-                <FormElement
-                  id="arg_name_{item_index}_{arg_index}"
-                  label={arg_index === 0 ? "Arg Name" : ""}
-                  inputType="input"
-                  placeholder="arg name"
-                  bind:value={arg_row.name}
-                />
-              </div>
-              <div class="flex-1">
-                <FormElement
-                  id="arg_value_{item_index}_{arg_index}"
-                  label={arg_index === 0 ? "Expected Value (JSON)" : ""}
-                  inputType="input"
-                  placeholder={'e.g. "hello" or 42'}
-                  bind:value={arg_row.value}
-                />
-              </div>
-              <div class="w-32">
-                <FormElement
-                  id="arg_match_{item_index}_{arg_index}"
-                  label={arg_index === 0 ? "Match" : ""}
-                  inputType="select"
-                  bind:value={arg_row.match_mode}
-                  select_options={[
-                    ["exact", "Exact"],
-                    ["contains", "Contains"],
-                    ["regex", "Regex"],
-                  ]}
-                />
-              </div>
-              <button
-                class="btn btn-ghost btn-sm btn-square"
-                on:click={() => remove_arg(item_index, arg_index)}
-                title="Remove argument"
-              >
-                ✕
-              </button>
-            </div>
-          {/each}
-          <button
-            class="btn btn-ghost btn-sm self-start"
-            on:click={() => add_arg(item_index)}
-          >
-            + Add Expected Argument
-          </button>
-        </Collapse>
-      </div>
-    </FormList>
-  </FormSection>
 </div>
