@@ -93,7 +93,7 @@ class ExactMatchProperties(BaseModel):
     type: Literal[V2EvalType.exact_match] = V2EvalType.exact_match
     value_expression: str | None = None
     expected_value: str | None = None
-    reference_key: str | None = None
+    reference_key: str | None = Field(default=None, min_length=1)
     case_sensitive: bool = True
 
     @model_validator(mode="after")
@@ -126,7 +126,7 @@ class ContainsProperties(BaseModel):
     type: Literal[V2EvalType.contains] = V2EvalType.contains
     value_expression: str | None = None
     substring: str | None = None
-    reference_key: str | None = None
+    reference_key: str | None = Field(default=None, min_length=1)
     case_sensitive: bool = True
     mode: Literal["must_contain", "must_not_contain"] = "must_contain"
 
@@ -141,7 +141,7 @@ class SetCheckProperties(BaseModel):
     type: Literal[V2EvalType.set_check] = V2EvalType.set_check
     value_expression: str | None = None
     expected_set: list[str] | None = None
-    reference_key: str | None = None
+    reference_key: str | None = Field(default=None, min_length=1)
     mode: Literal["subset", "superset", "equal"] = "subset"
 
     @model_validator(mode="after")
@@ -155,6 +155,17 @@ class ArgMatch(BaseModel):
     value: JsonValue
     match_mode: Literal["exact", "contains", "regex"] = "exact"
 
+    @model_validator(mode="after")
+    def validate_regex(self) -> Self:
+        if self.match_mode == "regex":
+            import re
+
+            try:
+                re.compile(str(self.value))
+            except re.error as e:
+                raise ValueError(f"Invalid regex value '{self.value}': {e}") from e
+        return self
+
 
 class ToolCallSpec(BaseModel):
     tool_name: str
@@ -163,7 +174,7 @@ class ToolCallSpec(BaseModel):
 
 class ToolCallCheckProperties(BaseModel):
     type: Literal[V2EvalType.tool_call_check] = V2EvalType.tool_call_check
-    expected_tools: list[ToolCallSpec]
+    expected_tools: list[ToolCallSpec] = Field(min_length=1)
     match_mode: Literal["any", "all", "ordered", "never"] = "all"
     on_unexpected_tools: Literal["ignore", "fail"] = "ignore"
 
@@ -260,6 +271,15 @@ class SkippedReason(str, Enum):
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
+
+
+class V2EvalResult(BaseModel):
+    """Result of a single V2 eval ``evaluate()`` call."""
+
+    scores: EvalScores = Field(default_factory=dict)
+    skipped_reason: SkippedReason | None = None
+    skipped_detail: str | None = None
+    intermediate_outputs: Dict[str, str] | None = None
 
 
 class UserMessage(BaseModel):
@@ -703,12 +723,20 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         props = self.properties
         if isinstance(props, LlmJudgeProperties):
             compile_template_or_raise(props.prompt_template)
-            tmpl_source = props.prompt_template.strip()
-            if "{{" not in tmpl_source and "{%" not in tmpl_source:
+            from jinja2 import meta
+
+            from kiln_ai.utils.jinja_engine import _template_env
+
+            referenced = meta.find_undeclared_variables(
+                _template_env.parse(props.prompt_template)
+            )
+            meaningful = {"final_message", "trace", "task_input"}
+            if not (referenced & meaningful):
                 raise ValueError(
-                    "prompt_template contains no Jinja2 expressions or blocks -- "
-                    "it would produce the same output for every input. "
-                    "Use {{ final_message }} or similar."
+                    "prompt_template never references the model output. "
+                    "A template that uses only reference_data (or no variables) "
+                    "produces the same judge prompt for every run. "
+                    "Reference the output, e.g. {{ final_message }}."
                 )
             for var in props.required_var:
                 compile_expression_or_raise(var)

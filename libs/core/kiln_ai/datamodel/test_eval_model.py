@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.eval import (
+    ArgMatch,
     CodeEvalProperties,
     ContainsProperties,
     Eval,
@@ -22,7 +23,10 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     SkippedReason,
     StepCountCheckProperties,
+    ToolCallCheckProperties,
+    ToolCallSpec,
     UserMessage,
+    V2EvalResult,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
@@ -2045,7 +2049,7 @@ def test_v2_eval_config_valid():
         properties=LlmJudgeProperties(
             model_name="gpt-4o",
             model_provider="openai",
-            prompt_template="Evaluate: {{output}}",
+            prompt_template="Evaluate: {{ final_message }}",
         ),
     )
     assert config.config_type == EvalConfigType.v2
@@ -2506,7 +2510,7 @@ class TestV2TemplateValidation:
 
     def test_static_prompt_template_rejected(self):
         """A prompt_template with no Jinja expressions is rejected."""
-        with pytest.raises(ValidationError, match="no Jinja2 expressions"):
+        with pytest.raises(ValidationError, match="never references the model output"):
             _make_v2_eval_config(
                 properties=LlmJudgeProperties(
                     model_name="m",
@@ -2517,7 +2521,7 @@ class TestV2TemplateValidation:
 
     def test_comment_only_prompt_template_rejected(self):
         """A prompt_template with only Jinja comments is effectively static and rejected."""
-        with pytest.raises(ValidationError, match="no Jinja2 expressions"):
+        with pytest.raises(ValidationError, match="never references the model output"):
             _make_v2_eval_config(
                 properties=LlmJudgeProperties(
                     model_name="m",
@@ -2526,13 +2530,46 @@ class TestV2TemplateValidation:
                 ),
             )
 
+    def test_reference_data_only_prompt_template_rejected(self):
+        """A prompt_template referencing only reference_data is rejected (D30)."""
+        with pytest.raises(ValidationError, match="never references the model output"):
+            _make_v2_eval_config(
+                properties=LlmJudgeProperties(
+                    model_name="m",
+                    model_provider="p",
+                    prompt_template="{{ reference_data.expected_output }}",
+                ),
+            )
+
     def test_prompt_template_with_block_passes(self):
-        """A prompt_template using {%% blocks is not static."""
+        """A prompt_template using {%% blocks referencing model output is not static."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
                 model_provider="p",
                 prompt_template="{% if trace %}has trace{% endif %}",
+            ),
+        )
+        assert cfg is not None
+
+    def test_prompt_template_with_trace_passes(self):
+        """A prompt_template referencing trace passes (D30)."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="{{ trace[0].content }}",
+            ),
+        )
+        assert cfg is not None
+
+    def test_prompt_template_with_task_input_passes(self):
+        """A prompt_template referencing task_input passes (D30)."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="{{ task_input }}",
             ),
         )
         assert cfg is not None
@@ -2956,3 +2993,105 @@ class TestCodeEvalNoDeadSyntaxErrorCatch:
             code="async def score(output, expected):\n    return 1.0\n"
         )
         assert "async def score" in props.code
+
+
+# ---------------------------------------------------------------------------
+# V2EvalResult model tests
+# ---------------------------------------------------------------------------
+class TestV2EvalResult:
+    def test_default_construction(self):
+        result = V2EvalResult()
+        assert result.scores == {}
+        assert result.skipped_reason is None
+        assert result.skipped_detail is None
+        assert result.intermediate_outputs is None
+
+    def test_with_scores(self):
+        result = V2EvalResult(scores={"quality": 4.0})
+        assert result.scores == {"quality": 4.0}
+        assert result.skipped_reason is None
+
+    def test_with_skip(self):
+        result = V2EvalResult(
+            skipped_reason=SkippedReason.missing_trace,
+            skipped_detail="no trace",
+        )
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_trace
+        assert result.skipped_detail == "no trace"
+
+    def test_with_intermediate_outputs(self):
+        result = V2EvalResult(
+            scores={"quality": 5.0},
+            intermediate_outputs={"chain_of_thought": "reasoning text"},
+        )
+        assert result.intermediate_outputs == {"chain_of_thought": "reasoning text"}
+
+
+# ---------------------------------------------------------------------------
+# D27: expected_tools non-empty (ToolCallCheckProperties)
+# ---------------------------------------------------------------------------
+class TestToolCallCheckExpectedToolsValidator:
+    def test_empty_expected_tools_rejected(self):
+        with pytest.raises(ValidationError):
+            ToolCallCheckProperties(expected_tools=[])
+
+    def test_non_empty_expected_tools_accepted(self):
+        props = ToolCallCheckProperties(
+            expected_tools=[ToolCallSpec(tool_name="search")]
+        )
+        assert len(props.expected_tools) == 1
+
+
+# ---------------------------------------------------------------------------
+# D28: ArgMatch regex validation
+# ---------------------------------------------------------------------------
+class TestArgMatchRegexValidator:
+    def test_bad_regex_rejected(self):
+        with pytest.raises(ValidationError, match="Invalid regex"):
+            ArgMatch(value="[invalid", match_mode="regex")
+
+    def test_valid_regex_accepted(self):
+        props = ArgMatch(value=r"^[a-z]+$", match_mode="regex")
+        assert props.match_mode == "regex"
+
+    def test_exact_mode_skips_regex_check(self):
+        props = ArgMatch(value="[not regex", match_mode="exact")
+        assert props.match_mode == "exact"
+
+    def test_contains_mode_skips_regex_check(self):
+        props = ArgMatch(value="[not regex", match_mode="contains")
+        assert props.match_mode == "contains"
+
+
+# ---------------------------------------------------------------------------
+# D29: reference_key min_length=1
+# ---------------------------------------------------------------------------
+class TestReferenceKeyMinLength:
+    def test_exact_match_empty_reference_key_rejected(self):
+        with pytest.raises(ValidationError):
+            ExactMatchProperties(reference_key="")
+
+    def test_exact_match_none_reference_key_accepted(self):
+        props = ExactMatchProperties(expected_value="val", reference_key=None)
+        assert props.reference_key is None
+
+    def test_exact_match_valid_reference_key_accepted(self):
+        props = ExactMatchProperties(reference_key="answer")
+        assert props.reference_key == "answer"
+
+    def test_contains_empty_reference_key_rejected(self):
+        with pytest.raises(ValidationError):
+            ContainsProperties(reference_key="")
+
+    def test_contains_none_reference_key_accepted(self):
+        props = ContainsProperties(substring="test", reference_key=None)
+        assert props.reference_key is None
+
+    def test_set_check_empty_reference_key_rejected(self):
+        with pytest.raises(ValidationError):
+            SetCheckProperties(reference_key="")
+
+    def test_set_check_none_reference_key_accepted(self):
+        props = SetCheckProperties(expected_set=["a"], reference_key=None)
+        assert props.reference_key is None

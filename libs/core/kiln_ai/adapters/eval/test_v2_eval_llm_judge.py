@@ -119,11 +119,35 @@ class TestLlmJudgeEvalLlmAsJudge:
         mock_adapter_for_task.return_value = mock_adapter
 
         cfg = _make_config()
-        scores, skip, detail = await LlmJudgeEval(cfg).evaluate(_inp())
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
 
-        assert scores == {"quality": 4.0}
-        assert skip is None
-        assert detail is None
+        assert result.scores == {"quality": 4.0}
+        assert result.skipped_reason is None
+        assert result.skipped_detail is None
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_intermediate_outputs_propagated(self, mock_adapter_for_task):
+        mock_adapter = AsyncMock()
+        mock_run_output = RunOutput(
+            output={"quality": "4"},
+            intermediate_outputs={
+                "chain_of_thought": "The answer is correct because it addresses all key points."
+            },
+        )
+        mock_adapter.invoke_returning_run_output.return_value = (
+            Mock(),
+            mock_run_output,
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        cfg = _make_config()
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"quality": 4.0}
+        assert result.intermediate_outputs == {
+            "chain_of_thought": "The answer is correct because it addresses all key points."
+        }
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -140,10 +164,10 @@ class TestLlmJudgeEvalLlmAsJudge:
         mock_adapter_for_task.return_value = mock_adapter
 
         cfg = _make_config()
-        scores, skip, _ = await LlmJudgeEval(cfg).evaluate(_inp())
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
 
-        assert scores == {"quality": 1.0}
-        assert skip is None
+        assert result.scores == {"quality": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -314,10 +338,10 @@ class TestLlmJudgeEvalGEval:
             "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
         ) as mock_g_eval_score:
             mock_g_eval_score.return_value = {"quality": 4.3}
-            scores, skip, _detail = await LlmJudgeEval(cfg).evaluate(_inp())
+            result = await LlmJudgeEval(cfg).evaluate(_inp())
 
-        assert scores == {"quality": 4.3}
-        assert skip is None
+        assert result.scores == {"quality": 4.3}
+        assert result.skipped_reason is None
 
         call_kwargs = mock_adapter_for_task.call_args[1]
         adapter_config = call_kwargs["base_adapter_config"]
@@ -395,10 +419,10 @@ class TestLlmJudgeEvalGEvalFailFast:
             ) as mock_g_eval_score,
         ):
             mock_g_eval_score.return_value = {"quality": 4.3}
-            scores, skip, _detail = await LlmJudgeEval(cfg).evaluate(_inp())
+            result = await LlmJudgeEval(cfg).evaluate(_inp())
 
-        assert scores == {"quality": 4.3}
-        assert skip is None
+        assert result.scores == {"quality": 4.3}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -423,10 +447,10 @@ class TestLlmJudgeEvalGEvalFailFast:
             ) as mock_g_eval_score,
         ):
             mock_g_eval_score.return_value = {"quality": 4.3}
-            scores, skip, _detail = await LlmJudgeEval(cfg).evaluate(_inp())
+            result = await LlmJudgeEval(cfg).evaluate(_inp())
 
-        assert scores == {"quality": 4.3}
-        assert skip is None
+        assert result.scores == {"quality": 4.3}
+        assert result.skipped_reason is None
 
 
 class TestLlmJudgeEvalRequiredVars:
@@ -434,12 +458,11 @@ class TestLlmJudgeEvalRequiredVars:
     async def test_missing_required_var_skips(self):
         props = _make_props(required_var=["reference_data.answer"])
         cfg = _make_config(props)
-        scores, skip, detail = await LlmJudgeEval(cfg).evaluate(
-            _inp(reference_data=None)
-        )
-        assert scores == {}
-        assert skip is not None
-        assert detail is not None
+        result = await LlmJudgeEval(cfg).evaluate(_inp(reference_data=None))
+        assert result.scores == {}
+        assert result.skipped_reason is not None
+        assert result.skipped_detail is not None
+        assert result.intermediate_outputs is None
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -453,11 +476,11 @@ class TestLlmJudgeEvalRequiredVars:
 
         props = _make_props(required_var=["reference_data.answer"])
         cfg = _make_config(props)
-        scores, skip, _ = await LlmJudgeEval(cfg).evaluate(
+        result = await LlmJudgeEval(cfg).evaluate(
             _inp(reference_data={"answer": "correct"})
         )
-        assert scores == {"quality": 3.0}
-        assert skip is None
+        assert result.scores == {"quality": 3.0}
+        assert result.skipped_reason is None
 
 
 class TestLlmJudgeEvalNoParentEval:
@@ -498,6 +521,6 @@ class TestLlmJudgeEvalMultipleScores:
         )
         mock_adapter_for_task.return_value = mock_adapter
 
-        scores, skip, _ = await LlmJudgeEval(cfg).evaluate(_inp())
-        assert scores == {"quality": 4.0, "relevance": 1.0}
-        assert skip is None
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+        assert result.scores == {"quality": 4.0, "relevance": 1.0}
+        assert result.skipped_reason is None

@@ -36,6 +36,7 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     SkippedReason,
     UserMessage,
+    V2EvalResult,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
@@ -1605,7 +1606,7 @@ class TestV2FreshGeneration:
         mock_evaluator = AsyncMock()
         mock_evaluator.run_task = AsyncMock(return_value=fresh_task_run)
         mock_evaluator.evaluate = AsyncMock(
-            return_value=({"accuracy": 0.5}, None, None)
+            return_value=V2EvalResult(scores={"accuracy": 0.5})
         )
 
         with patch(

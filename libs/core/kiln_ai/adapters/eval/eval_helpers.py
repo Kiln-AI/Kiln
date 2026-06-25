@@ -7,6 +7,7 @@ Users who need these helpers import them explicitly in their scorer code::
 Stdlib only -- no Pydantic, no Kiln-model/DB/UI imports.
 """
 
+import json
 import re
 from typing import Any
 
@@ -18,23 +19,50 @@ class KilnEvalHelpers:
 
     @staticmethod
     def get_tool_calls(trace: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """Return all tool-call entries from a trace (empty list if trace is None)."""
+        """Return all tool calls from a trace as a flat list.
+
+        Each entry is ``{"name": str, "arguments": dict, "id": str | None}``.
+        Extracts from OpenAI-format ``role: "assistant"`` messages with nested
+        ``tool_calls``.
+        """
+        if not trace:
+            return []
+        calls: list[dict[str, Any]] = []
+        for msg in trace:
+            if msg.get("role") != "assistant":
+                continue
+            for tc in msg.get("tool_calls") or []:
+                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                args_str = func.get("arguments", "{}")
+                try:
+                    args = (
+                        json.loads(args_str) if isinstance(args_str, str) else args_str
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                calls.append(
+                    {
+                        "name": func.get("name", ""),
+                        "arguments": args if isinstance(args, dict) else {},
+                        "id": tc.get("id") if isinstance(tc, dict) else None,
+                    }
+                )
+        return calls
+
+    @staticmethod
+    def get_assistant_messages(trace: list[dict[str, Any]] | None) -> list[str]:
+        """Return the content strings of all assistant messages from a trace.
+
+        Messages whose ``content`` is missing or not a string (e.g. tool-call-only
+        assistant turns with ``content: null``) are omitted.
+        """
         if not trace:
             return []
         return [
-            entry
-            for entry in trace
-            if entry.get("role") == "tool_call" or entry.get("type") == "tool_call"
+            msg["content"]
+            for msg in trace
+            if msg.get("role") == "assistant" and isinstance(msg.get("content"), str)
         ]
-
-    @staticmethod
-    def get_assistant_messages(
-        trace: list[dict[str, Any]] | None,
-    ) -> list[dict[str, Any]]:
-        """Return all assistant-role entries from a trace."""
-        if not trace:
-            return []
-        return [entry for entry in trace if entry.get("role") == "assistant"]
 
     @staticmethod
     def get_tool_results(trace: list[dict[str, Any]] | None) -> list[dict[str, Any]]:

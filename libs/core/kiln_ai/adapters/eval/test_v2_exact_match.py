@@ -21,32 +21,32 @@ class TestExactMatchBasic:
     @pytest.mark.asyncio
     async def test_pass_case_sensitive(self):
         cfg = _make_config(ExactMatchProperties(expected_value="Hello world"))
-        scores, _skip, _detail = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
-        assert _skip is None
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail_case_sensitive(self):
         cfg = _make_config(ExactMatchProperties(expected_value="hello world"))
-        scores, _skip, _detail = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
-        assert _skip is None
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_pass_case_insensitive(self):
         cfg = _make_config(
             ExactMatchProperties(expected_value="hello world", case_sensitive=False)
         )
-        scores, _skip, _detail = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_fail_case_insensitive(self):
         cfg = _make_config(
             ExactMatchProperties(expected_value="nope", case_sensitive=False)
         )
-        scores, _skip, _detail = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
 
 
 class TestExactMatchReferenceKey:
@@ -54,32 +54,32 @@ class TestExactMatchReferenceKey:
     async def test_pass_with_reference_key(self):
         cfg = _make_config(ExactMatchProperties(reference_key="answer"))
         inp = _inp(reference_data={"answer": "Hello world"})
-        scores, skip, _ = await ExactMatchEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail_with_reference_key(self):
         cfg = _make_config(ExactMatchProperties(reference_key="answer"))
         inp = _inp(reference_data={"answer": "wrong"})
-        scores, _skip, _ = await ExactMatchEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 0.0}
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 0.0}
 
     @pytest.mark.asyncio
     async def test_missing_reference_data(self):
         cfg = _make_config(ExactMatchProperties(reference_key="answer"))
         inp = _inp(reference_data=None)
-        scores, skip, _detail = await ExactMatchEval(cfg).evaluate(inp)
-        assert scores == {}
-        assert skip == SkippedReason.missing_reference_key
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_reference_key
 
     @pytest.mark.asyncio
     async def test_missing_reference_key_in_data(self):
         cfg = _make_config(ExactMatchProperties(reference_key="answer"))
         inp = _inp(reference_data={"other": "val"})
-        scores, skip, _ = await ExactMatchEval(cfg).evaluate(inp)
-        assert scores == {}
-        assert skip == SkippedReason.missing_reference_key
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_reference_key
 
 
 class TestExactMatchExpression:
@@ -87,9 +87,9 @@ class TestExactMatchExpression:
     async def test_value_expression(self):
         cfg = _make_config(ExactMatchProperties(expected_value="traced"))
         inp = _inp(trace=[{"content": "traced"}])
-        scores, _skip, _ = await ExactMatchEval(cfg).evaluate(inp)
+        result = await ExactMatchEval(cfg).evaluate(inp)
         # value_expression is None → uses final_message, not trace
-        assert scores == {"score_a": 0.0}
+        assert result.scores == {"score_a": 0.0}
 
     @pytest.mark.asyncio
     async def test_custom_expression(self):
@@ -99,8 +99,8 @@ class TestExactMatchExpression:
             )
         )
         inp = _inp(trace=[{"content": "traced"}])
-        scores, _skip, _ = await ExactMatchEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 1.0}
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_undefined_expression_skips(self):
@@ -109,10 +109,10 @@ class TestExactMatchExpression:
                 expected_value="x", value_expression="nonexistent_field"
             )
         )
-        scores, skip, detail = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip == SkippedReason.extraction_failed
-        assert detail is not None
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.skipped_detail is not None
 
 
 class TestExactMatchNoScores:
@@ -128,9 +128,9 @@ class TestExactMatchNoScores:
         parent.output_scores = []
         cfg = _make_config(ExactMatchProperties(expected_value="Hello world"))
         cfg.parent_eval.return_value = parent
-        scores, skip, _ = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip is None
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason is None
 
 
 class TestExactMatchMultipleScores:
@@ -147,5 +147,5 @@ class TestExactMatchMultipleScores:
         ]
         cfg = _make_config(ExactMatchProperties(expected_value="Hello world"))
         cfg.parent_eval.return_value = parent
-        scores, _, _ = await ExactMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0, "score_b": 1.0}
+        result = await ExactMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0, "score_b": 1.0}

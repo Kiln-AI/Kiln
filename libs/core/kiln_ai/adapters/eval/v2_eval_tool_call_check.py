@@ -6,25 +6,26 @@ from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import build_binary_scores
 from kiln_ai.datamodel.eval import (
     ArgMatch,
-    EvalScores,
     EvalTaskInput,
     SkippedReason,
     ToolCallCheckProperties,
     ToolCallSpec,
+    V2EvalResult,
 )
 
 
 class ToolCallCheckEval(BaseV2EvalBridge):
     """V2 adapter for tool_call_check: validates tool calls in the trace."""
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, ToolCallCheckProperties)
 
         if eval_input.trace is None:
-            return {}, SkippedReason.missing_trace, "tool_call_check requires a trace"
+            return V2EvalResult(
+                skipped_reason=SkippedReason.missing_trace,
+                skipped_detail="tool_call_check requires a trace",
+            )
 
         actual_calls = self._extract_tool_calls(eval_input.trace)
 
@@ -35,7 +36,9 @@ class ToolCallCheckEval(BaseV2EvalBridge):
             props.on_unexpected_tools,
         )
 
-        return build_binary_scores(self._output_scores, passed), None, None
+        return V2EvalResult(
+            scores=build_binary_scores(self._output_scores, passed),
+        )
 
     @staticmethod
     def _extract_tool_calls(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:

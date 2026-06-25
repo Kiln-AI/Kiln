@@ -1,6 +1,6 @@
 ---
-status: draft
-ship_gating: mixed (most ship-blocker; D27/D29 post-ship)
+status: complete
+ship_gating: ship-blocker (all 8; D27/D29 promoted from post-ship — scosman, 2026-06-24)
 owner: TBD
 ---
 
