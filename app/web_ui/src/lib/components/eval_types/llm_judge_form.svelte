@@ -153,17 +153,17 @@
         {#each suggested_models as model}
           {@const provider_image = get_provider_image(model.provider_id)}
           <button
-            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[200px] aspect-[5/6] p-4 flex flex-col justify-center items-center text-center group cursor-pointer"
+            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[120px] p-3 flex flex-col justify-center items-center text-center group cursor-pointer"
             on:click={() => {
               model_name = model.model_name
               provider_name = model.provider_name
               combined_model_name = `${model.provider_id}/${model.model_id}`
             }}
           >
-            <div class="flex flex-col gap-3 items-center">
+            <div class="flex flex-col gap-2 items-center">
               <img
                 src={provider_image}
-                class="w-10 h-10"
+                class="w-6 h-6"
                 alt={model.provider_name}
               />
               <div class="flex flex-col gap-1">
@@ -214,13 +214,13 @@
           {#if !is_unsupported}
             <label class="label cursor-pointer">
               <div
-                class="card card-bordered border-base-300 shadow-md flex flex-col gap-2 p-6 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[260px] aspect-[5/6]"
+                class="card card-bordered border-base-300 shadow-md flex flex-col gap-2 p-4 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[156px]"
               >
                 <div class="flex flex-col gap-2 text-center items-center">
                   <input
                     type="radio"
                     name="radio-evaluator"
-                    class="radio checked:bg-primary mx-auto my-8"
+                    class="radio checked:bg-primary mx-auto my-4"
                     checked={selected_algo === algo.id}
                     disabled={is_unsupported}
                     on:change={() => select_evaluator(algo.id)}

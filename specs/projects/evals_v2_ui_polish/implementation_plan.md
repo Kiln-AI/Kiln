@@ -41,7 +41,7 @@ suite and regenerates the OpenAPI client.
   `manual_example_dialog` (ephemeral run); `reference_data_field` (property-row → JSON modal).
   Auto-select first run. (arch §5, design_specs/test_run_sidebar.md)
 
-- [ ] **Phase 6 — Code Judge form + LLM cards.** Code form: standard `header_only`+`inline_action`
+- [x] **Phase 6 — Code Judge form + LLM cards.** Code form: standard `header_only`+`inline_action`
   Score Function header (subtitle + tooltip + "More Examples"); remove the footer paragraph;
   consolidate the redundant top badge/line. LLM judge: shrink model + algorithm cards ~40% with
   smaller icons. (arch §6, functional spec §5/§7)
