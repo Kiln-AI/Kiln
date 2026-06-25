@@ -59,7 +59,10 @@ class JobDerivedState(BaseModel):
 
     total: int | None = None
     success: int = 0
-    error: int = 0
+    # None means "not derivable from source-of-truth entities" — failed items
+    # leave no entity to count, so the registry keeps the live reported error
+    # count instead of clobbering it to 0 (mirrors `total`/`message`).
+    error: int | None = None
     is_complete: bool = False
     message: str | None = None
 

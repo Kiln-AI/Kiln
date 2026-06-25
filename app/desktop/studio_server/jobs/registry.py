@@ -488,7 +488,7 @@ class JobRegistry:
         new_progress = JobProgress(
             total=derived.total if derived.total is not None else job.progress.total,
             success=derived.success,
-            error=derived.error,
+            error=derived.error if derived.error is not None else job.progress.error,
             message=derived.message
             if derived.message is not None
             else job.progress.message,

@@ -16,6 +16,10 @@ from app.desktop.studio_server.jobs.models import (
     JobWorker,
 )
 from app.desktop.studio_server.jobs.registry import JobOperationError, JobRegistry
+from app.desktop.studio_server.jobs.workers.eval import (
+    EvalJobResult,
+    EvalJobWorker,
+)
 from app.desktop.studio_server.jobs.workers.noop import NoopJobWorker
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -225,6 +229,71 @@ async def test_create_explicit_project_id_scopes_typeless_job(client, registry):
     rows = (await client.get("/api/jobs", params={"project_id": "p_explicit"})).json()
     assert any(r["id"] == job_id for r in rows)
     await registry.cancel(job_id)
+
+
+# -- create eval (typed endpoint) --------------------------------------------
+
+
+_EVAL_PARAMS = {
+    "project_id": "p_eval",
+    "task_id": "t1",
+    "eval_id": "e1",
+    "eval_config_id": "ec1",
+    "run_config_id": "rc1",
+}
+
+
+_EVAL_RUN_PATH = "/api/jobs/evals/run"
+
+
+@pytest.fixture
+def stub_eval_worker(monkeypatch):
+    """Keep the EvalJobWorker off disk so the eval-run endpoint can be exercised
+    without real Kiln entities: compute_state is a no-op and run returns a
+    fixed result."""
+
+    async def fake_compute_state(self, params):
+        return None
+
+    async def fake_run(self, params, ctx):
+        return EvalJobResult(total=0, success=0, error=0)
+
+    monkeypatch.setattr(EvalJobWorker, "compute_state", fake_compute_state)
+    monkeypatch.setattr(EvalJobWorker, "run", fake_run)
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_creates_typed_eval_job(client, registry, stub_eval_worker):
+    resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    job_id = body["job_id"]
+    assert body["status"] in {
+        BackgroundJobStatus.PENDING.value,
+        BackgroundJobStatus.RUNNING.value,
+    }
+
+    job = registry._jobs[job_id]
+    assert job.type == "eval"
+    assert job.project_id == "p_eval"
+    assert job.params == _EVAL_PARAMS
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_invalid_params_422(client, registry):
+    # Missing required eval params.
+    resp = await client.post(_EVAL_RUN_PATH, json={"project_id": "p_eval"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_eval_run_path_does_not_collide_with_generic_create(client, registry):
+    # The eval-run endpoint deliberately lives at a two-segment path so it can
+    # never be shadowed by the generic single-segment POST /api/jobs/{type}.
+    # The single-segment /api/jobs/evals is therefore just an unknown job
+    # type (404), confirming the two are distinct routes.
+    resp = await client.post("/api/jobs/evals", json={"params": _EVAL_PARAMS})
+    assert resp.status_code == 404
 
 
 # -- list --------------------------------------------------------------------

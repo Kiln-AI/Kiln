@@ -3160,6 +3160,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Eval Job
+         * @description Kick off an eval as a background job and return immediately.
+         *
+         *     A typed, approval-gated entry point for agents. Unlike the UI's SSE
+         *     run endpoints, this does not stream — the job runs in the background.
+         *     Poll `GET /api/jobs/{id}` (or `/wait`) for progress and the result.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{type}": {
         parameters: {
             query?: never;
@@ -5689,6 +5713,19 @@ export interface components {
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
+        /** EvalJobParams */
+        EvalJobParams: {
+            /** Project Id */
+            project_id: string;
+            /** Task Id */
+            task_id: string;
+            /** Eval Id */
+            eval_id: string;
+            /** Eval Config Id */
+            eval_config_id: string;
+            /** Run Config Id */
+            run_config_id: string;
+        };
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -18104,6 +18141,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_job_api_jobs_evals_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
                 };
             };
             /** @description Validation Error */

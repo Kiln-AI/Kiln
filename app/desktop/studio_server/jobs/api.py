@@ -17,12 +17,17 @@ from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
 from .registry import JobNotFoundError, JobOperationError, job_registry
+from .workers.eval import EvalJobParams, EvalJobWorker
 from .workers.noop import NoopJobWorker
 
 KEEPALIVE_SECONDS = 15.0
 
 _JOB_MUTATION_APPROVAL = agent_policy_require_approval(
     "Allow agent to control background jobs (pause, resume, cancel, delete)?"
+)
+
+_EVAL_JOB_APPROVAL = agent_policy_require_approval(
+    "Run an eval in the background? This runs LLM calls across the eval set and uses AI credits."
 )
 
 
@@ -97,6 +102,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     # Register the workers this server exposes. register_type overwrites by
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
     job_registry.register_type(NoopJobWorker)
+    job_registry.register_type(EvalJobWorker)
 
     @app.get(
         "/api/jobs/events",
@@ -151,6 +157,30 @@ def connect_jobs_api(app: FastAPI) -> None:
             since=since,
             limit=limit,
         )
+
+    # Two-segment path so it can never collide with the generic single-segment
+    # POST /api/jobs/{type} (i.e. type="evals"), independent of route order.
+    @app.post(
+        "/api/jobs/evals/run",
+        summary="Run Eval Job",
+        tags=["Jobs"],
+        status_code=201,
+        response_model=CreateJobResponse,
+        openapi_extra=_EVAL_JOB_APPROVAL,
+    )
+    async def run_eval_job(params: EvalJobParams) -> CreateJobResponse:
+        """Kick off an eval as a background job and return immediately.
+
+        A typed, approval-gated entry point for agents. Unlike the UI's SSE
+        run endpoints, this does not stream — the job runs in the background.
+        Poll `GET /api/jobs/{id}` (or `/wait`) for progress and the result.
+        """
+        job = await job_registry.create(
+            type_name=EvalJobWorker.type_name,
+            params=params,
+            project_id=params.project_id,
+        )
+        return CreateJobResponse(job_id=job.id, status=job.status)
 
     @app.post(
         "/api/jobs/{type}",
