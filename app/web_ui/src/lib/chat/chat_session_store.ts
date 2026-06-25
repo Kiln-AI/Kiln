@@ -53,6 +53,12 @@ export interface ChatSessionState extends PersistedChatSession {
   toolExecuting: boolean
   showActivityIndicator: boolean
   /**
+   * The server is summarizing earlier messages (compaction) for this turn
+   * (Phase 5). Runtime-only — NOT persisted. Set by ``kiln_compaction_status``
+   * and cleared on the first content event / turn end / reset.
+   */
+  compacting: boolean
+  /**
    * A server-owned auto-mode burst is actively running. Decoupled from
    * ``status`` (which tracks the interactive client stream) so the chat view
    * can drive the SAME loading affordances during auto bursts while keeping the
@@ -135,6 +141,7 @@ export function createChatSessionStore(
     toolApprovalPicks: {},
     toolExecuting: false,
     showActivityIndicator: false,
+    compacting: false,
     autoWorking: false,
   })
 
@@ -227,6 +234,12 @@ export function createChatSessionStore(
     persisted.update((p) => ({ ...p, contextUsage: usage }))
   }
 
+  // Runtime-only (not persisted): drives the "Summarizing earlier messages…"
+  // indicator while the server compacts the conversation for this turn.
+  function setCompacting(compacting: boolean) {
+    combined.update((s) => ({ ...s, compacting }))
+  }
+
   // Append a fresh empty assistant message so the next streamed burst (auto run
   // or declined-resume) renders into a new turn rather than the prior one.
   function beginAssistantTurn() {
@@ -239,6 +252,7 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
   }
 
@@ -262,6 +276,7 @@ export function createChatSessionStore(
     onAssistantMessage: updateLastAssistant,
     onChatTrace: setLastAssistantTraceId,
     onContextUsage: setContextUsage,
+    onCompactionStatus: setCompacting,
     onInlineError: (message, traceId, code) =>
       pushInlineError(message, traceId, code),
     onToolExecutionStart: () =>
@@ -282,6 +297,7 @@ export function createChatSessionStore(
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
+        compacting: false,
         autoWorking: false,
       })),
     onAutoModeOff: () =>
@@ -289,6 +305,7 @@ export function createChatSessionStore(
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
+        compacting: false,
         autoWorking: false,
       })),
     onToolCallsPending: handleAutoToolCallsPending,
@@ -334,6 +351,10 @@ export function createChatSessionStore(
         if (isStale()) return
         setContextUsage(usage)
       },
+      onCompactionStatus: (compacting) => {
+        if (isStale()) return
+        setCompacting(compacting)
+      },
       onInlineError: (message, traceId, code) => {
         if (isStale()) return
         pushInlineError(message, traceId, code)
@@ -356,6 +377,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
       },
       onError: (err) => {
@@ -364,6 +386,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
         pushInlineError(err.message)
       },
@@ -415,6 +438,7 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
 
     const controller = new AbortController()
@@ -468,6 +492,10 @@ export function createChatSessionStore(
         if (isStale()) return
         setContextUsage(usage)
       },
+      onCompactionStatus: (compacting) => {
+        if (isStale()) return
+        setCompacting(compacting)
+      },
       onAutoModeConsentRequired: async (payload) => {
         if (isStale()) return
         await handleAutoModeConsent(payload)
@@ -490,6 +518,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
         setRuntimeState("ready", null)
       },
@@ -499,6 +528,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
@@ -702,6 +732,7 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
     setRuntimeState("ready", null)
   }
@@ -730,6 +761,7 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
     setRuntimeState("ready", null)
   }

@@ -78,6 +78,7 @@ interface SinkCalls {
   offReasons: (string | null)[]
   pendingToolCalls: ToolCallsPendingItem[][]
   contextUsages: ContextUsage[]
+  compactionStatuses: boolean[]
 }
 
 function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
@@ -95,6 +96,7 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     offReasons: [],
     pendingToolCalls: [],
     contextUsages: [],
+    compactionStatuses: [],
   }
   const sink: AutoRunChatSink = {
     beginAssistantTurn: () => {
@@ -107,6 +109,7 @@ function makeSink(): { sink: AutoRunChatSink; calls: SinkCalls } {
     },
     onChatTrace: (tid) => calls.traces.push(tid),
     onContextUsage: (usage) => calls.contextUsages.push(usage),
+    onCompactionStatus: (c) => calls.compactionStatuses.push(c),
     onInlineError: (msg) => calls.errors.push(msg),
     onToolExecutionStart: (n) => calls.toolStart.push(n),
     onToolExecutionEnd: (n) => calls.toolEnd.push(n),

@@ -46,6 +46,11 @@ export interface AutoRunChatSink {
   onChatTrace: (traceId: string) => void
   /** Fired when an auto-burst snapshot event carries ``context_usage``. */
   onContextUsage: (usage: ContextUsage) => void
+  /**
+   * Fired when an auto-burst emits ``kiln_compaction_status`` (Phase 5):
+   * ``true`` to show the "summarizing…" indicator, ``false`` to clear it.
+   */
+  onCompactionStatus: (compacting: boolean) => void
   onInlineError: (message: string, traceId?: string, code?: string) => void
   onToolExecutionStart: (toolCount: number) => void
   onToolExecutionEnd: (toolCount: number) => void
@@ -181,6 +186,7 @@ export function createAutoRunStore(): AutoRunStore {
       onAssistantMessage: (update) => sink?.onAssistantMessage(update),
       onChatTrace: (tid) => sink?.onChatTrace(tid),
       onContextUsage: (usage) => sink?.onContextUsage(usage),
+      onCompactionStatus: (compacting) => sink?.onCompactionStatus(compacting),
       onInlineError: (message, traceId, code) =>
         sink?.onInlineError(message, traceId, code),
       onToolExecutionStart: (count) => sink?.onToolExecutionStart(count),

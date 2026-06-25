@@ -92,6 +92,20 @@ class TestEventParser:
         assert b'"context_tokens":1234' in forwarded
         assert b'"compacted":true' in forwarded
 
+    def test_kiln_compaction_status_passes_through_untouched(self):
+        # Phase 5: ``kiln_compaction_status`` is a new upstream SSE event the
+        # proxy doesn't model. The parser is a raw passthrough — it forwards
+        # complete lines without reserializing — so an unknown event type must
+        # reach the client verbatim (architecture §4.7). It is neither a chat
+        # trace nor an error, so it leaves the extraction fields untouched.
+        raw = b'data: {"type":"kiln_compaction_status","state":"started"}\n\n'
+        result = EventParser().parse(raw)
+        assert result.chat_trace_id is None
+        assert result.has_error_event is False
+        forwarded = b"\n".join(result.lines_to_forward)
+        assert b"kiln_compaction_status" in forwarded
+        assert b'"state":"started"' in forwarded
+
     def test_kiln_chat_trace_last_wins_in_chunk(self):
         raw = (
             b'data: {"type":"kiln_chat_trace","trace_id":"first-id"}\n'

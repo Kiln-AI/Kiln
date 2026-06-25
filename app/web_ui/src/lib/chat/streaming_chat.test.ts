@@ -374,3 +374,76 @@ describe("StreamEventProcessor context_usage", () => {
     ])
   })
 })
+
+describe("StreamEventProcessor kiln_compaction_status (Phase 5)", () => {
+  function makeProcessor(onCompactionStatus: (c: boolean) => void) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onCompactionStatus,
+    })
+  }
+
+  it("sets compacting=true on a started status event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    expect(states).toEqual([true])
+  })
+
+  it("clears compacting on the next text content event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "text-start" })
+    processor.handleEvent({ type: "text-delta", delta: "hi" })
+    expect(states[0]).toBe(true)
+    // The first content event clears it; later content events keep it cleared.
+    expect(states.slice(1).every((s) => s === false)).toBe(true)
+    expect(states).toContain(false)
+  })
+
+  it("clears compacting on the snapshot (kiln_chat_trace) event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_chat_trace", trace_id: "trace-1" })
+    expect(states[0]).toBe(true)
+    expect(states[states.length - 1]).toBe(false)
+  })
+
+  it("does NOT clear compacting on a finished status event (stays up until content)", () => {
+    // A fast/buffered started→finished pair must not collapse the visible
+    // window. Only real assistant content clears the indicator, so a "finished"
+    // event on its own is ignored (no clear emitted).
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "finished" })
+    // Only the "started" → true was emitted; "finished" produced no callback.
+    expect(states).toEqual([true])
+  })
+
+  it("stays compacting through a started→finished pair, clears on first content", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "finished" })
+    expect(states).toEqual([true])
+    // The first real assistant content is what clears it.
+    processor.handleEvent({ type: "text-start" })
+    expect(states[states.length - 1]).toBe(false)
+  })
+
+  it("clears compacting on an error event", () => {
+    const states: boolean[] = []
+    const processor = new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onCompactionStatus: (c) => states.push(c),
+      onInlineError: () => {},
+    })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "error", message: "boom" })
+    expect(states[0]).toBe(true)
+    expect(states[states.length - 1]).toBe(false)
+  })
+})

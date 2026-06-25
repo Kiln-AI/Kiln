@@ -101,6 +101,9 @@
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
   $: showActivityIndicator = $store.showActivityIndicator
+  // Phase 5: the server is summarizing earlier messages (compaction) for this
+  // turn. Drives the same Thinking-style indicator with a "summarizing…" label.
+  $: compacting = $store.compacting
   // A server-owned auto burst is running. Drives the SAME in-transcript loading
   // affordances (thinking dots / animated icon) as interactive streaming, while
   // leaving the input usable for inject-on-send.
@@ -687,7 +690,10 @@
                         {/if}
                       {/if}
                     {/if}
-                  {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
+                  {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id && !compacting}
+                    <!-- While ``compacting`` the standalone summarizing row below
+                       the loop is the only indicator, so suppress the normal
+                       Thinking streaming-cursor here to avoid showing both. -->
                     <div class="flex items-start gap-3">
                       <img
                         src="/images/chat_icon_animated.svg"
@@ -711,6 +717,32 @@
             </div>
           {/if}
         {/each}
+        {#if compacting}
+          <!-- Phase 5: the server is summarizing earlier messages (compaction)
+             BEFORE inference for this turn. This happens before any assistant
+             content exists, so it can't rely on an assistant message bubble or
+             its activity flags being set. Render a standalone activity row
+             (same animated icon + ChatStatusSteps "compacting" markup as the
+             streaming-cursor branch) keyed only on ``compacting`` so it is
+             always mounted during the pre-inference window — it sits where the
+             assistant's Thinking indicator would appear. Cleared by the store
+             when the first real assistant content arrives. -->
+          <div class="flex items-start gap-3" role="status">
+            <img
+              src="/images/chat_icon_animated.svg"
+              alt=""
+              class="w-9 h-9 shrink-0 -mt-1.5"
+            />
+            <div class="flex flex-col">
+              <ChatStatusSteps
+                parts={[]}
+                isLoading={true}
+                isLastMessage={true}
+                compacting={true}
+              />
+            </div>
+          </div>
+        {/if}
         {#if $autoReconnecting}
           <!-- Transient re-attach affordance (Phase 9): shown while a hard-refresh
              resync or History restore resolves → hydrates → attaches the live

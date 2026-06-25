@@ -1553,3 +1553,74 @@ describe("contextUsage", () => {
     expect(get(store).contextUsage).toBeNull()
   })
 })
+
+describe("compacting (Phase 5)", () => {
+  it("is false initially", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("is set true via the onCompactionStatus stream callback", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    capture.options!.onCompactionStatus!(false)
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("clears compacting on finish", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    capture.options!.onFinish()
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("clears compacting on reset", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    store.reset()
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("is not persisted to sessionStorage", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore("kiln_chat_test")
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    // ``compacting`` is runtime-only — it must never be written into the
+    // persisted sessionStorage payload.
+    const persisted = storage.store["kiln_chat_test"]
+    expect(persisted).toBeDefined()
+    expect(persisted).not.toContain("compacting")
+  })
+})
