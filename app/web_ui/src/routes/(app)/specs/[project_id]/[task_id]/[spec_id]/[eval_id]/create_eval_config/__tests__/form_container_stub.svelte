@@ -24,7 +24,11 @@
   <button
     data-testid="form-submit-button"
     type="button"
-    on:click={() => dispatch("submit")}
+    disabled={submitting}
+    on:click={() => {
+      submitting = true
+      dispatch("submit")
+    }}
   >
     {submit_label}
   </button>

@@ -269,9 +269,9 @@
     const action = pending_trust_action
     pending_trust_action = null
     if (action === "test") {
-      await run_test()
+      run_test()
     } else if (action === "save") {
-      await do_save()
+      do_save()
     }
     return true
   }
@@ -282,16 +282,19 @@
         const trust_response = await checkCodeEvalTrust(project_id)
         if (!trust_response.trusted) {
           pending_trust_action = "save"
+          create_evaluator_loading = false
           trust_dialog.show()
           return
         }
       } catch (e) {
+        create_evaluator_loading = false
         create_evaluator_error = createKilnError(e)
         return
       }
     }
 
     if (!test_has_valid_run) {
+      create_evaluator_loading = false
       confirm_save_dialog.show()
       return
     }
@@ -603,26 +606,38 @@
 
 <Dialog
   bind:this={trust_dialog}
-  title="Allow Code Execution"
+  title="Trust Code and Project?"
   action_buttons={[
     {
       label: "Cancel",
       isCancel: true,
     },
     {
-      label: "I Understand, Allow Execution",
+      label: "Run — I Trust This Code",
       isWarning: true,
       asyncAction: grant_trust_and_retry,
     },
   ]}
 >
-  <div class="flex flex-col gap-3">
-    <div class="alert alert-warning text-sm">
-      <i class="bi bi-exclamation-triangle-fill"></i>
-      <span
-        >This eval runs Python code on your machine. Only proceed if you trust
-        eval code inside this project.</span
-      >
+  <div class="flex flex-col items-center gap-4">
+    <!-- exclaim icon from warning.svelte (keep in sync) -->
+    <svg
+      class="w-10 h-10 text-warning flex-none"
+      fill="currentColor"
+      viewBox="0 0 256 256"
+      xmlns="http://www.w3.org/2000/svg"
+      data-testid="trust-warning-icon"
+    >
+      <path
+        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
+      />
+    </svg>
+    <div class="flex flex-col gap-2 text-sm text-center">
+      <p>
+        This project wants to run Python code on your machine. Only proceed if
+        you trust the eval code and this project.
+      </p>
+      <p class="font-bold">Never paste code from a stranger or the internet.</p>
     </div>
   </div>
 </Dialog>

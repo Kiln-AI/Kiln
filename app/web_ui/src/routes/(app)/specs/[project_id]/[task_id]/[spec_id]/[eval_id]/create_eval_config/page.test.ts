@@ -234,7 +234,9 @@ const BuilderRoutePage = (await import("./[eval_config_type]/+page.svelte"))
 const EvalConfigBuilder = (
   await import("$lib/components/eval_types/eval_config_builder.svelte")
 ).default
-const { showCalls, resetCalls } = await import("./__tests__/dialog_stub.svelte")
+const { showCalls, resetCalls, actionButtonsByTitle } = await import(
+  "./__tests__/dialog_stub.svelte"
+)
 const { ALL_V2_EVAL_TYPES, getV2EvalTypeMetadata } = await import(
   "$lib/utils/eval_types/registry"
 )
@@ -513,7 +515,7 @@ describe("EvalConfigBuilder", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      expect(showCalls).toContain("Allow Code Execution")
+      expect(showCalls).toContain("Trust Code and Project?")
     })
 
     it("shows trust dialog when saving a code_eval without trust", async () => {
@@ -531,7 +533,7 @@ describe("EvalConfigBuilder", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      expect(showCalls).toContain("Allow Code Execution")
+      expect(showCalls).toContain("Trust Code and Project?")
       expect(mockCreateEvalConfig).not.toHaveBeenCalled()
     })
 
@@ -548,7 +550,7 @@ describe("EvalConfigBuilder", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      expect(showCalls).not.toContain("Allow Code Execution")
+      expect(showCalls).not.toContain("Trust Code and Project?")
       expect(mockCheckCodeEvalTrust).not.toHaveBeenCalled()
       expect(showCalls).toContain("Save Without Testing?")
     })
@@ -637,7 +639,7 @@ describe("EvalConfigBuilder", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
 
-      expect(showCalls).not.toContain("Allow Code Execution")
+      expect(showCalls).not.toContain("Trust Code and Project?")
       expect(showCalls).toContain("Save Without Testing?")
     })
   })
@@ -724,7 +726,9 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
 
   it("right column has no bordered box wrapper", async () => {
     const { container } = await renderBuilder("exact_match")
-    const borderedBox = container.querySelector(".rounded-lg.border.bg-base-100")
+    const borderedBox = container.querySelector(
+      ".rounded-lg.border.bg-base-100",
+    )
     expect(borderedBox).toBeNull()
   })
 
@@ -764,5 +768,284 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
     const meta = getV2EvalTypeMetadata("contains")
     expect(meta.example).toBeFalsy()
     expect(intro?.textContent).toContain(meta.explainer!)
+  })
+})
+
+describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
+  beforeEach(() => {
+    resetCalls()
+    mockTestV2Eval.mockReset()
+    mockTestV2EvalLlmJudge.mockReset()
+    mockCreateEvalConfig.mockReset()
+    mockCreateLlmJudgeConfig.mockReset()
+    mockCheckCodeEvalTrust.mockReset()
+    mockGrantCodeEvalTrust.mockReset()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  describe("trust modal redesign", () => {
+    it("trust dialog uses new title 'Trust Code and Project?'", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      const dialogs = container.querySelectorAll("[data-testid='dialog-stub']")
+      const trustDialog = Array.from(dialogs).find(
+        (d) => d.getAttribute("data-title") === "Trust Code and Project?",
+      )
+      expect(trustDialog).not.toBeNull()
+    })
+
+    it("trust dialog body contains new warning copy", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      expect(container.textContent).toContain(
+        "This project wants to run Python code on your machine",
+      )
+      expect(container.textContent).toContain(
+        "Never paste code from a stranger or the internet.",
+      )
+    })
+
+    it("trust dialog has no yellow alert box", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      const dialogs = container.querySelectorAll("[data-testid='dialog-stub']")
+      const trustDialog = Array.from(dialogs).find(
+        (d) => d.getAttribute("data-title") === "Trust Code and Project?",
+      )
+      expect(trustDialog).not.toBeNull()
+      const alertWarning = trustDialog!.querySelector(".alert-warning")
+      expect(alertWarning).toBeNull()
+    })
+
+    it("trust dialog has a large warning icon", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      const icon = container.querySelector("[data-testid='trust-warning-icon']")
+      expect(icon).not.toBeNull()
+      expect(icon!.classList.contains("text-warning")).toBe(true)
+      expect(icon!.classList.contains("w-10")).toBe(true)
+      expect(icon!.classList.contains("h-10")).toBe(true)
+    })
+
+    it("trust dialog action button is labeled 'Run — I Trust This Code'", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      const dialogs = container.querySelectorAll("[data-testid='dialog-stub']")
+      const trustDialog = Array.from(dialogs).find(
+        (d) => d.getAttribute("data-title") === "Trust Code and Project?",
+      )
+      expect(trustDialog).not.toBeNull()
+      const buttons = JSON.parse(
+        trustDialog!.getAttribute("data-action-buttons") || "[]",
+      )
+      const trustBtn = buttons.find(
+        (b: Record<string, unknown>) => b.isWarning === true,
+      )
+      expect(trustBtn).toBeTruthy()
+      expect(trustBtn.label).toContain("I Trust This Code")
+    })
+  })
+
+  describe("B1: loading state reset on modal defer", () => {
+    it("resets create_evaluator_loading when deferring to trust dialog", async () => {
+      let trustResolve: (v: unknown) => void
+      const trustPromise = new Promise((resolve) => {
+        trustResolve = resolve
+      })
+      mockCheckCodeEvalTrust.mockImplementationOnce(() => trustPromise)
+
+      const { container } = await renderBuilder("code_eval")
+
+      const submitBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+
+      await fireEvent.click(submitBtn)
+      await tick()
+
+      expect(submitBtn.disabled).toBe(true)
+
+      trustResolve!({ trusted: false })
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Trust Code and Project?")
+
+      const saveBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+      expect(saveBtn).not.toBeNull()
+      expect(saveBtn.disabled).toBe(false)
+    })
+
+    it("resets create_evaluator_loading when deferring to confirm-save dialog", async () => {
+      const { container } = await renderBuilder("exact_match")
+
+      const submitBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+
+      // For exact_match (no requiresTrust), handle_submit runs synchronously
+      // up to the confirm_save_dialog.show() + create_evaluator_loading = false.
+      // The stub sets submitting=true on click, but the handler resets it
+      // in the same synchronous execution, so we verify the end state.
+      await fireEvent.click(submitBtn)
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Save Without Testing?")
+
+      const saveBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+      expect(saveBtn).not.toBeNull()
+      expect(saveBtn.disabled).toBe(false)
+    })
+
+    it("resets loading when checkCodeEvalTrust throws an error", async () => {
+      let trustReject: (e: Error) => void
+      const trustPromise = new Promise((_resolve, reject) => {
+        trustReject = reject
+      })
+      mockCheckCodeEvalTrust.mockImplementationOnce(() => trustPromise)
+
+      const { container } = await renderBuilder("code_eval")
+
+      const submitBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+
+      await fireEvent.click(submitBtn)
+      await tick()
+
+      expect(submitBtn.disabled).toBe(true)
+
+      trustReject!(new Error("Network error checking trust"))
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      const saveBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+      expect(saveBtn).not.toBeNull()
+      expect(saveBtn.disabled).toBe(false)
+    })
+  })
+
+  describe("dismiss-on-trust (fire-and-forget)", () => {
+    it("grant_trust fires run_test without awaiting it", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      const selectBtn = container.querySelector(
+        '[data-testid="select-run-0"]',
+      ) as HTMLButtonElement
+      expect(selectBtn).not.toBeNull()
+      await fireEvent.click(selectBtn)
+      await tick()
+
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: {},
+        skipped_reason: "code_eval_not_trusted",
+        skipped_detail: "Code eval is not trusted for this project.",
+      })
+
+      const tryBtn = container.querySelector(
+        "button.btn-primary.btn-sm",
+      ) as HTMLButtonElement
+      await fireEvent.click(tryBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Trust Code and Project?")
+
+      const buttons = actionButtonsByTitle["Trust Code and Project?"]
+      expect(buttons).toBeTruthy()
+      const trustAction = buttons.find(
+        (b: Record<string, unknown>) => b.isWarning === true,
+      )
+      expect(trustAction).toBeTruthy()
+
+      let testResolve: (v: unknown) => void
+      const testPromise = new Promise((resolve) => {
+        testResolve = resolve
+      })
+      mockGrantCodeEvalTrust.mockResolvedValueOnce({})
+      mockTestV2Eval.mockImplementationOnce(() => testPromise)
+
+      const asyncAction = trustAction!.asyncAction as () => Promise<boolean>
+      const result = await asyncAction()
+
+      expect(result).toBe(true)
+      expect(mockGrantCodeEvalTrust).toHaveBeenCalled()
+
+      testResolve!({
+        scores: { accuracy: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+    })
+
+    it("grant_trust fires do_save without awaiting it", async () => {
+      const { container } = await renderBuilder("code_eval")
+
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
+
+      const submitBtn = container.querySelector(
+        '[data-testid="form-submit-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Trust Code and Project?")
+
+      const buttons = actionButtonsByTitle["Trust Code and Project?"]
+      expect(buttons).toBeTruthy()
+      const trustAction = buttons.find(
+        (b: Record<string, unknown>) => b.isWarning === true,
+      )
+      expect(trustAction).toBeTruthy()
+
+      let saveResolve: (v: unknown) => void
+      const savePromise = new Promise((resolve) => {
+        saveResolve = resolve
+      })
+      mockGrantCodeEvalTrust.mockResolvedValueOnce({})
+      mockCreateEvalConfig.mockImplementationOnce(() => savePromise)
+
+      const asyncAction = trustAction!.asyncAction as () => Promise<boolean>
+      const result = await asyncAction()
+
+      expect(result).toBe(true)
+      expect(mockGrantCodeEvalTrust).toHaveBeenCalled()
+
+      saveResolve!({
+        id: "config123",
+        type: "v2",
+        properties: {},
+      })
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+    })
   })
 })

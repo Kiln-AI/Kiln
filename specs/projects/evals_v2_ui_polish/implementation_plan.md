@@ -29,7 +29,7 @@ suite and regenerates the OpenAPI client.
   secondary-title block (fixes indent globally); new `eval_type_intro` at the top of the left
   column. (arch §3)
 
-- [ ] **Phase 4 — Trust modal + bugs.** New trust-modal copy + large warning icon (no yellow
+- [x] **Phase 4 — Trust modal + bugs.** New trust-modal copy + large warning icon (no yellow
   box); dismiss-on-trust (fire-and-forget) so the Test Run pane shows Running on the page; fix B1
   (reset `create_evaluator_loading` when deferring to confirm/trust dialog). Regression tests.
   (arch §4, §8-B1)
