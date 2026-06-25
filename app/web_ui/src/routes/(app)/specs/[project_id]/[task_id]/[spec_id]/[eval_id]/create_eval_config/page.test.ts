@@ -422,9 +422,8 @@ describe("create_eval_config picker page", () => {
     const { container } = await renderPickerPage()
     const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
     for (const row of rows) {
-      const svg = row.querySelector("svg")
-      expect(svg).not.toBeNull()
-      expect(svg?.classList.contains("ml-auto")).toBe(true)
+      const chevron = row.querySelector("svg.ml-auto")
+      expect(chevron).not.toBeNull()
     }
   })
 

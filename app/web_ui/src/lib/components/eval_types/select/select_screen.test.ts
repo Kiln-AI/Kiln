@@ -50,70 +50,92 @@ describe("EvalTypeTags", () => {
 })
 
 describe("EvalTypeRow", () => {
-  const metadata = getV2EvalTypeMetadata("code_eval")
+  const evalType = "code_eval" as const
+  const metadata = getV2EvalTypeMetadata(evalType)
 
   it("renders the type name", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
     expect(container.textContent).toContain("Code")
   })
 
   it("renders the description", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
     expect(container.textContent).toContain(metadata.description)
   })
 
   it("renders tags", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
     expect(container.textContent).toContain("Python")
     expect(container.textContent).toContain("Beta")
   })
 
   it("the entire row is a button with data-testid", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
     const button = container.querySelector('[data-testid="eval-type-row"]')
     expect(button).not.toBeNull()
     expect(button?.tagName).toBe("BUTTON")
   })
 
   it("has hover styling for interactivity", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
     const card = container.querySelector(".card")!
     expect(card.classList.contains("hover:shadow-lg")).toBe(true)
     expect(card.classList.contains("hover:border-primary/50")).toBe(true)
   })
 
   it("renders a chevron indicator", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
-    const svg = container.querySelector("svg")
-    expect(svg).not.toBeNull()
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
+    const svgs = container.querySelectorAll("svg")
+    expect(svgs.length).toBeGreaterThanOrEqual(1)
   })
 
   it("chevron is right-aligned with ml-auto", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
-    const svg = container.querySelector("svg")!
-    expect(svg.classList.contains("ml-auto")).toBe(true)
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
+    const chevron = container.querySelector("svg.ml-auto")
+    expect(chevron).not.toBeNull()
   })
 
   it("chevron is decorative (aria-hidden)", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
-    const svg = container.querySelector("svg")!
-    expect(svg.getAttribute("aria-hidden")).toBe("true")
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
+    const chevron = container.querySelector("svg.ml-auto")
+    expect(chevron).not.toBeNull()
+    expect(chevron!.getAttribute("aria-hidden")).toBe("true")
   })
 
-  it("renders the type icon", () => {
-    const { container } = render(EvalTypeRow, { props: { metadata } })
-    const icon = container.querySelector("i")
-    expect(icon).not.toBeNull()
-    expect(icon?.classList.contains("bi-code-slash")).toBe(true)
+  it("renders the type icon as an SVG", () => {
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata },
+    })
+    const iconContainer = container.querySelector('[aria-hidden="true"]')
+    expect(iconContainer).not.toBeNull()
+    const svg = iconContainer!.querySelector("svg")
+    expect(svg).not.toBeNull()
   })
 })
 
 describe("EvalTypeRow — recommended prop", () => {
-  const metadata = getV2EvalTypeMetadata("llm_judge")
+  const evalType = "llm_judge" as const
+  const metadata = getV2EvalTypeMetadata(evalType)
 
   it("renders with emphasized styling when recommended=true", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
     const card = container.querySelector(".card")!
     expect(card.classList.contains("border-2")).toBe(true)
@@ -122,7 +144,7 @@ describe("EvalTypeRow — recommended prop", () => {
 
   it("renders the star Recommended badge when recommended=true", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
     const badge = container.querySelector(".badge-primary")
     expect(badge).not.toBeNull()
@@ -131,14 +153,14 @@ describe("EvalTypeRow — recommended prop", () => {
 
   it("does not render the Recommended badge when recommended is false", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: false },
+      props: { evalType, metadata, recommended: false },
     })
     expect(container.textContent).not.toContain("Recommended")
   })
 
   it("recommended row is still a clickable button", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
     const button = container.querySelector('[data-testid="eval-type-row"]')
     expect(button).not.toBeNull()
@@ -147,25 +169,26 @@ describe("EvalTypeRow — recommended prop", () => {
 
   it("recommended row has a chevron (no Continue button)", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
-    const svg = container.querySelector("svg")
-    expect(svg).not.toBeNull()
+    const svgs = container.querySelectorAll("svg")
+    expect(svgs.length).toBeGreaterThanOrEqual(1)
     expect(container.textContent).not.toContain("Continue")
   })
 
   it("recommended row has larger icon container", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
     const iconContainer = container.querySelector(".w-12.h-12")
     expect(iconContainer).not.toBeNull()
   })
 
   it("non-recommended row has smaller icon container", () => {
-    const nonRecMeta = getV2EvalTypeMetadata("code_eval")
+    const nonRecType = "code_eval" as const
+    const nonRecMeta = getV2EvalTypeMetadata(nonRecType)
     const { container } = render(EvalTypeRow, {
-      props: { metadata: nonRecMeta, recommended: false },
+      props: { evalType: nonRecType, metadata: nonRecMeta, recommended: false },
     })
     const iconContainer = container.querySelector(".w-9.h-9")
     expect(iconContainer).not.toBeNull()
@@ -173,20 +196,20 @@ describe("EvalTypeRow — recommended prop", () => {
 
   it("recommended row renders tags", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
     expect(container.textContent).toContain("Uses LLM")
     expect(container.textContent).toContain("Graded")
   })
 
-  it("renders the type icon in recommended mode", () => {
+  it("renders the type icon as SVG in recommended mode", () => {
     const { container } = render(EvalTypeRow, {
-      props: { metadata, recommended: true },
+      props: { evalType, metadata, recommended: true },
     })
-    const icon = container.querySelector("i")
-    expect(icon).not.toBeNull()
-    expect(icon?.classList.contains("bi")).toBe(true)
-    expect(icon?.classList.contains("bi-robot")).toBe(true)
+    const iconContainer = container.querySelector('[aria-hidden="true"]')
+    expect(iconContainer).not.toBeNull()
+    const svg = iconContainer!.querySelector("svg")
+    expect(svg).not.toBeNull()
   })
 })
 

@@ -1,8 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
-  import type { V2EvalTypeMetadata } from "$lib/utils/eval_types/registry"
+  import type {
+    V2EvalType,
+    V2EvalTypeMetadata,
+  } from "$lib/utils/eval_types/registry"
   import EvalTypeTags from "./eval_type_tags.svelte"
+  import EvalTypeIcon from "$lib/components/eval_types/eval_type_icon.svelte"
 
+  export let evalType: V2EvalType
   export let metadata: V2EvalTypeMetadata
   export let recommended: boolean = false
 
@@ -18,15 +23,13 @@
 >
   <div class="flex items-center gap-4">
     <div
-      class="flex items-center justify-center rounded-lg flex-none {recommended
+      class="flex items-center justify-center rounded-lg flex-none text-primary {recommended
         ? 'w-12 h-12 bg-base-100'
         : 'w-9 h-9 bg-base-200'}"
     >
-      <i
-        class="{metadata.icon} text-primary {recommended
-          ? 'text-2xl'
-          : 'text-lg'}"
-      ></i>
+      <div class={recommended ? "w-6 h-6" : "w-4 h-4"} aria-hidden="true">
+        <EvalTypeIcon {evalType} />
+      </div>
     </div>
 
     <div class="flex-1 min-w-0">

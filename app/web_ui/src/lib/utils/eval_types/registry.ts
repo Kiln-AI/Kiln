@@ -61,7 +61,6 @@ export type EvalTypeTag = { label: string; tone: "default" | "beta" }
 export interface V2EvalTypeMetadata {
   label: string
   description: string
-  icon: string
   requiresTrust: boolean
   recommended?: boolean
   tags: EvalTypeTag[]
@@ -84,7 +83,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "Exact Match",
         description:
           "Output exactly equals an expected value (or a reference-data value).",
-        icon: "bi bi-bullseye",
+
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
         pageTitle: "Add an Exact Match Check",
@@ -100,7 +99,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Pattern Match",
         description: "Output matches (or doesn't match) a regular expression.",
-        icon: "bi bi-regex",
+
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
         pageTitle: "Add a Pattern Match Check",
@@ -115,7 +114,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "Contains",
         description:
           "Output contains (or doesn't contain) a substring or reference value.",
-        icon: "bi bi-search",
+
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
         pageTitle: "Add a Contains Check",
@@ -130,7 +129,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "Set Check",
         description:
           "Compare a set of values from the output against an expected set.",
-        icon: "bi bi-collection",
+
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
         pageTitle: "Add a Set Check",
@@ -146,7 +145,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "Tool Call Check",
         description:
           "Check the agent called the right tools, in the right order, with the right arguments.",
-        icon: "bi bi-wrench",
+
         requiresTrust: false,
         tags: [
           { label: "Agent", tone: "default" },
@@ -165,7 +164,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "Step Count Check",
         description:
           "Count steps in the trace and check they're within bounds.",
-        icon: "bi bi-123",
+
         requiresTrust: false,
         tags: [
           { label: "Agent", tone: "default" },
@@ -184,7 +183,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "LLM as Judge",
         description:
           "Grade output against criteria you write — quality, accuracy, or rubric pass/fail.",
-        icon: "bi bi-robot",
+
         requiresTrust: false,
         recommended: true,
         tags: [
@@ -203,7 +202,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         label: "Code",
         description:
           "Write a custom Python scorer for anything the built-in types can't express.",
-        icon: "bi bi-code-slash",
+
         requiresTrust: true,
         tags: [
           { label: "Python", tone: "default" },

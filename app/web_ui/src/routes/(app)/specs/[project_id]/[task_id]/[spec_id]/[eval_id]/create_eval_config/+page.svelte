@@ -71,6 +71,7 @@
         {#each ALL_V2_EVAL_TYPES as evalType}
           {@const metadata = getV2EvalTypeMetadata(evalType)}
           <EvalTypeRow
+            {evalType}
             {metadata}
             recommended={evalType === recommendedType}
             on:select={() => select_v2_type(evalType)}

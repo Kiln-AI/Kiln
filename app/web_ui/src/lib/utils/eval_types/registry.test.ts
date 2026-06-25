@@ -45,7 +45,6 @@ describe("getV2EvalTypeMetadata", () => {
       const meta = getV2EvalTypeMetadata(t)
       expect(meta.label).toBeTruthy()
       expect(meta.description).toBeTruthy()
-      expect(meta.icon).toBeTruthy()
       expect(typeof meta.requiresTrust).toBe("boolean")
       expect(meta.createFormComponent).toBeTruthy()
       expect(meta.resultRendererComponent).toBeTruthy()
@@ -79,9 +78,10 @@ describe("getV2EvalTypeMetadata", () => {
     }
   })
 
-  it("icons start with 'bi bi-'", () => {
+  it("does not have an icon string field (icons are now SVG components)", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
-      expect(getV2EvalTypeMetadata(t).icon).toMatch(/^bi bi-/)
+      const meta = getV2EvalTypeMetadata(t)
+      expect("icon" in meta).toBe(false)
     }
   })
 
@@ -310,7 +310,6 @@ describe("buildV2EvalTypeRegistry", () => {
       const fromFn = getV2EvalTypeMetadata(t)
       expect(fromRegistry.label).toBe(fromFn.label)
       expect(fromRegistry.description).toBe(fromFn.description)
-      expect(fromRegistry.icon).toBe(fromFn.icon)
       expect(fromRegistry.requiresTrust).toBe(fromFn.requiresTrust)
       expect(fromRegistry.recommended).toBe(fromFn.recommended)
       expect(fromRegistry.tags).toEqual(fromFn.tags)
