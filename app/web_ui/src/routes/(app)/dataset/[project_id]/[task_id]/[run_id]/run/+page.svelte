@@ -997,7 +997,7 @@
                 </div>
               </div>
             </div>
-            <div class="w-72 2xl:w-96 flex-none flex flex-col xl:pl-4">
+            <div class="w-72 2xl:w-96 flex-none flex flex-col xl:pl-4 pb-8">
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
