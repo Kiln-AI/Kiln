@@ -80,6 +80,7 @@
 </script>
 
 {#if usage}
+  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
   <div
     bind:this={triggerElement}
     class="flex flex-col items-end gap-0.5 cursor-default"
@@ -89,8 +90,11 @@
     aria-valuenow={displayPercent}
     aria-label={`Approximately ${displayPercent}% of context used`}
     data-testid="context-usage-gauge"
+    tabindex="0"
     on:mouseenter={showTooltip}
     on:mouseleave={hideTooltip}
+    on:focus={showTooltip}
+    on:blur={hideTooltip}
   >
     <span
       class="text-xs font-medium text-base-content/70 tabular-nums whitespace-nowrap leading-none"

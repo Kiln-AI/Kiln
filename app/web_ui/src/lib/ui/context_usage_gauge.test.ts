@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from "vitest"
-import { render, cleanup } from "@testing-library/svelte"
+import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import ContextUsageGauge from "./context_usage_gauge.svelte"
 import type { ContextUsage } from "$lib/chat/streaming_chat"
 
@@ -94,6 +94,21 @@ describe("ContextUsageGauge", () => {
     })
     expect(queryByTestId("context-usage-condensed")).toBeNull()
     expect(container.textContent).not.toContain("condensed")
+  })
+
+  it("makes the trigger keyboard-focusable and shows the tooltip on focus", async () => {
+    const { getByTestId, getByRole } = render(ContextUsageGauge, {
+      props: { usage: usage() },
+    })
+    const gauge = getByTestId("context-usage-gauge")
+    // The meter trigger must be reachable via keyboard.
+    expect(gauge.getAttribute("tabindex")).toBe("0")
+
+    // Hidden by default, revealed on focus (mirrors the mouseenter behavior).
+    const tooltip = getByRole("tooltip", { hidden: true })
+    expect(tooltip.getAttribute("class") ?? "").toContain("hidden")
+    await fireEvent.focus(gauge)
+    expect(tooltip.getAttribute("class") ?? "").not.toContain("hidden")
   })
 
   it("tooltip includes the locale-formatted token counts", () => {
