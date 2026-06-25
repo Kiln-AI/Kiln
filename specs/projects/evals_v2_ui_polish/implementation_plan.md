@@ -61,7 +61,7 @@ suite and regenerates the OpenAPI client.
   (B2), incl. `[eval_id]/+page.svelte` `docs_link()`; verify liveness where possible. Final
   cross-flow consistency pass (headings, spacing, copy) against the Kiln design guide. (arch §8-B2)
 
-- [ ] **Phase 10 — Test-pane score-range validation (D16).** *The one backend phase.* Extract the
+- [x] **Phase 10 — Test-pane score-range validation (D16).** *The one backend phase.* Extract the
   per-rating-type range checks from `EvalRun.validate_scores`
   (`libs/core/kiln_ai/datamodel/eval.py:531-587`) into a shared
   `validate_scores_against_output_scores(scores, output_scores)`; refactor `EvalRun` to call it (no

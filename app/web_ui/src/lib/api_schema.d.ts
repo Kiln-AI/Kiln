@@ -10281,6 +10281,8 @@ export interface components {
             skipped_reason?: string | null;
             /** Skipped Detail */
             skipped_detail?: string | null;
+            /** Score Range Errors */
+            score_range_errors?: string[] | null;
         };
         /**
          * TestWriteAccessRequest

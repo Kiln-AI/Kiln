@@ -33,6 +33,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     EvalTemplateId,
     V2EvalConfigProperties,
+    validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
@@ -235,6 +236,7 @@ class TestV2EvalResponse(BaseModel):
     scores: EvalScores = Field(default_factory=dict)
     skipped_reason: str | None = None
     skipped_detail: str | None = None
+    score_range_errors: list[str] | None = None
 
 
 class CodeEvalTrustResponse(BaseModel):
@@ -1074,10 +1076,20 @@ def connect_evals_api(app: FastAPI):
             scores, skipped_reason, skipped_detail = await adapter.evaluate(
                 request.eval_input
             )
+
+            score_range_errors: list[str] | None = None
+            if skipped_reason is None and scores:
+                problems = validate_scores_against_output_scores(
+                    scores, eval_obj.output_scores
+                )
+                if problems:
+                    score_range_errors = problems
+
             return TestV2EvalResponse(
                 scores=scores,
                 skipped_reason=skipped_reason.value if skipped_reason else None,
                 skipped_detail=skipped_detail,
+                score_range_errors=score_range_errors,
             )
         except (ValueError, NotImplementedError) as e:
             raise HTTPException(status_code=400, detail=str(e))

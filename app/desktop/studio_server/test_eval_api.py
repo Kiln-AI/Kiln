@@ -3860,6 +3860,69 @@ class TestTestV2Eval:
         msg = (body.get("message") or body.get("detail") or "").lower()
         assert "properties" in msg or "llm_judge" in msg
 
+    def test_score_range_errors_none_for_in_range(self, client, mock_v2_eval):
+        """In-range scores should NOT produce score_range_errors."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["score_range_errors"] is None
+
+    def test_score_range_errors_populated_for_out_of_range(self, client, mock_v2_eval):
+        """Out-of-range scores should populate score_range_errors."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 5.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
+                return_value={"ok": {"accuracy": 5.0}},
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 5.0
+        assert body["score_range_errors"] is not None
+        assert len(body["score_range_errors"]) == 1
+        assert "pass_fail" in body["score_range_errors"][0]
+
+    def test_score_range_errors_none_when_skipped(self, client, mock_v2_eval):
+        """Skipped results should not have score_range_errors."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+        assert body["score_range_errors"] is None
+
 
 class TestCreateLlmJudgeConfig:
     def _url(self, eval_id: str = "eval_v2") -> str:

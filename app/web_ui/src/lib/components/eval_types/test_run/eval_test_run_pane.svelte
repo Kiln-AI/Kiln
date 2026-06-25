@@ -16,6 +16,7 @@
   export let test_result: TestV2EvalResponse | null = null
   export let test_error: KilnError | null = null
   export let test_shape_warning: string | null = null
+  export let test_score_range_warning: string | null = null
   export let test_has_valid_run: boolean = false
   export let is_llm_judge: boolean = false
   export let can_submit_llm: boolean = false
@@ -171,6 +172,19 @@
         <div>
           <div class="font-medium">Score Shape Mismatch</div>
           <div class="text-xs">{test_shape_warning}</div>
+        </div>
+      </div>
+    {/if}
+
+    {#if test_score_range_warning}
+      <div
+        class="alert alert-warning text-sm"
+        data-testid="score-range-warning"
+      >
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>
+          <div class="font-medium">Score Out of Range</div>
+          <div class="text-xs">{test_score_range_warning}</div>
         </div>
       </div>
     {/if}

@@ -23,6 +23,7 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     StepCountCheckProperties,
     UserMessage,
+    validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
@@ -2971,3 +2972,158 @@ class TestCodeEvalNoDeadSyntaxErrorCatch:
             code="async def score(output, expected):\n    return 1.0\n"
         )
         assert "async def score" in props.code
+
+
+class TestValidateScoresAgainstOutputScores:
+    """Tests for the shared validate_scores_against_output_scores function."""
+
+    def test_five_star_in_range(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        assert (
+            validate_scores_against_output_scores({"quality": 3.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"quality": 1.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"quality": 5.0}, output_scores) == []
+        )
+
+    def test_five_star_out_of_range(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"quality": 6.0}, output_scores
+        )
+        assert len(problems) == 1
+        assert "five_star" in problems[0]
+        assert "6.0" in problems[0]
+
+        problems_low = validate_scores_against_output_scores(
+            {"quality": 0.5}, output_scores
+        )
+        assert len(problems_low) == 1
+        assert "five_star" in problems_low[0]
+
+    def test_pass_fail_in_range(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        assert (
+            validate_scores_against_output_scores({"check": 0.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"check": 1.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"check": 0.5}, output_scores) == []
+        )
+
+    def test_pass_fail_out_of_range(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        problems = validate_scores_against_output_scores({"check": 1.5}, output_scores)
+        assert len(problems) == 1
+        assert "pass_fail" in problems[0]
+
+        problems_neg = validate_scores_against_output_scores(
+            {"check": -0.1}, output_scores
+        )
+        assert len(problems_neg) == 1
+
+    def test_pass_fail_critical_in_range(self):
+        output_scores = [
+            EvalOutputScore(name="safety", type=TaskOutputRatingType.pass_fail_critical)
+        ]
+        assert (
+            validate_scores_against_output_scores({"safety": -1.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"safety": 0.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"safety": 1.0}, output_scores) == []
+        )
+
+    def test_pass_fail_critical_out_of_range(self):
+        output_scores = [
+            EvalOutputScore(name="safety", type=TaskOutputRatingType.pass_fail_critical)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"safety": -1.5}, output_scores
+        )
+        assert len(problems) == 1
+        assert "pass_fail_critical" in problems[0]
+
+        problems_high = validate_scores_against_output_scores(
+            {"safety": 1.1}, output_scores
+        )
+        assert len(problems_high) == 1
+
+    def test_multiple_scores_multiple_errors(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star),
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail),
+        ]
+        problems = validate_scores_against_output_scores(
+            {"quality": 10.0, "check": 2.0}, output_scores
+        )
+        assert len(problems) == 2
+
+    def test_missing_score_key_ignored(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        assert (
+            validate_scores_against_output_scores({"other": 3.0}, output_scores) == []
+        )
+
+    def test_non_float_flagged(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"check": "not_a_float"}, output_scores
+        )
+        assert len(problems) == 1
+
+    def test_empty_scores_returns_empty(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        assert validate_scores_against_output_scores({}, output_scores) == []
+
+    def test_eval_run_validate_scores_still_raises_on_out_of_range(self):
+        """Confirm EvalRun.validate_scores still raises ValueError for out-of-range scores,
+        ensuring the refactor to use validate_scores_against_output_scores is behavior-preserving."""
+        eval_obj = Eval(
+            name="Range Check Eval",
+            eval_set_filter_id="tag::test",
+            eval_configs_filter_id="tag::test2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star),
+            ],
+        )
+        eval_config = EvalConfig(
+            name="Config",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="hello"),
+            parent=eval_obj,
+        )
+        with pytest.raises(
+            ValueError,
+            match=r"five_star rating and must be a float between 1\.0 and 5\.0",
+        ):
+            EvalRun(
+                eval_input_id="inp1",
+                task_run_config_id="rc1",
+                eval_config_eval=False,
+                input="test",
+                output="test",
+                scores={"accuracy": 6.0},
+                parent=eval_config,
+            )

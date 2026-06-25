@@ -76,6 +76,7 @@
   let test_result: TestV2EvalResponse | null = null
   let test_has_valid_run = false
   let test_shape_warning: string | null = null
+  let test_score_range_warning: string | null = null
   let test_abort_controller: AbortController | null = null
 
   // Trust and confirm modal refs
@@ -190,6 +191,7 @@
       test_result = null
       test_has_valid_run = false
       test_shape_warning = null
+      test_score_range_warning = null
       test_abort_controller = new AbortController()
 
       let result: TestV2EvalResponse
@@ -239,6 +241,11 @@
         const shape = validate_result_shape(result.scores)
         test_has_valid_run = shape.valid
         test_shape_warning = shape.message
+
+        if (result.score_range_errors && result.score_range_errors.length > 0) {
+          test_score_range_warning = result.score_range_errors.join("; ")
+          test_has_valid_run = false
+        }
       }
     } catch (e) {
       test_error = createKilnError(e)
@@ -382,6 +389,7 @@
     test_result = null
     test_has_valid_run = false
     test_shape_warning = null
+    test_score_range_warning = null
     test_error = null
   }
 </script>
@@ -436,6 +444,7 @@
         {test_result}
         {test_error}
         {test_shape_warning}
+        {test_score_range_warning}
         {test_has_valid_run}
         {is_llm_judge}
         {can_submit_llm}

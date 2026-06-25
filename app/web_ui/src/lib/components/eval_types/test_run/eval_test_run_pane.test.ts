@@ -464,6 +464,64 @@ describe("EvalTestRunPane", () => {
       expect(saveBtn?.disabled).toBe(true)
     })
 
+    it("shows score-range warning and gates Save when test_score_range_warning is set", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 5.0 },
+            skipped_reason: null,
+          },
+          test_score_range_warning:
+            "Score accuracy is a pass_fail rating and must be a float between 0.0 and 1.0 inclusive. Got: 5.0",
+          test_has_valid_run: false,
+        },
+      })
+
+      const rangeWarning = container.querySelector(
+        '[data-testid="score-range-warning"]',
+      )
+      expect(rangeWarning).not.toBeNull()
+      expect(rangeWarning?.textContent).toContain("Score Out of Range")
+      expect(rangeWarning?.textContent).toContain("pass_fail")
+      expect(rangeWarning?.textContent).toContain("5.0")
+
+      const saveBtn = container.querySelector(
+        '[data-testid="save-eval"]',
+      ) as HTMLButtonElement
+      expect(saveBtn?.disabled).toBe(true)
+    })
+
+    it("does not show score-range warning when prop is null", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 0.5 },
+            skipped_reason: null,
+          },
+          test_score_range_warning: null,
+          test_has_valid_run: true,
+        },
+      })
+
+      const rangeWarning = container.querySelector(
+        '[data-testid="score-range-warning"]',
+      )
+      expect(rangeWarning).toBeNull()
+
+      const saveBtn = container.querySelector(
+        '[data-testid="save-eval"]',
+      ) as HTMLButtonElement
+      expect(saveBtn?.disabled).toBe(false)
+    })
+
     it("Save is enabled when test_has_valid_run is true", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
