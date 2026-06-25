@@ -234,6 +234,47 @@ def connect_jobs_api(app: FastAPI) -> None:
                 status_code=504, detail="Job did not complete within the timeout."
             )
 
+    # Declared before GET /api/jobs/{id} so "wait" resolves to this multi-wait
+    # endpoint rather than being captured as {id} = "wait".
+    @app.get(
+        "/api/jobs/wait",
+        summary="Wait For Jobs",
+        tags=["Jobs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def wait_for_jobs(
+        ids: Annotated[
+            list[str],
+            Query(
+                description="Job ids to wait for. Repeat the param per id "
+                "(e.g. ids=job_a&ids=job_b)."
+            ),
+        ] = [],
+        timeout: Annotated[
+            float | None,
+            Query(
+                ge=0,
+                description="Seconds to wait before giving up (504 on timeout). "
+                "Omit to wait indefinitely.",
+            ),
+        ] = None,
+    ) -> list[JobRecord]:
+        """Block until ALL the given jobs reach a terminal state, then return
+        their records (order preserved). A pure observer like /{id}/wait:
+        disconnecting tears down only the awaiter, never the jobs. The timeout
+        bounds the whole set. Empty `ids` returns an empty list."""
+        if not ids:
+            return []
+        try:
+            return await job_registry.wait_many(ids, timeout=timeout)
+        except JobNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"Job not found: {exc}")
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="Not all jobs completed within the timeout.",
+            )
+
     @app.get(
         "/api/jobs/{id}",
         summary="Get Job",

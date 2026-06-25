@@ -535,5 +535,32 @@ class JobRegistry:
         await asyncio.wait_for(ev.wait(), timeout)
         return job
 
+    async def wait_many(
+        self, job_ids: list[str], timeout: float | None = None
+    ) -> list[JobRecord]:
+        """Observe several jobs until ALL reach a terminal state, then return
+        their records in the order given.
+
+        Same pure-observer semantics as wait(): cancelling this await tears down
+        only the awaiter, never the jobs. The single shared `timeout` bounds the
+        whole set — on timeout asyncio.wait_for raises asyncio.TimeoutError even
+        if some jobs already finished. Raises JobNotFoundError if any id is
+        unknown (validated up front, before any waiting). Duplicate ids are fine.
+        """
+        # Validate every id and register its event up front, with no await in
+        # between, so there's no race window where a job goes terminal before we
+        # start observing it (mirrors wait()).
+        pending_events: list[asyncio.Event] = []
+        for job_id in job_ids:
+            job = self._require(job_id)
+            ev = self._completion_events.setdefault(job_id, asyncio.Event())
+            if not job.status.is_terminal:
+                pending_events.append(ev)
+        if pending_events:
+            await asyncio.wait_for(
+                asyncio.gather(*(ev.wait() for ev in pending_events)), timeout
+            )
+        return [self._jobs[job_id] for job_id in job_ids]
+
 
 job_registry = JobRegistry()

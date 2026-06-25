@@ -169,7 +169,9 @@ def _make_eval_run(eval_config, dataset_id, run_config_id) -> EvalRun:
 
 @contextmanager
 def _stub_eval_runner_run(progresses: list[Progress]):
-    async def fake_run(self, concurrency: int = 25) -> AsyncIterator[Progress]:
+    async def fake_run(
+        self, concurrency: int = 25, observers=None
+    ) -> AsyncIterator[Progress]:
         for progress in progresses:
             yield progress
 
@@ -440,6 +442,43 @@ async def test_run_reports_full_set_totals_on_partial_resume(
     # The snapshot must not regress below the baseline of 2 already-scored items.
     assert reported == [(2, 0, 5), (3, 0, 5), (4, 0, 5), (5, 0, 5)]
     assert result == EvalJobResult(total=5, success=5, error=0)
+
+
+async def test_run_logs_failed_items_to_error_log(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    # An in-filter item whose eval job raises: the worker's observer must forward
+    # the exception to ctx.report_error so /api/jobs/{id}/errors is populated —
+    # progress.errors is only a count, not the messages.
+    task_run = _make_task_run(task, data_source, "eval_set")
+
+    async def failing_run_job(self, job) -> bool:
+        raise ValueError("scoring exploded")
+
+    logged: list[tuple[str, dict]] = []
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            logged.append((error_message, extra))
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
+        new=failing_run_job,
+    ):
+        result = await EvalJobWorker().run(params, FakeCtx())
+
+    assert result.error == 1
+    assert len(logged) == 1
+    message, extra = logged[0]
+    assert "scoring exploded" in message
+    assert extra["dataset_id"] == task_run.id
+    assert extra["run_config_id"] == run_config.id
 
 
 # -- save_context wiring -----------------------------------------------------

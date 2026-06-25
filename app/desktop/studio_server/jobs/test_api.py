@@ -622,6 +622,54 @@ async def test_wait_endpoint_504_on_timeout(client, registry):
 
 
 @pytest.mark.asyncio
+async def test_wait_many_endpoint_returns_all_records(client):
+    a = await _create_noop(client, steps=2, sleep_per_step_seconds=0.02)
+    b = await _create_noop(client, steps=3, sleep_per_step_seconds=0.02)
+    got = await client.get(
+        "/api/jobs/wait", params={"ids": [a, b], "timeout": 10.0}, timeout=10.0
+    )
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert {r["id"] for r in body} == {a, b}
+    assert all(r["status"] == "succeeded" for r in body)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_empty_ids_returns_empty(client):
+    got = await client.get("/api/jobs/wait")
+    assert got.status_code == 200
+    assert got.json() == []
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_404_unknown(client):
+    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.02)
+    resp = await client.get("/api/jobs/wait", params={"ids": [job_id, "j_missing"]})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_504_on_timeout(client, registry):
+    fast = await _create_noop(client, steps=1, sleep_per_step_seconds=0.01)
+    slow = await _create_noop(client, steps=50, sleep_per_step_seconds=0.05)
+    await _wait_for_status(registry, slow, BackgroundJobStatus.RUNNING)
+    resp = await client.get(
+        "/api/jobs/wait", params={"ids": [fast, slow], "timeout": 0.05}
+    )
+    assert resp.status_code == 504
+    await registry.cancel(slow)
+
+
+@pytest.mark.asyncio
+async def test_jobs_wait_path_is_multiwait_not_get_job(client):
+    # /api/jobs/wait must resolve to the multi-wait endpoint, not GET
+    # /api/jobs/{id} with id="wait" (which would 404 the job).
+    got = await client.get("/api/jobs/wait")
+    assert got.status_code == 200
+    assert got.json() == []
+
+
+@pytest.mark.asyncio
 async def test_create_wait_true_returns_terminal_record(client):
     resp = await client.post(
         "/api/jobs/noop",

@@ -3358,6 +3358,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records (order preserved). A pure observer like /{id}/wait:
+         *     disconnecting tears down only the awaiter, never the jobs. The timeout
+         *     bounds the whole set. Empty `ids` returns an empty list.
+         */
+        get: operations["wait_for_jobs_api_jobs_wait_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{id}": {
         parameters: {
             query?: never;
@@ -18666,6 +18689,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreateJobResponse"] | components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_get: {
+        parameters: {
+            query?: {
+                /** @description Job ids to wait for. Repeat the param per id (e.g. ids=job_a&ids=job_b). */
+                ids?: string[];
+                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
+                timeout?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
                 };
             };
             /** @description Validation Error */

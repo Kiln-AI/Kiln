@@ -804,6 +804,40 @@ async def test_wait_times_out(registry):
 
 
 @pytest.mark.asyncio
+async def test_wait_many_returns_all_terminal_in_order(registry):
+    a = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
+    b = await registry.create("noop", {"steps": 4, "sleep_per_step_seconds": 0.02})
+    c = await registry.create("noop", {"steps": 1, "sleep_per_step_seconds": 0.01})
+    results = await asyncio.wait_for(
+        registry.wait_many([a.id, b.id, c.id]), timeout=5.0
+    )
+    assert [r.id for r in results] == [a.id, b.id, c.id]
+    assert all(r.status == BackgroundJobStatus.SUCCEEDED for r in results)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_empty_returns_empty(registry):
+    assert await registry.wait_many([]) == []
+
+
+@pytest.mark.asyncio
+async def test_wait_many_unknown_id_raises(registry):
+    job = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
+    with pytest.raises(JobNotFoundError):
+        await registry.wait_many([job.id, "j_doesnotexist"])
+
+
+@pytest.mark.asyncio
+async def test_wait_many_times_out_if_any_still_running(registry):
+    fast = await registry.create("noop", {"steps": 1, "sleep_per_step_seconds": 0.01})
+    slow = await registry.create("noop", {"steps": 50, "sleep_per_step_seconds": 0.05})
+    await wait_for_status(registry, slow.id, BackgroundJobStatus.RUNNING)
+    with pytest.raises(asyncio.TimeoutError):
+        await registry.wait_many([fast.id, slow.id], timeout=0.05)
+    await registry.cancel(slow.id)
+
+
+@pytest.mark.asyncio
 async def test_wait_cancellation_leaves_job_running(registry):
     # The load-bearing decoupling invariant: abandoning a wait() must NOT stop
     # the job. A second concurrent waiter still resolves to the terminal record.

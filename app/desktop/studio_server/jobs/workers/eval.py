@@ -3,14 +3,35 @@ from __future__ import annotations
 import asyncio
 
 from app.desktop.git_sync.save_context import save_context_for_project
-from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
 from kiln_ai.datamodel.task import Task
+from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel
 
 from ...eval_api import eval_config_from_id, task_run_config_from_id
 from ..models import JobContext, JobDerivedState, JobWorker
+
+
+class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
+    """Writes each failed dataset item's exception to the job's error log.
+
+    EvalRunner's Progress only carries an error COUNT; without this the
+    /api/jobs/{id}/errors endpoint would report "no errors" even when every
+    item failed. The observer fires once per item, only after retries are
+    exhausted (a final failure), so it logs real failures, not transient retries.
+    """
+
+    def __init__(self, ctx: JobContext) -> None:
+        self._ctx = ctx
+
+    async def on_error(self, job: EvalJob, error: Exception) -> None:
+        await self._ctx.report_error(
+            str(error) or error.__class__.__name__,
+            dataset_id=job.item.id,
+            run_config_id=job.task_run_config.id if job.task_run_config else None,
+        )
 
 
 class EvalJobParams(BaseModel):
@@ -100,7 +121,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         success = baseline_success
         total = baseline.total if baseline.total is not None else baseline_success
         error = 0
-        async for progress in eval_runner.run():
+        async for progress in eval_runner.run(observers=[_EvalErrorLogObserver(ctx)]):
             # progress.total = full - baseline_success (the unfinished remainder),
             # so baseline_success + progress.total = the full eval-set size.
             success = baseline_success + progress.complete

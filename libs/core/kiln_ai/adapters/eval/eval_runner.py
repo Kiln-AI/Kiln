@@ -14,7 +14,12 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_fr
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
@@ -183,9 +188,17 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(
+        self,
+        concurrency: int = 25,
+        observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+    ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
+
+        Pass `observers` to be notified per-item (e.g. to surface the exception of
+        a failed dataset item — `Progress.errors` is only a count). Optional so the
+        streaming UI paths can keep calling `run()` with no observer.
         """
         jobs = self.collect_tasks()
 
@@ -194,6 +207,7 @@ class EvalRunner:
             jobs=jobs,
             run_job_fn=self.run_job,
             max_retries=2,
+            observers=observers,
         )
         async for progress in runner.run():
             yield progress
