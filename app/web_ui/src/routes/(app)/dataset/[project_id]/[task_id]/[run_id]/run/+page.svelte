@@ -961,7 +961,7 @@
                   {/if}
                 </div>
               </div>
-              <div bind:this={composer_block_el} class="mt-2 bg-base-100 pb-6 pt-4">
+              <div bind:this={composer_block_el} class="bg-base-100 pb-6 pt-2">
                 <div class="flex w-full flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
