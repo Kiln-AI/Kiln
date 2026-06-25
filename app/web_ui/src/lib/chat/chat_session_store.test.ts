@@ -1377,6 +1377,46 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     expect(attach).toHaveBeenCalledWith("ar_live", false)
   })
 
+  it("bails without hydrating/attaching if the user switches conversations mid-resync", async () => {
+    // Race guard: the active trace changes (user picked another conversation)
+    // while the snapshot GET is in flight. resyncOnLoad must NOT loadSession()
+    // (overwriting the now-current session) nor attach() the stale run.
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    // storedTraceId and the post-resolve guard see "t_stale"; the post-GET guard
+    // sees "t_switched" — i.e. the user navigated to a different conversation.
+    vi.mocked(streaming.traceIdForNextChatRequest)
+      .mockReturnValueOnce("t_stale")
+      .mockReturnValueOnce("t_stale")
+      .mockReturnValue("t_switched")
+
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "running",
+    })
+    const attach = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach })
+
+    mockClientGet.mockResolvedValue({
+      data: { id: "t_now", task_run: { trace: [] } },
+      error: undefined,
+    })
+
+    const store = createChatSessionStore("resync_switched", auto)
+    await store.resyncOnLoad()
+
+    expect(resolve).toHaveBeenCalledWith("t_stale")
+    expect(mockClientGet).toHaveBeenCalled()
+    // Bailed: the stale run was neither hydrated into nor attached to the
+    // newly-selected conversation.
+    expect(mockHydrate).not.toHaveBeenCalled()
+    expect(attach).not.toHaveBeenCalled()
+  })
+
   it("inactive conversation (resolve 404) leaves the restored state and never attaches", async () => {
     const { createChatSessionStore, streamChatMock } =
       await importFreshWithMock()

@@ -713,10 +713,22 @@ export function createChatSessionStore(
       traceIdForNextChatRequest(get(persisted).messages) ?? continuationTraceId
     if (!storedTraceId) return
 
+    // Guard against the user switching conversations while an await below is in
+    // flight. loadSession() (history restore / New Chat) swaps persisted +
+    // continuationTraceId, so if the active trace no longer matches the one we
+    // started resyncing, this resync is for a conversation that's no longer
+    // showing. Bail with a plain return — never detach()/loadSession(), since
+    // the shared auto_run_store may already be owned by the newly-selected
+    // session and we must not clobber its observer or its messages.
+    const isStillCurrent = () =>
+      (traceIdForNextChatRequest(get(persisted).messages) ??
+        continuationTraceId) === storedTraceId
+
     const resolved = await autoRunStore.resolve(storedTraceId)
     // Not active (404 / error): leave the normal restored-from-sessionStorage
     // state untouched.
     if (!resolved) return
+    if (!isStillCurrent()) return
 
     // We now know it's an active run. Show a transient "reconnecting…" affordance
     // while we hydrate → attach so the transcript doesn't look done/idle before
@@ -732,6 +744,9 @@ export function createChatSessionStore(
         "/api/chat/sessions/{session_id}",
         { params: { path: { session_id: resolved.current_trace_id } } },
       )
+      // Switched conversations while the snapshot was fetching: bail before the
+      // destructive loadSession() so we don't overwrite the now-current session.
+      if (!isStillCurrent()) return
       // A structured error / empty snapshot must NOT short-circuit the attach:
       // resolve() already proved the run is live, so fall through to attach on
       // the restored (stale) view — same as the thrown-exception fallback below.
@@ -748,6 +763,7 @@ export function createChatSessionStore(
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at
       // least gets the live indicator + events on the restored (stale) view.
+      if (!isStillCurrent()) return
     }
     // Re-assert reconnecting: loadSession() detaches the prior observer, which
     // clears the flag, so re-mark it for the brief connecting window. attach()
