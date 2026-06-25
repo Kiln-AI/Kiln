@@ -233,6 +233,7 @@
       primary={true}
       keyboard_submit={true}
       focus_on_mount={false}
+      gap={4}
     >
       <div data-testid="multiturn-composer-input">
         <RunInputForm
@@ -242,7 +243,7 @@
           placeholder="Write a message…"
           hide_label={true}
           disabled={submitting}
-          height="medium"
+          height="compact"
         />
       </div>
       <svelte:fragment slot="submit_left">
@@ -267,6 +268,7 @@
       primary={true}
       keyboard_submit={!busy}
       focus_on_mount={false}
+      gap={4}
     >
       <div data-testid="multiturn-composer-input">
         <RunInputForm
@@ -276,7 +278,7 @@
           placeholder="Write a message…"
           hide_label={true}
           disabled={submitting || busy}
-          height="medium"
+          height="compact"
         />
       </div>
     </FormContainer>

@@ -81,9 +81,9 @@
   let loading = true
   let load_error: KilnError | null = null
 
-  // The multiturn view is a full-height chat layout (scrollable transcript +
-  // composer pinned to the bottom), so it needs the app shell's bottom
-  // padding removed. Single-turn keeps the normal padded document flow.
+  // The multiturn view is a chat layout where the composer sits at the bottom
+  // of the conversation with its own padding, so it needs the app shell's
+  // bottom padding removed. Single-turn keeps the normal padded document flow.
   $: is_multiturn = task?.turn_mode === "multiturn"
   const noLayoutBottomPadding = getContext<Writable<boolean> | undefined>(
     "noLayoutBottomPadding",
@@ -542,15 +542,14 @@
   // region) — we observe this element for content mutations and pin the window
   // scroll to the bottom while things settle.
   let transcript_scroll_el: HTMLElement | null = null
-  // The left chat column (transcript + sticky composer). On small screens the
-  // Options sidebar wraps to below this column, so the document's total height
-  // extends past the conversation. We scroll to this column's bottom rather
-  // than the document's so "bottom" always lands on the latest turn (just above
-  // the sticky composer), not the wrapped sidebar below it.
+  // The left chat column (transcript + composer). On small screens the Options
+  // sidebar wraps to below this column, so the document's total height extends
+  // past the conversation. We scroll to this column's bottom rather than the
+  // document's so "bottom" always lands on the latest turn (with the composer
+  // just below it), not the wrapped sidebar below it.
   let chat_column_el: HTMLElement | null = null
   // Scroll the page to the latest turn whenever a run renders — both on
-  // initial load and after sending a new turn. The composer is pinned
-  // separately, so "bottom" lands on the newest message, not the textbox.
+  // initial load and after sending a new turn.
   let scrolled_for_run_id: string | null = null
   $: if (
     run &&
@@ -901,18 +900,12 @@
         {@const multiturn_task_id = task.id}
         <!-- Chat-style layout: the whole page scrolls (no inner scroll
              regions). The conversation flows top-to-bottom with the composer
-             pinned to the bottom of the viewport via position:sticky; the
+             sitting in normal flow directly below the last message; the
              Options sidebar sits at the top of the page in normal flow. -->
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-            <!-- The chat/input fills the left column. The min-height keeps the
-                 sticky composer at the bottom of the viewport even for short
-                 conversations. -->
-            <div
-              bind:this={chat_column_el}
-              class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]"
-            >
-              <div bind:this={transcript_scroll_el} class="min-w-0 xl:flex-1">
+            <div bind:this={chat_column_el} class="grow flex flex-col min-w-0">
+              <div bind:this={transcript_scroll_el} class="min-w-0">
                 <div class="flex w-full flex-col gap-6">
                   {#if run_has_children}
                     <div role="alert" data-testid="run-has-children-banner">
@@ -964,7 +957,7 @@
                   {/if}
                 </div>
               </div>
-              <div class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4">
+              <div class="mt-6 bg-base-100 pb-6 pt-4">
                 <div class="flex w-full flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
