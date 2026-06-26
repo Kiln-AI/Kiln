@@ -63,7 +63,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Select a Judge Type"
-    subtitle="Every type produces the same scores — it just changes how they're computed."
+    subtitle="Choose how each output gets scored."
     {breadcrumbs}
   >
     <div class="pt-6 max-w-3xl">

@@ -400,6 +400,22 @@ describe("create_eval_config picker page", () => {
     expect(appPage?.getAttribute("data-title")).toBe("Select a Judge Type")
   })
 
+  it("shows updated subtitle copy", async () => {
+    const { container } = await renderPickerPage()
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    expect(appPage?.getAttribute("data-subtitle")).toBe(
+      "Choose how each output gets scored.",
+    )
+  })
+
+  it("does not show old subtitle copy", async () => {
+    const { container } = await renderPickerPage()
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    expect(appPage?.getAttribute("data-subtitle")).not.toContain(
+      "Every type produces the same scores",
+    )
+  })
+
   it("recommended item is first and rendered with emphasis", async () => {
     const { container } = await renderPickerPage()
     const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
@@ -418,12 +434,21 @@ describe("create_eval_config picker page", () => {
     expect(firstRow.textContent).not.toContain("Continue")
   })
 
-  it("every row has a right-aligned chevron", async () => {
+  it("every row has a structurally right-aligned chevron (flex-none last child of w-full flex row)", async () => {
     const { container } = await renderPickerPage()
     const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
-      const chevron = row.querySelector("svg.ml-auto")
-      expect(chevron).not.toBeNull()
+      const flexRow = row.querySelector(".flex.w-full")
+      expect(flexRow).not.toBeNull()
+
+      const children = Array.from(flexRow!.children)
+      const lastChild = children[children.length - 1]
+      expect(lastChild.tagName).toBe("svg")
+      expect(lastChild.classList.contains("flex-none")).toBe(true)
+
+      const contentBlock = flexRow!.querySelector(".flex-1.min-w-0")
+      expect(contentBlock).not.toBeNull()
     }
   })
 

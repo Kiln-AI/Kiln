@@ -101,21 +101,33 @@ describe("EvalTypeRow", () => {
     expect(svgs.length).toBeGreaterThanOrEqual(1)
   })
 
-  it("chevron is right-aligned with ml-auto", () => {
+  it("chevron is structurally right-aligned: flex-none last child of a w-full flex row with flex-1 content sibling", () => {
     const { container } = render(EvalTypeRow, {
       props: { evalType, metadata },
     })
-    const chevron = container.querySelector("svg.ml-auto")
-    expect(chevron).not.toBeNull()
+    const row = container.querySelector('[data-testid="eval-type-row"]')!
+    const flexRow = row.querySelector(".flex.w-full")
+    expect(flexRow).not.toBeNull()
+
+    const children = Array.from(flexRow!.children)
+    const lastChild = children[children.length - 1]
+    expect(lastChild.tagName).toBe("svg")
+    expect(lastChild.classList.contains("flex-none")).toBe(true)
+
+    const contentBlock = flexRow!.querySelector(".flex-1.min-w-0")
+    expect(contentBlock).not.toBeNull()
   })
 
   it("chevron is decorative (aria-hidden)", () => {
     const { container } = render(EvalTypeRow, {
       props: { evalType, metadata },
     })
-    const chevron = container.querySelector("svg.ml-auto")
-    expect(chevron).not.toBeNull()
-    expect(chevron!.getAttribute("aria-hidden")).toBe("true")
+    const row = container.querySelector('[data-testid="eval-type-row"]')!
+    const flexRow = row.querySelector(".flex.w-full")!
+    const children = Array.from(flexRow.children)
+    const chevron = children[children.length - 1]
+    expect(chevron.tagName).toBe("svg")
+    expect(chevron.getAttribute("aria-hidden")).toBe("true")
   })
 
   it("renders the type icon as an SVG", () => {
@@ -174,6 +186,23 @@ describe("EvalTypeRow — recommended prop", () => {
     const svgs = container.querySelectorAll("svg")
     expect(svgs.length).toBeGreaterThanOrEqual(1)
     expect(container.textContent).not.toContain("Continue")
+  })
+
+  it("recommended row chevron is structurally right-aligned: flex-none last child of w-full flex row", () => {
+    const { container } = render(EvalTypeRow, {
+      props: { evalType, metadata, recommended: true },
+    })
+    const row = container.querySelector('[data-testid="eval-type-row"]')!
+    const flexRow = row.querySelector(".flex.w-full")
+    expect(flexRow).not.toBeNull()
+
+    const children = Array.from(flexRow!.children)
+    const lastChild = children[children.length - 1]
+    expect(lastChild.tagName).toBe("svg")
+    expect(lastChild.classList.contains("flex-none")).toBe(true)
+
+    const contentBlock = flexRow!.querySelector(".flex-1.min-w-0")
+    expect(contentBlock).not.toBeNull()
   })
 
   it("recommended row has larger icon container", () => {

@@ -21,7 +21,7 @@
     : 'border-base-300 p-4'}"
   on:click={() => dispatch("select")}
 >
-  <div class="flex items-center gap-4">
+  <div class="flex items-center gap-4 w-full">
     <div
       class="flex items-center justify-center rounded-lg flex-none text-primary {recommended
         ? 'w-12 h-12 bg-base-100'
