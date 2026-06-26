@@ -3,7 +3,7 @@
   import { page } from "$app/stores"
   import { onMount, onDestroy } from "svelte"
   import { agentInfo } from "$lib/agent"
-  import { goto } from "$app/navigation"
+  import { goto, pushState, replaceState } from "$app/navigation"
   import { client, base_url } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
   import { get_task_composite_id, load_task } from "$lib/stores"
@@ -112,6 +112,51 @@
     return error instanceof DOMException && error.name === "AbortError"
   }
 
+  // ── Navigation (Svelte shallow routing).
+  //
+  // Each step transition records the step in history.state, so the browser's
+  // own Back/Forward move between steps — the component stays mounted, so no
+  // data is lost — instead of leaving the builder. popstate then restores the
+  // correct step (fixing the old "Back jumps to the wrong step" bug). The step
+  // is just a value in history.state, not a per-step route, so this survives
+  // any future change to the set of steps.
+  //
+  //   goto_step    — forward to a step the user dwells on (pushes an entry).
+  //   replace_step — swap the current entry for a result step, so transient
+  //                  loading steps (generate, save) don't become Back targets.
+  function goto_step(next: BuilderStep) {
+    current_step = next
+    pushState("", { builder_step: next })
+  }
+  function replace_step(next: BuilderStep) {
+    current_step = next
+    replaceState("", { builder_step: next })
+  }
+
+  // Restore the step on browser Back/Forward. Equality-guarded so our own
+  // push/replace (which also update page.state) are no-ops here; only real
+  // history navigation changes the step — and when it does, abort any in-flight
+  // request so a cancelled loading step doesn't leave a stuck spinner.
+  function sync_step_from_history(step: BuilderStep | undefined) {
+    if (!step || step === current_step) return
+    abort_copilot_request()
+    current_step = step
+  }
+  $: sync_step_from_history(
+    ($page.state as { builder_step?: BuilderStep }).builder_step,
+  )
+
+  // Warn before a full reload/close/external-nav when there's unsaved work —
+  // history can't guard a real unload (mirrors v1's warn_before_unload). SPA
+  // transitions (the save redirect) don't trigger beforeunload, so a successful
+  // save won't spuriously prompt.
+  $: warn_before_unload = current_step !== "describe" && current_step !== "done"
+  function handle_before_unload(event: BeforeUnloadEvent) {
+    if (!warn_before_unload) return
+    event.preventDefault()
+    event.returnValue = ""
+  }
+
   // ── Task (drives is_multi_turn, which branches Step 3 onward)
   let task: Task | null = null
   let task_loading = true
@@ -119,6 +164,9 @@
   $: is_multi_turn = task?.turn_mode === "multiturn"
 
   onMount(async () => {
+    // Seed the first history entry with the starting step so Back from Step 2
+    // returns to Step 1 rather than leaving the builder.
+    replaceState("", { builder_step: current_step })
     initCopilotConnectionStore()
     try {
       task = await load_task(project_id, task_id)
@@ -185,7 +233,7 @@
       if (error || !data) {
         classify_error =
           "Couldn't classify your description — continuing with default 'issue' type."
-        current_step = "clarify"
+        goto_step("clarify")
         return
       }
       spec_type = data.spec_type as SpecType
@@ -194,7 +242,7 @@
       // this spec_type. Cast to the looser Record shape consumed by
       // Questions / RefineSpec.
       property_values = data.property_values as Record<string, string | null>
-      current_step = "clarify"
+      goto_step("clarify")
     } catch (e) {
       if (is_abort_error(e)) return
       classify_error =
@@ -260,7 +308,7 @@
   async function on_continue_from_clarify(
     questions_and_answers: QuestionWithAnswer[],
   ) {
-    current_step = "refine"
+    goto_step("refine")
     refined_preview_loading = true
     try {
       const spec_fields: Record<string, string> = {}
@@ -395,7 +443,7 @@
       single_turn_examples = data.examples_for_feedback ?? []
       sdg_session_config = data.sdg_session_config ?? null
       judge_info = data.judge_result ?? null
-      current_step = "review"
+      replace_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error = e instanceof Error ? e.message : "Generation failed."
@@ -630,7 +678,7 @@
         return
       }
 
-      current_step = "review"
+      replace_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error =
@@ -652,14 +700,14 @@
   // off generation — no extra click required. The in-step button only
   // surfaces if generation errored, as a retry affordance.
   function on_advance_to_generate() {
-    current_step = "generate"
+    goto_step("generate")
     on_continue_from_generate_step()
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
   // already in flight; only show the in-step button on error as retry.
   function on_advance_to_save() {
-    current_step = "save"
+    goto_step("save")
     on_save()
   }
 
@@ -781,7 +829,7 @@
         if (saved.id) {
           goto(`/specs/${project_id}/${task_id}/${saved.id}`)
         } else {
-          current_step = "done"
+          replace_step("done")
         }
         return
       }
@@ -839,7 +887,7 @@
       if (saved.id) {
         goto(`/specs/${project_id}/${task_id}/${saved.id}`)
       } else {
-        current_step = "done"
+        replace_step("done")
       }
     } catch (e) {
       if (is_abort_error(e)) return
@@ -973,7 +1021,10 @@
     : "Kiln is generating test and training data for your eval before saving. Hold tight!"
 </script>
 
-<svelte:window on:keydown={handle_global_keydown} />
+<svelte:window
+  on:keydown={handle_global_keydown}
+  on:beforeunload={handle_before_unload}
+/>
 
 <!-- Constrain AppPage (title + body) to page_max_w, matching v1 spec_builder.
      Centring v1's inner content is handled by AppPage's own header/slot
@@ -1053,26 +1104,8 @@
               title="Preparing Clarifying Questions"
               description="Kiln is analyzing your criteria to identify areas that could use more clarity. Hold tight!"
             />
-            <div class="mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "describe"
-                }}>← Back</button
-              >
-            </div>
           {:else if questions_error}
             <Warning warning_color="error" warning_message={questions_error} />
-            <div class="mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "describe"
-                }}>← Back</button
-              >
-            </div>
           {:else if question_set}
             <Questions
               {name}
@@ -1086,15 +1119,6 @@
               bind:submitting={questions_submitting}
               warn_before_unload={false}
             />
-            <div class="mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "describe"
-                }}>← Back</button
-              >
-            </div>
           {/if}
         {:else if current_step === "refine"}
           <!-- ── Step 3 — Refine ── -->
@@ -1103,15 +1127,6 @@
               title="Refining Eval"
               description="Kiln is refining your eval with the feedback you provided. Hold tight!"
             />
-            <div class="mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "clarify"
-                }}>← Back</button
-              >
-            </div>
           {:else if is_multi_turn}
             <!-- Multi-turn variant: examples fields don't apply (real examples
              come from Step 4 synthetic chains). Just name + description. -->
@@ -1151,14 +1166,7 @@
               />
             {/if}
 
-            <div class="flex justify-between mt-8">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "clarify"
-                }}>← Back</button
-              >
+            <div class="flex justify-end mt-8">
               <button
                 class="btn btn-primary"
                 on:click={on_refine_submit}
@@ -1185,15 +1193,6 @@
               on:analyze_refined={on_refine_submit}
               on:create_spec={on_refine_submit}
             />
-            <div class="mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "clarify"
-                }}>← Back</button
-              >
-            </div>
           {/if}
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->
@@ -1237,25 +1236,38 @@
             </div>
           {/if}
 
-          <div class="flex justify-between mt-8">
-            <button
-              class="btn btn-ghost btn-sm"
-              on:click={() => {
-                abort_copilot_request()
-                current_step = "clarify"
-              }}>← Back</button
-            >
-          </div>
+          {#if !generation_loading && !generation_error}
+            <div class="flex justify-end mt-8">
+              {#if single_turn_examples.length > 0 || multi_turn_chains.length > 0}
+                <!-- Generation already ran (navigated back into this step) —
+                     continue to the existing results instead of re-running,
+                     matching the browser Forward path. -->
+                <button
+                  class="btn btn-primary"
+                  on:click={() => replace_step("review")}
+                >
+                  Continue to review →
+                </button>
+              {:else}
+                <!-- No results (a Back aborted generation) — offer to start it. -->
+                <button
+                  class="btn btn-primary"
+                  on:click={on_continue_from_generate_step}
+                >
+                  {is_multi_turn
+                    ? "Generate conversations →"
+                    : "Generate examples →"}
+                </button>
+              {/if}
+            </div>
+          {/if}
         {:else if current_step === "review"}
           <!-- ── Step 5 — Review ── -->
           {#if is_multi_turn}
             <MultiTurnReviewPaginator
               chains={multi_turn_chains}
               bind:verdicts={chain_verdicts}
-              on_back={() => {
-                abort_copilot_request()
-                current_step = "generate"
-              }}
+              on_back={() => history.back()}
               on_save={on_advance_to_save}
               save_disabled={!all_chains_reviewed}
               save_disabled_tooltip={all_chains_reviewed
@@ -1279,15 +1291,6 @@
               on:continue_to_refine={on_advance_to_save}
               on:create_spec_secondary={on_advance_to_save}
             />
-            <div class="mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => {
-                  abort_copilot_request()
-                  current_step = "generate"
-                }}>← Back</button
-              >
-            </div>
           {/if}
         {:else if current_step === "save"}
           <!-- ── Step 6 — Save ── -->
@@ -1303,14 +1306,6 @@
               >
             </div>
           {/if}
-
-          <div class="flex justify-between mt-8">
-            <button
-              class="btn btn-ghost btn-sm"
-              on:click={() => (current_step = "review")}
-              disabled={saving}>← Back</button
-            >
-          </div>
         {:else if current_step === "done"}
           <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to. -->
           <div class="text-center py-12">
