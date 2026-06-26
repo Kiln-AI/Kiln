@@ -5,6 +5,7 @@ import {
   getV2TypeFromEvalConfig,
   buildV2EvalTypeRegistry,
   extractV2Props,
+  evalTypeJudgeLabel,
   type V2EvalType,
   type V2EvalTypeMetadata,
   type EvalTypeTag,
@@ -224,6 +225,42 @@ describe("getV2EvalTypeMetadata", () => {
       const defaultTags = meta.tags.filter((tag) => tag.tone === "default")
       expect(defaultTags).toHaveLength(0)
     }
+  })
+})
+
+describe("evalTypeJudgeLabel", () => {
+  it('returns "LLM as Judge" for llm_judge (no double Judge)', () => {
+    expect(evalTypeJudgeLabel("llm_judge")).toBe("LLM as Judge")
+  })
+
+  it('returns "Code Judge" for code_eval', () => {
+    expect(evalTypeJudgeLabel("code_eval")).toBe("Code Judge")
+  })
+
+  it('returns "Exact Match Judge" for exact_match', () => {
+    expect(evalTypeJudgeLabel("exact_match")).toBe("Exact Match Judge")
+  })
+
+  it('returns "Pattern Match Judge" for pattern_match', () => {
+    expect(evalTypeJudgeLabel("pattern_match")).toBe("Pattern Match Judge")
+  })
+
+  it('returns "Contains Judge" for contains', () => {
+    expect(evalTypeJudgeLabel("contains")).toBe("Contains Judge")
+  })
+
+  it('returns "Set Check Judge" for set_check', () => {
+    expect(evalTypeJudgeLabel("set_check")).toBe("Set Check Judge")
+  })
+
+  it('returns "Tool Call Check Judge" for tool_call_check', () => {
+    expect(evalTypeJudgeLabel("tool_call_check")).toBe("Tool Call Check Judge")
+  })
+
+  it('returns "Step Count Check Judge" for step_count_check', () => {
+    expect(evalTypeJudgeLabel("step_count_check")).toBe(
+      "Step Count Check Judge",
+    )
   })
 })
 

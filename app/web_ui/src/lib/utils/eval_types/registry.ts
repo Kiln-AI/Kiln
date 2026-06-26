@@ -225,6 +225,15 @@ export function getV2TypeFromEvalConfig(eval_config: {
 }
 
 /**
+ * Returns the "... Judge" display label for a V2 eval type.
+ * Appends "Judge" if the label does not already end with it.
+ */
+export function evalTypeJudgeLabel(type: V2EvalType): string {
+  const label = getV2EvalTypeMetadata(type).label
+  return label.endsWith("Judge") ? label : label + " Judge"
+}
+
+/**
  * Build the full registry map of all V2 eval types to their metadata.
  */
 export function buildV2EvalTypeRegistry(): Map<V2EvalType, V2EvalTypeMetadata> {

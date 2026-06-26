@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type {
-    V2EvalType,
-    V2EvalTypeMetadata,
+  import {
+    type V2EvalType,
+    type V2EvalTypeMetadata,
+    evalTypeJudgeLabel,
   } from "$lib/utils/eval_types/registry"
   import EvalTypeTags from "./select/eval_type_tags.svelte"
   import CalloutCard from "$lib/ui/callout_card.svelte"
@@ -10,9 +11,7 @@
   export let evalType: V2EvalType
   export let metadata: V2EvalTypeMetadata
 
-  $: introTitle = metadata.label.endsWith("Judge")
-    ? metadata.label
-    : metadata.label + " Judge"
+  $: introTitle = evalTypeJudgeLabel(evalType)
 </script>
 
 <div class="pb-2 max-w-[600px]" data-testid="eval-type-intro">
