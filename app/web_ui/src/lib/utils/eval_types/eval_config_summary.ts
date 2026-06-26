@@ -57,9 +57,7 @@ function legacyConfigSummary(eval_config: EvalConfig): string {
     parts.push(taskDesc)
   }
   if (evalSteps && evalSteps.length > 0) {
-    const numbered = evalSteps
-      .map((step, i) => `${i + 1}. ${step}`)
-      .join("\n")
+    const numbered = evalSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")
     parts.push("Steps:\n" + numbered)
   }
   return parts.length > 0 ? parts.join("\n\n") : "No details available."
