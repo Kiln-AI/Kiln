@@ -14,13 +14,27 @@ def helpers() -> KilnEvalHelpers:
 # Trace navigation
 # ---------------------------------------------------------------------------
 
-_SAMPLE_TRACE = [
-    {"role": "assistant", "content": "Hello"},
-    {"role": "tool_call", "name": "search", "arguments": {"q": "kiln"}},
-    {"role": "tool_result", "content": "result1"},
-    {"role": "assistant", "content": "Got it"},
-    {"type": "tool_call", "name": "lookup", "arguments": {"id": 1}},
-    {"type": "tool_result", "content": "result2"},
+_OPENAI_FORMAT_TRACE = [
+    {"role": "user", "content": "Search for cats"},
+    {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_abc123",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q": "cats"}'},
+            },
+            {
+                "id": "call_def456",
+                "type": "function",
+                "function": {"name": "lookup", "arguments": '{"id": 1}'},
+            },
+        ],
+    },
+    {"role": "tool", "tool_call_id": "call_abc123", "content": "result1"},
+    {"role": "tool", "tool_call_id": "call_def456", "content": "result2"},
+    {"role": "assistant", "content": "Got it, here are the results."},
 ]
 
 
@@ -34,10 +48,38 @@ class TestTraceNavigation:
         assert helpers.get_tool_calls(trace) == []
 
     def test_get_tool_calls(self, helpers: KilnEvalHelpers):
-        calls = helpers.get_tool_calls(_SAMPLE_TRACE)
+        calls = helpers.get_tool_calls(_OPENAI_FORMAT_TRACE)
         assert len(calls) == 2
         assert calls[0]["name"] == "search"
+        assert calls[0]["arguments"] == {"q": "cats"}
+        assert calls[0]["id"] == "call_abc123"
         assert calls[1]["name"] == "lookup"
+        assert calls[1]["arguments"] == {"id": 1}
+        assert calls[1]["id"] == "call_def456"
+
+    def test_get_tool_calls_malformed(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_bad",
+                        "function": {"name": "fn", "arguments": "not json"},
+                    },
+                    {"id": "call_missing"},
+                    "not_a_dict",
+                ],
+            }
+        ]
+        calls = helpers.get_tool_calls(trace)
+        assert len(calls) == 3
+        assert calls[0]["name"] == "fn"
+        assert calls[0]["arguments"] == {}
+        assert calls[1]["name"] == ""
+        assert calls[1]["arguments"] == {}
+        assert calls[2]["name"] == ""
+        assert calls[2]["id"] is None
 
     @pytest.mark.parametrize(
         "trace",
@@ -48,9 +90,17 @@ class TestTraceNavigation:
         assert helpers.get_assistant_messages(trace) == []
 
     def test_get_assistant_messages(self, helpers: KilnEvalHelpers):
-        msgs = helpers.get_assistant_messages(_SAMPLE_TRACE)
-        assert len(msgs) == 2
-        assert msgs[0]["content"] == "Hello"
+        msgs = helpers.get_assistant_messages(_OPENAI_FORMAT_TRACE)
+        assert len(msgs) == 1
+        assert msgs[0] == "Got it, here are the results."
+
+    def test_get_assistant_messages_omits_null_content(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "assistant", "content": None},
+            {"role": "assistant", "content": "visible"},
+        ]
+        msgs = helpers.get_assistant_messages(trace)
+        assert msgs == ["visible"]
 
     @pytest.mark.parametrize(
         "trace",
@@ -61,7 +111,11 @@ class TestTraceNavigation:
         assert helpers.get_tool_results(trace) == []
 
     def test_get_tool_results(self, helpers: KilnEvalHelpers):
-        results = helpers.get_tool_results(_SAMPLE_TRACE)
+        trace = [
+            {"role": "tool_result", "content": "result1"},
+            {"type": "tool_result", "content": "result2"},
+        ]
+        results = helpers.get_tool_results(trace)
         assert len(results) == 2
         assert results[0]["content"] == "result1"
 

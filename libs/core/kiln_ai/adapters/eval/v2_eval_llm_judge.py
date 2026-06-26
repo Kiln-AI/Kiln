@@ -33,10 +33,9 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel.eval import (
     EvalConfig,
-    EvalScores,
     EvalTaskInput,
     LlmJudgeProperties,
-    SkippedReason,
+    V2EvalResult,
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
@@ -96,15 +95,13 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 f"Invalid model provider: {self.properties.model_provider}"
             )
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, LlmJudgeProperties)
 
         skip, detail = check_required_vars(props.required_var, eval_input)
         if skip is not None:
-            return {}, skip, detail
+            return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
 
         namespace = eval_input.model_dump()
         rendered_prompt = _template_env.from_string(props.prompt_template).render(
@@ -177,4 +174,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 score_from_token_string,
             )
 
-        return scores, None, None
+        return V2EvalResult(
+            scores=scores,
+            intermediate_outputs=run_output.intermediate_outputs,
+        )

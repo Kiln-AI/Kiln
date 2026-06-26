@@ -48,9 +48,9 @@ class TestStepCountToolCalls:
             StepCountCheckProperties(count_type="tool_calls", min_count=1, max_count=4)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2, tools_per_assistant=2)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_below_min_fail(self):
@@ -58,9 +58,9 @@ class TestStepCountToolCalls:
             StepCountCheckProperties(count_type="tool_calls", min_count=5)
         )
         trace = _multi_turn_trace(n_user=1, n_assistant=1, tools_per_assistant=2)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 0.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_above_max_fail(self):
@@ -68,9 +68,9 @@ class TestStepCountToolCalls:
             StepCountCheckProperties(count_type="tool_calls", max_count=1)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2, tools_per_assistant=2)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 0.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestStepCountModelResponses:
@@ -80,9 +80,9 @@ class TestStepCountModelResponses:
             StepCountCheckProperties(count_type="model_responses", min_count=2)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail(self):
@@ -90,9 +90,9 @@ class TestStepCountModelResponses:
             StepCountCheckProperties(count_type="model_responses", min_count=5)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 0.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestStepCountTurns:
@@ -102,17 +102,17 @@ class TestStepCountTurns:
             StepCountCheckProperties(count_type="turns", min_count=1, max_count=3)
         )
         trace = _multi_turn_trace(n_user=2, n_assistant=2)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail(self):
         cfg = _make_config(StepCountCheckProperties(count_type="turns", max_count=1))
         trace = _multi_turn_trace(n_user=3, n_assistant=3)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 0.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestStepCountEdgeCases:
@@ -121,35 +121,35 @@ class TestStepCountEdgeCases:
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", min_count=1)
         )
-        scores, skip, detail = await StepCountCheckEval(cfg).evaluate(_inp(trace=None))
-        assert scores == {}
-        assert skip == SkippedReason.missing_trace
-        assert detail is not None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=None))
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_trace
+        assert result.skipped_detail is not None
 
     @pytest.mark.asyncio
     async def test_empty_trace(self):
         cfg = _make_config(
             StepCountCheckProperties(count_type="tool_calls", min_count=0, max_count=0)
         )
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=[]))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=[]))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_only_min_bound(self):
         cfg = _make_config(StepCountCheckProperties(count_type="turns", min_count=1))
         trace = _multi_turn_trace(n_user=10, n_assistant=10)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_only_max_bound(self):
         cfg = _make_config(StepCountCheckProperties(count_type="turns", max_count=5))
         trace = _multi_turn_trace(n_user=3, n_assistant=3)
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_tool_call_only_assistant_counted_as_model_response(self):
@@ -172,6 +172,6 @@ class TestStepCountEdgeCases:
                 count_type="model_responses", min_count=1, max_count=1
             )
         )
-        scores, skip, _ = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None

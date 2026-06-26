@@ -359,6 +359,7 @@
                     skipped_reason={result.skipped_reason ?? null}
                     skipped_detail={result.skipped_detail ?? null}
                     eval_config={results.eval_config}
+                    intermediate_outputs={result.intermediate_outputs ?? null}
                   />
                 </td>
               {:else}

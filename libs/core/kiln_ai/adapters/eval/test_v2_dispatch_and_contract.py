@@ -35,6 +35,7 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     StepCountCheckProperties,
     ToolCallCheckProperties,
+    ToolCallSpec,
     V2EvalType,
 )
 
@@ -54,7 +55,9 @@ def _props_for_type(v2_type: V2EvalType):  # type: ignore[no-untyped-def]
         case V2EvalType.set_check:
             return SetCheckProperties(expected_set=["a"], mode="equal")
         case V2EvalType.tool_call_check:
-            return ToolCallCheckProperties(expected_tools=[])
+            return ToolCallCheckProperties(
+                expected_tools=[ToolCallSpec(tool_name="test")]
+            )
         case V2EvalType.step_count_check:
             return StepCountCheckProperties(count_type="turns", min_count=1)
         case V2EvalType.llm_judge:
@@ -114,10 +117,10 @@ class TestBaseV2EvalBridgeContract:
     async def test_stub_evaluate(self):
         cfg = _mock_v2_eval_config()
         adapter = StubV2Eval(cfg)
-        scores, skip, detail = await adapter.evaluate(_sample_eval_input())
-        assert scores == {"accuracy": 1.0}
-        assert skip is None
-        assert detail is None
+        result = await adapter.evaluate(_sample_eval_input())
+        assert result.scores == {"accuracy": 1.0}
+        assert result.skipped_reason is None
+        assert result.skipped_detail is None
 
     @pytest.mark.asyncio
     async def test_stub_receives_eval_task_input(self):
@@ -129,9 +132,9 @@ class TestBaseV2EvalBridgeContract:
             reference_data={"key": "val"},
             task_input="some input",
         )
-        scores, skip, _detail = await adapter.evaluate(inp)
-        assert scores == {"accuracy": 1.0}
-        assert skip is None
+        result = await adapter.evaluate(inp)
+        assert result.scores == {"accuracy": 1.0}
+        assert result.skipped_reason is None
 
     def test_rejects_non_v2_config(self):
         cfg = Mock(spec=EvalConfig)
@@ -151,10 +154,10 @@ class TestBaseV2EvalBridgeContract:
     async def test_skipping_stub_returns_skip(self):
         cfg = _mock_v2_eval_config()
         adapter = SkippingStubV2Eval(cfg)
-        scores, skip, detail = await adapter.evaluate(_sample_eval_input())
-        assert scores == {}
-        assert skip == SkippedReason.extraction_failed
-        assert detail == "test skip detail"
+        result = await adapter.evaluate(_sample_eval_input())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.skipped_detail == "test skip detail"
 
 
 # ===================================================================

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest"
-import { render } from "@testing-library/svelte"
+import { render, fireEvent } from "@testing-library/svelte"
 import type { EvalConfig } from "$lib/types"
 
 vi.mock("$lib/stores", async () => {
@@ -14,7 +14,12 @@ vi.mock("$lib/stores", async () => {
   }
 })
 
-import LlmJudgeResult from "./llm_judge_result.svelte"
+vi.mock("$lib/ui/dialog.svelte", async () => {
+  const StubModule = await import("./__tests__/dialog_stub.svelte")
+  return { default: StubModule.default }
+})
+
+const LlmJudgeResult = (await import("./llm_judge_result.svelte")).default
 
 function makeConfig(overrides: Record<string, unknown> = {}): EvalConfig {
   return {
@@ -107,5 +112,83 @@ describe("LlmJudgeResult", () => {
     expect(container.textContent).not.toContain("Model:")
     expect(container.textContent).not.toContain("G-Eval")
     expect(container.textContent).not.toContain("Chain-of-thought")
+  })
+
+  it("shows View reasoning link when reasoning is present via reasoning key", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+      },
+    })
+    expect(container.textContent).toContain("View reasoning")
+  })
+
+  it("shows View reasoning link when reasoning is present via chain_of_thought key", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: {
+          chain_of_thought: "Step 1: Check grammar.",
+        },
+      },
+    })
+    expect(container.textContent).toContain("View reasoning")
+  })
+
+  it("hides View reasoning when intermediate_outputs is null", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: null,
+      },
+    })
+    expect(container.textContent).not.toContain("View reasoning")
+  })
+
+  it("hides View reasoning when intermediate_outputs has no reasoning keys", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { some_other_key: "value" },
+      },
+    })
+    expect(container.textContent).not.toContain("View reasoning")
+  })
+
+  it("opens dialog when View reasoning is clicked", async () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+      },
+    })
+
+    const link = container.querySelector("button.link")
+    expect(link).toBeTruthy()
+    expect(link!.textContent).toContain("View reasoning")
+
+    await fireEvent.click(link!)
+
+    const dialog = container.querySelector('[data-testid="dialog-stub"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog!.getAttribute("data-title")).toBe("Judge Reasoning")
+    expect(dialog!.textContent).toContain("The model output was good.")
+  })
+
+  it("shows View reasoning even without eval_config (fallback path)", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: null,
+        intermediate_outputs: { reasoning: "Some reasoning text" },
+      },
+    })
+    expect(container.textContent).toContain("View reasoning")
   })
 })

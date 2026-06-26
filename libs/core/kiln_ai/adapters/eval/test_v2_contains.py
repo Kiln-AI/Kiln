@@ -22,28 +22,28 @@ class TestContainsMustContain:
     @pytest.mark.asyncio
     async def test_pass_substring_present(self):
         cfg = _make_config(ContainsProperties(substring="World"))
-        scores, skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail_substring_absent(self):
         cfg = _make_config(ContainsProperties(substring="missing"))
-        scores, skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
-        assert skip is None
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_case_sensitive_fail(self):
         cfg = _make_config(ContainsProperties(substring="world", case_sensitive=True))
-        scores, _skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
 
     @pytest.mark.asyncio
     async def test_case_insensitive_pass(self):
         cfg = _make_config(ContainsProperties(substring="world", case_sensitive=False))
-        scores, _skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
 
 
 class TestContainsMustNotContain:
@@ -52,16 +52,16 @@ class TestContainsMustNotContain:
         cfg = _make_config(
             ContainsProperties(substring="missing", mode="must_not_contain")
         )
-        scores, _skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_fail_substring_present(self):
         cfg = _make_config(
             ContainsProperties(substring="Hello", mode="must_not_contain")
         )
-        scores, _skip, _ = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
 
 
 class TestContainsReferenceKey:
@@ -69,31 +69,31 @@ class TestContainsReferenceKey:
     async def test_pass_with_reference_key(self):
         cfg = _make_config(ContainsProperties(reference_key="expected_sub"))
         inp = _inp(reference_data={"expected_sub": "Hello"})
-        scores, skip, _ = await ContainsEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail_with_reference_key(self):
         cfg = _make_config(ContainsProperties(reference_key="expected_sub"))
         inp = _inp(reference_data={"expected_sub": "nope"})
-        scores, _skip, _ = await ContainsEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 0.0}
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 0.0}
 
     @pytest.mark.asyncio
     async def test_missing_reference_data(self):
         cfg = _make_config(ContainsProperties(reference_key="expected_sub"))
-        scores, skip, _detail = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip == SkippedReason.missing_reference_key
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_reference_key
 
     @pytest.mark.asyncio
     async def test_missing_reference_key_in_data(self):
         cfg = _make_config(ContainsProperties(reference_key="expected_sub"))
         inp = _inp(reference_data={"other": "val"})
-        scores, skip, _ = await ContainsEval(cfg).evaluate(inp)
-        assert scores == {}
-        assert skip == SkippedReason.missing_reference_key
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_reference_key
 
 
 class TestContainsExpression:
@@ -103,17 +103,17 @@ class TestContainsExpression:
             ContainsProperties(substring="traced", value_expression="trace[0].content")
         )
         inp = _inp(trace=[{"content": "This has traced data"}])
-        scores, _skip, _ = await ContainsEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 1.0}
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_undefined_expression_skips(self):
         cfg = _make_config(
             ContainsProperties(substring="x", value_expression="nonexistent_field")
         )
-        scores, skip, _detail = await ContainsEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip == SkippedReason.extraction_failed
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
 
 
 class TestContainsNoScores:

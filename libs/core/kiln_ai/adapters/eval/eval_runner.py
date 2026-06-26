@@ -460,9 +460,7 @@ class EvalRunner:
 
             run_output = await evaluator.run_task(job.item)
             eval_task_input = EvalTaskInput.from_eval_input(job.item, run_output)
-            scores, skipped_reason, skipped_detail = await evaluator.evaluate(
-                eval_task_input
-            )
+            result = await evaluator.evaluate(eval_task_input)
 
             async with self._save_context():
                 eval_run = EvalRun(
@@ -473,12 +471,17 @@ class EvalRunner:
                     dataset_id=None,
                     eval_input_id=job.item.id,
                     eval_config_eval=False,
-                    scores=scores,
+                    scores=result.scores,
                     input=early_input_str,
-                    output=run_output.output.output if skipped_reason is None else None,
+                    output=run_output.output.output
+                    if result.skipped_reason is None
+                    else None,
                     reference_data=job.item.reference,
-                    skipped_reason=skipped_reason.value if skipped_reason else None,
-                    skipped_detail=skipped_detail,
+                    skipped_reason=result.skipped_reason.value
+                    if result.skipped_reason
+                    else None,
+                    skipped_detail=result.skipped_detail,
+                    intermediate_outputs=result.intermediate_outputs,
                 )
                 eval_run.save_to_file()
             return True
@@ -486,9 +489,7 @@ class EvalRunner:
         if job.type == "task_run_eval":
             run_output = await evaluator.run_task(job.item)
             eval_task_input = EvalTaskInput.from_task_run(run_output)
-            scores, skipped_reason, skipped_detail = await evaluator.evaluate(
-                eval_task_input
-            )
+            result = await evaluator.evaluate(eval_task_input)
             task_output = run_output.output.output
             task_input_str = run_output.input
             dataset_id = run_output.id
@@ -502,12 +503,15 @@ class EvalRunner:
                     dataset_id=dataset_id,
                     eval_input_id=None,
                     eval_config_eval=False,
-                    scores=scores,
+                    scores=result.scores,
                     input=task_input_str,
-                    output=task_output if skipped_reason is None else None,
+                    output=task_output if result.skipped_reason is None else None,
                     reference_data=eval_task_input.reference_data,
-                    skipped_reason=skipped_reason.value if skipped_reason else None,
-                    skipped_detail=skipped_detail,
+                    skipped_reason=result.skipped_reason.value
+                    if result.skipped_reason
+                    else None,
+                    skipped_detail=result.skipped_detail,
+                    intermediate_outputs=result.intermediate_outputs,
                 )
                 eval_run.save_to_file()
             return True
@@ -517,9 +521,7 @@ class EvalRunner:
             task_input_str = job.item.input
             task_output = job.item.output.output
 
-            scores, skipped_reason, skipped_detail = await evaluator.evaluate(
-                eval_task_input
-            )
+            result = await evaluator.evaluate(eval_task_input)
 
             async with self._save_context():
                 eval_run = EvalRun(
@@ -530,12 +532,15 @@ class EvalRunner:
                     dataset_id=dataset_id,
                     eval_input_id=None,
                     eval_config_eval=True,
-                    scores=scores,
+                    scores=result.scores,
                     input=task_input_str,
-                    output=task_output if skipped_reason is None else None,
+                    output=task_output if result.skipped_reason is None else None,
                     reference_data=eval_task_input.reference_data,
-                    skipped_reason=skipped_reason.value if skipped_reason else None,
-                    skipped_detail=skipped_detail,
+                    skipped_reason=result.skipped_reason.value
+                    if result.skipped_reason
+                    else None,
+                    skipped_detail=result.skipped_detail,
+                    intermediate_outputs=result.intermediate_outputs,
                 )
                 eval_run.save_to_file()
             return True

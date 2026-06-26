@@ -116,9 +116,9 @@ class TestCachedOutputScores:
         cfg.parent_eval.reset_mock()
 
         inp = EvalTaskInput(final_message="hello")
-        scores, skip, _ = await adapter.evaluate(inp)
-        assert scores == {"s": 1.0}
-        assert skip is None
+        result = await adapter.evaluate(inp)
+        assert result.scores == {"s": 1.0}
+        assert result.skipped_reason is None
 
         cfg.parent_eval.assert_not_called()
 

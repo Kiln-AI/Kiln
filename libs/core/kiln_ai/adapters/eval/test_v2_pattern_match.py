@@ -22,28 +22,28 @@ class TestPatternMatchMustMatch:
     @pytest.mark.asyncio
     async def test_pass_simple_pattern(self):
         cfg = _make_config(PatternMatchProperties(pattern=r"\d+"))
-        scores, skip, _ = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
-        assert skip is None
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_fail_simple_pattern(self):
         cfg = _make_config(PatternMatchProperties(pattern=r"^\d+$"))
-        scores, skip, _ = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
-        assert skip is None
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_anchored_pattern_pass(self):
         cfg = _make_config(PatternMatchProperties(pattern=r"^Hello"))
-        scores, _skip, _ = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_word_boundary(self):
         cfg = _make_config(PatternMatchProperties(pattern=r"\bworld\b"))
-        scores, _skip, _ = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
 
 
 class TestPatternMatchMustNotMatch:
@@ -52,16 +52,16 @@ class TestPatternMatchMustNotMatch:
         cfg = _make_config(
             PatternMatchProperties(pattern=r"^ZZZZZ$", mode="must_not_match")
         )
-        scores, _skip, _ = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 1.0}
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_fail_must_not_match(self):
         cfg = _make_config(
             PatternMatchProperties(pattern=r"\d+", mode="must_not_match")
         )
-        scores, _skip, _ = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {"score_a": 0.0}
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
 
 
 class TestPatternMatchExpression:
@@ -73,17 +73,17 @@ class TestPatternMatchExpression:
             )
         )
         inp = _inp(trace=[{"content": "traced"}])
-        scores, _skip, _ = await PatternMatchEval(cfg).evaluate(inp)
-        assert scores == {"score_a": 1.0}
+        result = await PatternMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
     async def test_undefined_expression_skips(self):
         cfg = _make_config(
             PatternMatchProperties(pattern=".*", value_expression="nonexistent_field")
         )
-        scores, skip, _detail = await PatternMatchEval(cfg).evaluate(_inp())
-        assert scores == {}
-        assert skip == SkippedReason.extraction_failed
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
 
 
 class TestPatternMatchNoScores:

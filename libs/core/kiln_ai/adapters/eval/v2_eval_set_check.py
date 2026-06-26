@@ -7,10 +7,9 @@ from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     extract_value,
 )
 from kiln_ai.datamodel.eval import (
-    EvalScores,
     EvalTaskInput,
     SetCheckProperties,
-    SkippedReason,
+    V2EvalResult,
 )
 
 
@@ -26,15 +25,13 @@ class SetCheckEval(BaseV2EvalBridge):
     - Any other type: wrap as a single-element set via ``{str(value)}``.
     """
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, SetCheckProperties)
 
         value, skip, detail = extract_value(props.value_expression, eval_input)
         if skip is not None:
-            return {}, skip, detail
+            return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
 
         actual_set = self._coerce_to_set(value)
 
@@ -43,7 +40,7 @@ class SetCheckEval(BaseV2EvalBridge):
                 props.reference_key, eval_input
             )
             if skip is not None:
-                return {}, skip, detail
+                return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
             expected_set = self._coerce_to_set(expected_raw)
         else:
             assert props.expected_set is not None
@@ -56,7 +53,9 @@ class SetCheckEval(BaseV2EvalBridge):
         else:
             passed = actual_set == expected_set
 
-        return build_binary_scores(self._output_scores, passed), None, None
+        return V2EvalResult(
+            scores=build_binary_scores(self._output_scores, passed),
+        )
 
     @staticmethod
     def _coerce_to_set(value: object) -> set[str]:

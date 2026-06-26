@@ -233,9 +233,10 @@ class TestParseJsonExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         inp = _inp(final_message='{"name": "Alice", "description": "A person"}')
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 1.0
         assert scores["rating"] == 5.0
@@ -247,9 +248,10 @@ class TestParseJsonExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         inp = _inp(final_message='{"name": "Alice"}')
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 0.0
         assert scores["rating"] == 1.0
@@ -261,9 +263,10 @@ class TestParseJsonExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         inp = _inp(final_message="not json at all")
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 0.0
         assert scores["rating"] == 1.0
@@ -276,9 +279,10 @@ class TestParseJsonExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         inp = _inp(final_message="[1, 2, 3]")
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 0.0
         assert scores["rating"] == 1.0
@@ -297,14 +301,33 @@ class TestCheckToolUsageExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         trace = [
-            {"role": "tool_call", "name": "search", "arguments": {"q": "test"}},
-            {"role": "tool_call", "name": "search", "arguments": {"q": "more"}},
-            {"role": "tool_call", "name": "other_tool", "arguments": {}},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": '{"q": "test"}'},
+                    },
+                    {
+                        "id": "c2",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": '{"q": "more"}'},
+                    },
+                    {
+                        "id": "c3",
+                        "type": "function",
+                        "function": {"name": "other_tool", "arguments": "{}"},
+                    },
+                ],
+            }
         ]
         inp = _inp(final_message="result", trace=trace)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 1.0
         assert scores["rating"] == 2.0
@@ -316,11 +339,24 @@ class TestCheckToolUsageExample:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        trace = [{"role": "tool_call", "name": "other_tool", "arguments": {}}]
+        trace = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "other_tool", "arguments": "{}"},
+                    },
+                ],
+            }
+        ]
         inp = _inp(final_message="result", trace=trace)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 0.0
         assert scores["rating"] == 1.0  # max(min(0, 5), 1) == 1
@@ -333,9 +369,10 @@ class TestCheckToolUsageExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         inp = _inp(final_message="result", trace=None)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 0.0
         assert scores["rating"] == 1.0
@@ -347,13 +384,24 @@ class TestCheckToolUsageExample:
         grant_code_eval_trust(PROJECT_PATH)
 
         trace = [
-            {"role": "tool_call", "name": "search", "arguments": {"q": f"q{i}"}}
-            for i in range(10)
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"c{i}",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": f'{{"q": "q{i}"}}'},
+                    }
+                    for i in range(10)
+                ],
+            }
         ]
         inp = _inp(final_message="result", trace=trace)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 1.0
         assert scores["rating"] == 5.0  # max(min(10, 5), 1) == 5
@@ -376,9 +424,10 @@ class TestDomainGradingExample:
             final_message=output,
             reference_data={"expected_answer": "42"},
         )
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 1.0
         assert scores["safety"] == 1.0
@@ -395,9 +444,10 @@ class TestDomainGradingExample:
             final_message=output,
             reference_data={"expected_answer": "UNICORN_NOT_PRESENT"},
         )
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 0.0
         assert scores["safety"] == 0.0
@@ -411,9 +461,10 @@ class TestDomainGradingExample:
 
         output = " ".join(["word"] * 30)
         inp = _inp(final_message=output, reference_data=None)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 1.0
         assert scores["safety"] == 1.0
@@ -427,9 +478,10 @@ class TestDomainGradingExample:
 
         output = " ".join(["word"] * 30)
         inp = _inp(final_message=output, reference_data={})
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["check"] == 1.0
         assert scores["safety"] == 1.0
@@ -443,9 +495,10 @@ class TestDomainGradingExample:
 
         output = "short"
         inp = _inp(final_message=output, reference_data=None)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["rating"] == 5.0
 
@@ -458,9 +511,10 @@ class TestDomainGradingExample:
 
         output = " ".join(["word"] * 160)
         inp = _inp(final_message=output, reference_data=None)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["rating"] == 1.0
 
@@ -473,9 +527,10 @@ class TestDomainGradingExample:
 
         output = " ".join(["word"] * 80)
         inp = _inp(final_message=output, reference_data=None)
-        scores, reason, _ = await adapter.evaluate(inp)
+        result = await adapter.evaluate(inp)
+        scores = result.scores
 
-        assert reason is None
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["rating"] == 3.0
 
@@ -497,8 +552,9 @@ class TestDefaultCodePassFail:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message="some output"))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message="some output"))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["quality"] == 1.0
 
@@ -508,8 +564,9 @@ class TestDefaultCodePassFail:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message=""))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message=""))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["quality"] == 0.0
 
@@ -526,8 +583,9 @@ class TestDefaultCodeFiveStar:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message="some output"))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message="some output"))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["quality"] == 5.0
 
@@ -538,8 +596,9 @@ class TestDefaultCodeFiveStar:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message=""))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message=""))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["quality"] == 1.0
 
@@ -556,8 +615,9 @@ class TestDefaultCodePassFailCritical:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message="some output"))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message="some output"))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["quality"] == 1.0
 
@@ -567,8 +627,9 @@ class TestDefaultCodePassFailCritical:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message=""))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message=""))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["quality"] == 0.0
 
@@ -589,8 +650,9 @@ class TestDefaultCodeMultiOutput:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message="some output"))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message="some output"))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["accuracy"] == 1.0
         assert scores["depth"] == 5.0
@@ -603,8 +665,9 @@ class TestDefaultCodeMultiOutput:
         adapter = CodeEvalAdapter(cfg)
         grant_code_eval_trust(PROJECT_PATH)
 
-        scores, reason, _ = await adapter.evaluate(_inp(final_message=""))
-        assert reason is None
+        result = await adapter.evaluate(_inp(final_message=""))
+        scores = result.scores
+        assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["accuracy"] == 0.0
         assert scores["depth"] == 1.0  # five_star low must be 1.0, not 0.0
