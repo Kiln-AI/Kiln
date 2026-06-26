@@ -1,10 +1,37 @@
 ---
-status: draft
+status: NOT PLANNED (folded into scosman/evals_v2_ui_fix — scosman, 2026-06-26)
 ship_gating: ship-blocker (sequenced — blocked on Project 1)
 depends_on: scosman/evals_v2_ui_fix  (project specs/projects/eval_create_ui_v2 — must complete first)
 ---
 
 # Project: Evals V2 read-only config views
+
+## ⛔ NOT PLANNED — superseded
+
+**This standalone project is not being built.** The underlying gap (the read-only config-detail
+view — i.e. the `"No description provided."` regression for non-`llm_judge` V2 types in the
+"Eval Instructions" column on the Compare Judges page) is being addressed directly in the
+**`scosman/evals_v2_ui_fix`** branch (Manual eval create UI V2), not here.
+
+**Why the change:** §4.3 offers two mechanisms — *reuse the per-type `createForm` in readonly mode*,
+**or** *a lightweight per-type `configDetail` renderer*. This project assumed the first, which is
+why it was sequenced **after** Project 1 (it needed Project 1's rebuilt forms). Choosing the second —
+a small per-type `eval_config_to_description()` rendered in the **existing** "Eval Instructions"
+column + "See all" modal (`eval_config_instruction.svelte`) — restores **V1 parity** with:
+
+- **no new route** (§4.2 explicitly forbids new routes — V2 renders where V1 already does; the
+  earlier "add an `[eval_config_id]` detail route" framing in this doc was wrong),
+- **no readonly-form mode**, and therefore
+- **no dependency on Project 1** — so it no longer needs its own sequenced project; it's a small,
+  parallel-safe fix that fits inside the UI-fix branch.
+
+What's given up vs. this project is only the *richer* §4.1 rendering (read-only CodeMirror for
+`code_eval`, structured field layout, Beta badge, "Advanced" collapse) — all **above** V1 parity,
+not parity itself. **Clone / prefill-from-existing** remains deferred for V2.0 (unchanged).
+
+The original plan is preserved below for reference.
+
+---
 
 ## Summary
 
