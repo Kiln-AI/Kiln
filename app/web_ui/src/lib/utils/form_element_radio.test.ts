@@ -273,7 +273,7 @@ describe("FormElement radio inputType", () => {
       })
     })
 
-    it("renders hidden input-error sentinel for FormContainer detection", async () => {
+    it("renders input-error on radiogroup for FormContainer detection", async () => {
       const { component, container } = render(FormElementRadioWithContext, {
         props: {
           radio_options: sampleOptions,
@@ -282,18 +282,18 @@ describe("FormElement radio inputType", () => {
         },
       })
 
-      // Hidden input exists but no error class initially
-      const hiddenInput = container.querySelector('input[type="hidden"]')
-      expect(hiddenInput).toBeTruthy()
-      expect(hiddenInput!.classList.contains("input-error")).toBe(false)
+      // Radiogroup exists but no error class initially
+      const radioGroup = container.querySelector('[role="radiogroup"]')
+      expect(radioGroup).toBeTruthy()
+      expect(radioGroup!.classList.contains("input-error")).toBe(false)
 
       // Trigger validation
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(component as any).runValidator()
       await tick()
 
-      // Hidden input should now have input-error for FormContainer's first_error()
-      expect(hiddenInput!.classList.contains("input-error")).toBe(true)
+      // Radiogroup should now have input-error for FormContainer's first_error()
+      expect(radioGroup!.classList.contains("input-error")).toBe(true)
     })
 
     it("clears error after selecting a valid value", async () => {

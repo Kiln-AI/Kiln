@@ -47,6 +47,18 @@ def score_scale_instruction(rating_type: TaskOutputRatingType) -> str:
             raise_exhaustive_enum_error(rating_type)
 
 
+def _sanitize_for_raw_block(text: str) -> str:
+    """Neutralize Jinja2 tokens so *text* cannot escape a ``{% raw %}`` block.
+
+    Inside ``{% raw %}``, the only way to break out is a literal
+    ``{% endraw %}``. We also defuse ``{%`` and ``{{`` as a defence-in-depth
+    measure so the text can never be misinterpreted as Jinja2 syntax.
+    """
+    text = text.replace("{%", "{ %")
+    text = text.replace("{{", "{ {")
+    return text
+
+
 def build_llm_judge_prompt_template(
     output_scores: list[EvalOutputScore],
 ) -> str:
@@ -58,10 +70,11 @@ def build_llm_judge_prompt_template(
     """
     criteria_lines: list[str] = []
     for score in output_scores:
-        instruction_text = score.instruction or score.name
+        instruction_text = _sanitize_for_raw_block(score.instruction or score.name)
+        safe_name = _sanitize_for_raw_block(score.name)
         scale_text = score_scale_instruction(score.type)
         criteria_lines.append(
-            f"- {score.name}: {instruction_text}\n  Score: {scale_text}"
+            f"- {safe_name}: {instruction_text}\n  Score: {scale_text}"
         )
     criteria_block = "\n".join(criteria_lines)
 

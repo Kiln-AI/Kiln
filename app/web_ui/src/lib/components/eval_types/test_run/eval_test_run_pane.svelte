@@ -172,6 +172,11 @@
       </div>
     {/if}
 
+    <ReferenceDataField
+      {reference_data}
+      on:change={(e) => dispatch("updateReferenceData", e.detail)}
+    />
+
     <button
       type="button"
       class="btn btn-sm btn-primary btn-outline"

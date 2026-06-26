@@ -33,6 +33,31 @@
       : [],
   )
 
+  // Keep arg_rows in sync when FormList adds/removes expected_tools entries.
+  // We use a WeakMap so each tool object carries its own arg draft state,
+  // surviving index shifts caused by removals.
+  const tool_arg_map = new WeakMap<ToolCallSpec, ArgRow[]>()
+  // Seed the map from the initial arg_rows
+  for (let i = 0; i < properties.expected_tools.length; i++) {
+    tool_arg_map.set(properties.expected_tools[i], arg_rows[i] ?? [])
+  }
+  // Data flows one-way: expected_tools → arg_rows (never the reverse).
+  // Mutating arg_rows does NOT write back to expected_tools, so no reactive loop.
+  $: {
+    const synced: ArgRow[][] = []
+    for (const tool of properties.expected_tools) {
+      const existing = tool_arg_map.get(tool)
+      if (existing) {
+        synced.push(existing)
+      } else {
+        const fresh: ArgRow[] = []
+        tool_arg_map.set(tool, fresh)
+        synced.push(fresh)
+      }
+    }
+    arg_rows = synced
+  }
+
   function sync_args_to_properties() {
     for (let i = 0; i < properties.expected_tools.length; i++) {
       const rows = arg_rows[i]
@@ -80,10 +105,10 @@
     while (arg_rows.length <= tool_index) {
       arg_rows.push([])
     }
-    arg_rows[tool_index] = [
-      ...arg_rows[tool_index],
-      { name: "", value: "", match_mode: "exact" },
-    ]
+    const new_row = { name: "", value: "", match_mode: "exact" }
+    arg_rows[tool_index] = [...arg_rows[tool_index], new_row]
+    const tool = properties.expected_tools[tool_index]
+    if (tool) tool_arg_map.set(tool, arg_rows[tool_index])
     arg_rows = arg_rows
   }
 
@@ -91,6 +116,8 @@
     arg_rows[tool_index] = arg_rows[tool_index].filter(
       (_, i) => i !== arg_index,
     )
+    const tool = properties.expected_tools[tool_index]
+    if (tool) tool_arg_map.set(tool, arg_rows[tool_index])
     arg_rows = arg_rows
   }
 </script>
@@ -189,6 +216,7 @@
   >
     <FormElement
       id="tool_call_check_match_mode"
+      label="Match Mode"
       inputType="radio"
       radio_options={[
         {
@@ -226,6 +254,7 @@
     >
       <FormElement
         id="tool_call_check_on_unexpected"
+        label="Unlisted Tool Calls"
         inputType="radio"
         radio_options={[
           {

@@ -13,14 +13,6 @@
 
   const ctx = getCreateEvalLayoutContext()
 
-  $: evaluator = $ctx_evaluator
-  $: task = $ctx_task
-  $: spec = $ctx_spec
-  $: project_id = $ctx_project_id
-  $: task_id = $ctx_task_id
-  $: eval_id = $ctx_eval_id
-  $: spec_id = $ctx_spec_id
-
   const ctx_evaluator = ctx.evaluator
   const ctx_task = ctx.task
   const ctx_spec = ctx.spec
@@ -28,6 +20,14 @@
   const ctx_task_id = ctx.task_id
   const ctx_eval_id = ctx.eval_id
   const ctx_spec_id = ctx.spec_id
+
+  $: evaluator = $ctx_evaluator
+  $: task = $ctx_task
+  $: spec = $ctx_spec
+  $: project_id = $ctx_project_id
+  $: task_id = $ctx_task_id
+  $: eval_id = $ctx_eval_id
+  $: spec_id = $ctx_spec_id
 
   $: raw_type = $page.params.eval_config_type
   $: valid_type = ALL_V2_EVAL_TYPES.includes(raw_type as V2EvalType)

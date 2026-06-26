@@ -320,8 +320,9 @@
       <div
         role="radiogroup"
         aria-label={aria_label || label}
-        class="flex flex-col gap-2"
+        class="flex flex-col gap-2 {error_message ? 'input-error' : ''}"
         {id}
+        tabindex="-1"
         data-testid="radio-group-{id}"
       >
         {#each radio_options as option}
@@ -354,7 +355,6 @@
           </label>
         {/each}
       </div>
-      <input type="hidden" class={error_message ? "input-error" : ""} />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

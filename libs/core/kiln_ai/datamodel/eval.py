@@ -271,27 +271,32 @@ def validate_scores_against_output_scores(
     Returns a list of human-readable problem strings (empty list means all OK).
     This is a pure function — it does NOT raise; callers decide how to surface errors.
     """
+
+    def _is_numeric(v: object) -> bool:
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
     problems: list[str] = []
     for output_score in output_scores:
         key = output_score.json_key()
         if key not in scores:
             continue
         value = scores[key]
+
         match output_score.type:
             case TaskOutputRatingType.five_star:
-                if not isinstance(value, float) or value < 1.0 or value > 5.0:
+                if not _is_numeric(value) or value < 1.0 or value > 5.0:
                     problems.append(
-                        f"Score {output_score.name} is a five_star rating and must be a float between 1.0 and 5.0 inclusive. Got: {value}"
+                        f"Score {output_score.name} is a five_star rating and must be a number between 1.0 and 5.0 inclusive. Got: {value}"
                     )
             case TaskOutputRatingType.pass_fail:
-                if not isinstance(value, float) or value < 0.0 or value > 1.0:
+                if not _is_numeric(value) or value < 0.0 or value > 1.0:
                     problems.append(
-                        f"Score {output_score.name} is a pass_fail rating and must be a float between 0.0 and 1.0 inclusive. Got: {value}"
+                        f"Score {output_score.name} is a pass_fail rating and must be a number between 0.0 and 1.0 inclusive. Got: {value}"
                     )
             case TaskOutputRatingType.pass_fail_critical:
-                if not isinstance(value, float) or value < -1.0 or value > 1.0:
+                if not _is_numeric(value) or value < -1.0 or value > 1.0:
                     problems.append(
-                        f"Score {output_score.name} is a pass_fail_critical rating and must be a float between -1.0 and 1.0 inclusive. Got: {value}"
+                        f"Score {output_score.name} is a pass_fail_critical rating and must be a number between -1.0 and 1.0 inclusive. Got: {value}"
                     )
             case TaskOutputRatingType.custom:
                 problems.append(

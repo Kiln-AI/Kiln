@@ -1257,30 +1257,20 @@ describe("Unsaved-changes guard gated on typing", () => {
     expect(formStub!.getAttribute("data-warn-before-unload")).toBe("false")
   })
 
-  it("warn_before_unload becomes true after an alphanumeric keydown", async () => {
+  it("warn_before_unload becomes true after a form input event", async () => {
     const { container } = await renderBuilder("exact_match")
 
-    await fireEvent.keyDown(window, { key: "a" })
+    // Fire a bubbling input event on the v2 form stub inside the content wrapper.
+    // This simulates a real user editing a form field.
+    const v2Stub = container.querySelector("[data-testid='v2-form-stub']")
+    expect(v2Stub).toBeTruthy()
+    await fireEvent.input(v2Stub!)
     await tick()
 
     const formStub = container.querySelector(
       "[data-testid='form-container-stub']",
     )
     expect(formStub!.getAttribute("data-warn-before-unload")).toBe("true")
-  })
-
-  it("non-alphanumeric keys (Shift, ArrowLeft) do NOT activate the guard", async () => {
-    const { container } = await renderBuilder("exact_match")
-
-    await fireEvent.keyDown(window, { key: "Shift" })
-    await tick()
-    await fireEvent.keyDown(window, { key: "ArrowLeft" })
-    await tick()
-
-    const formStub = container.querySelector(
-      "[data-testid='form-container-stub']",
-    )
-    expect(formStub!.getAttribute("data-warn-before-unload")).toBe("false")
   })
 })
 

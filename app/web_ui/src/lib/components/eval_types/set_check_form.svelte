@@ -47,7 +47,9 @@
   }
 
   let expected_set_tags: string[] = properties.expected_set ?? []
-  $: properties.expected_set = expected_set_tags
+  $: if (source === "expected_set") {
+    properties.expected_set = expected_set_tags
+  }
 </script>
 
 <div class="flex flex-col gap-6">

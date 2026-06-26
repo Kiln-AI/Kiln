@@ -87,14 +87,17 @@
   // Pending action after trust grant: "test" or "save"
   let pending_trust_action: "test" | "save" | null = null
 
-  // Unsaved-changes guard: only activate after the user has typed
+  // Unsaved-changes guard: activate after any real form interaction
   let has_typed = false
 
-  function handleTypingDetection(event: KeyboardEvent) {
-    if (!has_typed && /^[A-Za-z0-9]$/.test(event.key)) {
-      has_typed = true
-    }
+  function markDirty() {
+    has_typed = true
   }
+
+  // LLM-judge model/algo selection uses callback props, not native DOM events,
+  // so on:input/on:change on the form wrapper won't catch those changes.
+  // Watch the bound values reactively to arm the unsaved-changes guard.
+  $: if (llm_combined_model_name || llm_selected_algo) markDirty()
 
   $: is_llm_judge = eval_config_type === "llm_judge"
   $: can_submit_v2 = !!eval_config_type && !is_llm_judge
@@ -146,7 +149,20 @@
 
     if (advanced_reference_data.trim()) {
       try {
-        eval_input.reference_data = JSON.parse(advanced_reference_data.trim())
+        const parsed = JSON.parse(advanced_reference_data.trim())
+        if (
+          parsed === null ||
+          typeof parsed !== "object" ||
+          Array.isArray(parsed)
+        ) {
+          test_error = createKilnError(
+            new Error(
+              "Reference data must be a JSON object (not null, array, string, or number).",
+            ),
+          )
+          return null
+        }
+        eval_input.reference_data = parsed
       } catch {
         test_error = createKilnError(
           new Error("Reference data must be valid JSON (object)."),
@@ -266,7 +282,11 @@
         }
       }
     } catch (e) {
-      test_error = createKilnError(e)
+      if (e instanceof DOMException && e.name === "AbortError") {
+        // User cancelled -- not an error
+      } else {
+        test_error = createKilnError(e)
+      }
     } finally {
       test_loading = false
       test_abort_controller = null
@@ -392,7 +412,7 @@
         )
       } else {
         goto(
-          `/specs/${project_id}/${task_id}/${spec_id}/eval?selected_eval_config=${data.id}`,
+          `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}?selected_eval_config=${data.id}`,
         )
       }
     } catch (e) {
@@ -412,12 +432,7 @@
   }
 </script>
 
-<svelte:window
-  on:keydown={(e) => {
-    handleKeydown(e)
-    handleTypingDetection(e)
-  }}
-/>
+<svelte:window on:keydown={handleKeydown} />
 
 <FormContainer
   bind:this={form_container}
@@ -433,7 +448,12 @@
     <EvalTypeIntro evalType={eval_config_type} {metadata} />
   {/if}
 
-  <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start">
+  <!-- on:input/on:change capture real form interactions for unsaved-changes guard -->
+  <div
+    class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start"
+    on:input={markDirty}
+    on:change={markDirty}
+  >
     <!-- Left: form -->
     <div class="flex-1 min-w-0 flex flex-col gap-6">
       <div>

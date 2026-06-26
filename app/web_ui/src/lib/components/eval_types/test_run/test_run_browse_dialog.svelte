@@ -30,6 +30,7 @@
   function format_date(date_str: string | undefined | null): string {
     if (!date_str) return ""
     const date = new Date(date_str)
+    if (isNaN(date.getTime())) return ""
     const now = new Date()
     const diff_ms = now.getTime() - date.getTime()
     const diff_hours = Math.floor(diff_ms / (1000 * 60 * 60))

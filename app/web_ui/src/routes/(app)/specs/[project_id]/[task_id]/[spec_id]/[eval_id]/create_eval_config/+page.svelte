@@ -14,19 +14,19 @@
 
   const ctx = getCreateEvalLayoutContext()
 
-  $: evaluator = $ctx_evaluator
-  $: spec = $ctx_spec
-  $: project_id = $ctx_project_id
-  $: task_id = $ctx_task_id
-  $: eval_id = $ctx_eval_id
-  $: spec_id = $ctx_spec_id
-
   const ctx_evaluator = ctx.evaluator
   const ctx_spec = ctx.spec
   const ctx_project_id = ctx.project_id
   const ctx_task_id = ctx.task_id
   const ctx_eval_id = ctx.eval_id
   const ctx_spec_id = ctx.spec_id
+
+  $: evaluator = $ctx_evaluator
+  $: spec = $ctx_spec
+  $: project_id = $ctx_project_id
+  $: task_id = $ctx_task_id
+  $: eval_id = $ctx_eval_id
+  $: spec_id = $ctx_spec_id
 
   $: agentInfo.set({
     name: "Create Eval Config",
