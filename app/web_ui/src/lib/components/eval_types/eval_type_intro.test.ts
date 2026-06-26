@@ -96,4 +96,65 @@ describe("EvalTypeIntro", () => {
       }
     }
   })
+
+  it('shows "Code Judge" title for code_eval (label "Code" + " Judge")', () => {
+    const evalType = "code_eval" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const heading = container.querySelector("h2")
+    expect(heading?.textContent).toBe("Code Judge")
+  })
+
+  it('shows "Exact Match Judge" title for exact_match', () => {
+    const evalType = "exact_match" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const heading = container.querySelector("h2")
+    expect(heading?.textContent).toBe("Exact Match Judge")
+  })
+
+  it('shows "Pattern Match Judge" title for pattern_match', () => {
+    const evalType = "pattern_match" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const heading = container.querySelector("h2")
+    expect(heading?.textContent).toBe("Pattern Match Judge")
+  })
+
+  it('shows "Contains Judge" title for contains', () => {
+    const evalType = "contains" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const heading = container.querySelector("h2")
+    expect(heading?.textContent).toBe("Contains Judge")
+  })
+
+  it('keeps "LLM as Judge" title (does not double "Judge")', () => {
+    const evalType = "llm_judge" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const heading = container.querySelector("h2")
+    expect(heading?.textContent).toBe("LLM as Judge")
+    expect(heading?.textContent).not.toBe("LLM as Judge Judge")
+  })
+
+  it("has max-w-[600px] class on the intro wrapper", () => {
+    const evalType = "exact_match" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    expect(intro?.classList.contains("max-w-[600px]")).toBe(true)
+  })
 })

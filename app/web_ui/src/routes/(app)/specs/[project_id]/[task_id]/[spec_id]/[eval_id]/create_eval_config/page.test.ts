@@ -768,9 +768,9 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
 
   it("renders Test Run heading with app standard font style", async () => {
     const { container } = await renderBuilder("exact_match")
-    const heading = container.querySelector(".text-xl.font-bold")
-    expect(heading).not.toBeNull()
-    expect(heading?.textContent).toContain("Test Run")
+    const headings = container.querySelectorAll(".text-xl.font-bold")
+    const texts = Array.from(headings).map((h) => h.textContent?.trim())
+    expect(texts).toContain("Test Run")
   })
 
   it("renders eval_type_intro with explainer text", async () => {
@@ -1190,6 +1190,143 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       await new Promise((r) => setTimeout(r, 0))
       await tick()
     })
+  })
+})
+
+describe("Explainer placement + Judge Configuration header", () => {
+  beforeEach(() => {
+    resetCalls()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("renders eval_type_intro ABOVE the two-column row (sibling, not inside left column)", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const intro = container.querySelector("[data-testid='eval-type-intro']")
+    expect(intro).not.toBeNull()
+    const columnsRow = container.querySelector(".xl\\:flex-row")
+    expect(columnsRow).not.toBeNull()
+    // intro should be a sibling preceding the columns, not a child
+    expect(columnsRow!.contains(intro)).toBe(false)
+    // intro should come before the columns row in document order
+    const comparison = intro!.compareDocumentPosition(columnsRow!)
+    expect(comparison & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("renders 'Judge Configuration' header at the top of the left column", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const columnsRow = container.querySelector(".xl\\:flex-row")
+    expect(columnsRow).not.toBeNull()
+    const leftCol = columnsRow!.querySelector(".flex-1.min-w-0")
+    expect(leftCol).not.toBeNull()
+    const heading = leftCol!.querySelector(".text-xl.font-bold")
+    expect(heading).not.toBeNull()
+    expect(heading?.textContent).toContain("Judge Configuration")
+  })
+
+  it("'Judge Configuration' header matches Test Run header classes (text-xl font-bold)", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const headings = container.querySelectorAll(".text-xl.font-bold")
+    const texts = Array.from(headings).map((h) => h.textContent?.trim())
+    expect(texts).toContain("Judge Configuration")
+    expect(texts).toContain("Test Run")
+  })
+})
+
+describe("Unsaved-changes guard gated on typing", () => {
+  beforeEach(() => {
+    resetCalls()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("warn_before_unload is false initially (no guard until user types)", async () => {
+    const { container } = await renderBuilder("exact_match")
+    const formStub = container.querySelector(
+      "[data-testid='form-container-stub']",
+    )
+    expect(formStub).not.toBeNull()
+    expect(formStub!.getAttribute("data-warn-before-unload")).toBe("false")
+  })
+
+  it("warn_before_unload becomes true after an alphanumeric keydown", async () => {
+    const { container } = await renderBuilder("exact_match")
+
+    await fireEvent.keyDown(window, { key: "a" })
+    await tick()
+
+    const formStub = container.querySelector(
+      "[data-testid='form-container-stub']",
+    )
+    expect(formStub!.getAttribute("data-warn-before-unload")).toBe("true")
+  })
+
+  it("non-alphanumeric keys (Shift, ArrowLeft) do NOT activate the guard", async () => {
+    const { container } = await renderBuilder("exact_match")
+
+    await fireEvent.keyDown(window, { key: "Shift" })
+    await tick()
+    await fireEvent.keyDown(window, { key: "ArrowLeft" })
+    await tick()
+
+    const formStub = container.querySelector(
+      "[data-testid='form-container-stub']",
+    )
+    expect(formStub!.getAttribute("data-warn-before-unload")).toBe("false")
+  })
+})
+
+describe("Breadcrumb — Add Judge", () => {
+  afterEach(() => {
+    cleanup()
+    mockPage.set({
+      params: {
+        project_id: "proj1",
+        task_id: "task1",
+        eval_id: "eval1",
+        spec_id: "spec1",
+      },
+      url: new URL(
+        "http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config",
+      ),
+    })
+  })
+
+  it("renders an 'Add Judge' breadcrumb on the builder route page", async () => {
+    const { container } = await renderBuilderRoutePage("exact_match")
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    expect(appPage).not.toBeNull()
+    const breadcrumbs = JSON.parse(
+      appPage!.getAttribute("data-breadcrumbs") || "[]",
+    )
+    const addJudge = breadcrumbs.find(
+      (b: { label: string }) => b.label === "Add Judge",
+    )
+    expect(addJudge).toBeTruthy()
+  })
+
+  it("'Add Judge' breadcrumb links to the create_eval_config list page", async () => {
+    const { container } = await renderBuilderRoutePage("exact_match")
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    const breadcrumbs = JSON.parse(
+      appPage!.getAttribute("data-breadcrumbs") || "[]",
+    )
+    const addJudge = breadcrumbs.find(
+      (b: { label: string }) => b.label === "Add Judge",
+    )
+    expect(addJudge.href).toContain(
+      "/specs/proj1/task1/spec1/eval1/create_eval_config",
+    )
+    // Should NOT point to the type-specific route
+    expect(addJudge.href).not.toContain("/exact_match")
   })
 })
 

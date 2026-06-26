@@ -9,9 +9,13 @@
 
   export let evalType: V2EvalType
   export let metadata: V2EvalTypeMetadata
+
+  $: introTitle = metadata.label.endsWith("Judge")
+    ? metadata.label
+    : metadata.label + " Judge"
 </script>
 
-<div class="pb-6" data-testid="eval-type-intro">
+<div class="pb-6 max-w-[600px]" data-testid="eval-type-intro">
   <CalloutCard testid="eval-type-intro-card">
     <div
       slot="icon"
@@ -23,7 +27,7 @@
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 mb-1">
-        <h2 class="font-medium text-base">{metadata.label}</h2>
+        <h2 class="font-medium text-base">{introTitle}</h2>
         {#if metadata.tags.length > 0}
           <EvalTypeTags tags={metadata.tags} />
         {/if}

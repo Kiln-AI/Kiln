@@ -40,7 +40,7 @@
     description: `Create a new eval configuration (${raw_type}) for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}.`,
   })
 
-  $: breadcrumbs = buildCreateEvalBreadcrumbs(
+  $: base_breadcrumbs = buildCreateEvalBreadcrumbs(
     project_id,
     task_id,
     spec_id,
@@ -48,6 +48,14 @@
     spec,
     $page.url.searchParams.get("next_page"),
   )
+
+  $: breadcrumbs = [
+    ...base_breadcrumbs,
+    {
+      label: "Add Judge",
+      href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/create_eval_config${$page.url.search}`,
+    },
+  ]
 </script>
 
 {#if !valid_type}

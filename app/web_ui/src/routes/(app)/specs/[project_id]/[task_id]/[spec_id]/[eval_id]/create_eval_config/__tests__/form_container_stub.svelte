@@ -25,6 +25,7 @@
   data-testid="form-container-stub"
   data-submit-visible={submit_visible}
   data-submit-label={submit_label}
+  data-warn-before-unload={warn_before_unload}
 >
   <slot />
   {#if submit_visible}

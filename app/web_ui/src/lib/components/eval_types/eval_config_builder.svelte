@@ -87,6 +87,15 @@
   // Pending action after trust grant: "test" or "save"
   let pending_trust_action: "test" | "save" | null = null
 
+  // Unsaved-changes guard: only activate after the user has typed
+  let has_typed = false
+
+  function handleTypingDetection(event: KeyboardEvent) {
+    if (!has_typed && /^[A-Za-z0-9]$/.test(event.key)) {
+      has_typed = true
+    }
+  }
+
   $: is_llm_judge = eval_config_type === "llm_judge"
   $: can_submit_v2 = !!eval_config_type && !is_llm_judge
   $: can_submit_llm =
@@ -403,7 +412,12 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window
+  on:keydown={(e) => {
+    handleKeydown(e)
+    handleTypingDetection(e)
+  }}
+/>
 
 <FormContainer
   bind:this={form_container}
@@ -413,14 +427,18 @@
   on:submit={handle_submit}
   bind:error={create_evaluator_error}
   bind:submitting={create_evaluator_loading}
-  warn_before_unload={!complete && !!eval_config_type}
+  warn_before_unload={!complete && !!eval_config_type && has_typed}
 >
+  {#if metadata}
+    <EvalTypeIntro evalType={eval_config_type} {metadata} />
+  {/if}
+
   <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start">
     <!-- Left: form -->
     <div class="flex-1 min-w-0 flex flex-col gap-6">
-      {#if metadata}
-        <EvalTypeIntro evalType={eval_config_type} {metadata} />
-      {/if}
+      <div>
+        <div class="text-xl font-bold">Judge Configuration</div>
+      </div>
 
       {#if is_llm_judge}
         <LlmJudgeForm
