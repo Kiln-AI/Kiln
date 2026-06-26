@@ -276,6 +276,22 @@
           >
         </li>
 
+        <!-- TODO(eval-v2): remove this "Evals Legacy" entry and the v1
+             builder routes (/specs/.../spec_builder, /select_workflow,
+             /select_template) once the v2 builder ships GA. Temporary
+             during bug bash so testers can compare v2 vs v1 side-by-side. -->
+        <li class="menu-sm">
+          <a
+            href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}/select_workflow`}
+          >
+            <div class="sidebar-icon">
+              <EvalIcon />
+            </div>
+
+            Evals Legacy
+          </a>
+        </li>
+
         <li class="menu-sm">
           <a
             href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
