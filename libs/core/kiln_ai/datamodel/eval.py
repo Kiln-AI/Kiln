@@ -142,7 +142,7 @@ class SetCheckProperties(BaseModel):
     value_expression: str | None = None
     expected_set: list[str] | None = None
     reference_key: str | None = Field(default=None, min_length=1)
-    mode: Literal["subset", "superset", "equal"] = "subset"
+    mode: Literal["subset", "superset", "equal"]
 
     @model_validator(mode="after")
     def validate_value_source(self) -> Self:

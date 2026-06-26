@@ -2174,10 +2174,10 @@ def test_set_check_xor_validator():
     assert SetCheckProperties(expected_set=["x"], mode="equal").expected_set == ["x"]
 
 
-def test_set_check_mode_defaults_to_subset():
-    """SetCheckProperties.mode defaults to 'subset' when omitted."""
-    props = SetCheckProperties(expected_set=["a"])
-    assert props.mode == "subset"
+def test_set_check_mode_required():
+    """SetCheckProperties.mode is required; omitting it raises ValidationError."""
+    with pytest.raises(ValidationError):
+        SetCheckProperties(expected_set=["a"])
 
 
 def test_set_check_mode_explicit_values():
@@ -3261,8 +3261,10 @@ class TestReferenceKeyMinLength:
 
     def test_set_check_empty_reference_key_rejected(self):
         with pytest.raises(ValidationError):
-            SetCheckProperties(reference_key="")
+            SetCheckProperties(reference_key="", mode="subset")
 
     def test_set_check_none_reference_key_accepted(self):
-        props = SetCheckProperties(expected_set=["a"], reference_key=None)
+        props = SetCheckProperties(
+            expected_set=["a"], reference_key=None, mode="subset"
+        )
         assert props.reference_key is None

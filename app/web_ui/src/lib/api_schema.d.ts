@@ -9133,7 +9133,6 @@ export interface components {
             reference_key?: string | null;
             /**
              * Mode
-             * @default subset
              * @enum {string}
              */
             mode: "subset" | "superset" | "equal";
