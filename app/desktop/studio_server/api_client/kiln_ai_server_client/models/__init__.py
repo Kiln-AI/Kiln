@@ -8,6 +8,8 @@ from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_p
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
+from .build_claim_evidence_input import BuildClaimEvidenceInput
+from .build_claim_evidence_output import BuildClaimEvidenceOutput
 from .chat_completion_assistant_message_param_wrapper import ChatCompletionAssistantMessageParamWrapper
 from .chat_completion_content_part_image_param import ChatCompletionContentPartImageParam
 from .chat_completion_content_part_input_audio_param import ChatCompletionContentPartInputAudioParam
@@ -26,6 +28,9 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
 from .check_model_supported_response import CheckModelSupportedResponse
+from .citation import Citation
+from .claim import Claim
+from .claim_type import ClaimType
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
@@ -106,6 +111,7 @@ from .requirement_rating import RequirementRating
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
+from .source import Source
 from .spec import Spec
 from .spec_questioner_api_input import SpecQuestionerApiInput
 from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
@@ -139,6 +145,8 @@ __all__ = (
     "Audio",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
+    "BuildClaimEvidenceInput",
+    "BuildClaimEvidenceOutput",
     "ChatCompletionAssistantMessageParamWrapper",
     "ChatCompletionContentPartImageParam",
     "ChatCompletionContentPartInputAudioParam",
@@ -155,6 +163,9 @@ __all__ = (
     "ChatSnapshot",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
+    "Citation",
+    "Claim",
+    "ClaimType",
     "ClarifySpecInput",
     "ClarifySpecOutput",
     "ClientChatMessage",
@@ -225,6 +236,7 @@ __all__ = (
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
+    "Source",
     "Spec",
     "SpecificationInput",
     "SpecificationInputSpecFieldCurrentValues",
