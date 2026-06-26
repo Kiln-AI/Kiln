@@ -20,12 +20,15 @@
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import EvalConfigInstruction from "./eval_config_instruction.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import {
     eval_config_to_ui_name,
     eval_config_to_detailed_ui_name,
   } from "$lib/utils/formatters"
+  import {
+    evalConfigTypeLabel,
+    evalConfigDetailsSummary,
+  } from "$lib/utils/eval_types/eval_config_summary"
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
@@ -709,7 +712,8 @@
                   <div class="font-normal">How task output is evaluated</div>
                 </th>
                 <th class="text-center">Status</th>
-                <th> Eval Instructions </th>
+                <th>Eval Type</th>
+                <th> Eval Details </th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
@@ -796,9 +800,16 @@
                     {/if}
                   </td>
                   <td>
+                    <div class="text-sm text-gray-500">
+                      {evalConfigTypeLabel(eval_config)}
+                    </div>
+                  </td>
+                  <td>
                     <div class="max-w-[600px] min-w-[200px]">
                       <div class="max-h-[140px] overflow-y-hidden relative">
-                        <EvalConfigInstruction {eval_config} />
+                        <div class="text-sm whitespace-pre-line">
+                          {evalConfigDetailsSummary(eval_config)}
+                        </div>
                         <div class="absolute bottom-0 left-0 w-full">
                           <div
                             class="h-36 bg-gradient-to-t from-white to-transparent"
@@ -900,7 +911,7 @@
 
 <Dialog
   bind:this={eval_config_instructions_dialog}
-  title="Instructions for Judge '{displayed_eval_config?.name}'"
+  title="Details for Judge '{displayed_eval_config?.name}'"
   action_buttons={[
     {
       label: "Close",
@@ -908,7 +919,11 @@
     },
   ]}
 >
-  <EvalConfigInstruction bind:eval_config={displayed_eval_config} />
+  {#if displayed_eval_config}
+    <div class="text-sm whitespace-pre-line">
+      {evalConfigDetailsSummary(displayed_eval_config)}
+    </div>
+  {/if}
 </Dialog>
 
 <Dialog
