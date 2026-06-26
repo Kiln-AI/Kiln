@@ -738,7 +738,7 @@ describe("Phase 7: reference_key validation path", () => {
 })
 
 describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
-  it("ExactMatch has 'Output Value to Compare' label with Jinja tooltip", () => {
+  it("ExactMatch has 'Output Value' label with Jinja tooltip", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -754,15 +754,13 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
       '[data-testid="form-element-exact_match_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe(
-      "Output Value to Compare",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Output Value")
     expect(formElement?.getAttribute("data-info-description")).toContain(
       "Jinja",
     )
   })
 
-  it("PatternMatch has 'Output Value to Compare' label with Jinja tooltip", () => {
+  it("PatternMatch has 'Output Value' label with Jinja tooltip", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -777,15 +775,13 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
       '[data-testid="form-element-pattern_match_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe(
-      "Output Value to Compare",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Output Value")
     expect(formElement?.getAttribute("data-info-description")).toContain(
       "Jinja",
     )
   })
 
-  it("Contains has 'Output Value to Compare' label with Jinja tooltip", () => {
+  it("Contains has 'Output Value' label with Jinja tooltip", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -802,9 +798,7 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
       '[data-testid="form-element-contains_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe(
-      "Output Value to Compare",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Output Value")
     expect(formElement?.getAttribute("data-info-description")).toContain(
       "Jinja",
     )
@@ -1092,7 +1086,7 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
     ).toBeNull()
   })
 
-  it("has 'Output Value to Compare' label with Jinja tooltip", () => {
+  it("has 'Output Value' label with Jinja tooltip", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -1108,12 +1102,30 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
       '[data-testid="form-element-set_check_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe(
-      "Output Value to Compare",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Output Value")
     expect(formElement?.getAttribute("data-info-description")).toContain(
       "Jinja",
     )
+  })
+
+  it("Output Value description ends with 'Must be an array.'", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-set_check_value_expression"]',
+    )
+    const desc = formElement?.getAttribute("data-description") || ""
+    expect(desc).toContain("Leave blank to compare entire output")
+    expect(desc).toContain("Must be an array.")
   })
 
   it("renders all three comparison mode options", () => {
@@ -1487,8 +1499,8 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
 // UI polish tests: hidden duplicate labels, indent wrappers, moved controls,
 // placeholders, renamed sections, and regex tooltip content.
 
-describe("UI polish: hidden duplicate labels", () => {
-  it("OutputValueField hides inner FormElement label (section title is the sole heading)", () => {
+describe("Standard controls: visible labels (no hidden labels)", () => {
+  it("OutputValueField shows visible 'Output Value' label", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1503,10 +1515,11 @@ describe("UI polish: hidden duplicate labels", () => {
     const valueExprField = container.querySelector(
       '[data-testid="form-element-exact_match_value_expression"]',
     )
-    expect(valueExprField?.getAttribute("data-hide-label")).toBe("true")
+    expect(valueExprField?.getAttribute("data-hide-label")).toBe("false")
+    expect(valueExprField?.getAttribute("data-label")).toBe("Output Value")
   })
 
-  it("ExactMatch expected_value field hides its label (section title carries it)", () => {
+  it("ExactMatch expected_value field shows visible 'Value' label", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1521,10 +1534,11 @@ describe("UI polish: hidden duplicate labels", () => {
     const field = container.querySelector(
       '[data-testid="form-element-exact_match_expected_value"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-label")).toBe("Value")
   })
 
-  it("ExactMatch reference_key field hides its label", () => {
+  it("ExactMatch reference_key field shows visible 'Reference Data Field' label", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1539,10 +1553,11 @@ describe("UI polish: hidden duplicate labels", () => {
     const field = container.querySelector(
       '[data-testid="form-element-exact_match_reference_key"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-label")).toBe("Reference Data Field")
   })
 
-  it("PatternMatch regex field hides its label (section title is 'Regular Expression')", () => {
+  it("PatternMatch regex field shows visible 'Regular Expression' label", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -1556,10 +1571,11 @@ describe("UI polish: hidden duplicate labels", () => {
     const field = container.querySelector(
       '[data-testid="form-element-pattern_match_pattern"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-label")).toBe("Regular Expression")
   })
 
-  it("Contains substring field hides its label", () => {
+  it("Contains substring field shows visible 'Value' label", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -1575,10 +1591,11 @@ describe("UI polish: hidden duplicate labels", () => {
     const field = container.querySelector(
       '[data-testid="form-element-contains_substring"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-label")).toBe("Value")
   })
 
-  it("Contains reference_key field hides its label", () => {
+  it("Contains reference_key field shows visible 'Reference Data Field' label", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -1594,7 +1611,27 @@ describe("UI polish: hidden duplicate labels", () => {
     const field = container.querySelector(
       '[data-testid="form-element-contains_reference_key"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-label")).toBe("Reference Data Field")
+  })
+
+  it("SetCheck reference_key field shows visible 'Reference Data Field' label", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-set_check_reference_key"]',
+    )
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-label")).toBe("Reference Data Field")
   })
 })
 
@@ -1706,7 +1743,7 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
     expect(caseSensitive).toBeTruthy()
   })
 
-  it("ExactMatch case-sensitive is NOT inside OutputValueField section", () => {
+  it("ExactMatch case-sensitive is separate from OutputValueField", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1718,13 +1755,13 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
         },
       },
     })
-    const outputSection = container.querySelector(
-      '[data-testid="output-value-section"]',
+    const optionsSection = container.querySelector(
+      '[data-testid="exact-match-options-section"]',
     )
-    const caseSensitive = outputSection?.querySelector(
+    const caseSensitive = optionsSection?.querySelector(
       '[data-testid="form-element-exact_match_case_sensitive"]',
     )
-    expect(caseSensitive).toBeNull()
+    expect(caseSensitive).toBeTruthy()
   })
 
   it("Contains has case-sensitive in its own Comparison Options section", () => {
@@ -1750,7 +1787,7 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
     expect(caseSensitive).toBeTruthy()
   })
 
-  it("Contains case-sensitive is NOT inside OutputValueField section", () => {
+  it("Contains case-sensitive is separate from OutputValueField", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -1763,13 +1800,13 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
         },
       },
     })
-    const outputSection = container.querySelector(
-      '[data-testid="output-value-section"]',
+    const optionsSection = container.querySelector(
+      '[data-testid="contains-options-section"]',
     )
-    const caseSensitive = outputSection?.querySelector(
+    const caseSensitive = optionsSection?.querySelector(
       '[data-testid="form-element-contains_case_sensitive"]',
     )
-    expect(caseSensitive).toBeNull()
+    expect(caseSensitive).toBeTruthy()
   })
 })
 
@@ -1868,8 +1905,8 @@ describe("UI polish: placeholders on inputs", () => {
   })
 })
 
-describe("UI polish: PatternMatch section renamed to Regular Expression", () => {
-  it("Pattern section has title 'Regular Expression' (not 'Pattern')", () => {
+describe("Standard controls: PatternMatch uses single FormElement with 'Regular Expression' label", () => {
+  it("Pattern FormElement has label 'Regular Expression' (no duplicate section title)", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -1884,8 +1921,12 @@ describe("UI polish: PatternMatch section renamed to Regular Expression", () => 
       '[data-testid="pattern-match-pattern-section"]',
     )
     expect(section).toBeTruthy()
+    const formElement = section?.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    expect(formElement?.getAttribute("data-label")).toBe("Regular Expression")
     const heading = section?.querySelector("h3")
-    expect(heading?.textContent).toBe("Regular Expression")
+    expect(heading).toBeNull()
   })
 })
 
@@ -1911,8 +1952,8 @@ describe("UI polish: regex tooltip is educational", () => {
   })
 })
 
-describe("UI polish: reference key info tooltips", () => {
-  it("ExactMatch reference_key has info_description about reference data", () => {
+describe("Standard controls: reference key info tooltips", () => {
+  it("ExactMatch reference_key has info_description about Jinja extractor syntax", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1928,11 +1969,11 @@ describe("UI polish: reference key info tooltips", () => {
       '[data-testid="form-element-exact_match_reference_key"]',
     )
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("Reference data")
-    expect(tooltip).toContain("ground-truth")
+    expect(tooltip).toContain("reference data object")
+    expect(tooltip).toContain("Jinja extractor syntax")
   })
 
-  it("Contains reference_key has info_description about reference data", () => {
+  it("Contains reference_key has info_description about Jinja extractor syntax", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -1949,13 +1990,36 @@ describe("UI polish: reference key info tooltips", () => {
       '[data-testid="form-element-contains_reference_key"]',
     )
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("Reference data")
-    expect(tooltip).toContain("ground-truth")
+    expect(tooltip).toContain("reference data object")
+    expect(tooltip).toContain("Jinja extractor syntax")
+  })
+
+  it("SetCheck reference_key has description mentioning array and Jinja tooltip", () => {
+    const { container } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "ref_key",
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-set_check_reference_key"]',
+    )
+    const desc = field?.getAttribute("data-description") || ""
+    expect(desc).toContain("document.tags")
+    expect(desc).toContain("Must be an array.")
+    const tooltip = field?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("reference data object")
+    expect(tooltip).toContain("Jinja extractor syntax")
   })
 })
 
-describe("UI polish: OutputValueField section structure", () => {
-  it("OutputValueField renders with section testid and subtitle", () => {
+describe("Standard controls: OutputValueField is a plain FormElement", () => {
+  it("OutputValueField renders as a standard FormElement without FormSection wrapper", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1970,14 +2034,17 @@ describe("UI polish: OutputValueField section structure", () => {
     const section = container.querySelector(
       '[data-testid="output-value-section"]',
     )
-    expect(section).toBeTruthy()
-    const heading = section?.querySelector("h3")
-    expect(heading?.textContent).toBe("Output Extraction")
+    expect(section).toBeNull()
+    const formElement = container.querySelector(
+      '[data-testid="form-element-exact_match_value_expression"]',
+    )
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-label")).toBe("Output Value")
   })
 })
 
-describe("UI polish: hide_label preserves description, info_description, and error indicators", () => {
-  it("OutputValueField description and Jinja tooltip survive hide_label", () => {
+describe("Standard controls: description and tooltip on visible-label fields", () => {
+  it("OutputValueField has description and Jinja tooltip with visible label", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1992,14 +2059,12 @@ describe("UI polish: hide_label preserves description, info_description, and err
     const field = container.querySelector(
       '[data-testid="form-element-exact_match_value_expression"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
-    expect(field?.getAttribute("data-description")).toContain(
-      "Jinja expression",
-    )
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-description")).toContain("user.status")
     expect(field?.getAttribute("data-info-description")).toContain("Jinja")
   })
 
-  it("PatternMatch regex field description and tooltip survive hide_label", () => {
+  it("PatternMatch regex field has description and tooltip with visible label", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -2013,14 +2078,14 @@ describe("UI polish: hide_label preserves description, info_description, and err
     const field = container.querySelector(
       '[data-testid="form-element-pattern_match_pattern"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
     expect(field?.getAttribute("data-description")).toContain("pattern")
     expect(field?.getAttribute("data-info-description")).toContain(
       "regular expression",
     )
   })
 
-  it("ExactMatch reference_key info tooltip survives hide_label", () => {
+  it("ExactMatch reference_key has description and Jinja tooltip with visible label", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -2035,13 +2100,16 @@ describe("UI polish: hide_label preserves description, info_description, and err
     const field = container.querySelector(
       '[data-testid="form-element-exact_match_reference_key"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-description")).toContain(
+      "user.expected_status",
+    )
     expect(field?.getAttribute("data-info-description")).toContain(
-      "Reference data",
+      "reference data object",
     )
   })
 
-  it("Contains reference_key info tooltip survives hide_label", () => {
+  it("Contains reference_key has description and Jinja tooltip with visible label", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -2057,9 +2125,12 @@ describe("UI polish: hide_label preserves description, info_description, and err
     const field = container.querySelector(
       '[data-testid="form-element-contains_reference_key"]',
     )
-    expect(field?.getAttribute("data-hide-label")).toBe("true")
+    expect(field?.getAttribute("data-hide-label")).toBe("false")
+    expect(field?.getAttribute("data-description")).toContain(
+      "user.expected_status",
+    )
     expect(field?.getAttribute("data-info-description")).toContain(
-      "Reference data",
+      "reference data object",
     )
   })
 })
@@ -2115,7 +2186,7 @@ describe("SetCheckForm UI polish", () => {
     ).toBeGreaterThan(0)
   })
 
-  it("reference key field has info_description tooltip", () => {
+  it("reference key field has info_description tooltip about Jinja extractor", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -2131,8 +2202,8 @@ describe("SetCheckForm UI polish", () => {
       '[data-testid="form-element-set_check_reference_key"]',
     )
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("Reference data")
-    expect(tooltip).toContain("ground-truth")
+    expect(tooltip).toContain("reference data object")
+    expect(tooltip).toContain("Jinja extractor syntax")
   })
 
   it("conditional tag input is wrapped in indent container", () => {

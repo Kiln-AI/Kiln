@@ -67,9 +67,8 @@
       <div class="ml-4 border-l border-base-300 pl-4">
         <FormElement
           id="contains_substring"
-          label="Substring"
+          label="Value"
           inputType="input"
-          hide_label={true}
           placeholder="e.g. success"
           bind:value={properties.substring}
         />
@@ -78,11 +77,11 @@
       <div class="ml-4 border-l border-base-300 pl-4">
         <FormElement
           id="contains_reference_key"
-          label="Reference Key"
+          label="Reference Data Field"
           inputType="input"
-          hide_label={true}
           placeholder="e.g. expected_keyword"
-          info_description="Reference data is the ground-truth data attached to each dataset example. Enter the key name whose value should be used as the expected substring."
+          description="A field in the reference data to compare output to, example: `user.expected_status`"
+          info_description="Extract a value from reference data object. For example, use `user.email` to extract the email field from a JSON response. Uses Jinja extractor syntax."
           bind:value={properties.reference_key}
         />
       </div>

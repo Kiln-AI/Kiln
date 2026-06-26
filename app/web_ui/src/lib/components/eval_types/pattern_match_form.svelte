@@ -54,25 +54,19 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection
-    title="Regular Expression"
-    testid="pattern-match-pattern-section"
-  >
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div on:blur={on_pattern_blur}>
-      <FormElement
-        id="pattern_match_pattern"
-        label="Regular Expression"
-        description="The pattern to test against the output."
-        info_description="A regular expression (regex) is a sequence of characters that defines a search pattern. For example, ^yes$ matches only the exact string 'yes', while \\d+ matches one or more digits."
-        inputType="input"
-        hide_label={true}
-        placeholder="e.g. ^(yes|no)$"
-        bind:value={properties.pattern}
-        error_message={regex_error}
-      />
-    </div>
-  </FormSection>
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div on:blur={on_pattern_blur} data-testid="pattern-match-pattern-section">
+    <FormElement
+      id="pattern_match_pattern"
+      label="Regular Expression"
+      description="The pattern to test against the output."
+      info_description="A regular expression (regex) is a sequence of characters that defines a search pattern. For example, ^yes$ matches only the exact string 'yes', while \\d+ matches one or more digits."
+      inputType="input"
+      placeholder="e.g. ^(yes|no)$"
+      bind:value={properties.pattern}
+      error_message={regex_error}
+    />
+  </div>
 
   <FormSection title="Match Mode" testid="pattern-match-mode-section">
     <FormElement

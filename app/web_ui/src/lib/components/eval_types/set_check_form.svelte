@@ -99,10 +99,10 @@
       <div class="ml-4 border-l border-base-300 pl-4">
         <FormElement
           id="set_check_reference_key"
-          label="Reference Key"
-          info_description="Reference data is the ground-truth data attached to each dataset example. Enter the key name whose value should be used as the expected values."
+          label="Reference Data Field"
+          description="A field in the reference data to compare output to, example: `document.tags`. Must be an array."
+          info_description="Extract a value from reference data object. For example, use `user.email` to extract the email field from a JSON response. Uses Jinja extractor syntax."
           inputType="input"
-          hide_label={true}
           placeholder="e.g. expected_values"
           bind:value={properties.reference_key}
         />
@@ -142,5 +142,6 @@
   <OutputValueField
     id_prefix="set_check"
     bind:value={properties.value_expression}
+    extra_description="Must be an array."
   />
 </div>

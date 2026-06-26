@@ -68,7 +68,7 @@ describe("FormSection", () => {
 })
 
 describe("OutputValueField", () => {
-  it("renders with 'Output Value to Compare' label", () => {
+  it("renders with 'Output Value' label", () => {
     const { container } = render(OutputValueField, {
       props: { id_prefix: "exact_match", value: null },
     })
@@ -76,9 +76,7 @@ describe("OutputValueField", () => {
       '[data-testid="form-element-exact_match_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe(
-      "Output Value to Compare",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Output Value")
   })
 
   it("renders Jinja tooltip text", () => {
@@ -93,49 +91,52 @@ describe("OutputValueField", () => {
     )
   })
 
-  it("renders section title 'Output Extraction'", () => {
+  it("tooltip says 'the model output' (not 'reference data')", () => {
+    const { container } = render(OutputValueField, {
+      props: { id_prefix: "test", value: null },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    expect(formElement?.getAttribute("data-info-description")).toContain(
+      "the model output",
+    )
+  })
+
+  it("is a standard FormElement without FormSection wrapper", () => {
     const { container } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
     const section = container.querySelector(
       '[data-testid="output-value-section"]',
     )
-    expect(section).toBeTruthy()
-    const heading = section?.querySelector("h3")
-    expect(heading?.textContent).toBe("Output Extraction")
+    expect(section).toBeNull()
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    expect(formElement).toBeTruthy()
   })
 
-  it("renders description text about Jinja expressions", () => {
+  it("label is visible (hide_label is false)", () => {
     const { container } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
     const formElement = container.querySelector(
       '[data-testid="form-element-test_value_expression"]',
     )
-    expect(formElement?.getAttribute("data-description")).toContain(
-      "Jinja expression",
-    )
+    expect(formElement?.getAttribute("data-hide-label")).toBe("false")
   })
 
-  it("hides the inner FormElement label (section title is sole heading)", () => {
+  it("renders description about output field extraction", () => {
     const { container } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
     const formElement = container.querySelector(
       '[data-testid="form-element-test_value_expression"]',
     )
-    expect(formElement?.getAttribute("data-hide-label")).toBe("true")
-  })
-
-  it("renders subtitle about extracting fields", () => {
-    const { container } = render(OutputValueField, {
-      props: { id_prefix: "test", value: null },
-    })
-    const subtitle = container.querySelector(
-      '[data-testid="form-section-subtitle"]',
-    )
-    expect(subtitle).toBeTruthy()
-    expect(subtitle?.textContent).toContain("extract")
+    const desc = formElement?.getAttribute("data-description") || ""
+    expect(desc).toContain("user.status")
+    expect(desc).toContain("Leave blank to compare entire output")
   })
 
   it("renders placeholder on value expression input", () => {
@@ -148,5 +149,32 @@ describe("OutputValueField", () => {
     expect(formElement?.getAttribute("data-placeholder")).toBe(
       "e.g. result.answer",
     )
+  })
+
+  it("appends extra_description when provided", () => {
+    const { container } = render(OutputValueField, {
+      props: {
+        id_prefix: "test",
+        value: null,
+        extra_description: "Must be an array.",
+      },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    const desc = formElement?.getAttribute("data-description") || ""
+    expect(desc).toContain("Leave blank to compare entire output")
+    expect(desc).toContain("Must be an array.")
+  })
+
+  it("does not append extra text when extra_description is empty", () => {
+    const { container } = render(OutputValueField, {
+      props: { id_prefix: "test", value: null },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    const desc = formElement?.getAttribute("data-description") || ""
+    expect(desc).not.toContain("Must be an array.")
   })
 })
