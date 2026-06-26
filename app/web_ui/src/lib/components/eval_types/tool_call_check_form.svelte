@@ -4,6 +4,7 @@
   import FormList from "$lib/utils/form_list.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import FormSection from "./form_parts/form_section.svelte"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
 
   type ToolCallSpec = components["schemas"]["ToolCallSpec"]
 
@@ -113,7 +114,8 @@
           <FormElement
             id="tool_name_{item_index}"
             label="Tool Name"
-            description="The name of the tool that should be called."
+            description="The exact name of the tool that should be called."
+            info_description="Get the tool name from the Tools tab of Kiln. The name must match exactly."
             inputType="input"
             bind:value={properties.expected_tools[item_index].tool_name}
           />
@@ -124,13 +126,13 @@
             open={(arg_rows[item_index] ?? []).length > 0}
           >
             {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
-              <div class="flex gap-2 items-end">
+              <div class="flex gap-2 items-center">
                 <div class="flex-1">
                   <FormElement
                     id="arg_name_{item_index}_{arg_index}"
                     label={arg_index === 0 ? "Arg Name" : ""}
                     inputType="input"
-                    placeholder="arg name"
+                    placeholder="e.g. query"
                     bind:value={arg_row.name}
                   />
                 </div>
@@ -160,11 +162,11 @@
                   />
                 </div>
                 <button
-                  class="link text-xs text-gray-500"
+                  class="btn btn-ghost btn-sm btn-circle text-gray-500 hover:text-gray-700"
                   on:click={() => remove_arg(item_index, arg_index)}
-                  title="Remove argument"
+                  aria-label="Remove argument"
                 >
-                  remove
+                  <span class="h-4 w-4 block"><CloseIcon /></span>
                 </button>
               </div>
             {/each}

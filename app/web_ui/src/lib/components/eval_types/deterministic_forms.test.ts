@@ -2468,6 +2468,141 @@ describe("ToolCallCheckForm UI polish", () => {
   })
 })
 
+describe("ToolCallCheckForm arg remove icon button", () => {
+  it("renders a remove button with aria-label 'Remove argument'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: {
+                query: { value: "test", match_mode: "exact" as const },
+              },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const removeBtn = container.querySelector(
+      'button[aria-label="Remove argument"]',
+    )
+    expect(removeBtn).toBeTruthy()
+    expect(removeBtn?.querySelector("svg")).toBeTruthy()
+  })
+
+  it("clicking the remove icon button removes the arg row", async () => {
+    const { container, component } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: {
+                query: { value: "test", match_mode: "exact" as const },
+                limit: { value: 10, match_mode: "exact" as const },
+              },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    // Should have two arg rows initially
+    const removeBtns = container.querySelectorAll(
+      'button[aria-label="Remove argument"]',
+    )
+    expect(removeBtns).toHaveLength(2)
+
+    // Click the first remove button
+    await fireEvent.click(removeBtns[0])
+    await tick()
+
+    // Should now have one arg row
+    const remainingBtns = container.querySelectorAll(
+      'button[aria-label="Remove argument"]',
+    )
+    expect(remainingBtns).toHaveLength(1)
+
+    // getProperties should reflect the removal
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    const argKeys = Object.keys(props.expected_tools[0].expected_args || {})
+    expect(argKeys).toHaveLength(1)
+  })
+})
+
+describe("ToolCallCheckForm arg-name placeholder", () => {
+  it("arg name input has example placeholder 'e.g. query'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: {
+                query: { value: "test", match_mode: "exact" as const },
+              },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const argNameField = container.querySelector(
+      '[data-testid="form-element-arg_name_0_0"]',
+    )
+    expect(argNameField?.getAttribute("data-placeholder")).toBe("e.g. query")
+  })
+})
+
+describe("ToolCallCheckForm Tool Name field copy", () => {
+  it("Tool Name description says 'exact name'", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const toolNameField = container.querySelector(
+      '[data-testid="form-element-tool_name_0"]',
+    )
+    expect(toolNameField?.getAttribute("data-description")).toBe(
+      "The exact name of the tool that should be called.",
+    )
+  })
+
+  it("Tool Name has info_description tooltip about getting tool name from Tools tab", () => {
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "search", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+    const toolNameField = container.querySelector(
+      '[data-testid="form-element-tool_name_0"]',
+    )
+    const tooltip = toolNameField?.getAttribute("data-info-description") || ""
+    expect(tooltip).toContain("Tools tab")
+    expect(tooltip).toContain("match exactly")
+  })
+})
+
 describe("StepCountCheckForm UI polish", () => {
   it("min and max inputs are in a side-by-side flex row", () => {
     const { container } = render(StepCountCheckForm, {
