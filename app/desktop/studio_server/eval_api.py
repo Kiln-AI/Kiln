@@ -237,6 +237,7 @@ class TestV2EvalResponse(BaseModel):
     skipped_reason: str | None = None
     skipped_detail: str | None = None
     score_range_errors: list[str] | None = None
+    intermediate_outputs: dict[str, str] | None = None
 
 
 class CodeEvalTrustResponse(BaseModel):
@@ -1073,23 +1074,24 @@ def connect_evals_api(app: FastAPI):
                 parent=eval_obj,
             )
             adapter = v2_eval_adapter_from_config(transient_config)
-            scores, skipped_reason, skipped_detail = await adapter.evaluate(
-                request.eval_input
-            )
+            result = await adapter.evaluate(request.eval_input)
 
             score_range_errors: list[str] | None = None
-            if skipped_reason is None and scores:
+            if result.skipped_reason is None and result.scores:
                 problems = validate_scores_against_output_scores(
-                    scores, eval_obj.output_scores
+                    result.scores, eval_obj.output_scores
                 )
                 if problems:
                     score_range_errors = problems
 
             return TestV2EvalResponse(
-                scores=scores,
-                skipped_reason=skipped_reason.value if skipped_reason else None,
-                skipped_detail=skipped_detail,
+                scores=result.scores,
+                skipped_reason=result.skipped_reason.value
+                if result.skipped_reason
+                else None,
+                skipped_detail=result.skipped_detail,
                 score_range_errors=score_range_errors,
+                intermediate_outputs=result.intermediate_outputs,
             )
         except (ValueError, NotImplementedError) as e:
             raise HTTPException(status_code=400, detail=str(e))

@@ -16,6 +16,7 @@ from kiln_ai.datamodel.eval import (
     EvalScores,
     EvalTaskInput,
     SkippedReason,
+    V2EvalResult,
 )
 
 _trust_lock = Lock()
@@ -51,18 +52,15 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         super().__init__(eval_config, run_config, skills)
         assert isinstance(self.properties, CodeEvalProperties)
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
 
         project_path = self._resolve_project_path()
         if project_path is None or not is_code_eval_trusted(project_path):
-            return (
-                {},
-                SkippedReason.code_eval_not_trusted,
-                "Project not trusted for code eval execution.",
+            return V2EvalResult(
+                skipped_reason=SkippedReason.code_eval_not_trusted,
+                skipped_detail="Project not trusted for code eval execution.",
             )
 
         inputs: dict[str, Any] = {
@@ -91,7 +89,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             )
 
         scores = self._validate_scores(raw_scores)
-        return scores, None, None
+        return V2EvalResult(scores=scores)
 
     def _resolve_project_path(self) -> str | None:
         try:

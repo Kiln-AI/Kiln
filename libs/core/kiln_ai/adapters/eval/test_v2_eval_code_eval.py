@@ -113,10 +113,10 @@ class TestCodeEvalAdapterEvaluate:
     async def test_untrusted_project_skips(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        scores, reason, detail = await adapter.evaluate(_inp())
-        assert scores == {}
-        assert reason == SkippedReason.code_eval_not_trusted
-        assert detail is not None
+        result = await adapter.evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.code_eval_not_trusted
+        assert result.skipped_detail is not None
 
     @pytest.mark.asyncio
     async def test_successful_evaluation(self):
@@ -126,11 +126,11 @@ class TestCodeEvalAdapterEvaluate:
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 0.95}}
-            scores, reason, detail = await adapter.evaluate(_inp())
+            result = await adapter.evaluate(_inp())
 
-        assert scores == {"accuracy": 0.95}
-        assert reason is None
-        assert detail is None
+        assert result.scores == {"accuracy": 0.95}
+        assert result.skipped_reason is None
+        assert result.skipped_detail is None
 
     @pytest.mark.asyncio
     async def test_timeout_raises_runtime_error(self):
@@ -213,11 +213,11 @@ class TestScoreValidation:
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 1}}
-            scores, reason, _ = await adapter.evaluate(_inp())
+            result = await adapter.evaluate(_inp())
 
-        assert scores == {"accuracy": 1.0}
-        assert isinstance(scores["accuracy"], float)
-        assert reason is None
+        assert result.scores == {"accuracy": 1.0}
+        assert isinstance(result.scores["accuracy"], float)
+        assert result.skipped_reason is None
 
     @pytest.mark.asyncio
     async def test_key_mismatch_raises(self):

@@ -12,9 +12,9 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalOutputScore,
-    EvalScores,
     EvalTaskInput,
     SkippedReason,
+    V2EvalResult,
 )
 
 
@@ -24,19 +24,18 @@ from kiln_ai.datamodel.eval import (
 class StubV2Eval(BaseV2EvalBridge):
     """Stub that returns a passing score."""
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
-        return {"accuracy": 1.0}, None, None
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
+        return V2EvalResult(scores={"accuracy": 1.0})
 
 
 class SkippingStubV2Eval(BaseV2EvalBridge):
     """Stub that returns a skip."""
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
-        return {}, SkippedReason.extraction_failed, "test skip detail"
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
+        return V2EvalResult(
+            skipped_reason=SkippedReason.extraction_failed,
+            skipped_detail="test skip detail",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -3,10 +3,10 @@ from typing import Any
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import build_binary_scores
 from kiln_ai.datamodel.eval import (
-    EvalScores,
     EvalTaskInput,
     SkippedReason,
     StepCountCheckProperties,
+    V2EvalResult,
 )
 
 
@@ -19,17 +19,14 @@ class StepCountCheckEval(BaseV2EvalBridge):
     - "turns": number of distinct user/assistant turn pairs (count of user messages)
     """
 
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]:
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, StepCountCheckProperties)
 
         if eval_input.trace is None:
-            return (
-                {},
-                SkippedReason.missing_trace,
-                "step_count_check requires a trace",
+            return V2EvalResult(
+                skipped_reason=SkippedReason.missing_trace,
+                skipped_detail="step_count_check requires a trace",
             )
 
         count = self._count(eval_input.trace, props.count_type)
@@ -40,7 +37,9 @@ class StepCountCheckEval(BaseV2EvalBridge):
         if props.max_count is not None and count > props.max_count:
             passed = False
 
-        return build_binary_scores(self._output_scores, passed), None, None
+        return V2EvalResult(
+            scores=build_binary_scores(self._output_scores, passed),
+        )
 
     @staticmethod
     def _count(trace: list[dict[str, Any]], count_type: str) -> int:

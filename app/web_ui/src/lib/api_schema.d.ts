@@ -9133,6 +9133,7 @@ export interface components {
             reference_key?: string | null;
             /**
              * Mode
+             * @default subset
              * @enum {string}
              */
             mode: "subset" | "superset" | "equal";
@@ -10283,6 +10284,10 @@ export interface components {
             skipped_detail?: string | null;
             /** Score Range Errors */
             score_range_errors?: string[] | null;
+            /** Intermediate Outputs */
+            intermediate_outputs?: {
+                [key: string]: string;
+            } | null;
         };
         /**
          * TestWriteAccessRequest

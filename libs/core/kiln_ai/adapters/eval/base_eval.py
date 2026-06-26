@@ -16,7 +16,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     LlmJudgeProperties,
     SingleTurnEvalInputData,
-    SkippedReason,
+    V2EvalResult,
 )
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties, TaskOutputRatingType, TaskRun
@@ -327,17 +327,15 @@ class BaseV2EvalBridge(BaseEval):
         self._output_scores = self.eval.output_scores
 
     @abstractmethod
-    async def evaluate(
-        self, eval_input: EvalTaskInput
-    ) -> tuple[EvalScores, SkippedReason | None, str | None]: ...
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult: ...
 
     async def run_eval(
         self, task_run: TaskRun, eval_job_item: TaskRun | None = None
     ) -> tuple[EvalScores, Dict[str, str] | None]:
         eval_task_input = EvalTaskInput.from_task_run(task_run)
-        scores, skipped_reason, skipped_detail = await self.evaluate(eval_task_input)
-        if skipped_reason is not None:
+        result = await self.evaluate(eval_task_input)
+        if result.skipped_reason is not None:
             raise ValueError(
-                f"V2 eval was skipped ({skipped_reason}): {skipped_detail}"
+                f"V2 eval was skipped ({result.skipped_reason}): {result.skipped_detail}"
             )
-        return scores, None
+        return result.scores, result.intermediate_outputs
