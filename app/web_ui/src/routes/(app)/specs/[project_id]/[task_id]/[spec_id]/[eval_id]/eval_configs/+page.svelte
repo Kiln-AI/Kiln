@@ -20,7 +20,6 @@
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import EvalConfigInstruction from "./eval_config_instruction.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import {
     eval_config_to_ui_name,
@@ -29,6 +28,8 @@
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
+  import EvalConfigInstruction from "./eval_config_instruction.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -709,7 +710,7 @@
                   <div class="font-normal">How task output is evaluated</div>
                 </th>
                 <th class="text-center">Status</th>
-                <th> Eval Instructions </th>
+                <th>Eval Details</th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
@@ -797,27 +798,15 @@
                   </td>
                   <td>
                     <div class="max-w-[600px] min-w-[200px]">
-                      <div class="max-h-[140px] overflow-y-hidden relative">
+                      <ClampedText
+                        max_lines={5}
+                        on:see_all={() => {
+                          displayed_eval_config = eval_config
+                          eval_config_instructions_dialog?.show()
+                        }}
+                      >
                         <EvalConfigInstruction {eval_config} />
-                        <div class="absolute bottom-0 left-0 w-full">
-                          <div
-                            class="h-36 bg-gradient-to-t from-white to-transparent"
-                          ></div>
-                          <div
-                            class="text-center bg-white font-medium font-sm text-gray-500"
-                          >
-                            <button
-                              class="text-gray-500"
-                              on:click={() => {
-                                displayed_eval_config = eval_config
-                                eval_config_instructions_dialog?.show()
-                              }}
-                            >
-                              See all
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                      </ClampedText>
                     </div>
                   </td>
                   {#each evaluator.output_scores as output_score}
@@ -900,7 +889,7 @@
 
 <Dialog
   bind:this={eval_config_instructions_dialog}
-  title="Instructions for Judge '{displayed_eval_config?.name}'"
+  title="Details for Judge '{displayed_eval_config?.name}'"
   action_buttons={[
     {
       label: "Close",
@@ -908,7 +897,9 @@
     },
   ]}
 >
-  <EvalConfigInstruction bind:eval_config={displayed_eval_config} />
+  {#if displayed_eval_config}
+    <EvalConfigInstruction eval_config={displayed_eval_config} />
+  {/if}
 </Dialog>
 
 <Dialog

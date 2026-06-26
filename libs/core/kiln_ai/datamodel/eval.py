@@ -142,7 +142,7 @@ class SetCheckProperties(BaseModel):
     value_expression: str | None = None
     expected_set: list[str] | None = None
     reference_key: str | None = Field(default=None, min_length=1)
-    mode: Literal["subset", "superset", "equal"] = "subset"
+    mode: Literal["subset", "superset", "equal"]
 
     @model_validator(mode="after")
     def validate_value_source(self) -> Self:
@@ -260,6 +260,51 @@ V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = (
     StepCountCheckProperties,
     CodeEvalProperties,
 )
+
+
+def validate_scores_against_output_scores(
+    scores: EvalScores,
+    output_scores: list["EvalOutputScore"],
+) -> list[str]:
+    """Validate that *scores* fall within the expected range for each output score.
+
+    Returns a list of human-readable problem strings (empty list means all OK).
+    This is a pure function — it does NOT raise; callers decide how to surface errors.
+    """
+
+    def _is_numeric(v: object) -> bool:
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    problems: list[str] = []
+    for output_score in output_scores:
+        key = output_score.json_key()
+        if key not in scores:
+            continue
+        value = scores[key]
+
+        match output_score.type:
+            case TaskOutputRatingType.five_star:
+                if not _is_numeric(value) or value < 1.0 or value > 5.0:
+                    problems.append(
+                        f"Score {output_score.name} is a five_star rating and must be a number between 1.0 and 5.0 inclusive. Got: {value}"
+                    )
+            case TaskOutputRatingType.pass_fail:
+                if not _is_numeric(value) or value < 0.0 or value > 1.0:
+                    problems.append(
+                        f"Score {output_score.name} is a pass_fail rating and must be a number between 0.0 and 1.0 inclusive. Got: {value}"
+                    )
+            case TaskOutputRatingType.pass_fail_critical:
+                if not _is_numeric(value) or value < -1.0 or value > 1.0:
+                    problems.append(
+                        f"Score {output_score.name} is a pass_fail_critical rating and must be a number between -1.0 and 1.0 inclusive. Got: {value}"
+                    )
+            case TaskOutputRatingType.custom:
+                problems.append(
+                    f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
+                )
+            case _:
+                raise_exhaustive_enum_error(output_score.type)
+    return problems
 
 
 class SkippedReason(str, Enum):
@@ -566,44 +611,11 @@ class EvalRun(KilnParentedModel):
                 f"The scores produced by the evaluator must match the scores expected by the eval. Got: [{', '.join(self.scores.keys())}] and expected: [{', '.join(output_score_keys)}]"
             )
 
-        for output_score in eval.output_scores:
-            match output_score.type:
-                case TaskOutputRatingType.five_star:
-                    five_star_score = self.scores[output_score.json_key()]
-                    if (
-                        not isinstance(five_star_score, float)
-                        or five_star_score < 1.0
-                        or five_star_score > 5.0
-                    ):
-                        raise ValueError(
-                            f"Score {output_score.name} is a five_star rating and must be a float between 1.0 and 5.0 inclusive. Got: {five_star_score}"
-                        )
-                case TaskOutputRatingType.pass_fail:
-                    pass_fail_score = self.scores[output_score.json_key()]
-                    if (
-                        not isinstance(pass_fail_score, float)
-                        or pass_fail_score < 0.0
-                        or pass_fail_score > 1.0
-                    ):
-                        raise ValueError(
-                            f"Score {output_score.name} is a pass_fail rating and must be a float between 0.0 and 1.0 inclusive. Got: {pass_fail_score}"
-                        )
-                case TaskOutputRatingType.pass_fail_critical:
-                    pass_fail_critical_score = self.scores[output_score.json_key()]
-                    if (
-                        not isinstance(pass_fail_critical_score, float)
-                        or pass_fail_critical_score < -1.0
-                        or pass_fail_critical_score > 1.0
-                    ):
-                        raise ValueError(
-                            f"Score {output_score.name} is a pass_fail_critical rating and must be a float between -1.0 and 1.0 inclusive. Got: {pass_fail_critical_score}"
-                        )
-                case TaskOutputRatingType.custom:
-                    raise ValueError(
-                        f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
-                    )
-                case _:
-                    raise_exhaustive_enum_error(output_score.type)
+        problems = validate_scores_against_output_scores(
+            self.scores, eval.output_scores
+        )
+        if problems:
+            raise ValueError(problems[0])
         return self
 
     @model_validator(mode="after")

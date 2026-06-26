@@ -27,6 +27,7 @@ from kiln_ai.datamodel.eval import (
     ToolCallSpec,
     UserMessage,
     V2EvalResult,
+    validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
@@ -627,13 +628,13 @@ def test_eval_run_five_star_score_validation(valid_eval_config, valid_eval_run_d
     assert run.scores["accuracy"] == 4.5
 
     # Invalid scores
-    with pytest.raises(ValueError, match=r"must be a float between 1.0 and 5.0"):
+    with pytest.raises(ValueError, match=r"must be a number between 1.0 and 5.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 0.5}},
         )
 
-    with pytest.raises(ValueError, match=r"must be a float between 1.0 and 5.0"):
+    with pytest.raises(ValueError, match=r"must be a number between 1.0 and 5.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 5.5}},
@@ -667,13 +668,13 @@ def test_eval_run_pass_fail_score_validation(valid_eval_config, valid_eval_run_d
     assert run.scores["check"] == 0.0
 
     # Invalid scores
-    with pytest.raises(ValueError, match=r"must be a float between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a number between 0.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"check": -0.1}},
         )
 
-    with pytest.raises(ValueError, match=r"must be a float between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a number between 0.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"check": 1.1}},
@@ -710,13 +711,13 @@ def test_eval_run_pass_fail_critical_score_validation(
     assert run.scores["critical"] == -1.0
 
     # Invalid scores
-    with pytest.raises(ValueError, match=r"must be a float between -1.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a number between -1.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"critical": -1.1}},
         )
 
-    with pytest.raises(ValueError, match=r"must be a float between -1.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a number between -1.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"critical": 1.1}},
@@ -2164,13 +2165,26 @@ def test_set_check_xor_validator():
     with pytest.raises(
         ValueError, match="Exactly one of expected_set or reference_key"
     ):
-        SetCheckProperties(expected_set=["a"], reference_key="b")
+        SetCheckProperties(expected_set=["a"], reference_key="b", mode="equal")
     with pytest.raises(
         ValueError, match="Exactly one of expected_set or reference_key"
     ):
-        SetCheckProperties()
+        SetCheckProperties(mode="subset")
 
-    assert SetCheckProperties(expected_set=["x"]).expected_set == ["x"]
+    assert SetCheckProperties(expected_set=["x"], mode="equal").expected_set == ["x"]
+
+
+def test_set_check_mode_required():
+    """SetCheckProperties.mode is required; omitting it raises ValidationError."""
+    with pytest.raises(ValidationError):
+        SetCheckProperties(expected_set=["a"])
+
+
+def test_set_check_mode_explicit_values():
+    """Each mode value works when explicitly provided."""
+    for m in ("subset", "superset", "equal"):
+        props = SetCheckProperties(expected_set=["a"], mode=m)
+        assert props.mode == m
 
 
 def test_step_count_check_bounds():
@@ -2643,7 +2657,9 @@ class TestV2TemplateValidation:
         [
             PatternMatchProperties(pattern="ok", value_expression="final_message"),
             ContainsProperties(substring="yes", value_expression="final_message"),
-            SetCheckProperties(expected_set=["a"], value_expression="final_message"),
+            SetCheckProperties(
+                expected_set=["a"], value_expression="final_message", mode="equal"
+            ),
         ],
         ids=["pattern_match", "contains", "set_check"],
     )
@@ -2995,6 +3011,184 @@ class TestCodeEvalNoDeadSyntaxErrorCatch:
         assert "async def score" in props.code
 
 
+class TestValidateScoresAgainstOutputScores:
+    """Tests for the shared validate_scores_against_output_scores function."""
+
+    def test_five_star_in_range(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        assert (
+            validate_scores_against_output_scores({"quality": 3.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"quality": 1.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"quality": 5.0}, output_scores) == []
+        )
+
+    def test_five_star_out_of_range(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"quality": 6.0}, output_scores
+        )
+        assert len(problems) == 1
+        assert "five_star" in problems[0]
+        assert "6.0" in problems[0]
+
+        problems_low = validate_scores_against_output_scores(
+            {"quality": 0.5}, output_scores
+        )
+        assert len(problems_low) == 1
+        assert "five_star" in problems_low[0]
+
+    def test_pass_fail_in_range(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        assert (
+            validate_scores_against_output_scores({"check": 0.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"check": 1.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"check": 0.5}, output_scores) == []
+        )
+
+    def test_pass_fail_out_of_range(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        problems = validate_scores_against_output_scores({"check": 1.5}, output_scores)
+        assert len(problems) == 1
+        assert "pass_fail" in problems[0]
+
+        problems_neg = validate_scores_against_output_scores(
+            {"check": -0.1}, output_scores
+        )
+        assert len(problems_neg) == 1
+
+    def test_pass_fail_critical_in_range(self):
+        output_scores = [
+            EvalOutputScore(name="safety", type=TaskOutputRatingType.pass_fail_critical)
+        ]
+        assert (
+            validate_scores_against_output_scores({"safety": -1.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"safety": 0.0}, output_scores) == []
+        )
+        assert (
+            validate_scores_against_output_scores({"safety": 1.0}, output_scores) == []
+        )
+
+    def test_pass_fail_critical_out_of_range(self):
+        output_scores = [
+            EvalOutputScore(name="safety", type=TaskOutputRatingType.pass_fail_critical)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"safety": -1.5}, output_scores
+        )
+        assert len(problems) == 1
+        assert "pass_fail_critical" in problems[0]
+
+        problems_high = validate_scores_against_output_scores(
+            {"safety": 1.1}, output_scores
+        )
+        assert len(problems_high) == 1
+
+    def test_multiple_scores_multiple_errors(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star),
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail),
+        ]
+        problems = validate_scores_against_output_scores(
+            {"quality": 10.0, "check": 2.0}, output_scores
+        )
+        assert len(problems) == 2
+
+    def test_missing_score_key_ignored(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        assert (
+            validate_scores_against_output_scores({"other": 3.0}, output_scores) == []
+        )
+
+    def test_non_float_flagged(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"check": "not_a_float"}, output_scores
+        )
+        assert len(problems) == 1
+
+    def test_integer_scores_accepted(self):
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star),
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(
+                name="safety", type=TaskOutputRatingType.pass_fail_critical
+            ),
+        ]
+        assert (
+            validate_scores_against_output_scores({"quality": 3}, output_scores) == []
+        )
+        assert validate_scores_against_output_scores({"check": 1}, output_scores) == []
+        assert (
+            validate_scores_against_output_scores({"safety": -1}, output_scores) == []
+        )
+
+    def test_boolean_scores_rejected(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        problems = validate_scores_against_output_scores({"check": True}, output_scores)
+        assert len(problems) == 1
+
+    def test_empty_scores_returns_empty(self):
+        output_scores = [
+            EvalOutputScore(name="check", type=TaskOutputRatingType.pass_fail)
+        ]
+        assert validate_scores_against_output_scores({}, output_scores) == []
+
+    def test_eval_run_validate_scores_still_raises_on_out_of_range(self):
+        """Confirm EvalRun.validate_scores still raises ValueError for out-of-range scores,
+        ensuring the refactor to use validate_scores_against_output_scores is behavior-preserving."""
+        eval_obj = Eval(
+            name="Range Check Eval",
+            eval_set_filter_id="tag::test",
+            eval_configs_filter_id="tag::test2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star),
+            ],
+        )
+        eval_config = EvalConfig(
+            name="Config",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="hello"),
+            parent=eval_obj,
+        )
+        with pytest.raises(
+            ValueError,
+            match=r"five_star rating and must be a number between 1\.0 and 5\.0",
+        ):
+            EvalRun(
+                eval_input_id="inp1",
+                task_run_config_id="rc1",
+                eval_config_eval=False,
+                input="test",
+                output="test",
+                scores={"accuracy": 6.0},
+                parent=eval_config,
+            )
+
+
 # ---------------------------------------------------------------------------
 # V2EvalResult model tests
 # ---------------------------------------------------------------------------
@@ -3090,8 +3284,10 @@ class TestReferenceKeyMinLength:
 
     def test_set_check_empty_reference_key_rejected(self):
         with pytest.raises(ValidationError):
-            SetCheckProperties(reference_key="")
+            SetCheckProperties(reference_key="", mode="subset")
 
     def test_set_check_none_reference_key_accepted(self):
-        props = SetCheckProperties(expected_set=["a"], reference_key=None)
+        props = SetCheckProperties(
+            expected_set=["a"], reference_key=None, mode="subset"
+        )
         assert props.reference_key is None

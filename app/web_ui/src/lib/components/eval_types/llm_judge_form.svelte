@@ -1,48 +1,15 @@
 <script lang="ts">
-  import type {
-    Eval,
-    Task,
-    Spec,
-    EvalConfigType,
-    AvailableModels,
-  } from "$lib/types"
-  import FormElement from "$lib/utils/form_element.svelte"
-  import FormList from "$lib/utils/form_list.svelte"
+  import type { EvalConfigType, AvailableModels } from "$lib/types"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import Warning from "$lib/ui/warning.svelte"
   import { get_provider_image } from "$lib/ui/provider_image"
   import { available_models } from "$lib/stores"
-  import { get_eval_steps } from "$lib/utils/eval_types/eval_steps_utils"
 
-  export let evaluator: Eval
-  export let task: Task
-  export let spec: Spec | null = null
   export let task_id: string
 
   export let model_name: string | undefined = undefined
   export let provider_name: string | undefined = undefined
   export let combined_model_name: string | undefined = undefined
   export let selected_algo: EvalConfigType | undefined = undefined
-
-  let task_description: string = task.instruction
-  let eval_steps: string[] = get_eval_steps(
-    evaluator.template,
-    task,
-    evaluator,
-    spec,
-  )
-
-  export function getProperties(): Record<string, unknown> {
-    return {
-      eval_steps: eval_steps,
-      task_description: task_description,
-    }
-  }
-
-  export function getConfigType(): EvalConfigType | undefined {
-    return selected_algo
-  }
 
   const evaluator_algorithms: {
     id: EvalConfigType
@@ -163,6 +130,11 @@
     }
   }
 
+  $: available_algorithms = evaluator_algorithms.filter(
+    (algo) => !unsupported_algos[algo.id],
+  )
+  $: show_algorithm_section = model_name && available_algorithms.length > 1
+
   function select_evaluator(algo: EvalConfigType) {
     selected_algo = algo
   }
@@ -186,17 +158,17 @@
         {#each suggested_models as model}
           {@const provider_image = get_provider_image(model.provider_id)}
           <button
-            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[200px] aspect-[5/6] p-4 flex flex-col justify-center items-center text-center group cursor-pointer"
+            class="card card-bordered border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[120px] min-h-[120px] p-3 flex flex-col justify-center items-center text-center group cursor-pointer"
             on:click={() => {
               model_name = model.model_name
               provider_name = model.provider_name
               combined_model_name = `${model.provider_id}/${model.model_id}`
             }}
           >
-            <div class="flex flex-col gap-3 items-center">
+            <div class="flex flex-col gap-2 items-center">
               <img
                 src={provider_image}
-                class="w-10 h-10"
+                class="w-6 h-6"
                 alt={model.provider_name}
               />
               <div class="flex flex-col gap-1">
@@ -237,8 +209,8 @@
     />
   {/if}
 
-  {#if model_name}
-    <div>
+  {#if show_algorithm_section}
+    <div data-testid="algorithm-section">
       <div class="text-xl font-bold mb-2">Select Judge Algorithm</div>
 
       <div class="form-control flex flex-row gap-4 flex-wrap">
@@ -271,71 +243,5 @@
         {/each}
       </div>
     </div>
-  {/if}
-
-  {#if selected_algo && combined_model_name}
-    <div class="mt-2"></div>
-    <Collapse title="Advanced: Prompts and Instructions" small={false}>
-      <div>
-        <Warning
-          warning_message="Customizing the prompts and thinking steps used by the evaluator can improve the quality of the eval. We've pre-populated steps based on your task and eval."
-          warning_color="success"
-          warning_icon="info"
-        />
-      </div>
-      <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-        <div class="text-xl font-bold">Task Description</div>
-        <div class="text-xs text-gray-500">
-          <div>
-            Include a short description of what this task does. The evaluator
-            will use this for context. Keep it short, ideally one or two
-            sentences.
-          </div>
-        </div>
-      </div>
-      <FormElement
-        label=""
-        inputType="textarea"
-        id="task_description"
-        optional={true}
-        bind:value={task_description}
-      />
-
-      <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-        <div class="text-xl font-bold">Evaluation Instructions</div>
-        <div class="text-xs text-gray-500">
-          This is a list of instructions to be used by the evaluator's model. It
-          will 'think' through each of these steps in order before generating
-          final scores.
-        </div>
-        {#if evaluator?.template}
-          <div class="text-xs text-gray-500">
-            We've pre-populated the evaluation steps for you based on the
-            template you selected ({evaluator.template}). Feel free to edit.
-          </div>
-        {/if}
-        {#if spec}
-          <div class="text-xs text-gray-500">
-            We've pre-populated the evaluation steps for you based on the eval
-            you selected ({spec.name}). Feel free to edit.
-          </div>
-        {/if}
-      </div>
-
-      <FormList
-        bind:content={eval_steps}
-        content_label="Evaluation Step"
-        empty_content={""}
-        let:item_index
-      >
-        <FormElement
-          label=""
-          aria_label="Model Instructions"
-          inputType="textarea"
-          id="eval_step_{item_index}"
-          bind:value={eval_steps[item_index]}
-        />
-      </FormList>
-    </Collapse>
   {/if}
 </div>

@@ -37,14 +37,14 @@ export type V2EvalType =
   | "code_eval"
 
 export const ALL_V2_EVAL_TYPES: readonly V2EvalType[] = [
+  "llm_judge",
+  "code_eval",
+  "tool_call_check",
   "exact_match",
   "pattern_match",
   "contains",
   "set_check",
-  "tool_call_check",
   "step_count_check",
-  "llm_judge",
-  "code_eval",
 ] as const
 
 /**
@@ -56,11 +56,18 @@ export interface EvalTypeFormApi {
   validate?(): string | null
 }
 
+export type EvalTypeTag = { label: string; tone: "default" | "beta" }
+
 export interface V2EvalTypeMetadata {
   label: string
   description: string
-  icon: string
   requiresTrust: boolean
+  recommended?: boolean
+  tags: EvalTypeTag[]
+  pageTitle: string
+  pageSubtitle: string
+  explainer?: string
+  example?: string
   createFormComponent: ComponentType
   resultRendererComponent: ComponentType
 }
@@ -75,19 +82,30 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Exact Match",
         description:
-          "Passes when the output exactly matches a fixed value or reference key.",
-        icon: "bi bi-bullseye",
+          "Output field should exactly equal an expected value or a reference-data value.",
+
         requiresTrust: false,
+        tags: [],
+        pageTitle: "Add an Exact Match Check",
+        pageSubtitle: "Pass when the output equals an expected value.",
+        explainer:
+          "Compares the model output (or a value extracted from it) against a fixed expected value or a value from your reference data. Useful for tasks with a single correct answer.",
+        example:
+          'If you expect the model to output "yes" or "no", Exact Match can verify the answer is correct.',
         createFormComponent: ExactMatchForm,
         resultRendererComponent: ExactMatchResult,
       }
     case "pattern_match":
       return {
         label: "Pattern Match",
-        description:
-          "Passes when the output matches (or does not match) a regular expression.",
-        icon: "bi bi-regex",
+        description: "Output field matches a regular expression.",
+
         requiresTrust: false,
+        tags: [],
+        pageTitle: "Add a Pattern Match Check",
+        pageSubtitle: "Pass when the output matches a regular expression.",
+        explainer:
+          "Tests the model output against a regular expression pattern. Can require the pattern to match or not match.",
         createFormComponent: PatternMatchForm,
         resultRendererComponent: PatternMatchResult,
       }
@@ -95,9 +113,14 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Contains",
         description:
-          "Passes when the output contains (or does not contain) a substring or reference value.",
-        icon: "bi bi-search",
+          "Output contains (or doesn't contain) a string or reference value.",
+
         requiresTrust: false,
+        tags: [],
+        pageTitle: "Add a Contains Check",
+        pageSubtitle: "Pass when the output contains (or omits) a substring.",
+        explainer:
+          "Checks whether the model output includes or excludes a specific substring. The substring can be a fixed value or pulled from your reference data.",
         createFormComponent: ContainsForm,
         resultRendererComponent: ContainsResult,
       }
@@ -105,9 +128,15 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Set Check",
         description:
-          "Compares the output (parsed as a set) against an expected set using subset, superset, or equality.",
-        icon: "bi bi-collection",
+          "Compare a set of values from the output against an expected set.",
+
         requiresTrust: false,
+        tags: [],
+        pageTitle: "Add a Set Check",
+        pageSubtitle:
+          "Compare a set of values from the output against an expected set.",
+        explainer:
+          "Parses a set of values from the model output and compares it against an expected set using subset, superset, or equality matching.",
         createFormComponent: SetCheckForm,
         resultRendererComponent: SetCheckResult,
       }
@@ -115,9 +144,15 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Tool Call Check",
         description:
-          "Validates that the model made the expected tool calls with correct arguments.",
-        icon: "bi bi-wrench",
+          "Check the agent called the right tools, in the right order, with the right arguments.",
+
         requiresTrust: false,
+        tags: [],
+        pageTitle: "Add a Tool Call Check",
+        pageSubtitle:
+          "Check the agent called the right tools, order, and arguments.",
+        explainer:
+          "Inspects the agent's tool-call trace to verify it called the expected tools, with the correct arguments, in the right order.",
         createFormComponent: ToolCallCheckForm,
         resultRendererComponent: ToolCallCheckResult,
       }
@@ -125,29 +160,45 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Step Count Check",
         description:
-          "Passes when the number of conversation steps (tool calls, model responses, or turns) falls within bounds.",
-        icon: "bi bi-123",
+          "Count steps in the trace and check they're within bounds.",
+
         requiresTrust: false,
+        tags: [],
+        pageTitle: "Add a Step Count Check",
+        pageSubtitle:
+          "Check the number of steps in the trace is within bounds.",
+        explainer:
+          "Counts tool calls, model responses, or turns in the agent's trace and checks whether the count falls within specified bounds.",
         createFormComponent: StepCountCheckForm,
         resultRendererComponent: StepCountCheckResult,
       }
     case "llm_judge":
       return {
-        label: "LLM Judge",
+        label: "LLM as Judge",
         description:
-          "Uses an LLM to evaluate output quality via a custom prompt template.",
-        icon: "bi bi-robot",
+          "A language model grades output against criteria you write.",
+
         requiresTrust: false,
+        recommended: true,
+        tags: [],
+        pageTitle: "Add an LLM Judge",
+        pageSubtitle: "Grade outputs with a model and rubric.",
+        explainer:
+          "Uses a language model to evaluate output quality against criteria you define in a prompt template.",
         createFormComponent: LlmJudgeForm,
         resultRendererComponent: LlmJudgeResult,
       }
     case "code_eval":
       return {
-        label: "Code Eval",
-        description:
-          "Runs a custom Python scoring function against the output.",
-        icon: "bi bi-code-slash",
+        label: "Code",
+        description: "Write a custom Python scoring function.",
+
         requiresTrust: true,
+        tags: [{ label: "Beta", tone: "beta" }],
+        pageTitle: "Add a Code Judge",
+        pageSubtitle: "Write a Python function that scores model outputs.",
+        explainer:
+          "Write a custom Python scoring function that can use the model's output, trace, and reference data. Faster and cheaper than LLM as a judge.",
         createFormComponent: CodeEvalForm,
         resultRendererComponent: CodeEvalResult,
       }
@@ -171,6 +222,15 @@ export function getV2TypeFromEvalConfig(eval_config: {
   const t = props.type as V2EvalType
   if (ALL_V2_EVAL_TYPES.includes(t)) return t
   return null
+}
+
+/**
+ * Returns the "... Judge" display label for a V2 eval type.
+ * Appends "Judge" if the label does not already end with it.
+ */
+export function evalTypeJudgeLabel(type: V2EvalType): string {
+  const label = getV2EvalTypeMetadata(type).label
+  return label.endsWith("Judge") ? label : label + " Judge"
 }
 
 /**

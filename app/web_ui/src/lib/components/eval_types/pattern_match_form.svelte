@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormSection from "./form_parts/form_section.svelte"
+  import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["PatternMatchProperties"] = {
     type: "pattern_match",
@@ -12,35 +14,83 @@
   export function getProperties(): components["schemas"]["PatternMatchProperties"] {
     return properties
   }
+
+  let regex_error: string | null = null
+  let pattern_touched = false
+
+  function on_pattern_blur() {
+    pattern_touched = true
+    validate_regex()
+  }
+
+  function validate_regex() {
+    if (!properties.pattern) {
+      regex_error = null
+      return
+    }
+    try {
+      new RegExp(properties.pattern)
+      regex_error = null
+    } catch (e) {
+      regex_error = `Invalid regex: ${e instanceof SyntaxError ? e.message : String(e)}`
+    }
+  }
+
+  $: if (pattern_touched && properties.pattern !== undefined) {
+    validate_regex()
+  }
+
+  export function validate(): string | null {
+    if (!properties.pattern) {
+      return "Regular expression is required."
+    }
+    try {
+      new RegExp(properties.pattern)
+    } catch {
+      return "Invalid regular expression pattern."
+    }
+    return null
+  }
 </script>
 
-<div class="flex flex-col gap-4">
-  <FormElement
-    id="pattern_match_pattern"
-    label="Regular Expression"
-    description="The regex pattern to test against the output."
-    inputType="input"
-    bind:value={properties.pattern}
-  />
+<div class="flex flex-col gap-6">
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div on:blur={on_pattern_blur} data-testid="pattern-match-pattern-section">
+    <FormElement
+      id="pattern_match_pattern"
+      label="Regular Expression"
+      description="The pattern to test against the output."
+      info_description="A regular expression (regex) is a sequence of characters that defines a search pattern. For example, ^yes$ matches only the exact string 'yes', while \\d+ matches one or more digits."
+      inputType="input"
+      placeholder="e.g. ^(yes|no)$"
+      bind:value={properties.pattern}
+      error_message={regex_error}
+    />
+  </div>
 
-  <FormElement
-    id="pattern_match_mode"
-    label="Mode"
-    description="Whether the output must match or must not match the pattern."
-    inputType="select"
-    bind:value={properties.mode}
-    select_options={[
-      ["must_match", "Must Match"],
-      ["must_not_match", "Must Not Match"],
-    ]}
-  />
+  <FormSection title="Match Mode" testid="pattern-match-mode-section">
+    <FormElement
+      id="pattern_match_mode"
+      inputType="radio"
+      radio_options={[
+        {
+          value: "must_match",
+          label: "Must match",
+          description: "The output must match the pattern to pass.",
+        },
+        {
+          value: "must_not_match",
+          label: "Must not match",
+          description: "The output must NOT match the pattern to pass.",
+        },
+      ]}
+      bind:value={properties.mode}
+      hide_label
+    />
+  </FormSection>
 
-  <FormElement
-    id="pattern_match_value_expression"
-    label="Value Expression"
-    description="Optional JSONPath or expression to extract the value from the output before matching."
-    inputType="input"
-    optional={true}
+  <OutputValueField
+    id_prefix="pattern_match"
     bind:value={properties.value_expression}
   />
 </div>

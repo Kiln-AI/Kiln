@@ -7,10 +7,16 @@
   export let error: KilnError | null = null
   export let submitting: boolean = false
   export let warn_before_unload: boolean = false
+  export let keyboard_submit: boolean = true
 
   const dispatch = createEventDispatcher()
 
   export function triggerSubmit() {
+    dispatch("submit")
+  }
+
+  export function validate_and_submit() {
+    submitting = true
     dispatch("submit")
   }
 </script>
@@ -19,13 +25,20 @@
   data-testid="form-container-stub"
   data-submit-visible={submit_visible}
   data-submit-label={submit_label}
+  data-warn-before-unload={warn_before_unload}
 >
   <slot />
-  <button
-    data-testid="form-submit-button"
-    type="button"
-    on:click={() => dispatch("submit")}
-  >
-    {submit_label}
-  </button>
+  {#if submit_visible}
+    <button
+      data-testid="form-submit-button"
+      type="button"
+      disabled={submitting}
+      on:click={() => {
+        submitting = true
+        dispatch("submit")
+      }}
+    >
+      {submit_label}
+    </button>
+  {/if}
 </div>

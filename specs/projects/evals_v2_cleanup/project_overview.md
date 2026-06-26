@@ -15,7 +15,7 @@ Holding project for the **important-but-small** fixes from the Evals V2 spec-fid
 
 ## Source specs
 
-- [`../evals_v2/components/27_type_code_eval.md`](../evals_v2/components/27_type_code_eval.md) — §2 scorer contract + `KilnEvalHelpers` library (D14/D15).
+- [`../evals_v2/components/27_type_code_eval.md`](../evals_v2/components/27_type_code_eval.md) — §2 scorer contract + `KilnEvalHelpers` library (D14/D15; D16's range contract now owned by `evals_v2_ui_polish` and implemented on `scosman/evals_v2_ui_fix`).
 - [`../evals_v2/components/22_type_deterministic_basics.md`](../evals_v2/components/22_type_deterministic_basics.md) + [`../evals_v2/components/40_template_and_extraction.md`](../evals_v2/components/40_template_and_extraction.md) — save-time validation (D27–D30).
 - [`../evals_v2/components/70_builder_and_onboarding.md`](../evals_v2/components/70_builder_and_onboarding.md) §4 — results/view surfaces (D31). _(D32 read-only config-detail view moved to its own project — `specs/projects/evals_v2_readonly_views/` — since it reuses Project 1's per-type forms.)_
 - [`../evals_v2/components/85_observability_and_audit.md`](../evals_v2/components/85_observability_and_audit.md) §3.4 — `n_excluded` surfacing (D35).
@@ -29,6 +29,7 @@ Evidence: [`confirm_K.md`](../evals_v2/spec_fidelity_review/confirm_K.md) (code-
 | Decision | Work | Notes |
 |---|---|---|
 | **D14 / D15** | Normalize `KilnEvalHelpers.get_tool_calls()` / `get_assistant_messages()` to **real OpenAI trace format** (`role=="assistant"` + nested `tool_calls`). `eval_helpers.py` — reuse the correct extraction in `v2_eval_tool_call_check.py:41-66`. | **Gate: manual review on a real trace with tool calls** before approval — agent-written fixtures are insufficient (the bug shipped because tests used a fake trace shape). The shipped code-eval example gallery depends on these helpers. |
+| **D16** | _Moved to **`specs/projects/evals_v2_ui_polish/`** (Phase 10) and implemented on `scosman/evals_v2_ui_fix`. Extracted `validate_scores_against_output_scores(...)`, called from `EvalRun` + `test_v2_eval`, added `score_range_errors` response field._ | No longer owned here. |
 | **D28** | Compile `ArgMatch` regex values at save time (`eval.py:154-156`). | Insidious: invalid regex silently never matches at runtime. |
 | **D30** | AST-based useless-template check (currently a surface `{{`-scan) so a `reference_data`-only template can't pass save (`eval.py:706-712`). | Insidious: such a template never reads model output → meaningless eval. |
 | **D31** | Surface V2 `llm_judge`/`code_eval` **reasoning** in results (Thinking is currently hidden for all V2 configs; `intermediate_outputs` not passed to V2 renderers). `run_result/+page.svelte`, `llm_judge_result.svelte`. | **Non-prescriptive** — find the right way to show it; don't over-engineer. |
@@ -43,9 +44,9 @@ Evidence: [`confirm_K.md`](../evals_v2/spec_fidelity_review/confirm_K.md) (code-
 
 ## Notes
 
-- D14/D15/D27/D28/D29/D30 are **backend-only** (datamodel/helpers) — safe to do anytime. D27–D30 add validators to deterministic `*Properties` in `eval.py` (same file as Project 1's set_check enum work, but different classes — coordinate, low conflict risk). **D16 was moved out of cleanup to the UI-fix follow-on** (it's the backend of Project 1's "return-shape gates Save").
+- D14/D15/D27/D28/D29/D30 are **backend-only** (datamodel/helpers) — safe to do anytime. D27–D30 add validators to deterministic `*Properties` in `eval.py` (same file as Project 1's set_check enum work, but different classes — coordinate, low conflict risk). D16 was moved out of cleanup to `evals_v2_ui_polish` Phase 10 and is now implemented on `scosman/evals_v2_ui_fix`.
 - D31/D35 are **results/view** surfaces (run-result page, eval-detail, compare view) — distinct from the create container owned by Project 1. (D32 also a view surface, but it reuses the per-type forms → moved to its own project, sequenced after Project 1.)
-- Consider splitting execution into a pre-ship batch (D14/D15/D16/D28/D30/D31/D32/D35) and a post-ship batch (D27/D29).
+- Consider splitting execution into a pre-ship batch (D14/D15/D28/D30/D31/D32/D35) and a post-ship batch (D27/D29). (D16 now lands with `evals_v2_ui_polish`.)
 
 ## Out of scope
 

@@ -1916,6 +1916,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create LLM Judge Eval Config */
+        post: operations["create_llm_judge_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_llm_judge_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval": {
         parameters: {
             query?: never;
@@ -4438,6 +4455,29 @@ export interface components {
              * @description Kinde OAuth access token.
              */
             access_token: string;
+        };
+        /**
+         * CreateLlmJudgeConfigRequest
+         * @description Request to create a V2 llm_judge eval config with server-baked template.
+         */
+        CreateLlmJudgeConfigRequest: {
+            /**
+             * Model Name
+             * @description The LLM model to use as judge.
+             */
+            model_name: string;
+            /** @description The model provider. */
+            provider: components["schemas"]["ModelProviderName"];
+            /**
+             * G Eval
+             * @description Whether to use G-Eval logprob scoring.
+             */
+            g_eval: boolean;
+            /**
+             * Name
+             * @description The name of the eval config.
+             */
+            name?: string | null;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -7245,6 +7285,24 @@ export interface components {
             /** Prompt Audio */
             prompt_audio: string;
         };
+        /**
+         * LlmJudgeBuilderInput
+         * @description Shared fields for llm_judge: model, provider, g_eval.
+         */
+        LlmJudgeBuilderInput: {
+            /**
+             * Model Name
+             * @description The LLM model to use as judge.
+             */
+            model_name: string;
+            /** @description The model provider. */
+            provider: components["schemas"]["ModelProviderName"];
+            /**
+             * G Eval
+             * @description Whether to use G-Eval logprob scoring.
+             */
+            g_eval: boolean;
+        };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
             /**
@@ -9075,7 +9133,6 @@ export interface components {
             reference_key?: string | null;
             /**
              * Mode
-             * @default subset
              * @enum {string}
              */
             mode: "subset" | "superset" | "equal";
@@ -10203,11 +10260,13 @@ export interface components {
         TestV2EvalRequest: {
             /**
              * Properties
-             * @description The V2 eval config properties to test.
+             * @description The V2 eval config properties to test. Required unless llm_judge_builder_input is set.
              */
-            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | null;
             /** @description The input to evaluate. */
             eval_input: components["schemas"]["EvalTaskInput"];
+            /** @description Builder input for llm_judge; when set, the server bakes the full properties from the eval's output_scores. */
+            llm_judge_builder_input?: components["schemas"]["LlmJudgeBuilderInput"] | null;
         };
         /**
          * TestV2EvalResponse
@@ -10222,6 +10281,8 @@ export interface components {
             skipped_reason?: string | null;
             /** Skipped Detail */
             skipped_detail?: string | null;
+            /** Score Range Errors */
+            score_range_errors?: string[] | null;
             /** Intermediate Outputs */
             intermediate_outputs?: {
                 [key: string]: string;
@@ -15410,6 +15471,46 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateEvalConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_llm_judge_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_llm_judge_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLlmJudgeConfigRequest"];
             };
         };
         responses: {

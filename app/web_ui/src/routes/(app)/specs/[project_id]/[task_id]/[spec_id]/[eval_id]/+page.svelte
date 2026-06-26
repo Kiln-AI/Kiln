@@ -620,21 +620,12 @@
     let url = `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`
     goto(url)
   }
-
-  function docs_link(evaluator: Eval | null): string | undefined {
-    if (evaluator?.template === "tool_call") {
-      return "https://docs.kiln.tech/docs/evaluations/evaluate-appropriate-tool-use"
-    }
-    return "https://docs.kiln.tech/docs/evaluations"
-  }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
     title="Eval: {evaluator?.name || ''}"
     subtitle="Follow these steps to find the best way to evaluate and run your task"
-    sub_subtitle="Read the Docs"
-    sub_subtitle_link={docs_link(evaluator)}
     breadcrumbs={spec_id === "legacy"
       ? [
           {

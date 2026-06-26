@@ -5,8 +5,10 @@ import {
   getV2TypeFromEvalConfig,
   buildV2EvalTypeRegistry,
   extractV2Props,
+  evalTypeJudgeLabel,
   type V2EvalType,
   type V2EvalTypeMetadata,
+  type EvalTypeTag,
 } from "./registry"
 import type { EvalConfig } from "$lib/types"
 
@@ -44,7 +46,6 @@ describe("getV2EvalTypeMetadata", () => {
       const meta = getV2EvalTypeMetadata(t)
       expect(meta.label).toBeTruthy()
       expect(meta.description).toBeTruthy()
-      expect(meta.icon).toBeTruthy()
       expect(typeof meta.requiresTrust).toBe("boolean")
       expect(meta.createFormComponent).toBeTruthy()
       expect(meta.resultRendererComponent).toBeTruthy()
@@ -59,8 +60,8 @@ describe("getV2EvalTypeMetadata", () => {
       set_check: "Set Check",
       tool_call_check: "Tool Call Check",
       step_count_check: "Step Count Check",
-      llm_judge: "LLM Judge",
-      code_eval: "Code Eval",
+      llm_judge: "LLM as Judge",
+      code_eval: "Code",
     }
     for (const [type, label] of Object.entries(expectedLabels)) {
       expect(getV2EvalTypeMetadata(type as V2EvalType).label).toBe(label)
@@ -78,9 +79,10 @@ describe("getV2EvalTypeMetadata", () => {
     }
   })
 
-  it("icons start with 'bi bi-'", () => {
+  it("does not have an icon string field (icons are now SVG components)", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
-      expect(getV2EvalTypeMetadata(t).icon).toMatch(/^bi bi-/)
+      const meta = getV2EvalTypeMetadata(t)
+      expect("icon" in meta).toBe(false)
     }
   })
 
@@ -97,6 +99,168 @@ describe("getV2EvalTypeMetadata", () => {
       components.add(getV2EvalTypeMetadata(t).createFormComponent)
     }
     expect(components.size).toBe(ALL_V2_EVAL_TYPES.length)
+  })
+
+  it("every type has a non-empty pageTitle", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(getV2EvalTypeMetadata(t).pageTitle).toBeTruthy()
+    }
+  })
+
+  it("every type has a non-empty pageSubtitle", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(getV2EvalTypeMetadata(t).pageSubtitle).toBeTruthy()
+    }
+  })
+
+  it("every type has a non-empty explainer", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(getV2EvalTypeMetadata(t).explainer).toBeTruthy()
+    }
+  })
+
+  it("example is non-empty when present", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(t)
+      if (meta.example !== undefined) {
+        expect(meta.example).toBeTruthy()
+      }
+    }
+  })
+
+  it("only code_eval has tags (Beta); all other types have empty tags", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(t)
+      if (t === "code_eval") {
+        expect(meta.tags).toHaveLength(1)
+        expect(meta.tags[0]).toEqual({ label: "Beta", tone: "beta" })
+      } else {
+        expect(meta.tags).toHaveLength(0)
+      }
+    }
+  })
+
+  it("every tag has a valid tone", () => {
+    const validTones: EvalTypeTag["tone"][] = ["default", "beta"]
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(t)
+      for (const tag of meta.tags) {
+        expect(tag.label).toBeTruthy()
+        expect(validTones).toContain(tag.tone)
+      }
+    }
+  })
+
+  it("exactly one type has recommended set to true", () => {
+    const recommendedTypes = ALL_V2_EVAL_TYPES.filter(
+      (t) => getV2EvalTypeMetadata(t).recommended === true,
+    )
+    expect(recommendedTypes).toHaveLength(1)
+  })
+
+  it("recommended type is the first entry in ALL_V2_EVAL_TYPES", () => {
+    const first = ALL_V2_EVAL_TYPES[0]
+    expect(getV2EvalTypeMetadata(first).recommended).toBe(true)
+  })
+
+  it("non-recommended types do not have recommended set to true", () => {
+    for (const t of ALL_V2_EVAL_TYPES.slice(1)) {
+      const meta = getV2EvalTypeMetadata(t)
+      expect(meta.recommended).not.toBe(true)
+    }
+  })
+
+  it("returns correct pageTitle for each type", () => {
+    const expectedTitles: Record<V2EvalType, string> = {
+      llm_judge: "Add an LLM Judge",
+      code_eval: "Add a Code Judge",
+      exact_match: "Add an Exact Match Check",
+      pattern_match: "Add a Pattern Match Check",
+      contains: "Add a Contains Check",
+      set_check: "Add a Set Check",
+      tool_call_check: "Add a Tool Call Check",
+      step_count_check: "Add a Step Count Check",
+    }
+    for (const [type, title] of Object.entries(expectedTitles)) {
+      expect(getV2EvalTypeMetadata(type as V2EvalType).pageTitle).toBe(title)
+    }
+  })
+
+  it("code_eval has a beta-toned tag", () => {
+    const meta = getV2EvalTypeMetadata("code_eval")
+    const betaTags = meta.tags.filter((tag) => tag.tone === "beta")
+    expect(betaTags).toHaveLength(1)
+    expect(betaTags[0].label).toBe("Beta")
+  })
+
+  it("llm_judge has no tags", () => {
+    const meta = getV2EvalTypeMetadata("llm_judge")
+    expect(meta.tags).toEqual([])
+  })
+
+  it("agent types have no tags", () => {
+    const agentTypes: V2EvalType[] = ["tool_call_check", "step_count_check"]
+    for (const t of agentTypes) {
+      const meta = getV2EvalTypeMetadata(t)
+      expect(meta.tags).toEqual([])
+    }
+  })
+
+  it("deterministic types have no tags", () => {
+    const deterministicTypes: V2EvalType[] = [
+      "exact_match",
+      "pattern_match",
+      "contains",
+      "set_check",
+    ]
+    for (const t of deterministicTypes) {
+      const meta = getV2EvalTypeMetadata(t)
+      expect(meta.tags).toEqual([])
+    }
+  })
+
+  it("no type has any default-tone tags", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(t)
+      const defaultTags = meta.tags.filter((tag) => tag.tone === "default")
+      expect(defaultTags).toHaveLength(0)
+    }
+  })
+})
+
+describe("evalTypeJudgeLabel", () => {
+  it('returns "LLM as Judge" for llm_judge (no double Judge)', () => {
+    expect(evalTypeJudgeLabel("llm_judge")).toBe("LLM as Judge")
+  })
+
+  it('returns "Code Judge" for code_eval', () => {
+    expect(evalTypeJudgeLabel("code_eval")).toBe("Code Judge")
+  })
+
+  it('returns "Exact Match Judge" for exact_match', () => {
+    expect(evalTypeJudgeLabel("exact_match")).toBe("Exact Match Judge")
+  })
+
+  it('returns "Pattern Match Judge" for pattern_match', () => {
+    expect(evalTypeJudgeLabel("pattern_match")).toBe("Pattern Match Judge")
+  })
+
+  it('returns "Contains Judge" for contains', () => {
+    expect(evalTypeJudgeLabel("contains")).toBe("Contains Judge")
+  })
+
+  it('returns "Set Check Judge" for set_check', () => {
+    expect(evalTypeJudgeLabel("set_check")).toBe("Set Check Judge")
+  })
+
+  it('returns "Tool Call Check Judge" for tool_call_check', () => {
+    expect(evalTypeJudgeLabel("tool_call_check")).toBe("Tool Call Check Judge")
+  })
+
+  it('returns "Step Count Check Judge" for step_count_check', () => {
+    expect(evalTypeJudgeLabel("step_count_check")).toBe(
+      "Step Count Check Judge",
+    )
   })
 })
 
@@ -190,8 +354,11 @@ describe("buildV2EvalTypeRegistry", () => {
       const fromFn = getV2EvalTypeMetadata(t)
       expect(fromRegistry.label).toBe(fromFn.label)
       expect(fromRegistry.description).toBe(fromFn.description)
-      expect(fromRegistry.icon).toBe(fromFn.icon)
       expect(fromRegistry.requiresTrust).toBe(fromFn.requiresTrust)
+      expect(fromRegistry.recommended).toBe(fromFn.recommended)
+      expect(fromRegistry.tags).toEqual(fromFn.tags)
+      expect(fromRegistry.pageTitle).toBe(fromFn.pageTitle)
+      expect(fromRegistry.pageSubtitle).toBe(fromFn.pageSubtitle)
       expect(fromRegistry.createFormComponent).toBe(fromFn.createFormComponent)
       expect(fromRegistry.resultRendererComponent).toBe(
         fromFn.resultRendererComponent,

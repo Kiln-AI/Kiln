@@ -10,7 +10,7 @@
     fetch_task_sample_candidates,
     task_run_to_example,
   } from "$lib/utils/task_sample_example"
-  import type { TaskRun } from "$lib/types"
+  import type { TaskRun, TaskRunOutput } from "$lib/types"
   import type { GuideSample } from "./guide_setup_form.svelte"
 
   export let project_id: string
@@ -86,7 +86,7 @@
     example_dialog?.close()
   }
 
-  function select_existing_run(run: TaskRun) {
+  function select_existing_run(run: TaskRun | TaskRunOutput) {
     const ex = task_run_to_example(run)
     const sample: GuideSample = {
       input: ex.input,

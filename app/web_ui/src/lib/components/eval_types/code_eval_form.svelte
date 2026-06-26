@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
+  import type { InlineAction } from "$lib/utils/form_element.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { EvalOutputScore } from "$lib/types"
@@ -57,6 +58,11 @@
 
   let code_editor: CodeEditor
 
+  const examples_inline_action: InlineAction = {
+    handler: show_examples,
+    label: "More Examples",
+  }
+
   function on_code_change(e: CustomEvent<string>) {
     properties.code = e.detail
     user_has_edited = true
@@ -64,44 +70,21 @@
 </script>
 
 <div class="flex flex-col gap-4">
-  <div class="flex items-center gap-2">
-    <span class="badge badge-sm badge-primary badge-outline font-medium"
-      >Beta</span
-    >
-    <span class="text-xs text-gray-500"
-      >Write a Python function that scores model outputs.</span
-    >
-  </div>
-
-  <div class="flex flex-col gap-1">
-    <div class="flex items-center justify-between">
-      <label for="code_eval_code" class="label">
-        <span class="label-text font-medium">Score Function</span>
-      </label>
-      <button
-        type="button"
-        class="btn btn-ghost btn-xs text-primary"
-        on:click={show_examples}
-      >
-        <i class="bi bi-code-square"></i>
-        See examples
-      </button>
-    </div>
-    <CodeEditor
-      bind:this={code_editor}
-      value={properties.code || generate_default_code(output_scores)}
-      min_height="300px"
-      on:change={on_code_change}
-    />
-    <div class="text-xs text-gray-400 mt-1">
-      Define a <code class="font-mono text-gray-500"
-        >score(output, trace, reference_data, task_input)</code
-      >
-      function that returns a dict of score names to score values. Ranges vary by
-      type: pass/fail uses 0.0–1.0, pass/fail/critical uses -1.0–1.0, and five-star
-      uses 1.0–5.0.
-    </div>
-  </div>
+  <FormElement
+    id="code_eval_score_function"
+    label="Score Function"
+    description="Define a Python score function to evaluate the model's work."
+    info_description="The Python function can use the model's output, trace, and eval's reference data to drive pragmatic scoring. Faster and cheaper than LLM as a judge."
+    inputType="header_only"
+    inline_action={examples_inline_action}
+    value=""
+  />
+  <CodeEditor
+    bind:this={code_editor}
+    value={properties.code || generate_default_code(output_scores)}
+    min_height="300px"
+    on:change={on_code_change}
+  />
 
   <FormElement
     id="code_eval_timeout"

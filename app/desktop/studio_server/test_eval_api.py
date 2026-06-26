@@ -3797,6 +3797,234 @@ class TestTestV2Eval:
             )
         assert response.status_code == 404
 
+    def test_llm_judge_builder_input(self, client, mock_v2_eval):
+        payload = {
+            "llm_judge_builder_input": {
+                "model_name": "gpt-4o",
+                "provider": "openai",
+                "g_eval": False,
+            },
+            "eval_input": {
+                "final_message": "test output",
+            },
+        }
+        mock_run_output = RunOutput(
+            output={"accuracy": 5},
+            intermediate_outputs=None,
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(None, mock_run_output)
+        )
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "app.desktop.studio_server.eval_api.materialize_llm_judge_properties"
+            ) as mock_materialize,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+                return_value=mock_adapter,
+            ),
+        ):
+            mock_materialize.return_value = {
+                "type": "llm_judge",
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "g_eval": False,
+                "prompt_template": "test template {{ final_message }}",
+            }
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        mock_materialize.assert_called_once_with(
+            eval=mock_v2_eval,
+            model_name="gpt-4o",
+            model_provider="openai",
+            g_eval=False,
+        )
+        body = response.json()
+        assert "accuracy" in body["scores"]
+        assert body["skipped_reason"] is None
+
+    def test_400_when_no_properties_or_builder_input(self, client, mock_v2_eval):
+        payload = {
+            "eval_input": {
+                "final_message": "test output",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 400
+        body = response.json()
+        msg = (body.get("message") or body.get("detail") or "").lower()
+        assert "properties" in msg or "llm_judge" in msg
+
+    def test_score_range_errors_none_for_in_range(self, client, mock_v2_eval):
+        """In-range scores should NOT produce score_range_errors."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["score_range_errors"] is None
+
+    def test_score_range_errors_populated_for_out_of_range(self, client, mock_v2_eval):
+        """Out-of-range scores should populate score_range_errors."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 5.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
+                return_value={"ok": {"accuracy": 5.0}},
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 5.0
+        assert body["score_range_errors"] is not None
+        assert len(body["score_range_errors"]) == 1
+        assert "pass_fail" in body["score_range_errors"][0]
+
+    def test_score_range_errors_none_when_skipped(self, client, mock_v2_eval):
+        """Skipped results should not have score_range_errors."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+        assert body["score_range_errors"] is None
+
+
+class TestCreateLlmJudgeConfig:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/create_llm_judge_config"
+
+    def test_success(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["config_type"] == "v2"
+        props = body["properties"]
+        assert props["type"] == "llm_judge"
+        assert props["model_name"] == "gpt-4o"
+        assert props["model_provider"] == "openai"
+        assert props["g_eval"] is False
+        assert "{{ task_input }}" in props["prompt_template"]
+        assert "{{ final_message }}" in props["prompt_template"]
+        assert props["system_prompt"] is not None
+        assert props["thinking_instruction"] is not None
+        assert props["required_var"] == []
+
+    def test_g_eval_true(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": True,
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["g_eval"] is True
+
+    def test_persisted_to_disk(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        configs = mock_v2_eval.configs()
+        assert len(configs) == 1
+        cfg = configs[0]
+        assert cfg.config_type.value == "v2"
+        assert cfg.properties.type.value == "llm_judge"
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.post(
+                self._url("bad_id"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 404
+
+    def test_missing_model(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 422
+
+    def test_with_custom_name(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "name": "My Custom Judge",
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My Custom Judge"
+
 
 class TestV1CoexistenceAPI:
     """V1 coexistence regression guards at the API layer.

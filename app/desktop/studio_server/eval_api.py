@@ -16,6 +16,7 @@ from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.adapters.eval.base_eval import materialize_llm_judge_properties
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
     grant_code_eval_trust,
@@ -32,6 +33,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     EvalTemplateId,
     V2EvalConfigProperties,
+    validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
@@ -200,13 +202,32 @@ class CreateEvalConfigRequest(BaseModel):
     )
 
 
+class LlmJudgeBuilderInput(BaseModel):
+    """Shared fields for llm_judge: model, provider, g_eval."""
+
+    model_name: str = Field(description="The LLM model to use as judge.")
+    provider: ModelProviderName = Field(description="The model provider.")
+    g_eval: bool = Field(description="Whether to use G-Eval logprob scoring.")
+
+
+class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
+    """Request to create a V2 llm_judge eval config with server-baked template."""
+
+    name: str | None = Field(default=None, description="The name of the eval config.")
+
+
 class TestV2EvalRequest(BaseModel):
     """Request to test-run a V2 eval config without persisting."""
 
-    properties: V2EvalConfigProperties = Field(
-        description="The V2 eval config properties to test."
+    properties: V2EvalConfigProperties | None = Field(
+        default=None,
+        description="The V2 eval config properties to test. Required unless llm_judge_builder_input is set.",
     )
     eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+    llm_judge_builder_input: LlmJudgeBuilderInput | None = Field(
+        default=None,
+        description="Builder input for llm_judge; when set, the server bakes the full properties from the eval's output_scores.",
+    )
 
 
 class TestV2EvalResponse(BaseModel):
@@ -215,6 +236,7 @@ class TestV2EvalResponse(BaseModel):
     scores: EvalScores = Field(default_factory=dict)
     skipped_reason: str | None = None
     skipped_detail: str | None = None
+    score_range_errors: list[str] | None = None
     intermediate_outputs: dict[str, str] | None = None
 
 
@@ -969,6 +991,47 @@ def connect_evals_api(app: FastAPI):
         return eval_config
 
     @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config",
+        summary="Create LLM Judge Eval Config",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def create_llm_judge_config(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        request: CreateLlmJudgeConfigRequest,
+    ) -> EvalConfig:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        name = request.name or generate_memorable_name()
+
+        try:
+            properties = materialize_llm_judge_properties(
+                eval=eval,
+                model_name=request.model_name,
+                model_provider=request.provider,
+                g_eval=request.g_eval,
+            )
+            eval_config = EvalConfig(
+                name=name,
+                config_type=EvalConfigType.v2,
+                properties=properties,
+                parent=eval,
+            )
+        except (ValidationError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e),
+            )
+        eval_config.save_to_file()
+        return eval_config
+
+    @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval",
         summary="Test V2 Eval Config",
         tags=["Evals"],
@@ -987,20 +1050,47 @@ def connect_evals_api(app: FastAPI):
     ) -> TestV2EvalResponse:
         try:
             eval_obj = eval_from_id(project_id, task_id, eval_id)
+
+            if request.llm_judge_builder_input is not None:
+                builder = request.llm_judge_builder_input
+                properties = materialize_llm_judge_properties(
+                    eval=eval_obj,
+                    model_name=builder.model_name,
+                    model_provider=builder.provider,
+                    g_eval=builder.g_eval,
+                )
+            elif request.properties is not None:
+                properties = request.properties
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either properties or llm_judge_builder_input must be provided.",
+                )
+
             transient_config = EvalConfig(
                 name="test_run",
                 config_type=EvalConfigType.v2,
-                properties=request.properties,
+                properties=properties,
                 parent=eval_obj,
             )
             adapter = v2_eval_adapter_from_config(transient_config)
             result = await adapter.evaluate(request.eval_input)
+
+            score_range_errors: list[str] | None = None
+            if result.skipped_reason is None and result.scores:
+                problems = validate_scores_against_output_scores(
+                    result.scores, eval_obj.output_scores
+                )
+                if problems:
+                    score_range_errors = problems
+
             return TestV2EvalResponse(
                 scores=result.scores,
                 skipped_reason=result.skipped_reason.value
                 if result.skipped_reason
                 else None,
                 skipped_detail=result.skipped_detail,
+                score_range_errors=score_range_errors,
                 intermediate_outputs=result.intermediate_outputs,
             )
         except (ValueError, NotImplementedError) as e:

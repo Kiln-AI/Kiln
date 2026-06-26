@@ -13,6 +13,11 @@ vi.mock("$lib/ui/dialog.svelte", async () => {
   return { default: StubModule.default }
 })
 
+vi.mock("$lib/utils/form_element.svelte", async () => {
+  const StubModule = await import("./__tests__/form_element_stub.svelte")
+  return { default: StubModule.default }
+})
+
 const CodeEvalForm = (await import("./code_eval_form.svelte")).default
 
 beforeAll(() => {
@@ -42,43 +47,67 @@ describe("CodeEvalForm", () => {
     expect(container).toBeTruthy()
   })
 
-  it("displays the Beta badge", () => {
+  it("does not display a standalone Beta badge (consolidated into intro)", () => {
     const { container } = render(CodeEvalForm)
     const badge = container.querySelector(".badge")
-    expect(badge?.textContent?.trim()).toBe("Beta")
+    expect(badge).toBeNull()
   })
 
-  it("displays the Score Function label", () => {
+  it("renders Score Function as a header_only FormElement", () => {
     const { container } = render(CodeEvalForm)
-    expect(container.textContent).toContain("Score Function")
+    const el = container.querySelector(
+      '[data-testid="form-element-code_eval_score_function"]',
+    )
+    expect(el).not.toBeNull()
+    expect(el?.getAttribute("data-label")).toBe("Score Function")
+    expect(el?.getAttribute("data-type")).toBe("header_only")
   })
 
-  it("displays the See examples button", () => {
+  it("Score Function FormElement has subtitle description", () => {
     const { container } = render(CodeEvalForm)
-    const btn = container.querySelector("button.btn-ghost")
-    expect(btn).not.toBeNull()
-    expect(btn?.textContent).toContain("See examples")
-  })
-
-  it("displays the score function signature hint", () => {
-    const { container } = render(CodeEvalForm)
-    expect(container.textContent).toContain(
-      "score(output, trace, reference_data, task_input)",
+    const el = container.querySelector(
+      '[data-testid="form-element-code_eval_score_function"]',
+    )
+    expect(el?.getAttribute("data-description")).toBe(
+      "Define a Python score function to evaluate the model's work.",
     )
   })
 
-  it("displays updated helper text mentioning per-type ranges", () => {
+  it("Score Function FormElement has info_description tooltip", () => {
     const { container } = render(CodeEvalForm)
-    const text = container.textContent ?? ""
-    expect(text).toContain("pass/fail uses 0.0")
-    expect(text).toContain("five-star")
-    expect(text).toContain("1.0–5.0")
+    const el = container.querySelector(
+      '[data-testid="form-element-code_eval_score_function"]',
+    )
+    expect(el?.getAttribute("data-info-description")).toContain(
+      "pragmatic scoring",
+    )
   })
 
-  it("renders the timeout input with default value of 30", () => {
+  it("Score Function FormElement has More Examples inline action", () => {
     const { container } = render(CodeEvalForm)
-    expect(container.textContent).toContain("Timeout (seconds)")
-    expect(container.textContent).toContain(
+    const el = container.querySelector(
+      '[data-testid="form-element-code_eval_score_function"]',
+    )
+    expect(el?.getAttribute("data-inline-action-label")).toBe("More Examples")
+  })
+
+  it("does not display the footer paragraph with range hints", () => {
+    const { container } = render(CodeEvalForm)
+    expect(container.textContent).not.toContain("pass/fail uses 0.0")
+    expect(container.textContent).not.toContain("five-star uses 1.0")
+    expect(container.textContent).not.toContain(
+      "function that returns a dict of score names",
+    )
+  })
+
+  it("renders the timeout FormElement", () => {
+    const { container } = render(CodeEvalForm)
+    const el = container.querySelector(
+      '[data-testid="form-element-code_eval_timeout"]',
+    )
+    expect(el).not.toBeNull()
+    expect(el?.getAttribute("data-label")).toBe("Timeout (seconds)")
+    expect(el?.getAttribute("data-description")).toContain(
       "Maximum time allowed for the score function to execute",
     )
   })
