@@ -39,11 +39,11 @@ export type V2EvalType =
 export const ALL_V2_EVAL_TYPES: readonly V2EvalType[] = [
   "llm_judge",
   "code_eval",
+  "tool_call_check",
   "exact_match",
   "pattern_match",
   "contains",
   "set_check",
-  "tool_call_check",
   "step_count_check",
 ] as const
 
@@ -82,7 +82,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Exact Match",
         description:
-          "Output exactly equals an expected value (or a reference-data value).",
+          "Output field should exactly equal an expected value or a reference-data value.",
 
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
@@ -98,7 +98,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
     case "pattern_match":
       return {
         label: "Pattern Match",
-        description: "Output matches (or doesn't match) a regular expression.",
+        description: "Output field matches a regular expression.",
 
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
@@ -113,7 +113,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Contains",
         description:
-          "Output contains (or doesn't contain) a substring or reference value.",
+          "Output contains (or doesn't contain) a string or reference value.",
 
         requiresTrust: false,
         tags: [{ label: "Deterministic", tone: "default" }],
@@ -155,7 +155,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         pageSubtitle:
           "Check the agent called the right tools, order, and arguments.",
         explainer:
-          "Inspects the agent's tool-call trace to verify it called the expected tools with the correct arguments. Supports matching modes for order and completeness.",
+          "Inspects the agent's tool-call trace to verify it called the expected tools, with the correct arguments, in the right order.",
         createFormComponent: ToolCallCheckForm,
         resultRendererComponent: ToolCallCheckResult,
       }
@@ -182,7 +182,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "LLM as Judge",
         description:
-          "Grade output against criteria you write — quality, accuracy, or rubric pass/fail.",
+          "A language model grades output against criteria you write.",
 
         requiresTrust: false,
         recommended: true,
@@ -200,8 +200,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
     case "code_eval":
       return {
         label: "Code",
-        description:
-          "Write a custom Python scorer for anything the built-in types can't express.",
+        description: "Write a custom Python scoring function.",
 
         requiresTrust: true,
         tags: [
@@ -211,7 +210,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         pageTitle: "Add a Code Judge",
         pageSubtitle: "Write a Python function that scores model outputs.",
         explainer:
-          "Write a custom Python scoring function that can use the model's output, trace, and reference data. Gives you full flexibility for any scoring logic the built-in types can't express.",
+          "Write a custom Python scoring function that can use the model's output, trace, and reference data. Faster and cheaper than LLM as a judge.",
         createFormComponent: CodeEvalForm,
         resultRendererComponent: CodeEvalResult,
       }

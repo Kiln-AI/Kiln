@@ -98,8 +98,8 @@
   <FormSection
     title="Expected Tools"
     subtitle={properties.match_mode === "never"
-      ? "Define the tools the agent must NOT call. Tool calls are function calls the model makes during its reasoning trace."
-      : "Define the tools the agent is expected to call. Tool calls are function calls the model makes during its reasoning trace."}
+      ? "Define the tools the agent must NOT call."
+      : "Define the tools the agent is expected to call."}
     testid="tool-call-expected-tools-section"
   >
     <FormList

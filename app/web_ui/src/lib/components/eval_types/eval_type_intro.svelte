@@ -15,7 +15,7 @@
     : metadata.label + " Judge"
 </script>
 
-<div class="pb-6 max-w-[600px]" data-testid="eval-type-intro">
+<div class="pb-2 max-w-[600px]" data-testid="eval-type-intro">
   <CalloutCard testid="eval-type-intro-card">
     <div
       slot="icon"
