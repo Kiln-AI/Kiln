@@ -1182,6 +1182,182 @@ describe("ReferenceDataField", () => {
     )
     expect(field?.textContent).toContain("Empty object")
   })
+
+  it("displays 'Invalid: not an object' for non-object JSON values in preview", () => {
+    const nonObjects = ['"asdf"', "false", "12", "[1,2]", "null"]
+    for (const val of nonObjects) {
+      cleanup()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: val },
+      })
+      const field = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(field?.textContent).toContain("Invalid: not an object")
+    }
+  })
+
+  describe("save validation", () => {
+    function renderAndGetSaveAction() {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = render(ReferenceDataField as any, {
+        props: { reference_data: "" },
+      })
+      const handler = vi.fn()
+      result.component.$on("change", handler)
+      const buttons = actionButtonsByTitle["Reference Data"]
+      const saveBtn = buttons?.find((b) => b.label === "Save") as Record<
+        string,
+        unknown
+      >
+      return { ...result, handler, saveAction: saveBtn.action as () => boolean }
+    }
+
+    it("rejects string JSON with object error and blocks save", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: '"asdf"' } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain(
+        "Reference data must be a JSON object",
+      )
+    })
+
+    it("rejects boolean JSON with object error and blocks save", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: "false" } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain(
+        "Reference data must be a JSON object",
+      )
+    })
+
+    it("rejects number JSON with object error and blocks save", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: "12" } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain(
+        "Reference data must be a JSON object",
+      )
+    })
+
+    it("rejects array JSON with object error and blocks save", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: "[1,2]" } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain(
+        "Reference data must be a JSON object",
+      )
+    })
+
+    it("rejects null JSON with object error and blocks save", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: "null" } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain(
+        "Reference data must be a JSON object",
+      )
+    })
+
+    it("accepts valid JSON object and emits change", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, {
+        target: { value: '{"key":"value"}' },
+      })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(true)
+      expect(handler).toHaveBeenCalledTimes(1)
+      expect(handler.mock.calls[0][0].detail).toBe('{"key":"value"}')
+    })
+
+    it("accepts empty JSON object and emits change", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: "{}" } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(true)
+      expect(handler).toHaveBeenCalledTimes(1)
+      expect(handler.mock.calls[0][0].detail).toBe("{}")
+    })
+
+    it("shows invalid JSON error for unparseable input", async () => {
+      const { container, handler, saveAction } = renderAndGetSaveAction()
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(textarea, { target: { value: "{not json" } })
+      await tick()
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error).not.toBeNull()
+      expect(error?.textContent).not.toContain(
+        "Reference data must be a JSON object",
+      )
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------

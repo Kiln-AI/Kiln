@@ -14,10 +14,15 @@
 
   $: display_value = get_display_value(reference_data)
 
+  function is_plain_object(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+  }
+
   function get_display_value(data: string): string {
     if (!data.trim()) return "None"
     try {
       const parsed = JSON.parse(data.trim())
+      if (!is_plain_object(parsed)) return "Invalid: not an object"
       const keys = Object.keys(parsed)
       if (keys.length === 0) return "Empty object"
       if (keys.length <= 3) return keys.join(", ")
@@ -39,7 +44,12 @@
       return true
     }
     try {
-      JSON.parse(edit_value.trim())
+      const parsed = JSON.parse(edit_value.trim())
+      if (!is_plain_object(parsed)) {
+        json_error =
+          'Reference data must be a JSON object, e.g. {"key": "value"}.'
+        return false
+      }
       json_error = null
       dispatch("change", edit_value.trim())
       return true
