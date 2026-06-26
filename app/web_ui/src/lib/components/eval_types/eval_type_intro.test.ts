@@ -59,28 +59,35 @@ describe("EvalTypeIntro", () => {
     expect(card?.textContent).toContain(metadata.explainer)
   })
 
-  it("renders tags for code_eval including Beta", () => {
+  it("renders the Beta badge for code_eval", () => {
     const evalType = "code_eval" as const
     const metadata = getV2EvalTypeMetadata(evalType)
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
     const badges = container.querySelectorAll(".badge")
-    const badgeTexts = Array.from(badges).map((b) => b.textContent?.trim())
-    expect(badgeTexts).toContain("Beta")
-    expect(badgeTexts).toContain("Python")
+    expect(badges).toHaveLength(1)
+    expect(badges[0].textContent?.trim()).toBe("Beta")
   })
 
-  it("renders tags for llm_judge", () => {
+  it("renders no tag badges for llm_judge", () => {
     const evalType = "llm_judge" as const
     const metadata = getV2EvalTypeMetadata(evalType)
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
     const badges = container.querySelectorAll(".badge")
-    const badgeTexts = Array.from(badges).map((b) => b.textContent?.trim())
-    expect(badgeTexts).toContain("Uses LLM")
-    expect(badgeTexts).toContain("Graded")
+    expect(badges).toHaveLength(0)
+  })
+
+  it("renders no tag wrapper div for types with empty tags", () => {
+    const evalType = "exact_match" as const
+    const metadata = getV2EvalTypeMetadata(evalType)
+    const { container } = render(EvalTypeIntro, {
+      props: { evalType, metadata },
+    })
+    const badges = container.querySelectorAll(".badge")
+    expect(badges).toHaveLength(0)
   })
 
   it("renders tags matching the registry for every eval type", () => {

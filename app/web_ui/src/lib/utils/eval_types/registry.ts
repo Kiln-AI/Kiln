@@ -85,7 +85,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
           "Output field should exactly equal an expected value or a reference-data value.",
 
         requiresTrust: false,
-        tags: [{ label: "Deterministic", tone: "default" }],
+        tags: [],
         pageTitle: "Add an Exact Match Check",
         pageSubtitle: "Pass when the output equals an expected value.",
         explainer:
@@ -101,7 +101,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         description: "Output field matches a regular expression.",
 
         requiresTrust: false,
-        tags: [{ label: "Deterministic", tone: "default" }],
+        tags: [],
         pageTitle: "Add a Pattern Match Check",
         pageSubtitle: "Pass when the output matches a regular expression.",
         explainer:
@@ -116,7 +116,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
           "Output contains (or doesn't contain) a string or reference value.",
 
         requiresTrust: false,
-        tags: [{ label: "Deterministic", tone: "default" }],
+        tags: [],
         pageTitle: "Add a Contains Check",
         pageSubtitle: "Pass when the output contains (or omits) a substring.",
         explainer:
@@ -131,7 +131,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
           "Compare a set of values from the output against an expected set.",
 
         requiresTrust: false,
-        tags: [{ label: "Deterministic", tone: "default" }],
+        tags: [],
         pageTitle: "Add a Set Check",
         pageSubtitle:
           "Compare a set of values from the output against an expected set.",
@@ -147,10 +147,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
           "Check the agent called the right tools, in the right order, with the right arguments.",
 
         requiresTrust: false,
-        tags: [
-          { label: "Agent", tone: "default" },
-          { label: "Reads trace", tone: "default" },
-        ],
+        tags: [],
         pageTitle: "Add a Tool Call Check",
         pageSubtitle:
           "Check the agent called the right tools, order, and arguments.",
@@ -166,10 +163,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
           "Count steps in the trace and check they're within bounds.",
 
         requiresTrust: false,
-        tags: [
-          { label: "Agent", tone: "default" },
-          { label: "Reads trace", tone: "default" },
-        ],
+        tags: [],
         pageTitle: "Add a Step Count Check",
         pageSubtitle:
           "Check the number of steps in the trace is within bounds.",
@@ -186,10 +180,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
 
         requiresTrust: false,
         recommended: true,
-        tags: [
-          { label: "Uses LLM", tone: "default" },
-          { label: "Graded", tone: "default" },
-        ],
+        tags: [],
         pageTitle: "Add an LLM Judge",
         pageSubtitle: "Grade outputs with a model and rubric.",
         explainer:
@@ -203,10 +194,7 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         description: "Write a custom Python scoring function.",
 
         requiresTrust: true,
-        tags: [
-          { label: "Python", tone: "default" },
-          { label: "Beta", tone: "beta" },
-        ],
+        tags: [{ label: "Beta", tone: "beta" }],
         pageTitle: "Add a Code Judge",
         pageSubtitle: "Write a Python function that scores model outputs.",
         explainer:

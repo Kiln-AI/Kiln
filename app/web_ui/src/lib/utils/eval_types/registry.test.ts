@@ -127,10 +127,15 @@ describe("getV2EvalTypeMetadata", () => {
     }
   })
 
-  it("every type has a non-empty tags array", () => {
+  it("only code_eval has tags (Beta); all other types have empty tags", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
       const meta = getV2EvalTypeMetadata(t)
-      expect(meta.tags.length).toBeGreaterThan(0)
+      if (t === "code_eval") {
+        expect(meta.tags).toHaveLength(1)
+        expect(meta.tags[0]).toEqual({ label: "Beta", tone: "beta" })
+      } else {
+        expect(meta.tags).toHaveLength(0)
+      }
     }
   })
 
@@ -187,25 +192,20 @@ describe("getV2EvalTypeMetadata", () => {
     expect(betaTags[0].label).toBe("Beta")
   })
 
-  it("llm_judge has the correct tags", () => {
+  it("llm_judge has no tags", () => {
     const meta = getV2EvalTypeMetadata("llm_judge")
-    expect(meta.tags).toEqual([
-      { label: "Uses LLM", tone: "default" },
-      { label: "Graded", tone: "default" },
-    ])
+    expect(meta.tags).toEqual([])
   })
 
-  it("agent types have Agent and Reads trace tags", () => {
+  it("agent types have no tags", () => {
     const agentTypes: V2EvalType[] = ["tool_call_check", "step_count_check"]
     for (const t of agentTypes) {
       const meta = getV2EvalTypeMetadata(t)
-      const tagLabels = meta.tags.map((tag) => tag.label)
-      expect(tagLabels).toContain("Agent")
-      expect(tagLabels).toContain("Reads trace")
+      expect(meta.tags).toEqual([])
     }
   })
 
-  it("deterministic types have a Deterministic tag", () => {
+  it("deterministic types have no tags", () => {
     const deterministicTypes: V2EvalType[] = [
       "exact_match",
       "pattern_match",
@@ -214,8 +214,15 @@ describe("getV2EvalTypeMetadata", () => {
     ]
     for (const t of deterministicTypes) {
       const meta = getV2EvalTypeMetadata(t)
-      const tagLabels = meta.tags.map((tag) => tag.label)
-      expect(tagLabels).toContain("Deterministic")
+      expect(meta.tags).toEqual([])
+    }
+  })
+
+  it("no type has any default-tone tags", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(t)
+      const defaultTags = meta.tags.filter((tag) => tag.tone === "default")
+      expect(defaultTags).toHaveLength(0)
     }
   })
 })

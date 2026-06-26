@@ -9,24 +9,21 @@ import {
 } from "$lib/utils/eval_types/registry"
 
 describe("EvalTypeTags", () => {
-  it("renders all tags", () => {
-    const tags = [
-      { label: "Uses LLM", tone: "default" as const },
-      { label: "Graded", tone: "default" as const },
-    ]
+  it("renders nothing for empty tags array", () => {
+    const tags: { label: string; tone: "default" | "beta" }[] = []
     const { container } = render(EvalTypeTags, { props: { tags } })
     const badges = container.querySelectorAll(".badge")
-    expect(badges.length).toBe(2)
-    expect(badges[0].textContent?.trim()).toBe("Uses LLM")
-    expect(badges[1].textContent?.trim()).toBe("Graded")
+    expect(badges.length).toBe(0)
+    const wrapper = container.querySelector(".flex")
+    expect(wrapper).toBeNull()
   })
 
-  it("applies default tone styling", () => {
-    const tags = [{ label: "Deterministic", tone: "default" as const }]
+  it("renders a single beta tag", () => {
+    const tags = [{ label: "Beta", tone: "beta" as const }]
     const { container } = render(EvalTypeTags, { props: { tags } })
-    const badge = container.querySelector(".badge")!
-    expect(badge.classList.contains("badge-outline")).toBe(true)
-    expect(badge.classList.contains("badge-primary")).toBe(false)
+    const badges = container.querySelectorAll(".badge")
+    expect(badges.length).toBe(1)
+    expect(badges[0].textContent?.trim()).toBe("Beta")
   })
 
   it("applies beta tone styling", () => {
@@ -35,17 +32,6 @@ describe("EvalTypeTags", () => {
     const badge = container.querySelector(".badge")!
     expect(badge.classList.contains("badge-outline")).toBe(true)
     expect(badge.classList.contains("badge-primary")).toBe(true)
-  })
-
-  it("renders mixed tone tags correctly", () => {
-    const tags = [
-      { label: "Python", tone: "default" as const },
-      { label: "Beta", tone: "beta" as const },
-    ]
-    const { container } = render(EvalTypeTags, { props: { tags } })
-    const badges = container.querySelectorAll(".badge")
-    expect(badges[0].classList.contains("badge-primary")).toBe(false)
-    expect(badges[1].classList.contains("badge-primary")).toBe(true)
   })
 })
 
@@ -67,12 +53,13 @@ describe("EvalTypeRow", () => {
     expect(container.textContent).toContain(metadata.description)
   })
 
-  it("renders tags", () => {
+  it("renders only the Beta tag badge for code_eval (no Python badge)", () => {
     const { container } = render(EvalTypeRow, {
       props: { evalType, metadata },
     })
-    expect(container.textContent).toContain("Python")
-    expect(container.textContent).toContain("Beta")
+    const badges = container.querySelectorAll(".badge")
+    expect(badges).toHaveLength(1)
+    expect(badges[0].textContent?.trim()).toBe("Beta")
   })
 
   it("the entire row is a button with data-testid", () => {
@@ -223,12 +210,12 @@ describe("EvalTypeRow — recommended prop", () => {
     expect(iconContainer).not.toBeNull()
   })
 
-  it("recommended row renders tags", () => {
+  it("recommended row renders no descriptive tag badges (llm_judge has no tags)", () => {
     const { container } = render(EvalTypeRow, {
       props: { evalType, metadata, recommended: true },
     })
-    expect(container.textContent).toContain("Uses LLM")
-    expect(container.textContent).toContain("Graded")
+    expect(container.textContent).not.toContain("Uses LLM")
+    expect(container.textContent).not.toContain("Graded")
   })
 
   it("renders the type icon as SVG in recommended mode", () => {
@@ -259,13 +246,17 @@ describe("select screen data-driven rendering", () => {
     }
   })
 
-  it("every type has tags that can be rendered", () => {
+  it("only code_eval renders tag badges (Beta); all others render none", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
       const meta = getV2EvalTypeMetadata(t)
-      expect(meta.tags.length).toBeGreaterThan(0)
       const { container } = render(EvalTypeTags, { props: { tags: meta.tags } })
       const badges = container.querySelectorAll(".badge")
-      expect(badges.length).toBe(meta.tags.length)
+      if (t === "code_eval") {
+        expect(badges.length).toBe(1)
+        expect(badges[0].textContent?.trim()).toBe("Beta")
+      } else {
+        expect(badges.length).toBe(0)
+      }
     }
   })
 })
