@@ -7,6 +7,7 @@ from kiln_ai.datamodel.eval import (
     EvalScores,
     EvalTaskInput,
     SkippedReason,
+    V2EvalResult,
 )
 from kiln_ai.utils.jinja_engine import JinjaExtractionError, extract
 
@@ -51,6 +52,29 @@ def extract_value(
             f"Expression '{expression}' resolved to {'undefined' if isinstance(result, Undefined) else 'None'}",
         )
     return result, None, None
+
+
+def extract_output_value(
+    expression: str | None,
+    eval_input: EvalTaskInput,
+    output_scores: list[EvalOutputScore],
+) -> tuple[Any, V2EvalResult | None]:
+    """Extract an output value, returning a failing result on extraction failure.
+
+    For deterministic checks (contains, exact_match, pattern_match, set_check),
+    a missing or unparseable output field means the model didn't produce the
+    expected structure -- that's a FAIL, not a skip.  Skips are reserved for
+    missing ground-truth / reference data.
+
+    Returns ``(value, None)`` on success, or ``(None, failing_result)`` when the
+    extraction fails.
+    """
+    value, skip, _detail = extract_value(expression, eval_input)
+    if skip is not None:
+        return None, V2EvalResult(
+            scores=build_binary_scores(output_scores, passed=False),
+        )
+    return value, None
 
 
 def check_reference_key(

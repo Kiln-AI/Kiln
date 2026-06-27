@@ -4,7 +4,7 @@ from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     check_reference_key,
-    extract_value,
+    extract_output_value,
     stringify_for_match,
 )
 from kiln_ai.datamodel.eval import (
@@ -30,9 +30,11 @@ class SetCheckEval(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, SetCheckProperties)
 
-        value, skip, detail = extract_value(props.value_expression, eval_input)
-        if skip is not None:
-            return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
+        value, fail_result = extract_output_value(
+            props.value_expression, eval_input, self._output_scores
+        )
+        if fail_result is not None:
+            return fail_result
 
         actual_set = self._coerce_to_set(value)
 

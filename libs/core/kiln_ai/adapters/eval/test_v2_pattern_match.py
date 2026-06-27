@@ -7,7 +7,6 @@ from kiln_ai.adapters.eval.v2_eval_pattern_match import PatternMatchEval
 from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     PatternMatchProperties,
-    SkippedReason,
 )
 
 _make_config = make_v2_eval_config
@@ -77,13 +76,40 @@ class TestPatternMatchExpression:
         assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
-    async def test_undefined_expression_skips(self):
+    async def test_undefined_expression_fails_not_skips(self):
         cfg = _make_config(
             PatternMatchProperties(pattern=".*", value_expression="nonexistent_field")
         )
         result = await PatternMatchEval(cfg).evaluate(_inp())
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_fromjson_invalid_json_fails_not_skips(self):
+        cfg = _make_config(
+            PatternMatchProperties(
+                pattern=".*",
+                value_expression="(final_message | fromjson).field",
+            )
+        )
+        inp = _inp(final_message="not json")
+        result = await PatternMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_must_not_match_undefined_output_still_fails(self):
+        """A must_not_match check with undefined output should FAIL, not pass."""
+        cfg = _make_config(
+            PatternMatchProperties(
+                pattern=".*",
+                mode="must_not_match",
+                value_expression="nonexistent_field",
+            )
+        )
+        result = await PatternMatchEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestPatternMatchJsonCoercion:

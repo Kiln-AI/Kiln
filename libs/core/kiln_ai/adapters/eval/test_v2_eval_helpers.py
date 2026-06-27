@@ -1,12 +1,14 @@
-"""Tests for v2_eval_helpers -- extract_value, check_required_vars, check_reference_key, stringify_for_match."""
+"""Tests for v2_eval_helpers -- extract_value, extract_output_value, check_required_vars, check_reference_key, stringify_for_match."""
 
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
     check_required_vars,
+    extract_output_value,
     extract_value,
     stringify_for_match,
 )
-from kiln_ai.datamodel.eval import EvalTaskInput, SkippedReason
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import EvalOutputScore, EvalTaskInput, SkippedReason
 
 
 def _make_input(**kwargs) -> EvalTaskInput:
@@ -150,6 +152,66 @@ class TestFromjsonExtractionSkip:
         value, skip, _detail = extract_value("(final_message | fromjson).status", inp)
         assert value == "ok"
         assert skip is None
+
+
+# ---------------------------------------------------------------------------
+# extract_output_value — output failures become FAILs, not skips
+# ---------------------------------------------------------------------------
+
+_SAMPLE_SCORES = [
+    EvalOutputScore(name="s1", instruction="i", type=TaskOutputRatingType.pass_fail),
+    EvalOutputScore(name="s2", instruction="i", type=TaskOutputRatingType.pass_fail),
+]
+
+
+class TestExtractOutputValue:
+    def test_success_returns_value_and_no_fail(self):
+        inp = _make_input(final_message="ok")
+        value, fail_result = extract_output_value(None, inp, _SAMPLE_SCORES)
+        assert value == "ok"
+        assert fail_result is None
+
+    def test_expression_success(self):
+        inp = _make_input(task_input="my input")
+        value, fail_result = extract_output_value("task_input", inp, _SAMPLE_SCORES)
+        assert value == "my input"
+        assert fail_result is None
+
+    def test_undefined_expression_fails_not_skips(self):
+        inp = _make_input()
+        value, fail_result = extract_output_value(
+            "nonexistent_field", inp, _SAMPLE_SCORES
+        )
+        assert value is None
+        assert fail_result is not None
+        assert fail_result.skipped_reason is None
+        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
+
+    def test_none_result_fails_not_skips(self):
+        inp = _make_input(trace=None)
+        value, fail_result = extract_output_value("trace", inp, _SAMPLE_SCORES)
+        assert value is None
+        assert fail_result is not None
+        assert fail_result.skipped_reason is None
+        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
+
+    def test_fromjson_invalid_json_fails_not_skips(self):
+        inp = _make_input(final_message="not json")
+        value, fail_result = extract_output_value(
+            "(final_message | fromjson).field", inp, _SAMPLE_SCORES
+        )
+        assert value is None
+        assert fail_result is not None
+        assert fail_result.skipped_reason is None
+        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
+
+    def test_fromjson_valid_json_succeeds(self):
+        inp = _make_input(final_message='{"key": "val"}')
+        value, fail_result = extract_output_value(
+            "(final_message | fromjson).key", inp, _SAMPLE_SCORES
+        )
+        assert value == "val"
+        assert fail_result is None
 
 
 # ---------------------------------------------------------------------------

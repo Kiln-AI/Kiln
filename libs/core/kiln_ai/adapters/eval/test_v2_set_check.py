@@ -157,7 +157,7 @@ class TestSetCheckReferenceKey:
 
 class TestSetCheckExpression:
     @pytest.mark.asyncio
-    async def test_undefined_expression_skips(self):
+    async def test_undefined_expression_fails_not_skips(self):
         cfg = _make_config(
             SetCheckProperties(
                 expected_set=["a"],
@@ -166,8 +166,22 @@ class TestSetCheckExpression:
             )
         )
         result = await SetCheckEval(cfg).evaluate(_inp())
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_fromjson_invalid_json_fails_not_skips(self):
+        cfg = _make_config(
+            SetCheckProperties(
+                expected_set=["a"],
+                value_expression="(final_message | fromjson).field",
+                mode="equal",
+            )
+        )
+        inp = _inp(final_message="not json")
+        result = await SetCheckEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestSetCheckNoScores:

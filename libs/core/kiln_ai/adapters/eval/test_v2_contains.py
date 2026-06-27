@@ -107,13 +107,45 @@ class TestContainsExpression:
         assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
-    async def test_undefined_expression_skips(self):
+    async def test_undefined_expression_fails_not_skips(self):
         cfg = _make_config(
             ContainsProperties(substring="x", value_expression="nonexistent_field")
         )
         result = await ContainsEval(cfg).evaluate(_inp())
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_fromjson_invalid_json_fails_not_skips(self):
+        cfg = _make_config(
+            ContainsProperties(
+                substring="x",
+                value_expression="(final_message | fromjson).field",
+            )
+        )
+        inp = _inp(final_message="not json")
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_must_not_contain_undefined_output_still_fails(self):
+        """A must_not_contain check with undefined output should FAIL, not pass.
+
+        Even though the undefined value trivially "doesn't contain" the substring,
+        the correct semantics is: the model didn't produce the expected field, so
+        the eval result is a failure.
+        """
+        cfg = _make_config(
+            ContainsProperties(
+                substring="anything",
+                mode="must_not_contain",
+                value_expression="nonexistent_field",
+            )
+        )
+        result = await ContainsEval(cfg).evaluate(_inp())
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestContainsJsonCoercion:

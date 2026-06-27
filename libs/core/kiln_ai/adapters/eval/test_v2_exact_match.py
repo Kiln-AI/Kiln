@@ -103,16 +103,15 @@ class TestExactMatchExpression:
         assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
-    async def test_undefined_expression_skips(self):
+    async def test_undefined_expression_fails_not_skips(self):
         cfg = _make_config(
             ExactMatchProperties(
                 expected_value="x", value_expression="nonexistent_field"
             )
         )
         result = await ExactMatchEval(cfg).evaluate(_inp())
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.extraction_failed
-        assert result.skipped_detail is not None
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None
 
 
 class TestExactMatchNoScores:
@@ -189,7 +188,7 @@ class TestExactMatchJsonCoercion:
         assert result.scores == {"score_a": 1.0}
 
     @pytest.mark.asyncio
-    async def test_fromjson_invalid_json_skips(self):
+    async def test_fromjson_invalid_json_fails_not_skips(self):
         cfg = _make_config(
             ExactMatchProperties(
                 expected_value="x",
@@ -198,7 +197,5 @@ class TestExactMatchJsonCoercion:
         )
         inp = _inp(final_message="not json")
         result = await ExactMatchEval(cfg).evaluate(inp)
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.extraction_failed
-        assert result.skipped_detail is not None
-        assert "not valid JSON" in result.skipped_detail
+        assert result.scores == {"score_a": 0.0}
+        assert result.skipped_reason is None

@@ -229,7 +229,7 @@ class TestExtractValue:
         assert value == "traced"
         assert skip is None
 
-    def test_undefined_skips(self):
+    def test_undefined_returns_extraction_failed(self):
         inp = _sample_eval_input()
         value, skip, detail = extract_value("nonexistent_field", inp)
         assert value is None
