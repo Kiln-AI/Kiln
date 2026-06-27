@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from jinja2 import Undefined
@@ -7,7 +8,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     SkippedReason,
 )
-from kiln_ai.utils.jinja_engine import extract
+from kiln_ai.utils.jinja_engine import JinjaExtractionError, extract
 
 
 def build_binary_scores(
@@ -35,7 +36,14 @@ def extract_value(
     if expression is None:
         return eval_input.final_message, None, None
     data = eval_input.model_dump()
-    result = extract(expression, data)
+    try:
+        result = extract(expression, data)
+    except JinjaExtractionError as e:
+        return (
+            None,
+            SkippedReason.extraction_failed,
+            f"Expression '{expression}' failed: {e}",
+        )
     if isinstance(result, Undefined) or result is None:
         return (
             None,
@@ -75,6 +83,22 @@ def check_reference_key(
     return value, None, None
 
 
+def stringify_for_match(value: object) -> str:
+    """Coerce a value to a string for comparison in deterministic checks.
+
+    - str values pass through unchanged.
+    - Other types are serialized via ``json.dumps`` (preserving insertion order,
+      producing ``true``/``false`` for bools, double-quoted strings, etc.).
+    - Falls back to ``str(value)`` if JSON serialization fails.
+    """
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def check_required_vars(
     required_vars: list[str],
     eval_input: EvalTaskInput,
@@ -82,7 +106,13 @@ def check_required_vars(
     """Check that all required_var expressions resolve to non-Undefined/non-None values."""
     data = eval_input.model_dump()
     for var_expr in required_vars:
-        result = extract(var_expr, data)
+        try:
+            result = extract(var_expr, data)
+        except JinjaExtractionError as e:
+            return (
+                SkippedReason.extraction_failed,
+                f"required_var '{var_expr}' failed: {e}",
+            )
         if isinstance(result, Undefined) or result is None:
             return (
                 SkippedReason.extraction_failed,

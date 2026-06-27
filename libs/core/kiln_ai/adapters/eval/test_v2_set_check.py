@@ -225,3 +225,11 @@ class TestCoerceToSetStatic:
     )
     def test_coerce(self, input_val, expected):
         assert SetCheckEval._coerce_to_set(input_val) == expected
+
+    def test_bool_coercion_uses_json_style(self):
+        result = SetCheckEval._coerce_to_set([True, False, 42])
+        assert result == {"true", "false", "42"}
+
+    def test_json_array_with_bool_coercion(self):
+        result = SetCheckEval._coerce_to_set("[true, false, 1]")
+        assert result == {"true", "false", "1"}

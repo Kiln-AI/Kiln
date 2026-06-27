@@ -86,6 +86,20 @@ class TestPatternMatchExpression:
         assert result.skipped_reason == SkippedReason.extraction_failed
 
 
+class TestPatternMatchJsonCoercion:
+    @pytest.mark.asyncio
+    async def test_dict_value_regex_on_json(self):
+        cfg = _make_config(
+            PatternMatchProperties(
+                pattern=r'"status":\s*"ok"',
+                value_expression="(final_message | fromjson).result",
+            )
+        )
+        inp = _inp(final_message='{"result": {"status": "ok"}}')
+        result = await PatternMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+
+
 class TestPatternMatchNoScores:
     def test_no_parent_eval_raises(self):
         cfg = _make_config(PatternMatchProperties(pattern=".*"))

@@ -149,3 +149,56 @@ class TestExactMatchMultipleScores:
         cfg.parent_eval.return_value = parent
         result = await ExactMatchEval(cfg).evaluate(_inp())
         assert result.scores == {"score_a": 1.0, "score_b": 1.0}
+
+
+class TestExactMatchJsonCoercion:
+    @pytest.mark.asyncio
+    async def test_dict_value_compared_as_json(self):
+        cfg = _make_config(
+            ExactMatchProperties(
+                expected_value='{"status": "ok"}',
+                value_expression="(final_message | fromjson).result",
+            )
+        )
+        inp = _inp(final_message='{"result": {"status": "ok"}}')
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+
+    @pytest.mark.asyncio
+    async def test_list_value_compared_as_json(self):
+        cfg = _make_config(
+            ExactMatchProperties(
+                expected_value="[1, 2, 3]",
+                value_expression="(final_message | fromjson).numbers",
+            )
+        )
+        inp = _inp(final_message='{"numbers": [1, 2, 3]}')
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+
+    @pytest.mark.asyncio
+    async def test_bool_value_compared_as_json(self):
+        cfg = _make_config(
+            ExactMatchProperties(
+                expected_value="true",
+                value_expression="(final_message | fromjson).active",
+            )
+        )
+        inp = _inp(final_message='{"active": true}')
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+
+    @pytest.mark.asyncio
+    async def test_fromjson_invalid_json_skips(self):
+        cfg = _make_config(
+            ExactMatchProperties(
+                expected_value="x",
+                value_expression="(final_message | fromjson).field",
+            )
+        )
+        inp = _inp(final_message="not json")
+        result = await ExactMatchEval(cfg).evaluate(inp)
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.skipped_detail is not None
+        assert "not valid JSON" in result.skipped_detail

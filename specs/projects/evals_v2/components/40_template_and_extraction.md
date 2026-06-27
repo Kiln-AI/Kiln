@@ -17,7 +17,7 @@ summary: Jinja2 input transform, extract() helper, eval consumer design, V1 BC u
 - **Templating is a general Kiln capability, not eval-owned.** V2 evals are the first consumer of the `input_transform` infrastructure defined in `components/06_prereq_input_transform.md`. No eval-specific Jinja2 engine, no eval-specific FilterSpec data model.
 - **One extraction mechanism** across all V2 eval types: Jinja2 expressions via the shared `extract()` helper from the prereq module. `FilterSpec` is gone. jq dependency removed from the eval path.
 - **V2 `llm_judge` is a Kiln task** whose RunConfig carries a `JinjaInputTransform` with the user-authored prompt template. Eval runner assembles a synthetic input JSON (`EvalTaskInput`), passes it through the transform, and inference produces a structured score response.
-- **Four reserved top-level template variables:** `final_message`, `trace`, `reference_data`, `task_input`. No `data.` wrapper. User templates write `{{ final_message.classification }}` directly. Names are reserved at save-time.
+- **Four reserved top-level template variables:** `final_message`, `trace`, `reference_data`, `task_input`. No `data.` wrapper. User templates write `{{ (final_message | fromjson).classification }}` directly for JSON outputs. Names are reserved at save-time.
 - **Immutable EvalConfigs.** Defaults resolved and saved at creation time, never applied at runtime. Future code changes can't silently mutate saved evals.
 - **V1 backwards compatibility absolute.** V1 EvalConfigs (`config_type: g_eval` / `llm_as_judge`) keep running through the existing hardcoded f-string path. Zero V1 behavior changes (A0.1).
 
@@ -67,22 +67,22 @@ class EvalTaskInput(BaseModel):
     NOT user-authored — built by the eval runner from EvalInput + TaskRun.
     Templates reference these fields directly as top-level variables.
     """
-    final_message: str | dict[str, Any]
+    final_message: str
     trace: list[ChatCompletionMessageParam] | None = None
     reference_data: dict[str, JsonValue] | None = None
-    task_input: str | dict[str, Any]
+    task_input: str | None
 ```
 
 | Field | Sourced from | Notes |
 |---|---|---|
-| `final_message` | `TaskRun.output.output` | String for plain-text tasks; dict for tasks with `output_json_schema` |
+| `final_message` | `TaskRun.output.output` | Always the raw string; use the `fromjson` filter to parse JSON outputs (e.g. `(final_message \| fromjson).field`) |
 | `trace` | `TaskRun.trace` | Kiln's modified OpenAI format. `None` for `EvalDataType.final_answer` runs that don't carry traces |
 | `reference_data` | `EvalInput.reference` | `None` if EvalInput has no reference |
 | `task_input` | `TaskRun.input` | The original input given to the task being evaluated |
 
 ### Reserved top-level names
 
-`final_message`, `trace`, `reference_data`, `task_input` are reserved. Templates reference them directly: `{{ final_message.classification }}`, `{{ reference_data.expected_answer }}`. No `data.` namespace wrapper.
+`final_message`, `trace`, `reference_data`, `task_input` are reserved. Templates reference them directly: `{{ (final_message | fromjson).classification }}` (for JSON outputs), `{{ reference_data.expected_answer }}`. No `data.` namespace wrapper.
 
 User templates may NOT redefine these names via `{% set %}` (Jinja2 allows it but it's semantically wrong; we don't enforce but document).
 
@@ -132,7 +132,7 @@ class LlmJudgeProperties(BaseModel):
 **No `template_vars` field.** Templates access top-level synthetic-input fields directly. For DRYing repeated expressions, use Jinja2's built-in `{% set %}`:
 
 ```jinja
-{% set summary = final_message.summary %}
+{% set summary = (final_message | fromjson).summary %}
 {% set ref = reference_data.expected_summary %}
 Compare {{ summary }} against expert: {{ ref }}
 ```
@@ -214,7 +214,7 @@ Invalid Jinja2 → Pydantic `ValidationError` → save rejected.
 
 A `prompt_template` that references zero variables, or only references variables that are sub-paths of `reference_data`, cannot meaningfully evaluate a model's output. Save-time validation parses the template AST to find variable references; rejects the save unless at least one reference is:
 - A reserved top-level var that's NOT `reference_data` (`final_message`, `trace`, or `task_input`), OR
-- A sub-path of one of those (`final_message.summary`, `trace[0].content`, etc.)
+- A sub-path of one of those (`(final_message | fromjson).summary`, `trace[0].content`, etc.)
 
 Error message: `"prompt_template must reference at least one variable from model output (final_message, trace, or task_input)."`
 
@@ -243,13 +243,13 @@ EvalConfig(
     config_type="v2",
     properties=ExactMatchProperties(
         type="exact_match",
-        value_expression="final_message.classification",
+        value_expression="(final_message | fromjson).classification",
         reference_key="expected_classification",
     )
 )
 ```
 
-Extracts `final_message.classification`, compares to `reference_data["expected_classification"]`.
+Extracts `(final_message | fromjson).classification`, compares to `reference_data["expected_classification"]`.
 
 ### 6.2 Pattern match on whole output
 
@@ -368,7 +368,13 @@ V2 EvalConfigs (`config_type: "v2"`, properties typed by `V2EvalType`) route thr
 ### Confirmed no-action (notes only)
 
 - **Few-shot examples:** users can author few-shot examples directly into their Jinja2 `prompt_template` or `system_prompt`. No separate mechanism. Per Steve's #13: Kiln builder handles few-shot today.
-- **Custom Jinja2 filters** (e.g., recursive descent equivalent to jq's `..`): not in V2.0 scope. Future addition to the shared `kiln_ai` engine module if needed.
+- **Custom Jinja2 filters** (e.g., recursive descent equivalent to jq's `..`): not in V2.0 scope, with the exception of `fromjson` (see below). Future additions to the shared `kiln_ai` engine module if needed.
+
+### `fromjson` filter
+
+A built-in Jinja2 `fromjson` filter is registered on both the template and expression environments. It parses a JSON string into a Python object (dict, list, or scalar). Usage: `(final_message | fromjson).field_name`.
+
+**Strict behavior:** if the input is not a string, or not valid JSON, `fromjson` raises `JinjaExtractionError` (a `ValueError` subclass). In eval adapters, this error is caught and converted to a clean skip with `skipped_reason: extraction_failed` and a legible detail message. Templates using `fromjson` on non-JSON outputs will skip the case rather than crash the eval run.
 
 ---
 

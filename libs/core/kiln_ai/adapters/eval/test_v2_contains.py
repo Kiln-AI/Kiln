@@ -116,6 +116,32 @@ class TestContainsExpression:
         assert result.skipped_reason == SkippedReason.extraction_failed
 
 
+class TestContainsJsonCoercion:
+    @pytest.mark.asyncio
+    async def test_dict_value_contains_json_key(self):
+        cfg = _make_config(
+            ContainsProperties(
+                substring='"status"',
+                value_expression="(final_message | fromjson).result",
+            )
+        )
+        inp = _inp(final_message='{"result": {"status": "ok", "code": 200}}')
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+
+    @pytest.mark.asyncio
+    async def test_list_value_contains_element(self):
+        cfg = _make_config(
+            ContainsProperties(
+                substring="2",
+                value_expression="(final_message | fromjson).numbers",
+            )
+        )
+        inp = _inp(final_message='{"numbers": [1, 2, 3]}')
+        result = await ContainsEval(cfg).evaluate(inp)
+        assert result.scores == {"score_a": 1.0}
+
+
 class TestContainsNoScores:
     def test_no_parent_eval_raises(self):
         cfg = _make_config(ContainsProperties(substring="Hello"))

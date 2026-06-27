@@ -92,7 +92,7 @@ LlmJudgeProperties(
 
 ```python
 ExactMatchProperties(
-    value_expression="final_message.classification",
+    value_expression="(final_message | fromjson).classification",
     reference_key="expected_classification",
 )
 ```

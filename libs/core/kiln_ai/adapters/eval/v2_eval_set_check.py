@@ -5,6 +5,7 @@ from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     check_reference_key,
     extract_value,
+    stringify_for_match,
 )
 from kiln_ai.datamodel.eval import (
     EvalTaskInput,
@@ -59,19 +60,24 @@ class SetCheckEval(BaseV2EvalBridge):
 
     @staticmethod
     def _coerce_to_set(value: object) -> set[str]:
-        """Coerce a value to a set of strings."""
+        """Coerce a value to a set of strings.
+
+        Uses ``stringify_for_match`` for element stringification so that
+        bools become ``"true"``/``"false"`` and dicts/lists become JSON,
+        consistent with exact_match/contains/pattern_match.
+        """
         if isinstance(value, list):
-            return {str(item) for item in value}
+            return {stringify_for_match(item) for item in value}
         if isinstance(value, set):
-            return {str(item) for item in value}
+            return {stringify_for_match(item) for item in value}
         if isinstance(value, dict):
-            return {str(k) for k in value.keys()}
+            return {stringify_for_match(k) for k in value.keys()}
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
-                    return {str(item) for item in parsed}
+                    return {stringify_for_match(item) for item in parsed}
             except (json.JSONDecodeError, TypeError):
                 pass
             return {value}
-        return {str(value)}
+        return {stringify_for_match(value)}

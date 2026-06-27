@@ -23,6 +23,11 @@ vi.mock("./tag_input.svelte", async () => {
   return { default: Stub }
 })
 
+vi.mock("$lib/ui/dialog.svelte", async () => {
+  const { default: Stub } = await import("./__tests__/dialog_stub.svelte")
+  return { default: Stub }
+})
+
 const PatternMatchForm = (await import("./pattern_match_form.svelte")).default
 const ExactMatchForm = (await import("./exact_match_form.svelte")).default
 const ContainsForm = (await import("./contains_form.svelte")).default
@@ -738,13 +743,13 @@ describe("Phase 7: reference_key validation path", () => {
 })
 
 describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
-  it("ExactMatch has 'Sub-field' label with Jinja tooltip", () => {
+  it("ExactMatch has 'Jinja Expression' label when custom value is set", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
           type: "exact_match" as const,
           case_sensitive: true,
-          value_expression: null,
+          value_expression: "final_message | upper",
           expected_value: "hello",
           reference_key: null,
         },
@@ -754,20 +759,17 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
       '[data-testid="form-element-exact_match_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe("Sub-field")
-    expect(formElement?.getAttribute("data-info-description")).toContain(
-      "Jinja",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Jinja Expression")
   })
 
-  it("PatternMatch has 'Sub-field' label with Jinja tooltip", () => {
+  it("PatternMatch has 'Jinja Expression' label when custom value is set", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
           type: "pattern_match" as const,
           pattern: "test",
           mode: "must_match" as const,
-          value_expression: null,
+          value_expression: "final_message | upper",
         },
       },
     })
@@ -775,20 +777,17 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
       '[data-testid="form-element-pattern_match_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe("Sub-field")
-    expect(formElement?.getAttribute("data-info-description")).toContain(
-      "Jinja",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Jinja Expression")
   })
 
-  it("Contains has 'Sub-field' label with Jinja tooltip", () => {
+  it("Contains has 'Jinja Expression' label when custom value is set", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
           type: "contains" as const,
           case_sensitive: true,
           mode: "must_contain" as const,
-          value_expression: null,
+          value_expression: "final_message | upper",
           substring: "hello",
           reference_key: null,
         },
@@ -798,10 +797,7 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
       '[data-testid="form-element-contains_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe("Sub-field")
-    expect(formElement?.getAttribute("data-info-description")).toContain(
-      "Jinja",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Jinja Expression")
   })
 })
 
@@ -1086,13 +1082,13 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
     ).toBeNull()
   })
 
-  it("has 'Sub-field' label with Jinja tooltip", () => {
+  it("has 'Jinja Expression' label when custom value is set", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
           type: "set_check" as const,
           mode: "equal" as const,
-          value_expression: null,
+          value_expression: "final_message | upper",
           expected_set: ["a"],
           reference_key: null,
         },
@@ -1102,19 +1098,16 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
       '[data-testid="form-element-set_check_value_expression"]',
     )
     expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe("Sub-field")
-    expect(formElement?.getAttribute("data-info-description")).toContain(
-      "Jinja",
-    )
+    expect(formElement?.getAttribute("data-label")).toBe("Jinja Expression")
   })
 
-  it("Sub-field description ends with 'Must be an array.'", () => {
+  it("Jinja Expression description includes 'Must be an array.' via extra_description", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
           type: "set_check" as const,
           mode: "equal" as const,
-          value_expression: null,
+          value_expression: "final_message | upper",
           expected_set: ["a"],
           reference_key: null,
         },
@@ -1124,7 +1117,7 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
       '[data-testid="form-element-set_check_value_expression"]',
     )
     const desc = formElement?.getAttribute("data-description") || ""
-    expect(desc).toContain("Leave blank to use the entire message")
+    expect(desc).toContain("Jinja syntax")
     expect(desc).toContain("Must be an array.")
   })
 
@@ -1500,13 +1493,13 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
 // placeholders, renamed sections, and regex tooltip content.
 
 describe("Standard controls: visible labels (no hidden labels)", () => {
-  it("OutputValueField shows visible 'Sub-field' label", () => {
+  it("OutputValueField shows visible 'Jinja Expression' label when custom", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
           type: "exact_match" as const,
           case_sensitive: true,
-          value_expression: null,
+          value_expression: "final_message | upper",
           expected_value: "hello",
           reference_key: null,
         },
@@ -1516,7 +1509,7 @@ describe("Standard controls: visible labels (no hidden labels)", () => {
       '[data-testid="form-element-exact_match_value_expression"]',
     )
     expect(valueExprField?.getAttribute("data-hide-label")).toBe("false")
-    expect(valueExprField?.getAttribute("data-label")).toBe("Sub-field")
+    expect(valueExprField?.getAttribute("data-label")).toBe("Jinja Expression")
   })
 
   it("ExactMatch expected_value field shows visible 'Value' label", () => {
@@ -2019,7 +2012,7 @@ describe("Standard controls: reference key info tooltips", () => {
 })
 
 describe("Standard controls: OutputValueField has FormSection wrapper", () => {
-  it("OutputValueField renders inside a FormSection with radio and selector", () => {
+  it("OutputValueField renders inside a FormSection with dropdown", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -2035,22 +2028,22 @@ describe("Standard controls: OutputValueField has FormSection wrapper", () => {
       '[data-testid="output-value-section"]',
     )
     expect(section).toBeTruthy()
-    const formElement = container.querySelector(
-      '[data-testid="form-element-exact_match_value_expression"]',
+    const dropdown = container.querySelector(
+      '[data-testid="form-element-exact_match_output_source"]',
     )
-    expect(formElement).toBeTruthy()
-    expect(formElement?.getAttribute("data-label")).toBe("Sub-field")
+    expect(dropdown).toBeTruthy()
+    expect(dropdown?.getAttribute("data-type")).toBe("fancy_select")
   })
 })
 
 describe("Standard controls: description and tooltip on visible-label fields", () => {
-  it("OutputValueField has description and Jinja tooltip with visible label", () => {
+  it("OutputValueField has Jinja description with visible label when custom", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
           type: "exact_match" as const,
           case_sensitive: true,
-          value_expression: null,
+          value_expression: "final_message | upper",
           expected_value: "hello",
           reference_key: null,
         },
@@ -2060,8 +2053,8 @@ describe("Standard controls: description and tooltip on visible-label fields", (
       '[data-testid="form-element-exact_match_value_expression"]',
     )
     expect(field?.getAttribute("data-hide-label")).toBe("false")
-    expect(field?.getAttribute("data-description")).toContain("user.status")
-    expect(field?.getAttribute("data-info-description")).toContain("Jinja")
+    expect(field?.getAttribute("data-description")).toContain("Jinja syntax")
+    expect(field?.getAttribute("data-label")).toBe("Jinja Expression")
   })
 
   it("PatternMatch regex field has description and tooltip with visible label", () => {

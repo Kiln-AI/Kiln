@@ -3,6 +3,7 @@ from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     check_reference_key,
     extract_value,
+    stringify_for_match,
 )
 from kiln_ai.datamodel.eval import (
     ContainsProperties,
@@ -28,12 +29,12 @@ class ContainsEval(BaseV2EvalBridge):
             )
             if skip is not None:
                 return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
-            substring = str(substring)
+            substring = stringify_for_match(substring)
         else:
             substring = props.substring
             assert substring is not None
 
-        actual = str(value)
+        actual = stringify_for_match(value)
         if props.case_sensitive:
             found = substring in actual
         else:

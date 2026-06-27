@@ -17,6 +17,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
+    SkippedReason,
 )
 
 
@@ -524,3 +525,17 @@ class TestLlmJudgeEvalMultipleScores:
         result = await LlmJudgeEval(cfg).evaluate(_inp())
         assert result.scores == {"quality": 4.0, "relevance": 1.0}
         assert result.skipped_reason is None
+
+
+class TestLlmJudgeEvalTemplateRenderError:
+    @pytest.mark.asyncio
+    async def test_fromjson_on_non_json_skips_cleanly(self):
+        props = _make_props(
+            prompt_template="Result: {{ (final_message | fromjson).status }}"
+        )
+        cfg = _make_config(props)
+        result = await LlmJudgeEval(cfg).evaluate(_inp(final_message="not valid json"))
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.skipped_detail is not None
+        assert "not valid JSON" in result.skipped_detail

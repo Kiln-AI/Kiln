@@ -35,13 +35,14 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalTaskInput,
     LlmJudgeProperties,
+    SkippedReason,
     V2EvalResult,
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, Task
-from kiln_ai.utils.jinja_engine import _template_env
+from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
 
 _DEFAULT_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
@@ -104,9 +105,15 @@ class LlmJudgeEval(BaseV2EvalBridge):
             return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
 
         namespace = eval_input.model_dump()
-        rendered_prompt = _template_env.from_string(props.prompt_template).render(
-            **namespace
-        )
+        try:
+            rendered_prompt = _template_env.from_string(props.prompt_template).render(
+                **namespace
+            )
+        except JinjaExtractionError as e:
+            return V2EvalResult(
+                skipped_reason=SkippedReason.extraction_failed,
+                skipped_detail=f"Template rendering failed: {e}",
+            )
 
         output_json_schema = BaseEval.build_score_schema(
             self.eval, allow_float_scores=False

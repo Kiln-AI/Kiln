@@ -892,7 +892,7 @@ The `run_configs iff task_run_eval` check is applied identically in both branche
 
 **Decision:** V2 evals run as Kiln tasks (per V1 `GEvalTask` pattern). Eval runner assembles a synthetic JSON input (`EvalTaskInput { final_message, trace, reference_data, task_input }`) per case. For `llm_judge`: constructs an eval task RunConfig with `JinjaInputTransform(template=prompt_template)`, pre-checks `required_var` expressions via `extract()`, skips with structured `skipped_reason` on null/Undefined. For simple-check types: calls `extract()` directly, compares result to `expected_value` / `reference_data[reference_key]`.
 
-**No `template_vars` field on `LlmJudgeProperties`.** Templates access top-level synthetic-input fields directly (`{{ final_message.summary }}`). DRYing via Jinja2's built-in `{% set %}`.
+**No `template_vars` field on `LlmJudgeProperties`.** Templates access top-level synthetic-input fields directly (`{{ (final_message | fromjson).summary }}`). DRYing via Jinja2's built-in `{% set %}`.
 
 **Save-time validation:** EvalConfig save runs `compile_template_or_raise(prompt_template)` and `compile_expression_or_raise(...)` for each `required_var` / `value_expression`. Invalid Jinja2 → save rejected. PLUS: useless-template rejection (at least one referenced var must come from `final_message`, `trace`, or `task_input` — not just `reference_data`).
 

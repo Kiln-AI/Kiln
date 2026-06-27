@@ -4,6 +4,7 @@ from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     build_binary_scores,
     extract_value,
+    stringify_for_match,
 )
 from kiln_ai.datamodel.eval import (
     EvalTaskInput,
@@ -24,7 +25,7 @@ class PatternMatchEval(BaseV2EvalBridge):
         if skip is not None:
             return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
 
-        actual = str(value)
+        actual = stringify_for_match(value)
 
         try:
             match = re.search(props.pattern, actual)

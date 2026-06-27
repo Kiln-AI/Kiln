@@ -1,9 +1,10 @@
-"""Tests for v2_eval_helpers -- extract_value, check_required_vars, check_reference_key."""
+"""Tests for v2_eval_helpers -- extract_value, check_required_vars, check_reference_key, stringify_for_match."""
 
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
     check_required_vars,
     extract_value,
+    stringify_for_match,
 )
 from kiln_ai.datamodel.eval import EvalTaskInput, SkippedReason
 
@@ -120,3 +121,69 @@ class TestCheckReferenceKey:
         assert value is None
         assert skip == SkippedReason.missing_reference_key
         assert detail is not None and "None" in detail
+
+
+# ---------------------------------------------------------------------------
+# fromjson extraction error → clean skip
+# ---------------------------------------------------------------------------
+
+
+class TestFromjsonExtractionSkip:
+    def test_extract_value_fromjson_invalid_json_skips(self):
+        inp = _make_input(final_message="not valid json {")
+        value, skip, detail = extract_value("(final_message | fromjson).field", inp)
+        assert value is None
+        assert skip == SkippedReason.extraction_failed
+        assert detail is not None
+        assert "not valid JSON" in detail
+        assert "(final_message | fromjson).field" in detail
+
+    def test_check_required_vars_fromjson_invalid_json_skips(self):
+        inp = _make_input(final_message="plain text")
+        skip, detail = check_required_vars(["(final_message | fromjson).key"], inp)
+        assert skip == SkippedReason.extraction_failed
+        assert detail is not None
+        assert "not valid JSON" in detail
+
+    def test_extract_value_fromjson_valid_json_passes(self):
+        inp = _make_input(final_message='{"status": "ok"}')
+        value, skip, _detail = extract_value("(final_message | fromjson).status", inp)
+        assert value == "ok"
+        assert skip is None
+
+
+# ---------------------------------------------------------------------------
+# stringify_for_match
+# ---------------------------------------------------------------------------
+
+
+class TestStringifyForMatch:
+    def test_string_passthrough(self):
+        assert stringify_for_match("hello") == "hello"
+
+    def test_dict_to_json(self):
+        result = stringify_for_match({"a": 1, "b": 2})
+        assert result == '{"a": 1, "b": 2}'
+        assert '"' in result
+
+    def test_list_to_json(self):
+        result = stringify_for_match([1, 2, 3])
+        assert result == "[1, 2, 3]"
+
+    def test_bool_true(self):
+        assert stringify_for_match(True) == "true"
+
+    def test_bool_false(self):
+        assert stringify_for_match(False) == "false"
+
+    def test_number(self):
+        assert stringify_for_match(42) == "42"
+
+    def test_float(self):
+        assert stringify_for_match(3.14) == "3.14"
+
+    def test_none(self):
+        assert stringify_for_match(None) == "null"
+
+    def test_non_serializable_falls_back_to_str(self):
+        assert stringify_for_match(object.__class__) == str(object.__class__)
