@@ -11689,7 +11689,10 @@ export interface operations {
     };
     get_runs_api_projects__project_id__tasks__task_id__runs_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of runs to return. When set, the most recent runs (by created_at) are returned. When omitted, all runs are returned. */
+                limit?: number | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

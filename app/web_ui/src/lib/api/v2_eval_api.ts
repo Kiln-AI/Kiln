@@ -137,8 +137,11 @@ export async function testV2EvalLlmJudge(
   )
 }
 
+const TASK_RUNS_LIMIT = 50
+
 /**
- * Fetch task runs for a task, sorted most recent first.
+ * Fetch task runs for a task, sorted most recent first by the backend.
+ * Limited to the most recent TASK_RUNS_LIMIT entries to avoid loading massive datasets.
  */
 export async function fetchTaskRuns(
   projectId: string,
@@ -149,18 +152,14 @@ export async function fetchTaskRuns(
     {
       params: {
         path: { project_id: projectId, task_id: taskId },
+        query: { limit: TASK_RUNS_LIMIT },
       },
     },
   )
   if (error) {
     throw new Error(`Failed to fetch task runs: ${extractErrorMessage(error)}`)
   }
-  if (!data) return []
-  return [...data].sort((a, b) => {
-    const aDate = a.created_at ? new Date(a.created_at).getTime() : 0
-    const bDate = b.created_at ? new Date(b.created_at).getTime() : 0
-    return bDate - aDate
-  })
+  return data ?? []
 }
 
 /**

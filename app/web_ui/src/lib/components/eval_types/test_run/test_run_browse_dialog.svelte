@@ -8,7 +8,6 @@
 
   let dialog: Dialog
   let manual_dialog: ManualExampleDialog
-  let selected_index = 0
 
   const PAGE_SIZE = 5
   let current_page = 0
@@ -22,7 +21,6 @@
   }>()
 
   export function show() {
-    selected_index = 0
     current_page = 0
     dialog?.show()
   }
@@ -46,12 +44,9 @@
     return text.substring(0, max_length) + "..."
   }
 
-  function handle_use_input(): boolean {
-    const run = available_runs[selected_index]
-    if (run) {
-      dispatch("select", run)
-    }
-    return true
+  function select_run(run: TaskRunOutput) {
+    dispatch("select", run)
+    dialog?.close()
   }
 
   function handle_manual_confirm(e: CustomEvent<TaskRunOutput>) {
@@ -62,47 +57,26 @@
 
 <Dialog
   bind:this={dialog}
-  title="Choose an input"
+  title="Choose Dataset Sample"
   subtitle="Pick a dataset item to test this scorer against."
   width="wide"
-  action_buttons={[
-    { label: "Cancel", isCancel: true },
-    {
-      label: "Use input",
-      isPrimary: true,
-      action: handle_use_input,
-    },
-  ]}
 >
   <div class="flex flex-col gap-4">
     <div class="overflow-x-auto">
       <table class="table table-fixed w-full" data-testid="browse-table">
         <thead>
           <tr class="bg-base-200 text-xs uppercase text-gray-500">
-            <th class="w-8"></th>
             <th>Input preview</th>
             <th>Output preview</th>
             <th class="w-28">Created</th>
           </tr>
         </thead>
         <tbody>
-          {#each paged_runs as run, i}
-            {@const global_index = page_start + i}
+          {#each paged_runs as run}
             <tr
-              class="cursor-pointer hover:bg-base-200/50 {global_index ===
-              selected_index
-                ? 'bg-primary/5'
-                : ''}"
-              on:click={() => (selected_index = global_index)}
+              class="cursor-pointer hover:bg-base-200/50"
+              on:click={() => select_run(run)}
             >
-              <td class="py-2">
-                <input
-                  type="radio"
-                  class="radio radio-primary radio-xs"
-                  checked={global_index === selected_index}
-                  on:change={() => (selected_index = global_index)}
-                />
-              </td>
               <td class="py-2">
                 <span
                   class="text-xs text-gray-500 font-mono"
@@ -152,21 +126,15 @@
       </div>
     {/if}
 
-    <div
-      class="flex items-center justify-between border-t border-base-200 pt-3"
-    >
-      <span class="text-xs text-gray-500">
-        {available_runs.length}
-        {available_runs.length === 1 ? "input" : "inputs"}
-      </span>
+    <div class="flex items-center justify-end border-t border-base-200 pt-3">
       <button
         type="button"
-        class="btn btn-sm btn-ghost text-primary"
+        class="btn btn-sm btn-ghost text-primary font-bold"
         on:click={() => manual_dialog?.show()}
         data-testid="add-manual-example"
       >
         <i class="bi bi-plus-circle"></i>
-        Add manual example
+        or add manual example
       </button>
     </div>
   </div>

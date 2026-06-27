@@ -756,12 +756,14 @@ describe("TestRunBrowseDialog", () => {
       },
     })
 
-    const dialog = container.querySelector('[data-title="Choose an input"]')
+    const dialog = container.querySelector(
+      '[data-title="Choose Dataset Sample"]',
+    )
     expect(dialog).not.toBeNull()
     expect(dialog?.getAttribute("data-width")).toBe("wide")
   })
 
-  it("renders table with Input, Output, Created columns", () => {
+  it("renders table with Input, Output, Created columns (no radio column)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
       props: {
@@ -772,6 +774,7 @@ describe("TestRunBrowseDialog", () => {
     const table = container.querySelector('[data-testid="browse-table"]')
     expect(table).not.toBeNull()
     const headers = table?.querySelectorAll("th")
+    expect(headers?.length).toBe(3)
     const headerTexts = Array.from(headers || []).map((h) =>
       h.textContent?.trim(),
     )
@@ -796,7 +799,7 @@ describe("TestRunBrowseDialog", () => {
     expect(searchPlaceholder).toBeNull()
   })
 
-  it("shows Add manual example button", () => {
+  it("shows 'or add manual example' button with bold styling", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
       props: {
@@ -806,34 +809,11 @@ describe("TestRunBrowseDialog", () => {
 
     const addBtn = container.querySelector('[data-testid="add-manual-example"]')
     expect(addBtn).not.toBeNull()
-    expect(addBtn?.textContent?.trim()).toContain("Add manual example")
+    expect(addBtn?.textContent?.trim()).toContain("or add manual example")
+    expect(addBtn?.classList.contains("font-bold")).toBe(true)
   })
 
-  it("shows input count", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(TestRunBrowseDialog as any, {
-      props: {
-        available_runs: [run1, run2, run3],
-      },
-    })
-
-    expect(container.textContent).toContain("3")
-    expect(container.textContent).toContain("inputs")
-  })
-
-  it("uses singular 'input' for single item", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(TestRunBrowseDialog as any, {
-      props: {
-        available_runs: [run1],
-      },
-    })
-
-    expect(container.textContent).toContain("1")
-    expect(container.textContent).toMatch(/\b1\s+input\b/)
-  })
-
-  it("shows rows with radio buttons, first preselected", () => {
+  it("shows clickable rows without radio buttons", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
       props: {
@@ -842,9 +822,27 @@ describe("TestRunBrowseDialog", () => {
     })
 
     const radios = container.querySelectorAll('input[type="radio"]')
-    expect(radios.length).toBe(2)
-    expect((radios[0] as HTMLInputElement).checked).toBe(true)
-    expect((radios[1] as HTMLInputElement).checked).toBe(false)
+    expect(radios.length).toBe(0)
+
+    const rows = container.querySelectorAll("tbody tr")
+    expect(rows.length).toBe(2)
+    expect(rows[0].classList.contains("cursor-pointer")).toBe(true)
+  })
+
+  it("dispatches select and closes dialog on row click", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container, component } = render(TestRunBrowseDialog as any, {
+      props: {
+        available_runs: [run1, run2],
+      },
+    })
+    const handler = vi.fn()
+    component.$on("select", handler)
+
+    const rows = container.querySelectorAll("tbody tr")
+    await fireEvent.click(rows[1])
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler.mock.calls[0][0].detail).toBe(run2)
   })
 
   it("paginates with PAGE_SIZE of 5", () => {

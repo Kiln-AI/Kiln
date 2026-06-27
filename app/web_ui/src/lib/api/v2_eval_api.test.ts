@@ -239,7 +239,7 @@ describe("testV2EvalLlmJudge", () => {
 })
 
 describe("fetchTaskRuns", () => {
-  it("calls client.GET with correct path and params", async () => {
+  it("calls client.GET with correct path, params, and limit=50", async () => {
     mockGet.mockResolvedValue({ data: [], error: undefined })
 
     await fetchTaskRuns("proj-1", "task-2")
@@ -251,18 +251,18 @@ describe("fetchTaskRuns", () => {
       project_id: "proj-1",
       task_id: "task-2",
     })
+    expect(options.params.query).toEqual({ limit: 50 })
   })
 
-  it("sorts runs by created_at descending", async () => {
+  it("returns data as-is from backend (no client-side sort)", async () => {
     const runs = [
-      { id: "old", created_at: "2024-01-01T00:00:00Z" },
-      { id: "new", created_at: "2024-06-15T00:00:00Z" },
-      { id: "mid", created_at: "2024-03-10T00:00:00Z" },
+      { id: "a", created_at: "2024-06-15T00:00:00Z" },
+      { id: "b", created_at: "2024-01-01T00:00:00Z" },
     ]
     mockGet.mockResolvedValue({ data: runs, error: undefined })
 
     const result = await fetchTaskRuns("p", "t")
-    expect(result.map((r) => r.id)).toEqual(["new", "mid", "old"])
+    expect(result.map((r) => r.id)).toEqual(["a", "b"])
   })
 
   it("returns empty array when data is null", async () => {
