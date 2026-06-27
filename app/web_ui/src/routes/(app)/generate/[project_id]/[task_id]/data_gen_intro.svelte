@@ -23,6 +23,7 @@
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
+  import { build_eval_options } from "./eval_options"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -41,6 +42,9 @@
   let evals_by_id: Record<string, Eval> = {}
   let evals_loading: boolean = false
   let evals_error: KilnError | null = null
+
+  // Combined list of selectable evals (specs + legacy evals without a spec).
+  $: eval_options = build_eval_options(specs, evals_by_id)
 
   async function get_specs() {
     try {
@@ -104,8 +108,8 @@
     Promise.all([get_specs(), get_evals()])
   }
 
-  function select_spec(spec: Spec) {
-    const evaluator = spec.eval_id ? evals_by_id[spec.eval_id] : null
+  function select_eval_by_id(eval_id: string) {
+    const evaluator = evals_by_id[eval_id]
     if (!evaluator) {
       alert("This eval is not ready yet. Please configure its judge first.")
       return
@@ -132,7 +136,7 @@
       )
       return
     }
-    const eval_id = evaluator.id
+    const full_eval_id = evaluator.id
       ? `${project_id}::${task_id}::${evaluator.id}`
       : null
     const template_id = evaluator.template ?? null
@@ -140,8 +144,8 @@
     // build URL with parameters and redirect to synth page
     const params = new URLSearchParams()
     params.set("reason", "eval")
-    if (eval_id) {
-      params.set("eval_id", eval_id)
+    if (full_eval_id) {
+      params.set("eval_id", full_eval_id)
     }
     if (template_id) {
       params.set("template_id", template_id)
@@ -353,7 +357,7 @@
     <div class="font-light text-error">
       {specs_error?.message ?? evals_error?.message ?? "Unknown error"}
     </div>
-  {:else if specs.length > 0}
+  {:else if eval_options.length > 0}
     <div class="flex items-center mt-4">
       <a
         href={`/specs/${project_id}/${task_id}/select_template`}
@@ -369,13 +373,13 @@
     </div>
     <div class="font-medium text-center my-6">Select an Existing Eval</div>
     <div class="flex flex-col gap-3">
-      {#each specs as spec}
+      {#each eval_options as option}
         <button
-          on:click={() => select_spec(spec)}
+          on:click={() => select_eval_by_id(option.eval_id)}
           class="card bg-base-100 border border-base-300 hover:border-primary hover:shadow-md transition-all duration-200 cursor-pointer"
         >
           <div class="p-4 text-sm text-left">
-            <div class="">{spec.name}</div>
+            <div class="">{option.name}</div>
           </div>
         </button>
       {/each}
