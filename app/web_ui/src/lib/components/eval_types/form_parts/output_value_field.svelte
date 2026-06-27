@@ -6,7 +6,6 @@
   import FormSection from "./form_section.svelte"
   import {
     parseValue,
-    emitValue,
     JINJA_EXAMPLES,
     type OutputMode,
   } from "./output_value_helpers"
@@ -16,8 +15,11 @@
   export let id_prefix: string
   export let extra_description: string = ""
 
+  // Two genuinely independent state variables:
+  // 1. The dropdown/radio selection
   let mode: OutputMode = "final_message"
-  let customText: string = ""
+  // 2. The custom Jinja expression text (only meaningful when mode === "custom")
+  let customJinja: string = ""
 
   let examplesDialog: Dialog
 
@@ -49,73 +51,46 @@
     ? `${baseJinjaDescription} ${extra_description}`
     : baseJinjaDescription
 
-  // Guard to prevent reactive loops: tracks the value we last set.
-  let lastSetValue: string | null | undefined = undefined
+  // Derive the effective value reactively from the two state vars.
+  // This is NOT stored — it is computed on every change.
+  $: derivedValue =
+    mode === "final_message"
+      ? "final_message"
+      : mode === "trace"
+        ? "trace"
+        : customJinja.trim() || null
 
-  // Track previous mode to detect user-driven changes.
-  let modePrev: OutputMode = mode
+  // Guard to prevent reactive loops when we write to `value`.
+  let lastEmittedValue: string | null = null
 
-  // Track previous customText to detect user-driven changes.
-  let customTextPrev: string = customText
-
+  // Sync: parse an incoming `value` prop into the two state vars.
   function syncFromValue() {
     const parsed = parseValue(value)
     mode = parsed.mode
-    modePrev = parsed.mode
-    customText = parsed.customText
-    customTextPrev = parsed.customText
-    lastSetValue = value
+    customJinja = parsed.customText
+    lastEmittedValue = value
   }
 
-  // Initialize
+  // Initialize from the prop.
   syncFromValue()
 
-  // When `value` changes externally, re-parse into mode/customText.
-  // Skip if the change came from our own emit (lastSetValue matches).
-  $: if (value !== lastSetValue) {
+  // When `value` changes externally, re-parse into mode/customJinja.
+  // Skip if the change came from our own reactive emit.
+  $: if (value !== lastEmittedValue) {
     syncFromValue()
   }
 
-  function emitFromUI() {
-    const newVal = emitValue({ mode, customText })
-    lastSetValue = newVal
-    value = newVal
-  }
-
-  function onModeChange() {
-    // When switching into custom mode, prefill with the current concrete expression
-    if (mode === "custom") {
-      if (!customText.trim()) {
-        // Use the previous concrete value as starting base
-        const previous = lastSetValue
-        if (previous === "trace") {
-          customText = "trace"
-        } else {
-          customText = "final_message"
-        }
-        customTextPrev = customText
-      }
+  // Emit the derived value to the parent whenever it changes.
+  $: {
+    if (derivedValue !== lastEmittedValue) {
+      lastEmittedValue = derivedValue
+      value = derivedValue
     }
-    emitFromUI()
-  }
-
-  // Reactive emit when mode changes via dropdown binding.
-  $: if (mode !== modePrev) {
-    modePrev = mode
-    onModeChange()
-  }
-
-  // Reactive emit when customText changes via text input binding.
-  $: if (customText !== customTextPrev) {
-    customTextPrev = customText
-    emitFromUI()
   }
 
   function selectExample(expression: string) {
     mode = "custom"
-    customText = expression
-    customTextPrev = expression
-    emitFromUI()
+    customJinja = expression
     examplesDialog.close()
   }
 </script>
@@ -142,8 +117,7 @@
         description={fullJinjaDescription}
         inputType="input"
         placeholder="(final_message | fromjson).user.status"
-        optional
-        bind:value={customText}
+        bind:value={customJinja}
         inline_action={{
           handler: () => examplesDialog.show(),
           label: "See Examples",

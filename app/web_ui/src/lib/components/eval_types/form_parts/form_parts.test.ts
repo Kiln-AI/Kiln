@@ -482,6 +482,163 @@ describe("OutputValueField", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).value).toBe("trace")
   })
+
+  it("switching from Final Message to Custom emits null (empty customText shows placeholder)", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: { id_prefix: "test", value: "final_message" },
+    })
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    await fireEvent.click(customOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBeNull()
+  })
+
+  it("switching from Entire Trace to Custom emits null (empty customText shows placeholder)", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: { id_prefix: "test", value: "trace" },
+    })
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    await fireEvent.click(customOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBeNull()
+  })
+
+  it("switching to Custom preserves previously entered custom text", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: {
+        id_prefix: "test",
+        value: "final_message | upper",
+      },
+    })
+    // Start in custom mode with text. Switch to final_message, then back to custom.
+    const fmOption = container.querySelector(
+      '[data-testid="fancy-option-final_message"]',
+    )
+    await fireEvent.click(fmOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("final_message")
+
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    await fireEvent.click(customOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("final_message | upper")
+  })
+
+  it("external value change on edit re-parses into correct state", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: { id_prefix: "test", value: "final_message" },
+    })
+    // Verify initial state
+    const fmOption = container.querySelector(
+      '[data-testid="fancy-option-final_message"]',
+    )
+    expect(fmOption?.classList.contains("selected")).toBe(true)
+
+    // Externally set to a custom expression (simulates edit/load)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(component as any).$set({ value: "trace[-1].content" })
+    await tick()
+
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    expect(customOption?.classList.contains("selected")).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("trace[-1].content")
+  })
+
+  it("external value change to preset correctly sets dropdown", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: { id_prefix: "test", value: "custom_expr" },
+    })
+    // Start in custom mode
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    expect(customOption?.classList.contains("selected")).toBe(true)
+
+    // Externally set to 'trace'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(component as any).$set({ value: "trace" })
+    await tick()
+
+    const traceOption = container.querySelector(
+      '[data-testid="fancy-option-trace"]',
+    )
+    expect(traceOption?.classList.contains("selected")).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("trace")
+  })
+
+  it("custom text input is empty after switching from trace to custom", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: { id_prefix: "test", value: "trace" },
+    })
+    // Switch from Entire Trace to Custom
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    await fireEvent.click(customOption!)
+    await tick()
+
+    // The Jinja input should be visible (mode is custom)
+    const jinjaInput = container.querySelector(
+      '[data-testid="form-element-test_value_expression"]',
+    )
+    expect(jinjaInput).toBeTruthy()
+    // Value must be null, meaning custom text is empty — placeholder shows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBeNull()
+  })
+
+  it("round-trip: custom -> preset -> custom preserves custom text independently", async () => {
+    const { container, component } = render(OutputValueField, {
+      props: { id_prefix: "test", value: "my.custom.expr" },
+    })
+
+    // Switch to trace
+    const traceOption = container.querySelector(
+      '[data-testid="fancy-option-trace"]',
+    )
+    await fireEvent.click(traceOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("trace")
+
+    // Switch back to custom — custom text is preserved
+    const customOption = container.querySelector(
+      '[data-testid="fancy-option-custom"]',
+    )
+    await fireEvent.click(customOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("my.custom.expr")
+
+    // Switch to final_message
+    const fmOption = container.querySelector(
+      '[data-testid="fancy-option-final_message"]',
+    )
+    await fireEvent.click(fmOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("final_message")
+
+    // Switch back to custom — still preserved
+    await fireEvent.click(customOption!)
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).value).toBe("my.custom.expr")
+  })
 })
 
 // --- Examples modal tests ---
