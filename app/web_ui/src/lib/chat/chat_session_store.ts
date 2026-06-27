@@ -15,6 +15,7 @@ import {
   type AppState,
 } from "$lib/agent"
 import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
+import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 
 const CHAT_API_URL = `${base_url}/api/chat`
 const SESSION_STORAGE_KEY = "kiln_chat_session"
@@ -36,6 +37,17 @@ export interface ChatSessionState extends PersistedChatSession {
   toolApprovalPicks: Record<string, boolean | undefined>
   toolExecuting: boolean
   showActivityIndicator: boolean
+  /**
+   * Preferred version from a server upgrade nudge (non-blocking), or null when
+   * no nudge is active or the user dismissed it. Runtime-only, not persisted.
+   */
+  upgradeNudgeVersion: string | null
+  /**
+   * True when the server rejected the request because the client is below the
+   * required minimum version (HTTP 426). Surfaced as a blocking banner above
+   * the composer rather than as a conversation message. Runtime-only.
+   */
+  versionRequired: boolean
 }
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
@@ -47,6 +59,9 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
   applyToolApprovalRun(toolCallId: string): void
   applyToolApprovalSkip(toolCallId: string): void
+  dismissUpgradeNudge(): void
+  /** Fetch the server's version verdict and set the banner state up front. */
+  checkVersionPolicy(): Promise<void>
   onConsentNeeded: (() => Promise<boolean>) | null
 }
 
@@ -81,6 +96,8 @@ export function createChatSessionStore(
     toolApprovalPicks: {},
     toolExecuting: false,
     showActivityIndicator: false,
+    upgradeNudgeVersion: null,
+    versionRequired: false,
   })
 
   // Intentionally never unsubscribed — this store is a module-level singleton
@@ -239,8 +256,25 @@ export function createChatSessionStore(
           return p
         })
       },
+      onVersionNudge: (preferredVersion) => {
+        if (isStale()) return
+        // Set unconditionally: repeated nudges across tool rounds collapse to a
+        // single banner, and a new server preference re-surfaces it even if a
+        // prior nudge was dismissed.
+        combined.update((s) => ({
+          ...s,
+          upgradeNudgeVersion: preferredVersion,
+        }))
+      },
       onInlineError: (message, traceId, code) => {
         if (isStale()) return
+        // Blocking "client too old" rejection: show it as a banner above the
+        // composer (like the upgrade nudge) instead of a conversation message.
+        if (code === CHAT_CLIENT_VERSION_TOO_OLD) {
+          combined.update((s) => ({ ...s, versionRequired: true }))
+          setRuntimeState("ready", null)
+          return
+        }
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
           role: "error",
@@ -433,6 +467,33 @@ export function createChatSessionStore(
     maybeFinishToolApproval()
   }
 
+  function dismissUpgradeNudge(): void {
+    combined.update((s) => ({ ...s, upgradeNudgeVersion: null }))
+  }
+
+  async function checkVersionPolicy(): Promise<void> {
+    // Surface the upgrade banners on load, before the user sends anything.
+    // Best-effort: any failure just leaves the banners as-is.
+    try {
+      const res = await fetch(`${base_url}/api/chat/version_policy`)
+      if (!res.ok) return
+      const data = (await res.json()) as {
+        required?: boolean
+        upgrade_nudge_version?: string | null
+      }
+      combined.update((s) => ({
+        ...s,
+        versionRequired: !!data.required,
+        upgradeNudgeVersion:
+          typeof data.upgrade_nudge_version === "string"
+            ? data.upgrade_nudge_version
+            : null,
+      }))
+    } catch {
+      /* network/desktop error — leave banner state untouched */
+    }
+  }
+
   function togglePartCollapsed(key: string, currentlyCollapsed: boolean): void {
     persisted.update((p) => ({
       ...p,
@@ -450,6 +511,8 @@ export function createChatSessionStore(
     togglePartCollapsed,
     applyToolApprovalRun,
     applyToolApprovalSkip,
+    dismissUpgradeNudge,
+    checkVersionPolicy,
     get onConsentNeeded() {
       return onConsentNeeded
     },
