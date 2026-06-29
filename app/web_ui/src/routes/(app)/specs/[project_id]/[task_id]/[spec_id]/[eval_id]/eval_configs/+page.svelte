@@ -8,23 +8,14 @@
   import RunEval from "$lib/components/run_eval.svelte"
   import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
-  import {
-    model_info,
-    load_model_info,
-    model_name,
-    provider_name_from_id,
-    load_available_models,
-  } from "$lib/stores"
+  import { load_model_info, load_available_models } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import Dialog from "$lib/ui/dialog.svelte"
-  import {
-    eval_config_to_ui_name,
-    eval_config_to_detailed_ui_name,
-  } from "$lib/utils/formatters"
+  import { eval_config_to_detailed_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
@@ -53,6 +44,9 @@
 
   let eval_config_instructions_dialog: Dialog | null = null
   let displayed_eval_config: EvalConfig | null = null
+  $: displayed_eval_config_dialog_title = displayed_eval_config
+    ? `Details for Judge '${displayed_eval_config.name}' — ${eval_config_type_label(displayed_eval_config)}`
+    : "Details for Judge"
 
   let eval_configs: EvalConfig[] | null = null
   let eval_configs_error: KilnError | null = null
@@ -506,6 +500,14 @@
     }
   }
 
+  function eval_config_type_label(eval_config: EvalConfig): string {
+    if (eval_config.config_type === "v2") {
+      return eval_config_to_detailed_ui_name(eval_config)
+    }
+    // V1 g_eval and llm_as_judge both show as "LLM as Judge"
+    return "LLM as Judge"
+  }
+
   function info_tooltip_text(
     rating_type: TaskOutputRatingType,
     score_type: ScoreType,
@@ -705,14 +707,14 @@
           <table class="table table-fixed">
             <thead>
               <tr>
-                <th class="max-w-[400px]">
+                <th class="w-[200px] max-w-[250px]">
                   <div>Judge</div>
                   <div class="font-normal">How task output is evaluated</div>
                 </th>
-                <th class="text-center">Status</th>
-                <th>Eval Details</th>
+                <th class="text-center w-[160px]">Status</th>
+                <th class="w-auto">Eval Details</th>
                 {#each evaluator.output_scores as output_score}
-                  <th class="text-center">
+                  <th class="text-center w-[130px]">
                     {output_score.name}
                     {#if output_score.type}
                       <InfoTooltip
@@ -734,35 +736,13 @@
                     "" + eval_config.id
                   ] || 0.0}
                 <tr>
-                  <td class="max-w-[400px]">
-                    {#if eval_config.config_type === "v2"}
-                      <div class="font-medium">
-                        {eval_config.name}
-                      </div>
-                      <div class="text-sm text-gray-500">
-                        Type: {eval_config_to_detailed_ui_name(eval_config)}
-                      </div>
-                    {:else}
-                      <div class="font-medium">
-                        {model_name(
-                          eval_config?.model_name ?? undefined,
-                          $model_info,
-                        )}
-                      </div>
-                      <div class="text-sm text-gray-500">
-                        Method: {eval_config_to_ui_name(
-                          eval_config.config_type,
-                        )}
-                      </div>
-                      <div class="text-sm text-gray-500">
-                        Provider: {provider_name_from_id(
-                          eval_config?.model_provider ?? "",
-                        )}
-                      </div>
-                      <div class="text-sm text-gray-500">
-                        Name: {eval_config.name}
-                      </div>
-                    {/if}
+                  <td class="max-w-[250px]">
+                    <div class="font-medium break-words">
+                      {eval_config.name}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      Type: {eval_config_type_label(eval_config)}
+                    </div>
                   </td>
                   <td class="text-center text-sm">
                     {#if percent_complete < 1.0}
@@ -797,7 +777,7 @@
                     {/if}
                   </td>
                   <td>
-                    <div class="max-w-[600px] min-w-[200px]">
+                    <div class="min-w-[300px]">
                       <ClampedText
                         max_lines={5}
                         on:see_all={() => {
@@ -889,7 +869,7 @@
 
 <Dialog
   bind:this={eval_config_instructions_dialog}
-  title="Details for Judge '{displayed_eval_config?.name}'"
+  title={displayed_eval_config_dialog_title}
   action_buttons={[
     {
       label: "Close",

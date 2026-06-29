@@ -3,10 +3,7 @@ import { describe, it, expect } from "vitest"
 import { render } from "@testing-library/svelte"
 import EvalConfigInstruction from "./eval_config_instruction.svelte"
 import type { EvalConfig } from "$lib/types"
-import {
-  ALL_V2_EVAL_TYPES,
-  evalTypeJudgeLabel,
-} from "$lib/utils/eval_types/registry"
+import { ALL_V2_EVAL_TYPES } from "$lib/utils/eval_types/registry"
 
 function makeV2Config(
   type: string,
@@ -68,48 +65,153 @@ function getMinimalPropsForType(type: string): Record<string, unknown> {
 }
 
 describe("EvalConfigInstruction", () => {
-  describe("type label top line", () => {
-    it("renders Type: label for each V2 eval type", () => {
-      for (const type of ALL_V2_EVAL_TYPES) {
-        const config = makeV2Config(type, getMinimalPropsForType(type))
-        const { container } = render(EvalConfigInstruction, {
-          props: { eval_config: config },
-        })
-        const label = container.querySelector(
-          '[data-testid="eval-config-type-label"]',
-        )
-        expect(label).not.toBeNull()
-        expect(label!.textContent).toBe(evalTypeJudgeLabel(type))
-      }
+  describe("judge metadata lines", () => {
+    it("shows Judge Model and Provider for V2 llm_judge", () => {
+      const config = makeV2Config("llm_judge", {
+        model_name: "gpt-4",
+        model_provider: "openai",
+        prompt_template: "Evaluate the output.",
+        required_var: [],
+        g_eval: false,
+      })
+      const { container } = render(EvalConfigInstruction, {
+        props: { eval_config: config },
+      })
+      const modelLine = container.querySelector(
+        '[data-testid="judge-model-line"]',
+      )
+      expect(modelLine).not.toBeNull()
+      expect(modelLine!.textContent).toContain("Judge Model:")
+      expect(modelLine!.textContent).toContain("gpt-4")
+
+      const providerLine = container.querySelector(
+        '[data-testid="judge-provider-line"]',
+      )
+      expect(providerLine).not.toBeNull()
+      expect(providerLine!.textContent).toContain("Provider:")
+      expect(providerLine!.textContent).toContain("OpenAI")
     })
 
-    it('shows "Type: G-Eval" for legacy g_eval config', () => {
+    it("shows Method: G-Eval for V2 llm_judge with g_eval=true", () => {
+      const config = makeV2Config("llm_judge", {
+        model_name: "gpt-4",
+        model_provider: "openai",
+        prompt_template: "Evaluate.",
+        required_var: [],
+        g_eval: true,
+      })
+      const { container } = render(EvalConfigInstruction, {
+        props: { eval_config: config },
+      })
+      const methodLine = container.querySelector(
+        '[data-testid="judge-method-line"]',
+      )
+      expect(methodLine).not.toBeNull()
+      expect(methodLine!.textContent).toContain("Method:")
+      expect(methodLine!.textContent).toContain("G-Eval")
+    })
+
+    it("does not show Method line for vanilla V2 llm_judge", () => {
+      const config = makeV2Config("llm_judge", {
+        model_name: "gpt-4",
+        model_provider: "openai",
+        prompt_template: "Evaluate.",
+        required_var: [],
+        g_eval: false,
+      })
+      const { container } = render(EvalConfigInstruction, {
+        props: { eval_config: config },
+      })
+      expect(
+        container.querySelector('[data-testid="judge-method-line"]'),
+      ).toBeNull()
+    })
+
+    it("shows Judge Model and Provider for legacy g_eval config", () => {
       const config = makeLegacyConfig("g_eval", {
         task_description: "test",
       })
+      config.model_name = "gpt-4o"
+      config.model_provider = "openai"
       const { container } = render(EvalConfigInstruction, {
         props: { eval_config: config },
       })
-      const label = container.querySelector(
-        '[data-testid="eval-config-type-label"]',
+      const modelLine = container.querySelector(
+        '[data-testid="judge-model-line"]',
       )
-      expect(label!.textContent).toBe("G-Eval")
+      expect(modelLine).not.toBeNull()
+      expect(modelLine!.textContent).toContain("Judge Model:")
+      expect(modelLine!.textContent).toContain("gpt-4o")
+
+      const providerLine = container.querySelector(
+        '[data-testid="judge-provider-line"]',
+      )
+      expect(providerLine).not.toBeNull()
+      expect(providerLine!.textContent).toContain("Provider:")
+      expect(providerLine!.textContent).toContain("OpenAI")
     })
 
-    it('shows "Type: LLM as Judge" for legacy llm_as_judge config', () => {
+    it("shows Method: G-Eval for legacy g_eval config", () => {
+      const config = makeLegacyConfig("g_eval", {
+        task_description: "test",
+      })
+      config.model_name = "gpt-4o"
+      config.model_provider = "openai"
+      const { container } = render(EvalConfigInstruction, {
+        props: { eval_config: config },
+      })
+      const methodLine = container.querySelector(
+        '[data-testid="judge-method-line"]',
+      )
+      expect(methodLine).not.toBeNull()
+      expect(methodLine!.textContent).toContain("G-Eval")
+    })
+
+    it("shows Judge Model and Provider but not Method for legacy llm_as_judge", () => {
       const config = makeLegacyConfig("llm_as_judge", {
         task_description: "test",
       })
+      config.model_name = "gpt-4"
+      config.model_provider = "openai"
       const { container } = render(EvalConfigInstruction, {
         props: { eval_config: config },
       })
-      const label = container.querySelector(
-        '[data-testid="eval-config-type-label"]',
+      const modelLine = container.querySelector(
+        '[data-testid="judge-model-line"]',
       )
-      expect(label!.textContent).toBe("LLM as Judge")
+      expect(modelLine).not.toBeNull()
+      expect(modelLine!.textContent).toContain("Judge Model:")
+      expect(modelLine!.textContent).toContain("gpt-4")
+
+      const providerLine = container.querySelector(
+        '[data-testid="judge-provider-line"]',
+      )
+      expect(providerLine).not.toBeNull()
+      expect(providerLine!.textContent).toContain("Provider:")
+      expect(providerLine!.textContent).toContain("OpenAI")
+
+      expect(
+        container.querySelector('[data-testid="judge-method-line"]'),
+      ).toBeNull()
     })
 
-    it("contains bold Type: prefix", () => {
+    it("does not render a Type: line (type is shown in the Judge column)", () => {
+      const config = makeV2Config("llm_judge", {
+        model_name: "gpt-4",
+        model_provider: "openai",
+        prompt_template: "Evaluate.",
+        required_var: [],
+        g_eval: false,
+      })
+      const { container } = render(EvalConfigInstruction, {
+        props: { eval_config: config },
+      })
+      expect(
+        container.querySelector('[data-testid="eval-config-type-label"]'),
+      ).toBeNull()
+    })
+
+    it("does not show judge metadata for deterministic V2 evals", () => {
       const config = makeV2Config(
         "exact_match",
         getMinimalPropsForType("exact_match"),
@@ -117,14 +219,20 @@ describe("EvalConfigInstruction", () => {
       const { container } = render(EvalConfigInstruction, {
         props: { eval_config: config },
       })
-      const fontMedium = container.querySelector(".font-medium")
-      expect(fontMedium).not.toBeNull()
-      expect(fontMedium!.textContent).toContain("Type:")
+      expect(
+        container.querySelector('[data-testid="judge-model-line"]'),
+      ).toBeNull()
+      expect(
+        container.querySelector('[data-testid="judge-provider-line"]'),
+      ).toBeNull()
+      expect(
+        container.querySelector('[data-testid="judge-method-line"]'),
+      ).toBeNull()
     })
   })
 
   describe("llm_judge", () => {
-    it("renders prompt template", () => {
+    it("renders prompt template under Judge Prompt heading via Output component", () => {
       const config = makeV2Config("llm_judge", {
         model_name: "gpt-4",
         model_provider: "openai",
@@ -135,7 +243,12 @@ describe("EvalConfigInstruction", () => {
       const { container } = render(EvalConfigInstruction, {
         props: { eval_config: config },
       })
+      expect(container.textContent).toContain("Judge Prompt")
       expect(container.textContent).toContain("Evaluate the quality.")
+
+      const styledBlock = container.querySelector(".bg-base-200 pre")
+      expect(styledBlock).not.toBeNull()
+      expect(styledBlock!.textContent).toContain("Evaluate the quality.")
     })
 
     it("renders system prompt when present", () => {

@@ -1,25 +1,15 @@
 <script lang="ts">
-  import type { EvalConfig } from "$lib/types"
+  import type { EvalConfig, ProviderModels } from "$lib/types"
   import {
     type V2EvalType,
     type V2PropsMap,
     getV2TypeFromEvalConfig,
-    evalTypeJudgeLabel,
   } from "$lib/utils/eval_types/registry"
   import { assertNever } from "$lib/utils/exhaustive"
+  import { model_info, model_name, provider_name_from_id } from "$lib/stores"
+  import Output from "$lib/ui/output.svelte"
 
   export let eval_config: EvalConfig | null = null
-
-  // Type line label
-  function typeLabel(config: EvalConfig): string {
-    const v2Type = getV2TypeFromEvalConfig(config)
-    if (v2Type) {
-      return evalTypeJudgeLabel(v2Type)
-    }
-    if (config.config_type === "g_eval") return "G-Eval"
-    if (config.config_type === "llm_as_judge") return "LLM as Judge"
-    return config.config_type
-  }
 
   // Legacy helpers
   function get_eval_steps(config: EvalConfig): string[] | undefined {
@@ -50,25 +40,102 @@
     return expr
   }
 
+  // Judge model/provider info for V2 llm_judge
+  function getJudgeModelName(
+    config: EvalConfig,
+    mi: ProviderModels | null,
+  ): string | null {
+    const v2Type = getV2TypeFromEvalConfig(config)
+    if (v2Type === "llm_judge") {
+      const props = getV2Props(config, "llm_judge")
+      if (props?.model_name) return model_name(props.model_name, mi)
+      return null
+    }
+    if (
+      config.config_type === "g_eval" ||
+      config.config_type === "llm_as_judge"
+    ) {
+      if (config.model_name) return model_name(config.model_name, mi)
+      return null
+    }
+    return null
+  }
+
+  function getJudgeProvider(config: EvalConfig): string | null {
+    const v2Type = getV2TypeFromEvalConfig(config)
+    if (v2Type === "llm_judge") {
+      const props = getV2Props(config, "llm_judge")
+      if (props?.model_provider)
+        return provider_name_from_id(props.model_provider)
+      return null
+    }
+    if (
+      config.config_type === "g_eval" ||
+      config.config_type === "llm_as_judge"
+    ) {
+      if (config.model_provider)
+        return provider_name_from_id(config.model_provider)
+      return null
+    }
+    return null
+  }
+
+  function isGEval(config: EvalConfig): boolean {
+    const v2Type = getV2TypeFromEvalConfig(config)
+    if (v2Type === "llm_judge") {
+      const props = getV2Props(config, "llm_judge")
+      return props?.g_eval === true
+    }
+    return config.config_type === "g_eval"
+  }
+
+  function isJudgeEval(config: EvalConfig): boolean {
+    const v2Type = getV2TypeFromEvalConfig(config)
+    if (v2Type === "llm_judge") return true
+    return (
+      config.config_type === "g_eval" || config.config_type === "llm_as_judge"
+    )
+  }
+
   // Reactive V2 type
   $: v2Type = eval_config ? getV2TypeFromEvalConfig(eval_config) : null
 </script>
 
 {#if eval_config}
   <div class="text-sm" data-testid="eval-config-instruction">
-    <div class="mb-1">
-      <span class="font-medium">Type:</span>
-      <span data-testid="eval-config-type-label">{typeLabel(eval_config)}</span>
-    </div>
+    {#if isJudgeEval(eval_config)}
+      {@const judgeModel = getJudgeModelName(eval_config, $model_info)}
+      {@const judgeProvider = getJudgeProvider(eval_config)}
+      {#if judgeModel}
+        <div data-testid="judge-model-line">
+          <span class="font-medium">Judge Model:</span>
+          {judgeModel}
+        </div>
+      {/if}
+      {#if judgeProvider}
+        <div data-testid="judge-provider-line">
+          <span class="font-medium">Provider:</span>
+          {judgeProvider}
+        </div>
+      {/if}
+      {#if isGEval(eval_config)}
+        <div data-testid="judge-method-line">
+          <span class="font-medium">Method:</span> G-Eval
+        </div>
+      {/if}
+    {/if}
 
     {#if v2Type}
       {#if v2Type === "llm_judge"}
         {@const props = getV2Props(eval_config, "llm_judge")}
         {#if props?.prompt_template}
-          <div class="whitespace-pre-line">{props.prompt_template}</div>
+          <div class="mt-2">
+            <div class="font-medium mb-1">Judge Prompt</div>
+            <Output raw_output={props.prompt_template} max_height="200px" />
+          </div>
         {/if}
         {#if props?.system_prompt}
-          <div class="mt-1">
+          <div class="mt-2">
             <span class="font-medium">System prompt:</span>
             <span class="whitespace-pre-line">{props.system_prompt}</span>
           </div>
