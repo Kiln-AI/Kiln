@@ -32,6 +32,8 @@
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
+  import SynthBatchChooser from "../synth_batch_chooser.svelte"
+  import SynthKilnPro from "../synth_kiln_pro.svelte"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -48,7 +50,20 @@
   }
   let data_guide: DataGuide | null = null
   let guide_loading = true
-  let skip_data_guide = false
+
+  // The post-intro flow (skip-guide → chooser → manual/pro) is encoded in URL
+  // search params so the browser Back button steps backward through it (e.g.
+  // Back from the chooser returns to the data guide intro).
+  $: skip_data_guide = $page.url.searchParams.get("guide") === "skip"
+  $: batch_param = $page.url.searchParams.get("batch")
+  $: batch_mode =
+    batch_param === "manual" || batch_param === "pro" ? batch_param : null
+
+  function advance_synth_step(key: "guide" | "batch", value: string) {
+    const url = new URL($page.url)
+    url.searchParams.set(key, value)
+    goto(url, { keepFocus: true, noScroll: true })
+  }
 
   async function fetch_data_guide() {
     if (!project_id || !task_id) return
@@ -902,7 +917,7 @@
                   posthog.capture("data_guide_intro_clicked", {
                     choice: "skip",
                   })
-                  skip_data_guide = true
+                  advance_synth_step("guide", "skip")
                 },
               },
             ]}
@@ -912,7 +927,7 @@
             </div>
           </Intro>
         </div>
-      {:else if is_empty}
+      {:else if is_empty && is_setup && !guide_loading && (data_guide || skip_data_guide) && batch_mode === null}
         {#if data_guide_just_saved}
           <div class="mt-8">
             <Callout
@@ -923,6 +938,13 @@
             </Callout>
           </div>
         {/if}
+        <SynthBatchChooser
+          on_manual={() => advance_synth_step("batch", "manual")}
+          on_kiln_pro={() => advance_synth_step("batch", "pro")}
+        />
+      {:else if is_empty && is_setup && batch_mode === "pro"}
+        <SynthKilnPro {project_id} {task_id} {guidance_data} />
+      {:else if is_empty}
         <div>
           <DataGenIntro
             generate_subtopics={() => {

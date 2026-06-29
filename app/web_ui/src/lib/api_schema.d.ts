@@ -1615,6 +1615,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Inputs Batch
+         * @description Start an in-process job that generates one input per prompt in
+         *     parallel. Poll the status endpoint for progress and results.
+         */
+        post: operations["start_generate_inputs_batch_api_projects__project_id__tasks__task_id__generate_inputs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Inputs Batch Status */
+        get: operations["generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Outputs Batch
+         * @description Start an in-process job that runs the task on each input in parallel.
+         *     Poll the status endpoint for progress and the resulting (unsaved) runs.
+         */
+        post: operations["start_generate_outputs_batch_api_projects__project_id__tasks__task_id__generate_outputs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Outputs Batch Status */
+        get: operations["generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/generate_qna": {
         parameters: {
             query?: never;
@@ -6794,6 +6870,80 @@ export interface components {
                 [key: string]: components["schemas"]["SampleApi"][];
             };
         };
+        /** GenerateInputsBatchInput */
+        GenerateInputsBatchInput: {
+            /**
+             * Prompts
+             * @description One tailored prompt per input. Each is used as the guidance for a single input-generation call.
+             */
+            prompts: string[];
+            /**
+             * Gen Type
+             * @description The type of data generation: eval or training.
+             * @enum {string}
+             */
+            gen_type: "training" | "eval";
+            /**
+             * Data Guide
+             * @description Optional input data guide to include in every input-generation call.
+             */
+            data_guide?: string | null;
+            /** @description The run config properties (model, provider, tools, skills) to use for input generation. */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+        };
+        /** GenerateOutputsBatchInput */
+        GenerateOutputsBatchInput: {
+            /**
+             * Items
+             * @description The inputs to generate outputs for.
+             */
+            items: components["schemas"]["GenerateOutputsBatchItem"][];
+            /**
+             * Input Model Name
+             * @description The model used to generate the inputs (recorded on each run).
+             */
+            input_model_name: string;
+            /**
+             * Input Provider
+             * @description The provider used to generate the inputs (recorded on each run).
+             */
+            input_provider: string;
+            /**
+             * Run Config Properties
+             * @description The run config properties to use for output generation.
+             */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /**
+             * Guidance
+             * @description Optional custom guidance for output generation.
+             */
+            guidance?: string | null;
+            /**
+             * Session Id
+             * @description Optional session ID to group generated samples.
+             */
+            session_id?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to each generated sample.
+             */
+            tags?: string[] | null;
+        };
+        /** GenerateOutputsBatchItem */
+        GenerateOutputsBatchItem: {
+            /**
+             * Index
+             * @description Stable index of this item within the batch.
+             */
+            index: number;
+            /**
+             * Input
+             * @description The generated input to run the task on.
+             */
+            input: string | {
+                [key: string]: unknown;
+            };
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -6948,6 +7098,39 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** InputsBatchResultItem */
+        InputsBatchResultItem: {
+            /** Index */
+            index: number;
+            /** Input */
+            input?: string | {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** InputsBatchStatusOutput */
+        InputsBatchStatusOutput: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "error";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Errors */
+            errors: number;
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** Results */
+            results: components["schemas"]["InputsBatchResultItem"][];
+            /** Error Message */
+            error_message?: string | null;
         };
         /** IssueProperties */
         IssueProperties: {
@@ -7760,6 +7943,32 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** OutputsBatchResultItem */
+        OutputsBatchResultItem: {
+            /** Index */
+            index: number;
+            task_run?: components["schemas"]["TaskRun-Output"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** OutputsBatchStatusOutput */
+        OutputsBatchStatusOutput: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "error";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Errors */
+            errors: number;
+            /** Results */
+            results: components["schemas"]["OutputsBatchResultItem"][];
+            /** Error Message */
+            error_message?: string | null;
+        };
         /**
          * ParseImportFileApiOutput
          * @description Result of parsing an uploaded bulk-import file of input examples.
@@ -9390,6 +9599,14 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /** StartBatchJobOutput */
+        StartBatchJobOutput: {
+            /**
+             * Job Id
+             * @description Identifier for the started batch job.
+             */
+            job_id: string;
         };
         /**
          * StartDataGuideJobApiInput
@@ -14519,6 +14736,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generate_inputs_batch_api_projects__project_id__tasks__task_id__generate_inputs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateInputsBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartBatchJobOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The batch job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputsBatchStatusOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generate_outputs_batch_api_projects__project_id__tasks__task_id__generate_outputs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateOutputsBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartBatchJobOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The batch job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputsBatchStatusOutput"];
                 };
             };
             /** @description Validation Error */
