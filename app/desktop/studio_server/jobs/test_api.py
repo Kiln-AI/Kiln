@@ -593,35 +593,6 @@ async def test_delete_unknown_404(client):
 
 
 @pytest.mark.asyncio
-async def test_wait_endpoint_200_terminal_record(client):
-    resp = await client.post(
-        "/api/jobs/noop", json={"params": {"steps": 3, "sleep_per_step_seconds": 0.02}}
-    )
-    job_id = resp.json()["job_id"]
-    got = await client.get(f"/api/jobs/{job_id}/wait", timeout=10.0)
-    assert got.status_code == 200, got.text
-    body = got.json()
-    assert body["id"] == job_id
-    assert body["status"] == "succeeded"
-    assert body["result"] == {"completed_steps": 3}
-
-
-@pytest.mark.asyncio
-async def test_wait_endpoint_404_unknown(client):
-    resp = await client.get("/api/jobs/j_missing/wait")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_wait_endpoint_504_on_timeout(client, registry):
-    job_id = await _create_noop(client, steps=50, sleep_per_step_seconds=0.05)
-    await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
-    resp = await client.get(f"/api/jobs/{job_id}/wait", params={"timeout": 0.01})
-    assert resp.status_code == 504
-    await registry.cancel(job_id)
-
-
-@pytest.mark.asyncio
 async def test_wait_many_endpoint_returns_all_records(client):
     a = await _create_noop(client, steps=2, sleep_per_step_seconds=0.02)
     b = await _create_noop(client, steps=3, sleep_per_step_seconds=0.02)

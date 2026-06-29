@@ -173,7 +173,8 @@ def connect_jobs_api(app: FastAPI) -> None:
 
         A typed, approval-gated entry point for agents. Unlike the UI's SSE
         run endpoints, this does not stream — the job runs in the background.
-        Poll `GET /api/jobs/{id}` (or `/wait`) for progress and the result.
+        Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
+        result.
         """
         job = await job_registry.create(
             type_name=EvalJobWorker.type_name,
@@ -260,7 +261,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         ] = None,
     ) -> list[JobRecord]:
         """Block until ALL the given jobs reach a terminal state, then return
-        their records (order preserved). A pure observer like /{id}/wait:
+        their records (order preserved). A pure observer, like the SSE stream:
         disconnecting tears down only the awaiter, never the jobs. The timeout
         bounds the whole set. Empty `ids` returns an empty list."""
         if not ids:
@@ -306,37 +307,6 @@ def connect_jobs_api(app: FastAPI) -> None:
                 status_code=404, detail="No result available for this job."
             )
         return job.result
-
-    @app.get(
-        "/api/jobs/{id}/wait",
-        summary="Wait For Job",
-        tags=["Jobs"],
-        openapi_extra=ALLOW_AGENT,
-    )
-    async def wait_for_job(
-        id: Annotated[str, Path(description="The job id.")],
-        timeout: Annotated[
-            float | None,
-            Query(
-                ge=0,
-                description="Seconds to wait before giving up (504 on timeout). "
-                "Omit to wait indefinitely.",
-            ),
-        ] = None,
-    ) -> JobRecord:
-        """Block until the job reaches a terminal state, then return its record.
-
-        A pure observer, like the SSE stream: if the client disconnects, uvicorn
-        cancels this handler coroutine, which cancels the wait() await and tears
-        down only the awaiter — the job's supervising task keeps running."""
-        try:
-            return await job_registry.wait(id, timeout=timeout)
-        except JobNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Job not found: {id}")
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=504, detail="Job did not complete within the timeout."
-            )
 
     @app.get(
         "/api/jobs/{id}/errors",

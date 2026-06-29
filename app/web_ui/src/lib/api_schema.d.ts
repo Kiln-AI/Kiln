@@ -3356,7 +3356,8 @@ export interface paths {
          *
          *     A typed, approval-gated entry point for agents. Unlike the UI's SSE
          *     run endpoints, this does not stream — the job runs in the background.
-         *     Poll `GET /api/jobs/{id}` (or `/wait`) for progress and the result.
+         *     Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
+         *     result.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;
@@ -3392,7 +3393,7 @@ export interface paths {
         /**
          * Wait For Jobs
          * @description Block until ALL the given jobs reach a terminal state, then return
-         *     their records (order preserved). A pure observer like /{id}/wait:
+         *     their records (order preserved). A pure observer, like the SSE stream:
          *     disconnecting tears down only the awaiter, never the jobs. The timeout
          *     bounds the whole set. Empty `ids` returns an empty list.
          */
@@ -3432,30 +3433,6 @@ export interface paths {
         };
         /** Get Job Result */
         get: operations["get_job_result_api_jobs__id__result_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{id}/wait": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Wait For Job
-         * @description Block until the job reaches a terminal state, then return its record.
-         *
-         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
-         *     cancels this handler coroutine, which cancels the wait() await and tears
-         *     down only the awaiter — the job's supervising task keeps running.
-         */
-        get: operations["wait_for_job_api_jobs__id__wait_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -18893,41 +18870,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    wait_for_job_api_jobs__id__wait_get: {
-        parameters: {
-            query?: {
-                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
-                timeout?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description The job id. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRecord"];
                 };
             };
             /** @description Validation Error */
