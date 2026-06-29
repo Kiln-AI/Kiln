@@ -256,6 +256,9 @@ class TestSeedBody:
         runner, _, _ = _runner(FakeUpstreamClient([]), seed)
         body = await runner._build_seed_body()
         assert body["trace_id"] == "tr-0"
+        # auto_mode rides the seed so the upstream orchestrator phrases the
+        # auto-round-cap reminder for an absent user.
+        assert body["auto_mode"] is True
         assert body["messages"] == [
             {
                 "role": "tool",
@@ -286,6 +289,7 @@ class TestSeedBody:
         runner, _, _ = _runner(FakeUpstreamClient([]), seed)
         body = await runner._build_seed_body()
         assert "trace_id" not in body
+        assert body["auto_mode"] is True
         assert body["messages"] == [{"role": "user", "content": "first message"}]
 
     @pytest.mark.asyncio
@@ -339,6 +343,8 @@ async def test_injected_message_appended_to_continuation():
     # message (appended last).
     second_body = client.bodies[1]
     assert second_body["trace_id"] == "tr-1"
+    # auto_mode set once on the seed propagates through every {**body} continuation.
+    assert second_body["auto_mode"] is True
     user_messages = [m for m in second_body["messages"] if m.get("role") == "user"]
     assert user_messages == [{"role": "user", "content": "also do X"}]
     # The runner does NOT echo on drain — the registry already echoed the message

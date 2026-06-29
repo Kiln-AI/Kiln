@@ -441,6 +441,14 @@ class AutoChatRunner:
                     }
                 )
 
+        # auto_mode rides every continuation: each builder below does {**body, ...},
+        # so seeding it once here propagates it through the whole burst. The
+        # upstream orchestrator reads it to phrase the auto-round-cap reminder for
+        # an absent user (act or report stuck, don't ask a question).
         if self._seed.trace_id is None:
-            return {"messages": messages}
-        return {"trace_id": self._seed.trace_id, "messages": messages}
+            return {"messages": messages, "auto_mode": True}
+        return {
+            "trace_id": self._seed.trace_id,
+            "messages": messages,
+            "auto_mode": True,
+        }
