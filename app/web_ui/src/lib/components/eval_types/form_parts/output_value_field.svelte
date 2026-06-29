@@ -96,13 +96,13 @@
 </script>
 
 <FormSection
-  title="Value to Compare"
-  subtitle="Choose which part of the model output to evaluate."
+  title="Output to Check"
+  subtitle="Which part of the model's output to compare against the expected value."
   testid="output-value-section"
 >
   <FormElement
     id="{id_prefix}_output_source"
-    label="Value to Compare"
+    label="Output to Check"
     inputType="fancy_select"
     fancy_select_options={modeOptions}
     bind:value={mode}

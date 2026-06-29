@@ -58,7 +58,7 @@
   <div on:blur={on_pattern_blur} data-testid="pattern-match-pattern-section">
     <FormElement
       id="pattern_match_pattern"
-      label="Regular Expression"
+      label="Expected Pattern (Regex)"
       description="The pattern to test against the output."
       info_description="A regular expression (regex) is a sequence of characters that defines a search pattern. For example, ^yes$ matches only the exact string 'yes', while \\d+ matches one or more digits."
       inputType="input"

@@ -1550,7 +1550,7 @@ describe("Standard controls: visible labels (no hidden labels)", () => {
     expect(field?.getAttribute("data-label")).toBe("Reference Data Field")
   })
 
-  it("PatternMatch regex field shows visible 'Regular Expression' label", () => {
+  it("PatternMatch regex field shows visible 'Expected Pattern (Regex)' label", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -1565,7 +1565,7 @@ describe("Standard controls: visible labels (no hidden labels)", () => {
       '[data-testid="form-element-pattern_match_pattern"]',
     )
     expect(field?.getAttribute("data-hide-label")).toBe("false")
-    expect(field?.getAttribute("data-label")).toBe("Regular Expression")
+    expect(field?.getAttribute("data-label")).toBe("Expected Pattern (Regex)")
   })
 
   it("Contains substring field shows visible 'Value' label", () => {
@@ -1898,8 +1898,8 @@ describe("UI polish: placeholders on inputs", () => {
   })
 })
 
-describe("Standard controls: PatternMatch uses single FormElement with 'Regular Expression' label", () => {
-  it("Pattern FormElement has label 'Regular Expression' (no duplicate section title)", () => {
+describe("Standard controls: PatternMatch uses single FormElement with 'Expected Pattern (Regex)' label", () => {
+  it("Pattern FormElement has label 'Expected Pattern (Regex)' (no duplicate section title)", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -1917,7 +1917,9 @@ describe("Standard controls: PatternMatch uses single FormElement with 'Regular 
     const formElement = section?.querySelector(
       '[data-testid="form-element-pattern_match_pattern"]',
     )
-    expect(formElement?.getAttribute("data-label")).toBe("Regular Expression")
+    expect(formElement?.getAttribute("data-label")).toBe(
+      "Expected Pattern (Regex)",
+    )
     const heading = section?.querySelector("h3")
     expect(heading).toBeNull()
   })

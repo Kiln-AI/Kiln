@@ -232,12 +232,12 @@ describe("JINJA_EXAMPLES", () => {
 // --- Component DOM tests ---
 
 describe("OutputValueField", () => {
-  it("renders inside a FormSection with 'Value to Compare' title", () => {
+  it("renders inside a FormSection with 'Output to Check' title", () => {
     const { getByTestId, getByText } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
     expect(getByTestId("output-value-section")).toBeTruthy()
-    expect(getByText("Value to Compare")).toBeTruthy()
+    expect(getByText("Output to Check")).toBeTruthy()
   })
 
   it("renders FormSection subtitle", () => {
@@ -249,7 +249,7 @@ describe("OutputValueField", () => {
     )
     expect(subtitle).toBeTruthy()
     expect(subtitle?.textContent).toBe(
-      "Choose which part of the model output to evaluate.",
+      "Which part of the model's output to compare against the expected value.",
     )
   })
 
