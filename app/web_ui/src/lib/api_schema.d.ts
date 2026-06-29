@@ -4381,6 +4381,7 @@ export interface components {
             /** Id */
             id: string;
             task_run: components["schemas"]["TaskRunSnapshot"];
+            context_usage?: components["schemas"]["ContextUsage"] | null;
         };
         /**
          * ChatStrategy
@@ -4571,6 +4572,25 @@ export interface components {
             complete_examples: string;
             /** Incomplete Examples */
             incomplete_examples: string;
+        };
+        /**
+         * ContextUsage
+         * @description Proxy mirror of the kiln_server ``ContextUsage`` value object.
+         *
+         *     Carries only the gauge numbers and the ``compacted`` flag — never any trace
+         *     content — so it is safe to surface to the web UI. Every field is optional so
+         *     an older upstream that doesn't emit ``context_usage`` (or emits a partial
+         *     object) never 500s the proxy; the web UI hides the gauge when it's absent.
+         */
+        ContextUsage: {
+            /** Context Tokens */
+            context_tokens?: number | null;
+            /** Context Limit */
+            context_limit?: number | null;
+            /** Context Percent */
+            context_percent?: number | null;
+            /** Compacted */
+            compacted?: boolean | null;
         };
         /** CorrelationResult */
         CorrelationResult: {

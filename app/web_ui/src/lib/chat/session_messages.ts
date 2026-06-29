@@ -1,8 +1,10 @@
 import type { components } from "$lib/api_schema"
 import {
   chatGenerateId,
+  normalizeContextUsage,
   type ChatMessage,
   type ChatMessagePart,
+  type ContextUsage,
 } from "./streaming_chat"
 
 type TraceMessage = components["schemas"]["TraceMessage"]
@@ -64,6 +66,7 @@ function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
 export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   messages: ChatMessage[]
   continuationTraceId: string
+  contextUsage: ContextUsage | null
 } {
   const trace = snapshot.task_run.trace ?? []
   const messages: ChatMessage[] = []
@@ -119,5 +122,9 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
     }
   }
 
-  return { messages, continuationTraceId: snapshot.id }
+  return {
+    messages,
+    continuationTraceId: snapshot.id,
+    contextUsage: normalizeContextUsage(snapshot.context_usage),
+  }
 }

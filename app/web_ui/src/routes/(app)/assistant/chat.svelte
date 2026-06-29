@@ -5,6 +5,7 @@
   import posthog from "posthog-js"
   import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
+  import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
@@ -22,6 +23,7 @@
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
+  import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -99,10 +101,14 @@
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
   $: showActivityIndicator = $store.showActivityIndicator
+  // Phase 5: the server is summarizing earlier messages (compaction) for this
+  // turn. Drives the same Thinking-style indicator with a "summarizing…" label.
+  $: compacting = $store.compacting
   // A server-owned auto burst is running. Drives the SAME in-transcript loading
   // affordances (thinking dots / animated icon) as interactive streaming, while
   // leaving the input usable for inject-on-send.
   $: autoWorking = $store.autoWorking
+  $: contextUsage = $store.contextUsage
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -380,13 +386,12 @@
     store.stop()
   }
 
-  function onChatHistoryApply(
-    e: CustomEvent<{
-      messages: ChatMessage[]
-      continuationTraceId: string
-    }>,
-  ) {
-    store.loadSession(e.detail.messages, e.detail.continuationTraceId)
+  function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
+    store.loadSession(
+      e.detail.messages,
+      e.detail.continuationTraceId,
+      e.detail.contextUsage,
+    )
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -671,6 +676,7 @@
                                   isLoading={true}
                                   isLastMessage={true}
                                   {showActivityIndicator}
+                                  {compacting}
                                 />
                               </div>
                             </div>
@@ -680,12 +686,17 @@
                               isLoading={isActiveMessage}
                               isLastMessage={message.id === lastMessage?.id}
                               {showActivityIndicator}
+                              {compacting}
                             />
                           {/if}
                         {/if}
                       {/if}
                     {/if}
                   {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
+                    <!-- The single pending indicator for the active assistant
+                       turn. While ``compacting`` it swaps its label in place to
+                       the summarizing copy (instead of a separate row); when
+                       compaction finishes it reverts to Thinking. -->
                     <div class="flex items-start gap-3">
                       <img
                         src="/images/chat_icon_animated.svg"
@@ -698,6 +709,7 @@
                           isLoading={true}
                           isLastMessage={true}
                           {showActivityIndicator}
+                          {compacting}
                         />
                       </div>
                     </div>
@@ -709,6 +721,29 @@
             </div>
           {/if}
         {/each}
+        {#if compacting && lastMessage?.role !== "assistant"}
+          <!-- Fallback compaction indicator for the rare case where there is no
+             active assistant bubble yet to host the in-place indicator above
+             (so the summarizing copy still appears, and never alongside the
+             bubble's Thinking — exactly one shows). When an empty assistant
+             turn exists, the streaming-cursor branch above swaps its own label
+             to the summarizing copy instead. -->
+          <div class="flex items-start gap-3" role="status">
+            <img
+              src="/images/chat_icon_animated.svg"
+              alt=""
+              class="w-9 h-9 shrink-0 -mt-1.5"
+            />
+            <div class="flex flex-col">
+              <ChatStatusSteps
+                parts={[]}
+                isLoading={true}
+                isLastMessage={true}
+                compacting={true}
+              />
+            </div>
+          </div>
+        {/if}
         {#if $autoReconnecting}
           <!-- Transient re-attach affordance (Phase 9): shown while a hard-refresh
              resync or History restore resolves → hydrates → attaches the live
@@ -803,6 +838,11 @@
           <span aria-hidden="true">⏵⏵</span>
           Auto mode
         </button>
+      {/if}
+      {#if contextUsage}
+        <div class="ml-auto">
+          <ContextUsageGauge usage={contextUsage} />
+        </div>
       {/if}
     </div>
   </div>

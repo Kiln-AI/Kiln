@@ -18,6 +18,9 @@ from app.desktop.studio_server.chat.tool_metadata import tool_input_executor_is_
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
     DISABLE_AUTO_MODE_TOOL_NAME,
 )
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
+    ENABLE_AUTO_MODE_TOOL_NAME,
+)
 
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .sse import (
@@ -35,6 +38,18 @@ MAX_TOOL_ROUNDS_MESSAGE = "Maximum tool rounds exceeded. Please start a new mess
 # The tool result the app server resolves an intercepted disable_auto_mode call
 # to, fed back to the backend so it continues interactively.
 DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
+
+# The tool result for an enable_auto_mode call made WHILE auto mode is already on
+# (i.e. during an auto run). enable_auto_mode is a signal, never executed — but
+# the toolset is intentionally stable (both auto-mode tools are always exposed so
+# the prompt cache survives the whole conversation), so the model can still call
+# it redundantly. Resolve it as a no-op "already enabled" instead of letting it
+# fall through to execute_tool (which would return an "Unknown tool name" error),
+# and continue the burst.
+ENABLE_AUTO_MODE_RESULT = json.dumps(
+    {"status": "enabled", "detail": "Auto mode is already enabled."},
+    ensure_ascii=False,
+)
 
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
 # bus. It also detects kiln_chat_trace boundaries (buffer reset + index update).
@@ -208,6 +223,19 @@ class AutoChatRunner:
                     self.status = AutoRunStatus.USER_STOPPED
                     return
 
+                # enable_auto_mode no-op: the model called enable_auto_mode while
+                # auto mode is already on. It's a signal, never executed — resolve
+                # it as "already enabled" so the redundant call gets a clean result
+                # (not an "Unknown tool name" error from execute_tool) and the burst
+                # keeps going. The model is instructed to call it alone, but resolve
+                # any siblings normally below.
+                enable_events = [
+                    e for e in client_events if e.toolName == ENABLE_AUTO_MODE_TOOL_NAME
+                ]
+                executable_events = [
+                    e for e in client_events if e.toolName != ENABLE_AUTO_MODE_TOOL_NAME
+                ]
+
                 # AUTO-APPROVE: requires_approval=False makes execute_tool_batch
                 # skip the gate and run every client tool unattended.
                 tool_calls = [
@@ -217,11 +245,13 @@ class AutoChatRunner:
                         input=e.input,
                         requiresApproval=False,
                     )
-                    for e in client_events
+                    for e in executable_events
                 ]
 
-                self._emit(format_tool_exec_start(len(tool_calls)))
+                self._emit(format_tool_exec_start(len(client_events)))
                 results = await execute_tool_batch(tool_calls, {})
+                for e in enable_events:
+                    results[e.toolCallId] = ENABLE_AUTO_MODE_RESULT
                 for tc_id, output in results.items():
                     self._emit(format_tool_output(tc_id, output))
                 self._emit(format_tool_exec_end(len(results)))

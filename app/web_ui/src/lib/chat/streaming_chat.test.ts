@@ -5,7 +5,11 @@ import {
   resumePendingToolCalls,
   chatExecuteToolsUrl,
   traceIdForNextChatRequest,
+  normalizeContextUsage,
+  StreamEventProcessor,
   type ChatMessage,
+  type ContextUsage,
+  type StreamEvent,
 } from "./streaming_chat"
 
 describe("traceIdForNextChatRequest", () => {
@@ -271,5 +275,175 @@ describe("resumePendingToolCalls (graceful-stop handoff)", () => {
     expect(finishSpy).toHaveBeenCalledOnce()
 
     vi.unstubAllGlobals()
+  })
+})
+
+describe("normalizeContextUsage", () => {
+  it("returns null for absent payload", () => {
+    expect(normalizeContextUsage(null)).toBeNull()
+    expect(normalizeContextUsage(undefined)).toBeNull()
+    expect(normalizeContextUsage({})).toBeNull()
+  })
+
+  it("normalizes a full payload", () => {
+    expect(
+      normalizeContextUsage({
+        context_tokens: 100,
+        context_limit: 1000,
+        context_percent: 0.1,
+        compacted: true,
+      }),
+    ).toEqual({
+      context_tokens: 100,
+      context_limit: 1000,
+      context_percent: 0.1,
+      compacted: true,
+    })
+  })
+
+  it("defaults missing numbers to 0 and compacted to false", () => {
+    expect(normalizeContextUsage({ context_percent: 0.5 })).toEqual({
+      context_tokens: 0,
+      context_limit: 0,
+      context_percent: 0.5,
+      compacted: false,
+    })
+  })
+})
+
+describe("StreamEventProcessor context_usage", () => {
+  function makeProcessor(onContextUsage: (u: ContextUsage) => void) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onContextUsage,
+    })
+  }
+
+  it("fires onContextUsage when kiln_chat_trace carries context_usage", () => {
+    const usages: ContextUsage[] = []
+    const traces: string[] = []
+    const processor = new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onChatTrace: (t) => traces.push(t),
+      onContextUsage: (u) => usages.push(u),
+    })
+    const event: StreamEvent = {
+      type: "kiln_chat_trace",
+      trace_id: "trace-1",
+      context_usage: {
+        context_tokens: 90,
+        context_limit: 100,
+        context_percent: 0.9,
+        compacted: true,
+      },
+    }
+    processor.handleEvent(event)
+    expect(traces).toEqual(["trace-1"])
+    expect(usages).toEqual([
+      {
+        context_tokens: 90,
+        context_limit: 100,
+        context_percent: 0.9,
+        compacted: true,
+      },
+    ])
+  })
+
+  it("does not fire onContextUsage when context_usage is absent", () => {
+    const usages: ContextUsage[] = []
+    const processor = makeProcessor((u) => usages.push(u))
+    processor.handleEvent({ type: "kiln_chat_trace", trace_id: "trace-2" })
+    expect(usages).toHaveLength(0)
+  })
+
+  it("normalizes a partial context_usage without throwing", () => {
+    const usages: ContextUsage[] = []
+    const processor = makeProcessor((u) => usages.push(u))
+    processor.handleEvent({
+      type: "kiln_chat_trace",
+      trace_id: "trace-3",
+      context_usage: { context_percent: 0.42 },
+    })
+    expect(usages).toEqual([
+      {
+        context_tokens: 0,
+        context_limit: 0,
+        context_percent: 0.42,
+        compacted: false,
+      },
+    ])
+  })
+})
+
+describe("StreamEventProcessor kiln_compaction_status (Phase 5)", () => {
+  function makeProcessor(onCompactionStatus: (c: boolean) => void) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onCompactionStatus,
+    })
+  }
+
+  it("sets compacting=true on a started status event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    expect(states).toEqual([true])
+  })
+
+  it("clears compacting on the next text content event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "text-start" })
+    processor.handleEvent({ type: "text-delta", delta: "hi" })
+    expect(states[0]).toBe(true)
+    // The first content event clears it; later content events keep it cleared.
+    expect(states.slice(1).every((s) => s === false)).toBe(true)
+    expect(states).toContain(false)
+  })
+
+  it("clears compacting on the snapshot (kiln_chat_trace) event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_chat_trace", trace_id: "trace-1" })
+    expect(states[0]).toBe(true)
+    expect(states[states.length - 1]).toBe(false)
+  })
+
+  it("does NOT clear compacting on a finished status event (stays up until content)", () => {
+    // A fast/buffered started→finished pair must not collapse the visible
+    // window. Only real assistant content clears the indicator, so a "finished"
+    // event on its own is ignored (no clear emitted).
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "finished" })
+    // Only the "started" → true was emitted; "finished" produced no callback.
+    expect(states).toEqual([true])
+  })
+
+  it("stays compacting through a started→finished pair, clears on first content", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "finished" })
+    expect(states).toEqual([true])
+    // The first real assistant content is what clears it.
+    processor.handleEvent({ type: "text-start" })
+    expect(states[states.length - 1]).toBe(false)
+  })
+
+  it("clears compacting on an error event", () => {
+    const states: boolean[] = []
+    const processor = new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onCompactionStatus: (c) => states.push(c),
+      onInlineError: () => {},
+    })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "error", message: "boom" })
+    expect(states[0]).toBe(true)
+    expect(states[states.length - 1]).toBe(false)
   })
 })

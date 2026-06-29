@@ -6,6 +6,14 @@
   export let isLoading: boolean = false
   export let isLastMessage: boolean = false
   export let showActivityIndicator: boolean = false
+  /**
+   * Phase 5: the server is summarizing earlier messages (compaction) for this
+   * turn. When true, this same indicator shows the summarizing copy instead of
+   * "Thinking", and takes precedence over the normal thinking gating.
+   */
+  export let compacting: boolean = false
+  export let compactingMessage: string =
+    "Summarizing earlier messages to free up context… this may take a little while."
 
   function isToolPart(p: ChatMessagePart): boolean {
     return typeof p.type === "string" && p.type.startsWith("tool-")
@@ -25,7 +33,20 @@
     (!hasParts || showActivityIndicator)
 </script>
 
-{#if showThinking}
+{#if compacting}
+  <div class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5">
+    <BrailleSpinner />
+    <span>
+      {compactingMessage}<span class="inline-flex items-baseline gap-px"
+        ><span class="thinking-dot" style="animation-delay: 0ms">.</span><span
+          class="thinking-dot"
+          style="animation-delay: 160ms">.</span
+        ><span class="thinking-dot" style="animation-delay: 320ms">.</span
+        ></span
+      >
+    </span>
+  </div>
+{:else if showThinking}
   <div class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5">
     <BrailleSpinner />
     <span>

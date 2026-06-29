@@ -61,6 +61,53 @@ function toBackendMessage(m: ChatMessage): BackendChatRequest["messages"][0] {
   return { role: m.role, content: m.content ?? "" }
 }
 
+/**
+ * Approximate context-window usage for the conversation, surfaced by the server
+ * on the ``kiln_chat_trace`` snapshot event (and on the session GET). Numbers
+ * and a boolean only — never any trace content. Values are intentionally
+ * approximate (the gauge frames them with "≈").
+ */
+export interface ContextUsage {
+  context_tokens: number
+  context_limit: number
+  context_percent: number
+  compacted: boolean
+}
+
+/** Raw (optional/partial) ``context_usage`` shape as it arrives over the wire. */
+export interface RawContextUsage {
+  context_tokens?: number | null
+  context_limit?: number | null
+  context_percent?: number | null
+  compacted?: boolean | null
+}
+
+/**
+ * Normalize a raw (possibly partial) ``context_usage`` payload into a strict
+ * ``ContextUsage``, or ``null`` when the payload is absent / carries no numbers.
+ * Missing numbers default to 0 and ``compacted`` to ``false`` so an older or
+ * partial upstream never crashes the gauge.
+ */
+export function normalizeContextUsage(
+  raw: RawContextUsage | null | undefined,
+): ContextUsage | null {
+  if (!raw || typeof raw !== "object") return null
+  const hasAnyNumber =
+    typeof raw.context_tokens === "number" ||
+    typeof raw.context_limit === "number" ||
+    typeof raw.context_percent === "number"
+  if (!hasAnyNumber) return null
+  return {
+    context_tokens:
+      typeof raw.context_tokens === "number" ? raw.context_tokens : 0,
+    context_limit:
+      typeof raw.context_limit === "number" ? raw.context_limit : 0,
+    context_percent:
+      typeof raw.context_percent === "number" ? raw.context_percent : 0,
+    compacted: raw.compacted === true,
+  }
+}
+
 /** SSE event from backend (AI SDK stream event shape) */
 export interface StreamEvent {
   type: string
@@ -90,6 +137,10 @@ export interface StreamEvent {
   /** ``auto-mode-state`` (Phase 9) on-subscribe liveness snapshot */
   flag_on?: boolean
   working?: boolean
+  /** Approximate context usage carried on the ``kiln_chat_trace`` snapshot event */
+  context_usage?: RawContextUsage
+  /** ``kiln_compaction_status`` carries the lifecycle state ("started" / "finished") */
+  state?: string
 }
 
 export interface ToolCallsPendingItem {
@@ -125,6 +176,18 @@ export interface StreamChatOptions {
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   /** Fired when upstream sends ``kiln_chat_trace`` (typically end of a turn) */
   onChatTrace?: (traceId: string) => void
+  /**
+   * Fired when the ``kiln_chat_trace`` snapshot event carries ``context_usage``;
+   * drives the context gauge. Shared by ``StreamChatOptions`` (interactive
+   * stream) and the resume/auto paths via the processor.
+   */
+  onContextUsage?: (usage: ContextUsage) => void
+  /**
+   * Fired when the server emits ``kiln_compaction_status`` (Phase 5): ``true``
+   * when compaction starts (so the UI shows a "summarizing…" indicator), and
+   * ``false`` when it finishes or the first normal content event arrives.
+   */
+  onCompactionStatus?: (compacting: boolean) => void
   /** Fired when backend sends an inline error event */
   onInlineError?: (message: string, traceId?: string, code?: string) => void
   /**
@@ -178,6 +241,8 @@ type PartSlot = { kind: "text"; id: string } | { kind: "tool"; id: string }
 export interface StreamEventProcessorOptions {
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace?: (traceId: string) => void
+  onContextUsage?: (usage: ContextUsage) => void
+  onCompactionStatus?: (compacting: boolean) => void
   onInlineError?: (message: string, traceId?: string, code?: string) => void
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
@@ -203,6 +268,8 @@ export class StreamEventProcessor {
 
   private onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   private onChatTrace?: (traceId: string) => void
+  private onContextUsage?: (usage: ContextUsage) => void
+  private onCompactionStatus?: (compacting: boolean) => void
   private onInlineError?: (
     message: string,
     traceId?: string,
@@ -217,6 +284,8 @@ export class StreamEventProcessor {
   constructor(opts: StreamEventProcessorOptions) {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
+    this.onContextUsage = opts.onContextUsage
+    this.onCompactionStatus = opts.onCompactionStatus
     this.onInlineError = opts.onInlineError
     this.onToolExecutionStart = opts.onToolExecutionStart
     this.onToolExecutionEnd = opts.onToolExecutionEnd
@@ -224,34 +293,57 @@ export class StreamEventProcessor {
 
     this.HANDLERS = {
       "text-start": (e) => {
+        this.clearCompacting()
         this.onShowActivityIndicator?.(false)
         this.handleTextStart(e)
       },
-      "text-delta": (e) => this.handleTextDelta(e),
+      "text-delta": (e) => {
+        this.clearCompacting()
+        this.handleTextDelta(e)
+      },
       "text-end": () => {
         this.onShowActivityIndicator?.(true)
         this.handleTextEnd()
       },
       "tool-input-start": (e) => {
+        this.clearCompacting()
         this.onShowActivityIndicator?.(true)
         this.handleToolInputStart(e)
       },
       "tool-input-delta": (e) => this.handleToolInputDelta(e),
       "tool-input-available": (e) => {
+        this.clearCompacting()
         this.onShowActivityIndicator?.(true)
         this.handleToolInputAvailable(e)
       },
       "tool-output-available": (e) => this.handleToolOutputAvailable(e),
       "tool-output-error": (e) => this.handleToolOutputError(e),
-      kiln_chat_trace: (e) => this.handleChatTrace(e),
+      kiln_chat_trace: (e) => {
+        this.clearCompacting()
+        this.handleChatTrace(e)
+      },
+      kiln_compaction_status: (e) => this.handleCompactionStatus(e),
       "kiln-tool-execution-start": (e) => {
+        this.clearCompacting()
         this.onShowActivityIndicator?.(true)
         this.onToolExecutionStart?.(e.tool_count ?? 0)
       },
       "kiln-tool-execution-end": (e) =>
         this.onToolExecutionEnd?.(e.tool_count ?? 0),
-      error: (e) => this.handleError(e),
+      error: (e) => {
+        this.clearCompacting()
+        this.handleError(e)
+      },
     }
+  }
+
+  /**
+   * Clear the compaction indicator. Called when the first normal content event
+   * of the turn arrives (text/tool/snapshot) or on error — compaction is a
+   * brief pre-turn step, so any real turn output means it's done.
+   */
+  private clearCompacting(): void {
+    this.onCompactionStatus?.(false)
   }
 
   handleEvent(event: StreamEvent): void {
@@ -392,6 +484,22 @@ export class StreamEventProcessor {
     if (typeof tid === "string" && tid) {
       this.onChatTrace?.(tid)
     }
+    const usage = normalizeContextUsage(event.context_usage)
+    if (usage) {
+      this.onContextUsage?.(usage)
+    }
+  }
+
+  private handleCompactionStatus(event: StreamEvent): void {
+    // Only "started" drives the indicator ON. We deliberately do NOT clear on
+    // "finished": the summarization LLM call can complete and its bytes flush
+    // so fast (or buffered together) that a started→finished pair would collapse
+    // to nothing visible. Instead the indicator stays up until the FIRST real
+    // assistant content of the turn (text/tool/exec-start/snapshot) arrives —
+    // see ``clearCompacting``. A "finished" with no content yet is ignored.
+    if (event.state === "started") {
+      this.onCompactionStatus?.(true)
+    }
   }
 
   private handleError(event: StreamEvent): void {
@@ -484,6 +592,8 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     traceId,
     onAssistantMessage,
     onChatTrace,
+    onContextUsage,
+    onCompactionStatus,
     onInlineError,
     onToolCallsPending,
     onToolExecutionStart,
@@ -562,6 +672,8 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       currentTraceId = tid
       onChatTrace?.(tid)
     },
+    onContextUsage,
+    onCompactionStatus,
     onInlineError,
     onToolExecutionStart,
     onToolExecutionEnd,
@@ -711,6 +823,8 @@ export interface ResumePendingToolCallsOptions {
   ) => Promise<Record<string, boolean>>
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace?: (traceId: string) => void
+  onContextUsage?: (usage: ContextUsage) => void
+  onCompactionStatus?: (compacting: boolean) => void
   onInlineError?: (message: string, traceId?: string, code?: string) => void
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
@@ -744,6 +858,8 @@ export async function resumePendingToolCalls(
     onToolCallsPending,
     onAssistantMessage,
     onChatTrace,
+    onContextUsage,
+    onCompactionStatus,
     onInlineError,
     onToolExecutionStart,
     onToolExecutionEnd,
@@ -761,6 +877,8 @@ export async function resumePendingToolCalls(
       currentTraceId = tid
       onChatTrace?.(tid)
     },
+    onContextUsage,
+    onCompactionStatus,
     onInlineError,
     onToolExecutionStart,
     onToolExecutionEnd,

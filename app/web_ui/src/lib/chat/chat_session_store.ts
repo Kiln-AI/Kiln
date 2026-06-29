@@ -6,6 +6,7 @@ import {
   chatGenerateId,
   traceIdForNextChatRequest,
   type ChatMessage,
+  type ContextUsage,
   type ToolCallsPendingItem,
   type ToolCallsPendingPayload,
 } from "./streaming_chat"
@@ -33,6 +34,11 @@ export interface PersistedChatSession {
   messages: ChatMessage[]
   collapsedPartKeys: Record<string, boolean>
   lastSentAppState: AppState | null
+  /**
+   * Approximate context-window usage for the gauge. Persisted so a
+   * sessionStorage reload keeps the gauge. ``null`` before the first turn.
+   */
+  contextUsage: ContextUsage | null
 }
 
 export interface ToolApprovalWaiter {
@@ -46,6 +52,12 @@ export interface ChatSessionState extends PersistedChatSession {
   toolApprovalPicks: Record<string, boolean | undefined>
   toolExecuting: boolean
   showActivityIndicator: boolean
+  /**
+   * The server is summarizing earlier messages (compaction) for this turn
+   * (Phase 5). Runtime-only — NOT persisted. Set by ``kiln_compaction_status``
+   * and cleared on the first content event / turn end / reset.
+   */
+  compacting: boolean
   /**
    * A server-owned auto-mode burst is actively running. Decoupled from
    * ``status`` (which tracks the interactive client stream) so the chat view
@@ -68,7 +80,11 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   stop(): void
   retryLastRequest(): void
   reset(): void
-  loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  loadSession(
+    messages: ChatMessage[],
+    continuationTraceId: string,
+    contextUsage?: ContextUsage | null,
+  ): void
   /**
    * Resync the restored-from-sessionStorage conversation back to its true
    * auto-mode state after a hard refresh. If the conversation has an active
@@ -91,6 +107,7 @@ const EMPTY_PERSISTED: PersistedChatSession = {
   messages: [],
   collapsedPartKeys: {},
   lastSentAppState: null,
+  contextUsage: null,
 }
 
 export function createChatSessionStore(
@@ -124,6 +141,7 @@ export function createChatSessionStore(
     toolApprovalPicks: {},
     toolExecuting: false,
     showActivityIndicator: false,
+    compacting: false,
     autoWorking: false,
   })
 
@@ -136,6 +154,7 @@ export function createChatSessionStore(
       messages: $persisted.messages,
       collapsedPartKeys: $persisted.collapsedPartKeys,
       lastSentAppState: $persisted.lastSentAppState,
+      contextUsage: $persisted.contextUsage,
     }))
   })
 
@@ -211,6 +230,16 @@ export function createChatSessionStore(
     })
   }
 
+  function setContextUsage(usage: ContextUsage) {
+    persisted.update((p) => ({ ...p, contextUsage: usage }))
+  }
+
+  // Runtime-only (not persisted): drives the "Summarizing earlier messages…"
+  // indicator while the server compacts the conversation for this turn.
+  function setCompacting(compacting: boolean) {
+    combined.update((s) => ({ ...s, compacting }))
+  }
+
   // Append a fresh empty assistant message so the next streamed burst (auto run
   // or declined-resume) renders into a new turn rather than the prior one.
   function beginAssistantTurn() {
@@ -223,6 +252,7 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
   }
 
@@ -245,6 +275,8 @@ export function createChatSessionStore(
     beginAssistantTurn,
     onAssistantMessage: updateLastAssistant,
     onChatTrace: setLastAssistantTraceId,
+    onContextUsage: setContextUsage,
+    onCompactionStatus: setCompacting,
     onInlineError: (message, traceId, code) =>
       pushInlineError(message, traceId, code),
     onToolExecutionStart: () =>
@@ -265,6 +297,7 @@ export function createChatSessionStore(
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
+        compacting: false,
         autoWorking: false,
       })),
     onAutoModeOff: () =>
@@ -272,6 +305,7 @@ export function createChatSessionStore(
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
+        compacting: false,
         autoWorking: false,
       })),
     onToolCallsPending: handleAutoToolCallsPending,
@@ -313,6 +347,14 @@ export function createChatSessionStore(
         if (isStale()) return
         setLastAssistantTraceId(tid)
       },
+      onContextUsage: (usage) => {
+        if (isStale()) return
+        setContextUsage(usage)
+      },
+      onCompactionStatus: (compacting) => {
+        if (isStale()) return
+        setCompacting(compacting)
+      },
       onInlineError: (message, traceId, code) => {
         if (isStale()) return
         pushInlineError(message, traceId, code)
@@ -335,6 +377,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
       },
       onError: (err) => {
@@ -343,6 +386,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
         pushInlineError(err.message)
       },
@@ -394,6 +438,7 @@ export function createChatSessionStore(
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
 
     const controller = new AbortController()
@@ -443,6 +488,14 @@ export function createChatSessionStore(
         if (isStale()) return
         setLastAssistantTraceId(traceId)
       },
+      onContextUsage: (usage) => {
+        if (isStale()) return
+        setContextUsage(usage)
+      },
+      onCompactionStatus: (compacting) => {
+        if (isStale()) return
+        setCompacting(compacting)
+      },
       onAutoModeConsentRequired: async (payload) => {
         if (isStale()) return
         await handleAutoModeConsent(payload)
@@ -465,6 +518,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
         setRuntimeState("ready", null)
       },
@@ -474,6 +528,7 @@ export function createChatSessionStore(
           ...s,
           toolExecuting: false,
           showActivityIndicator: false,
+          compacting: false,
         }))
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
@@ -505,9 +560,17 @@ export function createChatSessionStore(
       traceIdForNextChatRequest(get(persisted).messages) ??
       continuationTraceId
     if (!traceId) return
-    const accepted = onAutoModeConsentNeeded
-      ? await onAutoModeConsentNeeded(payload)
-      : false
+    // If auto mode is already on/armed — the user turned it on themselves (e.g.
+    // clicked the footer toggle) while this interactive stream was still
+    // resolving the model's enable call — there is nothing to ask: accept
+    // silently so the pending enable tool call resolves without re-showing the
+    // consent dialog.
+    const alreadyOn = get(autoRunStore.autoModeOn) || get(autoRunStore.armed)
+    const accepted = alreadyOn
+      ? true
+      : onAutoModeConsentNeeded
+        ? await onAutoModeConsentNeeded(payload)
+        : false
     const siblings = payload.siblingToolCalls.map((s) => ({
       toolCallId: s.toolCallId,
       toolName: s.toolName,
@@ -671,16 +734,22 @@ export function createChatSessionStore(
       messages: [],
       collapsedPartKeys: {},
       lastSentAppState: null,
+      contextUsage: null,
     })
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
     setRuntimeState("ready", null)
   }
 
-  function loadSession(messages: ChatMessage[], traceId: string): void {
+  function loadSession(
+    messages: ChatMessage[],
+    traceId: string,
+    contextUsage: ContextUsage | null = null,
+  ): void {
     if (abortController) {
       abortController.abort()
     }
@@ -690,11 +759,17 @@ export function createChatSessionStore(
     autoRunStore.detach()
     clearToolApprovalState()
     continuationTraceId = traceId
-    persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
+    persisted.set({
+      messages,
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+      contextUsage,
+    })
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
     setRuntimeState("ready", null)
   }
@@ -754,11 +829,14 @@ export function createChatSessionStore(
       // no live stream) in the snapshot-error case while the throw case
       // correctly re-attaches.
       if (!error && snapshot) {
-        const { messages, continuationTraceId: traceId } =
-          hydrateSessionFromSnapshot(snapshot)
+        const {
+          messages,
+          continuationTraceId: traceId,
+          contextUsage,
+        } = hydrateSessionFromSnapshot(snapshot)
         // loadSession detaches any prior observer, sets the messages + trace id,
         // and resets runtime state — identical to the history-restore apply path.
-        loadSession(messages, traceId)
+        loadSession(messages, traceId, contextUsage)
       }
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at

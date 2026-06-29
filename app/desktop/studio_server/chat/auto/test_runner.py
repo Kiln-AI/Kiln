@@ -467,6 +467,95 @@ async def test_disable_auto_mode_resolves_tool_result_to_backend():
     assert "tr-2" in traces
 
 
+# ── enable_auto_mode no-op while already on ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_enable_auto_mode_while_on_resolves_already_enabled_and_continues():
+    # The model calls enable_auto_mode while auto mode is already on. It's a
+    # signal, never executed — the runner resolves it as "already enabled" (NOT
+    # an "Unknown tool name" error) and the burst continues normally.
+    round1 = [
+        text_delta("enabling auto mode"),
+        tool_input_available("tc_enable", "enable_auto_mode", input={}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("carrying on"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.execute_tool"
+    ) as execute_tool_mock:
+        with patch.object(httpx, "AsyncClient", return_value=client):
+            await runner.run()
+
+    # Burst continues — not disabled, not errored.
+    assert runner.status == AutoRunStatus.IDLE
+    # Never executed as a tool (no "Unknown tool name" path).
+    execute_tool_mock.assert_not_called()
+    # The enable call is resolved as already-enabled on the stream.
+    outputs = [
+        json.loads(e["output"])
+        for e in _events(emitted)
+        if e.get("type") == "tool-output-available"
+    ]
+    assert {"status": "enabled", "detail": "Auto mode is already enabled."} in outputs
+    # A continuation was sent to the backend resolving the enable tool_call_id, so
+    # the persisted trace has no dangling tool call.
+    assert len(client.bodies) == 2
+    enable_tool_msgs = [
+        m
+        for m in client.bodies[1]["messages"]
+        if m.get("role") == "tool" and m.get("tool_call_id") == "tc_enable"
+    ]
+    assert len(enable_tool_msgs) == 1
+    assert json.loads(enable_tool_msgs[0]["content"]) == {
+        "status": "enabled",
+        "detail": "Auto mode is already enabled.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_enable_auto_mode_resolved_alongside_executable_sibling():
+    # Defensive: if enable_auto_mode arrives with a sibling tool call, the sibling
+    # still executes (auto-approved) and the enable call resolves as a no-op.
+    round1 = [
+        text_delta("enabling and computing"),
+        tool_input_available("tc_enable", "enable_auto_mode", input={}),
+        tool_input_available("tc_add", "add", {"a": 2, "b": 3}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("done"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await runner.run()
+
+    assert runner.status == AutoRunStatus.IDLE
+    raw_outputs = [
+        e["output"]
+        for e in _events(emitted)
+        if e.get("type") == "tool-output-available"
+    ]
+    # The sibling executed (add → "5") and the enable call resolved as a no-op.
+    assert "5" in raw_outputs
+    assert (
+        json.dumps(
+            {"status": "enabled", "detail": "Auto mode is already enabled."},
+            ensure_ascii=False,
+        )
+        in raw_outputs
+    )
+
+
 # ── Graceful stop (functional spec §4.4(1)) ──────────────────────────────────
 
 

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { get, writable } from "svelte/store"
-import type { ChatMessage, StreamChatOptions } from "./streaming_chat"
+import { get, writable, type Writable } from "svelte/store"
+import type {
+  ChatMessage,
+  ContextUsage,
+  StreamChatOptions,
+} from "./streaming_chat"
 
 vi.mock("./streaming_chat", () => ({
   streamChat: vi.fn(),
@@ -413,6 +417,47 @@ describe("createChatSessionStore", () => {
         "Couldn't start auto mode: Too many auto runs",
       )
     })
+
+    it.each([
+      ["on", { autoModeOn: true }],
+      ["armed", { armed: true }],
+    ] as const)(
+      "auto-accepts the enable call without prompting when auto mode is already %s",
+      async (_label, flag) => {
+        const { createChatSessionStore, streamChatMock } =
+          await importFreshWithMock()
+        const capture: { options: StreamChatOptions | null } = { options: null }
+        streamChatMock.mockImplementation(capturingStreamChat(capture))
+
+        // Start the interactive stream while auto mode is still off, so the
+        // store registers its onAutoModeConsentRequired handoff.
+        const requestEnable = vi.fn().mockResolvedValue({ ok: true })
+        const fakeAutoRun = makeFakeAutoRun({ requestEnable })
+        const store = createChatSessionStore(undefined, fakeAutoRun)
+        const autoConsent = vi.fn(() => Promise.resolve(true))
+        store.onAutoModeConsentNeeded = autoConsent
+        await store.sendMessage("hi")
+
+        // The user turns auto mode on themselves (e.g. footer toggle) while the
+        // stream is still resolving the model's enable call.
+        const writableFlag = (
+          fakeAutoRun as unknown as Record<string, Writable<boolean>>
+        )["autoModeOn" in flag ? "autoModeOn" : "armed"]
+        writableFlag.set(true)
+
+        await capture.options!.onAutoModeConsentRequired!({
+          traceId: "trace-1",
+          enableToolCallId: "call_1",
+          reason: null,
+          siblingToolCalls: [],
+        })
+
+        // The consent dialog is never shown; the enable call is accepted
+        // silently so the pending tool call resolves.
+        expect(autoConsent).not.toHaveBeenCalled()
+        expect(requestEnable).toHaveBeenCalledTimes(1)
+      },
+    )
 
     it("skips consent prompt when already acknowledged", async () => {
       const { createChatSessionStore, streamChatMock } =
@@ -1464,5 +1509,159 @@ describe("chatSessionStore global instance", () => {
     const state = get(chatSessionStore)
     expect(state.messages).toEqual([])
     expect(state.status).toBe("ready")
+  })
+})
+
+describe("contextUsage", () => {
+  const usage: ContextUsage = {
+    context_tokens: 90_000,
+    context_limit: 150_000,
+    context_percent: 0.6,
+    compacted: false,
+  }
+
+  it("is null initially", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    expect(get(store).contextUsage).toBeNull()
+  })
+
+  it("is set via the onContextUsage stream callback", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onContextUsage!(usage)
+
+    expect(get(store).contextUsage).toEqual(usage)
+  })
+
+  it("persists contextUsage to sessionStorage", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore("ctx_session")
+
+    await store.sendMessage("hi")
+    capture.options!.onContextUsage!(usage)
+
+    const stored = JSON.parse(storage.store["ctx_session"])
+    expect(stored.contextUsage).toEqual(usage)
+  })
+
+  it("restores persisted contextUsage on a fresh store", async () => {
+    storage.store["ctx_restore"] = JSON.stringify({
+      messages: [],
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+      contextUsage: usage,
+    })
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore("ctx_restore")
+    expect(get(store).contextUsage).toEqual(usage)
+  })
+
+  it("sets contextUsage on loadSession", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    store.loadSession([], "trace-load", usage)
+    expect(get(store).contextUsage).toEqual(usage)
+  })
+
+  it("defaults contextUsage to null when loadSession omits it", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    store.loadSession([], "trace-load")
+    expect(get(store).contextUsage).toBeNull()
+  })
+
+  it("clears contextUsage on reset", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onContextUsage!(usage)
+    expect(get(store).contextUsage).toEqual(usage)
+
+    store.reset()
+    expect(get(store).contextUsage).toBeNull()
+  })
+})
+
+describe("compacting (Phase 5)", () => {
+  it("is false initially", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("is set true via the onCompactionStatus stream callback", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    capture.options!.onCompactionStatus!(false)
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("clears compacting on finish", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    capture.options!.onFinish()
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("clears compacting on reset", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    store.reset()
+    expect(get(store).compacting).toBe(false)
+  })
+
+  it("is not persisted to sessionStorage", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore("kiln_chat_test")
+
+    await store.sendMessage("hi")
+    capture.options!.onCompactionStatus!(true)
+    expect(get(store).compacting).toBe(true)
+
+    // ``compacting`` is runtime-only — it must never be written into the
+    // persisted sessionStorage payload.
+    const persisted = storage.store["kiln_chat_test"]
+    expect(persisted).toBeDefined()
+    expect(persisted).not.toContain("compacting")
   })
 })

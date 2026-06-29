@@ -77,9 +77,9 @@
         sessionsError = createKilnError(error)
         return
       }
-      const { messages, continuationTraceId } =
+      const { messages, continuationTraceId, contextUsage } =
         hydrateSessionFromSnapshot(snapshot)
-      dispatch("apply", { messages, continuationTraceId })
+      dispatch("apply", { messages, continuationTraceId, contextUsage })
       posthog.capture("chat_history_session_loaded", {
         message_count: messages.length,
         auto_active: !!row.auto_active,
