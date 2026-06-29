@@ -96,7 +96,9 @@ def _side_note_message(msg: InboundMessage) -> dict[str, Any]:
     """A drained mid-burst message, framed as a side note (see
     ``_SIDE_NOTE_REMINDER``) so the model answers inline and keeps working."""
     base = msg.as_chat_message()
-    return {**base, "content": _wrap_side_note(str(base.get("content", "")))}
+    # `or ""` (not a default arg) so an explicit None content can't become "None".
+    content = base.get("content") or ""
+    return {**base, "content": _wrap_side_note(str(content))}
 
 
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
@@ -422,7 +424,13 @@ class AutoChatRunner:
             if round_state.deferred_error_payload is not None:
                 self._emit(round_state.deferred_error_payload)
             elif transport_error:
-                self._emit(format_error("Something went wrong.", trace_id_for_error))
+                # Prefer the round's latest trace id: a newer one may have streamed
+                # in before the transport error struck mid-round.
+                self._emit(
+                    format_error(
+                        "Something went wrong.", round_state.trace_id_for_error
+                    )
+                )
             self.idle_reason = "error"
             self.status = AutoRunStatus.IDLE
             return None

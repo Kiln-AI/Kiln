@@ -395,31 +395,39 @@ async def test_mid_stream_transport_error_after_content_is_not_retried():
 
 @pytest.mark.asyncio
 async def test_stop_requested_during_retry_settles_user_stopped():
-    # Stop pressed while retrying a persistent transient failure must honor the
-    # graceful-stop contract: settle USER_STOPPED (so the supervisor publishes
-    # auto-mode-off), not IDLE("error") with the flag left on.
+    # Stop pressed *while actively retrying* a persistent transient failure must
+    # honor the graceful-stop contract: settle USER_STOPPED (so the supervisor
+    # publishes auto-mode-off), not IDLE("error") with the flag left on.
     client = FakeUpstreamClient(
-        [FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}')]
+        [
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+        ]
     )
     runner, emitted, _ = _runner(client)
-    runner.stop_requested = True
+
+    # Request Stop from inside the backoff sleep, so one retry has already been
+    # emitted and the run is genuinely mid-retry when the stop lands — exercising
+    # the in-retry transition (not the pre-run stop path).
+    async def _stop_mid_backoff(*args, **kwargs):
+        runner.stop_requested = True
 
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
             "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
-            new_callable=AsyncMock,
+            new=AsyncMock(side_effect=_stop_mid_backoff),
         ),
     ):
         await runner.run()
 
     decoded = _decoded(emitted)
-    # Stop abandons retries: no retry event, and the transient error is NOT
-    # surfaced as a hard error to the user.
-    assert '"type": "auto-mode-retry"' not in decoded
+    # It DID enter the retry branch (one retry emitted) before the stop landed,
+    # then settled USER_STOPPED without surfacing the transient error.
+    assert decoded.count('"type": "auto-mode-retry"') == 1
     assert "rate limited" not in decoded
     assert runner.status == AutoRunStatus.USER_STOPPED
-    assert len(client.bodies) == 1
+    assert len(client.bodies) == 2
 
 
 class TestSeedBody:
