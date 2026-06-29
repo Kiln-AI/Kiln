@@ -73,11 +73,13 @@ class FakeUpstreamResponse:
         status_code: int = 200,
         body: bytes = b"",
         raise_protocol_error: bool = False,
+        raise_connect_error: bool = False,
     ) -> None:
         self.status_code = status_code
         self._chunks = chunks or []
         self._body = body
         self._raise_protocol_error = raise_protocol_error
+        self._raise_connect_error = raise_connect_error
 
     async def aread(self) -> bytes:
         return self._body
@@ -89,6 +91,10 @@ class FakeUpstreamResponse:
             raise httpx.RemoteProtocolError("Server disconnected")
 
     async def __aenter__(self):
+        # Simulate a pre-response connection failure (raised before any status /
+        # bytes), distinct from a mid-stream RemoteProtocolError.
+        if self._raise_connect_error:
+            raise httpx.ConnectError("connection refused")
         return self
 
     async def __aexit__(self, *args):

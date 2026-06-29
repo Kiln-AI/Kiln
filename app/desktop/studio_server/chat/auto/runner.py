@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 from typing import Any, Awaitable, Callable
 
 import httpx
@@ -25,6 +27,7 @@ from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .sse import (
     format_auto_mode_on,
+    format_auto_mode_retry,
     format_error,
     format_tool_exec_end,
     format_tool_exec_start,
@@ -34,6 +37,22 @@ from .sse import (
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS_MESSAGE = "Maximum tool rounds exceeded. Please start a new message."
+
+# Auto mode runs unattended, so a transient upstream failure (rate limit, 5xx,
+# connection blip) should be retried with backoff rather than parking the burst
+# until a human returns. Bounded so a persistent outage still settles IDLE.
+MAX_AUTO_RETRIES = 10
+_RETRY_BASE_SECONDS = 1.0
+_RETRY_MAX_SECONDS = 30.0
+
+
+def _retry_backoff_seconds(attempt: int) -> float:
+    """Full-jitter exponential backoff. ``attempt`` is 1-based; the delay is a
+    random value in [0, min(cap, base * 2**(attempt-1))] to spread retries and
+    avoid thundering-herd alignment across runs."""
+    ceiling = min(_RETRY_MAX_SECONDS, _RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+    return random.uniform(0, ceiling)
+
 
 # The tool result the app server resolves an intercepted disable_auto_mode call
 # to, fed back to the backend so it continues interactively.
@@ -149,25 +168,18 @@ class AutoChatRunner:
         trace_id_for_error: str | None = self._seed.trace_id
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(MAX_TOOL_ROUNDS):
-                round_state = RoundState(trace_id_for_error=trace_id_for_error)
-
-                async for payload in iter_upstream_round(
-                    client, self._url, self._headers, body, round_state
-                ):
-                    self._emit(payload)
+                round_state = await self._stream_round_with_retries(
+                    client, body, trace_id_for_error
+                )
+                if round_state is None:
+                    # Retries exhausted or a non-retryable upstream error: the
+                    # helper already emitted the error and set IDLE("error").
+                    return
 
                 trace_id_for_error = round_state.trace_id_for_error
 
                 if round_state.trace_id and self._on_trace is not None:
                     await self._on_trace(round_state.trace_id)
-
-                if round_state.is_terminal_upstream_error:
-                    # An unrecoverable upstream error ends the burst, but the
-                    # conversation flag stays on (the supervisor routes this to
-                    # IDLE with reason "error" so the user can retry or stop).
-                    self.idle_reason = "error"
-                    self.status = AutoRunStatus.IDLE
-                    return
 
                 if round_state.trace_id:
                     body = {
@@ -317,6 +329,82 @@ class AutoChatRunner:
         self._emit(format_error(MAX_TOOL_ROUNDS_MESSAGE, trace_id_for_error))
         self.idle_reason = "max_rounds"
         self.status = AutoRunStatus.IDLE
+
+    async def _stream_round_with_retries(
+        self,
+        client: httpx.AsyncClient,
+        body: dict[str, Any],
+        trace_id_for_error: str | None,
+    ) -> RoundState | None:
+        """Stream one upstream round, retrying transient failures with backoff.
+
+        Returns the completed ``RoundState`` on success. Returns ``None`` when the
+        round ends on a terminal upstream error that is either non-retryable or
+        has exhausted ``MAX_AUTO_RETRIES`` — in that case it has already emitted
+        the error payload and set ``idle_reason="error"`` + status IDLE, so the
+        caller just returns.
+
+        Only failures that streamed NO content this attempt are retried (a
+        non-200 caught before any bytes, or a pre-response connection error), so a
+        retry can never duplicate already-emitted output. Backoff uses
+        ``defer_terminal_error`` so the error is held back until we give up.
+        """
+        attempt = 0
+        while True:
+            round_state = RoundState(trace_id_for_error=trace_id_for_error)
+            emitted_any = False
+            transport_error = False
+            try:
+                async for payload in iter_upstream_round(
+                    client,
+                    self._url,
+                    self._headers,
+                    body,
+                    round_state,
+                    defer_terminal_error=True,
+                ):
+                    emitted_any = True
+                    self._emit(payload)
+            except httpx.HTTPError:
+                # Pre-response connection/timeout failure (RemoteProtocolError is
+                # handled inside iter_upstream_round). Safe to retry only if no
+                # bytes were forwarded this attempt.
+                transport_error = True
+
+            if not transport_error and not round_state.is_terminal_upstream_error:
+                return round_state
+
+            streamed_content = (
+                emitted_any
+                or round_state.trace_id is not None
+                or bool(round_state.assistant_text)
+                or bool(round_state.tool_input_events)
+            )
+            retryable = not streamed_content and (
+                transport_error or round_state.error_retryable
+            )
+            if retryable and attempt < MAX_AUTO_RETRIES and not self.stop_requested:
+                attempt += 1
+                self._emit(
+                    format_auto_mode_retry(
+                        self.run_id,
+                        attempt=attempt,
+                        max_attempts=MAX_AUTO_RETRIES,
+                        status_code=round_state.error_status_code,
+                    )
+                )
+                await asyncio.sleep(_retry_backoff_seconds(attempt))
+                continue
+
+            # Give up: surface the held-back error (or a generic one for a
+            # transport failure with nothing deferred) and settle IDLE("error").
+            if round_state.deferred_error_payload is not None:
+                self._emit(round_state.deferred_error_payload)
+            elif transport_error:
+                self._emit(format_error("Something went wrong.", trace_id_for_error))
+            self.idle_reason = "error"
+            self.status = AutoRunStatus.IDLE
+            return None
 
     async def _resolve_disable(
         self,

@@ -675,10 +675,13 @@ async def test_inject_during_active_burst_echoes_message_exactly_once():
         await asyncio.sleep(0.02)
         drain_task.cancel()
 
-    # The message was appended to the round-2 continuation (drained by the runner).
+    # The message was appended to the round-2 continuation (drained by the runner),
+    # framed as a side note so the model answers inline and keeps working.
     second_body = client.bodies[1]
     user_messages = [m for m in second_body["messages"] if m.get("role") == "user"]
-    assert user_messages == [{"role": "user", "content": "inject me"}]
+    assert len(user_messages) == 1
+    assert "inject me" in user_messages[0]["content"]
+    assert "<system-reminder>" in user_messages[0]["content"]
 
     # The user-message echo appears EXACTLY ONCE across the whole observer stream
     # (registry echoes on enqueue; the runner must not re-echo on drain).

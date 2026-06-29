@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -233,20 +233,115 @@ async def test_max_rounds_backstop_emits_error():
 
 
 @pytest.mark.asyncio
-async def test_upstream_error_sets_error_status():
+async def test_non_retryable_upstream_error_sets_error_status_without_retry():
+    # A 4xx (here 400) is non-retryable: the burst ends immediately, flag stays on
+    # (IDLE, reason "error"), and no retry is attempted.
     client = FakeUpstreamClient(
-        [FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')]
+        [FakeUpstreamResponse(status_code=400, body=b'{"message": "boom"}')]
     )
     runner, emitted, _ = _runner(client)
 
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    # Revision R1: an unrecoverable upstream error ends the burst but the flag
-    # stays on (IDLE, reason "error").
     assert runner.status == AutoRunStatus.IDLE
     assert runner.idle_reason == "error"
     assert "boom" in _decoded(emitted)
+    # No retry attempted for a non-retryable status, and only one upstream request.
+    assert '"type": "auto-mode-retry"' not in _decoded(emitted)
+    assert len(client.bodies) == 1
+
+
+@pytest.mark.asyncio
+async def test_retryable_upstream_error_retries_then_succeeds():
+    # Two transient 503s, then a normal round. The runner retries with backoff,
+    # emits a retry event per attempt, recovers, and never surfaces the error.
+    round_ok = [text_delta("done"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+            FakeUpstreamResponse(chunks=round_ok),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    assert decoded.count('"type": "auto-mode-retry"') == 2
+    assert '"status_code": 503' in decoded
+    # Recovered: the transient error was never surfaced; the burst settled on the
+    # successful round (text-only → asked_user).
+    assert "rate limited" not in decoded
+    assert runner.idle_reason == "asked_user"
+    assert len(client.bodies) == 3
+
+
+@pytest.mark.asyncio
+async def test_retryable_upstream_error_exhausts_retries_then_idle_error():
+    from .runner import MAX_AUTO_RETRIES
+
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')
+            for _ in range(MAX_AUTO_RETRIES + 1)
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    # One retry event per attempt up to the cap, then give up.
+    assert decoded.count('"type": "auto-mode-retry"') == MAX_AUTO_RETRIES
+    # On give-up the held-back error is finally surfaced.
+    assert "boom" in decoded
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "error"
+    assert len(client.bodies) == MAX_AUTO_RETRIES + 1
+
+
+@pytest.mark.asyncio
+async def test_connection_error_retries_then_succeeds():
+    # A pre-response connection failure (no status code) is retried just like a
+    # transient 5xx, as long as nothing was streamed.
+    round_ok = [text_delta("done"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(raise_connect_error=True),
+            FakeUpstreamResponse(chunks=round_ok),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    assert decoded.count('"type": "auto-mode-retry"') == 1
+    assert runner.idle_reason == "asked_user"
+    assert len(client.bodies) == 2
 
 
 class TestSeedBody:

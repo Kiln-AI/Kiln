@@ -4,6 +4,7 @@ import json
 
 from app.desktop.studio_server.chat.constants import (
     SSE_TYPE_AUTO_MODE_IDLE,
+    SSE_TYPE_AUTO_MODE_RETRY,
     SSE_TYPE_AUTO_MODE_STATE,
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
@@ -35,6 +36,23 @@ def format_auto_mode_idle(run_id: str, reason: str) -> bytes:
     return _encode(
         {"type": SSE_TYPE_AUTO_MODE_IDLE, "run_id": run_id, "reason": reason}
     )
+
+
+def format_auto_mode_retry(
+    run_id: str, *, attempt: int, max_attempts: int, status_code: int | None = None
+) -> bytes:
+    """Emitted between retry attempts after a transient upstream failure, so the
+    UI can show "retrying N/M…" rather than a hard error. ``status_code`` is the
+    upstream HTTP status (omitted for a connection-level failure)."""
+    payload: dict = {
+        "type": SSE_TYPE_AUTO_MODE_RETRY,
+        "run_id": run_id,
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+    }
+    if status_code is not None:
+        payload["status_code"] = status_code
+    return _encode(payload)
 
 
 def format_auto_mode_state(run_id: str, *, flag_on: bool, working: bool) -> bytes:

@@ -61,11 +61,21 @@ class RoundState:
     trace_id: str | None = None
     trace_id_for_error: str | None = None
     seen_upstream_error: bool = False
-    # Set when iter_upstream_round itself yielded a terminal `error` SSE payload
-    # (non-200 response, or a RemoteProtocolError with no finish boundary). The
-    # caller uses this to stop the loop — distinct from a forwarded upstream
-    # `error` event, which is non-terminal and leaves the loop free to continue.
+    # Set when iter_upstream_round hit a terminal `error` (non-200 response, or a
+    # RemoteProtocolError with no finish boundary). The caller uses this to stop
+    # the loop — distinct from a forwarded upstream `error` event, which is
+    # non-terminal and leaves the loop free to continue. The payload is normally
+    # yielded inline; in ``defer_terminal_error`` mode it is held on
+    # ``deferred_error_payload`` instead so the caller can decide whether to retry.
     emitted_terminal_error: bool = False
+    # Populated only in ``defer_terminal_error`` mode (the auto runner): the error
+    # SSE bytes that would have been yielded, plus the classification the runner
+    # needs to decide on a retry. ``error_status_code`` is the upstream HTTP status
+    # (None for a connection-level failure); ``error_retryable`` is True for a
+    # transient non-200 (429/5xx) that streamed no content and is safe to re-POST.
+    deferred_error_payload: bytes | None = None
+    error_status_code: int | None = None
+    error_retryable: bool = False
 
     @property
     def is_terminal_upstream_error(self) -> bool:
@@ -142,12 +152,19 @@ def _format_consent_required_sse(
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
+# Transient upstream HTTP statuses worth retrying in auto mode (the request never
+# produced a streamed response, so re-POSTing is safe). 4xx client errors (400,
+# 401, 403, 404, 422) are deliberately excluded — they won't self-heal.
+RETRYABLE_UPSTREAM_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+
 async def iter_upstream_round(
     client: httpx.AsyncClient,
     url: str,
     headers: dict[str, str],
     body: dict[str, Any],
     round_state: RoundState,
+    defer_terminal_error: bool = False,
 ) -> AsyncIterator[bytes]:
     """POST one upstream round; yield forward-bytes as they stream; mutate
     ``round_state`` in place.
@@ -193,7 +210,21 @@ async def iter_upstream_round(
             if round_state.trace_id_for_error:
                 error_payload["trace_id"] = round_state.trace_id_for_error
             round_state.emitted_terminal_error = True
-            yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+            error_bytes = (
+                f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+            )
+            if defer_terminal_error:
+                # Don't surface the error yet — hand it to the caller (the auto
+                # runner) with the status so it can retry transient failures and
+                # only emit on give-up. No content streamed at this point, so a
+                # retryable status is safe to re-POST.
+                round_state.deferred_error_payload = error_bytes
+                round_state.error_status_code = upstream.status_code
+                round_state.error_retryable = (
+                    upstream.status_code in RETRYABLE_UPSTREAM_STATUS
+                )
+                return
+            yield error_bytes
             return
 
         try:
@@ -231,7 +262,14 @@ async def iter_upstream_round(
                     "trace_id": trace_id,
                 }
                 round_state.emitted_terminal_error = True
-                yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+                error_bytes = f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+                if defer_terminal_error:
+                    # Hold for the caller. error_retryable stays False: the stream
+                    # already dropped mid-round (possibly after partial content),
+                    # so re-POSTing is not safe to do blindly.
+                    round_state.deferred_error_payload = error_bytes
+                else:
+                    yield error_bytes
                 logger.exception(
                     "RemoteProtocolError during streaming (trace_id=%s)",
                     trace_id,
