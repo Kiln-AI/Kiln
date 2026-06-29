@@ -560,9 +560,17 @@ export function createChatSessionStore(
       traceIdForNextChatRequest(get(persisted).messages) ??
       continuationTraceId
     if (!traceId) return
-    const accepted = onAutoModeConsentNeeded
-      ? await onAutoModeConsentNeeded(payload)
-      : false
+    // If auto mode is already on/armed — the user turned it on themselves (e.g.
+    // clicked the footer toggle) while this interactive stream was still
+    // resolving the model's enable call — there is nothing to ask: accept
+    // silently so the pending enable tool call resolves without re-showing the
+    // consent dialog.
+    const alreadyOn = get(autoRunStore.autoModeOn) || get(autoRunStore.armed)
+    const accepted = alreadyOn
+      ? true
+      : onAutoModeConsentNeeded
+        ? await onAutoModeConsentNeeded(payload)
+        : false
     const siblings = payload.siblingToolCalls.map((s) => ({
       toolCallId: s.toolCallId,
       toolName: s.toolName,

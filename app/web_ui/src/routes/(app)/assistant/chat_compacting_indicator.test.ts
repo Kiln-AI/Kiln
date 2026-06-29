@@ -163,4 +163,75 @@ describe("chat.svelte compaction indicator (Phase 5 integration)", () => {
     const { queryByText } = render(Chat, { props: { store } })
     expect(queryByText(SUMMARIZING)).toBeNull()
   })
+
+  it("with an active assistant bubble, swaps Thinking for Summarizing IN PLACE (never both)", () => {
+    // Common case: the empty assistant bubble already exists. The in-bubble
+    // pending indicator must show the summarizing copy instead of "Thinking",
+    // and the standalone fallback row must NOT also render — exactly one.
+    const { store } = makeFakeStore(
+      baseState({
+        messages: [userMsg, { id: "a1", role: "assistant", parts: [] }],
+        compacting: true,
+      }),
+    )
+    const { queryAllByText, queryByText } = render(Chat, { props: { store } })
+    expect(queryAllByText(SUMMARIZING)).toHaveLength(1)
+    expect(queryByText(/^Thinking/)).toBeNull()
+  })
+
+  it("swaps Thinking for Summarizing when compaction kicks in MID-TURN (content already present)", async () => {
+    // The reported regression: the turn already showed "Thinking…" (an
+    // assistant message with content + the activity indicator), then compaction
+    // started. The trailing parts-branch indicator must swap to Summarizing —
+    // not stay stuck on Thinking.
+    const withContent = (compacting: boolean): ChatSessionState =>
+      baseState({
+        messages: [
+          userMsg,
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [{ type: "text", text: "partial" }],
+          },
+        ],
+        status: "streaming",
+        showActivityIndicator: true,
+        compacting,
+      })
+
+    const { store, state } = makeFakeStore(withContent(false))
+    const { queryAllByText, queryByText } = render(Chat, { props: { store } })
+    // Before compaction: Thinking is showing, no Summarizing.
+    expect(queryByText(/^Thinking/)).toBeTruthy()
+    expect(queryByText(SUMMARIZING)).toBeNull()
+
+    // Compaction kicks in mid-turn → swap in place, exactly one indicator.
+    state.set(withContent(true))
+    await Promise.resolve()
+    expect(queryAllByText(SUMMARIZING)).toHaveLength(1)
+    expect(queryByText(/^Thinking/)).toBeNull()
+  })
+
+  it("with an active assistant bubble, shows Thinking (not Summarizing) when compaction ends", async () => {
+    const { store, state } = makeFakeStore(
+      baseState({
+        messages: [userMsg, { id: "a1", role: "assistant", parts: [] }],
+        compacting: true,
+      }),
+    )
+    const { queryByText } = render(Chat, { props: { store } })
+    expect(queryByText(SUMMARIZING)).toBeTruthy()
+
+    // Compaction finished but the turn is still pending (no content yet): the
+    // same in-place indicator reverts to Thinking.
+    state.set(
+      baseState({
+        messages: [userMsg, { id: "a1", role: "assistant", parts: [] }],
+        compacting: false,
+      }),
+    )
+    await Promise.resolve()
+    expect(queryByText(SUMMARIZING)).toBeNull()
+    expect(queryByText(/^Thinking/)).toBeTruthy()
+  })
 })

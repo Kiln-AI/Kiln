@@ -14,12 +14,29 @@
   export let usage: ContextUsage | null = null
 
   // Raw percent may momentarily exceed 100 just before a compaction triggers;
-  // the displayed number is clamped to 100. The bar is a single neutral grey at
-  // all percentages (no color ramp).
+  // the displayed number is clamped to 100.
   $: displayPercent = Math.min(
     100,
     Math.round((usage?.context_percent ?? 0) * 100),
   )
+
+  // Tint the bar by how full the context is. Under 50% it's a subtle grey fill
+  // over a subtler grey track. Once it crosses 50% it goes warning (amber) and
+  // at 80% error (red): a STRONG full-strength fill over a muted same-hue track
+  // (strong amber on muted amber; strong red on muted red). Full class strings
+  // (not interpolated) so Tailwind keeps them.
+  $: trackClass =
+    displayPercent >= 80
+      ? "bg-error/20"
+      : displayPercent >= 50
+        ? "bg-warning/20"
+        : "bg-base-content/10"
+  $: fillClass =
+    displayPercent >= 80
+      ? "bg-error"
+      : displayPercent >= 50
+        ? "bg-warning"
+        : "bg-base-content/30"
 
   $: tooltipText = usage
     ? `≈ ${displayPercent}% of context used (≈ ${usage.context_tokens.toLocaleString()} / ${usage.context_limit.toLocaleString()} tokens). Older messages are automatically summarized when the conversation gets long.`
@@ -103,11 +120,11 @@
       ≈{displayPercent}%
     </span>
     <div
-      class="w-16 md:w-20 h-1.5 rounded-full bg-base-content/10 overflow-hidden"
+      class="w-16 md:w-20 h-1.5 rounded-full {trackClass} overflow-hidden transition-colors duration-300"
       data-testid="context-usage-track"
     >
       <div
-        class="h-full rounded-full bg-base-content/30 transition-[width] duration-300"
+        class="h-full rounded-full {fillClass} transition-[width,background-color] duration-300"
         style="width: {displayPercent}%"
         data-testid="context-usage-fill"
       ></div>

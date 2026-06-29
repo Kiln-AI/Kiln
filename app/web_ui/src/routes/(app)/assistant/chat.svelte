@@ -676,6 +676,7 @@
                                   isLoading={true}
                                   isLastMessage={true}
                                   {showActivityIndicator}
+                                  {compacting}
                                 />
                               </div>
                             </div>
@@ -685,15 +686,17 @@
                               isLoading={isActiveMessage}
                               isLastMessage={message.id === lastMessage?.id}
                               {showActivityIndicator}
+                              {compacting}
                             />
                           {/if}
                         {/if}
                       {/if}
                     {/if}
-                  {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id && !compacting}
-                    <!-- While ``compacting`` the standalone summarizing row below
-                       the loop is the only indicator, so suppress the normal
-                       Thinking streaming-cursor here to avoid showing both. -->
+                  {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
+                    <!-- The single pending indicator for the active assistant
+                       turn. While ``compacting`` it swaps its label in place to
+                       the summarizing copy (instead of a separate row); when
+                       compaction finishes it reverts to Thinking. -->
                     <div class="flex items-start gap-3">
                       <img
                         src="/images/chat_icon_animated.svg"
@@ -706,6 +709,7 @@
                           isLoading={true}
                           isLastMessage={true}
                           {showActivityIndicator}
+                          {compacting}
                         />
                       </div>
                     </div>
@@ -717,16 +721,13 @@
             </div>
           {/if}
         {/each}
-        {#if compacting}
-          <!-- Phase 5: the server is summarizing earlier messages (compaction)
-             BEFORE inference for this turn. This happens before any assistant
-             content exists, so it can't rely on an assistant message bubble or
-             its activity flags being set. Render a standalone activity row
-             (same animated icon + ChatStatusSteps "compacting" markup as the
-             streaming-cursor branch) keyed only on ``compacting`` so it is
-             always mounted during the pre-inference window — it sits where the
-             assistant's Thinking indicator would appear. Cleared by the store
-             when the first real assistant content arrives. -->
+        {#if compacting && lastMessage?.role !== "assistant"}
+          <!-- Fallback compaction indicator for the rare case where there is no
+             active assistant bubble yet to host the in-place indicator above
+             (so the summarizing copy still appears, and never alongside the
+             bubble's Thinking — exactly one shows). When an empty assistant
+             turn exists, the streaming-cursor branch above swaps its own label
+             to the summarizing copy instead. -->
           <div class="flex items-start gap-3" role="status">
             <img
               src="/images/chat_icon_animated.svg"

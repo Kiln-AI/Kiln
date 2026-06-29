@@ -44,19 +44,41 @@ describe("ContextUsageGauge", () => {
     )
   })
 
-  it("renders a grey-on-grey two-div bar: subtle track + mid-grey fill", () => {
+  it("under 50%: neutral grey two-div bar (light track + mid-grey fill)", () => {
     const { getByTestId } = render(ContextUsageGauge, {
-      props: { usage: usage() },
+      props: { usage: usage({ context_percent: 0.33 }) },
     })
     const track = getByTestId("context-usage-track")
     const fill = getByTestId("context-usage-fill")
     // Delicate low-opacity greys: very light track, slightly stronger but still
-    // light fill — no color-ramp or near-black DaisyUI ``progress`` styling.
+    // light fill — no near-black DaisyUI ``progress`` styling.
     expect(track.getAttribute("class") ?? "").toContain("bg-base-content/10")
     expect(fill.getAttribute("class") ?? "").toContain("bg-base-content/30")
     const allClasses = `${track.getAttribute("class")} ${fill.getAttribute("class")}`
     expect(allClasses).not.toMatch(/progress-(success|warning|error|primary)/)
   })
+
+  it.each([
+    [0.49, "bg-base-content/10", "bg-base-content/30"], // just under 50% → subtle grey
+    [0.5, "bg-warning/20", "bg-warning"], // crosses 50% → muted amber track, strong amber fill
+    [0.79, "bg-warning/20", "bg-warning"], // still under 80% → amber
+    [0.8, "bg-error/20", "bg-error"], // crosses 80% → muted red track, strong red fill
+    [1.2, "bg-error/20", "bg-error"], // clamped to 100% → red
+  ])(
+    "tints by fullness: %d → muted track %s under a strong fill %s",
+    (percent, trackClass, fillClass) => {
+      const { getByTestId } = render(ContextUsageGauge, {
+        props: { usage: usage({ context_percent: percent }) },
+      })
+      // Exact-token match: a strong fill like "bg-warning" must not be satisfied
+      // by the muted "bg-warning/20" track (substring), and vice-versa.
+      const tokens = (id: string) =>
+        (getByTestId(id).getAttribute("class") ?? "").split(/\s+/)
+      expect(tokens("context-usage-track")).toContain(trackClass)
+      expect(tokens("context-usage-fill")).toContain(fillClass)
+      cleanup()
+    },
+  )
 
   it("fill width reflects the (clamped) percent", () => {
     const half = render(ContextUsageGauge, {

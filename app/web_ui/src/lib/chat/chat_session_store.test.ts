@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { get, writable } from "svelte/store"
+import { get, writable, type Writable } from "svelte/store"
 import type {
   ChatMessage,
   ContextUsage,
@@ -417,6 +417,47 @@ describe("createChatSessionStore", () => {
         "Couldn't start auto mode: Too many auto runs",
       )
     })
+
+    it.each([
+      ["on", { autoModeOn: true }],
+      ["armed", { armed: true }],
+    ] as const)(
+      "auto-accepts the enable call without prompting when auto mode is already %s",
+      async (_label, flag) => {
+        const { createChatSessionStore, streamChatMock } =
+          await importFreshWithMock()
+        const capture: { options: StreamChatOptions | null } = { options: null }
+        streamChatMock.mockImplementation(capturingStreamChat(capture))
+
+        // Start the interactive stream while auto mode is still off, so the
+        // store registers its onAutoModeConsentRequired handoff.
+        const requestEnable = vi.fn().mockResolvedValue({ ok: true })
+        const fakeAutoRun = makeFakeAutoRun({ requestEnable })
+        const store = createChatSessionStore(undefined, fakeAutoRun)
+        const autoConsent = vi.fn(() => Promise.resolve(true))
+        store.onAutoModeConsentNeeded = autoConsent
+        await store.sendMessage("hi")
+
+        // The user turns auto mode on themselves (e.g. footer toggle) while the
+        // stream is still resolving the model's enable call.
+        const writableFlag = (
+          fakeAutoRun as unknown as Record<string, Writable<boolean>>
+        )["autoModeOn" in flag ? "autoModeOn" : "armed"]
+        writableFlag.set(true)
+
+        await capture.options!.onAutoModeConsentRequired!({
+          traceId: "trace-1",
+          enableToolCallId: "call_1",
+          reason: null,
+          siblingToolCalls: [],
+        })
+
+        // The consent dialog is never shown; the enable call is accepted
+        // silently so the pending tool call resolves.
+        expect(autoConsent).not.toHaveBeenCalled()
+        expect(requestEnable).toHaveBeenCalledTimes(1)
+      },
+    )
 
     it("skips consent prompt when already acknowledged", async () => {
       const { createChatSessionStore, streamChatMock } =
