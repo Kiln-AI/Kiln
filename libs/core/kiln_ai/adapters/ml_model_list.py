@@ -586,6 +586,19 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
     "Max": "max",
 }
 
+# GLM 5.2 on Fireworks is the only provider/model pair where reasoning can be
+# disabled: sending reasoning_effort="none" fully stops reasoning (verified:
+# completion drops to ~4 tokens, no reasoning_content). It does not support
+# graded effort — any explicit non-"none" effort suppresses the surfaced
+# reasoning (and "minimal" is rejected outright). So this is a simple on/off
+# toggle: "On" uses the "default" sentinel (omit reasoning_effort, the only mode
+# that reliably surfaces reasoning), "Off" sends reasoning_effort="none".
+# Default is "On" so reasoning stays enabled unless the user opts out.
+GLM_5_2_FIREWORKS_THINKING_LEVELS = {
+    "On (Default)": "default",
+    "Off / None": "none",
+}
+
 
 built_in_models: List[KilnModel] = [
     # Fugu Ultra
@@ -7154,6 +7167,8 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/glm-5p2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+                available_thinking_levels=GLM_5_2_FIREWORKS_THINKING_LEVELS,
+                default_thinking_level="default",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),

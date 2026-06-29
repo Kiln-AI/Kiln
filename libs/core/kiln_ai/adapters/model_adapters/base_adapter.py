@@ -191,6 +191,22 @@ class BaseAdapter(metaclass=ABCMeta):
             )
         return self._model_provider
 
+    def _reasoning_explicitly_disabled(self, provider: KilnModelProvider) -> bool:
+        """True when the effective thinking level turns reasoning off ("none").
+
+        Reasoning-capable models normally require reasoning in the response, but
+        when the user explicitly selects the "off"/"none" thinking level the
+        model legitimately returns no reasoning, so the requirement is waived.
+        """
+        if not provider.available_thinking_levels:
+            return False
+        run_config = as_kiln_agent_run_config(self.run_config)
+        if "thinking_level" in run_config.model_fields_set:
+            thinking_level = run_config.thinking_level
+        else:
+            thinking_level = provider.default_thinking_level
+        return thinking_level == "none"
+
     @staticmethod
     def _normalize_prior_trace(
         prior_trace: list[ChatCompletionMessageParam] | None,
@@ -310,6 +326,7 @@ class BaseAdapter(metaclass=ABCMeta):
                         and self.has_structured_output()
                     )
                     and not trace_has_toolcalls
+                    and not self._reasoning_explicitly_disabled(provider)
                 ):
                     raise RuntimeError(
                         "Reasoning is required for this model, but no reasoning was returned."
@@ -504,6 +521,7 @@ class BaseAdapter(metaclass=ABCMeta):
                     and self.has_structured_output()
                 )
                 and not trace_has_toolcalls
+                and not self._reasoning_explicitly_disabled(provider)
             ):
                 raise RuntimeError(
                     "Reasoning is required for this model, but no reasoning was returned."

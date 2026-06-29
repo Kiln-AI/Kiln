@@ -541,8 +541,15 @@ class LiteLlmAdapter(BaseAdapter):
             thinking_level is not None
             and provider.available_thinking_levels is not None
         ):
+            # "default" sentinel: use the provider's native default reasoning
+            # behavior by omitting reasoning_effort entirely. Used by models that
+            # reason reliably without an explicit effort and only need an explicit
+            # "off" toggle (e.g. GLM 5.2 on Fireworks, where any explicit effort
+            # suppresses the surfaced reasoning).
+            if thinking_level == "default":
+                pass
             # Anthropic models in OpenRouter uses reasoning object. See https://openrouter.ai/docs/use-cases/reasoning-tokens
-            if (
+            elif (
                 provider.name == ModelProviderName.openrouter
                 and provider.openrouter_reasoning_object
             ):

@@ -610,6 +610,58 @@ def test_build_extra_body_thinking_level_anthropic_none(config, mock_task):
     assert "reasoning" not in extra_body
 
 
+def test_build_extra_body_thinking_level_default_sentinel(config, mock_task):
+    """The "default" sentinel level means: use the provider's native default
+    reasoning behavior by omitting reasoning_effort (e.g. GLM 5.2 on Fireworks,
+    where reasoning is only surfaced reliably when no explicit effort is sent)."""
+    config.run_config_properties.thinking_level = "default"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.fireworks_ai
+    mock_provider.model_id = "accounts/fireworks/models/glm-5p2"
+    mock_provider.available_thinking_levels = {"On (Default)": "default", "Off / None": "none"}
+    mock_provider.default_thinking_level = "default"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
+
+
+def test_build_extra_body_thinking_level_fireworks_none_disables(config, mock_task):
+    """The "none" level on Fireworks sends reasoning_effort="none", which fully
+    disables reasoning on GLM 5.2."""
+    config.run_config_properties.thinking_level = "none"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.fireworks_ai
+    mock_provider.model_id = "accounts/fireworks/models/glm-5p2"
+    mock_provider.available_thinking_levels = {"On (Default)": "default", "Off / None": "none"}
+    mock_provider.default_thinking_level = "default"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "none"
+
+
 def test_build_extra_body_thinking_level_run_config_override(config, mock_task):
     """Test that the thinking level in the run config overrides the provider's default"""
     config.run_config_properties.thinking_level = "low"

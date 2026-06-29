@@ -1614,6 +1614,33 @@ class TestFinalizeStream:
         with pytest.raises(RuntimeError, match="Reasoning is required"):
             finalize_adapter._finalize_stream(adapter_stream, "test input", None)
 
+    def test_finalize_stream_reasoning_not_required_when_thinking_off(self, base_task):
+        """When the user explicitly selects the "none"/off thinking level, a
+        reasoning-capable model legitimately returns no reasoning, so the
+        reasoning-required guard is waived (e.g. GLM 5.2 on Fireworks with
+        reasoning disabled)."""
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="fireworks_ai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+                thinking_level="none",
+            ),
+        )
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = True
+        provider.reasoning_optional_for_structured_output = False
+        provider.available_thinking_levels = {"On (Default)": "default", "Off / None": "none"}
+        provider.default_thinking_level = "default"
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("output")
+        run = adapter._finalize_stream(adapter_stream, "test input", None)
+        assert isinstance(run, TaskRun)
+
     def test_finalize_stream_reasoning_not_required_with_tool_calls(
         self, finalize_adapter
     ):
