@@ -7334,6 +7334,10 @@ export interface components {
             progress_detail?: {
                 [key: string]: unknown;
             } | null;
+            /** Properties */
+            properties?: {
+                [key: string]: unknown;
+            } | null;
             /** Params */
             params?: {
                 [key: string]: unknown;

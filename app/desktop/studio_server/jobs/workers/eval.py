@@ -6,7 +6,10 @@ from app.desktop.git_sync.save_context import save_context_for_project
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
-from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.prompt_type import generator_label
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import Task, TaskRunConfig
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel
 
@@ -48,6 +51,28 @@ class EvalJobResult(BaseModel):
     error: int
 
 
+class EvalJobProperties(BaseModel):
+    """Static, descriptive info about an eval job, for display in the jobs UI.
+
+    Mirrors the run-config summary and judge info shown elsewhere in the app:
+    which eval, the run config (name, model, prompt, tool/skill counts), and the
+    judge (eval config) algorithm and model. Model/provider fields carry raw ids;
+    the frontend resolves them to display names with its model-name helpers.
+    """
+
+    eval_name: str
+    run_config_name: str
+    run_config_model_name: str
+    run_config_model_provider: str
+    run_config_prompt_name: str
+    run_config_tools_count: int
+    run_config_skills_count: int
+    judge_name: str
+    judge_algorithm: str
+    judge_model_name: str
+    judge_model_provider: str
+
+
 class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     """Background worker that runs an eval against a single run config.
 
@@ -60,7 +85,109 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     type_name = "eval"
     params_model = EvalJobParams
     result_model = EvalJobResult
+    properties_model = EvalJobProperties
     supports_pause = True
+
+    async def describe(self, params: EvalJobParams) -> EvalJobProperties:
+        # Loads entities off disk like _compute_state_sync; offload the blocking
+        # IO to a thread so create() stays responsive.
+        return await asyncio.to_thread(self._describe_sync, params)
+
+    def _describe_sync(self, params: EvalJobParams) -> EvalJobProperties:
+        eval_config = eval_config_from_id(
+            params.project_id,
+            params.task_id,
+            params.eval_id,
+            params.eval_config_id,
+        )
+        eval, task = self._eval_and_task(eval_config)
+        run_config = task_run_config_from_id(
+            params.project_id,
+            params.task_id,
+            params.run_config_id,
+        )
+        # Run configs are a union; only the kiln_agent variant carries a model,
+        # prompt, and tools. MCP run configs have none, so leave those fields
+        # blank rather than dropping the whole properties block (eval/judge info
+        # still renders).
+        run_config_properties = run_config.run_config_properties
+        if isinstance(run_config_properties, KilnAgentRunConfigProperties):
+            run_config_model_name = run_config_properties.model_name
+            run_config_model_provider = run_config_properties.model_provider_name
+            prompt_name = self._prompt_display_name(
+                task, run_config, run_config_properties
+            )
+            tool_ids = (
+                run_config_properties.tools_config.tools
+                if run_config_properties.tools_config
+                else []
+            )
+            skills_count = sum(
+                1 for t in tool_ids if t.startswith(SKILL_TOOL_ID_PREFIX)
+            )
+            tools_count = len(tool_ids) - skills_count
+        else:
+            run_config_model_name = ""
+            run_config_model_provider = ""
+            prompt_name = ""
+            tools_count = 0
+            skills_count = 0
+
+        return EvalJobProperties(
+            eval_name=eval.name,
+            run_config_name=run_config.name,
+            run_config_model_name=run_config_model_name,
+            run_config_model_provider=run_config_model_provider,
+            run_config_prompt_name=prompt_name,
+            run_config_tools_count=tools_count,
+            run_config_skills_count=skills_count,
+            judge_name=eval_config.name,
+            judge_algorithm=eval_config.config_type.value,
+            judge_model_name=eval_config.model_name,
+            judge_model_provider=eval_config.model_provider,
+        )
+
+    def _prompt_display_name(
+        self,
+        task: Task,
+        run_config: TaskRunConfig,
+        run_config_properties: KilnAgentRunConfigProperties,
+    ) -> str:
+        """Resolve a prompt id to a human name, mirroring the frontend's
+        prompt_name_from_id: a run config's own frozen prompt carries its name;
+        built-in generators map to a label; custom (id::) and reused frozen
+        (task_run_config::) prompts resolve their name from the task. Falls back
+        to the raw id only when nothing resolves."""
+        # A frozen prompt stored on THIS run config carries its saved name.
+        if run_config.prompt is not None and run_config.prompt.name:
+            return run_config.prompt.name
+
+        prompt_id = run_config_properties.prompt_id
+
+        # Built-in generator (e.g. "few_shot_prompt_builder" -> "Few-Shot").
+        label = generator_label(prompt_id)
+        if label:
+            return label
+
+        if prompt_id.startswith("fine_tune_prompt::"):
+            return "Fine-Tune Prompt"
+
+        # Custom prompt saved under the task: "id::<prompt_id>".
+        if prompt_id.startswith("id::"):
+            target = prompt_id[len("id::") :]
+            for prompt in task.prompts(readonly=True):
+                if prompt.id == target:
+                    return prompt.name
+
+        # Reused frozen prompt referencing another run config's frozen copy:
+        # "task_run_config::<project_id>::<task_id>::<run_config_id>".
+        if prompt_id.startswith("task_run_config::"):
+            target = prompt_id.split("::")[-1]
+            for other in task.run_configs(readonly=True):
+                if other.id == target and other.prompt is not None:
+                    return other.prompt.name
+
+        return prompt_id
 
     async def compute_state(self, params: EvalJobParams) -> JobDerivedState:
         # _compute_state_sync loads entities and enumerates runs/ directories

@@ -88,6 +88,12 @@ class JobRecord(BaseModel):
     # (e.g. RAG's four-phase breakdown). Kept as a dict on the wire so the core
     # stays worker-agnostic; the frontend casts it to the worker's model.
     progress_detail: dict[str, Any] | None = None
+    # Static, worker-published descriptive properties for this job (validated
+    # against the worker's `properties_model`). Derived once from params at
+    # create time; unlike `progress`, it does not change over the run. Kept as a
+    # dict on the wire so the core stays worker-agnostic; the frontend casts it
+    # to the worker's model.
+    properties: dict[str, Any] | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
     error: JobError | None = None
@@ -187,7 +193,22 @@ class JobWorker(Generic[TParams, TResult]):
     # JobContext.report_progress_detail(); stamped on JobRecord.progress_detail.
     # Leave None for workers whose generic count progress is enough.
     progress_model: ClassVar[type[BaseModel] | None] = None
+    # Optional typed model for static, worker-published descriptive properties
+    # returned by describe() and stamped on JobRecord.properties. Leave None for
+    # workers that have nothing descriptive to publish.
+    properties_model: ClassVar[type[BaseModel] | None] = None
     supports_pause: ClassVar[bool] = False
+
+    async def describe(self, params: TParams) -> BaseModel | None:
+        """Return static, worker-specific descriptive properties for the UI.
+
+        MUST be a pure read — no side effects, idempotent, safe to call any time.
+        Derived from params only (the result does not change over the run). The
+        registry calls this once at create time and stamps the serialized result
+        on JobRecord.properties. Returns an instance of the worker's
+        `properties_model`, or None when there is nothing to publish (default).
+        """
+        return None
 
     async def compute_state(self, params: TParams) -> JobDerivedState | None:
         """Read source-of-truth Kiln entities and return the operation's true state.

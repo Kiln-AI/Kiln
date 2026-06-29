@@ -164,12 +164,14 @@ class JobRegistry:
     ) -> JobRecord:
         worker = self.worker_for(type_name)
         validated = self._validate_params(worker, params)
+        properties = await self._describe(worker, validated)
         job_id = self._fresh_job_id()
         job = JobRecord(
             id=job_id,
             type=type_name,
             status=BackgroundJobStatus.PENDING,
             params=validated.model_dump(mode="json"),
+            properties=properties,
             metadata=metadata or {},
             project_id=project_id,
             supports_pause=worker.supports_pause,
@@ -194,6 +196,44 @@ class JobRegistry:
         if isinstance(params, BaseModel):
             params = params.model_dump()
         return worker.params_model.model_validate(params)
+
+    async def _describe(
+        self, worker: JobWorker, params: BaseModel
+    ) -> dict[str, Any] | None:
+        """Compute a worker's static display properties, guarded and serialized.
+
+        describe() is a pure read that may touch on-disk entities (project/task/
+        eval) that could be deleted or transiently unavailable — a failure here
+        must never break job creation, so we fall back to no properties. Also
+        guards the worker's contract: the result must be the model the worker
+        declared (so properties' shape is predictable for the frontend), and the
+        whole path — describe(), the type check, and serialization — is wrapped
+        so a bad payload or a model_dump failure can never break create().
+        """
+        try:
+            detail = await worker.describe(params)
+            if detail is None:
+                return None
+            expected = worker.properties_model
+            if expected is None:
+                logger.error(
+                    "describe() for job type %s returned properties but no "
+                    "properties_model is declared",
+                    worker.type_name,
+                )
+                return None
+            if not isinstance(detail, expected):
+                logger.error(
+                    "describe() for job type %s returned %s, expected %s",
+                    worker.type_name,
+                    type(detail).__name__,
+                    expected.__name__,
+                )
+                return None
+            return detail.model_dump(mode="json")
+        except Exception:
+            logger.exception("Failed to describe job of type %s", worker.type_name)
+            return None
 
     # -- dispatch / supervision ---------------------------------------------
 

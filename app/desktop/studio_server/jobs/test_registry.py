@@ -957,3 +957,126 @@ async def test_report_progress_detail_rejects_wrong_model():
     # The type guard raises inside run(), routing the job to FAILED.
     await wait_for_status(reg, job.id, BackgroundJobStatus.FAILED)
     assert reg._jobs[job.id].error is not None
+
+
+# -- describe() / properties guard ------------------------------------------
+
+
+class PropertiesModel(BaseModel):
+    label: str
+
+
+class DescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "describe"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    properties_model = PropertiesModel
+    gate: asyncio.Event
+
+    async def describe(self, params):
+        return PropertiesModel(label="hello")
+
+    async def run(self, params, ctx):
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_stamps_typed_properties():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(DescribeWorker)
+    DescribeWorker.gate = asyncio.Event()
+    # Properties are computed at create time, before dispatch.
+    job = await reg.create("describe", {})
+    try:
+        assert job.properties == {"label": "hello"}
+    finally:
+        # Always release the gated worker, even if the assertion fails, so the
+        # spawned job can finish rather than leaking into teardown.
+        DescribeWorker.gate.set()
+    await wait_for_status(reg, job.id, BackgroundJobStatus.SUCCEEDED)
+
+
+class BadDescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "bad_describe"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    properties_model = PropertiesModel
+
+    async def describe(self, params):
+        # Returns a model that is NOT the declared properties_model.
+        return WrongModel(other="x")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_drops_properties_on_wrong_type():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(BadDescribeWorker)
+    # The contract guard logs and drops the bad payload — create still succeeds
+    # (the job is not failed), it just carries no properties.
+    job = await reg.create("bad_describe", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )
+
+
+class RaisingDescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "raising_describe"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    properties_model = PropertiesModel
+
+    async def describe(self, params):
+        raise RuntimeError("boom")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_swallows_describe_failure():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(RaisingDescribeWorker)
+    # A describe() that raises must never break job creation.
+    job = await reg.create("raising_describe", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )
+
+
+class UndeclaredPropertiesWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "undeclared_properties"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    # properties_model intentionally left at the default (None).
+
+    async def describe(self, params):
+        return PropertiesModel(label="orphan")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_drops_properties_without_declared_model():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(UndeclaredPropertiesWorker)
+    # Returning properties without declaring properties_model is a contract
+    # violation: the payload is dropped (nothing to cast to) and create() still
+    # succeeds rather than serializing an unvalidated shape.
+    job = await reg.create("undeclared_properties", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )

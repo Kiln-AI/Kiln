@@ -9,6 +9,7 @@ from app.desktop.studio_server.jobs.models import BackgroundJobStatus
 from app.desktop.studio_server.jobs.registry import JobRegistry
 from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobParams,
+    EvalJobProperties,
     EvalJobResult,
     EvalJobWorker,
 )
@@ -304,6 +305,325 @@ async def test_compute_state_missing_eval_config_raises(
 
     with pytest.raises(Exception):
         await EvalJobWorker().compute_state(bad_params)
+
+
+# -- describe ----------------------------------------------------------------
+
+
+async def test_describe_returns_properties(
+    resolve_project, task, eval_config, run_config, params
+):
+    props = await EvalJobWorker().describe(params)
+
+    assert props == EvalJobProperties(
+        eval_name="Test Eval",
+        run_config_name="Test Run Config",
+        run_config_model_name="gpt-4",
+        run_config_model_provider="openai",
+        # prompt_id "simple_prompt_builder" maps to its generator label.
+        run_config_prompt_name="Basic (Zero Shot)",
+        run_config_tools_count=0,
+        run_config_skills_count=0,
+        judge_name="Test Eval Config",
+        # EvalConfig.config_type defaults to g_eval.
+        judge_algorithm="g_eval",
+        judge_model_name="gpt-4",
+        judge_model_provider="openai",
+    )
+
+
+async def test_describe_counts_tools_skills_and_frozen_prompt(
+    resolve_project, task, eval, eval_config, data_source
+):
+    # A run config with a frozen prompt, one regular tool, and two skills.
+    from kiln_ai.datamodel.prompt import BasePrompt
+    from kiln_ai.datamodel.run_config import ToolsRunConfig
+
+    run_config = TaskRunConfig(
+        id="run_config_tools",
+        name="Tools Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="task_run_config::p::t::frozen1",
+            structured_output_mode=StructuredOutputMode.json_schema,
+            tools_config=ToolsRunConfig(
+                tools=[
+                    "kiln_tool::add_numbers",
+                    "kiln_tool::skill::abc",
+                    "kiln_tool::skill::def",
+                ],
+            ),
+        ),
+        prompt=BasePrompt(name="Frozen Prompt", prompt="do it"),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config_tools",
+    )
+
+    props = await EvalJobWorker().describe(params)
+
+    assert props.run_config_prompt_name == "Frozen Prompt"
+    assert props.run_config_tools_count == 1
+    assert props.run_config_skills_count == 2
+
+
+async def test_describe_resolves_custom_prompt_name(
+    resolve_project, task, eval, eval_config, data_source
+):
+    # A custom prompt saved under the task, referenced by "id::<prompt_id>".
+    from kiln_ai.datamodel.prompt import Prompt
+
+    prompt = Prompt(id="myprompt", name="My Custom Prompt", prompt="do it", parent=task)
+    prompt.save_to_file()
+
+    run_config = TaskRunConfig(
+        id="run_config_custom_prompt",
+        name="Custom Prompt Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="id::myprompt",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config_custom_prompt",
+    )
+
+    props = await EvalJobWorker().describe(params)
+
+    # Resolved to the saved name, not the raw "id::myprompt".
+    assert props.run_config_prompt_name == "My Custom Prompt"
+
+
+async def test_describe_resolves_reused_frozen_prompt_name(
+    resolve_project, task, eval, eval_config, data_source
+):
+    # One run config carries a frozen prompt; a second run config reuses it via
+    # a "task_run_config::<proj>::<task>::<run_config_id>" prompt_id and has no
+    # own prompt — exercising the cross-run-config resolution branch.
+    from kiln_ai.datamodel.prompt import BasePrompt
+
+    owner = TaskRunConfig(
+        id="frozen_owner",
+        name="Frozen Owner",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        prompt=BasePrompt(name="Shared Frozen Prompt", prompt="do it"),
+        parent=task,
+    )
+    owner.save_to_file()
+
+    reuser = TaskRunConfig(
+        id="frozen_reuser",
+        name="Frozen Reuser",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="task_run_config::project1::task1::frozen_owner",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    reuser.save_to_file()
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="frozen_reuser",
+    )
+
+    props = await EvalJobWorker().describe(params)
+
+    # Resolved from the owning run config's frozen prompt, not the raw id.
+    assert props.run_config_prompt_name == "Shared Frozen Prompt"
+
+
+async def test_describe_resolves_fine_tune_prompt_name(
+    resolve_project, task, eval, eval_config, data_source
+):
+    run_config = TaskRunConfig(
+        id="run_config_finetune",
+        name="Fine-Tune Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="fine_tune_prompt::project1::task1::ft123",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config_finetune",
+    )
+
+    props = await EvalJobWorker().describe(params)
+
+    assert props.run_config_prompt_name == "Fine-Tune Prompt"
+
+
+async def test_describe_falls_back_to_raw_id_when_unresolvable(
+    resolve_project, task, eval, eval_config, data_source
+):
+    # An "id::" prompt referencing a prompt that doesn't exist on the task — the
+    # resolver exhausts every branch and falls back to the raw id rather than
+    # raising.
+    run_config = TaskRunConfig(
+        id="run_config_missing_prompt",
+        name="Missing Prompt Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="id::doesnotexist",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config_missing_prompt",
+    )
+
+    props = await EvalJobWorker().describe(params)
+
+    assert props.run_config_prompt_name == "id::doesnotexist"
+
+
+async def test_describe_mcp_run_config_blanks_agent_fields(
+    resolve_project, task, eval, eval_config, data_source
+):
+    # An MCP (agentless) run config has no model/prompt/tools. describe() must
+    # still return valid properties — eval/judge info intact, agent fields blank.
+    from kiln_ai.datamodel.run_config import (
+        MCPToolReference,
+        McpRunConfigProperties,
+    )
+
+    run_config = TaskRunConfig(
+        id="run_config_mcp",
+        name="MCP Run Config",
+        run_config_properties=McpRunConfigProperties(
+            tool_reference=MCPToolReference(
+                tool_id="mcp::local::my_server::my_tool",
+                tool_name="my_tool",
+            ),
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config_mcp",
+    )
+
+    props = await EvalJobWorker().describe(params)
+
+    # Eval/judge info preserved; agent-specific fields blanked, counts zeroed.
+    assert props.eval_name == "Test Eval"
+    assert props.run_config_name == "MCP Run Config"
+    assert props.judge_name == "Test Eval Config"
+    assert props.run_config_model_name == ""
+    assert props.run_config_model_provider == ""
+    assert props.run_config_prompt_name == ""
+    assert props.run_config_tools_count == 0
+    assert props.run_config_skills_count == 0
+
+
+async def test_describe_missing_entity_raises(resolve_project, task, run_config):
+    # Mirrors compute_state: the entity loader raises rather than silently
+    # returning partial info. The registry guard (_describe) swallows this.
+    bad_params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="missing_eval",
+        eval_config_id="missing_eval_config",
+        run_config_id="run_config1",
+    )
+
+    with pytest.raises(Exception):
+        await EvalJobWorker().describe(bad_params)
+
+
+async def test_registry_create_populates_properties(
+    resolve_project, task, eval_config, run_config, params
+):
+    registry = JobRegistry()
+    registry.register_type(EvalJobWorker)
+
+    job = await registry.create("eval", params, project_id=params.project_id)
+    await registry._tasks[job.id]
+
+    assert job.properties == {
+        "eval_name": "Test Eval",
+        "run_config_name": "Test Run Config",
+        "run_config_model_name": "gpt-4",
+        "run_config_model_provider": "openai",
+        "run_config_prompt_name": "Basic (Zero Shot)",
+        "run_config_tools_count": 0,
+        "run_config_skills_count": 0,
+        "judge_name": "Test Eval Config",
+        "judge_algorithm": "g_eval",
+        "judge_model_name": "gpt-4",
+        "judge_model_provider": "openai",
+    }
+
+
+async def test_registry_create_guards_describe_failure(
+    resolve_project, task, run_config
+):
+    # describe() raises (eval/eval_config missing): create must still succeed,
+    # leaving properties unset rather than failing the whole job creation.
+    bad_params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="missing_eval",
+        eval_config_id="missing_eval_config",
+        run_config_id="run_config1",
+    )
+
+    registry = JobRegistry()
+    registry.register_type(EvalJobWorker)
+
+    job = await registry.create("eval", bad_params, project_id="project1")
+    await registry._tasks[job.id]
+
+    assert job.properties is None
 
 
 # -- run ---------------------------------------------------------------------
