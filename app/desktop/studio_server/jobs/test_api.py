@@ -154,81 +154,11 @@ async def _wait_for_status(
     raise AssertionError(f"Job {job_id} did not reach {targets}; was {actual}")
 
 
-async def _create_noop(client, **params) -> str:
+async def _create_noop(registry: JobRegistry, **params) -> str:
     body = {"steps": 50, "sleep_per_step_seconds": 0.05}
     body.update(params)
-    resp = await client.post("/api/jobs/noop", json={"params": body})
-    assert resp.status_code == 201, resp.text
-    return resp.json()["job_id"]
-
-
-# -- create ------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_returns_201_and_status(client):
-    resp = await client.post(
-        "/api/jobs/noop",
-        json={"params": {"steps": 3, "sleep_per_step_seconds": 0.01}},
-    )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["job_id"].startswith("j_")
-    assert body["status"] in ("pending", "running")
-
-
-@pytest.mark.asyncio
-async def test_create_unknown_type_404(client):
-    resp = await client.post("/api/jobs/does_not_exist", json={"params": {}})
-    assert resp.status_code == 404
-    assert "Unknown job type" in resp.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_create_invalid_params_422(client):
-    resp = await client.post("/api/jobs/noop", json={"params": {"steps": "not-an-int"}})
-    assert resp.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_create_stores_metadata_and_project_id(client, registry):
-    resp = await client.post(
-        "/api/jobs/project_scoped",
-        json={"params": {"project_id": "p_abc"}, "metadata": {"source": "test"}},
-    )
-    assert resp.status_code == 201
-    job_id = resp.json()["job_id"]
-    record = registry._jobs[job_id]
-    assert record.project_id == "p_abc"
-    assert record.metadata == {"source": "test"}
-    await registry.cancel(job_id)
-
-
-@pytest.mark.asyncio
-async def test_create_noop_has_null_project_id(client, registry):
-    job_id = await _create_noop(client)
-    assert registry._jobs[job_id].project_id is None
-    await registry.cancel(job_id)
-
-
-@pytest.mark.asyncio
-async def test_create_explicit_project_id_scopes_typeless_job(client, registry):
-    # A job whose params carry no project_id (noop) still gets scoped when the
-    # request body sets project_id explicitly — this is what the project-filtered
-    # jobs panel / SSE stream rely on to show such jobs.
-    resp = await client.post(
-        "/api/jobs/noop",
-        json={
-            "params": {"steps": 50, "sleep_per_step_seconds": 0.05},
-            "project_id": "p_explicit",
-        },
-    )
-    assert resp.status_code == 201
-    job_id = resp.json()["job_id"]
-    assert registry._jobs[job_id].project_id == "p_explicit"
-    rows = (await client.get("/api/jobs", params={"project_id": "p_explicit"})).json()
-    assert any(r["id"] == job_id for r in rows)
-    await registry.cancel(job_id)
+    job = await registry.create("noop", body)
+    return job.id
 
 
 # -- create eval (typed endpoint) --------------------------------------------
@@ -286,16 +216,6 @@ async def test_run_eval_job_invalid_params_422(client, registry):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
-async def test_eval_run_path_does_not_collide_with_generic_create(client, registry):
-    # The eval-run endpoint deliberately lives at a two-segment path so it can
-    # never be shadowed by the generic single-segment POST /api/jobs/{type}.
-    # The single-segment /api/jobs/evals is therefore just an unknown job
-    # type (404), confirming the two are distinct routes.
-    resp = await client.post("/api/jobs/evals", json={"params": _EVAL_PARAMS})
-    assert resp.status_code == 404
-
-
 # -- list --------------------------------------------------------------------
 
 
@@ -308,8 +228,8 @@ async def test_list_empty(client):
 
 @pytest.mark.asyncio
 async def test_list_returns_jobs_sorted_desc(client, registry):
-    first = await _create_noop(client)
-    second = await _create_noop(client)
+    first = await _create_noop(registry)
+    second = await _create_noop(registry)
     resp = await client.get("/api/jobs")
     assert resp.status_code == 200
     ids = [r["id"] for r in resp.json()]
@@ -321,8 +241,8 @@ async def test_list_returns_jobs_sorted_desc(client, registry):
 
 @pytest.mark.asyncio
 async def test_list_filter_by_type(client, registry):
-    await _create_noop(client)
-    await client.post("/api/jobs/project_scoped", json={"params": {"project_id": "p1"}})
+    await _create_noop(registry)
+    await registry.create("project_scoped", {"project_id": "p1"})
     resp = await client.get("/api/jobs", params={"type": "project_scoped"})
     assert resp.status_code == 200
     rows = resp.json()
@@ -332,7 +252,7 @@ async def test_list_filter_by_type(client, registry):
 
 @pytest.mark.asyncio
 async def test_list_filter_by_status(client, registry):
-    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.01)
+    job_id = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.01)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.get("/api/jobs", params={"status": "succeeded"})
     assert [r["id"] for r in resp.json()] == [job_id]
@@ -341,13 +261,9 @@ async def test_list_filter_by_status(client, registry):
 
 
 @pytest.mark.asyncio
-async def test_list_filter_by_project_id(client):
-    await client.post(
-        "/api/jobs/project_scoped", json={"params": {"project_id": "p_one"}}
-    )
-    await client.post(
-        "/api/jobs/project_scoped", json={"params": {"project_id": "p_two"}}
-    )
+async def test_list_filter_by_project_id(client, registry):
+    await registry.create("project_scoped", {"project_id": "p_one"}, project_id="p_one")
+    await registry.create("project_scoped", {"project_id": "p_two"}, project_id="p_two")
     resp = await client.get("/api/jobs", params={"project_id": "p_one"})
     rows = resp.json()
     assert len(rows) == 1
@@ -355,17 +271,17 @@ async def test_list_filter_by_project_id(client):
 
 
 @pytest.mark.asyncio
-async def test_list_limit(client):
+async def test_list_limit(client, registry):
     for _ in range(3):
-        await _create_noop(client)
+        await _create_noop(registry)
     resp = await client.get("/api/jobs", params={"limit": 2})
     assert len(resp.json()) == 2
 
 
 @pytest.mark.asyncio
 async def test_list_since_excludes_older(client, registry):
-    old_id = await _create_noop(client)
-    newer_id = await _create_noop(client)
+    old_id = await _create_noop(registry)
+    newer_id = await _create_noop(registry)
     cutoff = registry._jobs[newer_id].created_at.isoformat()
     resp = await client.get("/api/jobs", params={"since": cutoff})
     ids = [r["id"] for r in resp.json()]
@@ -378,7 +294,7 @@ async def test_list_since_excludes_older(client, registry):
 
 @pytest.mark.asyncio
 async def test_get_returns_record(client, registry):
-    job_id = await _create_noop(client)
+    job_id = await _create_noop(registry)
     resp = await client.get(f"/api/jobs/{job_id}")
     assert resp.status_code == 200
     body = resp.json()
@@ -397,8 +313,8 @@ async def test_get_unknown_404(client):
 @pytest.mark.asyncio
 async def test_get_reconciles_to_succeeded(client, registry):
     ReconcileCompleteWorker.done = False
-    resp = await client.post("/api/jobs/reconcile_complete", json={"params": {}})
-    job_id = resp.json()["job_id"]
+    job = await registry.create("reconcile_complete", {})
+    job_id = job.id
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
     ReconcileCompleteWorker.done = True
     got = await client.get(f"/api/jobs/{job_id}")
@@ -412,7 +328,7 @@ async def test_get_reconciles_to_succeeded(client, registry):
 
 @pytest.mark.asyncio
 async def test_result_200_when_terminal(client, registry):
-    job_id = await _create_noop(client, steps=3, sleep_per_step_seconds=0.01)
+    job_id = await _create_noop(registry, steps=3, sleep_per_step_seconds=0.01)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.get(f"/api/jobs/{job_id}/result")
     assert resp.status_code == 200
@@ -421,7 +337,7 @@ async def test_result_200_when_terminal(client, registry):
 
 @pytest.mark.asyncio
 async def test_result_404_when_not_terminal(client, registry):
-    job_id = await _create_noop(client)
+    job_id = await _create_noop(registry)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
     resp = await client.get(f"/api/jobs/{job_id}/result")
     assert resp.status_code == 404
@@ -439,17 +355,9 @@ async def test_result_404_unknown(client):
 
 @pytest.mark.asyncio
 async def test_errors_returns_array(client, registry):
-    resp = await client.post(
-        "/api/jobs/noop",
-        json={
-            "params": {
-                "steps": 4,
-                "sleep_per_step_seconds": 0.01,
-                "error_at_steps": [1, 3],
-            }
-        },
+    job_id = await _create_noop(
+        registry, steps=4, sleep_per_step_seconds=0.01, error_at_steps=[1, 3]
     )
-    job_id = resp.json()["job_id"]
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.get(f"/api/jobs/{job_id}/errors")
     assert resp.status_code == 200
@@ -460,7 +368,7 @@ async def test_errors_returns_array(client, registry):
 
 @pytest.mark.asyncio
 async def test_errors_empty_when_none(client, registry):
-    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.01)
+    job_id = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.01)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.get(f"/api/jobs/{job_id}/errors")
     assert resp.status_code == 200
@@ -488,7 +396,7 @@ async def test_errors_specific_run_id(client):
 
 @pytest.mark.asyncio
 async def test_pause_then_resume(client, registry):
-    job_id = await _create_noop(client, steps=50, sleep_per_step_seconds=0.03)
+    job_id = await _create_noop(registry, steps=50, sleep_per_step_seconds=0.03)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
 
     resp = await client.post(f"/api/jobs/{job_id}/pause")
@@ -507,7 +415,7 @@ async def test_pause_then_resume(client, registry):
 
 @pytest.mark.asyncio
 async def test_pause_409_when_not_running(client, registry):
-    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.01)
+    job_id = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.01)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.post(f"/api/jobs/{job_id}/pause")
     assert resp.status_code == 409
@@ -515,8 +423,8 @@ async def test_pause_409_when_not_running(client, registry):
 
 @pytest.mark.asyncio
 async def test_pause_409_when_unsupported(client, registry):
-    resp = await client.post("/api/jobs/nonpausable", json={"params": {}})
-    job_id = resp.json()["job_id"]
+    job = await registry.create("nonpausable", {})
+    job_id = job.id
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
     resp = await client.post(f"/api/jobs/{job_id}/pause")
     assert resp.status_code == 409
@@ -531,7 +439,7 @@ async def test_pause_unknown_404(client):
 
 @pytest.mark.asyncio
 async def test_resume_409_when_not_paused(client, registry):
-    job_id = await _create_noop(client)
+    job_id = await _create_noop(registry)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
     resp = await client.post(f"/api/jobs/{job_id}/resume")
     assert resp.status_code == 409
@@ -540,7 +448,7 @@ async def test_resume_409_when_not_paused(client, registry):
 
 @pytest.mark.asyncio
 async def test_cancel_202(client, registry):
-    job_id = await _create_noop(client)
+    job_id = await _create_noop(registry)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
     resp = await client.post(f"/api/jobs/{job_id}/cancel")
     assert resp.status_code == 202
@@ -549,7 +457,7 @@ async def test_cancel_202(client, registry):
 
 @pytest.mark.asyncio
 async def test_cancel_409_when_terminal(client, registry):
-    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.01)
+    job_id = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.01)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.post(f"/api/jobs/{job_id}/cancel")
     assert resp.status_code == 409
@@ -566,7 +474,7 @@ async def test_cancel_unknown_404(client):
 
 @pytest.mark.asyncio
 async def test_delete_204_when_terminal(client, registry):
-    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.01)
+    job_id = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.01)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
     resp = await client.delete(f"/api/jobs/{job_id}")
     assert resp.status_code == 204
@@ -576,7 +484,7 @@ async def test_delete_204_when_terminal(client, registry):
 
 @pytest.mark.asyncio
 async def test_delete_409_when_in_flight(client, registry):
-    job_id = await _create_noop(client)
+    job_id = await _create_noop(registry)
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
     resp = await client.delete(f"/api/jobs/{job_id}")
     assert resp.status_code == 409
@@ -593,40 +501,11 @@ async def test_delete_unknown_404(client):
 
 
 @pytest.mark.asyncio
-async def test_wait_endpoint_200_terminal_record(client):
-    resp = await client.post(
-        "/api/jobs/noop", json={"params": {"steps": 3, "sleep_per_step_seconds": 0.02}}
-    )
-    job_id = resp.json()["job_id"]
-    got = await client.get(f"/api/jobs/{job_id}/wait", timeout=10.0)
-    assert got.status_code == 200, got.text
-    body = got.json()
-    assert body["id"] == job_id
-    assert body["status"] == "succeeded"
-    assert body["result"] == {"completed_steps": 3}
-
-
-@pytest.mark.asyncio
-async def test_wait_endpoint_404_unknown(client):
-    resp = await client.get("/api/jobs/j_missing/wait")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_wait_endpoint_504_on_timeout(client, registry):
-    job_id = await _create_noop(client, steps=50, sleep_per_step_seconds=0.05)
-    await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
-    resp = await client.get(f"/api/jobs/{job_id}/wait", params={"timeout": 0.01})
-    assert resp.status_code == 504
-    await registry.cancel(job_id)
-
-
-@pytest.mark.asyncio
-async def test_wait_many_endpoint_returns_all_records(client):
-    a = await _create_noop(client, steps=2, sleep_per_step_seconds=0.02)
-    b = await _create_noop(client, steps=3, sleep_per_step_seconds=0.02)
-    got = await client.get(
-        "/api/jobs/wait", params={"ids": [a, b], "timeout": 10.0}, timeout=10.0
+async def test_wait_many_endpoint_returns_all_records(client, registry):
+    a = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.02)
+    b = await _create_noop(registry, steps=3, sleep_per_step_seconds=0.02)
+    got = await client.post(
+        "/api/jobs/wait", json={"ids": [a, b], "timeout": 10.0}, timeout=10.0
     )
     assert got.status_code == 200, got.text
     body = got.json()
@@ -636,93 +515,40 @@ async def test_wait_many_endpoint_returns_all_records(client):
 
 @pytest.mark.asyncio
 async def test_wait_many_endpoint_empty_ids_returns_empty(client):
-    got = await client.get("/api/jobs/wait")
+    got = await client.post("/api/jobs/wait", json={})
     assert got.status_code == 200
     assert got.json() == []
 
 
 @pytest.mark.asyncio
-async def test_wait_many_endpoint_404_unknown(client):
-    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.02)
-    resp = await client.get("/api/jobs/wait", params={"ids": [job_id, "j_missing"]})
+async def test_wait_many_endpoint_404_unknown(client, registry):
+    job_id = await _create_noop(registry, steps=2, sleep_per_step_seconds=0.02)
+    resp = await client.post("/api/jobs/wait", json={"ids": [job_id, "j_missing"]})
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_wait_many_endpoint_504_on_timeout(client, registry):
-    fast = await _create_noop(client, steps=1, sleep_per_step_seconds=0.01)
-    slow = await _create_noop(client, steps=50, sleep_per_step_seconds=0.05)
+    fast = await _create_noop(registry, steps=1, sleep_per_step_seconds=0.01)
+    slow = await _create_noop(registry, steps=50, sleep_per_step_seconds=0.05)
     await _wait_for_status(registry, slow, BackgroundJobStatus.RUNNING)
-    resp = await client.get(
-        "/api/jobs/wait", params={"ids": [fast, slow], "timeout": 0.05}
+    resp = await client.post(
+        "/api/jobs/wait", json={"ids": [fast, slow], "timeout": 0.05}
     )
     assert resp.status_code == 504
     await registry.cancel(slow)
 
 
-@pytest.mark.asyncio
-async def test_jobs_wait_path_is_multiwait_not_get_job(client):
-    # /api/jobs/wait must resolve to the multi-wait endpoint, not GET
-    # /api/jobs/{id} with id="wait" (which would 404 the job).
-    got = await client.get("/api/jobs/wait")
-    assert got.status_code == 200
-    assert got.json() == []
-
-
-@pytest.mark.asyncio
-async def test_create_wait_true_returns_terminal_record(client):
-    resp = await client.post(
-        "/api/jobs/noop",
-        params={"wait": "true"},
-        json={"params": {"steps": 3, "sleep_per_step_seconds": 0.02}},
-        timeout=10.0,
-    )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["id"].startswith("j_")
-    assert body["status"] == "succeeded"
-    assert body["result"] == {"completed_steps": 3}
-
-
-@pytest.mark.asyncio
-async def test_create_wait_false_returns_create_response(client, registry):
-    resp = await client.post(
-        "/api/jobs/noop",
-        params={"wait": "false"},
-        json={"params": {"steps": 50, "sleep_per_step_seconds": 0.05}},
-    )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["job_id"].startswith("j_")
-    assert body["status"] in ("pending", "running")
-    assert "result" not in body
-    await registry.cancel(body["job_id"])
-
-
-@pytest.mark.asyncio
-async def test_create_wait_true_timeout_504(client, registry):
-    resp = await client.post(
-        "/api/jobs/noop",
-        params={"wait": "true", "timeout": 0.01},
-        json={"params": {"steps": 50, "sleep_per_step_seconds": 0.05}},
-    )
-    assert resp.status_code == 504
-    # The job was still created and keeps running despite the awaiter timing out.
-    running = [r for r in registry.list_jobs() if not r.status.is_terminal]
-    assert len(running) == 1
-    await registry.cancel(running[0].id)
-
-
 # -- wiring ------------------------------------------------------------------
 
 
-def test_connect_jobs_api_registers_noop_idempotently(monkeypatch):
+def test_connect_jobs_api_registers_eval_idempotently(monkeypatch):
     reg = JobRegistry(max_concurrent=2)
     monkeypatch.setattr(jobs_api, "job_registry", reg)
     app = FastAPI()
     connect_jobs_api(app)
     connect_jobs_api(app)  # second call must not raise
-    assert "noop" in reg._workers
+    assert "eval" in reg._workers
 
 
 # -- SSE ---------------------------------------------------------------------

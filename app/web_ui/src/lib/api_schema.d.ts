@@ -3356,26 +3356,10 @@ export interface paths {
          *
          *     A typed, approval-gated entry point for agents. Unlike the UI's SSE
          *     run endpoints, this does not stream — the job runs in the background.
-         *     Poll `GET /api/jobs/{id}` (or `/wait`) for progress and the result.
+         *     Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
+         *     result.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{type}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Job */
-        post: operations["create_job_api_jobs__type__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3389,16 +3373,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        get?: never;
+        put?: never;
         /**
          * Wait For Jobs
          * @description Block until ALL the given jobs reach a terminal state, then return
-         *     their records (order preserved). A pure observer like /{id}/wait:
+         *     their records (order preserved). A pure observer, like the SSE stream:
          *     disconnecting tears down only the awaiter, never the jobs. The timeout
          *     bounds the whole set. Empty `ids` returns an empty list.
          */
-        get: operations["wait_for_jobs_api_jobs_wait_get"];
-        put?: never;
-        post?: never;
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3432,30 +3416,6 @@ export interface paths {
         };
         /** Get Job Result */
         get: operations["get_job_result_api_jobs__id__result_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{id}/wait": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Wait For Job
-         * @description Block until the job reaches a terminal state, then return its record.
-         *
-         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
-         *     cancels this handler coroutine, which cancels the wait() await and tears
-         *     down only the awaiter — the job's supervising task keeps running.
-         */
-        get: operations["wait_for_job_api_jobs__id__wait_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4847,31 +4807,6 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
-        };
-        /**
-         * CreateJobRequest
-         * @description Request body for creating a job. Params are validated per job type.
-         */
-        CreateJobRequest: {
-            /**
-             * Params
-             * @description Type-specific job parameters, validated against the type's params model.
-             */
-            params?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Project Id
-             * @description Project to scope this job to (for filtering/visibility). Falls back to the params' project_id when omitted.
-             */
-            project_id?: string | null;
-            /**
-             * Metadata
-             * @description Free-form pass-through attribution, stored verbatim.
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
         };
         /**
          * CreateJobResponse
@@ -11211,6 +11146,22 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely.
+             */
+            timeout?: number | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -18735,60 +18686,18 @@ export interface operations {
             };
         };
     };
-    create_job_api_jobs__type__post: {
+    wait_for_jobs_api_jobs_wait_post: {
         parameters: {
-            query?: {
-                /** @description When true, block until the job reaches a terminal state and return the full JobRecord instead of CreateJobResponse. */
-                wait?: boolean;
-                /** @description Seconds to wait when wait=true (504 on timeout). Omit to wait indefinitely. */
-                timeout?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description The registered job type to run. */
-                type: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateJobRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateJobResponse"] | components["schemas"]["JobRecord"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    wait_for_jobs_api_jobs_wait_get: {
-        parameters: {
-            query?: {
-                /** @description Job ids to wait for. Repeat the param per id (e.g. ids=job_a&ids=job_b). */
-                ids?: string[];
-                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
-                timeout?: number | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -18893,41 +18802,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    wait_for_job_api_jobs__id__wait_get: {
-        parameters: {
-            query?: {
-                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
-                timeout?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description The job id. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRecord"];
                 };
             };
             /** @description Validation Error */
