@@ -1046,3 +1046,32 @@ async def test_create_swallows_describe_failure():
         job.id,
         {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
     )
+
+
+class UndeclaredPropertiesWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "undeclared_properties"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    # properties_model intentionally left at the default (None).
+
+    async def describe(self, params):
+        return PropertiesModel(label="orphan")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_drops_properties_without_declared_model():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(UndeclaredPropertiesWorker)
+    # Returning properties without declaring properties_model is a contract
+    # violation: the payload is dropped (nothing to cast to) and create() still
+    # succeeds rather than serializing an unvalidated shape.
+    job = await reg.create("undeclared_properties", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )

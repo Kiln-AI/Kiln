@@ -206,25 +206,34 @@ class JobRegistry:
         eval) that could be deleted or transiently unavailable — a failure here
         must never break job creation, so we fall back to no properties. Also
         guards the worker's contract: the result must be the model the worker
-        declared, so properties' shape is predictable for the frontend.
+        declared (so properties' shape is predictable for the frontend), and the
+        whole path — describe(), the type check, and serialization — is wrapped
+        so a bad payload or a model_dump failure can never break create().
         """
         try:
             detail = await worker.describe(params)
+            if detail is None:
+                return None
+            expected = worker.properties_model
+            if expected is None:
+                logger.error(
+                    "describe() for job type %s returned properties but no "
+                    "properties_model is declared",
+                    worker.type_name,
+                )
+                return None
+            if not isinstance(detail, expected):
+                logger.error(
+                    "describe() for job type %s returned %s, expected %s",
+                    worker.type_name,
+                    type(detail).__name__,
+                    expected.__name__,
+                )
+                return None
+            return detail.model_dump(mode="json")
         except Exception:
             logger.exception("Failed to describe job of type %s", worker.type_name)
             return None
-        if detail is None:
-            return None
-        expected = worker.properties_model
-        if expected is not None and not isinstance(detail, expected):
-            logger.error(
-                "describe() for job type %s returned %s, expected %s",
-                worker.type_name,
-                type(detail).__name__,
-                expected.__name__,
-            )
-            return None
-        return detail.model_dump(mode="json")
 
     # -- dispatch / supervision ---------------------------------------------
 
