@@ -316,6 +316,18 @@ class TestSeedBody:
         assert ("sib1", "3") in roles
 
 
+def test_side_note_message_frames_content_to_continue_working():
+    # A drained mid-burst message is wrapped so the model answers inline and keeps
+    # working (does not stop just to reply), but the original text is preserved.
+    msg = InboundMessage(content="also handle edge case Y")
+    wrapped = AutoChatRunner._side_note_message(msg)
+    assert wrapped["role"] == "user"
+    assert "also handle edge case Y" in wrapped["content"]
+    assert "<system-reminder>" in wrapped["content"]
+    assert "side note" in wrapped["content"].lower()
+    assert "do not end your turn just to reply" in wrapped["content"]
+
+
 # ── Revision R1: message injection ────────────────────────────────────────────
 
 
@@ -346,7 +358,11 @@ async def test_injected_message_appended_to_continuation():
     # auto_mode set once on the seed propagates through every {**body} continuation.
     assert second_body["auto_mode"] is True
     user_messages = [m for m in second_body["messages"] if m.get("role") == "user"]
-    assert user_messages == [{"role": "user", "content": "also do X"}]
+    # Mid-burst injected messages are framed as a side note so the model answers
+    # inline and keeps working instead of halting on a text-only reply.
+    assert len(user_messages) == 1
+    assert "also do X" in user_messages[0]["content"]
+    assert "<system-reminder>" in user_messages[0]["content"]
     # The runner does NOT echo on drain — the registry already echoed the message
     # onto the bus/buffer at enqueue time (CR Moderate 1). Double-echo would
     # render the message twice; the combined registry+runner echo-once behaviour
@@ -373,7 +389,11 @@ async def test_drain_before_idle_continues_with_queued_message():
     # It did NOT stop after round1 — a second upstream round ran, seeded with the
     # queued user message as a fresh turn.
     assert len(client.bodies) == 2
-    assert client.bodies[1]["messages"] == [{"role": "user", "content": "keep going"}]
+    assert len(client.bodies[1]["messages"]) == 1
+    queued_msg = client.bodies[1]["messages"][0]
+    assert queued_msg["role"] == "user"
+    assert "keep going" in queued_msg["content"]
+    assert "<system-reminder>" in queued_msg["content"]
     # Eventually settled IDLE once the queue was empty.
     assert runner.status == AutoRunStatus.IDLE
 

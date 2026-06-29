@@ -51,6 +51,28 @@ ENABLE_AUTO_MODE_RESULT = json.dumps(
     ensure_ascii=False,
 )
 
+# Framing prepended to a user message that arrives WHILE a burst is in flight
+# (drained mid-round). Without it the model treats the message as a fresh
+# conversational turn, replies in plain text, and that text-only turn settles the
+# burst IDLE ("asked_user") — so a quick aside from the user halts the autonomous
+# run. Framed as a side note, the model weaves its reply into a turn that still
+# carries tool calls, so it answers AND keeps working. It does NOT apply to the
+# seed message (the task itself) or to a message that wakes an idle run.
+_SIDE_NOTE_REMINDER = (
+    "<system-reminder>"
+    "This message arrived from the user while you are working autonomously in auto "
+    "mode. Treat it as a side note: weave any acknowledgment or answer into your "
+    "ongoing work and keep going in the same turn — do not end your turn just to "
+    "reply. Stop only if the message explicitly asks you to, or your task is "
+    "already complete."
+    "</system-reminder>"
+)
+
+
+def _wrap_side_note(content: str) -> str:
+    return f"{_SIDE_NOTE_REMINDER}\n\n{content}"
+
+
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
 # bus. It also detects kiln_chat_trace boundaries (buffer reset + index update).
 EmitCallback = Callable[[bytes], None]
@@ -375,13 +397,20 @@ class AutoChatRunner:
         return self._drain_inbound()
 
     @staticmethod
+    def _side_note_message(msg: InboundMessage) -> dict[str, Any]:
+        """A drained mid-burst message, framed as a side note (see
+        ``_SIDE_NOTE_REMINDER``) so the model answers inline and keeps working."""
+        base = msg.as_chat_message()
+        return {**base, "content": _wrap_side_note(str(base.get("content", "")))}
+
+    @staticmethod
     def _append_user_messages(
         body: dict[str, Any], messages: list[InboundMessage]
     ) -> dict[str, Any]:
         """Append injected user messages after the tool results in a continuation
         body (they come last so the backend reads them as the latest input)."""
         existing = list(body.get("messages", []))
-        existing.extend(m.as_chat_message() for m in messages)
+        existing.extend(AutoChatRunner._side_note_message(m) for m in messages)
         return {**body, "messages": existing}
 
     def _continue_with_user_messages(
@@ -391,7 +420,7 @@ class AutoChatRunner:
         (the trace advanced, no pending tool results to carry)."""
         return {
             **body,
-            "messages": [m.as_chat_message() for m in messages],
+            "messages": [self._side_note_message(m) for m in messages],
         }
 
     async def _build_seed_body(self) -> dict[str, Any]:
