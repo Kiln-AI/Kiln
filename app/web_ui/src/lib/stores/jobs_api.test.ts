@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { client } from "$lib/api_client"
 import {
   cancel_job,
-  create_job,
   delete_job,
   get_job,
   get_job_errors,
@@ -51,35 +50,6 @@ describe("jobs_api", () => {
       params: { path: { id: "j_2" } },
     })
     expect(result).toEqual({ id: "j_2" })
-  })
-
-  it("create_job calls POST /api/jobs/{type} with params and metadata", async () => {
-    mockPOST.mockResolvedValue({
-      data: { job_id: "j_3", status: "pending" },
-      error: undefined,
-    })
-    const result = await create_job("eval", { eval_id: "e_1" }, { src: "ui" })
-    expect(mockPOST).toHaveBeenCalledWith("/api/jobs/{type}", {
-      params: { path: { type: "eval" } },
-      body: {
-        params: { eval_id: "e_1" },
-        metadata: { src: "ui" },
-        project_id: null,
-      },
-    })
-    expect(result).toEqual({ job_id: "j_3", status: "pending" })
-  })
-
-  it("create_job passes an explicit project_id in the body", async () => {
-    mockPOST.mockResolvedValue({
-      data: { job_id: "j_3b", status: "pending" },
-      error: undefined,
-    })
-    await create_job("noop", { steps: 5 }, null, "p_current")
-    expect(mockPOST).toHaveBeenCalledWith("/api/jobs/{type}", {
-      params: { path: { type: "noop" } },
-      body: { params: { steps: 5 }, metadata: null, project_id: "p_current" },
-    })
   })
 
   it("get_job_result calls GET /api/jobs/{id}/result", async () => {

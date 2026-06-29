@@ -40,25 +40,6 @@ export async function get_job(id: string): Promise<JobRecord> {
   return data
 }
 
-export async function create_job(
-  type: string,
-  params: Record<string, unknown> = {},
-  metadata: Record<string, unknown> | null = null,
-  project_id: string | null = null,
-): Promise<
-  | components["schemas"]["CreateJobResponse"]
-  | components["schemas"]["JobRecord"]
-> {
-  const { data, error } = await client.POST("/api/jobs/{type}", {
-    params: { path: { type } },
-    body: { params, metadata, project_id },
-  })
-  if (error) {
-    throw error
-  }
-  return data
-}
-
 export async function get_job_result(
   id: string,
 ): Promise<Record<string, unknown>> {

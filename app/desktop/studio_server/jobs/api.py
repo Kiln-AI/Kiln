@@ -11,14 +11,13 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
 from .registry import JobNotFoundError, JobOperationError, job_registry
 from .workers.eval import EvalJobParams, EvalJobWorker
-from .workers.noop import NoopJobWorker
 
 KEEPALIVE_SECONDS = 15.0
 
@@ -31,24 +30,6 @@ _EVAL_JOB_APPROVAL = agent_policy_require_approval(
 )
 
 
-class CreateJobRequest(BaseModel):
-    """Request body for creating a job. Params are validated per job type."""
-
-    params: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Type-specific job parameters, validated against the type's params model.",
-    )
-    project_id: str | None = Field(
-        default=None,
-        description="Project to scope this job to (for filtering/visibility). "
-        "Falls back to the params' project_id when omitted.",
-    )
-    metadata: dict[str, Any] | None = Field(
-        default=None,
-        description="Free-form pass-through attribution, stored verbatim.",
-    )
-
-
 class CreateJobResponse(BaseModel):
     """Response returned when a job is created."""
 
@@ -58,8 +39,19 @@ class CreateJobResponse(BaseModel):
     )
 
 
-def _project_id_from_params(validated_params: BaseModel) -> str | None:
-    return getattr(validated_params, "project_id", None)
+class WaitForJobsRequest(BaseModel):
+    """Request body for waiting on a set of jobs."""
+
+    ids: list[str] = Field(
+        default_factory=list,
+        description="Job ids to wait for. All must reach a terminal state.",
+    )
+    timeout: float | None = Field(
+        default=None,
+        ge=0,
+        description="Seconds to wait before giving up (504 on timeout). "
+        "Omit to wait indefinitely.",
+    )
 
 
 def _format_sse(event: JobEvent) -> str:
@@ -101,7 +93,6 @@ async def _event_stream(
 def connect_jobs_api(app: FastAPI) -> None:
     # Register the workers this server exposes. register_type overwrites by
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
-    job_registry.register_type(NoopJobWorker)
     job_registry.register_type(EvalJobWorker)
 
     @app.get(
@@ -184,90 +175,20 @@ def connect_jobs_api(app: FastAPI) -> None:
         return CreateJobResponse(job_id=job.id, status=job.status)
 
     @app.post(
-        "/api/jobs/{type}",
-        summary="Create Job",
-        tags=["Jobs"],
-        status_code=201,
-        response_model=CreateJobResponse | JobRecord,
-        openapi_extra=ALLOW_AGENT,
-    )
-    async def create_job(
-        type: Annotated[str, Path(description="The registered job type to run.")],
-        request: CreateJobRequest,
-        wait: Annotated[
-            bool,
-            Query(
-                description="When true, block until the job reaches a terminal "
-                "state and return the full JobRecord instead of CreateJobResponse."
-            ),
-        ] = False,
-        timeout: Annotated[
-            float | None,
-            Query(
-                ge=0,
-                description="Seconds to wait when wait=true (504 on timeout). "
-                "Omit to wait indefinitely.",
-            ),
-        ] = None,
-    ) -> CreateJobResponse | JobRecord:
-        try:
-            worker = job_registry.worker_for(type)
-        except JobOperationError:
-            raise HTTPException(status_code=404, detail=f"Unknown job type: {type}")
-
-        try:
-            validated = worker.params_model.model_validate(request.params)
-        except ValidationError as exc:
-            raise HTTPException(status_code=422, detail=exc.errors())
-
-        job = await job_registry.create(
-            type_name=type,
-            params=validated,
-            project_id=request.project_id or _project_id_from_params(validated),
-            metadata=request.metadata,
-        )
-        if not wait:
-            return CreateJobResponse(job_id=job.id, status=job.status)
-        try:
-            return await job_registry.wait(job.id, timeout=timeout)
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=504, detail="Job did not complete within the timeout."
-            )
-
-    # Declared before GET /api/jobs/{id} so "wait" resolves to this multi-wait
-    # endpoint rather than being captured as {id} = "wait".
-    @app.get(
         "/api/jobs/wait",
         summary="Wait For Jobs",
         tags=["Jobs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def wait_for_jobs(
-        ids: Annotated[
-            list[str],
-            Query(
-                description="Job ids to wait for. Repeat the param per id "
-                "(e.g. ids=job_a&ids=job_b)."
-            ),
-        ] = [],
-        timeout: Annotated[
-            float | None,
-            Query(
-                ge=0,
-                description="Seconds to wait before giving up (504 on timeout). "
-                "Omit to wait indefinitely.",
-            ),
-        ] = None,
-    ) -> list[JobRecord]:
+    async def wait_for_jobs(request: WaitForJobsRequest) -> list[JobRecord]:
         """Block until ALL the given jobs reach a terminal state, then return
         their records (order preserved). A pure observer, like the SSE stream:
         disconnecting tears down only the awaiter, never the jobs. The timeout
         bounds the whole set. Empty `ids` returns an empty list."""
-        if not ids:
+        if not request.ids:
             return []
         try:
-            return await job_registry.wait_many(ids, timeout=timeout)
+            return await job_registry.wait_many(request.ids, timeout=request.timeout)
         except JobNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"Job not found: {exc}")
         except asyncio.TimeoutError:
