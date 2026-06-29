@@ -905,7 +905,11 @@
 
 <div>
   <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-    <div class="grow min-w-0 overflow-hidden">
+    <!-- px/-mx pair: overflow-hidden contains wide trace content, but would
+         otherwise clip the 4px focus ring (outline-offset: 2px) of inputs like
+         the repair textarea. The padding gives the ring room; the matching
+         negative margin keeps content aligned with the rest of the page. -->
+    <div class="grow min-w-0 overflow-hidden px-1.5 -mx-1.5">
       <div class="text-xl font-bold mb-1">Output</div>
       {#if task.output_json_schema}
         <div class="text-xs font-medium text-gray-500 flex flex-row mb-2">

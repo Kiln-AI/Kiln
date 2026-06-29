@@ -220,7 +220,7 @@
         {id}
         class="textarea text-base textarea-bordered w-full {height_class[
           height
-        ]} wrap-pre text-left align-top
+        ]} whitespace-pre-wrap break-words text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
         autocomplete="off"

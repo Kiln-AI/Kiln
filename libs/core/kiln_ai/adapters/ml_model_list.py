@@ -45,6 +45,7 @@ class ModelFamily(str, Enum):
     mimo = "mimo"
     nemotron = "nemotron"
     arcee = "arcee"
+    sakana = "sakana"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -54,6 +55,7 @@ class ModelName(str, Enum):
     Where models have instruct and raw versions, instruct is default and raw is specified.
     """
 
+    fugu_ultra = "fugu_ultra"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
@@ -575,6 +577,13 @@ GROK_4_3_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+# Fugu Ultra: reasoning is mandatory (no "none"); OpenRouter exposes only high/xhigh/max.
+FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
 }
 
 
@@ -8278,6 +8287,36 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Fugu Ultra
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_ultra,
+        friendly_name="Fugu Ultra",
+        editorial_notes="Sakana's Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-ultra",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],

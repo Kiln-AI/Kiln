@@ -3,6 +3,8 @@ from http import HTTPStatus
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ChatSnapshot,
 )
@@ -1125,3 +1127,59 @@ def test_chat_stream_has_no_write_lock(app):
 def test_execute_tools_has_no_write_lock(app):
     endpoint = _find_endpoint_by_path(app, "/api/chat/execute-tools")
     assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+# --- GET /api/chat/version_policy proxy ---
+
+PATCH_ROUTES_ASYNC_CLIENT = "app.desktop.studio_server.chat.routes.httpx.AsyncClient"
+
+
+def _mock_version_policy_client(*, json_body=None, status_code=200):
+    """Build a mock httpx.AsyncClient whose async .get() returns a fake response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = json_body
+    http_client = MagicMock()
+    http_client.get = AsyncMock(return_value=resp)
+    http_client.__aenter__ = AsyncMock(return_value=http_client)
+    http_client.__aexit__ = AsyncMock(return_value=None)
+    return MagicMock(return_value=http_client)
+
+
+def test_version_policy_forwards_and_parses(client, mock_api_key):
+    mock_class = _mock_version_policy_client(
+        json_body={"required": False, "upgrade_nudge_version": "1.0.5"}
+    )
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, mock_class):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": "1.0.5"}
+
+
+def test_version_policy_degrades_on_non_200(client, mock_api_key):
+    mock_class = _mock_version_policy_client(json_body={}, status_code=503)
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, mock_class):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": None}
+
+
+def test_version_policy_degrades_on_invalid_upstream_body(client, mock_api_key):
+    # Pydantic v2 ValidationError is not a ValueError; ensure it's caught and we
+    # degrade to "no banner" rather than 500.
+    mock_class = _mock_version_policy_client(json_body={"required": "not-a-bool"})
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, mock_class):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": None}
+
+
+def test_version_policy_degrades_on_transport_error(client, mock_api_key):
+    http_client = MagicMock()
+    http_client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
+    http_client.__aenter__ = AsyncMock(return_value=http_client)
+    http_client.__aexit__ = AsyncMock(return_value=None)
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, MagicMock(return_value=http_client)):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": None}
