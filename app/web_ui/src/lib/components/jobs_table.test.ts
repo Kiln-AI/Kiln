@@ -22,6 +22,9 @@ const api = {
   delete_job: vi.fn().mockResolvedValue(undefined),
   get_job_errors: vi.fn().mockResolvedValue([]),
   get_job_result: vi.fn().mockResolvedValue({}),
+  // Real-shaped passthrough: the table calls this for every row.
+  eval_job_properties: (job: JobRecord) =>
+    job.type === "eval" && job.properties ? job.properties : null,
 }
 vi.mock("$lib/stores/jobs_api", () => api)
 
@@ -142,5 +145,42 @@ describe("JobsTable", () => {
     connection.set("errored")
     const { getByText } = render(JobsTable)
     expect(getByText("Can't connect to the job stream")).not.toBeNull()
+  })
+
+  it("renders eval job properties inline in the Details cell", () => {
+    jobs.set([
+      makeJob({
+        id: "j_eval",
+        type: "eval",
+        properties: {
+          eval_name: "Toxicity check",
+          run_config_name: "GLM run",
+          run_config_model_name: "gpt-4o",
+          run_config_model_provider: "openai",
+          run_config_prompt_name: "Few-Shot",
+          run_config_tools_count: 0,
+          run_config_skills_count: 0,
+          judge_name: "G-Eval judge",
+          judge_algorithm: "g_eval",
+          judge_model_name: "claude",
+          judge_model_provider: "anthropic",
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    // Eval name is the header; run-config summary lines follow, with g_eval
+    // mapped to its UI name.
+    expect(getByText(/Eval: Toxicity check/)).not.toBeNull()
+    expect(getByText(/Run config: GLM run/)).not.toBeNull()
+    expect(getByText(/Prompt: Few-Shot/)).not.toBeNull()
+    expect(getByText(/Tools: None/)).not.toBeNull()
+    expect(getByText(/Skills: None/)).not.toBeNull()
+    expect(getByText(/Judge: G-Eval/)).not.toBeNull()
+  })
+
+  it("renders no eval properties for non-eval jobs", () => {
+    jobs.set([makeJob({ id: "j_noop", type: "noop" })])
+    const { queryByText } = render(JobsTable)
+    expect(queryByText(/Run config:/)).toBeNull()
   })
 })
