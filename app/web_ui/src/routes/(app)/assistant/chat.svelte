@@ -5,10 +5,11 @@
   import posthog from "posthog-js"
   import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
-  import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import {
     chatSessionStore,
     type ChatSessionStore,
@@ -37,6 +38,8 @@
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
   $: showActivityIndicator = $store.showActivityIndicator
+  $: upgradeNudgeVersion = $store.upgradeNudgeVersion
+  $: versionRequired = $store.versionRequired
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -59,7 +62,9 @@
   }
 
   $: isLoading = status === "submitted" || status === "streaming"
-  $: inputDisabled = isLoading
+  // Block input entirely when the client is too old: sending would just 426
+  // again and the message would go nowhere.
+  $: inputDisabled = isLoading || versionRequired
 
   let prevIsLoading = false
   $: {
@@ -338,6 +343,9 @@
   let lastTouchY = 0
 
   onMount(() => {
+    // Surface the upgrade banners up front, before any message is sent.
+    void store.checkVersionPolicy()
+
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
@@ -411,6 +419,10 @@
 
   function retryLastRequest() {
     store.retryLastRequest()
+  }
+
+  function dismissUpgradeNudge() {
+    store.dismissUpgradeNudge()
   }
 
   function stop() {
@@ -488,30 +500,17 @@
                   : "flex flex-col gap-3"}
             >
               {#if message.role === "error"}
-                {#if message.errorCode === CHAT_CLIENT_VERSION_TOO_OLD}
-                  <div class="flex items-center gap-3">
-                    <span
-                      >A newer version of Kiln is required.
-                      <a
-                        href="/settings/check_for_update"
-                        class="underline font-medium hover:text-error/80"
-                        >Check for updates</a
-                      ></span
-                    >
-                  </div>
-                {:else}
-                  <div class="flex items-center justify-between gap-3">
-                    <span>{message.content}</span>
-                    <button
-                      type="button"
-                      class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
-                      on:click={retryLastRequest}
-                      disabled={isLoading}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                {/if}
+                <div class="flex items-center justify-between gap-3">
+                  <span>{message.content}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
+                    on:click={retryLastRequest}
+                    disabled={isLoading}
+                  >
+                    Retry
+                  </button>
+                </div>
               {:else}
                 <div class="flex flex-col leading-tight">
                   {#if message.parts && message.parts.length > 0}
@@ -1040,6 +1039,44 @@
         />
       </div>
     </div>
+
+    {#if versionRequired}
+      <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
+        <div class="rounded-lg border border-error/40 bg-error/5 px-3 py-2">
+          <Warning
+            warning_color="error"
+            tight
+            markdown
+            trusted
+            warning_message={"A newer version of Kiln is required to continue using chat. [Check for updates](/settings/check_for_update)"}
+          />
+        </div>
+      </div>
+    {:else if upgradeNudgeVersion}
+      <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
+        <div
+          class="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2"
+        >
+          <div class="flex-1 min-w-0">
+            <Warning
+              warning_color="warning"
+              tight
+              markdown
+              trusted
+              warning_message={`A newer version of Kiln (${upgradeNudgeVersion}) is available. [Check for updates](/settings/check_for_update)`}
+            />
+          </div>
+          <button
+            type="button"
+            class="shrink-0 text-base-content/40 hover:text-base-content/70 transition-colors"
+            on:click={dismissUpgradeNudge}
+            aria-label="Dismiss upgrade notice"
+          >
+            <span class="size-4 block"><CloseIcon /></span>
+          </button>
+        </div>
+      </div>
+    {/if}
 
     <form
       class="flex-none relative w-full md:max-w-3xl md:mx-auto px-1 pt-2"

@@ -3058,6 +3058,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/version_policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client version policy
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/version_policy``.
+         *
+         *     Lets the assistant page show the upgrade banners on load. Forwards the
+         *     desktop version header so the server can compute the verdict; on any
+         *     upstream/transport failure we degrade to "no banner" rather than error.
+         */
+        get: operations["chat_version_policy_api_chat_version_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/sessions": {
         parameters: {
             query?: never;
@@ -4269,6 +4293,16 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
+        };
+        /** ClientVersionPolicy */
+        ClientVersionPolicy: {
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Upgrade Nudge Version */
+            upgrade_nudge_version?: string | null;
         };
         /**
          * CloneRequest
@@ -17908,6 +17942,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_version_policy_api_chat_version_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientVersionPolicy"];
                 };
             };
         };
