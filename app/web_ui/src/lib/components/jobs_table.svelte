@@ -238,52 +238,52 @@
       </thead>
       <tbody>
         {#each $jobs as job (job.id)}
+          {@const p = eval_job_properties(job)}
           <tr>
             <td class="align-top">
               <div class="flex flex-col gap-1 max-w-[280px]">
-                {#if eval_job_properties(job)}
-                  {@const p = eval_job_properties(job)}
-                  {@const model = p?.run_config_model_name
+                {#if p}
+                  {@const model = p.run_config_model_name
                     ? getDetailedModelNameFromParts(
                         p.run_config_model_name,
                         p.run_config_model_provider,
                         $model_info,
                       )
                     : ""}
-                  {@const judge_model = p?.judge_model_name
+                  {@const judge_model = p.judge_model_name
                     ? getDetailedModelNameFromParts(
                         p.judge_model_name,
                         p.judge_model_provider,
                         $model_info,
                       )
                     : ""}
-                  <span class="font-medium truncate" title={p?.eval_name}
-                    >Eval: {p?.eval_name}</span
+                  <span class="font-medium truncate" title={p.eval_name}
+                    >Eval: {p.eval_name}</span
                   >
                   <div class="space-y-1 text-xs text-gray-500">
-                    <div class="truncate" title={p?.run_config_name}>
-                      Run config: {p?.run_config_name}
+                    <div class="truncate" title={p.run_config_name}>
+                      Run config: {p.run_config_name}
                     </div>
                     {#if model}
                       <div class="truncate" title={model}>Model: {model}</div>
                     {/if}
-                    {#if p?.run_config_prompt_name}
+                    {#if p.run_config_prompt_name}
                       <div class="truncate" title={p.run_config_prompt_name}>
                         Prompt: {p.run_config_prompt_name}
                       </div>
                     {/if}
                     <div>
-                      Tools: {p && p.run_config_tools_count > 0
+                      Tools: {p.run_config_tools_count > 0
                         ? `${p.run_config_tools_count} available`
                         : "None"}
                     </div>
                     <div>
-                      Skills: {p && p.run_config_skills_count > 0
+                      Skills: {p.run_config_skills_count > 0
                         ? `${p.run_config_skills_count} available`
                         : "None"}
                     </div>
                     <div class="truncate">
-                      Judge: {judge_algorithm_display(p?.judge_algorithm ?? "")}
+                      Judge: {judge_algorithm_display(p.judge_algorithm)}
                     </div>
                     {#if judge_model}
                       <div class="truncate" title={judge_model}>
