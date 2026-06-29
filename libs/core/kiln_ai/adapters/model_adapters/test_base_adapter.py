@@ -1633,7 +1633,10 @@ class TestFinalizeStream:
         provider.parser = None
         provider.reasoning_capable = True
         provider.reasoning_optional_for_structured_output = False
-        provider.available_thinking_levels = {"On (Default)": "default", "Off / None": "none"}
+        provider.available_thinking_levels = {
+            "On (Default)": "default",
+            "Off / None": "none",
+        }
         provider.default_thinking_level = "default"
         adapter.model_provider = MagicMock(return_value=provider)
 

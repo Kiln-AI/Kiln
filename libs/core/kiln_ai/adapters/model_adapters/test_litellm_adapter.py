@@ -620,7 +620,10 @@ def test_build_extra_body_thinking_level_default_sentinel(config, mock_task):
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.fireworks_ai
     mock_provider.model_id = "accounts/fireworks/models/glm-5p2"
-    mock_provider.available_thinking_levels = {"On (Default)": "default", "Off / None": "none"}
+    mock_provider.available_thinking_levels = {
+        "On (Default)": "default",
+        "Off / None": "none",
+    }
     mock_provider.default_thinking_level = "default"
     mock_provider.openrouter_reasoning_object = False
     mock_provider.require_openrouter_reasoning = False
@@ -646,7 +649,10 @@ def test_build_extra_body_thinking_level_fireworks_none_disables(config, mock_ta
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.fireworks_ai
     mock_provider.model_id = "accounts/fireworks/models/glm-5p2"
-    mock_provider.available_thinking_levels = {"On (Default)": "default", "Off / None": "none"}
+    mock_provider.available_thinking_levels = {
+        "On (Default)": "default",
+        "Off / None": "none",
+    }
     mock_provider.default_thinking_level = "default"
     mock_provider.openrouter_reasoning_object = False
     mock_provider.require_openrouter_reasoning = False
