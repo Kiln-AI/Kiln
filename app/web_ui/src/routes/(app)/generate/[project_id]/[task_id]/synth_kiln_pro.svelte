@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from "svelte"
+  import { onMount, tick } from "svelte"
   import { get } from "svelte/store"
+  import { client } from "$lib/api_client"
   import Intro from "$lib/ui/intro.svelte"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
@@ -11,7 +12,7 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { isKilnAgentRunConfig } from "$lib/types"
   import type { KilnAgentRunConfigProperties } from "$lib/types"
-  import { KilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import SynthDataGuide from "./synth_data_guide.svelte"
   import KilnProBatchPlan from "./kiln_pro_batch_plan.svelte"
   import KilnProInputs from "./kiln_pro_inputs.svelte"
@@ -46,8 +47,7 @@
   // True once the user edits the plan (deletes prompts); the summary isn't
   // regenerated so we flag it as possibly out of date.
   let plan_edited = false
-
-  let planning_timer: ReturnType<typeof setTimeout> | null = null
+  let plan_error: KilnError | null = null
 
   // Generate Inputs modal lives here (not in the inputs view) so it opens over
   // the plan page — the page only transitions once the user submits it.
@@ -63,10 +63,6 @@
     } catch {
       current_state = "connect"
     }
-  })
-
-  onDestroy(() => {
-    if (planning_timer) clearTimeout(planning_timer)
   })
 
   function handle_connect_success() {
@@ -88,28 +84,34 @@
     document.getElementById(dialog_id)?.showModal()
   }
 
-  // Dummy plan stand-in until the kiln_server call is wired in. The real
-  // endpoint returns { prompts: string[], summary: string }.
-  function make_dummy_plan(n: number): BatchPlan {
-    return {
-      prompts: Array.from({ length: n }, (_, i) => `Dummy prompt ${i + 1}`),
-      summary: `**${n} prompts** that push this eval across the situations your users actually hit — with a deliberate mix of common cases and hard edges.\n\n- **40% Core scenarios** — the common, expected cases\n- **30% Variations** — phrasing, tone, and context shifts\n- **20% Edge cases** — boundary and adversarial inputs\n- **10% Negative controls** — inputs that should *not* trigger`,
-    }
-  }
-
-  function submit_batch() {
+  async function submit_batch() {
     batch_submitting = false
     // @ts-expect-error close is not typed on HTMLElement
     document.getElementById(dialog_id)?.close()
     const requested = num_inputs
+    const data_guide = get(guidance_data.use_data_guide)
+      ? get(guidance_data.data_guide)
+      : null
+    plan_error = null
     stage = "planning"
-    // Hard-coded 2s stand-in for the server call.
-    planning_timer = setTimeout(() => {
-      plan = make_dummy_plan(requested)
+    try {
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
+        {
+          params: { path: { project_id, task_id } },
+          body: { guidance: batch_guidance, count: requested, data_guide },
+        },
+      )
+      if (error) throw error
+      if (!data) throw new Error("Batch planner returned no plan.")
+      plan = { prompts: data.prompts, summary: data.summary }
       plan_edited = false
       stage = "plan"
-      planning_timer = null
-    }, 2000)
+    } catch (e) {
+      plan_error = createKilnError(e)
+      // Drop back to the intro so the user can adjust and retry.
+      stage = "intro"
+    }
   }
 
   function delete_prompt(index: number) {
@@ -222,6 +224,11 @@
         <img src="/images/animated_logo.svg" alt="Kiln Pro" />
       </div>
     </Intro>
+    {#if plan_error}
+      <div class="text-error text-sm mt-4 max-w-md text-center">
+        {plan_error.getMessage()}
+      </div>
+    {/if}
   </div>
 {/if}
 

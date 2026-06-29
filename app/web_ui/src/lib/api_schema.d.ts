@@ -2990,6 +2990,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Plan
+         * @description Plan a synthetic batch: turn the user's guidance + count into one
+         *     tailored prompt per input (plus a user-facing summary). Requires a
+         *     connected Kiln Pro / Copilot key (connection only, no paid tier).
+         */
+        post: operations["batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/git_sync/test_access": {
         parameters: {
             query?: never;
@@ -3846,6 +3868,38 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
+        };
+        /** BatchPlanApiInput */
+        BatchPlanApiInput: {
+            /**
+             * Guidance
+             * @description User guidance describing this batch (distribution, focus, edge cases).
+             * @default
+             */
+            guidance: string;
+            /**
+             * Count
+             * @description Number of inputs to plan — the planner returns one prompt per input.
+             */
+            count: number;
+            /**
+             * Data Guide
+             * @description The task's input data guide (input profile) to include, or null to omit.
+             */
+            data_guide?: string | null;
+        };
+        /** BatchPlanApiOutput */
+        BatchPlanApiOutput: {
+            /**
+             * Prompts
+             * @description One tailored prompt per input; length equals the requested count.
+             */
+            prompts: string[];
+            /**
+             * Summary
+             * @description A short, user-facing overview of the planned batch.
+             */
+            summary: string;
         };
         /** BiasProperties */
         BiasProperties: {
@@ -17817,6 +17871,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchPlanApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPlanApiOutput"];
                 };
             };
             /** @description Validation Error */

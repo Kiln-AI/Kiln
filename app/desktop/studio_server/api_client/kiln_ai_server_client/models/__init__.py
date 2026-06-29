@@ -4,6 +4,8 @@ from .answer_option import AnswerOption
 from .answer_option_with_selection import AnswerOptionWithSelection
 from .api_key_verification_result import ApiKeyVerificationResult
 from .audio import Audio
+from .batch_plan_input import BatchPlanInput
+from .batch_plan_output import BatchPlanOutput
 from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
@@ -30,6 +32,7 @@ from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
 from .client_chat_message_role import ClientChatMessageRole
+from .client_version_policy import ClientVersionPolicy
 from .create_api_key_response import CreateApiKeyResponse
 from .data_guide_job_output import DataGuideJobOutput
 from .data_guide_job_result_response import DataGuideJobResultResponse
@@ -134,6 +137,8 @@ __all__ = (
     "AnswerOptionWithSelection",
     "ApiKeyVerificationResult",
     "Audio",
+    "BatchPlanInput",
+    "BatchPlanOutput",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
     "ChatCompletionAssistantMessageParamWrapper",
@@ -156,6 +161,7 @@ __all__ = (
     "ClarifySpecOutput",
     "ClientChatMessage",
     "ClientChatMessageRole",
+    "ClientVersionPolicy",
     "CreateApiKeyResponse",
     "DataGuideJobOutput",
     "DataGuideJobResultResponse",
