@@ -92,6 +92,13 @@ def _wrap_side_note(content: str) -> str:
     return f"{_SIDE_NOTE_REMINDER}\n\n{content}"
 
 
+def _side_note_message(msg: InboundMessage) -> dict[str, Any]:
+    """A drained mid-burst message, framed as a side note (see
+    ``_SIDE_NOTE_REMINDER``) so the model answers inline and keeps working."""
+    base = msg.as_chat_message()
+    return {**base, "content": _wrap_side_note(str(base.get("content", "")))}
+
+
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
 # bus. It also detects kiln_chat_trace boundaries (buffer reset + index update).
 EmitCallback = Callable[[bytes], None]
@@ -338,11 +345,12 @@ class AutoChatRunner:
     ) -> RoundState | None:
         """Stream one upstream round, retrying transient failures with backoff.
 
-        Returns the completed ``RoundState`` on success. Returns ``None`` when the
-        round ends on a terminal upstream error that is either non-retryable or
-        has exhausted ``MAX_AUTO_RETRIES`` — in that case it has already emitted
-        the error payload and set ``idle_reason="error"`` + status IDLE, so the
-        caller just returns.
+        Returns the completed ``RoundState`` on success. Returns ``None`` on a
+        terminal outcome — in which case it has set ``self.status`` and the caller
+        just returns. Two terminal cases: a Stop requested while retrying settles
+        ``USER_STOPPED`` (no error surfaced); otherwise a non-retryable or
+        retry-exhausted error settles ``IDLE("error")`` after surfacing the
+        held-back error (the suppressed-duplicate terminal case surfaces nothing).
 
         Only failures that streamed NO content this attempt are retried (a
         non-200 caught before any bytes, or a pre-response connection error), so a
@@ -368,7 +376,10 @@ class AutoChatRunner:
             except httpx.HTTPError:
                 # Pre-response connection/timeout failure (RemoteProtocolError is
                 # handled inside iter_upstream_round). Safe to retry only if no
-                # bytes were forwarded this attempt.
+                # bytes were forwarded this attempt. A ReadTimeout after the POST
+                # was sent may re-trigger a duplicate LLM generation upstream, but
+                # the runner executes no tools until bytes stream, so the accepted
+                # blast radius is a wasted generation, never duplicated side effects.
                 transport_error = True
 
             if not transport_error and not round_state.is_terminal_upstream_error:
@@ -396,8 +407,18 @@ class AutoChatRunner:
                 await asyncio.sleep(_retry_backoff_seconds(attempt))
                 continue
 
+            # Stop pressed while retrying a persistent failure: honor the
+            # graceful-stop contract — settle USER_STOPPED (surface no error) so
+            # the supervisor publishes auto-mode-off, matching every other stop
+            # path. Checked before the error paths since stop takes precedence.
+            if self.stop_requested:
+                self.status = AutoRunStatus.USER_STOPPED
+                return None
+
             # Give up: surface the held-back error (or a generic one for a
-            # transport failure with nothing deferred) and settle IDLE("error").
+            # transport failure with nothing deferred; the suppressed-duplicate
+            # terminal case has nothing deferred and emits nothing) and settle
+            # IDLE("error").
             if round_state.deferred_error_payload is not None:
                 self._emit(round_state.deferred_error_payload)
             elif transport_error:
@@ -485,20 +506,13 @@ class AutoChatRunner:
         return self._drain_inbound()
 
     @staticmethod
-    def _side_note_message(msg: InboundMessage) -> dict[str, Any]:
-        """A drained mid-burst message, framed as a side note (see
-        ``_SIDE_NOTE_REMINDER``) so the model answers inline and keeps working."""
-        base = msg.as_chat_message()
-        return {**base, "content": _wrap_side_note(str(base.get("content", "")))}
-
-    @staticmethod
     def _append_user_messages(
         body: dict[str, Any], messages: list[InboundMessage]
     ) -> dict[str, Any]:
         """Append injected user messages after the tool results in a continuation
         body (they come last so the backend reads them as the latest input)."""
         existing = list(body.get("messages", []))
-        existing.extend(AutoChatRunner._side_note_message(m) for m in messages)
+        existing.extend(_side_note_message(m) for m in messages)
         return {**body, "messages": existing}
 
     def _continue_with_user_messages(
@@ -508,7 +522,7 @@ class AutoChatRunner:
         (the trace advanced, no pending tool results to carry)."""
         return {
             **body,
-            "messages": [self._side_note_message(m) for m in messages],
+            "messages": [_side_note_message(m) for m in messages],
         }
 
     async def _build_seed_body(self) -> dict[str, Any]:

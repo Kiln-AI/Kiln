@@ -74,12 +74,14 @@ class FakeUpstreamResponse:
         body: bytes = b"",
         raise_protocol_error: bool = False,
         raise_connect_error: bool = False,
+        raise_transport_error_after_chunks: bool = False,
     ) -> None:
         self.status_code = status_code
         self._chunks = chunks or []
         self._body = body
         self._raise_protocol_error = raise_protocol_error
         self._raise_connect_error = raise_connect_error
+        self._raise_transport_error_after_chunks = raise_transport_error_after_chunks
 
     async def aread(self) -> bytes:
         return self._body
@@ -89,6 +91,11 @@ class FakeUpstreamResponse:
             yield chunk
         if self._raise_protocol_error:
             raise httpx.RemoteProtocolError("Server disconnected")
+        if self._raise_transport_error_after_chunks:
+            # A mid-stream transport failure that is NOT a RemoteProtocolError
+            # (e.g. a read timeout), so it propagates out of iter_upstream_round
+            # for the runner to classify — after content was already forwarded.
+            raise httpx.ReadError("Connection dropped mid-stream")
 
     async def __aenter__(self):
         # Simulate a pre-response connection failure (raised before any status /

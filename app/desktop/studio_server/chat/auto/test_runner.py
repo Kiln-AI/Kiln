@@ -9,7 +9,12 @@ import httpx
 import pytest
 
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
-from .runner import MAX_TOOL_ROUNDS_MESSAGE, AutoChatRunner
+from .runner import (
+    MAX_AUTO_RETRIES,
+    MAX_TOOL_ROUNDS_MESSAGE,
+    AutoChatRunner,
+    _side_note_message,
+)
 from .test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -270,25 +275,27 @@ async def test_retryable_upstream_error_retries_then_succeeds():
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
             "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
-            new=AsyncMock(),
-        ),
+            new_callable=AsyncMock,
+        ) as sleep_mock,
     ):
         await runner.run()
 
-    decoded = _decoded(emitted)
-    assert decoded.count('"type": "auto-mode-retry"') == 2
-    assert '"status_code": 503' in decoded
+    # Parse structurally: a retry event per failed attempt, numbered 1, 2.
+    retry_events = [e for e in _events(emitted) if e["type"] == "auto-mode-retry"]
+    assert [e["attempt"] for e in retry_events] == [1, 2]
+    assert all(e["max_attempts"] == MAX_AUTO_RETRIES for e in retry_events)
+    assert all(e["status_code"] == 503 for e in retry_events)
+    # Backoff actually ran between attempts (not a tight spin).
+    assert sleep_mock.await_count == 2
     # Recovered: the transient error was never surfaced; the burst settled on the
     # successful round (text-only → asked_user).
-    assert "rate limited" not in decoded
+    assert "rate limited" not in _decoded(emitted)
     assert runner.idle_reason == "asked_user"
     assert len(client.bodies) == 3
 
 
 @pytest.mark.asyncio
 async def test_retryable_upstream_error_exhausts_retries_then_idle_error():
-    from .runner import MAX_AUTO_RETRIES
-
     client = FakeUpstreamClient(
         [
             FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')
@@ -342,6 +349,77 @@ async def test_connection_error_retries_then_succeeds():
     assert decoded.count('"type": "auto-mode-retry"') == 1
     assert runner.idle_reason == "asked_user"
     assert len(client.bodies) == 2
+
+
+@pytest.mark.asyncio
+async def test_mid_stream_transport_error_after_content_is_not_retried():
+    # The central anti-duplication guard: a transport failure that strikes AFTER
+    # bytes were already forwarded must NOT be retried (a re-POST would duplicate
+    # the streamed output). Here a text delta streams, then the stream drops with
+    # a non-RemoteProtocolError transport error.
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(
+                chunks=[text_delta("partial answer")],
+                raise_transport_error_after_chunks=True,
+            ),
+            # A second response is queued to prove it is never requested.
+            FakeUpstreamResponse(
+                chunks=[text_delta("dupe"), trace("tr-x"), finish("stop")]
+            ),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock,
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    # No retry, no backoff, exactly one upstream request — the guard held.
+    assert '"type": "auto-mode-retry"' not in decoded
+    assert sleep_mock.await_count == 0
+    assert len(client.bodies) == 1
+    # The already-streamed content appears exactly once (never duplicated).
+    assert decoded.count("partial answer") == 1
+    assert "dupe" not in decoded
+    # A single generic error is surfaced and the burst settles IDLE("error").
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "error"
+
+
+@pytest.mark.asyncio
+async def test_stop_requested_during_retry_settles_user_stopped():
+    # Stop pressed while retrying a persistent transient failure must honor the
+    # graceful-stop contract: settle USER_STOPPED (so the supervisor publishes
+    # auto-mode-off), not IDLE("error") with the flag left on.
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}')]
+    )
+    runner, emitted, _ = _runner(client)
+    runner.stop_requested = True
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    # Stop abandons retries: no retry event, and the transient error is NOT
+    # surfaced as a hard error to the user.
+    assert '"type": "auto-mode-retry"' not in decoded
+    assert "rate limited" not in decoded
+    assert runner.status == AutoRunStatus.USER_STOPPED
+    assert len(client.bodies) == 1
 
 
 class TestSeedBody:
@@ -415,7 +493,7 @@ def test_side_note_message_frames_content_to_continue_working():
     # A drained mid-burst message is wrapped so the model answers inline and keeps
     # working (does not stop just to reply), but the original text is preserved.
     msg = InboundMessage(content="also handle edge case Y")
-    wrapped = AutoChatRunner._side_note_message(msg)
+    wrapped = _side_note_message(msg)
     assert wrapped["role"] == "user"
     assert "also handle edge case Y" in wrapped["content"]
     assert "<system-reminder>" in wrapped["content"]

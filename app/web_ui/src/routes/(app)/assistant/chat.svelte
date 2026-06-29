@@ -769,9 +769,13 @@
             role="status"
           >
             <BrailleSpinner />
-            <span
-              >Connection issue — retrying {$autoRetry.attempt}/{$autoRetry.max}…</span
-            >
+            <span>
+              {#if $autoRetry.max > 0}
+                Temporary issue — retrying {$autoRetry.attempt}/{$autoRetry.max}…
+              {:else}
+                Temporary issue — retrying…
+              {/if}
+            </span>
           </div>
         {/if}
         <div
