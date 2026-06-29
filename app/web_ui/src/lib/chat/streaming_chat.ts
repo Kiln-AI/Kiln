@@ -137,6 +137,10 @@ export interface StreamEvent {
   /** ``auto-mode-state`` (Phase 9) on-subscribe liveness snapshot */
   flag_on?: boolean
   working?: boolean
+  /** ``auto-mode-retry`` carries the current/limit attempt + the upstream status */
+  attempt?: number
+  max_attempts?: number
+  status_code?: number
   /** Approximate context usage carried on the ``kiln_chat_trace`` snapshot event */
   context_usage?: RawContextUsage
   /** ``kiln_compaction_status`` carries the lifecycle state ("started" / "finished") */

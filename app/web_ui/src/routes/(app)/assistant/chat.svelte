@@ -44,6 +44,9 @@
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
   // History restore) resolves → hydrates → attaches the live observer (Phase 9).
   const autoReconnecting = auto_run_store.reconnecting
+  // Transient "retrying N/M…" affordance while the runner retries a transient
+  // upstream failure (rate limit / 5xx / connection blip) with backoff.
+  const autoRetry = auto_run_store.retry
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
   // branch), and is ALWAYS clickable (Revision R2) — including on a brand-new
@@ -754,6 +757,21 @@
           >
             <BrailleSpinner />
             <span>Reconnecting…</span>
+          </div>
+        {/if}
+        {#if $autoRetry}
+          <!-- Transient retry affordance: the runner hit a transient upstream
+             failure and is retrying with backoff. Show progress so an unattended
+             run reads as "still working" rather than stalled or errored. Clears
+             on the next event (recovered round, or settled idle/off). -->
+          <div
+            class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
+            role="status"
+          >
+            <BrailleSpinner />
+            <span
+              >Connection issue — retrying {$autoRetry.attempt}/{$autoRetry.max}…</span
+            >
           </div>
         {/if}
         <div
