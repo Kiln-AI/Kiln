@@ -588,36 +588,6 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
 
 
 built_in_models: List[KilnModel] = [
-    # Fugu Ultra
-    KilnModel(
-        family=ModelFamily.sakana,
-        name=ModelName.fugu_ultra,
-        friendly_name="Fugu Ultra",
-        editorial_notes="Sakana's Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="sakana/fugu-ultra",
-                supports_structured_output=True,
-                supports_data_gen=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="xhigh",
-                openrouter_reasoning_object=True,
-                multimodal_capable=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_requires_pdf_as_image=True,
-                multimodal_mime_types=[
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
-        ],
-    ),
     # GPT 5.5
     KilnModel(
         family=ModelFamily.gpt,
@@ -8317,6 +8287,36 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Fugu Ultra
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_ultra,
+        friendly_name="Fugu Ultra",
+        editorial_notes="Sakana's Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-ultra",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
