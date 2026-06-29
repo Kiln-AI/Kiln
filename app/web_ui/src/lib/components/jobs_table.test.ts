@@ -158,9 +158,9 @@ describe("JobsTable", () => {
           run_config_model_name: "gpt-4o",
           run_config_model_provider: "openai",
           run_config_prompt_name: "Few-Shot",
-          run_config_tools_count: 0,
-          run_config_skills_count: 0,
-          judge_name: "G-Eval judge",
+          run_config_tools_count: 2,
+          run_config_skills_count: 1,
+          judge_name: "Magical Yeti",
           judge_algorithm: "g_eval",
           judge_model_name: "claude",
           judge_model_provider: "anthropic",
@@ -168,14 +168,18 @@ describe("JobsTable", () => {
       }),
     ])
     const { getByText } = render(JobsTable)
-    // Eval name is the header; run-config summary lines follow, with g_eval
-    // mapped to its UI name.
+    // Eval name is the header; run-config summary lines follow.
     expect(getByText(/Eval: Toxicity check/)).not.toBeNull()
     expect(getByText(/Run config: GLM run/)).not.toBeNull()
+    // Model line flows through the model-name helper (unknown id -> "Model ID:").
+    expect(getByText(/Model:/)).not.toBeNull()
     expect(getByText(/Prompt: Few-Shot/)).not.toBeNull()
-    expect(getByText(/Tools: None/)).not.toBeNull()
-    expect(getByText(/Skills: None/)).not.toBeNull()
-    expect(getByText(/Judge: G-Eval/)).not.toBeNull()
+    // Non-zero counts render the "N available" branch.
+    expect(getByText(/Tools: 2 available/)).not.toBeNull()
+    expect(getByText(/Skills: 1 available/)).not.toBeNull()
+    // The judge line shows the judge (eval-config) name plus its algorithm.
+    expect(getByText(/Judge: Magical Yeti \(G-Eval\)/)).not.toBeNull()
+    expect(getByText(/Judge model:/)).not.toBeNull()
   })
 
   it("renders no eval properties for non-eval jobs", () => {

@@ -282,8 +282,15 @@
                         ? `${p.run_config_skills_count} available`
                         : "None"}
                     </div>
-                    <div class="truncate">
-                      Judge: {judge_algorithm_display(p.judge_algorithm)}
+                    <div
+                      class="truncate"
+                      title="{p.judge_name} ({judge_algorithm_display(
+                        p.judge_algorithm,
+                      )})"
+                    >
+                      Judge: {p.judge_name} ({judge_algorithm_display(
+                        p.judge_algorithm,
+                      )})
                     </div>
                     {#if judge_model}
                       <div class="truncate" title={judge_model}>
@@ -297,8 +304,9 @@
                 <span class="text-[11px] text-gray-400 mt-2"
                   >{formatDate(job.created_at)}</span
                 >
-                <span class="font-mono text-[11px] text-gray-400 truncate"
-                  >{job.id}</span
+                <span
+                  class="font-mono text-[11px] text-gray-400 truncate"
+                  title={job.id}>{job.id}</span
                 >
               </div>
             </td>
