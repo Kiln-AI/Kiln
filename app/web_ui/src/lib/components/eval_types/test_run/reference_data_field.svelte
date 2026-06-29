@@ -5,8 +5,8 @@
   export let reference_data: string = ""
 
   let dialog: Dialog
-  let edit_value = ""
-  let json_error: string | null = null
+  let rows: Array<{ key: string; value: string }> = []
+  let save_error: string | null = null
 
   const dispatch = createEventDispatcher<{
     change: string
@@ -32,34 +32,77 @@
     }
   }
 
+  function parse_value(raw: string): unknown {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return raw
+    }
+  }
+
+  function object_to_rows(data: string): Array<{ key: string; value: string }> {
+    if (!data.trim()) return []
+    try {
+      const parsed = JSON.parse(data.trim())
+      if (!is_plain_object(parsed)) return []
+      return Object.entries(parsed).map(([key, val]) => ({
+        key,
+        value: JSON.stringify(val),
+      }))
+    } catch {
+      return []
+    }
+  }
+
   function open_editor() {
-    edit_value = reference_data
-    json_error = null
+    rows = object_to_rows(reference_data)
+    if (rows.length === 0) {
+      rows = [{ key: "", value: "" }]
+    }
+    save_error = null
     dialog?.show()
   }
 
+  function add_row() {
+    rows = [...rows, { key: "", value: "" }]
+  }
+
+  function remove_row(index: number) {
+    rows = rows.filter((_, i) => i !== index)
+  }
+
   function handle_save(): boolean {
-    if (!edit_value.trim()) {
+    // Filter out completely empty rows
+    const filled = rows.filter((r) => r.key.trim() || r.value.trim())
+
+    if (filled.length === 0) {
       dispatch("change", "")
       return true
     }
-    try {
-      const parsed = JSON.parse(edit_value.trim())
-      if (!is_plain_object(parsed)) {
-        json_error =
-          'Reference data must be a JSON object, e.g. {"key": "value"}.'
-        return false
-      }
-      json_error = null
-      dispatch("change", edit_value.trim())
-      return true
-    } catch (e) {
-      json_error =
-        e instanceof Error
-          ? e.message
-          : "Invalid JSON. Please check your input."
+
+    // Check for empty keys on rows that have values
+    const empty_key = filled.find((r) => !r.key.trim())
+    if (empty_key) {
+      save_error = "Each row must have a name."
       return false
     }
+
+    // Check for duplicate keys
+    const keys = filled.map((r) => r.key.trim())
+    const unique_keys = new Set(keys)
+    if (unique_keys.size !== keys.length) {
+      save_error = "Duplicate names are not allowed."
+      return false
+    }
+
+    const obj: Record<string, unknown> = {}
+    for (const row of filled) {
+      obj[row.key.trim()] = parse_value(row.value)
+    }
+
+    save_error = null
+    dispatch("change", JSON.stringify(obj))
+    return true
   }
 </script>
 
@@ -81,7 +124,8 @@
 <Dialog
   bind:this={dialog}
   title="Reference Data"
-  subtitle="Provide a JSON object with reference values for this test run."
+  subtitle="Provide key-value pairs for reference data used during evaluation."
+  width="wide"
   action_buttons={[
     { label: "Cancel", isCancel: true },
     {
@@ -91,17 +135,72 @@
     },
   ]}
 >
-  <div class="flex flex-col gap-3">
-    <textarea
-      class="textarea textarea-bordered w-full font-mono text-sm"
-      rows="8"
-      placeholder={'{"expected_answer": "..."}'}
-      bind:value={edit_value}
-      data-testid="reference-data-textarea"
-    ></textarea>
-    {#if json_error}
+  <div class="flex flex-col gap-3" data-testid="reference-data-editor">
+    {#if rows.length === 0}
+      <p class="text-sm text-gray-500">
+        No values yet. Add one to get started.
+      </p>
+    {/if}
+
+    {#each rows as row, index}
+      <div class="flex items-start gap-2" data-testid="reference-data-row">
+        <div class="flex-1">
+          {#if index === 0}
+            <div class="py-0 pb-1">
+              <span class="label-text text-xs">Name</span>
+            </div>
+          {/if}
+          <input
+            type="text"
+            class="input input-bordered input-sm w-full"
+            placeholder="key"
+            bind:value={row.key}
+            data-testid="reference-data-key"
+          />
+        </div>
+        <div class="flex-[2]">
+          {#if index === 0}
+            <div class="py-0 pb-1">
+              <span class="label-text text-xs">Value</span>
+            </div>
+          {/if}
+          <input
+            type="text"
+            class="input input-bordered input-sm w-full font-mono"
+            placeholder="value"
+            bind:value={row.value}
+            data-testid="reference-data-value"
+          />
+        </div>
+        <div class={index === 0 ? "mt-6" : ""}>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-square"
+            on:click={() => remove_row(index)}
+            aria-label="Remove row"
+            data-testid="reference-data-remove"
+          >
+            <i class="bi bi-x-lg text-gray-400"></i>
+          </button>
+        </div>
+      </div>
+    {/each}
+
+    <div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-primary"
+        on:click={add_row}
+        data-testid="reference-data-add"
+      >
+        <i class="bi bi-plus-lg"></i>
+        Add Value
+      </button>
+    </div>
+
+    {#if save_error}
       <div class="text-error text-xs" data-testid="reference-data-error">
-        {json_error}
+        {save_error}
       </div>
     {/if}
   </div>
