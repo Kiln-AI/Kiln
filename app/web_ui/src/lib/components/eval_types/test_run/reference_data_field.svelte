@@ -124,7 +124,8 @@
 <Dialog
   bind:this={dialog}
   title="Reference Data"
-  subtitle="Provide key-value pairs for reference data used during evaluation."
+  subtitle="Provide reference data used during evaluation."
+  sub_subtitle="Values can be any valid JSON: strings, numbers, booleans, arrays, or objects."
   width="wide"
   action_buttons={[
     { label: "Cancel", isCancel: true },
