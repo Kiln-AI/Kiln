@@ -988,8 +988,13 @@ async def test_create_stamps_typed_properties():
     DescribeWorker.gate = asyncio.Event()
     # Properties are computed at create time, before dispatch.
     job = await reg.create("describe", {})
-    assert job.properties == {"label": "hello"}
-    DescribeWorker.gate.set()
+    try:
+        assert job.properties == {"label": "hello"}
+    finally:
+        # Always release the gated worker, even if the assertion fails, so the
+        # spawned job can finish rather than leaking into teardown.
+        DescribeWorker.gate.set()
+    await wait_for_status(reg, job.id, BackgroundJobStatus.SUCCEEDED)
 
 
 class BadDescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
