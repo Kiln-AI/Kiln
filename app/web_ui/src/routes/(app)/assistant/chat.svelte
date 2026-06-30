@@ -44,8 +44,10 @@
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
   // History restore) resolves → hydrates → attaches the live observer (Phase 9).
   const autoReconnecting = auto_run_store.reconnecting
-  // Transient "retrying N/M…" affordance while the runner retries a transient
-  // upstream failure (rate limit / 5xx / connection blip) with backoff.
+  // Transient "retrying N/M…" affordance while a transient upstream failure
+  // (rate limit / 5xx / connection blip) is retried with backoff. Auto mode
+  // surfaces it via auto_run_store; interactive chat via the session store. Only
+  // one can be active at a time, so prefer whichever is set.
   const autoRetry = auto_run_store.retry
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
@@ -112,6 +114,8 @@
   // affordances (thinking dots / animated icon) as interactive streaming, while
   // leaving the input usable for inject-on-send.
   $: autoWorking = $store.autoWorking
+  // Retry affordance from either source (auto burst or interactive stream).
+  $: activeRetry = $autoRetry ?? $store.retry
   $: contextUsage = $store.contextUsage
   $: upgradeNudgeVersion = $store.upgradeNudgeVersion
   $: versionRequired = $store.versionRequired
@@ -759,19 +763,19 @@
             <span>Reconnecting…</span>
           </div>
         {/if}
-        {#if $autoRetry}
-          <!-- Transient retry affordance: the runner hit a transient upstream
-             failure and is retrying with backoff. Show progress so an unattended
-             run reads as "still working" rather than stalled or errored. Clears
-             on the next event (recovered round, or settled idle/off). -->
+        {#if activeRetry}
+          <!-- Transient retry affordance (both auto and interactive): a transient
+             upstream failure is being retried with backoff. Show progress so the
+             turn reads as "still working" rather than stalled or errored. Clears
+             on the next event (recovered round, or settled error). -->
           <div
             class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
             role="status"
           >
             <BrailleSpinner />
             <span>
-              {#if $autoRetry.max > 0}
-                Temporary issue — retrying {$autoRetry.attempt}/{$autoRetry.max}…
+              {#if activeRetry.max > 0}
+                Temporary issue — retrying {activeRetry.attempt}/{activeRetry.max}…
               {:else}
                 Temporary issue — retrying…
               {/if}

@@ -9,8 +9,9 @@ import httpx
 import pytest
 
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
+from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
+
 from .runner import (
-    MAX_AUTO_RETRIES,
     MAX_TOOL_ROUNDS_MESSAGE,
     AutoChatRunner,
     _side_note_message,
@@ -253,7 +254,7 @@ async def test_non_retryable_upstream_error_sets_error_status_without_retry():
     assert runner.idle_reason == "error"
     assert "boom" in _decoded(emitted)
     # No retry attempted for a non-retryable status, and only one upstream request.
-    assert '"type": "auto-mode-retry"' not in _decoded(emitted)
+    assert '"type": "kiln-chat-retry"' not in _decoded(emitted)
     assert len(client.bodies) == 1
 
 
@@ -274,16 +275,16 @@ async def test_retryable_upstream_error_retries_then_succeeds():
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
-            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
             new_callable=AsyncMock,
         ) as sleep_mock,
     ):
         await runner.run()
 
     # Parse structurally: a retry event per failed attempt, numbered 1, 2.
-    retry_events = [e for e in _events(emitted) if e["type"] == "auto-mode-retry"]
+    retry_events = [e for e in _events(emitted) if e["type"] == "kiln-chat-retry"]
     assert [e["attempt"] for e in retry_events] == [1, 2]
-    assert all(e["max_attempts"] == MAX_AUTO_RETRIES for e in retry_events)
+    assert all(e["max_attempts"] == MAX_CHAT_RETRIES for e in retry_events)
     assert all(e["status_code"] == 503 for e in retry_events)
     # Backoff actually ran between attempts (not a tight spin).
     assert sleep_mock.await_count == 2
@@ -299,7 +300,7 @@ async def test_retryable_upstream_error_exhausts_retries_then_idle_error():
     client = FakeUpstreamClient(
         [
             FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')
-            for _ in range(MAX_AUTO_RETRIES + 1)
+            for _ in range(MAX_CHAT_RETRIES + 1)
         ]
     )
     runner, emitted, _ = _runner(client)
@@ -307,7 +308,7 @@ async def test_retryable_upstream_error_exhausts_retries_then_idle_error():
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
-            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
             new=AsyncMock(),
         ),
     ):
@@ -315,12 +316,12 @@ async def test_retryable_upstream_error_exhausts_retries_then_idle_error():
 
     decoded = _decoded(emitted)
     # One retry event per attempt up to the cap, then give up.
-    assert decoded.count('"type": "auto-mode-retry"') == MAX_AUTO_RETRIES
+    assert decoded.count('"type": "kiln-chat-retry"') == MAX_CHAT_RETRIES
     # On give-up the held-back error is finally surfaced.
     assert "boom" in decoded
     assert runner.status == AutoRunStatus.IDLE
     assert runner.idle_reason == "error"
-    assert len(client.bodies) == MAX_AUTO_RETRIES + 1
+    assert len(client.bodies) == MAX_CHAT_RETRIES + 1
 
 
 @pytest.mark.asyncio
@@ -339,14 +340,14 @@ async def test_connection_error_retries_then_succeeds():
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
-            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
             new=AsyncMock(),
         ),
     ):
         await runner.run()
 
     decoded = _decoded(emitted)
-    assert decoded.count('"type": "auto-mode-retry"') == 1
+    assert decoded.count('"type": "kiln-chat-retry"') == 1
     assert runner.idle_reason == "asked_user"
     assert len(client.bodies) == 2
 
@@ -374,7 +375,7 @@ async def test_mid_stream_transport_error_after_content_is_not_retried():
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
-            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
             new_callable=AsyncMock,
         ) as sleep_mock,
     ):
@@ -382,7 +383,7 @@ async def test_mid_stream_transport_error_after_content_is_not_retried():
 
     decoded = _decoded(emitted)
     # No retry, no backoff, exactly one upstream request — the guard held.
-    assert '"type": "auto-mode-retry"' not in decoded
+    assert '"type": "kiln-chat-retry"' not in decoded
     assert sleep_mock.await_count == 0
     assert len(client.bodies) == 1
     # The already-streamed content appears exactly once (never duplicated).
@@ -415,7 +416,7 @@ async def test_stop_requested_during_retry_settles_user_stopped():
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch(
-            "app.desktop.studio_server.chat.auto.runner.asyncio.sleep",
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
             new=AsyncMock(side_effect=_stop_mid_backoff),
         ),
     ):
@@ -424,7 +425,7 @@ async def test_stop_requested_during_retry_settles_user_stopped():
     decoded = _decoded(emitted)
     # It DID enter the retry branch (one retry emitted) before the stop landed,
     # then settled USER_STOPPED without surfacing the transient error.
-    assert decoded.count('"type": "auto-mode-retry"') == 1
+    assert decoded.count('"type": "kiln-chat-retry"') == 1
     assert "rate limited" not in decoded
     assert runner.status == AutoRunStatus.USER_STOPPED
     assert len(client.bodies) == 2

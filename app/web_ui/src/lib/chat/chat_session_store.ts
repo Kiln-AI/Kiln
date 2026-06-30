@@ -67,6 +67,13 @@ export interface ChatSessionState extends PersistedChatSession {
    */
   autoWorking: boolean
   /**
+   * A transient upstream failure is being retried with backoff during the
+   * interactive stream (``kiln-chat-retry``): ``{ attempt, max }`` while retrying,
+   * else null. Drives the "retrying N/M…" affordance for non-auto chat. (Auto
+   * mode surfaces the same affordance via ``auto_run_store.retry``.) Runtime-only.
+   */
+  retry: { attempt: number; max: number } | null
+  /**
    * Preferred version from a server upgrade nudge (non-blocking), or null when
    * no nudge is active or the user dismissed it. Runtime-only, not persisted.
    */
@@ -158,6 +165,7 @@ export function createChatSessionStore(
     showActivityIndicator: false,
     compacting: false,
     autoWorking: false,
+    retry: null,
     upgradeNudgeVersion: null,
     versionRequired: false,
   })
@@ -494,6 +502,14 @@ export function createChatSessionStore(
           showActivityIndicator: show,
         }))
       },
+      onRetry: (attempt, max) => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, retry: { attempt, max } }))
+      },
+      onRetryClear: () => {
+        if (isStale()) return
+        combined.update((s) => ({ ...s, retry: null }))
+      },
       onAssistantMessage: (update) => {
         if (isStale()) return
         if (status !== "streaming") {
@@ -553,6 +569,7 @@ export function createChatSessionStore(
           toolExecuting: false,
           showActivityIndicator: false,
           compacting: false,
+          retry: null,
         }))
         setRuntimeState("ready", null)
       },
@@ -563,6 +580,7 @@ export function createChatSessionStore(
           toolExecuting: false,
           showActivityIndicator: false,
           compacting: false,
+          retry: null,
         }))
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),

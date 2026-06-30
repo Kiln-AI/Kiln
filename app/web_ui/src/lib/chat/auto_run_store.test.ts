@@ -486,7 +486,7 @@ describe("auto_run_store", () => {
     expect(calls.working).toEqual([true, true, false])
   })
 
-  it("auto-mode-retry surfaces retrying progress and clears on the next event", async () => {
+  it("kiln-chat-retry surfaces retrying progress and clears on the next event", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ run_id: "ar_retry" }),
@@ -497,7 +497,7 @@ describe("auto_run_store", () => {
     source.message({ type: "auto-mode-on", run_id: "ar_retry" })
 
     source.message({
-      type: "auto-mode-retry",
+      type: "kiln-chat-retry",
       run_id: "ar_retry",
       attempt: 3,
       max_attempts: 10,
@@ -510,7 +510,7 @@ describe("auto_run_store", () => {
 
     // A second retry updates the counter.
     source.message({
-      type: "auto-mode-retry",
+      type: "kiln-chat-retry",
       run_id: "ar_retry",
       attempt: 4,
       max_attempts: 10,

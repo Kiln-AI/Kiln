@@ -1,8 +1,10 @@
+import asyncio
 import json
 import logging
+import random
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable, Literal
 
 import httpx
 from app.desktop.studio_server.chat.constants import (
@@ -11,6 +13,7 @@ from app.desktop.studio_server.chat.constants import (
     FUNCTION_NAME_TO_TOOL_ID,
     MAX_TOOL_ROUNDS,
     SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
+    SSE_TYPE_CHAT_RETRY,
     SSE_TYPE_TOOL_CALLS_PENDING,
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
@@ -157,6 +160,44 @@ def _format_consent_required_sse(
 # 401, 403, 404, 422) are deliberately excluded — they won't self-heal.
 RETRYABLE_UPSTREAM_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
+# A transient upstream failure is retried with bounded full-jitter exponential
+# backoff rather than surfaced immediately, on BOTH the interactive chat stream
+# and the unattended auto runner (they share ``iter_round_with_retries``). Bounded
+# so a persistent outage still settles instead of hanging forever.
+MAX_CHAT_RETRIES = 10
+_RETRY_BASE_SECONDS = 1.0
+_RETRY_MAX_SECONDS = 30.0
+
+
+def _retry_backoff_seconds(attempt: int) -> float:
+    """Full-jitter exponential backoff. ``attempt`` is 1-based; the delay is a
+    random value in [0, min(cap, base * 2**(attempt-1))] to spread retries and
+    avoid thundering-herd alignment across concurrent streams."""
+    ceiling = min(_RETRY_MAX_SECONDS, _RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+    return random.uniform(0, ceiling)
+
+
+def format_chat_retry(
+    *,
+    attempt: int,
+    max_attempts: int,
+    status_code: int | None = None,
+    run_id: str | None = None,
+) -> bytes:
+    """SSE event emitted between retry attempts so the UI can show "retrying
+    N/M…". ``status_code`` is the upstream HTTP status (omitted for a
+    connection-level failure); ``run_id`` is present only on the auto stream."""
+    payload: dict[str, Any] = {
+        "type": SSE_TYPE_CHAT_RETRY,
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+    }
+    if status_code is not None:
+        payload["status_code"] = status_code
+    if run_id is not None:
+        payload["run_id"] = run_id
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
 
 async def iter_upstream_round(
     client: httpx.AsyncClient,
@@ -276,6 +317,113 @@ async def iter_upstream_round(
                 )
 
 
+@dataclass
+class RetryRoundResult:
+    """Outcome of ``iter_round_with_retries``, reported back to the caller after
+    the generator is exhausted (an async generator can't return a value):
+
+    - ``status == "ok"``: ``round_state`` is the successful attempt's state —
+      the caller continues its round loop.
+    - ``status == "stopped"``: a Stop was requested mid-retry (auto runner only)
+      — the caller settles ``USER_STOPPED``.
+    - ``status == "error"``: a non-retryable or retry-exhausted failure; the
+      error was already yielded — the caller ends the stream.
+    """
+
+    status: Literal["ok", "stopped", "error"] = "error"
+    round_state: RoundState | None = None
+
+
+async def iter_round_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    trace_id_for_error: str | None,
+    result: RetryRoundResult,
+    *,
+    run_id: str | None = None,
+    stop_requested: Callable[[], bool] | None = None,
+) -> AsyncIterator[bytes]:
+    """Stream one upstream round, retrying transient failures with backoff.
+
+    Shared by the interactive ``ChatStreamSession.stream()`` and the unattended
+    ``AutoChatRunner`` so both get identical retry behavior. Yields forward bytes
+    as they stream, plus a ``kiln-chat-retry`` event between attempts and, on
+    give-up, the held-back error. The terminal outcome is reported via ``result``.
+
+    Only failures that streamed NO content this attempt are retried (a non-200
+    caught before any bytes, or a pre-response connection error), so a retry can
+    never duplicate already-emitted output. ``defer_terminal_error`` holds the
+    error back until we either retry past it or give up.
+
+    ``stop_requested`` (auto runner only) is polled each round so a Stop pressed
+    mid-retry abandons the loop with ``status == "stopped"``.
+    """
+    attempt = 0
+    while True:
+        round_state = RoundState(trace_id_for_error=trace_id_for_error)
+        result.round_state = round_state
+        emitted_any = False
+        transport_error = False
+        try:
+            async for payload in iter_upstream_round(
+                client, url, headers, body, round_state, defer_terminal_error=True
+            ):
+                emitted_any = True
+                yield payload
+        except httpx.HTTPError:
+            # Pre-response connection/timeout failure (RemoteProtocolError is
+            # handled inside iter_upstream_round). A ReadTimeout after the POST
+            # may re-trigger a duplicate upstream generation, but no tools run
+            # until bytes stream, so the accepted blast radius is a wasted
+            # generation, never duplicated side effects.
+            transport_error = True
+
+        if not transport_error and not round_state.is_terminal_upstream_error:
+            result.status = "ok"
+            return
+
+        streamed_content = (
+            emitted_any
+            or round_state.trace_id is not None
+            or bool(round_state.assistant_text)
+            or bool(round_state.tool_input_events)
+        )
+        retryable = not streamed_content and (
+            transport_error or round_state.error_retryable
+        )
+        stop = stop_requested() if stop_requested is not None else False
+        if retryable and attempt < MAX_CHAT_RETRIES and not stop:
+            attempt += 1
+            yield format_chat_retry(
+                attempt=attempt,
+                max_attempts=MAX_CHAT_RETRIES,
+                status_code=round_state.error_status_code,
+                run_id=run_id,
+            )
+            await asyncio.sleep(_retry_backoff_seconds(attempt))
+            continue
+
+        # Stop takes precedence over surfacing the error (auto runner only).
+        if stop:
+            result.status = "stopped"
+            return
+        # Give up: surface the held-back error (the suppressed-duplicate terminal
+        # case has nothing deferred and yields nothing) and end the stream.
+        if round_state.deferred_error_payload is not None:
+            yield round_state.deferred_error_payload
+        elif transport_error:
+            error_payload = {
+                "type": "error",
+                "message": "Something went wrong.",
+                "trace_id": round_state.trace_id_for_error or str(uuid.uuid4()),
+            }
+            yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+        result.status = "error"
+        return
+
+
 async def execute_tool_batch(
     tool_calls: list[ToolCallInfo],
     decisions: dict[str, bool],
@@ -311,25 +459,28 @@ class ChatStreamSession:
         trace_id_for_error: str | None = self._initial_trace_id
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(MAX_TOOL_ROUNDS):
-                round_state = RoundState(trace_id_for_error=trace_id_for_error)
-
-                async for forward_bytes in iter_upstream_round(
+                # Retry transient upstream failures (rate limit / 5xx / connection)
+                # with backoff, emitting kiln-chat-retry events the UI renders as
+                # "retrying N/M…", instead of surfacing the error immediately.
+                result = RetryRoundResult()
+                async for forward_bytes in iter_round_with_retries(
                     client,
                     self._upstream_url,
                     self._headers,
                     self._body,
-                    round_state,
+                    trace_id_for_error,
+                    result,
                 ):
                     yield forward_bytes
 
-                trace_id_for_error = round_state.trace_id_for_error
+                round_state = result.round_state
+                if round_state is not None:
+                    trace_id_for_error = round_state.trace_id_for_error
 
-                # A terminal upstream error (iter_upstream_round already emitted
-                # the error SSE, or a forwarded upstream error followed by a
-                # connection close with no finish boundary) means there's nothing
-                # more to drive — end the stream, matching the pre-refactor
-                # `return`s.
-                if round_state.is_terminal_upstream_error:
+                # A non-retryable or retry-exhausted upstream error: the error SSE
+                # was already yielded — nothing more to drive, end the stream.
+                # ("stopped" is auto-runner-only and never occurs here.)
+                if result.status != "ok" or round_state is None:
                     return
 
                 if round_state.trace_id:
