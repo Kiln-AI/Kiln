@@ -99,10 +99,12 @@ async def test_golden_client_tool_round_executes_and_continues():
 
 @pytest.mark.asyncio
 async def test_golden_non_200_emits_error_and_stops():
+    # 400 (non-retryable): surfaces immediately and stops. Retryable statuses
+    # (5xx/429) go through the retry loop instead (see test_stream_session.py).
     client = FakeUpstreamClient(
         [
             FakeUpstreamResponse(
-                status_code=500, body=b'{"message": "boom", "code": "X"}'
+                status_code=400, body=b'{"message": "boom", "code": "X"}'
             )
         ]
     )

@@ -80,3 +80,45 @@ describe("ChatStatusSteps compaction indicator (Phase 5)", () => {
     ).toBeTruthy()
   })
 })
+
+describe("ChatStatusSteps retry indicator", () => {
+  it("renders the retry copy with attempt/max when retrying", () => {
+    const { getByText } = render(ChatStatusSteps, {
+      props: {
+        parts: [],
+        isLoading: true,
+        isLastMessage: true,
+        retrying: { attempt: 3, max: 10 },
+      },
+    })
+    expect(getByText(/Temporary issue — retrying 3\/10/)).toBeTruthy()
+  })
+
+  it("takes precedence over Thinking and compacting", () => {
+    const { queryByText } = render(ChatStatusSteps, {
+      props: {
+        parts: [],
+        isLoading: true,
+        isLastMessage: true,
+        compacting: true,
+        retrying: { attempt: 1, max: 10 },
+      },
+    })
+    expect(queryByText(/^Thinking/)).toBeNull()
+    expect(
+      queryByText(/Summarizing earlier messages to free up context/i),
+    ).toBeNull()
+  })
+
+  it("omits the counter when max is 0 (degraded event)", () => {
+    const { getByText } = render(ChatStatusSteps, {
+      props: {
+        parts: [],
+        isLoading: true,
+        isLastMessage: true,
+        retrying: { attempt: 0, max: 0 },
+      },
+    })
+    expect(getByText(/Temporary issue — retrying…/)).toBeTruthy()
+  })
+})

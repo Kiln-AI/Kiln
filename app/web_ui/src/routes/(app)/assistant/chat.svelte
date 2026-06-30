@@ -44,8 +44,10 @@
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
   // History restore) resolves → hydrates → attaches the live observer (Phase 9).
   const autoReconnecting = auto_run_store.reconnecting
-  // Transient "retrying N/M…" affordance while the runner retries a transient
-  // upstream failure (rate limit / 5xx / connection blip) with backoff.
+  // Transient "retrying N/M…" affordance while a transient upstream failure
+  // (rate limit / 5xx / connection blip) is retried with backoff. Auto mode
+  // surfaces it via auto_run_store; interactive chat via the session store. Only
+  // one can be active at a time, so prefer whichever is set.
   const autoRetry = auto_run_store.retry
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
@@ -112,6 +114,8 @@
   // affordances (thinking dots / animated icon) as interactive streaming, while
   // leaving the input usable for inject-on-send.
   $: autoWorking = $store.autoWorking
+  // Retry affordance from either source (auto burst or interactive stream).
+  $: activeRetry = $autoRetry ?? $store.retry
   $: contextUsage = $store.contextUsage
   $: upgradeNudgeVersion = $store.upgradeNudgeVersion
   $: versionRequired = $store.versionRequired
@@ -531,7 +535,7 @@
                           ? segment.items.slice(-MAX_VISIBLE_STEPS)
                           : segment.items}
                         <div class="flex items-start gap-3 min-w-0">
-                          {#if groupLoading}
+                          {#if groupLoading && !activeRetry}
                             <img
                               src="/images/chat_icon_animated.svg"
                               alt=""
@@ -641,6 +645,8 @@
                                     message.id === lastMessage?.id}
                                   isLastMessage={message.id === lastMessage?.id}
                                   {showActivityIndicator}
+                                  {compacting}
+                                  retrying={activeRetry}
                                 />
                               {/if}
                             {/if}
@@ -667,11 +673,13 @@
                         {#if !hasVisibleApproval}
                           {#if isActiveMessage && showActivityIndicator}
                             <div class="flex items-start gap-3">
-                              <img
-                                src="/images/chat_icon_animated.svg"
-                                alt=""
-                                class="w-9 h-9 shrink-0 -mt-1.5"
-                              />
+                              {#if !activeRetry}
+                                <img
+                                  src="/images/chat_icon_animated.svg"
+                                  alt=""
+                                  class="w-9 h-9 shrink-0 -mt-1.5"
+                                />
+                              {/if}
                               <div class="flex flex-col">
                                 <ChatStatusSteps
                                   parts={message.parts ?? []}
@@ -679,6 +687,7 @@
                                   isLastMessage={true}
                                   {showActivityIndicator}
                                   {compacting}
+                                  retrying={activeRetry}
                                 />
                               </div>
                             </div>
@@ -689,6 +698,7 @@
                               isLastMessage={message.id === lastMessage?.id}
                               {showActivityIndicator}
                               {compacting}
+                              retrying={activeRetry}
                             />
                           {/if}
                         {/if}
@@ -700,11 +710,13 @@
                        the summarizing copy (instead of a separate row); when
                        compaction finishes it reverts to Thinking. -->
                     <div class="flex items-start gap-3">
-                      <img
-                        src="/images/chat_icon_animated.svg"
-                        alt=""
-                        class="w-9 h-9 shrink-0 -mt-1.5"
-                      />
+                      {#if !activeRetry}
+                        <img
+                          src="/images/chat_icon_animated.svg"
+                          alt=""
+                          class="w-9 h-9 shrink-0 -mt-1.5"
+                        />
+                      {/if}
                       <div class="flex flex-col">
                         <ChatStatusSteps
                           parts={[]}
@@ -712,6 +724,7 @@
                           isLastMessage={true}
                           {showActivityIndicator}
                           {compacting}
+                          retrying={activeRetry}
                         />
                       </div>
                     </div>
@@ -723,25 +736,27 @@
             </div>
           {/if}
         {/each}
-        {#if compacting && lastMessage?.role !== "assistant"}
-          <!-- Fallback compaction indicator for the rare case where there is no
-             active assistant bubble yet to host the in-place indicator above
-             (so the summarizing copy still appears, and never alongside the
-             bubble's Thinking — exactly one shows). When an empty assistant
-             turn exists, the streaming-cursor branch above swaps its own label
-             to the summarizing copy instead. -->
+        {#if (compacting || activeRetry) && lastMessage?.role !== "assistant"}
+          <!-- Fallback compaction/retry indicator for when there is no active
+             assistant bubble yet to host the in-place indicator above (so the
+             summarizing / retrying copy still appears, and never alongside the
+             bubble's Thinking — exactly one shows). When an empty assistant turn
+             exists, the streaming-cursor branch above hosts the indicator. -->
           <div class="flex items-start gap-3" role="status">
-            <img
-              src="/images/chat_icon_animated.svg"
-              alt=""
-              class="w-9 h-9 shrink-0 -mt-1.5"
-            />
+            {#if !activeRetry}
+              <img
+                src="/images/chat_icon_animated.svg"
+                alt=""
+                class="w-9 h-9 shrink-0 -mt-1.5"
+              />
+            {/if}
             <div class="flex flex-col">
               <ChatStatusSteps
                 parts={[]}
                 isLoading={true}
                 isLastMessage={true}
-                compacting={true}
+                {compacting}
+                retrying={activeRetry}
               />
             </div>
           </div>
@@ -757,25 +772,6 @@
           >
             <BrailleSpinner />
             <span>Reconnecting…</span>
-          </div>
-        {/if}
-        {#if $autoRetry}
-          <!-- Transient retry affordance: the runner hit a transient upstream
-             failure and is retrying with backoff. Show progress so an unattended
-             run reads as "still working" rather than stalled or errored. Clears
-             on the next event (recovered round, or settled idle/off). -->
-          <div
-            class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
-            role="status"
-          >
-            <BrailleSpinner />
-            <span>
-              {#if $autoRetry.max > 0}
-                Temporary issue — retrying {$autoRetry.attempt}/{$autoRetry.max}…
-              {:else}
-                Temporary issue — retrying…
-              {/if}
-            </span>
           </div>
         {/if}
         <div

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import random
 from typing import Any, Awaitable, Callable
 
 import httpx
 from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT, MAX_TOOL_ROUNDS
 from app.desktop.studio_server.chat.stream_session import (
+    RetryRoundResult,
     RoundState,
     ToolCallInfo,
     _build_openai_tool_continuation,
     _format_tool_calls_pending_sse,
     execute_tool_batch,
+    iter_round_with_retries,
     iter_upstream_round,
 )
 from app.desktop.studio_server.chat.tool_metadata import tool_input_executor_is_server
@@ -27,7 +27,6 @@ from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .sse import (
     format_auto_mode_on,
-    format_auto_mode_retry,
     format_error,
     format_tool_exec_end,
     format_tool_exec_start,
@@ -37,21 +36,6 @@ from .sse import (
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS_MESSAGE = "Maximum tool rounds exceeded. Please start a new message."
-
-# Auto mode runs unattended, so a transient upstream failure (rate limit, 5xx,
-# connection blip) should be retried with backoff rather than parking the burst
-# until a human returns. Bounded so a persistent outage still settles IDLE.
-MAX_AUTO_RETRIES = 10
-_RETRY_BASE_SECONDS = 1.0
-_RETRY_MAX_SECONDS = 30.0
-
-
-def _retry_backoff_seconds(attempt: int) -> float:
-    """Full-jitter exponential backoff. ``attempt`` is 1-based; the delay is a
-    random value in [0, min(cap, base * 2**(attempt-1))] to spread retries and
-    avoid thundering-herd alignment across runs."""
-    ceiling = min(_RETRY_MAX_SECONDS, _RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
-    return random.uniform(0, ceiling)
 
 
 # The tool result the app server resolves an intercepted disable_auto_mode call
@@ -345,95 +329,36 @@ class AutoChatRunner:
         body: dict[str, Any],
         trace_id_for_error: str | None,
     ) -> RoundState | None:
-        """Stream one upstream round, retrying transient failures with backoff.
+        """Stream one upstream round via the shared retry helper, translating its
+        outcome into the runner's terminal status.
 
         Returns the completed ``RoundState`` on success. Returns ``None`` on a
-        terminal outcome — in which case it has set ``self.status`` and the caller
-        just returns. Two terminal cases: a Stop requested while retrying settles
-        ``USER_STOPPED`` (no error surfaced); otherwise a non-retryable or
-        retry-exhausted error settles ``IDLE("error")`` after surfacing the
-        held-back error (the suppressed-duplicate terminal case surfaces nothing).
-
-        Only failures that streamed NO content this attempt are retried (a
-        non-200 caught before any bytes, or a pre-response connection error), so a
-        retry can never duplicate already-emitted output. Backoff uses
-        ``defer_terminal_error`` so the error is held back until we give up.
+        terminal outcome: a Stop requested while retrying settles ``USER_STOPPED``
+        (the helper surfaced no error); a non-retryable or retry-exhausted error
+        settles ``IDLE("error")`` (the helper already yielded the error).
         """
-        attempt = 0
-        while True:
-            round_state = RoundState(trace_id_for_error=trace_id_for_error)
-            emitted_any = False
-            transport_error = False
-            try:
-                async for payload in iter_upstream_round(
-                    client,
-                    self._url,
-                    self._headers,
-                    body,
-                    round_state,
-                    defer_terminal_error=True,
-                ):
-                    emitted_any = True
-                    self._emit(payload)
-            except httpx.HTTPError:
-                # Pre-response connection/timeout failure (RemoteProtocolError is
-                # handled inside iter_upstream_round). Safe to retry only if no
-                # bytes were forwarded this attempt. A ReadTimeout after the POST
-                # was sent may re-trigger a duplicate LLM generation upstream, but
-                # the runner executes no tools until bytes stream, so the accepted
-                # blast radius is a wasted generation, never duplicated side effects.
-                transport_error = True
+        result = RetryRoundResult()
+        async for payload in iter_round_with_retries(
+            client,
+            self._url,
+            self._headers,
+            body,
+            trace_id_for_error,
+            result,
+            run_id=self.run_id,
+            stop_requested=lambda: self.stop_requested,
+        ):
+            self._emit(payload)
 
-            if not transport_error and not round_state.is_terminal_upstream_error:
-                return round_state
-
-            streamed_content = (
-                emitted_any
-                or round_state.trace_id is not None
-                or bool(round_state.assistant_text)
-                or bool(round_state.tool_input_events)
-            )
-            retryable = not streamed_content and (
-                transport_error or round_state.error_retryable
-            )
-            if retryable and attempt < MAX_AUTO_RETRIES and not self.stop_requested:
-                attempt += 1
-                self._emit(
-                    format_auto_mode_retry(
-                        self.run_id,
-                        attempt=attempt,
-                        max_attempts=MAX_AUTO_RETRIES,
-                        status_code=round_state.error_status_code,
-                    )
-                )
-                await asyncio.sleep(_retry_backoff_seconds(attempt))
-                continue
-
-            # Stop pressed while retrying a persistent failure: honor the
-            # graceful-stop contract — settle USER_STOPPED (surface no error) so
-            # the supervisor publishes auto-mode-off, matching every other stop
-            # path. Checked before the error paths since stop takes precedence.
-            if self.stop_requested:
-                self.status = AutoRunStatus.USER_STOPPED
-                return None
-
-            # Give up: surface the held-back error (or a generic one for a
-            # transport failure with nothing deferred; the suppressed-duplicate
-            # terminal case has nothing deferred and emits nothing) and settle
-            # IDLE("error").
-            if round_state.deferred_error_payload is not None:
-                self._emit(round_state.deferred_error_payload)
-            elif transport_error:
-                # Prefer the round's latest trace id: a newer one may have streamed
-                # in before the transport error struck mid-round.
-                self._emit(
-                    format_error(
-                        "Something went wrong.", round_state.trace_id_for_error
-                    )
-                )
-            self.idle_reason = "error"
-            self.status = AutoRunStatus.IDLE
+        if result.status == "ok":
+            return result.round_state
+        if result.status == "stopped":
+            self.status = AutoRunStatus.USER_STOPPED
             return None
+        # status == "error"
+        self.idle_reason = "error"
+        self.status = AutoRunStatus.IDLE
+        return None
 
     async def _resolve_disable(
         self,

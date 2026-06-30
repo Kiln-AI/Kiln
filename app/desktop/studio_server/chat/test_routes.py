@@ -74,7 +74,10 @@ class TestChatStreaming:
         assert response.status_code == 401
 
     def test_handles_upstream_error(self, client, mock_api_key):
-        mock_class, _, _ = make_httpx_mock(status_code=500)
+        # 404 (non-retryable) surfaces immediately as an SSE error. Retryable
+        # statuses (5xx/429) go through the retry loop instead (covered in
+        # test_stream_session.py), so they'd block on backoff here.
+        mock_class, _, _ = make_httpx_mock(status_code=404)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
             response = client.post(

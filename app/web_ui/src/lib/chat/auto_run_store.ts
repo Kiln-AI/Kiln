@@ -174,7 +174,7 @@ export function createAutoRunStore(): AutoRunStore {
   const runId = writable<string | null>(null)
   const offReason = writable<string | null>(null)
   const connection = writable<AutoConnection>("idle")
-  // Transient "retrying N/M…" affordance: set on each auto-mode-retry event,
+  // Transient "retrying N/M…" affordance: set on each kiln-chat-retry event,
   // cleared by the next event of any other kind (the recovered round's first
   // event, or an idle/off marker). Null when no retry is in flight.
   const retry = writable<{ attempt: number; max: number } | null>(null)
@@ -285,7 +285,7 @@ export function createAutoRunStore(): AutoRunStore {
       offReason.set(null)
       return true
     }
-    if (event.type === "auto-mode-retry") {
+    if (event.type === "kiln-chat-retry") {
       // A transient upstream failure is being retried with backoff. The burst is
       // still working — keep the indicator on and surface "retrying N/M…" so the
       // user sees progress rather than a hard error. Cleared by the next event.
@@ -380,7 +380,7 @@ export function createAutoRunStore(): AutoRunStore {
       }
       // Any event other than another retry means the retry window is over (the
       // round recovered, or the burst settled idle/off) — clear the affordance.
-      if (event.type !== "auto-mode-retry") retry.set(null)
+      if (event.type !== "kiln-chat-retry") retry.set(null)
       if (handleControlEvent(event)) return
       processor.handleEvent(event)
     }
