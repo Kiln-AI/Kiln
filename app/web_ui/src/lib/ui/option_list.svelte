@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { OptionListItem } from "./option_list_types"
 
-  export let options: OptionListItem[]
+  export let options: OptionListItem[] = []
   export let select_option: (id: string) => void
 </script>
 
@@ -9,7 +9,7 @@
   {#each options as option}
     <button
       type="button"
-      class="card card-bordered border-base-300 bg-base-100 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-full text-left p-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-md disabled:hover:border-base-300 disabled:hover:shadow-md"
+      class="card card-bordered border-base-300 bg-base-100 shadow-md hover:shadow-lg hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-all duration-200 w-full text-left p-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-md disabled:hover:border-base-300 disabled:hover:shadow-md"
       on:click={() => select_option(option.id)}
       disabled={option.disabled}
     >
@@ -26,7 +26,7 @@
             <span class="font-medium">{option.name}</span>
             {#if option.recommended}
               <span class="badge badge-sm badge-primary whitespace-nowrap"
-                >&#9733; Recommended</span
+                ><span aria-hidden="true">&#9733;</span> Recommended</span
               >
             {/if}
             {#each option.tags ?? [] as tag}
