@@ -2,7 +2,8 @@
 import { describe, it, expect } from "vitest"
 import { render } from "@testing-library/svelte"
 import EvalTypeTags from "./eval_type_tags.svelte"
-import EvalTypeRow from "./eval_type_row.svelte"
+import OptionList from "$lib/ui/option_list.svelte"
+import { buildEvalTypeOptions } from "./eval_type_options"
 import {
   ALL_V2_EVAL_TYPES,
   getV2EvalTypeMetadata,
@@ -35,197 +36,69 @@ describe("EvalTypeTags", () => {
   })
 })
 
-describe("EvalTypeRow", () => {
-  const evalType = "code_eval" as const
-  const metadata = getV2EvalTypeMetadata(evalType)
-
-  it("renders the type name", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    expect(container.textContent).toContain("Code")
+describe("buildEvalTypeOptions", () => {
+  it("returns one option per eval type, in registry order", () => {
+    const options = buildEvalTypeOptions()
+    expect(options.map((o) => o.id)).toEqual([...ALL_V2_EVAL_TYPES])
   })
 
-  it("renders the description", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    expect(container.textContent).toContain(metadata.description)
+  it("maps each option's name and description from metadata", () => {
+    const options = buildEvalTypeOptions()
+    for (const option of options) {
+      const metadata = getV2EvalTypeMetadata(
+        option.id as (typeof ALL_V2_EVAL_TYPES)[number],
+      )
+      expect(option.name).toBe(metadata.label)
+      expect(option.description).toBe(metadata.description)
+    }
   })
 
-  it("renders only the Beta tag badge for code_eval (no Python badge)", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const badges = container.querySelectorAll(".badge")
-    expect(badges).toHaveLength(1)
-    expect(badges[0].textContent?.trim()).toBe("Beta")
+  it("marks only the recommended registry type as recommended", () => {
+    const options = buildEvalTypeOptions()
+    for (const option of options) {
+      const metadata = getV2EvalTypeMetadata(
+        option.id as (typeof ALL_V2_EVAL_TYPES)[number],
+      )
+      expect(option.recommended).toBe(metadata.recommended ?? false)
+    }
+    expect(options.filter((o) => o.recommended)).toHaveLength(1)
+    expect(options.find((o) => o.recommended)?.id).toBe("llm_judge")
   })
 
-  it("the entire row is a button with data-testid", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const button = container.querySelector('[data-testid="eval-type-row"]')
-    expect(button).not.toBeNull()
-    expect(button?.tagName).toBe("BUTTON")
-  })
-
-  it("has hover styling for interactivity", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const card = container.querySelector(".card")!
-    expect(card.classList.contains("hover:shadow-lg")).toBe(true)
-    expect(card.classList.contains("hover:border-primary/50")).toBe(true)
-  })
-
-  it("renders a chevron indicator", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const svgs = container.querySelectorAll("svg")
-    expect(svgs.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it("chevron is structurally right-aligned: flex-none last child of a w-full flex row with flex-1 content sibling", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const row = container.querySelector('[data-testid="eval-type-row"]')!
-    const flexRow = row.querySelector(".flex.w-full")
-    expect(flexRow).not.toBeNull()
-
-    const children = Array.from(flexRow!.children)
-    const lastChild = children[children.length - 1]
-    expect(lastChild.tagName).toBe("svg")
-    expect(lastChild.classList.contains("flex-none")).toBe(true)
-
-    const contentBlock = flexRow!.querySelector(".flex-1.min-w-0")
-    expect(contentBlock).not.toBeNull()
-  })
-
-  it("chevron is decorative (aria-hidden)", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const row = container.querySelector('[data-testid="eval-type-row"]')!
-    const flexRow = row.querySelector(".flex.w-full")!
-    const children = Array.from(flexRow.children)
-    const chevron = children[children.length - 1]
-    expect(chevron.tagName).toBe("svg")
-    expect(chevron.getAttribute("aria-hidden")).toBe("true")
-  })
-
-  it("renders the type icon as an SVG", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata },
-    })
-    const iconContainer = container.querySelector('[aria-hidden="true"]')
-    expect(iconContainer).not.toBeNull()
-    const svg = iconContainer!.querySelector("svg")
-    expect(svg).not.toBeNull()
+  it("provides an icon component for every option", () => {
+    const options = buildEvalTypeOptions()
+    for (const option of options) {
+      expect(option.icon, `${option.id} should have an icon`).toBeTruthy()
+    }
   })
 })
 
-describe("EvalTypeRow — recommended prop", () => {
-  const evalType = "llm_judge" as const
-  const metadata = getV2EvalTypeMetadata(evalType)
-
-  it("renders with emphasized styling when recommended=true", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
+describe("judge type picker (OptionList)", () => {
+  it("renders one clickable button row per eval type", () => {
+    const { container } = render(OptionList, {
+      props: { options: buildEvalTypeOptions(), select_option: () => {} },
     })
-    const card = container.querySelector(".card")!
-    expect(card.classList.contains("border-2")).toBe(true)
-    expect(card.classList.contains("bg-base-200")).toBe(true)
+    const buttons = container.querySelectorAll("button")
+    expect(buttons.length).toBe(ALL_V2_EVAL_TYPES.length)
   })
 
-  it("renders the star Recommended badge when recommended=true", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
+  it("renders a single star Recommended badge for the recommended type", () => {
+    const { container } = render(OptionList, {
+      props: { options: buildEvalTypeOptions(), select_option: () => {} },
     })
-    const badge = container.querySelector(".badge-primary")
-    expect(badge).not.toBeNull()
-    expect(badge?.textContent).toContain("Recommended")
+    const recommendedBadges = Array.from(
+      container.querySelectorAll(".badge-primary"),
+    ).filter((b) => b.textContent?.includes("Recommended"))
+    expect(recommendedBadges).toHaveLength(1)
   })
 
-  it("does not render the Recommended badge when recommended is false", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: false },
-    })
-    expect(container.textContent).not.toContain("Recommended")
-  })
-
-  it("recommended row is still a clickable button", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
-    })
-    const button = container.querySelector('[data-testid="eval-type-row"]')
-    expect(button).not.toBeNull()
-    expect(button?.tagName).toBe("BUTTON")
-  })
-
-  it("recommended row has a chevron (no Continue button)", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
+  it("renders a chevron indicator on each row", () => {
+    const { container } = render(OptionList, {
+      props: { options: buildEvalTypeOptions(), select_option: () => {} },
     })
     const svgs = container.querySelectorAll("svg")
-    expect(svgs.length).toBeGreaterThanOrEqual(1)
-    expect(container.textContent).not.toContain("Continue")
-  })
-
-  it("recommended row chevron is structurally right-aligned: flex-none last child of w-full flex row", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
-    })
-    const row = container.querySelector('[data-testid="eval-type-row"]')!
-    const flexRow = row.querySelector(".flex.w-full")
-    expect(flexRow).not.toBeNull()
-
-    const children = Array.from(flexRow!.children)
-    const lastChild = children[children.length - 1]
-    expect(lastChild.tagName).toBe("svg")
-    expect(lastChild.classList.contains("flex-none")).toBe(true)
-
-    const contentBlock = flexRow!.querySelector(".flex-1.min-w-0")
-    expect(contentBlock).not.toBeNull()
-  })
-
-  it("recommended row has larger icon container", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
-    })
-    const iconContainer = container.querySelector(".w-12.h-12")
-    expect(iconContainer).not.toBeNull()
-  })
-
-  it("non-recommended row has smaller icon container", () => {
-    const nonRecType = "code_eval" as const
-    const nonRecMeta = getV2EvalTypeMetadata(nonRecType)
-    const { container } = render(EvalTypeRow, {
-      props: { evalType: nonRecType, metadata: nonRecMeta, recommended: false },
-    })
-    const iconContainer = container.querySelector(".w-9.h-9")
-    expect(iconContainer).not.toBeNull()
-  })
-
-  it("recommended row renders no descriptive tag badges (llm_judge has no tags)", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
-    })
-    expect(container.textContent).not.toContain("Uses LLM")
-    expect(container.textContent).not.toContain("Graded")
-  })
-
-  it("renders the type icon as SVG in recommended mode", () => {
-    const { container } = render(EvalTypeRow, {
-      props: { evalType, metadata, recommended: true },
-    })
-    const iconContainer = container.querySelector('[aria-hidden="true"]')
-    expect(iconContainer).not.toBeNull()
-    const svg = iconContainer!.querySelector("svg")
-    expect(svg).not.toBeNull()
+    // At least one chevron per row.
+    expect(svgs.length).toBeGreaterThanOrEqual(ALL_V2_EVAL_TYPES.length)
   })
 })
 

@@ -1,14 +1,31 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest"
 import { render } from "@testing-library/svelte"
-import EvalTypeIcon from "./eval_type_icon.svelte"
-import EvalTypeRow from "./select/eval_type_row.svelte"
+import EvalTypeIcon, { getEvalTypeIconComponent } from "./eval_type_icon.svelte"
+import OptionList from "$lib/ui/option_list.svelte"
 import EvalTypeIntro from "./eval_type_intro.svelte"
 import {
   ALL_V2_EVAL_TYPES,
   getV2EvalTypeMetadata,
   type V2EvalType,
 } from "$lib/utils/eval_types/registry"
+
+function renderEvalTypeOptionList(evalType: V2EvalType) {
+  const metadata = getV2EvalTypeMetadata(evalType)
+  return render(OptionList, {
+    props: {
+      options: [
+        {
+          id: evalType,
+          name: metadata.label,
+          description: metadata.description,
+          icon: getEvalTypeIconComponent(evalType),
+        },
+      ],
+      select_option: () => {},
+    },
+  })
+}
 
 describe("EvalTypeIcon", () => {
   it("renders a non-empty SVG for every V2 eval type", () => {
@@ -60,26 +77,18 @@ describe("EvalTypeIcon", () => {
   })
 })
 
-describe("EvalTypeIcon renders in eval_type_row", () => {
-  it("every eval type row renders an SVG icon (no empty squares)", () => {
+describe("EvalTypeIcon renders in the option list", () => {
+  it("every eval type option renders an SVG icon (no empty squares)", () => {
     for (const evalType of ALL_V2_EVAL_TYPES) {
-      const metadata = getV2EvalTypeMetadata(evalType)
-      const { container } = render(EvalTypeRow, {
-        props: { evalType, metadata },
-      })
-      const svgs = container.querySelectorAll("svg")
-      expect(
-        svgs.length,
-        `${evalType} row should have SVG icons`,
-      ).toBeGreaterThanOrEqual(1)
-      const iconSvg = container.querySelector('[aria-hidden="true"] svg')
+      const { container } = renderEvalTypeOptionList(evalType)
+      const iconSvg = container.querySelector(".option-icon svg")
       expect(
         iconSvg,
-        `${evalType} row should have an icon SVG inside aria-hidden container`,
+        `${evalType} option should have an icon SVG`,
       ).not.toBeNull()
       expect(
         iconSvg!.innerHTML.trim().length,
-        `${evalType} row icon SVG should not be empty`,
+        `${evalType} option icon SVG should not be empty`,
       ).toBeGreaterThan(0)
     }
   })
@@ -111,16 +120,14 @@ describe("EvalTypeIcon renders in eval_type_intro", () => {
   })
 })
 
-describe("Same icon in row and intro", () => {
-  it("renders the same icon SVG for a given type in both row and intro", () => {
+describe("Same icon in option list and intro", () => {
+  it("renders the same icon SVG for a given type in both option list and intro", () => {
     for (const evalType of ALL_V2_EVAL_TYPES) {
       const metadata = getV2EvalTypeMetadata(evalType)
 
-      const { container: rowContainer } = render(EvalTypeRow, {
-        props: { evalType, metadata },
-      })
-      const rowIcon = rowContainer.querySelector('[aria-hidden="true"] svg')
-      expect(rowIcon, `${evalType} row icon`).not.toBeNull()
+      const { container: optionContainer } = renderEvalTypeOptionList(evalType)
+      const optionIcon = optionContainer.querySelector(".option-icon svg")
+      expect(optionIcon, `${evalType} option icon`).not.toBeNull()
 
       const { container: introContainer } = render(EvalTypeIntro, {
         props: { evalType, metadata },
@@ -129,8 +136,8 @@ describe("Same icon in row and intro", () => {
       expect(introIcon, `${evalType} intro icon`).not.toBeNull()
 
       expect(
-        rowIcon!.innerHTML,
-        `${evalType} should have the same icon in row and intro`,
+        optionIcon!.innerHTML,
+        `${evalType} should have the same icon in option list and intro`,
       ).toBe(introIcon!.innerHTML)
     }
   })

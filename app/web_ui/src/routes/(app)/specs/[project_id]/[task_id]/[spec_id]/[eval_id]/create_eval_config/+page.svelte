@@ -3,14 +3,11 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { agentInfo } from "$lib/agent"
-  import {
-    ALL_V2_EVAL_TYPES,
-    getV2EvalTypeMetadata,
-    type V2EvalType,
-  } from "$lib/utils/eval_types/registry"
+  import { type V2EvalType } from "$lib/utils/eval_types/registry"
   import { buildCreateEvalBreadcrumbs } from "./breadcrumbs"
   import { getCreateEvalLayoutContext } from "./context"
-  import EvalTypeRow from "$lib/components/eval_types/select/eval_type_row.svelte"
+  import OptionList from "$lib/ui/option_list.svelte"
+  import { buildEvalTypeOptions } from "$lib/components/eval_types/select/eval_type_options"
 
   const ctx = getCreateEvalLayoutContext()
 
@@ -42,7 +39,7 @@
     $page.url.searchParams.get("next_page"),
   )
 
-  const recommendedType = ALL_V2_EVAL_TYPES[0]
+  const eval_type_options = buildEvalTypeOptions()
 
   function preserved_query_string(): string {
     const params = new URLSearchParams()
@@ -58,6 +55,10 @@
     const base = $page.url.pathname.replace(/\/$/, "")
     goto(`${base}/${type}${preserved_query_string()}`)
   }
+
+  function select_option(id: string) {
+    select_v2_type(id as V2EvalType)
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -67,17 +68,7 @@
     {breadcrumbs}
   >
     <div class="pt-6 max-w-3xl">
-      <div class="flex flex-col gap-2">
-        {#each ALL_V2_EVAL_TYPES as evalType}
-          {@const metadata = getV2EvalTypeMetadata(evalType)}
-          <EvalTypeRow
-            {evalType}
-            {metadata}
-            recommended={evalType === recommendedType}
-            on:select={() => select_v2_type(evalType)}
-          />
-        {/each}
-      </div>
+      <OptionList options={eval_type_options} {select_option} />
     </div>
   </AppPage>
 </div>

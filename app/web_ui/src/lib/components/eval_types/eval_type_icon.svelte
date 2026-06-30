@@ -1,4 +1,5 @@
-<script lang="ts">
+<script context="module" lang="ts">
+  import type { ComponentType } from "svelte"
   import type { V2EvalType } from "$lib/utils/eval_types/registry"
 
   import ExactMatchIcon from "$lib/ui/icons/eval_types/exact_match_icon.svelte"
@@ -10,9 +11,7 @@
   import LlmJudgeIcon from "$lib/ui/icons/eval_types/llm_judge_icon.svelte"
   import CodeEvalIcon from "$lib/ui/icons/eval_types/code_eval_icon.svelte"
 
-  export let evalType: V2EvalType
-
-  const iconComponents: Record<V2EvalType, typeof ExactMatchIcon> = {
+  const iconComponents: Record<V2EvalType, ComponentType> = {
     exact_match: ExactMatchIcon,
     pattern_match: PatternMatchIcon,
     contains: ContainsIcon,
@@ -22,6 +21,16 @@
     llm_judge: LlmJudgeIcon,
     code_eval: CodeEvalIcon,
   }
+
+  export function getEvalTypeIconComponent(
+    evalType: V2EvalType,
+  ): ComponentType {
+    return iconComponents[evalType]
+  }
+</script>
+
+<script lang="ts">
+  export let evalType: V2EvalType
 
   $: iconComponent = iconComponents[evalType]
 </script>

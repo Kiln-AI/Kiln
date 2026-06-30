@@ -385,7 +385,7 @@ describe("create_eval_config picker page", () => {
 
   it("renders all eval types as rows in a single list", async () => {
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     expect(rows.length).toBe(ALL_V2_EVAL_TYPES.length)
   })
 
@@ -416,19 +416,19 @@ describe("create_eval_config picker page", () => {
     )
   })
 
-  it("recommended item is first and rendered with emphasis", async () => {
+  it("recommended item is first and shows the Recommended badge", async () => {
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     const firstRow = rows[0]
     expect(firstRow.textContent).toContain("LLM as Judge")
     expect(firstRow.textContent).toContain("Recommended")
-    expect(firstRow.classList.contains("border-2")).toBe(true)
-    expect(firstRow.classList.contains("bg-base-200")).toBe(true)
+    const badge = firstRow.querySelector(".badge-primary")
+    expect(badge?.textContent).toContain("Recommended")
   })
 
   it("recommended item is a clickable button (no Continue button)", async () => {
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     const firstRow = rows[0]
     expect(firstRow.tagName).toBe("BUTTON")
     expect(firstRow.textContent).not.toContain("Continue")
@@ -436,7 +436,7 @@ describe("create_eval_config picker page", () => {
 
   it("every row has a structurally right-aligned chevron (flex-none last child of w-full flex row)", async () => {
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
       const flexRow = row.querySelector(".flex.w-full")
@@ -454,7 +454,7 @@ describe("create_eval_config picker page", () => {
 
   it("navigates to llm_judge on recommended row click", async () => {
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     await fireEvent.click(rows[0])
     await tick()
 
@@ -465,7 +465,7 @@ describe("create_eval_config picker page", () => {
 
   it("navigates to type on list row click", async () => {
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     expect(rows.length).toBe(ALL_V2_EVAL_TYPES.length)
     await fireEvent.click(rows[1])
     await tick()
@@ -489,7 +489,7 @@ describe("create_eval_config picker page", () => {
     })
 
     const { container } = await renderPickerPage()
-    const rows = container.querySelectorAll('[data-testid="eval-type-row"]')
+    const rows = container.querySelectorAll("button.card")
     await fireEvent.click(rows[0])
     await tick()
 
