@@ -884,19 +884,12 @@
     {#if queuedMessage}
       <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
         <div
-          class="rounded-xl border border-base-content/10 bg-base-200 px-3 py-2.5"
+          class="rounded-xl border border-base-content/10 bg-base-200 py-2.5"
           in:fly={{ y: 8, duration: 150 }}
         >
-          <div class="flex items-start gap-2">
-            <div class="flex-1 min-w-0">
-              <div class="text-xs text-base-content/50 mb-1">
-                Queued · sends as soon as possible
-              </div>
-              <div
-                class="text-sm whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
-              >
-                {queuedMessage}
-              </div>
+          <div class="flex items-center justify-between gap-2 px-3">
+            <div class="text-xs text-base-content/50">
+              Queued · sends as soon as possible
             </div>
             <div class="flex items-center gap-1 shrink-0">
               <button
@@ -927,6 +920,11 @@
                 <span class="size-4 block"><ArrowUpIcon /></span>
               </button>
             </div>
+          </div>
+          <div
+            class="queued-message-scroll mt-1.5 max-h-32 overflow-y-auto px-3 text-sm whitespace-pre-wrap break-words"
+          >
+            {queuedMessage}
           </div>
         </div>
       </div>
@@ -1017,24 +1015,29 @@
 <AutoModeStopDialog bind:this={stopDialog} />
 
 <style>
-  .chat-messages-scroll::-webkit-scrollbar {
+  .chat-messages-scroll::-webkit-scrollbar,
+  .queued-message-scroll::-webkit-scrollbar {
     width: 6px;
   }
 
-  .chat-messages-scroll::-webkit-scrollbar-track {
+  .chat-messages-scroll::-webkit-scrollbar-track,
+  .queued-message-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .chat-messages-scroll::-webkit-scrollbar-thumb {
+  .chat-messages-scroll::-webkit-scrollbar-thumb,
+  .queued-message-scroll::-webkit-scrollbar-thumb {
     background-color: oklch(var(--bc) / 0.2);
     border-radius: 3px;
   }
 
-  .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+  .chat-messages-scroll::-webkit-scrollbar-thumb:hover,
+  .queued-message-scroll::-webkit-scrollbar-thumb:hover {
     background-color: oklch(var(--bc) / 0.35);
   }
 
-  .chat-messages-scroll {
+  .chat-messages-scroll,
+  .queued-message-scroll {
     scrollbar-width: thin;
     scrollbar-color: oklch(var(--bc) / 0.2) transparent;
   }
