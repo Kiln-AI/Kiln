@@ -84,6 +84,13 @@ export interface ChatSessionState extends PersistedChatSession {
    * the composer rather than as a conversation message. Runtime-only.
    */
   versionRequired: boolean
+  /**
+   * A user message typed while a turn was in flight (interactive stream or auto
+   * burst), held client-side until the turn yields — then auto-sent — or sent
+   * immediately via send-now. ``null`` when nothing is queued. A second send
+   * while one is queued appends to it. Runtime-only, not persisted.
+   */
+  queuedMessage: string | null
 }
 
 /**
@@ -96,6 +103,16 @@ export type AutoModeConsentDecision = (
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendMessage(text: string): Promise<boolean>
+  /**
+   * Send the currently queued message right now instead of waiting for the
+   * in-flight turn to end. Interactive: stops the turn (it then auto-sends on
+   * the ready transition). Auto mode: injects immediately, keeping auto mode
+   * running (the runner picks it up at the next round boundary). No-op when
+   * nothing is queued.
+   */
+  sendQueuedNow(): void
+  /** Discard the queued message without sending it. */
+  clearQueued(): void
   stop(): void
   retryLastRequest(): void
   reset(): void
@@ -168,6 +185,7 @@ export function createChatSessionStore(
     retry: null,
     upgradeNudgeVersion: null,
     versionRequired: false,
+    queuedMessage: null,
   })
 
   // Intentionally never unsubscribed — this store is a module-level singleton
@@ -317,14 +335,18 @@ export function createChatSessionStore(
     onUserMessage: appendEchoedUserMessage,
     // Idle: a burst ended but the flag stays on. Stop the working affordances;
     // the green indicator persists (it binds to autoModeOn, not autoWorking).
-    onAutoModeIdle: () =>
+    onAutoModeIdle: () => {
       combined.update((s) => ({
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
         compacting: false,
         autoWorking: false,
-      })),
+      }))
+      // The burst settled and auto mode is waiting for the user — the moment to
+      // flush a queued message (injects it, which starts the next burst).
+      maybeFlush()
+    },
     onAutoModeOff: () =>
       combined.update((s) => ({
         ...s,
@@ -572,6 +594,9 @@ export function createChatSessionStore(
           retry: null,
         }))
         setRuntimeState("ready", null)
+        // The interactive turn ended (normal completion or a Stop/abort, which
+        // streamChat reports as a finish) — flush any queued message now.
+        maybeFlush()
       },
       onError: (err) => {
         if (isStale()) return
@@ -658,7 +683,85 @@ export function createChatSessionStore(
     }
   }
 
+  // A turn is "in flight" — sending should queue rather than dispatch — when the
+  // interactive stream is active, a tool approval is open (waiting on the user
+  // mid-turn), or a server-owned auto burst is running / re-attaching.
+  function turnActive(): boolean {
+    if (status !== "ready") return true
+    if (get(combined).toolApprovalWaiter) return true
+    if (get(autoRunStore.working)) return true
+    if (get(autoRunStore.reconnecting)) return true
+    return false
+  }
+
+  // Hold a message client-side while a turn is in flight. A second send while one
+  // is queued appends (blank line between) so the coalesced text sends as one.
+  function enqueue(text: string): void {
+    combined.update((s) => ({
+      ...s,
+      queuedMessage: s.queuedMessage ? `${s.queuedMessage}\n\n${text}` : text,
+    }))
+  }
+
+  function clearQueued(): void {
+    combined.update((s) => ({ ...s, queuedMessage: null }))
+  }
+
+  // Auto-send the queued message once the turn has yielded. Guards on
+  // ``turnActive`` (re-check: a flush hook can fire mid-transition) and
+  // ``versionRequired`` (sending would just be rejected). Clears the queue
+  // before dispatching so a re-entrant flush can't double-send.
+  function maybeFlush(): void {
+    const queued = get(combined).queuedMessage
+    if (!queued) return
+    if (turnActive()) return
+    if (get(combined).versionRequired) return
+    clearQueued()
+    void actuallySend(queued)
+  }
+
+  // Send the queued message right away instead of waiting for the turn to end.
+  function sendQueuedNow(): void {
+    const queued = get(combined).queuedMessage
+    if (!queued) return
+    if (get(combined).versionRequired) return
+    // Auto mode: inject immediately and keep auto mode running — the runner
+    // picks the message up at its next round boundary (it can't interrupt a turn
+    // mid-round). Covers a live burst and the idle "waiting for you" state.
+    if (get(autoRunStore.autoModeOn) || get(autoRunStore.armed)) {
+      clearQueued()
+      void actuallySend(queued)
+      return
+    }
+    // Interactive turn in flight: terminate it. The resulting ready transition
+    // (abort → onFinish) flushes the queued message via ``maybeFlush``.
+    if (status !== "ready") {
+      stop()
+      return
+    }
+    // Nothing in flight (e.g. the turn already finished/errored): just send it.
+    clearQueued()
+    void actuallySend(queued)
+  }
+
   async function sendMessage(text: string): Promise<boolean> {
+    const trimmed = text.trim()
+    if (!trimmed) return false
+    // Queue when a turn is in flight (the composer surfaces it above the input
+    // with send-now / edit / cancel and it auto-sends when the turn yields), or
+    // whenever something is already queued so a follow-up send coalesces into
+    // the pending message rather than dispatching alongside it.
+    if (get(combined).queuedMessage !== null || turnActive()) {
+      enqueue(trimmed)
+      return true
+    }
+    return actuallySend(trimmed)
+  }
+
+  // Dispatch a message to its real transport: armed-first-send (creates the
+  // run), inject-on-send (auto flag on), or the interactive stream. Assumes no
+  // turn is in flight — callers gate on ``turnActive`` or flush on a turn ending.
+  async function actuallySend(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed) return false
     const autoOn = get(autoRunStore.autoModeOn)
@@ -793,6 +896,7 @@ export function createChatSessionStore(
       toolExecuting: false,
       showActivityIndicator: false,
       compacting: false,
+      queuedMessage: null,
     }))
     setRuntimeState("ready", null)
   }
@@ -822,6 +926,7 @@ export function createChatSessionStore(
       toolExecuting: false,
       showActivityIndicator: false,
       compacting: false,
+      queuedMessage: null,
     }))
     setRuntimeState("ready", null)
   }
@@ -1021,6 +1126,8 @@ export function createChatSessionStore(
   return {
     subscribe: combined.subscribe,
     sendMessage,
+    sendQueuedNow,
+    clearQueued,
     stop,
     retryLastRequest,
     reset,

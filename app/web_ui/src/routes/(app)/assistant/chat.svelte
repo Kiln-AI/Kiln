@@ -10,6 +10,8 @@
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
+  import EditIcon from "$lib/ui/icons/edit_icon.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import {
     chatSessionStore,
@@ -119,6 +121,9 @@
   $: contextUsage = $store.contextUsage
   $: upgradeNudgeVersion = $store.upgradeNudgeVersion
   $: versionRequired = $store.versionRequired
+  // A message typed while a turn was in flight, held client-side and surfaced
+  // above the composer with send-now / edit / cancel until it auto-sends.
+  $: queuedMessage = $store.queuedMessage
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -144,12 +149,14 @@
   // tool lines) show for BOTH the interactive client stream and a live auto
   // burst, AND during a re-attach's brief "reconnecting…" window (Phase 9) so a
   // reattaching conversation doesn't look done/idle before liveness is known.
-  // The input/send/Stop controls stay bound to ``isLoading`` only, so the
-  // textarea remains usable for inject-on-send while auto mode works.
+  // The composer stays usable throughout (see ``inputDisabled``) so a message
+  // typed mid-turn is queued rather than blocked.
   $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
-  // Block input entirely when the client is too old: sending would just 426
-  // again and the message would go nowhere.
-  $: inputDisabled = isLoading || versionRequired
+  // The composer stays usable while a turn is in flight so a message typed mid-
+  // turn is queued (held above the input, auto-sent when the turn yields) rather
+  // than blocked. Only a too-old client disables it entirely — sending would
+  // just 426 again and the message would go nowhere.
+  $: inputDisabled = versionRequired
 
   let prevIsLoading = false
   $: {
@@ -374,7 +381,8 @@
   function handleTextareaKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      if (!isLoading && input.trim()) handleSubmit()
+      // No isLoading guard: submitting mid-turn queues the message.
+      if (input.trim()) handleSubmit()
     }
   }
 
@@ -405,6 +413,28 @@
     store.stop()
   }
 
+  function sendQueuedNow() {
+    store.sendQueuedNow()
+  }
+
+  function cancelQueued() {
+    store.clearQueued()
+  }
+
+  // Pull the queued message back into the composer to edit it (merging with any
+  // in-progress text), then clear the queue so re-sending doesn't double it up.
+  function editQueued() {
+    const queued = $store.queuedMessage
+    if (!queued) return
+    const draft = input.trim()
+    input = draft ? `${queued}\n\n${draft}` : queued
+    store.clearQueued()
+    tick().then(() => {
+      adjustTextareaHeight()
+      textareaRef?.focus({ preventScroll: true })
+    })
+  }
+
   function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
     store.loadSession(
       e.detail.messages,
@@ -432,7 +462,8 @@
   async function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
-    if (!text || isLoading) return
+    // No isLoading guard: the store queues when a turn is in flight.
+    if (!text) return
     const sent = await store.sendMessage(text)
     if (!sent) return
     input = ""
@@ -820,6 +851,57 @@
       </div>
     {/if}
 
+    {#if queuedMessage}
+      <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
+        <div
+          class="rounded-xl border border-base-content/10 bg-base-200 px-3 py-2.5"
+          in:fly={{ y: 8, duration: 150 }}
+        >
+          <div class="flex items-start gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="text-xs text-base-content/50 mb-1">
+                Queued · sends when the assistant finishes
+              </div>
+              <div
+                class="text-sm whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
+              >
+                {queuedMessage}
+              </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-base-content/80"
+                on:click={editQueued}
+                title="Edit"
+                aria-label="Edit queued message"
+              >
+                <span class="size-4 block"><EditIcon /></span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error"
+                on:click={cancelQueued}
+                title="Discard"
+                aria-label="Discard queued message"
+              >
+                <span class="size-4 block"><TrashIcon /></span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-circle btn-primary"
+                on:click={sendQueuedNow}
+                title="Send now"
+                aria-label="Send queued message now"
+              >
+                <span class="size-4 block"><ArrowUpIcon /></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     <form
       class="flex-none relative w-full md:max-w-3xl md:mx-auto px-1 pt-2"
       on:submit|preventDefault={handleSubmit}
@@ -835,7 +917,7 @@
         on:input={() => adjustTextareaHeight()}
         on:keydown={handleTextareaKeydown}
       />
-      {#if isLoading}
+      {#if isLoading && !input.trim()}
         <button
           type="button"
           class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-neutral"

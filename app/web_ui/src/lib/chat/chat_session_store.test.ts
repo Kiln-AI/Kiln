@@ -192,7 +192,7 @@ describe("createChatSessionStore", () => {
       expect(get(store).status).toBe("ready")
     })
 
-    it("guards against sending when not ready", async () => {
+    it("queues a second message sent while a turn is in flight instead of dispatching it", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       streamChatMock.mockImplementation(noopStreamChat)
@@ -202,8 +202,11 @@ describe("createChatSessionStore", () => {
       expect(get(store).status).toBe("submitted")
 
       await store.sendMessage("second")
+      // The second send is held client-side: no new conversation messages, no
+      // second stream — just the queued buffer.
       expect(get(store).messages).toHaveLength(2)
       expect(streamChatMock).toHaveBeenCalledTimes(1)
+      expect(get(store).queuedMessage).toBe("second")
     })
 
     it("transitions to streaming when onAssistantMessage is called", async () => {
@@ -653,6 +656,180 @@ describe("createChatSessionStore", () => {
       expect(sent).toBe(false)
       const errorMsg = get(store).messages.find((m) => m.role === "error")
       expect(errorMsg?.content).toBe("Couldn't send the message: Run is gone")
+    })
+  })
+
+  describe("queued messages", () => {
+    // Reach into the typed-erased fake's writable stores to simulate burst state.
+    function workingStore(fake: unknown): Writable<boolean> {
+      return (fake as { working: Writable<boolean> }).working
+    }
+
+    function bindSink(fake: unknown): {
+      get: () => import("./auto_run_store").AutoRunChatSink | null
+    } {
+      let sink: import("./auto_run_store").AutoRunChatSink | null = null
+      ;(
+        fake as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        sink = s
+      }
+      return { get: () => sink }
+    }
+
+    it("appends a second queued message to the first instead of replacing it", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first") // status -> submitted
+      await store.sendMessage("second")
+      await store.sendMessage("third")
+
+      expect(get(store).queuedMessage).toBe("second\n\nthird")
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("coalesces a new send into an already-queued message even after the turn ends", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      // The turn errors, leaving the message queued (not auto-flushed on error).
+      capture.options!.onError(new Error("boom"))
+      expect(get(store).status).toBe("ready")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      // A follow-up send appends to the pending message instead of dispatching a
+      // separate stream alongside it.
+      await store.sendMessage("more")
+      expect(get(store).queuedMessage).toBe("queued\n\nmore")
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("flushes the queued message when the interactive turn finishes", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      // Turn ends -> the queued message dispatches as a fresh stream.
+      capture.options!.onFinish()
+
+      expect(get(store).queuedMessage).toBeNull()
+      expect(streamChatMock).toHaveBeenCalledTimes(2)
+      const secondCall = streamChatMock.mock.calls[1][0] as StreamChatOptions
+      expect(secondCall.messages[0].content).toBe("queued")
+    })
+
+    it("clearQueued discards the queued message without sending", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      store.clearQueued()
+      expect(get(store).queuedMessage).toBeNull()
+      // Still mid-turn, and only the original stream was ever dispatched.
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("sendQueuedNow stops the interactive turn so the queue flushes on finish", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      const controller = get(store).abortController
+      const abortSpy = vi.spyOn(controller!, "abort")
+
+      store.sendQueuedNow()
+      // Interactive send-now terminates the turn; streamChat reports the abort
+      // as a finish, which flushes the queued message.
+      expect(abortSpy).toHaveBeenCalled()
+      capture.options!.onFinish()
+      expect(get(store).queuedMessage).toBeNull()
+      expect(streamChatMock).toHaveBeenCalledTimes(2)
+    })
+
+    it("flushes a queued message by injecting when an auto burst goes idle", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      // A burst is running -> the message queues rather than injecting now.
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("while working")
+      expect(inject).not.toHaveBeenCalled()
+      expect(get(store).queuedMessage).toBe("while working")
+
+      // Burst settles -> the queued message injects (starting the next burst).
+      workingStore(fakeAutoRun).set(false)
+      sink.get()!.onAutoModeIdle("done")
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("while working")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("sendQueuedNow injects immediately in auto mode without waiting for idle", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("urgent")
+      expect(inject).not.toHaveBeenCalled()
+
+      store.sendQueuedNow()
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("urgent")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("clears the queue on reset", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      store.reset()
+      expect(get(store).queuedMessage).toBeNull()
     })
   })
 
