@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Annotated, Literal
 
@@ -784,12 +785,6 @@ async def generate_input_preview_samples(
         guidance=input_combined_guidance,
     )
 
-    task_input = DataGenSampleTaskInput.from_task(
-        task=task,
-        topic=[],
-        num_samples=num_samples,
-    )
-
     rcp = run_config_properties.model_copy()
     rcp.prompt_id = PromptGenerators.SIMPLE
     skills = load_skills_for_task(sample_task, rcp)
@@ -799,29 +794,46 @@ async def generate_input_preview_samples(
         base_adapter_config=AdapterConfig(skills=skills),
     )
 
-    samples_run = await adapter.invoke(task_input.model_dump())
+    # Generate each preview sample with its own single-shot call (num_samples=1)
+    # fanned out in parallel, rather than asking one call for all `num_samples`.
+    # Independent draws better match how runtime SDG produces a single input per
+    # call and avoid the model collapsing a batch toward a single theme.
+    single_sample_input = DataGenSampleTaskInput.from_task(
+        task=task,
+        topic=[],
+        num_samples=1,
+    ).model_dump()
 
-    if not samples_run.output or not samples_run.output.output:
-        raise HTTPException(
-            status_code=500, detail="Failed to generate preview samples"
-        )
-
-    try:
-        parsed = json.loads(samples_run.output.output)
-        generated_samples = parsed.get("generated_samples", [])
-    except (json.JSONDecodeError, AttributeError):
-        raise HTTPException(status_code=500, detail="Failed to parse generated samples")
-    if not isinstance(generated_samples, list):
-        raise HTTPException(status_code=500, detail="Failed to parse generated samples")
+    results = await asyncio.gather(
+        *(adapter.invoke(single_sample_input) for _ in range(num_samples)),
+        return_exceptions=True,
+    )
 
     preview_samples: list[GuidePreviewSample] = []
-    for sample_input in generated_samples[:num_samples]:
+    for result in results:
+        if isinstance(result, BaseException):
+            continue
+        if not result.output or not result.output.output:
+            continue
+        try:
+            parsed = json.loads(result.output.output)
+            generated_samples = parsed.get("generated_samples", [])
+        except (json.JSONDecodeError, AttributeError):
+            continue
+        if not isinstance(generated_samples, list) or not generated_samples:
+            continue
+        sample_input = generated_samples[0]
         sample_input_str = (
             json.dumps(sample_input)
             if isinstance(sample_input, (dict, list))
             else str(sample_input)
         )
         preview_samples.append(GuidePreviewSample(input=sample_input_str))
+
+    if not preview_samples:
+        raise HTTPException(
+            status_code=500, detail="Failed to generate preview samples"
+        )
 
     return preview_samples
 

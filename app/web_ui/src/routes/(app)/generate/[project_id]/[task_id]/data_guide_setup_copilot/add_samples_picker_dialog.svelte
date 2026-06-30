@@ -10,8 +10,10 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import OptionList from "$lib/ui/option_list.svelte"
+  import type { OptionListItem } from "$lib/ui/option_list_types"
   import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
-  import FileIcon from "$lib/ui/icons/file_icon.svelte"
+  import DocumentIcon from "$lib/ui/icons/document_icon.svelte"
   import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
   import EditIcon from "$lib/ui/icons/edit_icon.svelte"
   import CsvIcon from "$lib/ui/icons/csv_icon.svelte"
@@ -40,6 +42,53 @@
     dialog?.close()
     dispatch("pick", { source })
   }
+
+  function select_source(id: string) {
+    pick(id as SampleSource)
+  }
+
+  $: source_options = [
+    ...(!is_structured_task
+      ? [
+          {
+            id: "upload",
+            name: "Upload Documents",
+            description: "Import documents from your computer.",
+            icon: UploadIcon,
+          },
+          {
+            id: "library",
+            name: "Document Library",
+            description:
+              "Pick from documents already uploaded to this project.",
+            icon: DocumentIcon,
+          },
+        ]
+      : []),
+    {
+      id: "dataset",
+      name: "Dataset",
+      description: "Pick examples already in your Kiln Dataset.",
+      icon: DatabaseIcon,
+    },
+    {
+      id: "csv",
+      name: "CSV Import",
+      description: "Import a CSV file to bulk-add examples.",
+      icon: CsvIcon,
+    },
+    ...(is_structured_task
+      ? [
+          {
+            id: "manual_structured",
+            name: "Manual Entry",
+            description:
+              "Write an example input by hand using your task's input schema.",
+            icon: EditIcon,
+          },
+        ]
+      : []),
+  ] satisfies OptionListItem[]
 </script>
 
 <Dialog
@@ -48,137 +97,5 @@
   bind:this={dialog}
   width="wide"
 >
-  <div class="flex flex-col gap-2">
-    {#if !is_structured_task}
-      <button type="button" class="source-row" on:click={() => pick("upload")}>
-        <div class="source-icon bg-blue-50 text-[#628BD9]">
-          <UploadIcon />
-        </div>
-        <div class="source-body">
-          <div class="source-title">Upload Documents</div>
-          <div class="source-desc">Import documents from your computer.</div>
-        </div>
-        <span class="source-chev">›</span>
-      </button>
-
-      <button type="button" class="source-row" on:click={() => pick("library")}>
-        <div class="source-icon bg-blue-50 text-[#628BD9]">
-          <FileIcon kind="document" />
-        </div>
-        <div class="source-body">
-          <div class="source-title">Document Library</div>
-          <div class="source-desc">
-            Pick from documents already uploaded to this project.
-          </div>
-        </div>
-        <span class="source-chev">›</span>
-      </button>
-    {/if}
-
-    <button type="button" class="source-row" on:click={() => pick("dataset")}>
-      <div class="source-icon bg-blue-50 text-[#628BD9]">
-        <DatabaseIcon />
-      </div>
-      <div class="source-body">
-        <div class="source-title">Dataset</div>
-        <div class="source-desc">
-          Pick examples already in your Kiln Dataset.
-        </div>
-      </div>
-      <span class="source-chev">›</span>
-    </button>
-
-    <button type="button" class="source-row" on:click={() => pick("csv")}>
-      <div class="source-icon bg-blue-50 text-[#628BD9]">
-        <CsvIcon />
-      </div>
-      <div class="source-body">
-        <div class="source-title">CSV Import</div>
-        <div class="source-desc">Import a CSV file to bulk-add examples.</div>
-      </div>
-      <span class="source-chev">›</span>
-    </button>
-
-    {#if is_structured_task}
-      <button
-        type="button"
-        class="source-row"
-        on:click={() => pick("manual_structured")}
-      >
-        <div class="source-icon bg-blue-50 text-[#628BD9]">
-          <EditIcon />
-        </div>
-        <div class="source-body">
-          <div class="source-title">Manual Entry</div>
-          <div class="source-desc">
-            Write an example input by hand using your task's input schema.
-          </div>
-        </div>
-        <span class="source-chev">›</span>
-      </button>
-    {/if}
-  </div>
+  <OptionList options={source_options} select_option={select_source} />
 </Dialog>
-
-<style>
-  .source-row {
-    width: 100%;
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    padding: 14px 16px;
-    border-radius: 12px;
-    border: 1px solid #ececec;
-    background: #fff;
-    text-align: left;
-    transition:
-      border-color 120ms,
-      background-color 120ms;
-  }
-  .source-row:hover {
-    border-color: rgba(65, 92, 245, 0.4);
-    background: #fafbff;
-  }
-  .source-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding: 9px;
-  }
-  .source-icon :global(svg) {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-  .source-body {
-    flex: 1;
-    min-width: 0;
-  }
-  .source-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #131517;
-    line-height: 1.25;
-  }
-  .source-desc {
-    font-size: 13px;
-    color: #5a5a5a;
-    margin-top: 3px;
-    line-height: 1.35;
-  }
-  .source-chev {
-    color: #bdbdbd;
-    font-size: 24px;
-    line-height: 1;
-    margin-top: 8px;
-    flex-shrink: 0;
-    transition: color 120ms;
-  }
-  .source-row:hover .source-chev {
-    color: #415cf5;
-  }
-</style>
