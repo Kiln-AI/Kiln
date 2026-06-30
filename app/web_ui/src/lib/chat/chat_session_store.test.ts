@@ -883,6 +883,32 @@ describe("createChatSessionStore", () => {
       expect(inject).not.toHaveBeenCalled()
     })
 
+    it("restores the queued message if a flush dispatch is rejected (no silent data loss)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      // The inject fails — the queued text must not vanish.
+      const inject = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "run is gone" })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("keep me")
+      expect(get(store).queuedMessage).toBe("keep me")
+
+      // Round boundary triggers a flush that fails to dispatch.
+      sink.get()!.onToolExecutionEnd(1)
+      expect(inject).toHaveBeenCalledTimes(1)
+      // Cleared optimistically, then restored once the failed send resolves.
+      await vi.waitFor(() => expect(get(store).queuedMessage).toBe("keep me"))
+    })
+
     it("clears the queue on reset", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()

@@ -716,19 +716,34 @@ export function createChatSessionStore(
     combined.update((s) => ({ ...s, queuedMessage: null }))
   }
 
+  // Dispatch a queued message: clear it, then send. If the send is rejected
+  // (declined consent, a failed auto-mode injection, an armed enable already
+  // pending, …) restore it to the FRONT of whatever has queued since, so a
+  // failed/declined send never silently drops the user's typed text.
+  async function dispatchQueued(queued: string): Promise<void> {
+    clearQueued()
+    const sent = await actuallySend(queued)
+    if (!sent) {
+      combined.update((s) => ({
+        ...s,
+        queuedMessage: s.queuedMessage
+          ? `${queued}\n\n${s.queuedMessage}`
+          : queued,
+      }))
+    }
+  }
+
   // Auto-send the queued message at the next safe point: an interactive turn
   // finishing, or — in auto mode — a round boundary / the burst going idle.
   // Guards on ``interactiveTurnActive`` (never flush mid interactive turn; a
   // flush hook can fire mid-transition) and ``versionRequired`` (sending would
-  // just be rejected). Clears the queue before dispatching so a re-entrant flush
-  // can't double-send.
+  // just be rejected).
   function maybeFlush(): void {
     const queued = get(combined).queuedMessage
     if (!queued) return
     if (interactiveTurnActive()) return
     if (get(combined).versionRequired) return
-    clearQueued()
-    void actuallySend(queued)
+    void dispatchQueued(queued)
   }
 
   // Send the queued message right away instead of waiting for the turn to end.
@@ -741,8 +756,7 @@ export function createChatSessionStore(
     // dispatch immediately, so a queued message here only exists if auto turned
     // on after it was queued interactively; inject it now.)
     if (get(autoRunStore.autoModeOn) || get(autoRunStore.armed)) {
-      clearQueued()
-      void actuallySend(queued)
+      void dispatchQueued(queued)
       return
     }
     // Interactive turn in flight: terminate it. The resulting ready transition
@@ -751,9 +765,13 @@ export function createChatSessionStore(
       stop()
       return
     }
+    // A tool approval can be open while ``status`` is "ready" (a pending-tool
+    // continuation handed off from a graceful auto stop). That's an in-flight
+    // turn too — leave the message queued rather than starting a competing
+    // request; it flushes when that continuation yields.
+    if (get(combined).toolApprovalWaiter) return
     // Nothing in flight (e.g. the turn already finished/errored): just send it.
-    clearQueued()
-    void actuallySend(queued)
+    void dispatchQueued(queued)
   }
 
   async function sendMessage(text: string): Promise<boolean> {
