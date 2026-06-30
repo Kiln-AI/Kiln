@@ -1757,6 +1757,56 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     expect(get(store).messages).toEqual(hydratedMessages)
   })
 
+  it("keeps the optimistic transcript when the resolved leaf is already rendered (injected-message lag)", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+
+    const streaming = await import("./streaming_chat")
+    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_now")
+
+    // The run resolves to t_now, but the client already rendered t_now plus a
+    // just-injected message + its in-flight response — current_trace_id lags one
+    // round behind the optimistic transcript.
+    const resolve = vi.fn().mockResolvedValue({
+      run_id: "ar_live",
+      current_trace_id: "t_now",
+      status: "running",
+    })
+    const attach = vi.fn()
+    const beginReconnect = vi.fn()
+    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
+
+    const optimistic: ChatMessage[] = [
+      { id: "a0", role: "assistant", parts: [], traceId: "t_now" },
+      { id: "u_inj", role: "user", content: "my name is bobby" },
+      {
+        id: "a_resp",
+        role: "assistant",
+        parts: [{ type: "text", text: "Hey Bobby!" }],
+      },
+    ]
+    // Seed the restored-from-sessionStorage transcript.
+    storage.store["resync_lag"] = JSON.stringify({
+      messages: optimistic,
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+      contextUsage: null,
+    })
+
+    const store = createChatSessionStore("resync_lag", auto)
+    await store.resyncOnLoad()
+
+    // The stale snapshot was neither fetched nor applied — the optimistic
+    // transcript (with the just-sent message + response) is preserved...
+    expect(mockClientGet).not.toHaveBeenCalled()
+    expect(mockHydrate).not.toHaveBeenCalled()
+    expect(get(store).messages).toEqual(optimistic)
+    // ...and we still re-attach the live run.
+    expect(beginReconnect).toHaveBeenCalled()
+    expect(attach).toHaveBeenCalledWith("ar_live", true)
+  })
+
   it("attaches even when snapshot hydration returns a structured error (CR Moderate item 1)", async () => {
     // resolve() already proved the run is live; a snapshot error/empty response
     // must NOT short-circuit — fall through to attach so the indicator + live

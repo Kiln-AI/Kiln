@@ -381,7 +381,14 @@ export function createAutoRunStore(): AutoRunStore {
       // Any event other than another retry means the retry window is over (the
       // round recovered, or the burst settled idle/off) — clear the affordance.
       if (event.type !== "kiln-chat-retry") retry.set(null)
-      if (handleControlEvent(event)) return
+      if (handleControlEvent(event)) {
+        // A ``user-message`` echo opens a fresh assistant turn (the sink calls
+        // beginAssistantTurn). Reset the processor so the prior turn's
+        // accumulated parts aren't re-flushed into the new turn (which would
+        // duplicate the previous round's text + tools into it).
+        if (event.type === "user-message") processor.reset()
+        return
+      }
       processor.handleEvent(event)
     }
 

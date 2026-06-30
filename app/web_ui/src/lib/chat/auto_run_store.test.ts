@@ -606,6 +606,35 @@ describe("auto_run_store", () => {
     expect(get(store.autoModeOn)).toBe(true)
   })
 
+  it("resets accumulated parts on a user-message echo so the prior round isn't duplicated into the new turn", () => {
+    store.attach("ar_dup")
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_dup" })
+
+    // Round 1 renders some assistant text into the current turn.
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "Round one." })
+    source.message({ type: "text-end" })
+
+    // An injected user message opens a fresh assistant turn (beginAssistantTurn).
+    source.message({ type: "user-message", content: "hi there" })
+
+    // Round 2 renders into the new turn.
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "Round two." })
+    source.message({ type: "text-end" })
+
+    const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
+    const text = (last.parts ?? [])
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("")
+    // Without the processor reset, round one's text would be re-flushed into the
+    // new turn alongside round two's.
+    expect(text).toBe("Round two.")
+    expect(text).not.toContain("Round one")
+  })
+
   it("resolve returns {run_id, current_trace_id, status} for an active run", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

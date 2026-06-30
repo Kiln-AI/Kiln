@@ -400,6 +400,21 @@ export class StreamEventProcessor {
     }
   }
 
+  /**
+   * Drop all accumulated parts so the next events render into a FRESH assistant
+   * turn. Call this when a new assistant message has been opened mid-stream
+   * (e.g. an injected user message during an auto burst calls
+   * ``beginAssistantTurn``). Without it, ``flushAssistant`` keeps re-writing the
+   * prior turn's parts into the newly opened message, duplicating it.
+   */
+  reset(): void {
+    this.partOrder = []
+    this.textBlocks.clear()
+    this.toolMap.clear()
+    this.toolInputBuffer.clear()
+    this.currentTextId = null
+  }
+
   private nextSlotId(): string {
     this.slotIdCounter += 1
     return `slot-${this.slotIdCounter}`

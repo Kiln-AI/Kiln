@@ -1000,37 +1000,51 @@ export function createChatSessionStore(
     // clears it once the stream is established; off/idle/error paths also clear it.
     autoRunStore.beginReconnect()
 
-    // Hydrate from the run's CURRENT leaf so the user catches up on rounds that
-    // completed while the tab was gone, then attach for live events + buffer
-    // replay + the indicator/working state.
-    try {
-      const { data: snapshot, error } = await client.GET(
-        "/api/chat/sessions/{session_id}",
-        { params: { path: { session_id: resolved.current_trace_id } } },
-      )
-      // Switched conversations while the snapshot was fetching: bail before the
-      // destructive loadSession() so we don't overwrite the now-current session.
-      if (!isStillCurrent()) return
-      // A structured error / empty snapshot must NOT short-circuit the attach:
-      // resolve() already proved the run is live, so fall through to attach on
-      // the restored (stale) view — same as the thrown-exception fallback below.
-      // Returning here would leave the conversation looking dead (no indicator,
-      // no live stream) in the snapshot-error case while the throw case
-      // correctly re-attaches.
-      if (!error && snapshot) {
-        const {
-          messages,
-          continuationTraceId: traceId,
-          contextUsage,
-        } = hydrateSessionFromSnapshot(snapshot)
-        // loadSession detaches any prior observer, sets the messages + trace id,
-        // and resets runtime state — identical to the history-restore apply path.
-        loadSession(messages, traceId, contextUsage)
+    // Only hydrate from the run's CURRENT leaf when it's a round the client
+    // hasn't rendered yet — a genuine catch-up after the tab was away. If
+    // ``current_trace_id`` is already present in the restored transcript, the
+    // run's registered leaf is BEHIND our optimistic state, which happens right
+    // after a message is injected mid-burst: it's echoed + persisted locally,
+    // but ``current_trace_id`` only advances to the round that incorporates it
+    // one round later. Hydrating would drop that just-sent message (and its
+    // in-flight response) until a full History reload — so skip it and just
+    // re-attach; the live stream + buffer replay reconcile the in-flight round.
+    const clientHasLeaf = get(persisted).messages.some(
+      (m) => m.traceId === resolved.current_trace_id,
+    )
+    if (!clientHasLeaf) {
+      // Hydrate from the current leaf so the user catches up on rounds that
+      // completed while the tab was gone, then attach for live events + buffer
+      // replay + the indicator/working state.
+      try {
+        const { data: snapshot, error } = await client.GET(
+          "/api/chat/sessions/{session_id}",
+          { params: { path: { session_id: resolved.current_trace_id } } },
+        )
+        // Switched conversations while the snapshot was fetching: bail before the
+        // destructive loadSession() so we don't overwrite the now-current session.
+        if (!isStillCurrent()) return
+        // A structured error / empty snapshot must NOT short-circuit the attach:
+        // resolve() already proved the run is live, so fall through to attach on
+        // the restored (stale) view — same as the thrown-exception fallback below.
+        // Returning here would leave the conversation looking dead (no indicator,
+        // no live stream) in the snapshot-error case while the throw case
+        // correctly re-attaches.
+        if (!error && snapshot) {
+          const {
+            messages,
+            continuationTraceId: traceId,
+            contextUsage,
+          } = hydrateSessionFromSnapshot(snapshot)
+          // loadSession detaches any prior observer, sets the messages + trace
+          // id, and resets runtime state — identical to the history-restore path.
+          loadSession(messages, traceId, contextUsage)
+        }
+      } catch {
+        // Hydration failed (network/parse). Fall back: still attach so the user
+        // at least gets the live indicator + events on the restored (stale) view.
+        if (!isStillCurrent()) return
       }
-    } catch {
-      // Hydration failed (network/parse). Fall back: still attach so the user at
-      // least gets the live indicator + events on the restored (stale) view.
-      if (!isStillCurrent()) return
     }
     // Re-assert reconnecting: loadSession() detaches the prior observer, which
     // clears the flag, so re-mark it for the brief connecting window. attach()
