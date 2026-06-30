@@ -98,6 +98,7 @@
     // have been kicked off — just disarm without the explainer dialog.
     if (!get(autoModeOn)) {
       auto_run_store.disarm()
+      store.clearQueued()
       return
     }
     // Confirm + set expectations: the hard stop halts the agent immediately, but
@@ -105,6 +106,10 @@
     // running. Bail if the user backs out.
     const confirmed = await stopDialog.prompt()
     if (!confirmed) return
+
+    // Drop any pending queued message — stopping clears the queue. (detach()
+    // below is silent, so onAutoModeOff won't fire to clear it for us.)
+    store.clearQueued()
 
     // Hard stop: halt the agent completely. Abort any in-flight interactive
     // stream (e.g. a tool-call continuation or a normal streaming turn), tell the

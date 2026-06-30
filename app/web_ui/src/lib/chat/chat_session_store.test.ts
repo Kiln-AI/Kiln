@@ -665,6 +665,22 @@ describe("createChatSessionStore", () => {
       return (fake as { working: Writable<boolean> }).working
     }
 
+    // Capture the sink the store binds into the auto-run store so tests can
+    // drive the runner's control/round events (onToolExecutionEnd, idle, off).
+    function bindSink(fake: unknown): {
+      get: () => import("./auto_run_store").AutoRunChatSink | null
+    } {
+      let sink: import("./auto_run_store").AutoRunChatSink | null = null
+      ;(
+        fake as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        sink = s
+      }
+      return { get: () => sink }
+    }
+
     it("appends a second queued message to the first instead of replacing it", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
@@ -757,7 +773,34 @@ describe("createChatSessionStore", () => {
       expect(streamChatMock).toHaveBeenCalledTimes(2)
     })
 
-    it("injects immediately during an active auto burst instead of queuing or waiting for idle", async () => {
+    it("queues during an active auto burst and injects at the next round boundary", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      // A burst is running -> hold client-side (no immediate inject, so the echo
+      // doesn't jump into the transcript mid-round).
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("while working")
+      expect(inject).not.toHaveBeenCalled()
+      expect(get(store).queuedMessage).toBe("while working")
+
+      // Round boundary (a tool round finished) -> inject so it rides the next
+      // request.
+      sink.get()!.onToolExecutionEnd(1)
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("while working")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("injects immediately when auto mode is idle (no in-flight round to wait for)", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       streamChatMock.mockImplementation(noopStreamChat)
@@ -768,13 +811,76 @@ describe("createChatSessionStore", () => {
       })
       const store = createChatSessionStore(undefined, fakeAutoRun)
 
-      // A burst is running, but auto mode never holds client-side — the message
-      // is injected right away so the runner appends it to its next request.
-      workingStore(fakeAutoRun).set(true)
-      await store.sendMessage("while working")
+      // working defaults false -> auto mode is idle ("waiting for you").
+      await store.sendMessage("go")
       expect(inject).toHaveBeenCalledTimes(1)
-      expect(inject.mock.calls[0][0]).toBe("while working")
+      expect(inject.mock.calls[0][0]).toBe("go")
       expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("flushes a queued message by injecting when the burst goes idle", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("at idle")
+      expect(inject).not.toHaveBeenCalled()
+
+      workingStore(fakeAutoRun).set(false)
+      sink.get()!.onAutoModeIdle("done")
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("at idle")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("sendQueuedNow injects immediately in auto mode without waiting for a round boundary", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("urgent")
+      expect(inject).not.toHaveBeenCalled()
+
+      store.sendQueuedNow()
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("urgent")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("clears the queued message when auto mode stops (auto-mode-off)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("pending")
+      expect(get(store).queuedMessage).toBe("pending")
+
+      sink.get()!.onAutoModeOff("user_stopped")
+      expect(get(store).queuedMessage).toBeNull()
+      expect(inject).not.toHaveBeenCalled()
     })
 
     it("clears the queue on reset", async () => {

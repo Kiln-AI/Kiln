@@ -324,8 +324,13 @@ export function createChatSessionStore(
       pushInlineError(message, traceId, code),
     onToolExecutionStart: () =>
       combined.update((s) => ({ ...s, toolExecuting: true })),
-    onToolExecutionEnd: () =>
-      combined.update((s) => ({ ...s, toolExecuting: false })),
+    onToolExecutionEnd: () => {
+      combined.update((s) => ({ ...s, toolExecuting: false }))
+      // Round boundary: the runner just finished a tool round and is about to
+      // make its next request — flush a queued message so it rides that request
+      // (and its echo lands here, at the pause, rather than mid-round).
+      maybeFlush()
+    },
     onShowActivityIndicator: (show) =>
       combined.update((s) => ({ ...s, showActivityIndicator: show })),
     // Burst liveness drives the same thinking-dots/animated-icon path as the
@@ -348,12 +353,15 @@ export function createChatSessionStore(
       maybeFlush()
     },
     onAutoModeOff: () =>
+      // Auto mode stopped — drop any pending queued message (stopping clears the
+      // queue; the user can re-send if they still want it).
       combined.update((s) => ({
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
         compacting: false,
         autoWorking: false,
+        queuedMessage: null,
       })),
     onToolCallsPending: handleAutoToolCallsPending,
   })
@@ -708,10 +716,12 @@ export function createChatSessionStore(
     combined.update((s) => ({ ...s, queuedMessage: null }))
   }
 
-  // Auto-send the queued message once the interactive turn has yielded. Guards
-  // on ``interactiveTurnActive`` (re-check: a flush hook can fire mid-transition)
-  // and ``versionRequired`` (sending would just be rejected). Clears the queue
-  // before dispatching so a re-entrant flush can't double-send.
+  // Auto-send the queued message at the next safe point: an interactive turn
+  // finishing, or — in auto mode — a round boundary / the burst going idle.
+  // Guards on ``interactiveTurnActive`` (never flush mid interactive turn; a
+  // flush hook can fire mid-transition) and ``versionRequired`` (sending would
+  // just be rejected). Clears the queue before dispatching so a re-entrant flush
+  // can't double-send.
   function maybeFlush(): void {
     const queued = get(combined).queuedMessage
     if (!queued) return
@@ -749,19 +759,30 @@ export function createChatSessionStore(
   async function sendMessage(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed) return false
-    // Auto mode never holds client-side: a message is injected immediately so
-    // the runner appends it to its next request (its next round boundary),
-    // rather than waiting for the whole auto run to finish. Armed likewise
-    // creates the run now. Both are dispatched straight through.
-    if (get(autoRunStore.autoModeOn) || get(autoRunStore.armed)) {
+    // Coalesce into an existing queued message (the queue holds one squashed
+    // entry) so rapid sends accumulate rather than racing each other out.
+    if (get(combined).queuedMessage !== null) {
+      enqueue(trimmed)
+      return true
+    }
+    // Auto mode with a burst running: hold the message in the queue and inject it
+    // at the runner's next round boundary (or immediately via send-now), so it
+    // rides the next request instead of jumping into the transcript mid-round.
+    // Auto idle / armed has no in-flight round, so dispatch now (which starts a
+    // burst immediately — the "as soon as possible" path).
+    if (get(autoRunStore.autoModeOn)) {
+      if (get(autoRunStore.working)) {
+        enqueue(trimmed)
+        return true
+      }
       return actuallySend(trimmed)
     }
-    // Interactive: hold the message in the client-side queue while a turn is in
-    // flight (the composer surfaces it above the input with send-now / edit /
-    // cancel and it auto-sends when the turn yields), or whenever something is
-    // already queued so a follow-up send coalesces into the pending message
-    // rather than dispatching alongside it.
-    if (get(combined).queuedMessage !== null || interactiveTurnActive()) {
+    if (get(autoRunStore.armed)) {
+      return actuallySend(trimmed)
+    }
+    // Interactive: hold while a turn is in flight; it auto-sends when the turn
+    // yields. The composer surfaces it above the input with send-now/edit/cancel.
+    if (interactiveTurnActive()) {
       enqueue(trimmed)
       return true
     }
