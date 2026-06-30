@@ -24,6 +24,8 @@ from app.desktop.studio_server.chat.stream_session import (
     ChatStreamSession,
     ToolCallInfo,
     _format_tool_calls_pending_sse,
+    _RETRY_BACKOFF_SCHEDULE,
+    _retry_backoff_seconds,
     execute_tool_batch,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
@@ -245,6 +247,21 @@ async def test_stream_retries_exhausted_then_surfaces_error():
     assert raw.count('"type": "kiln-chat-retry"') == MAX_CHAT_RETRIES
     assert "boom" in raw  # the held-back error is surfaced on give-up
     assert len(client.bodies) == MAX_CHAT_RETRIES + 1
+
+
+def test_retry_backoff_schedule_ramps_and_caps():
+    # Each attempt's delay sits within the ±15% jitter band of its scheduled base.
+    for attempt, base in enumerate(_RETRY_BACKOFF_SCHEDULE, start=1):
+        delay = _retry_backoff_seconds(attempt)
+        assert base * 0.85 <= delay <= base * 1.15
+    # Early retries are a second or two; the tail caps at ~60s (so the full run
+    # rides out a real outage over minutes, not seconds).
+    assert _retry_backoff_seconds(1) < 2
+    assert 50 <= _retry_backoff_seconds(MAX_CHAT_RETRIES) <= 70
+    # Attempts beyond the schedule clamp to the last (capped) entry.
+    assert 50 <= _retry_backoff_seconds(MAX_CHAT_RETRIES + 5) <= 70
+    # The schedule is monotonically non-decreasing (ignoring jitter).
+    assert list(_RETRY_BACKOFF_SCHEDULE) == sorted(_RETRY_BACKOFF_SCHEDULE)
 
 
 class TestBuildOpenAIToolContinuation:

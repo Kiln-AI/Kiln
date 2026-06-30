@@ -160,21 +160,35 @@ def _format_consent_required_sse(
 # 401, 403, 404, 422) are deliberately excluded — they won't self-heal.
 RETRYABLE_UPSTREAM_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
-# A transient upstream failure is retried with bounded full-jitter exponential
-# backoff rather than surfaced immediately, on BOTH the interactive chat stream
-# and the unattended auto runner (they share ``iter_round_with_retries``). Bounded
-# so a persistent outage still settles instead of hanging forever.
-MAX_CHAT_RETRIES = 10
-_RETRY_BASE_SECONDS = 1.0
-_RETRY_MAX_SECONDS = 30.0
+# A transient upstream failure is retried with backoff rather than surfaced
+# immediately, on BOTH the interactive chat stream and the unattended auto runner
+# (they share ``iter_round_with_retries``). The schedule ramps up and caps at 60s
+# so the run rides out a real remote/network blip (~5 min total) instead of
+# burning all attempts in seconds, but still settles instead of hanging forever.
+# Per-attempt seconds, 1-based: attempt N uses index N-1, clamped to the last.
+_RETRY_BACKOFF_SCHEDULE: tuple[float, ...] = (
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    30.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+)
+MAX_CHAT_RETRIES = len(_RETRY_BACKOFF_SCHEDULE)
+# ±15% jitter so retries don't align across concurrent streams.
+_RETRY_JITTER = 0.15
 
 
 def _retry_backoff_seconds(attempt: int) -> float:
-    """Full-jitter exponential backoff. ``attempt`` is 1-based; the delay is a
-    random value in [0, min(cap, base * 2**(attempt-1))] to spread retries and
-    avoid thundering-herd alignment across concurrent streams."""
-    ceiling = min(_RETRY_MAX_SECONDS, _RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
-    return random.uniform(0, ceiling)
+    """Backoff before retry ``attempt`` (1-based), from the fixed schedule with
+    light jitter. Attempts past the schedule clamp to its last (capped) entry."""
+    idx = min(attempt, len(_RETRY_BACKOFF_SCHEDULE)) - 1
+    base = _RETRY_BACKOFF_SCHEDULE[max(idx, 0)]
+    return base * random.uniform(1.0 - _RETRY_JITTER, 1.0 + _RETRY_JITTER)
 
 
 def format_chat_retry(
