@@ -516,6 +516,13 @@
           {reference_candidate_keys}
           bind:required_reference_fields
         />
+      {:else if eval_config_type === "tool_call_check" && metadata}
+        <svelte:component
+          this={metadata.createFormComponent}
+          bind:this={v2FormComponentRef}
+          {project_id}
+          {task_id}
+        />
       {:else if metadata}
         <svelte:component
           this={metadata.createFormComponent}

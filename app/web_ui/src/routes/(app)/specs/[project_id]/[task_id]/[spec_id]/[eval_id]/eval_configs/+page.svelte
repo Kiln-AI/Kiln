@@ -45,8 +45,11 @@
   let eval_config_instructions_dialog: Dialog | null = null
   let displayed_eval_config: EvalConfig | null = null
   $: displayed_eval_config_dialog_title = displayed_eval_config
-    ? `Details for Judge '${displayed_eval_config.name}' — ${eval_config_type_label(displayed_eval_config)}`
+    ? `Details for Judge '${displayed_eval_config.name}'`
     : "Details for Judge"
+  $: displayed_eval_config_dialog_subtitle = displayed_eval_config
+    ? `${eval_config_type_label(displayed_eval_config)}`
+    : undefined
 
   let eval_configs: EvalConfig[] | null = null
   let eval_configs_error: KilnError | null = null
@@ -869,7 +872,9 @@
 
 <Dialog
   bind:this={eval_config_instructions_dialog}
+  width="wide"
   title={displayed_eval_config_dialog_title}
+  subtitle={displayed_eval_config_dialog_subtitle}
   action_buttons={[
     {
       label: "Close",

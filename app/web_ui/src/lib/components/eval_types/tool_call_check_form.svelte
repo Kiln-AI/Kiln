@@ -4,6 +4,11 @@
   import FormList from "$lib/utils/form_list.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import { onMount } from "svelte"
+  import { available_tools, load_available_tools } from "$lib/stores"
+  import { tool_id_to_function_name } from "$lib/stores/tools_store"
+  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import type { ToolSetApiDescription } from "$lib/types"
 
   type ToolCallSpec = components["schemas"]["ToolCallSpec"]
 
@@ -13,6 +18,97 @@
     match_mode: "all",
     on_unexpected_tools: "ignore",
   }
+
+  // Project/task context, used to resolve the OpenAI-compatible tool-call
+  // function names for the tool dropdown.
+  export let project_id: string = ""
+  export let task_id: string = ""
+
+  // Options for the tool-name dropdown, grouped by tool set. Values are the
+  // OpenAI-compatible function names (what appears in the trace), not the Kiln
+  // display names.
+  let tool_options: OptionGroup[] = []
+  let known_function_names = new Set<string>()
+  let tools_loading = true
+  let options_built = false
+
+  onMount(() => {
+    load_available_tools(project_id)
+  })
+
+  // Build the dropdown once the project's tools have loaded.
+  $: maybe_build_tool_options($available_tools[project_id])
+
+  function maybe_build_tool_options(
+    tool_sets: ToolSetApiDescription[] | undefined,
+  ) {
+    if (!tool_sets || options_built || !project_id || !task_id) return
+    options_built = true
+    build_tool_options(tool_sets)
+  }
+
+  async function build_tool_options(tool_sets: ToolSetApiDescription[]) {
+    const groups: OptionGroup[] = []
+    const fn_names = new Set<string>()
+    for (const tool_set of tool_sets) {
+      const resolved = await Promise.all(
+        tool_set.tools.map(async (tool): Promise<Option | null> => {
+          try {
+            const function_name = await tool_id_to_function_name(
+              tool.id,
+              project_id,
+              task_id,
+            )
+            return {
+              value: function_name,
+              label: tool.name,
+              description: function_name,
+            }
+          } catch {
+            // Skip tools we can't resolve a function name for (e.g. offline
+            // MCP server). They just won't appear in the dropdown.
+            return null
+          }
+        }),
+      )
+      const options = resolved.filter((o): o is Option => o !== null)
+      for (const option of options) {
+        fn_names.add(option.value as string)
+      }
+      if (options.length > 0) {
+        groups.push({ label: tool_set.set_name, options })
+      }
+    }
+    tool_options = groups
+    known_function_names = fn_names
+    tools_loading = false
+  }
+
+  // Preserve tool names that aren't in the current tool list (legacy configs,
+  // removed/renamed tools) so the dropdown still shows and keeps them.
+  $: custom_values = [
+    ...new Set(
+      properties.expected_tools
+        .map((t) => t.tool_name)
+        .filter((name) => name && !known_function_names.has(name)),
+    ),
+  ]
+  $: display_tool_options =
+    custom_values.length > 0
+      ? [
+          ...tool_options,
+          {
+            label: "Other",
+            options: custom_values.map(
+              (name): Option => ({
+                value: name,
+                label: name,
+                description: "Not found in this project's tools",
+              }),
+            ),
+          },
+        ]
+      : tool_options
 
   type ArgMatch = components["schemas"]["ArgMatch"]
   type ArgRow = { name: string; value: string; match_mode: string }
@@ -143,10 +239,17 @@
           <div class="flex flex-col gap-2">
             <FormElement
               id="tool_name_{item_index}"
-              label="Tool Name"
-              description="The exact name of the tool that should be called."
-              info_description="Get the tool name from the Tools tab of Kiln. The name must match exactly."
-              inputType="input"
+              label="Tool"
+              description="The tool that should be called."
+              info_description="The dropdown lists each tool's function name as it appears in the trace, which can differ from its display name in Kiln."
+              inputType="fancy_select"
+              fancy_select_options={display_tool_options}
+              empty_label="Select a tool"
+              empty_state_message={tools_loading
+                ? "Loading tools..."
+                : "No tools available"}
+              empty_state_subtitle="Add Tools"
+              empty_state_link={`/tools/${project_id}/add_tools`}
               bind:value={properties.expected_tools[item_index].tool_name}
             />
 

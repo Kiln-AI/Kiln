@@ -130,7 +130,7 @@
         {@const props = getV2Props(eval_config, "llm_judge")}
         {#if props?.prompt_template}
           <div class="mt-2">
-            <div class="font-medium mb-1">Judge Prompt</div>
+            <div class="font-medium mb-1">Judge Prompt:</div>
             <Output raw_output={props.prompt_template} max_height="200px" />
           </div>
         {/if}
@@ -300,7 +300,7 @@
         </div>
       {/if}
       {#if eval_steps}
-        <div>
+        <div class="flex flex-col gap-2">
           <span class="font-medium">Evaluation Steps:</span>
           {#each eval_steps as step}
             <Output raw_output={step} max_height="200px" />

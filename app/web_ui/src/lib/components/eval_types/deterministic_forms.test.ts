@@ -2559,8 +2559,8 @@ describe("ToolCallCheckForm arg-name placeholder", () => {
   })
 })
 
-describe("ToolCallCheckForm Tool Name field copy", () => {
-  it("Tool Name description says 'exact name'", () => {
+describe("ToolCallCheckForm Tool field copy", () => {
+  it("Tool field renders as a dropdown (fancy_select)", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2574,12 +2574,13 @@ describe("ToolCallCheckForm Tool Name field copy", () => {
     const toolNameField = container.querySelector(
       '[data-testid="form-element-tool_name_0"]',
     )
+    expect(toolNameField?.getAttribute("data-type")).toBe("fancy_select")
     expect(toolNameField?.getAttribute("data-description")).toBe(
-      "The exact name of the tool that should be called.",
+      "The tool that should be called.",
     )
   })
 
-  it("Tool Name has info_description tooltip about getting tool name from Tools tab", () => {
+  it("Tool field info_description explains the function name differs from the display name", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2594,8 +2595,8 @@ describe("ToolCallCheckForm Tool Name field copy", () => {
       '[data-testid="form-element-tool_name_0"]',
     )
     const tooltip = toolNameField?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("Tools tab")
-    expect(tooltip).toContain("match exactly")
+    expect(tooltip).toContain("function name")
+    expect(tooltip).toContain("trace")
   })
 })
 

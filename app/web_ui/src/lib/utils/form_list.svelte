@@ -108,7 +108,7 @@
 
 <div class="flex place-content-center">
   <button
-    class="btn btn-sm {frozen || hide_add_button ? 'hidden' : ''}"
+    class="btn btn-sm mt-4 {frozen || hide_add_button ? 'hidden' : ''}"
     on:click={() => add_item(true)}
     id={id + "_add_button"}
   >
