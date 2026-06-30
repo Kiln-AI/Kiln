@@ -84,12 +84,23 @@
     }
   }
 
-  async function stopAutoMode() {
-    // A client-armed (no-run) conversation just disarms locally; a real server
-    // run is stopped via the registry. Always clear the armed flag so disable
-    // before the first send returns the toggle to off (functional spec §4.1(2)).
+  async function stopAgent() {
+    // Hard stop: halt the agent completely. Abort any in-flight interactive
+    // stream (e.g. a tool-call continuation or a normal streaming turn), tell the
+    // server to cancel the background run, and detach the observer so nothing
+    // further — including any client tool calls the server might hand back — gets
+    // dispatched from the browser.
+    //
+    // Order matters: auto_run_store.stop() reads the run id synchronously (before
+    // its first await), so calling it before detach() — which clears that id —
+    // guarantees the server actually receives the stop. A client-armed (no-run)
+    // conversation has no server run; disarm()/detach() just clear the local
+    // armed flag so the toggle returns to off (functional spec §4.1(2)).
+    store.stop()
+    const stopping = auto_run_store.stop()
     auto_run_store.disarm()
-    await auto_run_store.stop()
+    auto_run_store.detach()
+    await stopping
   }
 
   let chatHistory: { open: () => void }
@@ -850,16 +861,13 @@
               >⏵⏵</span
             >
             <span>auto mode on</span>
-            {#if !$autoModeWorking}
-              <span class="font-normal text-primary/70">· waiting for you</span>
-            {/if}
           </span>
           <button
             type="button"
             class="btn btn-ghost btn-xs text-error/80 hover:text-error hover:bg-error/10"
-            on:click={stopAutoMode}
-            title="Stop auto mode"
-            aria-label="Stop auto mode"
+            on:click={stopAgent}
+            title="Stop the agent"
+            aria-label="Stop the agent"
           >
             ▸ Stop
           </button>

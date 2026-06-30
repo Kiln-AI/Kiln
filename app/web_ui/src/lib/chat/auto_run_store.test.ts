@@ -640,7 +640,7 @@ describe("auto_run_store", () => {
     expect(get(store.working)).toBe(true)
     expect(get(store.autoModeOn)).toBe(true)
 
-    // An IDLE run (initialWorking=false) shows "· waiting for you" immediately.
+    // An IDLE run (initialWorking=false) shows the idle (non-pulsing) indicator.
     store.detach()
     store.beginReconnect()
     store.attach("ar_wait", false)

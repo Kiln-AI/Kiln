@@ -504,26 +504,37 @@ class AutoChatRegistry:
     async def stop(self, run_id: str) -> None:
         """Stop auto mode for the conversation (Stop button). Idempotent.
 
-        Revision R1 + graceful stop (functional spec §4.4(1)): Stop is NOT a hard
-        cancel. A RUNNING burst is asked to stop **gracefully** — the runner
-        finishes the in-flight upstream round (no cut-off), then at the round
-        boundary surfaces any pending client tool calls for normal approval
-        (tool-calls-pending) and ends the burst USER_STOPPED. We only set the stop
-        intent here and return promptly (the endpoint replies 202): the
-        supervising task winds the burst down and publishes auto-mode-off on its
-        own, so observers see the off marker when the round actually ends. An IDLE
-        run has no burst task, so the flag is cleared here directly."""
+        Hard stop: the user pressed Stop to halt the agent completely, so a
+        RUNNING burst is cancelled immediately (mirroring ``disable``) rather than
+        wound down gracefully. We mark the run USER_STOPPED first so the cancelled
+        burst's CancelledError handler in ``_supervise`` preserves that reason and
+        publishes ``auto-mode-off(user_stopped)``; the runner is torn down
+        mid-round and never reaches the point where it would surface this round's
+        pending client tool calls for approval, so nothing further is dispatched.
+        An IDLE run has no burst task, so the flag is cleared here directly."""
         run = self._runs.get(run_id)
-        task = self._tasks.get(run_id)
-        if task is not None:
-            if run is not None:
-                run.runner.request_stop()
-            return
-
-        # No live burst (idle or already off). If the flag is still on, clear it.
         if run is None or run.record.status.is_terminal:
             return
+
+        # Mark USER_STOPPED first so a cancelled burst preserves the reason: the
+        # _supervise CancelledError handler only defaults to USER_STOPPED when the
+        # status isn't already terminal (CR Moderate 2, mirrored from disable()).
         run.record.status = AutoRunStatus.USER_STOPPED
+
+        task = self._tasks.get(run_id)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug(
+                    "Auto run %s raised during stop await", run_id, exc_info=True
+                )
+            return
+
+        # No live burst (idle). Clear the flag directly.
         run.inbound.clear()
         self._publish_off(run)
         self._touch(run)

@@ -217,19 +217,18 @@ async def test_is_active_for_trace_true_while_running_and_idle_false_when_off():
 
 
 @pytest.mark.asyncio
-async def test_stop_is_graceful_finishes_round_then_publishes_off():
-    # Graceful stop (functional spec §4.4(1)): Stop must NOT hard-cancel / cut off
-    # the in-flight output. It sets a stop intent; the current round finishes
-    # streaming, and only at the round boundary does the burst end USER_STOPPED.
+async def test_stop_is_hard_cancel_ends_immediately():
+    # Hard stop: Stop cancels the in-flight burst immediately rather than waiting
+    # for the round to finish. The run goes terminal (USER_STOPPED) and publishes
+    # auto-mode-off(user_stopped) without the gated round ever being released, and
+    # never surfaces tool-calls-pending for approval.
     reg = AutoChatRegistry()
-    release = asyncio.Event()  # the in-flight round blocks until released
+    release = asyncio.Event()  # the round blocks here until cancelled
     client = _GatedClient(release)
     with patch.object(httpx, "AsyncClient", return_value=client):
         rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
         run = reg.get(rec.run_id)
         assert run is not None
-        # Subscribe so we can confirm the current turn's output is NOT cut off and
-        # auto-mode-off(user_stopped) is published.
         sub = run.bus.subscribe()
         received: list[bytes] = []
 
@@ -239,23 +238,19 @@ async def test_stop_is_graceful_finishes_round_then_publishes_off():
 
         drain_task = asyncio.create_task(_drain())
         await asyncio.sleep(0.05)  # let the run start + buffer replay
-        # Request stop while the round is still streaming. The run must NOT end
-        # yet — the round hasn't finished.
+        # Stop while the round is still blocked open. The burst is cancelled
+        # mid-round and goes terminal immediately — the gate is never released.
         await reg.stop(rec.run_id)
-        await asyncio.sleep(0.05)
-        assert run.record.status == AutoRunStatus.RUNNING
-        # Let the in-flight round finish; the burst should now wind down to off.
-        release.set()
         await _wait_terminal(reg, rec.run_id)
         await asyncio.sleep(0.02)
         drain_task.cancel()
+        release.set()  # cleanup: unblock the gated client
 
     assert run.record.status == AutoRunStatus.USER_STOPPED
     decoded = b"".join(received).decode()
-    # The current turn's text was delivered (not cut off) before going off.
-    assert "done" in decoded
     assert '"type": "auto-mode-off"' in decoded
     assert '"reason": "user_stopped"' in decoded
+    assert '"type": "tool-calls-pending"' not in decoded
 
 
 @pytest.mark.asyncio
