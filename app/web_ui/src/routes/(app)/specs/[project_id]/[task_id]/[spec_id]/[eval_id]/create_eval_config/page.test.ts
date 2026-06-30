@@ -770,7 +770,7 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
     const { container } = await renderBuilder("exact_match")
     const headings = container.querySelectorAll(".text-xl.font-bold")
     const texts = Array.from(headings).map((h) => h.textContent?.trim())
-    expect(texts).toContain("Test Run")
+    expect(texts).toContain("Test Judge")
   })
 
   it("renders eval_type_intro with explainer text", async () => {
@@ -1233,7 +1233,7 @@ describe("Explainer placement + Judge Configuration header", () => {
     const headings = container.querySelectorAll(".text-xl.font-bold")
     const texts = Array.from(headings).map((h) => h.textContent?.trim())
     expect(texts).toContain("Judge Configuration")
-    expect(texts).toContain("Test Run")
+    expect(texts).toContain("Test Judge")
   })
 })
 

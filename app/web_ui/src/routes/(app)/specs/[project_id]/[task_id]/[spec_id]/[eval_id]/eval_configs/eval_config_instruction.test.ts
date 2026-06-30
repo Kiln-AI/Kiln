@@ -566,10 +566,8 @@ describe("EvalConfigInstruction", () => {
       const { container } = render(EvalConfigInstruction, {
         props: { eval_config: config },
       })
-      const ol = container.querySelector("ol")
-      expect(ol).not.toBeNull()
-      const items = container.querySelectorAll("li")
-      expect(items).toHaveLength(2)
+      expect(container.textContent).toContain("Step 1")
+      expect(container.textContent).toContain("Step 2")
     })
 
     it("shows fallback when no properties", () => {

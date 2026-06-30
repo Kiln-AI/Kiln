@@ -41,7 +41,7 @@
 
 <div class="flex flex-col gap-3" data-testid="test-run-pane">
   <div>
-    <div class="text-xl font-bold">Test Run</div>
+    <div class="text-xl font-bold">Test Judge</div>
     <p class="text-sm text-gray-500 mt-0.5" data-testid="test-run-subtitle">
       Test your judge on real data before saving.
     </p>

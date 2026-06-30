@@ -294,21 +294,17 @@
       {@const task_desc = get_task_description(eval_config)}
       {@const eval_steps = get_eval_steps(eval_config)}
       {#if task_desc}
-        <div class="mb-2">
+        <div class="my-2">
           <span class="font-medium">Task Description:</span>
-          {task_desc}
+          <Output raw_output={task_desc} max_height="200px" />
         </div>
       {/if}
       {#if eval_steps}
         <div>
-          <span class="font-medium">Steps:</span>
-          <ol class="list-decimal pl-5">
-            {#each eval_steps as step}
-              <li>
-                <span class="whitespace-pre-line">{step}</span>
-              </li>
-            {/each}
-          </ol>
+          <span class="font-medium">Evaluation Steps:</span>
+          {#each eval_steps as step}
+            <Output raw_output={step} max_height="200px" />
+          {/each}
         </div>
       {/if}
       {#if !task_desc && !eval_steps}
