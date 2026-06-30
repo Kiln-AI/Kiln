@@ -195,7 +195,7 @@
         "Long-running workloads will show up here for you to view status and results.",
       ]}
     >
-      <div slot="icon" class="w-12 h-12 text-gray-400" aria-hidden="true">
+      <div slot="icon" class="w-12 h-12" aria-hidden="true">
         <JobsIcon />
       </div>
     </Intro>
