@@ -12,7 +12,9 @@ from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobProperties,
     EvalJobResult,
     EvalJobWorker,
+    _error_detail,
 )
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -31,7 +33,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
-from kiln_ai.utils.async_job_runner import Progress
+from kiln_ai.utils.async_job_runner import Progress, RetryableError
 
 
 @pytest.fixture
@@ -799,6 +801,110 @@ async def test_run_logs_failed_items_to_error_log(
     assert "scoring exploded" in message
     assert extra["dataset_id"] == task_run.id
     assert extra["run_config_id"] == run_config.id
+
+
+@pytest.mark.asyncio
+async def test_run_logs_original_error_for_kiln_run_error(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    # The model adapter wraps failures in KilnRunError, whose own message is the
+    # genericized format_error_message text. The error log must surface the
+    # underlying .original detail, not "An unexpected error occurred."
+    task_run = _make_task_run(task, data_source, "eval_set")
+
+    original = RuntimeError("provider 500: model is overloaded right now")
+
+    async def failing_run_job(self, job) -> bool:
+        raise KilnRunError(
+            message="An unexpected error occurred.",
+            partial_trace=None,
+            original=original,
+        )
+
+    logged: list[tuple[str, dict]] = []
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            logged.append((error_message, extra))
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
+        new=failing_run_job,
+    ):
+        result = await EvalJobWorker().run(params, FakeCtx())
+
+    assert result.error == 1
+    assert len(logged) == 1
+    message, extra = logged[0]
+    assert message == "provider 500: model is overloaded right now"
+    assert "An unexpected error occurred." not in message
+    assert extra["dataset_id"] == task_run.id
+    assert extra["run_config_id"] == run_config.id
+
+
+def test_error_detail_unwraps_kiln_run_error():
+    original = ValueError("real underlying detail")
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=original,
+    )
+    assert _error_detail(wrapped) == "real underlying detail"
+
+
+def test_error_detail_falls_back_to_original_class_name_when_empty():
+    original = RuntimeError("")
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=original,
+    )
+    assert _error_detail(wrapped) == "RuntimeError"
+
+
+def test_error_detail_passes_through_plain_exception():
+    assert _error_detail(ValueError("scoring exploded")) == "scoring exploded"
+
+
+def test_error_detail_surfaces_retryable_error_message():
+    # The most common real eval failure path: EvalRunner.run_job re-raises transient
+    # failures (rate limits, 5xx, schema errors) as RetryableError(str(original)).
+    # After retries are exhausted, that instance — not a KilnRunError — reaches
+    # _error_detail, which must surface the wrapped message, not a generic one.
+    assert _error_detail(RetryableError("rate limit exceeded")) == "rate limit exceeded"
+
+
+def test_error_detail_falls_back_to_class_name_for_empty_plain_exception():
+    assert _error_detail(ValueError("")) == "ValueError"
+
+
+def test_error_detail_does_not_crash_on_buggy_str():
+    # The observer runs in AsyncJobRunner's unguarded on_error path, so a buggy
+    # __str__ must degrade to the class name rather than take down the run.
+    class BoomError(Exception):
+        def __str__(self) -> str:
+            raise RuntimeError("str blew up")
+
+    assert _error_detail(BoomError()) == "BoomError"
+
+
+def test_error_detail_handles_kiln_run_error_with_buggy_original_str():
+    class BoomError(Exception):
+        def __str__(self) -> str:
+            raise RuntimeError("str blew up")
+
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=BoomError(),
+    )
+    assert _error_detail(wrapped) == "BoomError"
 
 
 # -- save_context wiring -----------------------------------------------------
