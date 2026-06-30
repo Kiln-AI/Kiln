@@ -3478,6 +3478,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/judge_feedback_batch/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Judge Feedback Batch Job
+         * @description Create and run a judge feedback batch as a background job, returning immediately.
+         *
+         *     The job-backed counterpart to `POST /judge_feedback_batches/run`: lets an agent
+         *     fire many gates and `POST /api/jobs/wait` on all of them at once instead of
+         *     blocking on each synchronous call. The aggregate scores/usage/latency are on the
+         *     job result; the per-item runs (with the judge's feedback) are persisted — fetch
+         *     them via `GET /judge_feedback_batches/{id}/runs` (the result carries the batch id).
+         */
+        post: operations["run_judge_feedback_batch_job_api_jobs_judge_feedback_batch_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/wait": {
         parameters: {
             query?: never;
@@ -7646,6 +7672,68 @@ export interface components {
              * @description The error message.
              */
             error: string;
+        };
+        /**
+         * JudgeFeedbackBatchJobParams
+         * @description Create-and-run a judge feedback batch as a background job.
+         *
+         *     Inherits every CreateJudgeFeedbackBatchRequest field (and its validation) and
+         *     adds the project/task scope, so the body is the same as the synchronous
+         *     create-and-run endpoint plus project_id/task_id.
+         */
+        JudgeFeedbackBatchJobParams: {
+            /**
+             * Name
+             * @description The name of the judge feedback batch. A memorable name is generated if omitted.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description A description of the judge feedback batch.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled. At least one required.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config. Metadata when judging existing outputs; required and run on each item when generate_outputs=true.
+             */
+            run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run run_config_id on each sampled item to generate a fresh output and judge that (gate a candidate, scoped to the tagged items). If false, judge existing outputs.
+             * @default false
+             */
+            generate_outputs: boolean;
+            /**
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
+             */
+            stop_after_failures?: number | null;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+            /** Project Id */
+            project_id: string;
+            /** Task Id */
+            task_id: string;
         };
         /**
          * JudgeFeedbackBatchRun
@@ -19288,6 +19376,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_judge_feedback_batch_job_api_jobs_judge_feedback_batch_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JudgeFeedbackBatchJobParams"];
             };
         };
         responses: {
