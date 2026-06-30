@@ -1090,114 +1090,377 @@ describe("ReferenceDataField", () => {
     cleanup()
   })
 
-  it("displays 'None' when reference_data is empty", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: { reference_data: "" },
-    })
-
-    const field = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(field?.textContent).toContain("None")
-    expect(field?.textContent).toContain("Reference Data")
-  })
-
-  it("displays key summary when valid JSON is provided", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: { reference_data: '{"expected": "hello", "key2": "world"}' },
-    })
-
-    const field = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(field?.textContent).toContain("expected")
-    expect(field?.textContent).toContain("key2")
-  })
-
-  it("opens a dialog for JSON editing on click", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: { reference_data: "" },
-    })
-
-    const editBtn = container.querySelector(
-      '[data-testid="reference-data-edit"]',
-    ) as HTMLButtonElement
-    expect(editBtn).not.toBeNull()
-
-    const dialog = container.querySelector('[data-title="Reference Data"]')
-    expect(dialog).not.toBeNull()
-  })
-
-  it("shows textarea in the JSON modal", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: { reference_data: "" },
-    })
-
-    const textarea = container.querySelector(
-      '[data-testid="reference-data-textarea"]',
-    )
-    expect(textarea).not.toBeNull()
-  })
-
-  it("displays 'Invalid JSON' for malformed reference_data", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: { reference_data: "not json" },
-    })
-
-    const field = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(field?.textContent).toContain("Invalid JSON")
-  })
-
-  it("displays keys with '+N more' for many keys", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: {
-        reference_data: '{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}',
-      },
-    })
-
-    const field = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(field?.textContent).toContain("+2 more")
-  })
-
-  it("displays 'Empty object' for empty JSON object", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ReferenceDataField as any, {
-      props: { reference_data: "{}" },
-    })
-
-    const field = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(field?.textContent).toContain("Empty object")
-  })
-
-  it("displays 'Invalid: not an object' for non-object JSON values in preview", () => {
-    const nonObjects = ['"asdf"', "false", "12", "[1,2]", "null"]
-    for (const val of nonObjects) {
-      cleanup()
+  describe("display value (preview text)", () => {
+    it("displays 'None' when reference_data is empty", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(ReferenceDataField as any, {
-        props: { reference_data: val },
+        props: { reference_data: "" },
       })
+
       const field = container.querySelector(
         '[data-testid="reference-data-field"]',
       )
-      expect(field?.textContent).toContain("Invalid: not an object")
-    }
+      expect(field?.textContent).toContain("None")
+      expect(field?.textContent).toContain("Reference Data")
+    })
+
+    it("displays key summary when valid JSON is provided", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: '{"expected": "hello", "key2": "world"}' },
+      })
+
+      const field = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(field?.textContent).toContain("expected")
+      expect(field?.textContent).toContain("key2")
+    })
+
+    it("displays 'Invalid JSON' for malformed reference_data", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "not json" },
+      })
+
+      const field = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(field?.textContent).toContain("Invalid JSON")
+    })
+
+    it("displays keys with '+N more' for many keys", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: {
+          reference_data: '{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}',
+        },
+      })
+
+      const field = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(field?.textContent).toContain("+2 more")
+    })
+
+    it("displays 'Empty object' for empty JSON object", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "{}" },
+      })
+
+      const field = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(field?.textContent).toContain("Empty object")
+    })
+
+    it("displays 'Invalid: not an object' for non-object JSON values in preview", () => {
+      const nonObjects = ['"asdf"', "false", "12", "[1,2]", "null"]
+      for (const val of nonObjects) {
+        cleanup()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { container } = render(ReferenceDataField as any, {
+          props: { reference_data: val },
+        })
+        const field = container.querySelector(
+          '[data-testid="reference-data-field"]',
+        )
+        expect(field?.textContent).toContain("Invalid: not an object")
+      }
+    })
+  })
+
+  describe("dialog structure", () => {
+    it("opens a wide dialog with key-value editor on click", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "" },
+      })
+
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      expect(editBtn).not.toBeNull()
+
+      const dialog = container.querySelector('[data-title="Reference Data"]')
+      expect(dialog).not.toBeNull()
+      expect(dialog?.getAttribute("data-width")).toBe("wide")
+    })
+
+    it("shows key-value editor (not a textarea)", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "" },
+      })
+
+      const editor = container.querySelector(
+        '[data-testid="reference-data-editor"]',
+      )
+      expect(editor).not.toBeNull()
+
+      const textarea = container.querySelector(
+        '[data-testid="reference-data-textarea"]',
+      )
+      expect(textarea).toBeNull()
+    })
+
+    it("shows Add Value button", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "" },
+      })
+
+      const addBtn = container.querySelector(
+        '[data-testid="reference-data-add"]',
+      )
+      expect(addBtn).not.toBeNull()
+      expect(addBtn?.textContent).toContain("Add Value")
+    })
+  })
+
+  describe("row management", () => {
+    it("starts with one empty row when reference_data is empty", async () => {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "" },
+      })
+
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
+      const rows = container.querySelectorAll(
+        '[data-testid="reference-data-row"]',
+      )
+      expect(rows.length).toBe(1)
+    })
+
+    it("populates rows from existing JSON data", async () => {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: {
+          reference_data: '{"name": "Alice", "age": 30}',
+        },
+      })
+
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
+      const rows = container.querySelectorAll(
+        '[data-testid="reference-data-row"]',
+      )
+      expect(rows.length).toBe(2)
+
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+      expect(keys[0].value).toBe("name")
+      expect(values[0].value).toBe('"Alice"')
+      expect(keys[1].value).toBe("age")
+      expect(values[1].value).toBe("30")
+    })
+
+    it("adds a new row when Add Value is clicked", async () => {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: { reference_data: "" },
+      })
+
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
+      const addBtn = container.querySelector(
+        '[data-testid="reference-data-add"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(addBtn)
+      await tick()
+
+      const rows = container.querySelectorAll(
+        '[data-testid="reference-data-row"]',
+      )
+      expect(rows.length).toBe(2)
+    })
+
+    it("removes a row when X is clicked", async () => {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: {
+          reference_data: '{"a": 1, "b": 2}',
+        },
+      })
+
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
+      let rows = container.querySelectorAll(
+        '[data-testid="reference-data-row"]',
+      )
+      expect(rows.length).toBe(2)
+
+      const removeBtn = container.querySelector(
+        '[data-testid="reference-data-remove"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(removeBtn)
+      await tick()
+
+      rows = container.querySelectorAll('[data-testid="reference-data-row"]')
+      expect(rows.length).toBe(1)
+    })
+
+    it("shows Name and Value column labels on first row only", async () => {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(ReferenceDataField as any, {
+        props: {
+          reference_data: '{"a": 1, "b": 2}',
+        },
+      })
+
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
+      const labels = container.querySelectorAll(".label-text")
+      const labelTexts = Array.from(labels).map((l) => l.textContent?.trim())
+      expect(labelTexts).toContain("Name")
+      expect(labelTexts).toContain("Value")
+      // Only 2 labels total (Name + Value), not repeated per row
+      expect(labels.length).toBe(2)
+    })
   })
 
   describe("save validation", () => {
-    function renderAndGetSaveAction() {
+    async function renderAndGetSaveAction(reference_data = "") {
+      resetActionButtons()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = render(ReferenceDataField as any, {
+        props: { reference_data },
+      })
+      const handler = vi.fn()
+      result.component.$on("change", handler)
+
+      const editBtn = result.container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
+      const buttons = actionButtonsByTitle["Reference Data"]
+      const saveBtn = buttons?.find((b) => b.label === "Save") as Record<
+        string,
+        unknown
+      >
+      return {
+        ...result,
+        handler,
+        saveAction: saveBtn.action as () => boolean,
+      }
+    }
+
+    it("saves valid key-value pairs and emits change", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "answer" } })
+      await fireEvent.input(values[0], { target: { value: "hello" } })
+      await tick()
+
+      const result = saveAction()
+      expect(result).toBe(true)
+      expect(handler).toHaveBeenCalledTimes(1)
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted).toEqual({ answer: "hello" })
+    })
+
+    it("emits empty string when all rows are empty", async () => {
+      const { handler, saveAction } = await renderAndGetSaveAction()
+
+      const result = saveAction()
+      expect(result).toBe(true)
+      expect(handler).toHaveBeenCalledTimes(1)
+      expect(handler.mock.calls[0][0].detail).toBe("")
+    })
+
+    it("rejects rows with value but no name", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+      await fireEvent.input(values[0], { target: { value: "some value" } })
+      await tick()
+
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain("must have a name")
+    })
+
+    it("rejects duplicate keys", async () => {
+      const { container, handler, saveAction } =
+        await renderAndGetSaveAction('{"a": 1}')
+
+      // Add a second row
+      const addBtn = container.querySelector(
+        '[data-testid="reference-data-add"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(addBtn)
+      await tick()
+
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+      await fireEvent.input(keys[1], { target: { value: "a" } })
+      await fireEvent.input(values[1], { target: { value: "2" } })
+      await tick()
+
+      const result = saveAction()
+      expect(result).toBe(false)
+      expect(handler).not.toHaveBeenCalled()
+      await tick()
+      const error = container.querySelector(
+        '[data-testid="reference-data-error"]',
+      )
+      expect(error?.textContent).toContain("Duplicate")
+    })
+  })
+
+  describe("value parsing", () => {
+    async function renderAndGetSaveAction() {
       resetActionButtons()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = render(ReferenceDataField as any, {
@@ -1205,155 +1468,192 @@ describe("ReferenceDataField", () => {
       })
       const handler = vi.fn()
       result.component.$on("change", handler)
+
+      const editBtn = result.container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(editBtn)
+      await tick()
+
       const buttons = actionButtonsByTitle["Reference Data"]
       const saveBtn = buttons?.find((b) => b.label === "Save") as Record<
         string,
         unknown
       >
-      return { ...result, handler, saveAction: saveBtn.action as () => boolean }
+      return {
+        ...result,
+        handler,
+        saveAction: saveBtn.action as () => boolean,
+      }
     }
 
-    it("rejects string JSON with object error and blocks save", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: '"asdf"' } })
+    it("parses number values as numbers", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "count" } })
+      await fireEvent.input(values[0], { target: { value: "12" } })
       await tick()
-      const result = saveAction()
-      expect(result).toBe(false)
-      expect(handler).not.toHaveBeenCalled()
-      await tick()
-      const error = container.querySelector(
-        '[data-testid="reference-data-error"]',
-      )
-      expect(error?.textContent).toContain(
-        "Reference data must be a JSON object",
-      )
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.count).toBe(12)
+      expect(typeof emitted.count).toBe("number")
     })
 
-    it("rejects boolean JSON with object error and blocks save", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "false" } })
+    it("parses boolean true as boolean", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "flag" } })
+      await fireEvent.input(values[0], { target: { value: "true" } })
       await tick()
-      const result = saveAction()
-      expect(result).toBe(false)
-      expect(handler).not.toHaveBeenCalled()
-      await tick()
-      const error = container.querySelector(
-        '[data-testid="reference-data-error"]',
-      )
-      expect(error?.textContent).toContain(
-        "Reference data must be a JSON object",
-      )
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.flag).toBe(true)
+      expect(typeof emitted.flag).toBe("boolean")
     })
 
-    it("rejects number JSON with object error and blocks save", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "12" } })
+    it("parses boolean false as boolean", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "disabled" } })
+      await fireEvent.input(values[0], { target: { value: "false" } })
       await tick()
-      const result = saveAction()
-      expect(result).toBe(false)
-      expect(handler).not.toHaveBeenCalled()
-      await tick()
-      const error = container.querySelector(
-        '[data-testid="reference-data-error"]',
-      )
-      expect(error?.textContent).toContain(
-        "Reference data must be a JSON object",
-      )
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.disabled).toBe(false)
+      expect(typeof emitted.disabled).toBe("boolean")
     })
 
-    it("rejects array JSON with object error and blocks save", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "[1,2]" } })
+    it('parses quoted strings as strings (e.g. "12" becomes string "12")', async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "code" } })
+      await fireEvent.input(values[0], { target: { value: '"12"' } })
       await tick()
-      const result = saveAction()
-      expect(result).toBe(false)
-      expect(handler).not.toHaveBeenCalled()
-      await tick()
-      const error = container.querySelector(
-        '[data-testid="reference-data-error"]',
-      )
-      expect(error?.textContent).toContain(
-        "Reference data must be a JSON object",
-      )
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.code).toBe("12")
+      expect(typeof emitted.code).toBe("string")
     })
 
-    it("rejects null JSON with object error and blocks save", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "null" } })
+    it("falls back to string for unparseable JSON values", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "text" } })
+      await fireEvent.input(values[0], { target: { value: "hello world" } })
       await tick()
-      const result = saveAction()
-      expect(result).toBe(false)
-      expect(handler).not.toHaveBeenCalled()
-      await tick()
-      const error = container.querySelector(
-        '[data-testid="reference-data-error"]',
-      )
-      expect(error?.textContent).toContain(
-        "Reference data must be a JSON object",
-      )
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.text).toBe("hello world")
+      expect(typeof emitted.text).toBe("string")
     })
 
-    it("accepts valid JSON object and emits change", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, {
-        target: { value: '{"key":"value"}' },
+    it("falls back to string for broken JSON (e.g. unclosed quote)", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "bad" } })
+      await fireEvent.input(values[0], { target: { value: '"12' } })
+      await tick()
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.bad).toBe('"12')
+      expect(typeof emitted.bad).toBe("string")
+    })
+
+    it("parses nested objects as objects", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "nested" } })
+      await fireEvent.input(values[0], {
+        target: { value: '{"a": 1}' },
       })
       await tick()
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.nested).toEqual({ a: 1 })
+    })
+
+    it("parses null as null", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+      const values = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "empty" } })
+      await fireEvent.input(values[0], { target: { value: "null" } })
+      await tick()
+
+      saveAction()
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.empty).toBeNull()
+    })
+
+    it("saves empty value as empty string when key is present", async () => {
+      const { container, handler, saveAction } = await renderAndGetSaveAction()
+      const keys = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      ) as NodeListOf<HTMLInputElement>
+
+      await fireEvent.input(keys[0], { target: { value: "score" } })
+      await tick()
+
       const result = saveAction()
       expect(result).toBe(true)
       expect(handler).toHaveBeenCalledTimes(1)
-      expect(handler.mock.calls[0][0].detail).toBe('{"key":"value"}')
-    })
-
-    it("accepts empty JSON object and emits change", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "{}" } })
-      await tick()
-      const result = saveAction()
-      expect(result).toBe(true)
-      expect(handler).toHaveBeenCalledTimes(1)
-      expect(handler.mock.calls[0][0].detail).toBe("{}")
-    })
-
-    it("shows invalid JSON error for unparseable input", async () => {
-      const { container, handler, saveAction } = renderAndGetSaveAction()
-      const textarea = container.querySelector(
-        '[data-testid="reference-data-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(textarea, { target: { value: "{not json" } })
-      await tick()
-      const result = saveAction()
-      expect(result).toBe(false)
-      expect(handler).not.toHaveBeenCalled()
-      await tick()
-      const error = container.querySelector(
-        '[data-testid="reference-data-error"]',
-      )
-      expect(error).not.toBeNull()
-      expect(error?.textContent).not.toContain(
-        "Reference data must be a JSON object",
-      )
+      const emitted = JSON.parse(handler.mock.calls[0][0].detail)
+      expect(emitted.score).toBe("")
+      expect(typeof emitted.score).toBe("string")
     })
   })
 })
