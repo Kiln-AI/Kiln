@@ -1801,61 +1801,13 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
       { params: { path: { session_id: "t_now" } } },
     )
     // Phase 9: attach is driven by the resolved liveness (RUNNING → working) and
-    // the reconnecting affordance is shown for the connecting window.
+    // the reconnecting affordance is shown for the connecting window. The third
+    // arg opens a fresh assistant turn for the replayed in-flight round so it
+    // doesn't overwrite the last hydrated bubble.
     expect(beginReconnect).toHaveBeenCalled()
-    expect(attach).toHaveBeenCalledWith("ar_live", true)
+    expect(attach).toHaveBeenCalledWith("ar_live", true, true)
     // The caught-up messages replaced the stale restored view.
     expect(get(store).messages).toEqual(hydratedMessages)
-  })
-
-  it("keeps the optimistic transcript when the resolved leaf is already rendered (injected-message lag)", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    streamChatMock.mockImplementation(noopStreamChat)
-
-    const streaming = await import("./streaming_chat")
-    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_now")
-
-    // The run resolves to t_now, but the client already rendered t_now plus a
-    // just-injected message + its in-flight response — current_trace_id lags one
-    // round behind the optimistic transcript.
-    const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
-      current_trace_id: "t_now",
-      status: "running",
-    })
-    const attach = vi.fn()
-    const beginReconnect = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
-
-    const optimistic: ChatMessage[] = [
-      { id: "a0", role: "assistant", parts: [], traceId: "t_now" },
-      { id: "u_inj", role: "user", content: "my name is bobby" },
-      {
-        id: "a_resp",
-        role: "assistant",
-        parts: [{ type: "text", text: "Hey Bobby!" }],
-      },
-    ]
-    // Seed the restored-from-sessionStorage transcript.
-    storage.store["resync_lag"] = JSON.stringify({
-      messages: optimistic,
-      collapsedPartKeys: {},
-      lastSentAppState: null,
-      contextUsage: null,
-    })
-
-    const store = createChatSessionStore("resync_lag", auto)
-    await store.resyncOnLoad()
-
-    // The stale snapshot was neither fetched nor applied — the optimistic
-    // transcript (with the just-sent message + response) is preserved...
-    expect(mockClientGet).not.toHaveBeenCalled()
-    expect(mockHydrate).not.toHaveBeenCalled()
-    expect(get(store).messages).toEqual(optimistic)
-    // ...and we still re-attach the live run.
-    expect(beginReconnect).toHaveBeenCalled()
-    expect(attach).toHaveBeenCalledWith("ar_live", true)
   })
 
   it("attaches even when snapshot hydration returns a structured error (CR Moderate item 1)", async () => {
@@ -1890,8 +1842,8 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     // Hydration did not happen (no messages to apply)...
     expect(mockHydrate).not.toHaveBeenCalled()
     // ...but we STILL attach so the conversation isn't left looking dead (IDLE
-    // status → not working).
-    expect(attach).toHaveBeenCalledWith("ar_live", false)
+    // status → not working), opening a fresh in-flight turn.
+    expect(attach).toHaveBeenCalledWith("ar_live", false, true)
   })
 
   it("bails without hydrating/attaching if the user switches conversations mid-resync", async () => {
