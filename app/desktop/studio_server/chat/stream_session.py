@@ -376,6 +376,14 @@ async def iter_round_with_retries(
     """
     attempt = 0
     while True:
+        # A Stop requested during the backoff sleep must abandon the retry before
+        # re-POSTing — otherwise one more upstream round would stream after the
+        # user stopped. (attempt > 0 ⇒ this is a retry continuation, not the
+        # first round; the no-stop interactive path passes stop_requested=None.)
+        if attempt > 0 and stop_requested is not None and stop_requested():
+            result.status = "stopped"
+            return
+
         round_state = RoundState(trace_id_for_error=trace_id_for_error)
         result.round_state = round_state
         emitted_any = False

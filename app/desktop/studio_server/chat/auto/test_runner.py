@@ -428,7 +428,9 @@ async def test_stop_requested_during_retry_settles_user_stopped():
     assert decoded.count('"type": "kiln-chat-retry"') == 1
     assert "rate limited" not in decoded
     assert runner.status == AutoRunStatus.USER_STOPPED
-    assert len(client.bodies) == 2
+    # The stop landed during the backoff sleep, so the retry is abandoned BEFORE
+    # re-POSTing — only the initial request was made (no extra round streamed).
+    assert len(client.bodies) == 1
 
 
 class TestSeedBody:
