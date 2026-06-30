@@ -526,7 +526,7 @@ describe("EvalTestRunPane", () => {
 
       const heading = container.querySelector(".text-xl.font-bold")
       expect(heading).not.toBeNull()
-      expect(heading?.textContent).toContain("Test Run")
+      expect(heading?.textContent).toContain("Test Judge")
     })
 
     it("renders updated subtitle text", () => {
