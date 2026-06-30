@@ -2104,6 +2104,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Judge Feedback Batches
+         * @description List all judge feedback batches for a task.
+         */
+        get: operations["list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get"];
+        put?: never;
+        /**
+         * Create Judge Feedback Batch
+         * @description Create a judge feedback batch config. Run it later with `/judge_feedback_batches/{id}/run`.
+         */
+        post: operations["create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Judge Feedback Batch
+         * @description Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
+         *     the failing examples + feedback.
+         *
+         *     Runs synchronously and returns once judging completes. Each result is persisted as a child
+         *     run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
+         *     (num_judged, failing_count, train_set_size, hit_cap) and any per-item `errors` are FYI for
+         *     the caller's loop. Errors don't abort the run — partial results are still persisted, and
+         *     re-running the job retries only the un-persisted (errored or not-yet-judged) items.
+         */
+        post: operations["run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create And Run Judge Feedback Batch
+         * @description Create a judge feedback batch and run it immediately (synchronous), returning the failing examples
+         *     + feedback.
+         */
+        post: operations["create_and_run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Judge Feedback Batch
+         * @description Get a judge feedback batch config.
+         */
+        get: operations["get_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Judge Feedback Batch Runs
+         * @description Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge feedback batch.
+         */
+        get: operations["get_judge_feedback_batch_runs_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/validate_input_transform_template": {
         parameters: {
             query?: never;
@@ -4821,6 +4933,60 @@ export interface components {
             /** @description The job's status immediately after creation. */
             status: components["schemas"]["BackgroundJobStatus"];
         };
+        /**
+         * CreateJudgeFeedbackBatchRequest
+         * @description Request to create a judge feedback batch.
+         */
+        CreateJudgeFeedbackBatchRequest: {
+            /**
+             * Name
+             * @description The name of the judge feedback batch. A memorable name is generated if omitted.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description A description of the judge feedback batch.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled. At least one required.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config. Metadata when judging existing outputs; required and run on each item when generate_outputs=true.
+             */
+            run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run run_config_id on each sampled item to generate a fresh output and judge that (gate a candidate, scoped to the tagged items). If false, judge existing outputs.
+             * @default false
+             */
+            generate_outputs: boolean;
+            /**
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
+             */
+            stop_after_failures?: number | null;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+        };
         /** CreateKilnCopilotApiKeyRequest */
         CreateKilnCopilotApiKeyRequest: {
             /**
@@ -7378,6 +7544,240 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
+        /**
+         * JudgeFeedbackBatch
+         * @description A reusable config that samples dataset items by tag, judges them with an evaluator
+         *     (eval config), and records each item's pass/fail and the judge's feedback.
+         *
+         *     Used to surface a minibatch of failing examples — with feedback — for reflective prompt
+         *     optimization. A child of a Task; a parent of the JudgeFeedbackBatchRun results it produces.
+         */
+        JudgeFeedbackBatch: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the judge feedback batch.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the judge feedback batch for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled for this job.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score the sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config. With generate_outputs=false it's metadata (the existing dataset output is judged). With generate_outputs=true it's run on each sampled item to produce the output that is judged.
+             */
+            run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run `run_config_id` on each sampled item to generate a fresh output and judge that (gate a candidate config, scoped to the tagged items). If false (default), judge each item's existing dataset output (the task is not re-run).
+             * @default false
+             */
+            generate_outputs: boolean;
+            /**
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
+             */
+            stop_after_failures?: number | null;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * JudgeFeedbackBatchItemError
+         * @description An error judging or persisting a single item. Surfaced so the caller can see partial failures.
+         */
+        JudgeFeedbackBatchItemError: {
+            /**
+             * Task Run Id
+             * @description The ID of the task run (dataset item) that errored.
+             */
+            task_run_id: string;
+            /**
+             * Error
+             * @description The error message.
+             */
+            error: string;
+        };
+        /**
+         * JudgeFeedbackBatchRun
+         * @description The judge's result for a single sampled dataset item (a child of a JudgeFeedbackBatch).
+         */
+        JudgeFeedbackBatchRun: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Task Run Id
+             * @description The ID of the task run (dataset item) that was judged.
+             */
+            task_run_id: string | null;
+            /**
+             * Scores
+             * @description The scores produced by the judge for this dataset item.
+             */
+            scores: {
+                [key: string]: number;
+            };
+            /**
+             * Feedback
+             * @description The judge's plaintext reasoning for the scores, if available.
+             */
+            feedback?: string | null;
+            /**
+             * Passed
+             * @description Whether this item passed the judge (i.e. it is not a failing example).
+             */
+            passed: boolean;
+            /**
+             * Run Config Id
+             * @description If the judged output was generated (generate_outputs), the run config that produced it. None when the item's existing dataset output was judged.
+             */
+            run_config_id?: string | null;
+            /** @description Token usage, cost, and LLM latency for generating this item's output. Populated only when generate_outputs=true (the candidate config was run to produce a fresh output); None when an existing dataset output was judged (nothing was generated). */
+            usage?: components["schemas"]["Usage"] | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * JudgeFeedbackBatchRunResponse
+         * @description The result of running a judge feedback batch. Counts and errors are FYI for the caller; not persisted.
+         */
+        JudgeFeedbackBatchRunResponse: {
+            /** @description The judge feedback batch that was run. */
+            judge_feedback_batch: components["schemas"]["JudgeFeedbackBatch"];
+            /**
+             * Failing Runs
+             * @description The failing examples found (up to stop_after_failures, if set), with feedback.
+             */
+            failing_runs: components["schemas"]["JudgeFeedbackBatchRun"][];
+            /**
+             * Judged Runs
+             * @description Every item judged this run (pass and fail), each keyed by task_run_id. Pair these across two runs by task_run_id to gate a candidate vs baseline on the same items.
+             */
+            judged_runs: components["schemas"]["JudgeFeedbackBatchRun"][];
+            /**
+             * Num Judged
+             * @description How many items were examined while searching for failures.
+             */
+            num_judged: number;
+            /**
+             * Failing Count
+             * @description How many judged items failed the judge.
+             */
+            failing_count: number;
+            /**
+             * Train Set Size
+             * @description Total number of dataset items matching the target tags.
+             */
+            train_set_size: number;
+            /**
+             * Hit Cap
+             * @description True if coverage was capped: max_samples reached before stop_after_failures (train signal), or the matching set exceeded max_samples (gate).
+             */
+            hit_cap: boolean;
+            /**
+             * Errors
+             * @description Per-item judge/save errors (if any). Each is skipped, not retried; re-running the job retries the un-persisted items. A non-empty list means partial success.
+             */
+            errors?: components["schemas"]["JudgeFeedbackBatchItemError"][];
+            /**
+             * Mean Normalized Scores
+             * @description Mean normalized (0-1, higher = better) score per output-score dimension over judged_runs — the continuous signal the pass/fail bit discards. Use it as a gate/loss metric (compare a candidate's mean vs the baseline's) instead of just the failure count.
+             */
+            mean_normalized_scores?: {
+                [key: string]: number;
+            };
+            /**
+             * Mean Normalized Score
+             * @description Mean of mean_normalized_scores across dimensions (null if nothing was judged).
+             */
+            mean_normalized_score?: number | null;
+            /** @description Summed token usage, cost (USD), and LLM latency for generating the judged outputs. Populated only in generate_outputs mode (null when existing outputs were judged). The deterministic counterpart to mean_normalized_scores — weigh quality against cost/latency (a Pareto axis), and accumulate cost/elapsed across calls for an advisory budget readout. */
+            total_usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Mean Cost
+             * @description Mean generation cost (USD) per judged item, over the items that reported cost (null in judge-only mode). Per-item cost lives on each judged_runs[].usage.
+             */
+            mean_cost?: number | null;
+            /**
+             * Mean Latency Ms
+             * @description Mean generation LLM latency (ms) per judged item, over the items that reported latency (null in judge-only mode). Per-item latency lives on each judged_runs[].usage.
+             */
+            mean_latency_ms?: number | null;
+        };
         /**
          * KilnAgentRunConfigProperties
          * @description A configuration for running a task using a Kiln AI agent.
@@ -16234,6 +16634,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJudgeFeedbackBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_and_run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJudgeFeedbackBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_judge_feedback_batch_runs_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__runs_get: {
+        parameters: {
+            query?: {
+                /** @description Return only the items that failed the judge. */
+                failing_only?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRun"][];
                 };
             };
             /** @description Validation Error */

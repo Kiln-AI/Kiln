@@ -1,0 +1,436 @@
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from app.desktop.studio_server.judge_feedback_batch_api import (
+    connect_judge_feedback_batch_api,
+)
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
+
+from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
+    JudgeFeedbackBatchItemError,
+    JudgeFeedbackBatchRunResult,
+)
+from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.datamodel import (
+    JudgeFeedbackBatch,
+    JudgeFeedbackBatchRun,
+    Project,
+    Task,
+    TaskOutputRatingType,
+)
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalOutputScore,
+)
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.usage import Usage
+
+BASE = "/api/projects/project1/tasks/task1/judge_feedback_batches"
+
+
+@pytest.fixture
+def app():
+    app = FastAPI()
+    connect_custom_errors(app)
+    connect_judge_feedback_batch_api(app)
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return TestClient(app)
+
+
+@pytest.fixture
+def mock_task(tmp_path):
+    project = Project(id="project1", name="P", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        id="task1",
+        name="T",
+        instruction="do",
+        path=tmp_path / "task.kiln",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.fixture
+def mock_eval_config(mock_task):
+    eval = Eval(
+        id="eval1",
+        name="e",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(name="Accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="c",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["s"]},
+        parent=eval,
+    )
+    eval_config.save_to_file()
+    return eval_config
+
+
+@pytest.fixture
+def mock_task_from_id(mock_task):
+    with patch("app.desktop.studio_server.judge_feedback_batch_api.task_from_id") as m:
+        m.return_value = mock_task
+        yield m
+
+
+@pytest.fixture
+def saved_job(mock_task, mock_eval_config):
+    job = JudgeFeedbackBatch(
+        id="jj1",
+        name="scan",
+        target_tags=["train"],
+        eval_config_id=mock_eval_config.id,
+        parent=mock_task,
+    )
+    job.save_to_file()
+    return job
+
+
+@pytest.fixture
+def mock_run_config(mock_task):
+    rc = TaskRunConfig(
+        id="run_config1",
+        name="candidate",
+        description="candidate",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=mock_task,
+    )
+    rc.save_to_file()
+    return rc
+
+
+def patched_runner(result: JudgeFeedbackBatchRunResult):
+    """Patch JudgeFeedbackBatchRunner so the endpoint returns `result` without real judging."""
+    runner = Mock()
+    runner.run = AsyncMock(return_value=result)
+    mock_cls = patch(
+        "app.desktop.studio_server.judge_feedback_batch_api.JudgeFeedbackBatchRunner",
+        return_value=runner,
+    )
+    return mock_cls
+
+
+def test_create_judge_feedback_batch(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(
+        BASE,
+        json={
+            "name": "scan",
+            "target_tags": ["train"],
+            "eval_config_id": "eval_config1",
+            "stop_after_failures": 3,
+            "max_samples": 10,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "scan"
+    assert body["target_tags"] == ["train"]
+    assert body["stop_after_failures"] == 3
+    assert len(mock_task.judge_feedback_batches()) == 1
+
+
+def test_create_generates_name(client, mock_task, mock_task_from_id, mock_eval_config):
+    resp = client.post(
+        BASE, json={"target_tags": ["train"], "eval_config_id": "eval_config1"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"]
+
+
+def test_create_unknown_eval_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(BASE, json={"target_tags": ["train"], "eval_config_id": "nope"})
+    assert resp.status_code == 404
+
+
+def test_create_unknown_run_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(
+        BASE,
+        json={
+            "target_tags": ["train"],
+            "eval_config_id": "eval_config1",
+            "run_config_id": "nope",
+        },
+    )
+    assert resp.status_code == 404
+
+
+def test_create_validation(client, mock_task, mock_task_from_id, mock_eval_config):
+    bad_counts = client.post(
+        BASE,
+        json={
+            "target_tags": ["train"],
+            "eval_config_id": "eval_config1",
+            "stop_after_failures": 5,
+            "max_samples": 2,
+        },
+    )
+    assert bad_counts.status_code == 422
+
+    empty_tags = client.post(
+        BASE, json={"target_tags": [], "eval_config_id": "eval_config1"}
+    )
+    assert empty_tags.status_code == 422
+
+
+def test_create_generate_requires_run_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    # generate_outputs needs a config to run — reject when run_config_id is missing.
+    resp = client.post(
+        BASE,
+        json={
+            "target_tags": ["val"],
+            "eval_config_id": "eval_config1",
+            "generate_outputs": True,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_create_generate_unknown_run_config(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(
+        BASE,
+        json={
+            "target_tags": ["val"],
+            "eval_config_id": "eval_config1",
+            "generate_outputs": True,
+            "run_config_id": "nope",
+        },
+    )
+    assert resp.status_code == 404
+
+
+def test_create_reference_answer_eval_requires_generate(
+    client, mock_task, mock_task_from_id
+):
+    eval = Eval(
+        id="refeval",
+        name="ref",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(name="Accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=EvalDataType.reference_answer,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="refcfg",
+        name="c",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["s"]},
+        parent=eval,
+    ).save_to_file()
+
+    # Judging existing outputs with a reference-answer eval is rejected (no reference to compare to).
+    resp = client.post(
+        BASE, json={"target_tags": ["train"], "eval_config_id": "refcfg"}
+    )
+    assert resp.status_code == 422
+
+
+def test_create_and_run_generate(
+    client, mock_task, mock_task_from_id, mock_eval_config, mock_run_config
+):
+    result = JudgeFeedbackBatchRunResult(
+        failing_runs=[],
+        judged_runs=[],
+        num_judged=0,
+        failing_count=0,
+        train_set_size=0,
+        hit_cap=False,
+    )
+    with patched_runner(result):
+        resp = client.post(
+            f"{BASE}/run",
+            json={
+                "target_tags": ["val"],
+                "eval_config_id": "eval_config1",
+                "run_config_id": "run_config1",
+                "generate_outputs": True,
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.json()["judge_feedback_batch"]["generate_outputs"] is True
+    jobs = mock_task.judge_feedback_batches()
+    assert len(jobs) == 1
+    assert jobs[0].generate_outputs is True
+    assert jobs[0].run_config_id == "run_config1"
+
+
+def test_run_judge_feedback_batch(
+    client, mock_task, mock_task_from_id, mock_eval_config, saved_job
+):
+    failing_run = JudgeFeedbackBatchRun(
+        parent=saved_job,
+        task_run_id="d1",
+        scores={"accuracy": 0.0},
+        feedback="bad",
+        passed=False,
+    )
+    passing_run = JudgeFeedbackBatchRun(
+        parent=saved_job,
+        task_run_id="d3",
+        scores={"accuracy": 1.0},
+        passed=True,
+        usage=Usage(cost=0.01, total_llm_latency_ms=200, total_tokens=120),
+    )
+    result = JudgeFeedbackBatchRunResult(
+        failing_runs=[failing_run],
+        judged_runs=[failing_run, passing_run],
+        num_judged=3,
+        failing_count=1,
+        train_set_size=10,
+        hit_cap=False,
+        errors=[
+            JudgeFeedbackBatchItemError(
+                task_run_id="d2", error="Error judging item: boom"
+            )
+        ],
+        mean_normalized_scores={"accuracy": 0.5},
+        mean_normalized_score=0.5,
+        total_usage=Usage(cost=0.01, total_llm_latency_ms=200, total_tokens=120),
+        mean_cost=0.01,
+        mean_latency_ms=200,
+    )
+    with patched_runner(result):
+        resp = client.post(f"{BASE}/jj1/run")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["judge_feedback_batch"]["id"] == "jj1"
+    assert body["num_judged"] == 3
+    assert body["failing_count"] == 1
+    assert body["train_set_size"] == 10
+    assert body["hit_cap"] is False
+    assert len(body["failing_runs"]) == 1
+    assert body["failing_runs"][0]["task_run_id"] == "d1"
+    assert body["failing_runs"][0]["feedback"] == "bad"
+    # judged_runs carries every judged item (pass and fail), keyed by task_run_id, for pairing.
+    assert {(r["task_run_id"], r["passed"]) for r in body["judged_runs"]} == {
+        ("d1", False),
+        ("d3", True),
+    }
+    # Per-item errors are surfaced so the caller can see partial failures.
+    assert body["errors"] == [
+        {"task_run_id": "d2", "error": "Error judging item: boom"}
+    ]
+    # Continuous loss signal (P1) flows through for gating.
+    assert body["mean_normalized_scores"] == {"accuracy": 0.5}
+    assert body["mean_normalized_score"] == 0.5
+    # Deterministic signal: per-run usage + aggregate cost/latency flow through for the Pareto axis.
+    judged_by_id = {r["task_run_id"]: r for r in body["judged_runs"]}
+    assert judged_by_id["d3"]["usage"]["cost"] == 0.01
+    assert judged_by_id["d1"]["usage"] is None
+    assert body["total_usage"]["cost"] == 0.01
+    assert body["total_usage"]["total_tokens"] == 120
+    assert body["mean_cost"] == 0.01
+    assert body["mean_latency_ms"] == 200
+
+
+def test_run_judge_feedback_batch_404(
+    client, mock_task, mock_task_from_id, mock_eval_config
+):
+    resp = client.post(f"{BASE}/nope/run")
+    assert resp.status_code == 404
+
+
+def test_create_and_run(client, mock_task, mock_task_from_id, mock_eval_config):
+    result = JudgeFeedbackBatchRunResult(
+        failing_runs=[],
+        judged_runs=[],
+        num_judged=0,
+        failing_count=0,
+        train_set_size=0,
+        hit_cap=False,
+    )
+    with patched_runner(result):
+        resp = client.post(
+            f"{BASE}/run",
+            json={"target_tags": ["train"], "eval_config_id": "eval_config1"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["judge_feedback_batch"]["target_tags"] == ["train"]
+    # the job was created/persisted
+    assert len(mock_task.judge_feedback_batches()) == 1
+
+
+def test_get_judge_feedback_batch(client, mock_task, mock_task_from_id, saved_job):
+    resp = client.get(f"{BASE}/jj1")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "jj1"
+
+
+def test_get_judge_feedback_batch_404(client, mock_task, mock_task_from_id):
+    resp = client.get(f"{BASE}/nope")
+    assert resp.status_code == 404
+
+
+def test_get_judge_feedback_batch_runs(client, mock_task, mock_task_from_id, saved_job):
+    JudgeFeedbackBatchRun(
+        parent=saved_job,
+        task_run_id="d1",
+        scores={"accuracy": 0.0},
+        feedback="bad",
+        passed=False,
+    ).save_to_file()
+    JudgeFeedbackBatchRun(
+        parent=saved_job, task_run_id="d2", scores={"accuracy": 1.0}, passed=True
+    ).save_to_file()
+
+    resp = client.get(f"{BASE}/jj1/runs")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+    failing = client.get(f"{BASE}/jj1/runs", params={"failing_only": True})
+    assert failing.status_code == 200
+    body = failing.json()
+    assert len(body) == 1
+    assert body[0]["task_run_id"] == "d1"
+    assert body[0]["feedback"] == "bad"
+
+
+def test_list_judge_feedback_batches(client, mock_task, mock_task_from_id, saved_job):
+    resp = client.get(BASE)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["id"] == "jj1"
