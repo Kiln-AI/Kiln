@@ -20,6 +20,7 @@
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
   import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
+  import AutoModeStopDialog from "./auto_mode_stop_dialog.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
@@ -31,6 +32,7 @@
   let costDisclaimer: ChatCostDisclaimer
   $: store.onConsentNeeded = () => costDisclaimer.prompt()
   let consentDialog: AutoModeConsentDialog
+  let stopDialog: AutoModeStopDialog
   // The store asks here when the model requests auto mode; we just decide
   // accept/decline via the dialog. The store handles enable/decline + handoff.
   $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
@@ -85,6 +87,18 @@
   }
 
   async function stopAgent() {
+    // Brand-new armed conversation: no server run exists yet, so nothing could
+    // have been kicked off — just disarm without the explainer dialog.
+    if (!get(autoModeOn)) {
+      auto_run_store.disarm()
+      return
+    }
+    // Confirm + set expectations: the hard stop halts the agent immediately, but
+    // jobs it already started (evals, optimization runs) are independent and keep
+    // running. Bail if the user backs out.
+    const confirmed = await stopDialog.prompt()
+    if (!confirmed) return
+
     // Hard stop: halt the agent completely. Abort any in-flight interactive
     // stream (e.g. a tool-call continuation or a normal streaming turn), tell the
     // server to cancel the background run, and detach the observer so nothing
@@ -895,6 +909,7 @@
 
 <ChatCostDisclaimer bind:this={costDisclaimer} />
 <AutoModeConsentDialog bind:this={consentDialog} />
+<AutoModeStopDialog bind:this={stopDialog} />
 
 <style>
   .chat-messages-scroll::-webkit-scrollbar {
