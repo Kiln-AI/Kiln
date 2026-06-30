@@ -424,6 +424,41 @@ async def test_send_message_while_running_enqueues():
 
 
 @pytest.mark.asyncio
+async def test_send_message_echo_carries_message_id():
+    # The echoed user-message event carries the injected message's stable id so a
+    # re-attaching client can dedupe a replayed echo against a message it shows.
+    reg = AutoChatRegistry()
+    release = asyncio.Event()
+    client = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(_seed("tr-0"), reason=None, upstream_url=URL, headers={})
+        run = reg.get(rec.run_id)
+        assert run is not None
+        await asyncio.sleep(0.02)
+
+        msg = InboundMessage(content="inject me")
+        assert msg.id.startswith("am_")
+        assert reg.send_message(rec.run_id, msg) is True
+
+        echo = next(
+            e
+            for e in (
+                json.loads(line[6:].strip())
+                for chunk in run.buffer
+                for line in chunk.decode().split("\n")
+                if line.startswith("data: ") and line[6:].strip()
+            )
+            if isinstance(e, dict) and e.get("type") == "user-message"
+        )
+        assert echo["content"] == "inject me"
+        assert echo["id"] == msg.id
+
+        await reg.stop(rec.run_id)
+        release.set()
+        await _wait_terminal(reg, rec.run_id)
+
+
+@pytest.mark.asyncio
 async def test_send_message_while_idle_starts_new_burst():
     reg = AutoChatRegistry()
     # First burst settles IDLE; second burst (from /message) runs to settle too.

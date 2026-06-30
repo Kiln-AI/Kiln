@@ -302,11 +302,18 @@ export function createChatSessionStore(
   // Append an echoed (injected) user message, then a fresh assistant turn so the
   // burst it triggers renders into a new turn — mirrors the server's
   // render-immediately + replay model for inject-on-send (functional spec §4.3.2).
-  function appendEchoedUserMessage(content: string) {
+  // Idempotent by echo id: a buffer replay on re-attach (hard-refresh resync /
+  // History restore) re-emits the echo for an in-flight injected message the
+  // restored transcript already shows — skip it (and don't open another assistant
+  // turn) instead of appending a duplicate that would compound on each refresh.
+  function appendEchoedUserMessage(content: string, echoId?: string) {
+    if (echoId && get(persisted).messages.some((m) => m.echoId === echoId)) {
+      return
+    }
     removeErrors()
     updateMessages((msgs) => [
       ...msgs,
-      { id: chatGenerateId(), role: "user", content },
+      { id: chatGenerateId(), role: "user", content, echoId },
     ])
     beginAssistantTurn()
   }

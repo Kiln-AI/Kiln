@@ -25,6 +25,12 @@ export interface ChatMessage {
   parts?: ChatMessagePart[]
   /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
   traceId?: string
+  /**
+   * Stable id from the ``user-message`` echo for an auto-mode injected message.
+   * Lets the client render the echo idempotently — a buffer replay on re-attach
+   * re-emits the echo for an in-flight message the transcript already shows.
+   */
+  echoId?: string
   /** Machine-readable error code from upstream (e.g. ``CHAT_CLIENT_VERSION_TOO_OLD``) */
   errorCode?: string
 }

@@ -61,8 +61,12 @@ export interface AutoRunChatSink {
    * streaming while the runner works between events. ``false`` on burst end.
    */
   onWorkingChange: (working: boolean) => void
-  /** The runner echoed an injected user message; render it as a new user turn. */
-  onUserMessage: (content: string) => void
+  /**
+   * The runner echoed an injected user message; render it as a new user turn.
+   * ``echoId`` is the message's stable id, so the sink can render it idempotently
+   * (a buffer replay on re-attach re-emits the echo for a message already shown).
+   */
+  onUserMessage: (content: string, echoId?: string) => void
   /**
    * A burst ended but auto mode stays ON (asked_user / done / error /
    * max_rounds). The indicator persists; only the working sub-state clears.
@@ -313,9 +317,11 @@ export function createAutoRunStore(): AutoRunStore {
     if (event.type === "user-message") {
       // The runner echoed an injected user message. Render it as a fresh user
       // turn (then a new assistant turn for the burst it triggers) so every
-      // observer — including the sender — sees it, consistent with replay.
+      // observer — including the sender — sees it, consistent with replay. The
+      // echo id lets the sink dedupe a replayed echo (re-attach) against a
+      // message it already shows.
       setWorking(true)
-      sink?.onUserMessage(event.content ?? "")
+      sink?.onUserMessage(event.content ?? "", event.id)
       return true
     }
     if (event.type === "tool-calls-pending") {

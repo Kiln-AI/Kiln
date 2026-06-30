@@ -642,6 +642,31 @@ describe("createChatSessionStore", () => {
       expect(msgs[msgs.length - 1].role).toBe("assistant")
     })
 
+    it("renders an echoed user message once per echo id (dedupes a replayed echo)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
+      ;(
+        fakeAutoRun as unknown as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        boundSink = s
+      }
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      // Live echo + a buffer-replay echo on re-attach carry the SAME id.
+      boundSink!.onUserMessage("hello there", "am_1")
+      boundSink!.onUserMessage("hello there", "am_1")
+
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(1)
+      expect(users[0].content).toBe("hello there")
+      expect(users[0].echoId).toBe("am_1")
+    })
+
     it("surfaces an inline error when injecting a message fails", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
