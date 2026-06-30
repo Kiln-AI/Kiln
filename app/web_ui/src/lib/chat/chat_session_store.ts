@@ -683,14 +683,15 @@ export function createChatSessionStore(
     }
   }
 
-  // A turn is "in flight" — sending should queue rather than dispatch — when the
-  // interactive stream is active, a tool approval is open (waiting on the user
-  // mid-turn), or a server-owned auto burst is running / re-attaching.
-  function turnActive(): boolean {
+  // An interactive turn is "in flight" — sending should queue rather than
+  // dispatch — when the client stream is active or a tool approval is open
+  // (waiting on the user mid-turn). Auto mode is intentionally NOT consulted
+  // here: it never holds client-side. A message sent during an auto burst is
+  // injected immediately so the runner appends it to its next request (its next
+  // round boundary), rather than waiting for the whole auto run to finish.
+  function interactiveTurnActive(): boolean {
     if (status !== "ready") return true
     if (get(combined).toolApprovalWaiter) return true
-    if (get(autoRunStore.working)) return true
-    if (get(autoRunStore.reconnecting)) return true
     return false
   }
 
@@ -707,14 +708,14 @@ export function createChatSessionStore(
     combined.update((s) => ({ ...s, queuedMessage: null }))
   }
 
-  // Auto-send the queued message once the turn has yielded. Guards on
-  // ``turnActive`` (re-check: a flush hook can fire mid-transition) and
-  // ``versionRequired`` (sending would just be rejected). Clears the queue
+  // Auto-send the queued message once the interactive turn has yielded. Guards
+  // on ``interactiveTurnActive`` (re-check: a flush hook can fire mid-transition)
+  // and ``versionRequired`` (sending would just be rejected). Clears the queue
   // before dispatching so a re-entrant flush can't double-send.
   function maybeFlush(): void {
     const queued = get(combined).queuedMessage
     if (!queued) return
-    if (turnActive()) return
+    if (interactiveTurnActive()) return
     if (get(combined).versionRequired) return
     clearQueued()
     void actuallySend(queued)
@@ -726,8 +727,9 @@ export function createChatSessionStore(
     if (!queued) return
     if (get(combined).versionRequired) return
     // Auto mode: inject immediately and keep auto mode running — the runner
-    // picks the message up at its next round boundary (it can't interrupt a turn
-    // mid-round). Covers a live burst and the idle "waiting for you" state.
+    // picks the message up at its next round boundary. (Auto sends already
+    // dispatch immediately, so a queued message here only exists if auto turned
+    // on after it was queued interactively; inject it now.)
     if (get(autoRunStore.autoModeOn) || get(autoRunStore.armed)) {
       clearQueued()
       void actuallySend(queued)
@@ -747,11 +749,19 @@ export function createChatSessionStore(
   async function sendMessage(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed) return false
-    // Queue when a turn is in flight (the composer surfaces it above the input
-    // with send-now / edit / cancel and it auto-sends when the turn yields), or
-    // whenever something is already queued so a follow-up send coalesces into
-    // the pending message rather than dispatching alongside it.
-    if (get(combined).queuedMessage !== null || turnActive()) {
+    // Auto mode never holds client-side: a message is injected immediately so
+    // the runner appends it to its next request (its next round boundary),
+    // rather than waiting for the whole auto run to finish. Armed likewise
+    // creates the run now. Both are dispatched straight through.
+    if (get(autoRunStore.autoModeOn) || get(autoRunStore.armed)) {
+      return actuallySend(trimmed)
+    }
+    // Interactive: hold the message in the client-side queue while a turn is in
+    // flight (the composer surfaces it above the input with send-now / edit /
+    // cancel and it auto-sends when the turn yields), or whenever something is
+    // already queued so a follow-up send coalesces into the pending message
+    // rather than dispatching alongside it.
+    if (get(combined).queuedMessage !== null || interactiveTurnActive()) {
       enqueue(trimmed)
       return true
     }
@@ -759,8 +769,9 @@ export function createChatSessionStore(
   }
 
   // Dispatch a message to its real transport: armed-first-send (creates the
-  // run), inject-on-send (auto flag on), or the interactive stream. Assumes no
-  // turn is in flight — callers gate on ``turnActive`` or flush on a turn ending.
+  // run), inject-on-send (auto flag on), or the interactive stream. The
+  // interactive stream assumes no client turn is in flight — callers gate on
+  // ``interactiveTurnActive`` or flush on a turn ending.
   async function actuallySend(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed) return false

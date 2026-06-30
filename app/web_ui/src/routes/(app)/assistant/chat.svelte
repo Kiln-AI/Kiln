@@ -885,7 +885,7 @@
           <div class="flex items-start gap-2">
             <div class="flex-1 min-w-0">
               <div class="text-xs text-base-content/50 mb-1">
-                Queued · sends when the assistant finishes
+                Queued · sends as soon as possible
               </div>
               <div
                 class="text-sm whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
