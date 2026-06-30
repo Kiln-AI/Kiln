@@ -50,7 +50,7 @@
   bind:this={dialog}
   title="Stop the agent?"
   action_buttons={[
-    { label: "Keep running", isCancel: true },
+    { label: "Cancel", isCancel: true },
     { label: "Stop agent", isError: true, action: confirm },
   ]}
   on:cancel={() => dismiss()}
