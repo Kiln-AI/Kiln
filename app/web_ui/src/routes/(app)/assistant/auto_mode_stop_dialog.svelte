@@ -56,10 +56,8 @@
   on:cancel={() => dismiss()}
   on:close={() => dismiss()}
 >
-  <div class="text-sm">
-    <p class="leading-relaxed">
-      The agent won't start anything new, but any jobs it already kicked off
-      (like evals) keep running in the background.
-    </p>
-  </div>
+  <p class="text-sm">
+    The agent won't start anything new, but any jobs it already kicked off (like
+    evals) keep running in the background.
+  </p>
 </Dialog>
