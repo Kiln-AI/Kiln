@@ -148,10 +148,10 @@
   function row_menu_items(job: JobRecord): FloatingMenuItem[] {
     const items: FloatingMenuItem[] = []
     if (has_result(job)) {
-      items.push({ label: "View results", onclick: () => open_result(job) })
+      items.push({ label: "View Results", onclick: () => open_result(job) })
     }
     if (has_errors(job)) {
-      items.push({ label: "View errors", onclick: () => open_errors(job) })
+      items.push({ label: "View Errors", onclick: () => open_errors(job) })
     }
     for (const action of available_actions(job)) {
       items.push({
@@ -190,9 +190,9 @@
 {:else if $jobs.length === 0}
   <div class="flex justify-center items-center min-h-[55vh]">
     <Intro
-      title="No jobs yet"
+      title="This project has no tracked jobs"
       description_paragraphs={[
-        "Long-running workloads show up here. Manage them from this page, or leave — they'll keep running in the background.",
+        "Long-running workloads will show up here for you to view status and results.",
       ]}
     >
       <div slot="icon" class="w-12 h-12 text-gray-400" aria-hidden="true">
@@ -203,14 +203,14 @@
 {:else}
   <div class="flex flex-row justify-end mb-3">
     <button
-      class="btn btn-xs btn-ghost"
+      class="btn btn-sm"
       disabled={clearing_completed || completed.length === 0}
       on:click={clear_completed}
     >
       {#if clearing_completed}
         <span class="loading loading-spinner loading-xs"></span>
       {/if}
-      Clear completed
+      Clear Completed
     </button>
   </div>
   <div class="overflow-x-auto rounded-lg border">
@@ -228,7 +228,7 @@
             <td class="whitespace-nowrap">
               <div class="flex flex-col gap-1">
                 <span class="font-medium">{job_type_display(job.type)}</span>
-                <span class="font-mono text-xs text-gray-500">{job.id}</span>
+                <span class="font-mono text-xs text-gray-500">ID: {job.id}</span>
                 <span class="text-xs text-gray-500"
                   >{formatDate(job.created_at)}</span
                 >
