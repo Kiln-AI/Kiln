@@ -15,6 +15,7 @@ from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
@@ -183,10 +184,13 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(self, concurrency: int | None = None) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
         """
+        if concurrency is None:
+            concurrency = Config.shared().max_concurrent_evals or 25
+
         jobs = self.collect_tasks()
 
         runner = AsyncJobRunner(

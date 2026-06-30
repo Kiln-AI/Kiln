@@ -53,6 +53,7 @@
   let data_guide: DataGuide | null = null
   let guide_loading = true
   let skip_data_guide = false
+  let max_concurrency = 5
 
   async function fetch_data_guide() {
     if (!project_id || !task_id) return
@@ -216,6 +217,15 @@
   }
 
   onMount(async () => {
+    try {
+      const { data: settings } = await client.GET("/api/settings")
+      if (settings && typeof settings.max_concurrent_generation === "number") {
+        max_concurrency = settings.max_concurrent_generation
+      }
+    } catch (e) {
+      console.error("Failed to load max concurrent generation setting", e)
+    }
+
     if ($page.url.searchParams.get("data_guide_saved") === "true") {
       data_guide_just_saved = true
       const cleaned = new URL($page.url.toString())
@@ -632,9 +642,9 @@
 
       const queue = [...samples_to_generate]
 
-      // Create and start 5 workers
-      // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
-      const workers = Array(5)
+      // Create and start workers
+      // Default is 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+      const workers = Array(max_concurrency)
         .fill(null)
         .map(() => generate_worker(queue, run_config_properties))
 

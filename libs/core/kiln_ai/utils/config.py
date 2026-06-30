@@ -216,6 +216,16 @@ class Config:
             "personal_use_contact": ConfigProperty(
                 str,
             ),
+            "max_concurrent_generation": ConfigProperty(
+                int,
+                env_var="KILN_MAX_CONCURRENT_GENERATION",
+                default=5,
+            ),
+            "max_concurrent_evals": ConfigProperty(
+                int,
+                env_var="KILN_MAX_CONCURRENT_EVALS",
+                default=25,
+            ),
         }
         self._lock = threading.Lock()
         self._in_memory_settings: Dict[str, Any] = {}

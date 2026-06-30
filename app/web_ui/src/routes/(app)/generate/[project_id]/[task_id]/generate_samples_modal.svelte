@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte"
   import type { SampleDataNode } from "./gen_model"
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
@@ -12,6 +13,19 @@
   import type { RunConfigProperties } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import { get } from "svelte/store"
+
+  let max_concurrency = 5
+
+  onMount(async () => {
+    try {
+      const { data: settings } = await client.GET("/api/settings")
+      if (settings && typeof settings.max_concurrent_generation === "number") {
+        max_concurrency = settings.max_concurrent_generation
+      }
+    } catch (e) {
+      console.error("Failed to load max concurrent generation setting", e)
+    }
+  })
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
@@ -217,9 +231,9 @@
       ? collect_leaf_topic_nodes()
       : [{ path, node: data }]
 
-    // Create and start 5 workers
-    // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
-    const workers = Array(5)
+    // Create and start workers
+    // Default is 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+    const workers = Array(max_concurrency)
       .fill(null)
       .map(() => worker(queue, run_config_properties))
 
