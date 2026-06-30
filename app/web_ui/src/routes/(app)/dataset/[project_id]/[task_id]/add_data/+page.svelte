@@ -187,10 +187,12 @@
       button_text={completed_button_text || "View Dataset"}
     />
   {:else}
-    <OptionList
-      options={data_source_descriptions}
-      select_option={select_data_source}
-    />
+    <div class="max-w-[600px]">
+      <OptionList
+        options={data_source_descriptions}
+        select_option={select_data_source}
+      />
+    </div>
   {/if}
 </AppPage>
 
