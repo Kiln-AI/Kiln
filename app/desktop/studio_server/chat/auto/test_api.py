@@ -333,10 +333,10 @@ async def test_stop_returns_202_and_is_idempotent(client, registry, mock_api_key
 
 @pytest.mark.asyncio
 async def test_stop_clears_flag_with_user_stopped(client, registry, mock_api_key):
-    # /stop is graceful (functional spec §4.4(1)): it returns 202 promptly and
-    # sets a stop intent WITHOUT cutting off the in-flight round. The flag clears
-    # (USER_STOPPED) + auto-mode-off(user_stopped) is published only once the
-    # current round finishes.
+    # /stop is a hard cancel: it returns 202 and tears the in-flight burst down
+    # immediately rather than waiting for the round to finish. The flag clears
+    # (USER_STOPPED) + auto-mode-off(user_stopped) is published right away, even
+    # though the gated round is never released.
     release = asyncio.Event()
     gated = _GatedClient(release)
     with patch.object(httpx, "AsyncClient", return_value=gated):
@@ -356,16 +356,14 @@ async def test_stop_clears_flag_with_user_stopped(client, registry, mock_api_key
 
         drain_task = asyncio.create_task(_drain())
         await asyncio.sleep(0.02)
+        # The round is still blocked open on the gated client; stop must NOT wait
+        # for it — the burst is cancelled mid-round and goes terminal at once.
         r = await client.post(f"/api/chat/auto/{run_id}/stop")
         assert r.status_code == 202
-        # Not cut off: still RUNNING until the in-flight round finishes.
-        await asyncio.sleep(0.02)
-        assert run.record.status == AutoRunStatus.RUNNING
-        # Let the round finish; the burst now winds down to off.
-        release.set()
         await _wait_terminal(registry, run_id)
         await asyncio.sleep(0.02)
         drain_task.cancel()
+        release.set()  # cleanup: unblock the gated client
 
     assert run.record.status == AutoRunStatus.USER_STOPPED
     decoded = b"".join(received).decode()
