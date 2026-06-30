@@ -692,6 +692,7 @@ async def test_status_with_deploy(fireworks_finetune, mock_api_key):
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_fetch_all_deployments(fireworks_finetune):
     deployments = await fireworks_finetune._fetch_all_deployments()
     assert isinstance(deployments, list)

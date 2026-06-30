@@ -195,7 +195,7 @@ class APIWriteContext:
         error = None
         if resp.status_code >= 400:
             try:
-                error = resp.json().get("detail")
+                error = resp.json().get("message")
             except Exception:
                 error = resp.text
 
@@ -212,7 +212,7 @@ class APIWriteContext:
         body = None
         if resp.status_code >= 400:
             try:
-                error = resp.json().get("detail")
+                error = resp.json().get("message")
             except Exception:
                 error = resp.text
         else:

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 import {
   streamChat,
@@ -28,6 +28,12 @@ describe("traceIdForNextChatRequest", () => {
 })
 
 describe("streamChat", () => {
+  // Always restore globals, even if an assertion throws mid-test, so a stubbed
+  // fetch can't leak into later tests.
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it("includes trace_id in POST body when traceId option is set", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -55,8 +61,6 @@ describe("streamChat", () => {
       messages: [{ role: "user", content: "hi" }],
       trace_id: "tid-1",
     })
-
-    vi.unstubAllGlobals()
   })
 
   it("posts execute-tools when tool-calls-pending is received", async () => {
@@ -131,8 +135,6 @@ describe("streamChat", () => {
     expect(chatExecuteToolsUrl("https://example.test/api/chat")).toBe(
       "https://example.test/api/chat/execute-tools",
     )
-
-    vi.unstubAllGlobals()
   })
 
   it("calls onInlineError with code when response has chat_client_version_too_old", async () => {
@@ -165,8 +167,6 @@ describe("streamChat", () => {
 
     expect(inlineErrorSpy).toHaveBeenCalledOnce()
     expect(inlineErrorSpy.mock.calls[0][2]).toBe(CHAT_CLIENT_VERSION_TOO_OLD)
-
-    vi.unstubAllGlobals()
   })
 
   it("calls onError for non-version error responses", async () => {
@@ -192,7 +192,45 @@ describe("streamChat", () => {
 
     expect(errorSpy).toHaveBeenCalledOnce()
     expect(inlineErrorSpy).not.toHaveBeenCalled()
+  })
 
-    vi.unstubAllGlobals()
+  it("calls onVersionNudge for kiln_client_upgrade_nudge events", async () => {
+    const lines = [
+      'data: {"type":"kiln_client_upgrade_nudge","preferred_version":"1.2.3"}\n\n',
+      'data: {"type":"kiln_chat_trace","trace_id":"trace-1"}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (i >= lines.length) {
+              return Promise.resolve({ done: true, value: undefined })
+            }
+            const value = new TextEncoder().encode(lines[i])
+            i += 1
+            return Promise.resolve({ done: false, value })
+          },
+        }),
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const versionNudgeSpy = vi.fn()
+    const errorSpy = vi.fn()
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onVersionNudge: versionNudgeSpy,
+      onFinish: () => {},
+      onError: errorSpy,
+    })
+
+    expect(versionNudgeSpy).toHaveBeenCalledOnce()
+    expect(versionNudgeSpy).toHaveBeenCalledWith("1.2.3")
+    expect(errorSpy).not.toHaveBeenCalled()
   })
 })

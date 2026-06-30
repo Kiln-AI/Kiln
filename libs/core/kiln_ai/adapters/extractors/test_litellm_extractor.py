@@ -6,7 +6,7 @@ import pytest
 from litellm.types.utils import Choices, ModelResponse
 
 from kiln_ai.adapters.extractors.base_extractor import ExtractionInput, OutputFormat
-from kiln_ai.adapters.extractors.encoding import to_base64_url
+from kiln_ai.adapters.extractors.encoding import to_base64, to_base64_url
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.litellm_extractor import (
     ExtractorConfig,
@@ -20,6 +20,10 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models_from_provider,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.adapters.pytest_prerelease_whitelist import (
+    PRERELEASE_EXTRACTION_MIME_PROBES,
+    PRERELEASE_EXTRACTION_MODELS,
+)
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
@@ -539,30 +543,95 @@ def paid_litellm_extractor(model_name: str, provider_name: str):
 
 
 @pytest.mark.parametrize(
-    "mime_type, expected_encoding",
+    "provider_name, mime_type, expected_encoding",
     [
+        # Non-OpenRouter providers (e.g. Gemini) use the generic `file` block for
+        # documents, audio and video; images get the dedicated `image_url` block.
         # documents
-        (MockFileFactoryMimeType.PDF, "generic_file_data"),
-        (MockFileFactoryMimeType.TXT, "generic_file_data"),
-        (MockFileFactoryMimeType.MD, "generic_file_data"),
-        (MockFileFactoryMimeType.HTML, "generic_file_data"),
-        (MockFileFactoryMimeType.CSV, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.PDF,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.TXT,
+            "generic_file_data",
+        ),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.MD, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.HTML,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.CSV,
+            "generic_file_data",
+        ),
         # images
-        (MockFileFactoryMimeType.PNG, "image_data"),
-        (MockFileFactoryMimeType.JPEG, "image_data"),
-        (MockFileFactoryMimeType.JPG, "image_data"),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.PNG, "image_data"),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.JPEG, "image_data"),
+        (ModelProviderName.gemini_api, MockFileFactoryMimeType.JPG, "image_data"),
         # videos
-        (MockFileFactoryMimeType.MP4, "generic_file_data"),
-        (MockFileFactoryMimeType.MOV, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.MP4,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.MOV,
+            "generic_file_data",
+        ),
         # audio
-        (MockFileFactoryMimeType.MP3, "generic_file_data"),
-        (MockFileFactoryMimeType.OGG, "generic_file_data"),
-        (MockFileFactoryMimeType.WAV, "generic_file_data"),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.MP3,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.OGG,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.gemini_api,
+            MockFileFactoryMimeType.WAV,
+            "generic_file_data",
+        ),
+        # OpenRouter rejects the generic `file` block for audio/video, so we use the
+        # OpenAI-style `input_audio` block and a `video_url` block instead. Documents
+        # and images are unchanged.
+        # documents
+        (
+            ModelProviderName.openrouter,
+            MockFileFactoryMimeType.PDF,
+            "generic_file_data",
+        ),
+        (
+            ModelProviderName.openrouter,
+            MockFileFactoryMimeType.CSV,
+            "generic_file_data",
+        ),
+        # images
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.PNG, "image_data"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.JPEG, "image_data"),
+        # videos
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.MP4, "video_url"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.MOV, "video_url"),
+        # audio
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.MP3, "input_audio_mp3"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.OGG, "input_audio_ogg"),
+        (ModelProviderName.openrouter, MockFileFactoryMimeType.WAV, "input_audio_wav"),
     ],
 )
-def test_encode_file_litellm_format(mock_file_factory, mime_type, expected_encoding):
+def test_encode_file_litellm_format(
+    mock_file_factory, provider_name, mime_type, expected_encoding
+):
     test_file = mock_file_factory(mime_type)
-    encoded = encode_file_litellm_format(Path(test_file), mime_type)
+    encoded = encode_file_litellm_format(Path(test_file), mime_type, provider_name)
+    file_bytes = Path(test_file).read_bytes()
 
     # there are two types of ways of including files, image_url is a special case
     # and it also works with the generic file_data encoding, but LiteLLM docs are
@@ -571,14 +640,29 @@ def test_encode_file_litellm_format(mock_file_factory, mime_type, expected_encod
         assert encoded == {
             "type": "image_url",
             "image_url": {
-                "url": to_base64_url(mime_type, Path(test_file).read_bytes()),
+                "url": to_base64_url(mime_type, file_bytes),
             },
         }
     elif expected_encoding == "generic_file_data":
         assert encoded == {
             "type": "file",
             "file": {
-                "file_data": to_base64_url(mime_type, Path(test_file).read_bytes()),
+                "file_data": to_base64_url(mime_type, file_bytes),
+            },
+        }
+    elif expected_encoding == "video_url":
+        assert encoded == {
+            "type": "video_url",
+            "video_url": {
+                "url": to_base64_url(mime_type, file_bytes),
+            },
+        }
+    elif expected_encoding.startswith("input_audio_"):
+        assert encoded == {
+            "type": "input_audio",
+            "input_audio": {
+                "data": to_base64(file_bytes),
+                "format": expected_encoding.removeprefix("input_audio_"),
             },
         }
     else:
@@ -1422,4 +1506,72 @@ async def test_clear_cache_for_file_path(
                 f"irrelevant_key_{i}"
             )
             is not None
+        )
+
+
+# Curated prerelease smoke tests: same behavior as test_extract_document_success
+# and test_provider_bad_request above, but restricted to a small whitelist of
+# (model, provider) pairs and a small set of mime probes so --runprerelease
+# stays fast.
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_EXTRACTION_MODELS)
+@pytest.mark.parametrize("mime_type,text_probe", PRERELEASE_EXTRACTION_MIME_PROBES)
+async def test_extract_document_success_prerelease_smoke(
+    model_name,
+    provider_name,
+    mime_type,
+    text_probe,
+    mock_file_factory,
+):
+    model = built_in_models_from_provider(provider_name, model_name)
+    assert model is not None
+    if mime_type not in model.multimodal_mime_types:
+        pytest.skip(f"Model {model_name} configured to not support {mime_type}")
+    if (
+        mime_type == MockFileFactoryMimeType.MD
+        or mime_type == MockFileFactoryMimeType.TXT
+    ):
+        pytest.skip(f"Model {model_name} configured to passthrough {mime_type}")
+
+    test_file = mock_file_factory(mime_type)
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
+    output = await extractor.extract(
+        extraction_input=ExtractionInput(
+            path=str(test_file),
+            mime_type=mime_type,
+        )
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+
+    text_probe_str = ", ".join(text_probe)
+    assert any(probe.lower() in output.content.lower() for probe in text_probe), (
+        f"Expected any of [{text_probe_str}] to be in output: {output.content}"
+    )
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_EXTRACTION_MODELS)
+async def test_provider_bad_request_prerelease_smoke(
+    tmp_path, model_name, provider_name
+):
+    temp_file = tmp_path / "corrupted_file.pdf"
+    temp_file.write_bytes(b"invalid file")
+
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
+
+    with pytest.raises(ValueError, match=r"Error extracting .*corrupted_file.pdf: "):
+        await extractor.extract(
+            extraction_input=ExtractionInput(
+                path=temp_file.as_posix(),
+                mime_type="application/pdf",
+            )
         )

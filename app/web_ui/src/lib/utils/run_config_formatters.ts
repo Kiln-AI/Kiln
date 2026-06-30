@@ -48,14 +48,6 @@ export function getDetailedModelNameFromParts(
   return `${model_name(model_name_part, model_info)} (${provider_name_from_id(model_provider_part)})`
 }
 
-export function getStaticPromptDisplayName(
-  prompt_name: string,
-  prompt_generator_id: string | null | undefined,
-  current_task_prompts: PromptResponse | null,
-): string {
-  return `${prompt_name} — ${prompt_generator_id ? prompt_name_from_id(prompt_generator_id, current_task_prompts) : "Custom"}`
-}
-
 export function getRunConfigPromptDisplayName(
   task_run_config: TaskRunConfig,
   current_task_prompts: PromptResponse | null,
@@ -65,23 +57,13 @@ export function getRunConfigPromptDisplayName(
     case "mcp":
       return null
     case "kiln_agent": {
+      // The prompt's type is baked into its name (e.g. frozen prompts are named
+      // "<memorable name> - Basic (Zero Shot)"), so we just show the name. For
+      // a reused frozen prompt this resolves the owner's name from the list.
       const prompt_name = prompt_name_from_id(
         task_run_config?.run_config_properties?.prompt_id,
         current_task_prompts,
       )
-
-      if (
-        task_run_config.prompt?.generator_id &&
-        task_run_config?.run_config_properties?.prompt_id?.startsWith(
-          "task_run_config::",
-        )
-      ) {
-        return getStaticPromptDisplayName(
-          prompt_name,
-          task_run_config.prompt.generator_id,
-          current_task_prompts,
-        )
-      }
 
       if (prompt_name) {
         return prompt_name
@@ -98,26 +80,31 @@ export function getRunConfigPromptDisplayName(
 
 export function getRunConfigPromptInfoText(
   task_run_config: TaskRunConfig,
+  current_task_prompts: PromptResponse | null = null,
 ): string | null {
   const run_config_type = task_run_config.run_config_properties.type
   switch (run_config_type) {
     case "mcp":
       return null
-    case "kiln_agent":
-      if (
-        task_run_config.prompt?.generator_id &&
-        task_run_config?.run_config_properties?.prompt_id?.startsWith(
-          "task_run_config::",
-        )
-      ) {
-        return (
-          'The exact prompt was saved under the name "' +
-          task_run_config.prompt?.name +
-          '". See the Prompt tab for details.'
-        )
+    case "kiln_agent": {
+      const prompt_id = task_run_config?.run_config_properties?.prompt_id
+      if (prompt_id?.startsWith("task_run_config::")) {
+        // Use the local frozen copy's name when present, otherwise resolve the
+        // reused frozen prompt's name from the prompts list.
+        const prompt_name =
+          task_run_config.prompt?.name ??
+          current_task_prompts?.prompts.find((p) => p.id === prompt_id)?.name
+        if (prompt_name) {
+          return (
+            'The exact prompt was saved under the name "' +
+            prompt_name +
+            '". See the Prompt tab for details.'
+          )
+        }
       }
 
       return null
+    }
     default: {
       const _exhaustive: never = run_config_type
       throw new Error(`Unknown run config type: ${_exhaustive}`)
@@ -239,7 +226,10 @@ export function getRunConfigUiProperties(
         ? prompt_link(project_id, task_id, prompt_id)
         : undefined
 
-      const prompt_info_text = getRunConfigPromptInfoText(run_config)
+      const prompt_info_text = getRunConfigPromptInfoText(
+        run_config,
+        task_prompts,
+      )
 
       const input_transform =
         run_config.run_config_properties.input_transform ?? null
@@ -291,12 +281,14 @@ export function getRunConfigUiProperties(
           value: tools_property_info.value,
           links: tools_property_info.links,
           badge: Array.isArray(tools_property_info.value) ? true : false,
+          collapse_badges: true,
         },
         {
           name: "Available Skills",
           value: skills_property_info.value,
           links: skills_property_info.links,
           badge: Array.isArray(skills_property_info.value) ? true : false,
+          collapse_badges: true,
         },
         {
           name: "Temperature",
@@ -306,6 +298,17 @@ export function getRunConfigUiProperties(
           name: "Top P",
           value: run_config.run_config_properties.top_p.toString(),
         },
+        ...(run_config.run_config_properties.thinking_level != null
+          ? [
+              {
+                name: "Thinking Level",
+                value: getThinkingLevelDisplayName(
+                  run_config.run_config_properties.thinking_level,
+                ),
+                tooltip: THINKING_LEVEL_INFO_DESCRIPTION,
+              },
+            ]
+          : []),
       ]
     }
     default: {
@@ -313,6 +316,28 @@ export function getRunConfigUiProperties(
       throw new Error(`Unknown run config type: ${_exhaustive}`)
     }
   }
+}
+
+export const THINKING_LEVEL_INFO_DESCRIPTION =
+  "Thinking level controls the model's internal reasoning effort for supported models. Higher effort uses more tokens and is slower; lower effort is faster."
+
+const THINKING_LEVEL_DISPLAY_NAMES: Record<string, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+}
+
+export function getThinkingLevelDisplayName(value: string): string {
+  const known = THINKING_LEVEL_DISPLAY_NAMES[value]
+  if (known) {
+    return known
+  }
+  // Fallback for unknown values: capitalize the first letter.
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 export function buildJinjaInputTransform(template: string): InputTransform {

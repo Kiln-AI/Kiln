@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from "vitest"
-import type { TaskRunConfig, InputTransform } from "$lib/types"
+import type { TaskRunConfig, InputTransform, PromptResponse } from "$lib/types"
 import {
   getRunConfigModelDisplayName,
   getRunConfigUiProperties,
+  getRunConfigPromptDisplayName,
+  getRunConfigPromptInfoText,
   getInputTransformDisplay,
   getRunConfigInputTransform,
   getRunConfigInputTransformSummaryLabel,
   buildJinjaInputTransform,
   inputTransformsEqual,
+  getThinkingLevelDisplayName,
 } from "./run_config_formatters"
 
 const JINJA_TRANSFORM: InputTransform = {
@@ -18,9 +21,10 @@ const JINJA_TRANSFORM: InputTransform = {
 function makeKilnAgentConfig(
   overrides: Partial<TaskRunConfig> & {
     input_transform?: InputTransform | null
+    thinking_level?: string | null
   } = {},
 ): TaskRunConfig {
-  const { input_transform, ...rest } = overrides
+  const { input_transform, thinking_level, ...rest } = overrides
   return {
     v: 1,
     id: "rc-agent",
@@ -37,6 +41,7 @@ function makeKilnAgentConfig(
       top_p: 1,
       structured_output_mode: "default",
       input_transform: input_transform ?? null,
+      thinking_level: thinking_level ?? null,
     },
     prompt: null,
     model_type: "task_run_config",
@@ -200,6 +205,66 @@ describe("getRunConfigUiProperties (kiln_agent input transformer row)", () => {
   })
 })
 
+describe("getThinkingLevelDisplayName", () => {
+  it("maps known thinking level values to friendly labels", () => {
+    expect(getThinkingLevelDisplayName("none")).toBe("None")
+    expect(getThinkingLevelDisplayName("minimal")).toBe("Minimal")
+    expect(getThinkingLevelDisplayName("low")).toBe("Low")
+    expect(getThinkingLevelDisplayName("medium")).toBe("Medium")
+    expect(getThinkingLevelDisplayName("high")).toBe("High")
+    expect(getThinkingLevelDisplayName("xhigh")).toBe("Extra High")
+    expect(getThinkingLevelDisplayName("max")).toBe("Max")
+  })
+
+  it("capitalizes unknown values as a fallback", () => {
+    expect(getThinkingLevelDisplayName("ultra")).toBe("Ultra")
+  })
+})
+
+describe("getRunConfigUiProperties (kiln_agent thinking level row)", () => {
+  it("shows the Thinking Level row when a value is set", () => {
+    const config = makeKilnAgentConfig({ thinking_level: "high" })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const row = props.find((p) => p.name === "Thinking Level")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("High")
+  })
+
+  it('shows "None" when thinking level is explicitly "none"', () => {
+    const config = makeKilnAgentConfig({ thinking_level: "none" })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const row = props.find((p) => p.name === "Thinking Level")
+    expect(row).toBeDefined()
+    expect(row?.value).toBe("None")
+  })
+
+  it("omits the Thinking Level row when thinking level is null", () => {
+    const config = makeKilnAgentConfig({ thinking_level: null })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    expect(names).not.toContain("Thinking Level")
+  })
+
+  it("omits the Thinking Level row when thinking_level is undefined/absent", () => {
+    const config = makeKilnAgentConfig()
+    delete (config.run_config_properties as Record<string, unknown>)
+      .thinking_level
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    expect(names).not.toContain("Thinking Level")
+  })
+
+  it("places the Thinking Level row after Top P", () => {
+    const config = makeKilnAgentConfig({ thinking_level: "medium" })
+    const props = getRunConfigUiProperties("p1", "t1", config, null, null, null)
+    const names = props.map((p) => p.name)
+    const topPIdx = names.indexOf("Top P")
+    const thinkingIdx = names.indexOf("Thinking Level")
+    expect(topPIdx).toBeGreaterThanOrEqual(0)
+    expect(thinkingIdx).toBe(topPIdx + 1)
+  })
+})
+
 describe("buildJinjaInputTransform", () => {
   it("builds a jinja input transform from a template string", () => {
     const result = buildJinjaInputTransform("Hello {{ input }}")
@@ -251,5 +316,79 @@ describe("inputTransformsEqual", () => {
     const a = { type: "jinja" as const, template: "Hello {{ input }}" }
     const b = { type: "jinja" as const, template: "Goodbye {{ input }}" }
     expect(inputTransformsEqual(a, b)).toBe(false)
+  })
+})
+
+describe("run_config_formatters (frozen prompt display)", () => {
+  // The prompts list contains the OWNER run config's frozen prompt by id.
+  const OWNER_PROMPT_ID = "task_run_config::p1::t1::owner"
+  // The type is baked into the frozen prompt's name at creation time.
+  const FROZEN_NAME = "Ethereal Owl - Basic (Zero Shot)"
+  const prompts: PromptResponse = {
+    generators: [],
+    prompts: [
+      {
+        id: OWNER_PROMPT_ID,
+        type: "Frozen",
+        name: FROZEN_NAME,
+        prompt: "frozen body",
+        description: null,
+        generator_id: "simple_prompt_builder",
+        chain_of_thought_instructions: null,
+        created_at: "2026-02-01T00:00:00.000Z",
+        created_by: "test",
+      },
+    ],
+  }
+
+  it("shows the baked name when the run config owns its frozen prompt", () => {
+    const owner = makeKilnAgentConfig({
+      id: "owner",
+      run_config_properties: {
+        type: "kiln_agent",
+        model_name: "gpt-4",
+        model_provider_name: "openai",
+        prompt_id: OWNER_PROMPT_ID,
+        temperature: 0.7,
+        top_p: 1,
+        structured_output_mode: "default",
+        input_transform: null,
+        thinking_level: null,
+      },
+      prompt: {
+        name: FROZEN_NAME,
+        prompt: "frozen body",
+        description: null,
+        generator_id: "simple_prompt_builder",
+        chain_of_thought_instructions: null,
+      },
+    })
+    // No runtime type label is appended; the name carries it.
+    expect(getRunConfigPromptDisplayName(owner, prompts)).toBe(FROZEN_NAME)
+  })
+
+  it("resolves the owner's name for a reused frozen prompt (no local copy)", () => {
+    // A run config that reuses another's frozen prompt: prompt is null, but the
+    // prompt_id points at the owner's frozen prompt in the prompts list.
+    const reuser = makeKilnAgentConfig({
+      id: "reuser",
+      run_config_properties: {
+        type: "kiln_agent",
+        model_name: "gpt-4",
+        model_provider_name: "openai",
+        prompt_id: OWNER_PROMPT_ID,
+        temperature: 0.7,
+        top_p: 1,
+        structured_output_mode: "default",
+        input_transform: null,
+        thinking_level: null,
+      },
+      prompt: null,
+    })
+    expect(getRunConfigPromptDisplayName(reuser, prompts)).toBe(FROZEN_NAME)
+    // Info text resolves the name from the prompts list too
+    expect(getRunConfigPromptInfoText(reuser, prompts)).toContain(
+      `saved under the name "${FROZEN_NAME}"`,
+    )
   })
 })
