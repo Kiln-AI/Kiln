@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from app.desktop.git_sync.save_context import save_context_for_project
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
@@ -15,6 +16,21 @@ from pydantic import BaseModel
 
 from ...eval_api import eval_config_from_id, task_run_config_from_id
 from ..models import JobContext, JobDerivedState, JobWorker
+
+
+def _error_detail(error: Exception) -> str:
+    """The most informative message for a failed dataset item's error log.
+
+    The model adapter wraps failures in `KilnRunError`, whose own message is the
+    user-friendly `format_error_message` text — often the generic "An unexpected
+    error occurred." for exception types it doesn't recognize. The original
+    exception survives on `.original`, so for the developer-facing eval error log
+    we surface that underlying detail instead of the genericized wrapper message.
+    """
+    if isinstance(error, KilnRunError):
+        original = error.original
+        return str(original) or original.__class__.__name__
+    return str(error) or error.__class__.__name__
 
 
 class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
@@ -31,7 +47,7 @@ class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
 
     async def on_error(self, job: EvalJob, error: Exception) -> None:
         await self._ctx.report_error(
-            str(error) or error.__class__.__name__,
+            _error_detail(error),
             dataset_id=job.item.id,
             run_config_id=job.task_run_config.id if job.task_run_config else None,
         )

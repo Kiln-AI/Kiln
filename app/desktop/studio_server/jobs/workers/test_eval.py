@@ -12,7 +12,9 @@ from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobProperties,
     EvalJobResult,
     EvalJobWorker,
+    _error_detail,
 )
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -799,6 +801,77 @@ async def test_run_logs_failed_items_to_error_log(
     assert "scoring exploded" in message
     assert extra["dataset_id"] == task_run.id
     assert extra["run_config_id"] == run_config.id
+
+
+@pytest.mark.asyncio
+async def test_run_logs_original_error_for_kiln_run_error(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    # The model adapter wraps failures in KilnRunError, whose own message is the
+    # genericized format_error_message text. The error log must surface the
+    # underlying .original detail, not "An unexpected error occurred."
+    _make_task_run(task, data_source, "eval_set")
+
+    original = RuntimeError("provider 500: model is overloaded right now")
+
+    async def failing_run_job(self, job) -> bool:
+        raise KilnRunError(
+            message="An unexpected error occurred.",
+            partial_trace=None,
+            original=original,
+        )
+
+    logged: list[tuple[str, dict]] = []
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            logged.append((error_message, extra))
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
+        new=failing_run_job,
+    ):
+        result = await EvalJobWorker().run(params, FakeCtx())
+
+    assert result.error == 1
+    assert len(logged) == 1
+    message, _ = logged[0]
+    assert message == "provider 500: model is overloaded right now"
+    assert "An unexpected error occurred." not in message
+
+
+def test_error_detail_unwraps_kiln_run_error():
+    original = ValueError("real underlying detail")
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=original,
+    )
+    assert _error_detail(wrapped) == "real underlying detail"
+
+
+def test_error_detail_falls_back_to_original_class_name_when_empty():
+    original = RuntimeError("")
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=original,
+    )
+    assert _error_detail(wrapped) == "RuntimeError"
+
+
+def test_error_detail_passes_through_plain_exception():
+    assert _error_detail(ValueError("scoring exploded")) == "scoring exploded"
+
+
+def test_error_detail_falls_back_to_class_name_for_empty_plain_exception():
+    assert _error_detail(ValueError("")) == "ValueError"
 
 
 # -- save_context wiring -----------------------------------------------------
