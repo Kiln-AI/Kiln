@@ -15,6 +15,11 @@ SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED = "auto-mode-consent-required"
 # Revision R1: a burst settled but the conversation auto-mode flag stays on. This
 # is distinct from auto-mode-off (which is published only on explicit disable).
 SSE_TYPE_AUTO_MODE_IDLE = "auto-mode-idle"
+# Emitted between retry attempts after a transient upstream failure (by BOTH the
+# interactive chat stream and the auto runner — they share the retry helper), so
+# the UI can show "retrying N/M…" instead of a hard error. Carries
+# {attempt, max_attempts, status_code?, run_id?}.
+SSE_TYPE_CHAT_RETRY = "kiln-chat-retry"
 # Phase 9: an on-subscribe snapshot of the run's CURRENT liveness so a
 # re-attaching client immediately reflects working-vs-idle (instead of looking
 # idle until the next event happens to arrive). Carries {flag_on, working}.

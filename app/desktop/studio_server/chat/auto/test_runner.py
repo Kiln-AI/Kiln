@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
-from .runner import MAX_TOOL_ROUNDS_MESSAGE, AutoChatRunner
+from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
+
+from .runner import (
+    MAX_TOOL_ROUNDS_MESSAGE,
+    AutoChatRunner,
+    _side_note_message,
+)
 from .test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -233,20 +239,198 @@ async def test_max_rounds_backstop_emits_error():
 
 
 @pytest.mark.asyncio
-async def test_upstream_error_sets_error_status():
+async def test_non_retryable_upstream_error_sets_error_status_without_retry():
+    # A 4xx (here 400) is non-retryable: the burst ends immediately, flag stays on
+    # (IDLE, reason "error"), and no retry is attempted.
     client = FakeUpstreamClient(
-        [FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')]
+        [FakeUpstreamResponse(status_code=400, body=b'{"message": "boom"}')]
     )
     runner, emitted, _ = _runner(client)
 
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
 
-    # Revision R1: an unrecoverable upstream error ends the burst but the flag
-    # stays on (IDLE, reason "error").
     assert runner.status == AutoRunStatus.IDLE
     assert runner.idle_reason == "error"
     assert "boom" in _decoded(emitted)
+    # No retry attempted for a non-retryable status, and only one upstream request.
+    assert '"type": "kiln-chat-retry"' not in _decoded(emitted)
+    assert len(client.bodies) == 1
+
+
+@pytest.mark.asyncio
+async def test_retryable_upstream_error_retries_then_succeeds():
+    # Two transient 503s, then a normal round. The runner retries with backoff,
+    # emits a retry event per attempt, recovers, and never surfaces the error.
+    round_ok = [text_delta("done"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+            FakeUpstreamResponse(chunks=round_ok),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock,
+    ):
+        await runner.run()
+
+    # Parse structurally: a retry event per failed attempt, numbered 1, 2.
+    retry_events = [e for e in _events(emitted) if e["type"] == "kiln-chat-retry"]
+    assert [e["attempt"] for e in retry_events] == [1, 2]
+    assert all(e["max_attempts"] == MAX_CHAT_RETRIES for e in retry_events)
+    assert all(e["status_code"] == 503 for e in retry_events)
+    # Backoff actually ran between attempts (not a tight spin).
+    assert sleep_mock.await_count == 2
+    # Recovered: the transient error was never surfaced; the burst settled on the
+    # successful round (text-only → asked_user).
+    assert "rate limited" not in _decoded(emitted)
+    assert runner.idle_reason == "asked_user"
+    assert len(client.bodies) == 3
+
+
+@pytest.mark.asyncio
+async def test_retryable_upstream_error_exhausts_retries_then_idle_error():
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')
+            for _ in range(MAX_CHAT_RETRIES + 1)
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    # One retry event per attempt up to the cap, then give up.
+    assert decoded.count('"type": "kiln-chat-retry"') == MAX_CHAT_RETRIES
+    # On give-up the held-back error is finally surfaced.
+    assert "boom" in decoded
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "error"
+    assert len(client.bodies) == MAX_CHAT_RETRIES + 1
+
+
+@pytest.mark.asyncio
+async def test_connection_error_retries_then_succeeds():
+    # A pre-response connection failure (no status code) is retried just like a
+    # transient 5xx, as long as nothing was streamed.
+    round_ok = [text_delta("done"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(raise_connect_error=True),
+            FakeUpstreamResponse(chunks=round_ok),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    assert decoded.count('"type": "kiln-chat-retry"') == 1
+    assert runner.idle_reason == "asked_user"
+    assert len(client.bodies) == 2
+
+
+@pytest.mark.asyncio
+async def test_mid_stream_transport_error_after_content_is_not_retried():
+    # The central anti-duplication guard: a transport failure that strikes AFTER
+    # bytes were already forwarded must NOT be retried (a re-POST would duplicate
+    # the streamed output). Here a text delta streams, then the stream drops with
+    # a non-RemoteProtocolError transport error.
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(
+                chunks=[text_delta("partial answer")],
+                raise_transport_error_after_chunks=True,
+            ),
+            # A second response is queued to prove it is never requested.
+            FakeUpstreamResponse(
+                chunks=[text_delta("dupe"), trace("tr-x"), finish("stop")]
+            ),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock,
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    # No retry, no backoff, exactly one upstream request — the guard held.
+    assert '"type": "kiln-chat-retry"' not in decoded
+    assert sleep_mock.await_count == 0
+    assert len(client.bodies) == 1
+    # The already-streamed content appears exactly once (never duplicated).
+    assert decoded.count("partial answer") == 1
+    assert "dupe" not in decoded
+    # A single generic error is surfaced and the burst settles IDLE("error").
+    assert runner.status == AutoRunStatus.IDLE
+    assert runner.idle_reason == "error"
+
+
+@pytest.mark.asyncio
+async def test_stop_requested_during_retry_settles_user_stopped():
+    # Stop pressed *while actively retrying* a persistent transient failure must
+    # honor the graceful-stop contract: settle USER_STOPPED (so the supervisor
+    # publishes auto-mode-off), not IDLE("error") with the flag left on.
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "rate limited"}'),
+        ]
+    )
+    runner, emitted, _ = _runner(client)
+
+    # Request Stop from inside the backoff sleep, so one retry has already been
+    # emitted and the run is genuinely mid-retry when the stop lands — exercising
+    # the in-retry transition (not the pre-run stop path).
+    async def _stop_mid_backoff(*args, **kwargs):
+        runner.stop_requested = True
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new=AsyncMock(side_effect=_stop_mid_backoff),
+        ),
+    ):
+        await runner.run()
+
+    decoded = _decoded(emitted)
+    # It DID enter the retry branch (one retry emitted) before the stop landed,
+    # then settled USER_STOPPED without surfacing the transient error.
+    assert decoded.count('"type": "kiln-chat-retry"') == 1
+    assert "rate limited" not in decoded
+    assert runner.status == AutoRunStatus.USER_STOPPED
+    # The stop landed during the backoff sleep, so the retry is abandoned BEFORE
+    # re-POSTing — only the initial request was made (no extra round streamed).
+    assert len(client.bodies) == 1
 
 
 class TestSeedBody:
@@ -316,6 +500,18 @@ class TestSeedBody:
         assert ("sib1", "3") in roles
 
 
+def test_side_note_message_frames_content_to_continue_working():
+    # A drained mid-burst message is wrapped so the model answers inline and keeps
+    # working (does not stop just to reply), but the original text is preserved.
+    msg = InboundMessage(content="also handle edge case Y")
+    wrapped = _side_note_message(msg)
+    assert wrapped["role"] == "user"
+    assert "also handle edge case Y" in wrapped["content"]
+    assert "<system-reminder>" in wrapped["content"]
+    assert "side note" in wrapped["content"].lower()
+    assert "do not end your turn just to reply" in wrapped["content"]
+
+
 # ── Revision R1: message injection ────────────────────────────────────────────
 
 
@@ -346,7 +542,11 @@ async def test_injected_message_appended_to_continuation():
     # auto_mode set once on the seed propagates through every {**body} continuation.
     assert second_body["auto_mode"] is True
     user_messages = [m for m in second_body["messages"] if m.get("role") == "user"]
-    assert user_messages == [{"role": "user", "content": "also do X"}]
+    # Mid-burst injected messages are framed as a side note so the model answers
+    # inline and keeps working instead of halting on a text-only reply.
+    assert len(user_messages) == 1
+    assert "also do X" in user_messages[0]["content"]
+    assert "<system-reminder>" in user_messages[0]["content"]
     # The runner does NOT echo on drain — the registry already echoed the message
     # onto the bus/buffer at enqueue time (CR Moderate 1). Double-echo would
     # render the message twice; the combined registry+runner echo-once behaviour
@@ -373,7 +573,11 @@ async def test_drain_before_idle_continues_with_queued_message():
     # It did NOT stop after round1 — a second upstream round ran, seeded with the
     # queued user message as a fresh turn.
     assert len(client.bodies) == 2
-    assert client.bodies[1]["messages"] == [{"role": "user", "content": "keep going"}]
+    assert len(client.bodies[1]["messages"]) == 1
+    queued_msg = client.bodies[1]["messages"][0]
+    assert queued_msg["role"] == "user"
+    assert "keep going" in queued_msg["content"]
+    assert "<system-reminder>" in queued_msg["content"]
     # Eventually settled IDLE once the queue was empty.
     assert runner.status == AutoRunStatus.IDLE
 

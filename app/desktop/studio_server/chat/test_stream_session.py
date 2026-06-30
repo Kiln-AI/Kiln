@@ -11,11 +11,21 @@ from app.desktop.studio_server.chat import execute_tool
 from app.desktop.studio_server.chat.stream_session import (
     _build_openai_tool_continuation,
 )
+from app.desktop.studio_server.chat.auto.test_fakes import (
+    FakeUpstreamClient,
+    FakeUpstreamResponse,
+    finish,
+    text_delta,
+    trace,
+)
 from app.desktop.studio_server.chat.constants import SSE_TYPE_TOOL_CALLS_PENDING
 from app.desktop.studio_server.chat.stream_session import (
+    MAX_CHAT_RETRIES,
     ChatStreamSession,
     ToolCallInfo,
     _format_tool_calls_pending_sse,
+    _RETRY_BACKOFF_SCHEDULE,
+    _retry_backoff_seconds,
     execute_tool_batch,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
@@ -162,7 +172,9 @@ async def test_stream_error_includes_code_field():
 @pytest.mark.asyncio
 async def test_stream_error_without_code_omits_code_field():
     error_body = json.dumps({"message": "Something failed"}).encode()
-    fake_resp = _FakeResponse(500, error_body)
+    # 404 (non-retryable): surfaces immediately so this stays a pure error-shape
+    # test. Retryable statuses (5xx/429) are covered by the retry tests below.
+    fake_resp = _FakeResponse(404, error_body)
     fake_client = _FakeClient(fake_resp)
 
     session = _make_session()
@@ -177,6 +189,79 @@ async def test_stream_error_without_code_omits_code_field():
     assert payload["type"] == "error"
     assert payload["message"] == "Something failed"
     assert "code" not in payload
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_transient_error_then_succeeds():
+    # The interactive path (not just auto mode) retries a transient upstream
+    # failure with backoff, emitting kiln-chat-retry events the UI renders, and
+    # recovers without ever surfacing the transient error.
+    ok_round = [text_delta("hi there"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "busy"}'),
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "busy"}'),
+            FakeUpstreamResponse(chunks=ok_round),
+        ]
+    )
+    session = _make_session()
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock,
+    ):
+        raw = "".join([c.decode() async for c in session.stream()])
+
+    assert raw.count('"type": "kiln-chat-retry"') == 2
+    assert '"status_code": 503' in raw
+    assert "hi there" in raw  # recovered round streamed through
+    assert "busy" not in raw  # the transient error was never surfaced
+    assert sleep_mock.await_count == 2
+    assert len(client.bodies) == 3
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_exhausted_then_surfaces_error():
+    # A persistent retryable failure exhausts the bounded retries, then the error
+    # is surfaced (so the stream still terminates instead of hanging forever).
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')
+            for _ in range(MAX_CHAT_RETRIES + 1)
+        ]
+    )
+    session = _make_session()
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=client),
+        patch(
+            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+    ):
+        raw = "".join([c.decode() async for c in session.stream()])
+
+    assert raw.count('"type": "kiln-chat-retry"') == MAX_CHAT_RETRIES
+    assert "boom" in raw  # the held-back error is surfaced on give-up
+    assert len(client.bodies) == MAX_CHAT_RETRIES + 1
+
+
+def test_retry_backoff_schedule_ramps_and_caps():
+    # Each attempt's delay sits within the ±15% jitter band of its scheduled base.
+    for attempt, base in enumerate(_RETRY_BACKOFF_SCHEDULE, start=1):
+        delay = _retry_backoff_seconds(attempt)
+        assert base * 0.85 <= delay <= base * 1.15
+    # Early retries are a second or two; the tail caps at ~60s (so the full run
+    # rides out a real outage over minutes, not seconds).
+    assert _retry_backoff_seconds(1) < 2
+    assert 50 <= _retry_backoff_seconds(MAX_CHAT_RETRIES) <= 70
+    # Attempts beyond the schedule clamp to the last (capped) entry.
+    assert 50 <= _retry_backoff_seconds(MAX_CHAT_RETRIES + 5) <= 70
+    # The schedule is monotonically non-decreasing (ignoring jitter).
+    assert list(_RETRY_BACKOFF_SCHEDULE) == sorted(_RETRY_BACKOFF_SCHEDULE)
 
 
 class TestBuildOpenAIToolContinuation:

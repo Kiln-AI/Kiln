@@ -7,11 +7,13 @@ from typing import Any, Awaitable, Callable
 import httpx
 from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT, MAX_TOOL_ROUNDS
 from app.desktop.studio_server.chat.stream_session import (
+    RetryRoundResult,
     RoundState,
     ToolCallInfo,
     _build_openai_tool_continuation,
     _format_tool_calls_pending_sse,
     execute_tool_batch,
+    iter_round_with_retries,
     iter_upstream_round,
 )
 from app.desktop.studio_server.chat.tool_metadata import tool_input_executor_is_server
@@ -35,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS_MESSAGE = "Maximum tool rounds exceeded. Please start a new message."
 
+
 # The tool result the app server resolves an intercepted disable_auto_mode call
 # to, fed back to the backend so it continues interactively.
 DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
@@ -50,6 +53,37 @@ ENABLE_AUTO_MODE_RESULT = json.dumps(
     {"status": "enabled", "detail": "Auto mode is already enabled."},
     ensure_ascii=False,
 )
+
+# Framing prepended to a user message that arrives WHILE a burst is in flight
+# (drained mid-round). Without it the model treats the message as a fresh
+# conversational turn, replies in plain text, and that text-only turn settles the
+# burst IDLE ("asked_user") — so a quick aside from the user halts the autonomous
+# run. Framed as a side note, the model weaves its reply into a turn that still
+# carries tool calls, so it answers AND keeps working. It does NOT apply to the
+# seed message (the task itself) or to a message that wakes an idle run.
+_SIDE_NOTE_REMINDER = (
+    "<system-reminder>"
+    "This message arrived from the user while you are working autonomously in auto "
+    "mode. Treat it as a side note: weave any acknowledgment or answer into your "
+    "ongoing work and keep going in the same turn — do not end your turn just to "
+    "reply. Stop only if the message explicitly asks you to, or your task is "
+    "already complete."
+    "</system-reminder>"
+)
+
+
+def _wrap_side_note(content: str) -> str:
+    return f"{_SIDE_NOTE_REMINDER}\n\n{content}"
+
+
+def _side_note_message(msg: InboundMessage) -> dict[str, Any]:
+    """A drained mid-burst message, framed as a side note (see
+    ``_SIDE_NOTE_REMINDER``) so the model answers inline and keeps working."""
+    base = msg.as_chat_message()
+    # `or ""` (not a default arg) so an explicit None content can't become "None".
+    content = base.get("content") or ""
+    return {**base, "content": _wrap_side_note(str(content))}
+
 
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
 # bus. It also detects kiln_chat_trace boundaries (buffer reset + index update).
@@ -127,25 +161,18 @@ class AutoChatRunner:
         trace_id_for_error: str | None = self._seed.trace_id
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(MAX_TOOL_ROUNDS):
-                round_state = RoundState(trace_id_for_error=trace_id_for_error)
-
-                async for payload in iter_upstream_round(
-                    client, self._url, self._headers, body, round_state
-                ):
-                    self._emit(payload)
+                round_state = await self._stream_round_with_retries(
+                    client, body, trace_id_for_error
+                )
+                if round_state is None:
+                    # Retries exhausted or a non-retryable upstream error: the
+                    # helper already emitted the error and set IDLE("error").
+                    return
 
                 trace_id_for_error = round_state.trace_id_for_error
 
                 if round_state.trace_id and self._on_trace is not None:
                     await self._on_trace(round_state.trace_id)
-
-                if round_state.is_terminal_upstream_error:
-                    # An unrecoverable upstream error ends the burst, but the
-                    # conversation flag stays on (the supervisor routes this to
-                    # IDLE with reason "error" so the user can retry or stop).
-                    self.idle_reason = "error"
-                    self.status = AutoRunStatus.IDLE
-                    return
 
                 if round_state.trace_id:
                     body = {
@@ -296,6 +323,43 @@ class AutoChatRunner:
         self.idle_reason = "max_rounds"
         self.status = AutoRunStatus.IDLE
 
+    async def _stream_round_with_retries(
+        self,
+        client: httpx.AsyncClient,
+        body: dict[str, Any],
+        trace_id_for_error: str | None,
+    ) -> RoundState | None:
+        """Stream one upstream round via the shared retry helper, translating its
+        outcome into the runner's terminal status.
+
+        Returns the completed ``RoundState`` on success. Returns ``None`` on a
+        terminal outcome: a Stop requested while retrying settles ``USER_STOPPED``
+        (the helper surfaced no error); a non-retryable or retry-exhausted error
+        settles ``IDLE("error")`` (the helper already yielded the error).
+        """
+        result = RetryRoundResult()
+        async for payload in iter_round_with_retries(
+            client,
+            self._url,
+            self._headers,
+            body,
+            trace_id_for_error,
+            result,
+            run_id=self.run_id,
+            stop_requested=lambda: self.stop_requested,
+        ):
+            self._emit(payload)
+
+        if result.status == "ok":
+            return result.round_state
+        if result.status == "stopped":
+            self.status = AutoRunStatus.USER_STOPPED
+            return None
+        # status == "error"
+        self.idle_reason = "error"
+        self.status = AutoRunStatus.IDLE
+        return None
+
     async def _resolve_disable(
         self,
         client: httpx.AsyncClient,
@@ -381,7 +445,7 @@ class AutoChatRunner:
         """Append injected user messages after the tool results in a continuation
         body (they come last so the backend reads them as the latest input)."""
         existing = list(body.get("messages", []))
-        existing.extend(m.as_chat_message() for m in messages)
+        existing.extend(_side_note_message(m) for m in messages)
         return {**body, "messages": existing}
 
     def _continue_with_user_messages(
@@ -391,7 +455,7 @@ class AutoChatRunner:
         (the trace advanced, no pending tool results to carry)."""
         return {
             **body,
-            "messages": [m.as_chat_message() for m in messages],
+            "messages": [_side_note_message(m) for m in messages],
         }
 
     async def _build_seed_body(self) -> dict[str, Any]:

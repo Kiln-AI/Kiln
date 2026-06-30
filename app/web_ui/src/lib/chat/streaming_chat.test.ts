@@ -485,3 +485,68 @@ describe("StreamEventProcessor kiln_compaction_status (Phase 5)", () => {
     expect(states[states.length - 1]).toBe(false)
   })
 })
+
+describe("StreamEventProcessor kiln-chat-retry", () => {
+  function makeProcessor(
+    onRetry: (attempt: number, max: number) => void,
+    onRetryClear: () => void,
+  ) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onRetry,
+      onRetryClear,
+    })
+  }
+
+  it("fires onRetry with attempt/max on a kiln-chat-retry event", () => {
+    const retries: Array<[number, number]> = []
+    let clears = 0
+    const processor = makeProcessor(
+      (a, m) => retries.push([a, m]),
+      () => {
+        clears += 1
+      },
+    )
+    processor.handleEvent({
+      type: "kiln-chat-retry",
+      attempt: 3,
+      max_attempts: 10,
+      status_code: 503,
+    })
+    expect(retries).toEqual([[3, 10]])
+    expect(clears).toBe(0)
+  })
+
+  it("clears exactly once on the next non-retry event (not per token)", () => {
+    const retries: Array<[number, number]> = []
+    let clears = 0
+    const processor = makeProcessor(
+      (a, m) => retries.push([a, m]),
+      () => {
+        clears += 1
+      },
+    )
+    processor.handleEvent({
+      type: "kiln-chat-retry",
+      attempt: 1,
+      max_attempts: 10,
+    })
+    // The recovered round streams several tokens — clear must fire just once.
+    processor.handleEvent({ type: "text-start" })
+    processor.handleEvent({ type: "text-delta", delta: "a" })
+    processor.handleEvent({ type: "text-delta", delta: "b" })
+    expect(clears).toBe(1)
+  })
+
+  it("does not clear when no retry is active", () => {
+    let clears = 0
+    const processor = makeProcessor(
+      () => {},
+      () => {
+        clears += 1
+      },
+    )
+    processor.handleEvent({ type: "text-delta", delta: "hi" })
+    expect(clears).toBe(0)
+  })
+})

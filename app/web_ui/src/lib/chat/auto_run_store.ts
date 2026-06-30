@@ -105,6 +105,12 @@ export interface AutoRunStore {
    * normal (non-reattach) enable flow.
    */
   reconnecting: Readable<boolean>
+  /**
+   * Transient retry affordance: ``{ attempt, max }`` while a transient upstream
+   * failure is being retried with backoff, else ``null``. Lets the transcript
+   * show "retrying N/M…" instead of stalling silently or erroring.
+   */
+  retry: Readable<{ attempt: number; max: number } | null>
   runId: Readable<string | null>
   offReason: Readable<string | null>
   connection: Readable<AutoConnection>
@@ -168,6 +174,10 @@ export function createAutoRunStore(): AutoRunStore {
   const runId = writable<string | null>(null)
   const offReason = writable<string | null>(null)
   const connection = writable<AutoConnection>("idle")
+  // Transient "retrying N/M…" affordance: set on each kiln-chat-retry event,
+  // cleared by the next event of any other kind (the recovered round's first
+  // event, or an idle/off marker). Null when no retry is in flight.
+  const retry = writable<{ attempt: number; max: number } | null>(null)
 
   function setWorking(next: boolean): void {
     working.set(next)
@@ -208,6 +218,7 @@ export function createAutoRunStore(): AutoRunStore {
     armed.set(false)
     setWorking(false)
     reconnecting.set(false)
+    retry.set(null)
     runId.set(null)
     offReason.set(reason)
     connection.set("closed")
@@ -233,6 +244,7 @@ export function createAutoRunStore(): AutoRunStore {
     armed.set(false)
     setWorking(false)
     reconnecting.set(false)
+    retry.set(null)
     runId.set(null)
     offReason.set(null)
     connection.set("idle")
@@ -271,6 +283,17 @@ export function createAutoRunStore(): AutoRunStore {
       reconnecting.set(false)
       if (event.run_id) runId.set(event.run_id)
       offReason.set(null)
+      return true
+    }
+    if (event.type === "kiln-chat-retry") {
+      // A transient upstream failure is being retried with backoff. The burst is
+      // still working — keep the indicator on and surface "retrying N/M…" so the
+      // user sees progress rather than a hard error. Cleared by the next event.
+      setWorking(true)
+      retry.set({
+        attempt: event.attempt ?? 0,
+        max: event.max_attempts ?? 0,
+      })
       return true
     }
     if (event.type === "auto-mode-idle") {
@@ -355,6 +378,9 @@ export function createAutoRunStore(): AutoRunStore {
       } catch {
         return
       }
+      // Any event other than another retry means the retry window is over (the
+      // round recovered, or the burst settled idle/off) — clear the affordance.
+      if (event.type !== "kiln-chat-retry") retry.set(null)
       if (handleControlEvent(event)) return
       processor.handleEvent(event)
     }
@@ -551,6 +577,7 @@ export function createAutoRunStore(): AutoRunStore {
     armed: { subscribe: armed.subscribe },
     working: { subscribe: working.subscribe },
     reconnecting: { subscribe: reconnecting.subscribe },
+    retry: { subscribe: retry.subscribe },
     runId: { subscribe: runId.subscribe },
     offReason: { subscribe: offReason.subscribe },
     connection: { subscribe: connection.subscribe },

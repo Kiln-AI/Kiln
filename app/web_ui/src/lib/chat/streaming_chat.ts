@@ -137,6 +137,10 @@ export interface StreamEvent {
   /** ``auto-mode-state`` (Phase 9) on-subscribe liveness snapshot */
   flag_on?: boolean
   working?: boolean
+  /** ``auto-mode-retry`` carries the current/limit attempt + the upstream status */
+  attempt?: number
+  max_attempts?: number
+  status_code?: number
   /** Approximate context usage carried on the ``kiln_chat_trace`` snapshot event */
   context_usage?: RawContextUsage
   /** ``kiln_compaction_status`` carries the lifecycle state ("started" / "finished") */
@@ -209,6 +213,13 @@ export interface StreamChatOptions {
   onToolExecutionEnd?: (toolCount: number) => void
   onShowActivityIndicator?: (show: boolean) => void
   /**
+   * A transient upstream failure is being retried with backoff (kiln-chat-retry).
+   * Drives the interactive "retrying N/M…" affordance; ``onRetryClear`` fires on
+   * the next non-retry event (recovered round, or terminal error).
+   */
+  onRetry?: (attempt: number, maxAttempts: number) => void
+  onRetryClear?: () => void
+  /**
    * After ``auto-mode-consent-required`` the stream ends; the handler decides
    * whether to enable auto mode (accept) or resume interactively (decline).
    * Both outcomes are handled outside this stream, so it simply returns.
@@ -256,6 +267,13 @@ export interface StreamEventProcessorOptions {
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
   onShowActivityIndicator?: (show: boolean) => void
+  /**
+   * A transient upstream failure is being retried with backoff (kiln-chat-retry).
+   * Drives the "retrying N/M…" affordance. ``onRetryClear`` fires on the next
+   * non-retry event (the recovered round, or the terminal error).
+   */
+  onRetry?: (attempt: number, maxAttempts: number) => void
+  onRetryClear?: () => void
 }
 
 export class StreamEventProcessor {
@@ -288,6 +306,11 @@ export class StreamEventProcessor {
   private onToolExecutionStart?: (toolCount: number) => void
   private onToolExecutionEnd?: (toolCount: number) => void
   private onShowActivityIndicator?: (show: boolean) => void
+  private onRetry?: (attempt: number, maxAttempts: number) => void
+  private onRetryClear?: () => void
+  // True while a kiln-chat-retry is the most recent event, so we clear the
+  // affordance exactly once on the next non-retry event (not per streamed token).
+  private retryActive = false
 
   private HANDLERS: Record<string, (event: StreamEvent) => void>
 
@@ -301,6 +324,8 @@ export class StreamEventProcessor {
     this.onToolExecutionStart = opts.onToolExecutionStart
     this.onToolExecutionEnd = opts.onToolExecutionEnd
     this.onShowActivityIndicator = opts.onShowActivityIndicator
+    this.onRetry = opts.onRetry
+    this.onRetryClear = opts.onRetryClear
 
     this.HANDLERS = {
       "text-start": (e) => {
@@ -346,6 +371,10 @@ export class StreamEventProcessor {
         this.clearCompacting()
         this.handleError(e)
       },
+      "kiln-chat-retry": (e) => {
+        this.retryActive = true
+        this.onRetry?.(e.attempt ?? 0, e.max_attempts ?? 0)
+      },
     }
   }
 
@@ -359,6 +388,12 @@ export class StreamEventProcessor {
   }
 
   handleEvent(event: StreamEvent): void {
+    // The retry affordance clears as soon as the round recovers (or fails) — the
+    // next event of any other kind. Guarded so it fires once, not per token.
+    if (this.retryActive && event.type !== "kiln-chat-retry") {
+      this.retryActive = false
+      this.onRetryClear?.()
+    }
     const handler = this.HANDLERS[event.type]
     if (handler) {
       handler(event)
@@ -619,6 +654,8 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onToolExecutionStart,
     onToolExecutionEnd,
     onShowActivityIndicator,
+    onRetry,
+    onRetryClear,
     onAutoModeConsentRequired,
     onFinish,
     onError,
@@ -699,6 +736,8 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onToolExecutionStart,
     onToolExecutionEnd,
     onShowActivityIndicator,
+    onRetry,
+    onRetryClear,
   })
 
   try {

@@ -486,6 +486,46 @@ describe("auto_run_store", () => {
     expect(calls.working).toEqual([true, true, false])
   })
 
+  it("kiln-chat-retry surfaces retrying progress and clears on the next event", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ run_id: "ar_retry" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    await store.requestEnable({ trace_id: "t" })
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_retry" })
+
+    source.message({
+      type: "kiln-chat-retry",
+      run_id: "ar_retry",
+      attempt: 3,
+      max_attempts: 10,
+      status_code: 503,
+    })
+    // Retry affordance is set; the burst still reads as working, stream open.
+    expect(get(store.retry)).toEqual({ attempt: 3, max: 10 })
+    expect(get(store.working)).toBe(true)
+    expect(source.closed).toBe(false)
+
+    // A second retry updates the counter.
+    source.message({
+      type: "kiln-chat-retry",
+      run_id: "ar_retry",
+      attempt: 4,
+      max_attempts: 10,
+    })
+    expect(get(store.retry)).toEqual({ attempt: 4, max: 10 })
+
+    // The next non-retry event (here the burst settling idle) clears it.
+    source.message({
+      type: "auto-mode-idle",
+      run_id: "ar_retry",
+      reason: "asked_user",
+    })
+    expect(get(store.retry)).toBe(null)
+  })
+
   it("only auto-mode-off clears the indicator after an idle burst", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

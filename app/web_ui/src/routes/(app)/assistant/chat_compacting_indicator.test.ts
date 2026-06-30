@@ -81,6 +81,7 @@ function baseState(
     showActivityIndicator: false,
     compacting: false,
     autoWorking: false,
+    retry: null,
     upgradeNudgeVersion: null,
     versionRequired: false,
     ...overrides,
