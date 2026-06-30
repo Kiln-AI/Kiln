@@ -16,7 +16,6 @@ vi.mock("$lib/ui/dialog.svelte", async () => {
   return { default: Stub }
 })
 
-const FormSection = (await import("./form_section.svelte")).default
 const OutputValueField = (await import("./output_value_field.svelte")).default
 const ReferenceFieldSelect = (await import("./reference_field_select.svelte"))
   .default
@@ -36,47 +35,6 @@ beforeAll(() => {
       globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }
     ).ResizeObserver = ResizeObserverStub
   }
-})
-
-describe("FormSection", () => {
-  it("renders title text", () => {
-    const { getByText } = render(FormSection, {
-      props: { title: "Expected Value" },
-    })
-    expect(getByText("Expected Value")).toBeTruthy()
-  })
-
-  it("renders subtitle text when provided", () => {
-    const { container, getByText } = render(FormSection, {
-      props: {
-        title: "Test",
-        subtitle: "Choose what value to compare.",
-      },
-    })
-    expect(getByText("Choose what value to compare.")).toBeTruthy()
-    const subtitle = container.querySelector(
-      '[data-testid="form-section-subtitle"]',
-    )
-    expect(subtitle).not.toBeNull()
-    expect(subtitle?.textContent).toBe("Choose what value to compare.")
-  })
-
-  it("does not render subtitle element when not provided", () => {
-    const { container } = render(FormSection, {
-      props: { title: "Test" },
-    })
-    const subtitle = container.querySelector(
-      '[data-testid="form-section-subtitle"]',
-    )
-    expect(subtitle).toBeNull()
-  })
-
-  it("renders with testid when provided", () => {
-    const { getByTestId } = render(FormSection, {
-      props: { title: "Test", testid: "my-section" },
-    })
-    expect(getByTestId("my-section")).toBeTruthy()
-  })
 })
 
 // --- Pure helper tests ---
@@ -237,23 +195,26 @@ describe("JINJA_EXAMPLES", () => {
 // --- Component DOM tests ---
 
 describe("OutputValueField", () => {
-  it("renders inside a FormSection with 'Output to Check' title", () => {
-    const { getByTestId, getByText } = render(OutputValueField, {
-      props: { id_prefix: "test", value: null },
-    })
-    expect(getByTestId("output-value-section")).toBeTruthy()
-    expect(getByText("Output to Check")).toBeTruthy()
-  })
-
-  it("renders FormSection subtitle", () => {
+  it("renders 'Output to Check' label on the dropdown FormElement", () => {
     const { container } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
-    const subtitle = container.querySelector(
-      '[data-testid="form-section-subtitle"]',
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_output_source"]',
     )
-    expect(subtitle).toBeTruthy()
-    expect(subtitle?.textContent).toBe(
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-label")).toBe("Output to Check")
+  })
+
+  it("renders description on the dropdown FormElement", () => {
+    const { container } = render(OutputValueField, {
+      props: { id_prefix: "test", value: null },
+    })
+    const formElement = container.querySelector(
+      '[data-testid="form-element-test_output_source"]',
+    )
+    expect(formElement).toBeTruthy()
+    expect(formElement?.getAttribute("data-description")).toBe(
       "Which part of the model's output to compare against the expected value.",
     )
   })
@@ -302,7 +263,7 @@ describe("OutputValueField", () => {
     expect(option).toBeTruthy()
     expect(option?.textContent).toContain("Custom (Jinja)")
     expect(option?.textContent).toContain(
-      "Build a custom expression from Jinja syntax.",
+      "Select part of the output or trace using Jinja syntax.",
     )
   })
 
@@ -415,14 +376,14 @@ describe("OutputValueField", () => {
     expect(formElement?.getAttribute("data-type")).toBe("fancy_select")
   })
 
-  it("hides dropdown label (FormSection provides the header)", () => {
+  it("shows dropdown label (label is visible on the FormElement)", () => {
     const { container } = render(OutputValueField, {
       props: { id_prefix: "test", value: null },
     })
     const formElement = container.querySelector(
       '[data-testid="form-element-test_output_source"]',
     )
-    expect(formElement?.getAttribute("data-hide-label")).toBe("true")
+    expect(formElement?.getAttribute("data-hide-label")).toBe("false")
   })
 
   it("loading value='trace' selects Entire Trace mode", () => {

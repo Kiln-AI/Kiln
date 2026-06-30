@@ -3,7 +3,6 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import FormSection from "./form_parts/form_section.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
 
   type ToolCallSpec = components["schemas"]["ToolCallSpec"]
@@ -123,156 +122,148 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection
-    title="Expected Tools"
-    subtitle={properties.match_mode === "never"
-      ? "Define the tools the agent must NOT call."
-      : "Define the tools the agent is expected to call."}
-    testid="tool-call-expected-tools-section"
-  >
-    <FormList
-      bind:content={properties.expected_tools}
-      content_label="Expected Tool"
-      empty_content={structuredClone(empty_tool)}
-      let:item_index
-    >
-      <div class="ml-4 border-l border-base-300 pl-4">
-        <div class="flex flex-col gap-2">
-          <FormElement
-            id="tool_name_{item_index}"
-            label="Tool Name"
-            description="The exact name of the tool that should be called."
-            info_description="Get the tool name from the Tools tab of Kiln. The name must match exactly."
-            inputType="input"
-            bind:value={properties.expected_tools[item_index].tool_name}
-          />
-
-          <Collapse
-            title="Expected Arguments"
-            description="Optionally check specific argument values passed to this tool."
-            open={(arg_rows[item_index] ?? []).length > 0}
-          >
-            {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
-              <div class="flex gap-2 items-center">
-                <div class="flex-1">
-                  <FormElement
-                    id="arg_name_{item_index}_{arg_index}"
-                    label={arg_index === 0 ? "Arg Name" : ""}
-                    inputType="input"
-                    placeholder="e.g. query"
-                    bind:value={arg_row.name}
-                  />
-                </div>
-                <div class="flex-1">
-                  <FormElement
-                    id="arg_value_{item_index}_{arg_index}"
-                    label={arg_index === 0 ? "Expected Value (JSON)" : ""}
-                    info_description={arg_index === 0
-                      ? 'Values must be valid JSON. Strings must be quoted (e.g. "hello"), numbers and booleans are bare (e.g. 42, true).'
-                      : ""}
-                    inputType="input"
-                    placeholder={'"hello", 42, true'}
-                    bind:value={arg_row.value}
-                  />
-                </div>
-                <div class="w-32">
-                  <FormElement
-                    id="arg_match_{item_index}_{arg_index}"
-                    label={arg_index === 0 ? "Comparison" : ""}
-                    inputType="select"
-                    bind:value={arg_row.match_mode}
-                    select_options={[
-                      ["exact", "Exact"],
-                      ["contains", "Contains"],
-                      ["regex", "Regex"],
-                    ]}
-                  />
-                </div>
-                <button
-                  class="btn btn-ghost btn-sm btn-circle text-gray-500 hover:text-gray-700"
-                  on:click={() => remove_arg(item_index, arg_index)}
-                  aria-label="Remove argument"
-                >
-                  <span class="h-4 w-4 block"><CloseIcon /></span>
-                </button>
-              </div>
-            {/each}
-            <button
-              class="btn btn-ghost btn-sm self-start"
-              on:click={() => add_arg(item_index)}
-            >
-              + Add Expected Argument
-            </button>
-          </Collapse>
-        </div>
-      </div>
-    </FormList>
-  </FormSection>
-
-  <FormSection
-    title="Match Mode"
-    subtitle="How to match tools against the trace."
-    testid="tool-call-match-mode-section"
-  >
+  <div class="flex flex-col gap-3">
     <FormElement
-      id="tool_call_check_match_mode"
-      label="Match Mode"
+      id="tool_call_expected_tools_header"
+      inputType="header_only"
+      label="Expected Tools"
+      description={properties.match_mode === "never"
+        ? "Define the tools the agent must NOT call."
+        : "Define the tools the agent is expected to call."}
+      value=""
+    />
+    <div class="ml-4 border-l border-base-300 pl-4">
+      <FormList
+        bind:content={properties.expected_tools}
+        content_label="Expected Tool"
+        empty_content={structuredClone(empty_tool)}
+        let:item_index
+      >
+        <div class="ml-4 border-l border-base-300 pl-4">
+          <div class="flex flex-col gap-2">
+            <FormElement
+              id="tool_name_{item_index}"
+              label="Tool Name"
+              description="The exact name of the tool that should be called."
+              info_description="Get the tool name from the Tools tab of Kiln. The name must match exactly."
+              inputType="input"
+              bind:value={properties.expected_tools[item_index].tool_name}
+            />
+
+            <Collapse
+              title="Expected Arguments"
+              description="Optionally check specific argument values passed to this tool."
+              open={(arg_rows[item_index] ?? []).length > 0}
+            >
+              {#each arg_rows[item_index] ?? [] as arg_row, arg_index}
+                <div class="flex gap-2 items-center">
+                  <div class="flex-1">
+                    <FormElement
+                      id="arg_name_{item_index}_{arg_index}"
+                      label={arg_index === 0 ? "Arg Name" : ""}
+                      inputType="input"
+                      placeholder="e.g. query"
+                      bind:value={arg_row.name}
+                    />
+                  </div>
+                  <div class="flex-1">
+                    <FormElement
+                      id="arg_value_{item_index}_{arg_index}"
+                      label={arg_index === 0 ? "Expected Value (JSON)" : ""}
+                      info_description={arg_index === 0
+                        ? 'Values must be valid JSON. Strings must be quoted (e.g. "hello"), numbers and booleans are bare (e.g. 42, true).'
+                        : ""}
+                      inputType="input"
+                      placeholder={'"hello", 42, true'}
+                      bind:value={arg_row.value}
+                    />
+                  </div>
+                  <div class="w-32">
+                    <FormElement
+                      id="arg_match_{item_index}_{arg_index}"
+                      label={arg_index === 0 ? "Comparison" : ""}
+                      inputType="select"
+                      bind:value={arg_row.match_mode}
+                      select_options={[
+                        ["exact", "Exact"],
+                        ["contains", "Contains"],
+                        ["regex", "Regex"],
+                      ]}
+                    />
+                  </div>
+                  <button
+                    class="btn btn-ghost btn-sm btn-circle text-gray-500 hover:text-gray-700"
+                    on:click={() => remove_arg(item_index, arg_index)}
+                    aria-label="Remove argument"
+                  >
+                    <span class="h-4 w-4 block"><CloseIcon /></span>
+                  </button>
+                </div>
+              {/each}
+              <button
+                class="btn btn-ghost btn-sm self-start"
+                on:click={() => add_arg(item_index)}
+              >
+                + Add Expected Argument
+              </button>
+            </Collapse>
+          </div>
+        </div>
+      </FormList>
+    </div>
+  </div>
+
+  <FormElement
+    id="tool_call_check_match_mode"
+    label="Match Mode"
+    description="How to match tools against the trace."
+    inputType="radio"
+    radio_options={[
+      {
+        value: "any",
+        label: "Any",
+        description: "Pass if at least one of the expected tools was called.",
+      },
+      {
+        value: "all",
+        label: "All (any order)",
+        description: "Pass if every expected tool was called, in any order.",
+      },
+      {
+        value: "ordered",
+        label: "Ordered (in list order)",
+        description:
+          "Pass if all expected tools were called in the order listed.",
+      },
+      {
+        value: "never",
+        label: "Never",
+        description: "Pass if none of the listed tools were called.",
+      },
+    ]}
+    bind:value={properties.match_mode}
+  />
+
+  {#if properties.match_mode !== "never"}
+    <FormElement
+      id="tool_call_check_on_unexpected"
+      label="Unlisted Tool Calls"
+      description="What happens when the model calls tools not in your list."
       inputType="radio"
       radio_options={[
         {
-          value: "any",
-          label: "Any",
-          description: "Pass if at least one of the expected tools was called.",
+          value: "ignore",
+          label: "Allow",
+          description: "Extra tool calls beyond the expected list are allowed.",
         },
         {
-          value: "all",
-          label: "All (any order)",
-          description: "Pass if every expected tool was called, in any order.",
-        },
-        {
-          value: "ordered",
-          label: "Ordered (in list order)",
+          value: "fail",
+          label: "Fail",
           description:
-            "Pass if all expected tools were called in the order listed.",
-        },
-        {
-          value: "never",
-          label: "Never",
-          description: "Pass if none of the listed tools were called.",
+            "Fail if any tool is called that is not in the expected list.",
         },
       ]}
-      bind:value={properties.match_mode}
-      hide_label
+      bind:value={properties.on_unexpected_tools}
     />
-  </FormSection>
-
-  {#if properties.match_mode !== "never"}
-    <FormSection
-      title="Unlisted Tool Calls"
-      subtitle="What happens when the model calls tools not in your list."
-      testid="tool-call-unexpected-section"
-    >
-      <FormElement
-        id="tool_call_check_on_unexpected"
-        label="Unlisted Tool Calls"
-        inputType="radio"
-        radio_options={[
-          {
-            value: "ignore",
-            label: "Allow",
-            description:
-              "Extra tool calls beyond the expected list are allowed.",
-          },
-          {
-            value: "fail",
-            label: "Fail",
-            description:
-              "Fail if any tool is called that is not in the expected list.",
-          },
-        ]}
-        bind:value={properties.on_unexpected_tools}
-        hide_label
-      />
-    </FormSection>
   {/if}
 </div>

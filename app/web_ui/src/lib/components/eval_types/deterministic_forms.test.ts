@@ -828,7 +828,9 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       container.querySelector('[data-testid="radio-group-exact_match_source"]'),
     ).toBeTruthy()
     expect(
-      container.querySelector('[data-testid="exact-match-expected-section"]'),
+      container.querySelector(
+        '[data-testid="form-element-exact_match_source"]',
+      ),
     ).toBeTruthy()
   })
 
@@ -883,7 +885,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       container.querySelector('[data-testid="radio-group-contains_source"]'),
     ).toBeTruthy()
     expect(
-      container.querySelector('[data-testid="contains-expected-section"]'),
+      container.querySelector('[data-testid="form-element-contains_source"]'),
     ).toBeTruthy()
   })
 
@@ -912,7 +914,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
     ).toBeTruthy()
   })
 
-  it("PatternMatch renders match mode radio group and section titles", () => {
+  it("PatternMatch renders match mode radio group and pattern field", () => {
     const { container } = render(PatternMatchForm, {
       props: {
         properties: {
@@ -930,11 +932,13 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       container.querySelector('[data-testid="pattern-match-pattern-section"]'),
     ).toBeTruthy()
     expect(
-      container.querySelector('[data-testid="pattern-match-mode-section"]'),
+      container.querySelector(
+        '[data-testid="form-element-pattern_match_mode"]',
+      ),
     ).toBeTruthy()
   })
 
-  it("Contains renders match mode radio group and section titles", () => {
+  it("Contains renders match mode radio group", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -951,7 +955,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
       container.querySelector('[data-testid="radio-group-contains_mode"]'),
     ).toBeTruthy()
     expect(
-      container.querySelector('[data-testid="contains-mode-section"]'),
+      container.querySelector('[data-testid="form-element-contains_mode"]'),
     ).toBeTruthy()
   })
 
@@ -980,7 +984,7 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
 // and that getProperties()/validate() contracts are preserved exactly.
 
 describe("Phase 8: SetCheckForm section structure and progressive disclosure", () => {
-  it("renders Expected Values section with testid", () => {
+  it("renders Expected Values radio with label", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -992,12 +996,14 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
         },
       },
     })
-    expect(
-      container.querySelector('[data-testid="set-check-expected-section"]'),
-    ).toBeTruthy()
+    const el = container.querySelector(
+      '[data-testid="form-element-set_check_source"]',
+    )
+    expect(el).toBeTruthy()
+    expect(el?.getAttribute("data-label")).toBe("Expected Values")
   })
 
-  it("renders Comparison Mode section with radio group", () => {
+  it("renders Comparison Mode radio with label", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -1009,9 +1015,11 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
         },
       },
     })
-    expect(
-      container.querySelector('[data-testid="set-check-mode-section"]'),
-    ).toBeTruthy()
+    const el = container.querySelector(
+      '[data-testid="form-element-set_check_mode"]',
+    )
+    expect(el).toBeTruthy()
+    expect(el?.getAttribute("data-label")).toBe("Comparison Mode")
     expect(
       container.querySelector('[data-testid="radio-group-set_check_mode"]'),
     ).toBeTruthy()
@@ -1203,7 +1211,7 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
 })
 
 describe("Phase 8: ToolCallCheckForm section structure and progressive disclosure", () => {
-  it("renders Match Mode section with radio group", () => {
+  it("renders Match Mode radio with label", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -1214,9 +1222,11 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
         },
       },
     })
-    expect(
-      container.querySelector('[data-testid="tool-call-match-mode-section"]'),
-    ).toBeTruthy()
+    const el = container.querySelector(
+      '[data-testid="form-element-tool_call_check_match_mode"]',
+    )
+    expect(el).toBeTruthy()
+    expect(el?.getAttribute("data-label")).toBe("Match Mode")
     expect(
       container.querySelector(
         '[data-testid="radio-group-tool_call_check_match_mode"]',
@@ -1241,7 +1251,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
     expect(getAllByText("Never").length).toBeGreaterThan(0)
   })
 
-  it("shows Unlisted Tool Calls section when match_mode is not 'never'", () => {
+  it("shows Unlisted Tool Calls radio when match_mode is not 'never'", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -1253,7 +1263,9 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
       },
     })
     expect(
-      container.querySelector('[data-testid="tool-call-unexpected-section"]'),
+      container.querySelector(
+        '[data-testid="form-element-tool_call_check_on_unexpected"]',
+      ),
     ).toBeTruthy()
     expect(
       container.querySelector(
@@ -1262,7 +1274,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
     ).toBeTruthy()
   })
 
-  it("hides Unlisted Tool Calls section when match_mode is 'never'", () => {
+  it("hides Unlisted Tool Calls radio when match_mode is 'never'", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -1274,11 +1286,13 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
       },
     })
     expect(
-      container.querySelector('[data-testid="tool-call-unexpected-section"]'),
+      container.querySelector(
+        '[data-testid="form-element-tool_call_check_on_unexpected"]',
+      ),
     ).toBeNull()
   })
 
-  it("renders Expected Tools section with testid", () => {
+  it("renders Expected Tools header_only FormElement", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -1289,11 +1303,11 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
         },
       },
     })
-    expect(
-      container.querySelector(
-        '[data-testid="tool-call-expected-tools-section"]',
-      ),
-    ).toBeTruthy()
+    const header = container.querySelector(
+      '[data-testid="form-element-tool_call_expected_tools_header"]',
+    )
+    expect(header).toBeTruthy()
+    expect(header?.getAttribute("data-label")).toBe("Expected Tools")
   })
 
   it("getProperties returns current match_mode", () => {
@@ -1349,7 +1363,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
 })
 
 describe("Phase 8: StepCountCheckForm section structure and progressive disclosure", () => {
-  it("renders What to Count section with radio group", () => {
+  it("renders What to Count radio with label", () => {
     const { container } = render(StepCountCheckForm, {
       props: {
         properties: {
@@ -1360,9 +1374,11 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
         },
       },
     })
-    expect(
-      container.querySelector('[data-testid="step-count-type-section"]'),
-    ).toBeTruthy()
+    const el = container.querySelector(
+      '[data-testid="form-element-step_count_check_count_type"]',
+    )
+    expect(el).toBeTruthy()
+    expect(el?.getAttribute("data-label")).toBe("What to Count")
     expect(
       container.querySelector(
         '[data-testid="radio-group-step_count_check_count_type"]',
@@ -1386,7 +1402,7 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
     expect(getAllByText("Turns").length).toBeGreaterThan(0)
   })
 
-  it("renders Bounds section with testid", () => {
+  it("renders Bounds header_only FormElement", () => {
     const { container } = render(StepCountCheckForm, {
       props: {
         properties: {
@@ -1397,9 +1413,11 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
         },
       },
     })
-    expect(
-      container.querySelector('[data-testid="step-count-bounds-section"]'),
-    ).toBeTruthy()
+    const header = container.querySelector(
+      '[data-testid="form-element-step_count_bounds_header"]',
+    )
+    expect(header).toBeTruthy()
+    expect(header?.getAttribute("data-label")).toBe("Bounds")
   })
 
   it("getProperties returns correct count_type", () => {
@@ -1714,7 +1732,7 @@ describe("UI polish: conditional inputs indented under radio selection", () => {
 })
 
 describe("UI polish: case-sensitive moved out of OutputValueField", () => {
-  it("ExactMatch has case-sensitive in its own Comparison Options section", () => {
+  it("ExactMatch has case-sensitive checkbox as direct child of form", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1726,14 +1744,11 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
         },
       },
     })
-    const optionsSection = container.querySelector(
-      '[data-testid="exact-match-options-section"]',
-    )
-    expect(optionsSection).toBeTruthy()
-    const caseSensitive = optionsSection?.querySelector(
+    const caseSensitive = container.querySelector(
       '[data-testid="form-element-exact_match_case_sensitive"]',
     )
     expect(caseSensitive).toBeTruthy()
+    expect(caseSensitive?.getAttribute("data-label")).toBe("Case Sensitive")
   })
 
   it("ExactMatch case-sensitive is separate from OutputValueField", () => {
@@ -1748,16 +1763,13 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
         },
       },
     })
-    const optionsSection = container.querySelector(
-      '[data-testid="exact-match-options-section"]',
-    )
-    const caseSensitive = optionsSection?.querySelector(
+    const caseSensitive = container.querySelector(
       '[data-testid="form-element-exact_match_case_sensitive"]',
     )
     expect(caseSensitive).toBeTruthy()
   })
 
-  it("Contains has case-sensitive in its own Comparison Options section", () => {
+  it("Contains has case-sensitive checkbox as direct child of form", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -1770,14 +1782,11 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
         },
       },
     })
-    const optionsSection = container.querySelector(
-      '[data-testid="contains-options-section"]',
-    )
-    expect(optionsSection).toBeTruthy()
-    const caseSensitive = optionsSection?.querySelector(
+    const caseSensitive = container.querySelector(
       '[data-testid="form-element-contains_case_sensitive"]',
     )
     expect(caseSensitive).toBeTruthy()
+    expect(caseSensitive?.getAttribute("data-label")).toBe("Case Sensitive")
   })
 
   it("Contains case-sensitive is separate from OutputValueField", () => {
@@ -1793,10 +1802,7 @@ describe("UI polish: case-sensitive moved out of OutputValueField", () => {
         },
       },
     })
-    const optionsSection = container.querySelector(
-      '[data-testid="contains-options-section"]',
-    )
-    const caseSensitive = optionsSection?.querySelector(
+    const caseSensitive = container.querySelector(
       '[data-testid="form-element-contains_case_sensitive"]',
     )
     expect(caseSensitive).toBeTruthy()
@@ -2011,8 +2017,8 @@ describe("Standard controls: reference key info tooltips", () => {
   })
 })
 
-describe("Standard controls: OutputValueField has FormSection wrapper", () => {
-  it("OutputValueField renders inside a FormSection with dropdown", () => {
+describe("Standard controls: OutputValueField renders labeled dropdown", () => {
+  it("OutputValueField renders a labeled fancy_select dropdown", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -2024,15 +2030,13 @@ describe("Standard controls: OutputValueField has FormSection wrapper", () => {
         },
       },
     })
-    const section = container.querySelector(
-      '[data-testid="output-value-section"]',
-    )
-    expect(section).toBeTruthy()
     const dropdown = container.querySelector(
       '[data-testid="form-element-exact_match_output_source"]',
     )
     expect(dropdown).toBeTruthy()
     expect(dropdown?.getAttribute("data-type")).toBe("fancy_select")
+    expect(dropdown?.getAttribute("data-label")).toBe("Output to Check")
+    expect(dropdown?.getAttribute("data-hide-label")).toBe("false")
   })
 })
 
@@ -2141,9 +2145,14 @@ describe("SetCheckForm UI polish", () => {
         },
       },
     })
-    const label = container.querySelector('[data-testid="tag-input-label"]')
-    expect(label).toBeTruthy()
-    expect(label?.textContent).toBe("Expected Values")
+    const header = container.querySelector(
+      '[data-testid="form-element-set_check_expected_values_header"]',
+    )
+    expect(header).toBeTruthy()
+    expect(header?.getAttribute("data-label")).toBe("Values")
+    expect(header?.getAttribute("data-description")).toBe(
+      "Add items by typing and pressing Enter or comma.",
+    )
   })
 
   it("comparison mode descriptions use plain language", () => {
@@ -2235,7 +2244,7 @@ describe("SetCheckForm UI polish", () => {
     expect(parent?.classList.contains("pl-4")).toBe(true)
   })
 
-  it("section title is 'Expected Values' not 'Expected Set'", () => {
+  it("label is 'Expected Values' not 'Expected Set'", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -2247,16 +2256,15 @@ describe("SetCheckForm UI polish", () => {
         },
       },
     })
-    const section = container.querySelector(
-      '[data-testid="set-check-expected-section"]',
+    const el = container.querySelector(
+      '[data-testid="form-element-set_check_source"]',
     )
-    const heading = section?.querySelector("h3")
-    expect(heading?.textContent).toBe("Expected Values")
+    expect(el?.getAttribute("data-label")).toBe("Expected Values")
   })
 })
 
 describe("ToolCallCheckForm UI polish", () => {
-  it("Expected Tools section appears before Match Mode section in DOM", () => {
+  it("Expected Tools header appears before Match Mode in DOM", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2271,14 +2279,18 @@ describe("ToolCallCheckForm UI polish", () => {
     const sectionIds = Array.from(sections).map((s) =>
       s.getAttribute("data-testid"),
     )
-    const toolsIdx = sectionIds.indexOf("tool-call-expected-tools-section")
-    const matchIdx = sectionIds.indexOf("tool-call-match-mode-section")
+    const toolsIdx = sectionIds.indexOf(
+      "form-element-tool_call_expected_tools_header",
+    )
+    const matchIdx = sectionIds.indexOf(
+      "form-element-tool_call_check_match_mode",
+    )
     expect(toolsIdx).toBeGreaterThanOrEqual(0)
     expect(matchIdx).toBeGreaterThanOrEqual(0)
     expect(toolsIdx).toBeLessThan(matchIdx)
   })
 
-  it("does not duplicate 'Expected Tools' as both section title and item header", () => {
+  it("renders 'Expected Tools' header label exactly once (no duplication)", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2289,15 +2301,15 @@ describe("ToolCallCheckForm UI polish", () => {
         },
       },
     })
-    const toolsSection = container.querySelector(
-      '[data-testid="tool-call-expected-tools-section"]',
+    const header = container.querySelector(
+      '[data-testid="form-element-tool_call_expected_tools_header"]',
     )
-    expect(toolsSection).toBeTruthy()
-    const headings = toolsSection?.querySelectorAll("h3")
-    const headingTexts = Array.from(headings || []).map(
-      (h) => h.textContent || "",
+    expect(header).toBeTruthy()
+    expect(header?.getAttribute("data-label")).toBe("Expected Tools")
+    const allWithLabel = container.querySelectorAll(
+      '[data-label="Expected Tools"]',
     )
-    expect(headingTexts.filter((t) => t === "Expected Tools")).toHaveLength(1)
+    expect(allWithLabel).toHaveLength(1)
   })
 
   it("arg row header says 'Comparison' not 'Match'", () => {
@@ -2357,7 +2369,7 @@ describe("ToolCallCheckForm UI polish", () => {
     expect(getAllByText("Ordered (in list order)").length).toBeGreaterThan(0)
   })
 
-  it("subtitle contextualizes for 'never' mode", () => {
+  it("description contextualizes for 'never' mode", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2368,16 +2380,13 @@ describe("ToolCallCheckForm UI polish", () => {
         },
       },
     })
-    const section = container.querySelector(
-      '[data-testid="tool-call-expected-tools-section"]',
+    const header = container.querySelector(
+      '[data-testid="form-element-tool_call_expected_tools_header"]',
     )
-    const subtitle = section?.querySelector(
-      '[data-testid="form-section-subtitle"]',
-    )
-    expect(subtitle?.textContent).toContain("must NOT call")
+    expect(header?.getAttribute("data-description")).toContain("must NOT call")
   })
 
-  it("subtitle for non-never mode says 'expected to call'", () => {
+  it("description for non-never mode says 'expected to call'", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2388,16 +2397,15 @@ describe("ToolCallCheckForm UI polish", () => {
         },
       },
     })
-    const section = container.querySelector(
-      '[data-testid="tool-call-expected-tools-section"]',
+    const header = container.querySelector(
+      '[data-testid="form-element-tool_call_expected_tools_header"]',
     )
-    const subtitle = section?.querySelector(
-      '[data-testid="form-section-subtitle"]',
+    expect(header?.getAttribute("data-description")).toContain(
+      "expected to call",
     )
-    expect(subtitle?.textContent).toContain("expected to call")
   })
 
-  it("section title is 'Unlisted Tool Calls' not 'On Unexpected Tools'", () => {
+  it("label is 'Unlisted Tool Calls' not 'On Unexpected Tools'", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         properties: {
@@ -2408,11 +2416,10 @@ describe("ToolCallCheckForm UI polish", () => {
         },
       },
     })
-    const section = container.querySelector(
-      '[data-testid="tool-call-unexpected-section"]',
+    const el = container.querySelector(
+      '[data-testid="form-element-tool_call_check_on_unexpected"]',
     )
-    const heading = section?.querySelector("h3")
-    expect(heading?.textContent).toBe("Unlisted Tool Calls")
+    expect(el?.getAttribute("data-label")).toBe("Unlisted Tool Calls")
   })
 
   it("Expected Arguments collapse has a description", () => {

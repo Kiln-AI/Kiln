@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
-  import FormSection from "./form_parts/form_section.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
 
   export let properties: components["schemas"]["PatternMatchProperties"] = {
@@ -68,26 +67,24 @@
     />
   </div>
 
-  <FormSection title="Match Mode" testid="pattern-match-mode-section">
-    <FormElement
-      id="pattern_match_mode"
-      inputType="radio"
-      radio_options={[
-        {
-          value: "must_match",
-          label: "Must match",
-          description: "The output must match the pattern to pass.",
-        },
-        {
-          value: "must_not_match",
-          label: "Must not match",
-          description: "The output must NOT match the pattern to pass.",
-        },
-      ]}
-      bind:value={properties.mode}
-      hide_label
-    />
-  </FormSection>
+  <FormElement
+    id="pattern_match_mode"
+    label="Match Mode"
+    inputType="radio"
+    radio_options={[
+      {
+        value: "must_match",
+        label: "Must match",
+        description: "The output must match the pattern to pass.",
+      },
+      {
+        value: "must_not_match",
+        label: "Must not match",
+        description: "The output must NOT match the pattern to pass.",
+      },
+    ]}
+    bind:value={properties.mode}
+  />
 
   <OutputValueField
     id_prefix="pattern_match"

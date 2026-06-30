@@ -3,7 +3,6 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import FormSection from "./form_section.svelte"
   import {
     parseValue,
     JINJA_EXAMPLES,
@@ -39,7 +38,7 @@
         {
           value: "custom",
           label: "Custom (Jinja)",
-          description: "Build a custom expression from Jinja syntax.",
+          description: "Select part of the output or trace using Jinja syntax.",
         },
       ],
     },
@@ -95,18 +94,14 @@
   }
 </script>
 
-<FormSection
-  title="Output to Check"
-  subtitle="Which part of the model's output to compare against the expected value."
-  testid="output-value-section"
->
+<div class="flex flex-col gap-3">
   <FormElement
     id="{id_prefix}_output_source"
     label="Output to Check"
+    description="Which part of the model's output to compare against the expected value."
     inputType="fancy_select"
     fancy_select_options={modeOptions}
     bind:value={mode}
-    hide_label
   />
 
   {#if mode === "custom"}
@@ -125,7 +120,7 @@
       />
     </div>
   {/if}
-</FormSection>
+</div>
 
 <Dialog
   bind:this={examplesDialog}

@@ -3,7 +3,6 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
-  import FormSection from "./form_parts/form_section.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
   import ReferenceFieldSelect from "./form_parts/reference_field_select.svelte"
 
@@ -52,9 +51,11 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection title="Expected Substring" testid="contains-expected-section">
+  <div class="flex flex-col gap-3">
     <FormElement
       id="contains_source"
+      label="Expected Substring"
+      description="The text to search for in the output."
       inputType="radio"
       radio_options={[
         {
@@ -71,7 +72,6 @@
       ]}
       bind:value={source}
       on_radio_change={on_source_change}
-      hide_label
     />
 
     {#if source === "substring"}
@@ -93,37 +93,33 @@
         />
       </div>
     {/if}
-  </FormSection>
+  </div>
 
-  <FormSection title="Match Mode" testid="contains-mode-section">
-    <FormElement
-      id="contains_mode"
-      inputType="radio"
-      radio_options={[
-        {
-          value: "must_contain",
-          label: "Must contain",
-          description: "The output must contain the value to pass.",
-        },
-        {
-          value: "must_not_contain",
-          label: "Must not contain",
-          description: "The output must NOT contain the value to pass.",
-        },
-      ]}
-      bind:value={properties.mode}
-      hide_label
-    />
-  </FormSection>
+  <FormElement
+    id="contains_mode"
+    label="Match Mode"
+    inputType="radio"
+    radio_options={[
+      {
+        value: "must_contain",
+        label: "Must contain",
+        description: "The output must contain the value to pass.",
+      },
+      {
+        value: "must_not_contain",
+        label: "Must not contain",
+        description: "The output must NOT contain the value to pass.",
+      },
+    ]}
+    bind:value={properties.mode}
+  />
 
-  <FormSection title="Comparison Options" testid="contains-options-section">
-    <FormElement
-      id="contains_case_sensitive"
-      label="Case Sensitive"
-      inputType="checkbox"
-      bind:value={properties.case_sensitive}
-    />
-  </FormSection>
+  <FormElement
+    id="contains_case_sensitive"
+    label="Case Sensitive"
+    inputType="checkbox"
+    bind:value={properties.case_sensitive}
+  />
 
   <OutputValueField
     id_prefix="contains"

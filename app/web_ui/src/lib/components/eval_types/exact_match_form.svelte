@@ -3,7 +3,6 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
-  import FormSection from "./form_parts/form_section.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
   import ReferenceFieldSelect from "./form_parts/reference_field_select.svelte"
 
@@ -53,9 +52,10 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection title="Expected Value" testid="exact-match-expected-section">
+  <div class="flex flex-col gap-3">
     <FormElement
       id="exact_match_source"
+      label="Expected Value"
       inputType="radio"
       radio_options={[
         {
@@ -72,7 +72,6 @@
       ]}
       bind:value={source}
       on_radio_change={on_source_change}
-      hide_label
     />
 
     {#if source === "expected_value"}
@@ -94,16 +93,14 @@
         />
       </div>
     {/if}
-  </FormSection>
+  </div>
 
-  <FormSection title="Comparison Options" testid="exact-match-options-section">
-    <FormElement
-      id="exact_match_case_sensitive"
-      label="Case Sensitive"
-      inputType="checkbox"
-      bind:value={properties.case_sensitive}
-    />
-  </FormSection>
+  <FormElement
+    id="exact_match_case_sensitive"
+    label="Case Sensitive"
+    inputType="checkbox"
+    bind:value={properties.case_sensitive}
+  />
 
   <OutputValueField
     id_prefix="exact_match"

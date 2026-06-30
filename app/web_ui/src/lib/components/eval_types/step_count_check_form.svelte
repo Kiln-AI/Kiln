@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
-  import FormSection from "./form_parts/form_section.svelte"
 
   export let properties: components["schemas"]["StepCountCheckProperties"] = {
     type: "step_count_check",
@@ -53,43 +52,41 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection
-    title="What to Count"
-    subtitle="Choose what to count in the agent's trace."
-    testid="step-count-type-section"
-  >
-    <FormElement
-      id="step_count_check_count_type"
-      inputType="radio"
-      radio_options={[
-        {
-          value: "tool_calls",
-          label: "Tool calls",
-          description: "Count each tool or function call the agent made.",
-        },
-        {
-          value: "model_responses",
-          label: "Model responses",
-          description:
-            "Count each response the model generated (one per inference call).",
-        },
-        {
-          value: "turns",
-          label: "Turns",
-          description:
-            "Count conversational turns (each user-then-assistant exchange counts as one turn).",
-        },
-      ]}
-      bind:value={properties.count_type}
-      hide_label
-    />
-  </FormSection>
+  <FormElement
+    id="step_count_check_count_type"
+    label="What to Count"
+    description="Choose what to count in the agent's trace."
+    inputType="radio"
+    radio_options={[
+      {
+        value: "tool_calls",
+        label: "Tool calls",
+        description: "Count each tool or function call the agent made.",
+      },
+      {
+        value: "model_responses",
+        label: "Model responses",
+        description:
+          "Count each response the model generated (one per inference call).",
+      },
+      {
+        value: "turns",
+        label: "Turns",
+        description:
+          "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+      },
+    ]}
+    bind:value={properties.count_type}
+  />
 
-  <FormSection
-    title="Bounds"
-    subtitle="Set a minimum and/or maximum. At least one is required."
-    testid="step-count-bounds-section"
-  >
+  <div class="flex flex-col gap-3">
+    <FormElement
+      id="step_count_bounds_header"
+      inputType="header_only"
+      label="Bounds"
+      description="Set a minimum and/or maximum. At least one is required."
+      value=""
+    />
     <div class="ml-4 border-l border-base-300 pl-4">
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div on:blur={on_bounds_blur}>
@@ -124,5 +121,5 @@
         {/if}
       </div>
     </div>
-  </FormSection>
+  </div>
 </div>

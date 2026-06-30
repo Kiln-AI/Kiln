@@ -3,7 +3,6 @@
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
-  import FormSection from "./form_parts/form_section.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
   import ReferenceFieldSelect from "./form_parts/reference_field_select.svelte"
   import TagInput from "./tag_input.svelte"
@@ -64,13 +63,11 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <FormSection
-    title="Expected Values"
-    subtitle="Define what the output should contain."
-    testid="set-check-expected-section"
-  >
+  <div class="flex flex-col gap-3">
     <FormElement
       id="set_check_source"
+      label="Expected Values"
+      description="Define what the output should contain."
       inputType="radio"
       radio_options={[
         {
@@ -87,21 +84,17 @@
       ]}
       bind:value={source}
       on_radio_change={on_source_change}
-      hide_label
     />
 
     {#if source === "expected_set"}
       <div class="ml-4 border-l border-base-300 pl-4">
-        <label
-          for="set_check_expected_set"
-          class="text-sm font-medium"
-          data-testid="tag-input-label"
-        >
-          Expected Values
-        </label>
-        <p class="text-xs text-gray-500 mt-0.5 mb-1.5">
-          Add items by typing and pressing Enter or comma.
-        </p>
+        <FormElement
+          id="set_check_expected_values_header"
+          inputType="header_only"
+          label="Values"
+          description="Add items by typing and pressing Enter or comma."
+          value=""
+        />
         <TagInput
           id="set_check_expected_set"
           bind:tags={expected_set_tags}
@@ -117,36 +110,34 @@
         />
       </div>
     {/if}
-  </FormSection>
+  </div>
 
-  <FormSection title="Comparison Mode" testid="set-check-mode-section">
-    <FormElement
-      id="set_check_mode"
-      inputType="radio"
-      radio_options={[
-        {
-          value: "equal",
-          label: "Equal",
-          description:
-            "The output must contain exactly the expected values, with no extras and nothing missing.",
-        },
-        {
-          value: "subset",
-          label: "Subset",
-          description:
-            "Every output value must appear in the expected values (extras in expected are OK).",
-        },
-        {
-          value: "superset",
-          label: "Superset",
-          description:
-            "Every expected value must appear in the output (extra output values are OK).",
-        },
-      ]}
-      bind:value={properties.mode}
-      hide_label
-    />
-  </FormSection>
+  <FormElement
+    id="set_check_mode"
+    label="Comparison Mode"
+    inputType="radio"
+    radio_options={[
+      {
+        value: "equal",
+        label: "Equal",
+        description:
+          "The output must contain exactly the expected values, with no extras and nothing missing.",
+      },
+      {
+        value: "subset",
+        label: "Subset",
+        description:
+          "Every output value must appear in the expected values (extras in expected are OK).",
+      },
+      {
+        value: "superset",
+        label: "Superset",
+        description:
+          "Every expected value must appear in the output (extra output values are OK).",
+      },
+    ]}
+    bind:value={properties.mode}
+  />
 
   <OutputValueField
     id_prefix="set_check"
