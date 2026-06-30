@@ -1892,9 +1892,7 @@ describe("UI polish: placeholders on inputs", () => {
     const field = container.querySelector(
       '[data-testid="form-element-contains_reference_key"]',
     )
-    expect(field?.getAttribute("data-placeholder")).toBe(
-      "e.g. expected_keyword",
-    )
+    expect(field?.getAttribute("data-placeholder")).toBe("e.g. expected_answer")
   })
 })
 
@@ -1948,7 +1946,7 @@ describe("UI polish: regex tooltip is educational", () => {
 })
 
 describe("Standard controls: reference key info tooltips", () => {
-  it("ExactMatch reference_key has info_description about Jinja extractor syntax", () => {
+  it("ExactMatch reference_key has info_description about top-level field", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -1964,11 +1962,11 @@ describe("Standard controls: reference key info tooltips", () => {
       '[data-testid="form-element-exact_match_reference_key"]',
     )
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("reference data object")
-    expect(tooltip).toContain("Jinja extractor syntax")
+    expect(tooltip).toContain("top-level field")
+    expect(tooltip).toContain("expected_answer")
   })
 
-  it("Contains reference_key has info_description about Jinja extractor syntax", () => {
+  it("Contains reference_key has info_description about top-level field", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -1985,11 +1983,11 @@ describe("Standard controls: reference key info tooltips", () => {
       '[data-testid="form-element-contains_reference_key"]',
     )
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("reference data object")
-    expect(tooltip).toContain("Jinja extractor syntax")
+    expect(tooltip).toContain("top-level field")
+    expect(tooltip).toContain("expected_answer")
   })
 
-  it("SetCheck reference_key has description mentioning array and Jinja tooltip", () => {
+  it("SetCheck reference_key has description and tooltip about top-level field", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -2005,11 +2003,11 @@ describe("Standard controls: reference key info tooltips", () => {
       '[data-testid="form-element-set_check_reference_key"]',
     )
     const desc = field?.getAttribute("data-description") || ""
-    expect(desc).toContain("document.tags")
-    expect(desc).toContain("Must be an array.")
+    expect(desc).toContain("reference data")
+    expect(desc).toContain("expected value")
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("reference data object")
-    expect(tooltip).toContain("Jinja extractor syntax")
+    expect(tooltip).toContain("top-level field")
+    expect(tooltip).toContain("expected_answer")
   })
 })
 
@@ -2080,7 +2078,7 @@ describe("Standard controls: description and tooltip on visible-label fields", (
     )
   })
 
-  it("ExactMatch reference_key has description and Jinja tooltip with visible label", () => {
+  it("ExactMatch reference_key has description and tooltip with visible label", () => {
     const { container } = render(ExactMatchForm, {
       props: {
         properties: {
@@ -2096,15 +2094,13 @@ describe("Standard controls: description and tooltip on visible-label fields", (
       '[data-testid="form-element-exact_match_reference_key"]',
     )
     expect(field?.getAttribute("data-hide-label")).toBe("false")
-    expect(field?.getAttribute("data-description")).toContain(
-      "user.expected_status",
-    )
+    expect(field?.getAttribute("data-description")).toContain("reference data")
     expect(field?.getAttribute("data-info-description")).toContain(
-      "reference data object",
+      "top-level field",
     )
   })
 
-  it("Contains reference_key has description and Jinja tooltip with visible label", () => {
+  it("Contains reference_key has description and tooltip with visible label", () => {
     const { container } = render(ContainsForm, {
       props: {
         properties: {
@@ -2121,11 +2117,9 @@ describe("Standard controls: description and tooltip on visible-label fields", (
       '[data-testid="form-element-contains_reference_key"]',
     )
     expect(field?.getAttribute("data-hide-label")).toBe("false")
-    expect(field?.getAttribute("data-description")).toContain(
-      "user.expected_status",
-    )
+    expect(field?.getAttribute("data-description")).toContain("reference data")
     expect(field?.getAttribute("data-info-description")).toContain(
-      "reference data object",
+      "top-level field",
     )
   })
 })
@@ -2181,7 +2175,7 @@ describe("SetCheckForm UI polish", () => {
     ).toBeGreaterThan(0)
   })
 
-  it("reference key field has info_description tooltip about Jinja extractor", () => {
+  it("reference key field has info_description tooltip about top-level field", () => {
     const { container } = render(SetCheckForm, {
       props: {
         properties: {
@@ -2197,8 +2191,8 @@ describe("SetCheckForm UI polish", () => {
       '[data-testid="form-element-set_check_reference_key"]',
     )
     const tooltip = field?.getAttribute("data-info-description") || ""
-    expect(tooltip).toContain("reference data object")
-    expect(tooltip).toContain("Jinja extractor syntax")
+    expect(tooltip).toContain("top-level field")
+    expect(tooltip).toContain("expected_answer")
   })
 
   it("conditional tag input is wrapped in indent container", () => {
@@ -2772,5 +2766,146 @@ describe("StepCountCheckForm UI polish", () => {
         "Count each response the model generated (one per inference call).",
       ).length,
     ).toBeGreaterThan(0)
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────
+// required_reference_fields reactive computation
+// ──────────────────────────────────────────────────────────────────
+
+describe("required_reference_fields computation", () => {
+  it("ExactMatch: empty when fixed value source is selected", () => {
+    const { component } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([])
+  })
+
+  it("ExactMatch: contains key when reference_key source is selected", async () => {
+    const { component } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: "expected_answer",
+        },
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([
+      "expected_answer",
+    ])
+  })
+
+  it("ExactMatch: empty when reference_key source is selected but key is null", async () => {
+    const { component } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: null,
+          reference_key: null,
+        },
+      },
+    })
+    // Switch to reference_key source
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(component as any).$set({
+      properties: {
+        type: "exact_match" as const,
+        case_sensitive: true,
+        value_expression: null,
+        expected_value: null,
+        reference_key: null,
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([])
+  })
+
+  it("Contains: contains key when reference_key source is selected", async () => {
+    const { component } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: null,
+          reference_key: "expected_keyword",
+        },
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([
+      "expected_keyword",
+    ])
+  })
+
+  it("Contains: empty when substring source is selected", () => {
+    const { component } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "hello",
+          reference_key: null,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([])
+  })
+
+  it("SetCheck: contains key when reference_key source is selected", async () => {
+    const { component } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: null,
+          reference_key: "expected_tags",
+        },
+      },
+    })
+    await tick()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([
+      "expected_tags",
+    ])
+  })
+
+  it("SetCheck: empty when expected_set source is selected", () => {
+    const { component } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a"],
+          reference_key: null,
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).required_reference_fields).toEqual([])
   })
 })

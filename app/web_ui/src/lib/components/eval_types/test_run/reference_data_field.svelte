@@ -3,6 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
 
   export let reference_data: string = ""
+  export let required_reference_fields: string[] = []
 
   let dialog: Dialog
   let edit_value = ""
@@ -12,10 +13,36 @@
     change: string
   }>()
 
-  $: display_value = get_display_value(reference_data)
+  $: missing_fields = get_missing_fields(
+    reference_data,
+    required_reference_fields,
+  )
+  $: display_value =
+    missing_fields.length > 0
+      ? "Missing " + missing_fields.join(", ")
+      : get_display_value(reference_data)
+  $: display_is_error = missing_fields.length > 0
 
   function is_plain_object(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value)
+  }
+
+  function get_missing_fields(data: string, required: string[]): string[] {
+    if (required.length === 0) return []
+    if (!data.trim()) return required
+    try {
+      const parsed = JSON.parse(data.trim())
+      if (!is_plain_object(parsed)) return required
+      return required.filter(
+        (k) =>
+          !(k in parsed) ||
+          parsed[k] === undefined ||
+          parsed[k] === null ||
+          parsed[k] === "",
+      )
+    } catch {
+      return required
+    }
   }
 
   function get_display_value(data: string): string {
@@ -70,7 +97,9 @@
   <span class="text-gray-500">Reference Data</span>
   <button
     type="button"
-    class="link text-sm text-gray-500 hover:text-primary"
+    class="link text-sm {display_is_error
+      ? 'text-error'
+      : 'text-gray-500 hover:text-primary'}"
     on:click={open_editor}
     data-testid="reference-data-edit"
   >

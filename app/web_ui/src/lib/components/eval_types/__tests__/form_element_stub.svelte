@@ -64,6 +64,8 @@
         </label>
       {/each}
     </div>
+  {:else if inputType === "input"}
+    <input type="text" data-testid="input-{id}" {placeholder} bind:value />
   {:else if inputType === "fancy_select"}
     <div data-testid="fancy-select-{id}">
       {#each fancy_select_options as group}

@@ -1431,3 +1431,147 @@ describe("Auto-select integration", () => {
     expect(link?.getAttribute("href")).toBe("/run")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Tests: ReferenceDataField "Missing x" red-state
+// ---------------------------------------------------------------------------
+
+describe("ReferenceDataField missing-field red-state", () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("shows 'Missing x' when required field is not in reference data", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: "",
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("Missing expected_answer")
+  })
+
+  it("applies text-error class when field is missing", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: "",
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.classList.contains("text-error")).toBe(true)
+    expect(editBtn?.classList.contains("text-gray-500")).toBe(false)
+  })
+
+  it("does not show missing state when required field is present", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: '{"expected_answer": "yes"}',
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).not.toContain("Missing")
+    expect(editBtn?.classList.contains("text-error")).toBe(false)
+    expect(editBtn?.classList.contains("text-gray-500")).toBe(true)
+  })
+
+  it("shows normal display when no required fields", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: "",
+        required_reference_fields: [],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("None")
+    expect(editBtn?.classList.contains("text-error")).toBe(false)
+  })
+
+  it("shows missing for field with null value in reference data", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: '{"expected_answer": null}',
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("Missing expected_answer")
+    expect(editBtn?.classList.contains("text-error")).toBe(true)
+  })
+
+  it("shows missing for field with empty string value", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: '{"expected_answer": ""}',
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("Missing expected_answer")
+  })
+
+  it("comma-joins multiple missing fields", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: "",
+        required_reference_fields: ["field_a", "field_b"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("Missing field_a, field_b")
+  })
+
+  it("shows missing when reference data is invalid JSON", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: "not json",
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("Missing expected_answer")
+    expect(editBtn?.classList.contains("text-error")).toBe(true)
+  })
+
+  it("shows normal display when field is present with truthy value", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: '{"expected_answer": "correct"}',
+        required_reference_fields: ["expected_answer"],
+      },
+    })
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    )
+    expect(editBtn?.textContent).toContain("expected_answer")
+    expect(editBtn?.textContent).not.toContain("Missing")
+    expect(editBtn?.classList.contains("text-gray-500")).toBe(true)
+  })
+})

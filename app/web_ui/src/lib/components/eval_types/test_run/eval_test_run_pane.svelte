@@ -12,6 +12,7 @@
   export let available_runs: TaskRunOutput[] = []
   export let selected_run: TaskRunOutput | null = null
   export let reference_data: string = ""
+  export let required_reference_fields: string[] = []
   export let test_loading: boolean = false
   export let test_result: TestV2EvalResponse | null = null
   export let test_error: KilnError | null = null
@@ -174,6 +175,7 @@
 
     <ReferenceDataField
       {reference_data}
+      {required_reference_fields}
       on:change={(e) => dispatch("updateReferenceData", e.detail)}
     />
 
@@ -196,6 +198,7 @@
 
     <ReferenceDataField
       {reference_data}
+      {required_reference_fields}
       on:change={(e) => dispatch("updateReferenceData", e.detail)}
     />
 

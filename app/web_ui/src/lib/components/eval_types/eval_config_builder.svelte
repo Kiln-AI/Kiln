@@ -87,6 +87,40 @@
   // Pending action after trust grant: "test" or "save"
   let pending_trust_action: "test" | "save" | null = null
 
+  // Reference data candidate keys for dropdown (parsed from test run panel)
+  let reference_candidate_keys: string[] = []
+  $: reference_candidate_keys = parse_reference_keys(advanced_reference_data)
+
+  function parse_reference_keys(data: string): string[] {
+    if (!data.trim()) return []
+    try {
+      const parsed = JSON.parse(data.trim())
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
+        return []
+      }
+      return Object.keys(parsed)
+    } catch {
+      return []
+    }
+  }
+
+  // Required reference fields surfaced by the active form.
+  // Only the deterministic forms (exact_match, contains, set_check) bind
+  // this; reset when switching to any other eval type so stale values
+  // from a previous form don't leak.
+  let required_reference_fields: string[] = []
+  $: if (
+    eval_config_type !== "exact_match" &&
+    eval_config_type !== "contains" &&
+    eval_config_type !== "set_check"
+  ) {
+    required_reference_fields = []
+  }
+
   // Unsaved-changes guard: activate after any real form interaction
   let has_typed = false
 
@@ -475,6 +509,13 @@
           bind:this={v2FormComponentRef}
           output_scores={evaluator?.output_scores}
         />
+      {:else if (eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check") && metadata}
+        <svelte:component
+          this={metadata.createFormComponent}
+          bind:this={v2FormComponentRef}
+          {reference_candidate_keys}
+          bind:required_reference_fields
+        />
       {:else if metadata}
         <svelte:component
           this={metadata.createFormComponent}
@@ -507,6 +548,7 @@
         {available_runs}
         selected_run={selected_task_run}
         reference_data={advanced_reference_data}
+        {required_reference_fields}
         {test_loading}
         {test_result}
         {test_error}

@@ -18,6 +18,11 @@ vi.mock("$lib/ui/dialog.svelte", async () => {
 
 const FormSection = (await import("./form_section.svelte")).default
 const OutputValueField = (await import("./output_value_field.svelte")).default
+const ReferenceFieldSelect = (await import("./reference_field_select.svelte"))
+  .default
+const ReferenceFieldHarness = (
+  await import("../__tests__/reference_field_harness.svelte")
+).default
 
 beforeAll(() => {
   if (typeof globalThis.ResizeObserver === "undefined") {
@@ -703,5 +708,319 @@ describe("Examples modal", () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).value).toBe("trace[-1].content")
+  })
+})
+
+// --- ReferenceFieldSelect tests ---
+
+describe("ReferenceFieldSelect", () => {
+  describe("no candidates (plain text fallback)", () => {
+    it("renders a plain text input when candidate_keys is empty", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: [] },
+      })
+      const field = container.querySelector(
+        '[data-testid="form-element-test_reference_key"]',
+      )
+      expect(field).toBeTruthy()
+      expect(field?.getAttribute("data-type")).toBe("input")
+    })
+
+    it("plain text input has correct label and description", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: [] },
+      })
+      const field = container.querySelector(
+        '[data-testid="form-element-test_reference_key"]',
+      )
+      expect(field?.getAttribute("data-label")).toBe("Reference Data Field")
+      expect(field?.getAttribute("data-description")).toContain(
+        "reference data",
+      )
+    })
+
+    it("plain text input has tooltip", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: [] },
+      })
+      const field = container.querySelector(
+        '[data-testid="form-element-test_reference_key"]',
+      )
+      const tooltip = field?.getAttribute("data-info-description") || ""
+      expect(tooltip).toContain("top-level field")
+      expect(tooltip).toContain("expected_answer")
+    })
+
+    it("binds value in plain text mode", () => {
+      const { component } = render(ReferenceFieldSelect, {
+        props: {
+          id_prefix: "test",
+          value: "my_field",
+          candidate_keys: [],
+        },
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("my_field")
+    })
+  })
+
+  describe("with candidates (dropdown mode)", () => {
+    const keys = ["expected_answer", "expected_status"]
+
+    it("renders a fancy_select when candidates are present", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: keys },
+      })
+      const field = container.querySelector(
+        '[data-testid="form-element-test_reference_key"]',
+      )
+      expect(field).toBeTruthy()
+      expect(field?.getAttribute("data-type")).toBe("fancy_select")
+    })
+
+    it("renders candidate keys as dropdown options plus Custom", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: keys },
+      })
+      const fancySelect = container.querySelector(
+        '[data-testid="fancy-select-test_reference_key"]',
+      )
+      const options = fancySelect?.querySelectorAll("button[data-testid]")
+      expect(options?.length).toBe(3)
+      expect(
+        fancySelect?.querySelector(
+          '[data-testid="fancy-option-expected_answer"]',
+        ),
+      ).toBeTruthy()
+      expect(
+        fancySelect?.querySelector(
+          '[data-testid="fancy-option-expected_status"]',
+        ),
+      ).toBeTruthy()
+      expect(
+        fancySelect?.querySelector('[data-testid="fancy-option-__custom__"]'),
+      ).toBeTruthy()
+    })
+
+    it("selecting a key emits that key as value", async () => {
+      const { container, component } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: keys },
+      })
+      const option = container.querySelector(
+        '[data-testid="fancy-option-expected_answer"]',
+      )
+      await fireEvent.click(option!)
+      await tick()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("expected_answer")
+    })
+
+    it("selecting Custom opens the modal dialog", async () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: {
+          id_prefix: "test",
+          value: "expected_answer",
+          candidate_keys: keys,
+        },
+      })
+      const customOption = container.querySelector(
+        '[data-testid="fancy-option-__custom__"]',
+      )
+      await fireEvent.click(customOption!)
+      await tick()
+      const dialog = container.querySelector('[data-title="Custom Field Name"]')
+      expect(dialog).toBeTruthy()
+    })
+
+    it("custom field name input exists inside the modal dialog (not inline)", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: {
+          id_prefix: "test",
+          value: "expected_answer",
+          candidate_keys: keys,
+        },
+      })
+      const customInput = container.querySelector(
+        '[data-testid="custom-field-name-input"]',
+      )
+      expect(customInput).toBeTruthy()
+    })
+
+    it("adds non-candidate value to option list and selects it", () => {
+      const { container, component } = render(ReferenceFieldSelect, {
+        props: {
+          id_prefix: "test",
+          value: "unknown_field",
+          candidate_keys: keys,
+        },
+      })
+      const unknownOption = container.querySelector(
+        '[data-testid="fancy-option-unknown_field"]',
+      )
+      expect(unknownOption).toBeTruthy()
+      expect(unknownOption?.classList.contains("selected")).toBe(true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("unknown_field")
+    })
+
+    it("selects matching key when value matches a candidate", () => {
+      const { container } = render(ReferenceFieldSelect, {
+        props: {
+          id_prefix: "test",
+          value: "expected_status",
+          candidate_keys: keys,
+        },
+      })
+      const option = container.querySelector(
+        '[data-testid="fancy-option-expected_status"]',
+      )
+      expect(option?.classList.contains("selected")).toBe(true)
+    })
+
+    it("null value shows placeholder (no option selected), not Custom sentinel", () => {
+      const { container, component } = render(ReferenceFieldSelect, {
+        props: { id_prefix: "test", value: null, candidate_keys: keys },
+      })
+      // Custom sentinel must NOT be selected — it is only a momentary
+      // modal trigger, never a persisted selection.
+      const customOption = container.querySelector(
+        '[data-testid="fancy-option-__custom__"]',
+      )
+      expect(customOption?.classList.contains("selected")).toBe(false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBeNull()
+    })
+  })
+
+  describe("no-candidates → has-candidates transition preserves typed value", () => {
+    it("DOM typing: value typed via real input is preserved when candidates appear", async () => {
+      // Render via harness that does bind:value like the real form does.
+      const { container, component } = render(ReferenceFieldHarness, {
+        props: { value: null, candidate_keys: [] },
+      })
+
+      // Confirm text input mode
+      const formEl = container.querySelector(
+        '[data-testid="form-element-t_reference_key"]',
+      )
+      expect(formEl?.getAttribute("data-type")).toBe("input")
+
+      // Type "asdf" into the real <input> rendered by the stub.
+      // This goes through the actual DOM → bind:value chain:
+      //   stub <input> → FormElement.value → bind → custom_raw_reference_value
+      const input = container.querySelector(
+        '[data-testid="input-t_reference_key"]',
+      ) as HTMLInputElement
+      expect(input).toBeTruthy()
+
+      await fireEvent.input(input, { target: { value: "asdf" } })
+      await tick()
+
+      // Confirm value propagated up through the harness bind
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("asdf")
+
+      // candidate_keys becomes non-empty (user entered reference data)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(component as any).$set({ candidate_keys: ["foo"] })
+      await tick()
+      await tick()
+
+      // Control must now be a dropdown
+      const dropdown = container.querySelector(
+        '[data-testid="form-element-t_reference_key"]',
+      )
+      expect(dropdown?.getAttribute("data-type")).toBe("fancy_select")
+
+      // "asdf" must be preserved as the value — on both the component and harness
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("asdf")
+
+      // "asdf" must appear as a selected option in the dropdown
+      const asdfOption = container.querySelector(
+        '[data-testid="fancy-option-asdf"]',
+      )
+      expect(asdfOption).toBeTruthy()
+      expect(asdfOption?.classList.contains("selected")).toBe(true)
+
+      // The sentinel must NOT be selected
+      const customOption = container.querySelector(
+        '[data-testid="fancy-option-__custom__"]',
+      )
+      expect(customOption?.classList.contains("selected")).toBe(false)
+    })
+
+    it("typed value in plain text mode is preserved when candidates appear", async () => {
+      const { container, component } = render(ReferenceFieldHarness, {
+        props: { value: "my_field", candidate_keys: [] },
+      })
+      const field = container.querySelector(
+        '[data-testid="form-element-t_reference_key"]',
+      )
+      expect(field?.getAttribute("data-type")).toBe("input")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("my_field")
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(component as any).$set({
+        candidate_keys: ["expected_answer", "expected_status"],
+      })
+      await tick()
+      await tick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("my_field")
+
+      // Must appear as a selected dropdown option
+      const option = container.querySelector(
+        '[data-testid="fancy-option-my_field"]',
+      )
+      expect(option).toBeTruthy()
+      expect(option?.classList.contains("selected")).toBe(true)
+    })
+
+    it("null value stays null when candidates appear", async () => {
+      const { component } = render(ReferenceFieldHarness, {
+        props: { value: null, candidate_keys: [] },
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBeNull()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(component as any).$set({ candidate_keys: ["expected_answer"] })
+      await tick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBeNull()
+    })
+
+    it("typed value matching a candidate selects the candidate option", async () => {
+      const { container, component } = render(ReferenceFieldHarness, {
+        props: { value: null, candidate_keys: [] },
+      })
+
+      // Type a value that will match a future candidate
+      const input = container.querySelector(
+        '[data-testid="input-t_reference_key"]',
+      ) as HTMLInputElement
+      await fireEvent.input(input, { target: { value: "expected_answer" } })
+      await tick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("expected_answer")
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(component as any).$set({
+        candidate_keys: ["expected_answer", "expected_status"],
+      })
+      await tick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).value).toBe("expected_answer")
+      const option = container.querySelector(
+        '[data-testid="fancy-option-expected_answer"]',
+      )
+      expect(option?.classList.contains("selected")).toBe(true)
+    })
   })
 })

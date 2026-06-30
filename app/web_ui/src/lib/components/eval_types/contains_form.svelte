@@ -1,8 +1,11 @@
+<svelte:options accessors />
+
 <script lang="ts">
   import type { components } from "$lib/api_schema"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormSection from "./form_parts/form_section.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
+  import ReferenceFieldSelect from "./form_parts/reference_field_select.svelte"
 
   export let properties: components["schemas"]["ContainsProperties"] = {
     type: "contains",
@@ -12,6 +15,9 @@
     substring: null,
     reference_key: null,
   }
+
+  export let reference_candidate_keys: string[] = []
+  export let required_reference_fields: string[] = []
 
   export function getProperties(): components["schemas"]["ContainsProperties"] {
     return properties
@@ -30,6 +36,11 @@
   let source: "substring" | "reference_key" = properties.reference_key
     ? "reference_key"
     : "substring"
+
+  $: required_reference_fields =
+    source === "reference_key" && properties.reference_key
+      ? [properties.reference_key]
+      : []
 
   function on_source_change() {
     if (source === "substring") {
@@ -75,13 +86,9 @@
       </div>
     {:else}
       <div class="ml-4 border-l border-base-300 pl-4">
-        <FormElement
-          id="contains_reference_key"
-          label="Reference Data Field"
-          inputType="input"
-          placeholder="e.g. expected_keyword"
-          description="A field in the reference data to compare output to, example: `user.expected_status`"
-          info_description="Extract a value from reference data object. For example, use `user.email` to extract the email field from a JSON response. Uses Jinja extractor syntax."
+        <ReferenceFieldSelect
+          id_prefix="contains"
+          candidate_keys={reference_candidate_keys}
           bind:value={properties.reference_key}
         />
       </div>
