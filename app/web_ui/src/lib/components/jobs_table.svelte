@@ -228,7 +228,8 @@
             <td class="whitespace-nowrap">
               <div class="flex flex-col gap-1">
                 <span class="font-medium">{job_type_display(job.type)}</span>
-                <span class="font-mono text-xs text-gray-500">ID: {job.id}</span>
+                <span class="font-mono text-xs text-gray-500">ID: {job.id}</span
+                >
                 <span class="text-xs text-gray-500"
                   >{formatDate(job.created_at)}</span
                 >
