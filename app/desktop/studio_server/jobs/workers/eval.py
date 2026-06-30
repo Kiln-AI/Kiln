@@ -18,6 +18,21 @@ from ...eval_api import eval_config_from_id, task_run_config_from_id
 from ..models import JobContext, JobDerivedState, JobWorker
 
 
+def _safe_str(exc: Exception) -> str:
+    """str(exc), falling back to the class name when it's empty or __str__ raises.
+
+    This runs in the error-logging path, which must never itself crash the run:
+    AsyncJobRunner awaits the observer's on_error unguarded, so a buggy __str__
+    here would take down the whole eval. Mirrors errors._safe_str, but prefers
+    the class name over a generic message since this log is developer-facing.
+    """
+    try:
+        result = str(exc)
+    except Exception:
+        return type(exc).__name__
+    return result or type(exc).__name__
+
+
 def _error_detail(error: Exception) -> str:
     """The most informative message for a failed dataset item's error log.
 
@@ -27,10 +42,9 @@ def _error_detail(error: Exception) -> str:
     exception survives on `.original`, so for the developer-facing eval error log
     we surface that underlying detail instead of the genericized wrapper message.
     """
-    if isinstance(error, KilnRunError):
-        original = error.original
-        return str(original) or original.__class__.__name__
-    return str(error) or error.__class__.__name__
+    if isinstance(error, KilnRunError) and error.original is not None:
+        return _safe_str(error.original)
+    return _safe_str(error)
 
 
 class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):

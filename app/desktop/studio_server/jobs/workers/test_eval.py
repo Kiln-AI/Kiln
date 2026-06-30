@@ -874,6 +874,29 @@ def test_error_detail_falls_back_to_class_name_for_empty_plain_exception():
     assert _error_detail(ValueError("")) == "ValueError"
 
 
+def test_error_detail_does_not_crash_on_buggy_str():
+    # The observer runs in AsyncJobRunner's unguarded on_error path, so a buggy
+    # __str__ must degrade to the class name rather than take down the run.
+    class BoomError(Exception):
+        def __str__(self) -> str:
+            raise RuntimeError("str blew up")
+
+    assert _error_detail(BoomError()) == "BoomError"
+
+
+def test_error_detail_handles_kiln_run_error_with_buggy_original_str():
+    class BoomError(Exception):
+        def __str__(self) -> str:
+            raise RuntimeError("str blew up")
+
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=BoomError(),
+    )
+    assert _error_detail(wrapped) == "BoomError"
+
+
 # -- save_context wiring -----------------------------------------------------
 
 
