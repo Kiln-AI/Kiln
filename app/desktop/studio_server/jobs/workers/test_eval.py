@@ -33,7 +33,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
-from kiln_ai.utils.async_job_runner import Progress
+from kiln_ai.utils.async_job_runner import Progress, RetryableError
 
 
 @pytest.fixture
@@ -810,7 +810,7 @@ async def test_run_logs_original_error_for_kiln_run_error(
     # The model adapter wraps failures in KilnRunError, whose own message is the
     # genericized format_error_message text. The error log must surface the
     # underlying .original detail, not "An unexpected error occurred."
-    _make_task_run(task, data_source, "eval_set")
+    task_run = _make_task_run(task, data_source, "eval_set")
 
     original = RuntimeError("provider 500: model is overloaded right now")
 
@@ -841,9 +841,11 @@ async def test_run_logs_original_error_for_kiln_run_error(
 
     assert result.error == 1
     assert len(logged) == 1
-    message, _ = logged[0]
+    message, extra = logged[0]
     assert message == "provider 500: model is overloaded right now"
     assert "An unexpected error occurred." not in message
+    assert extra["dataset_id"] == task_run.id
+    assert extra["run_config_id"] == run_config.id
 
 
 def test_error_detail_unwraps_kiln_run_error():
@@ -868,6 +870,14 @@ def test_error_detail_falls_back_to_original_class_name_when_empty():
 
 def test_error_detail_passes_through_plain_exception():
     assert _error_detail(ValueError("scoring exploded")) == "scoring exploded"
+
+
+def test_error_detail_surfaces_retryable_error_message():
+    # The most common real eval failure path: EvalRunner.run_job re-raises transient
+    # failures (rate limits, 5xx, schema errors) as RetryableError(str(original)).
+    # After retries are exhausted, that instance — not a KilnRunError — reaches
+    # _error_detail, which must surface the wrapped message, not a generic one.
+    assert _error_detail(RetryableError("rate limit exceeded")) == "rate limit exceeded"
 
 
 def test_error_detail_falls_back_to_class_name_for_empty_plain_exception():
