@@ -5,6 +5,10 @@
   import AppPage from "../../../../app_page.svelte"
   import { agentInfo } from "$lib/agent"
   import { getDataGuideJob } from "$lib/stores/data_guide_job_store"
+  import AddExampleDialog, {
+    type GuideSample,
+  } from "$lib/components/add_example_dialog.svelte"
+  import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
   import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id!
@@ -26,8 +30,25 @@
     }
   })
 
+  // Add-example dialog reused from the data_guide_setup flow. Picking the
+  // manual path opens it first so the user fills out their first example here;
+  // after they submit, we stash the sample on a pending store and navigate to
+  // /data_guide_setup, where it gets seeded into the form.
+  let add_data_guide_example_dialog: AddExampleDialog
+
   function pick_manual() {
     posthog.capture("data_guide_chooser_picked", { choice: "manual" })
+    add_data_guide_example_dialog?.open_add()
+  }
+
+  function handle_data_guide_example_added(
+    event: CustomEvent<{
+      sample: GuideSample
+      index: number
+      mode: "add" | "edit"
+    }>,
+  ) {
+    pending_data_guide_example.set(event.detail.sample)
     goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
   }
 
@@ -144,3 +165,12 @@
     </div>
   </AppPage>
 </div>
+
+<AddExampleDialog
+  bind:this={add_data_guide_example_dialog}
+  {project_id}
+  {task_id}
+  include_output={false}
+  sub_subtitle="To start, add an example input to guide synthetic input generation."
+  on:submit={handle_data_guide_example_added}
+/>
