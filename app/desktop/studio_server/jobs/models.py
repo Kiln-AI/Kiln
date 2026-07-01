@@ -47,54 +47,136 @@ class JobProgress(BaseModel):
     field is a count only — the actual messages live in the per-run error log.
     """
 
-    total: int | None = None
-    success: int = 0
-    error: int = 0
-    message: str | None = None
-    updated_at: datetime = Field(default_factory=_utc_now)
+    total: int | None = Field(
+        default=None,
+        description="Total number of items to process, or null when the size is not yet known.",
+    )
+    success: int = Field(
+        default=0, description="Number of items processed successfully so far."
+    )
+    error: int = Field(
+        default=0,
+        description="Number of items that failed so far. A count only — the actual "
+        "messages live in the per-run error log.",
+    )
+    message: str | None = Field(
+        default=None,
+        description="Optional human-readable status line describing the current step.",
+    )
+    updated_at: datetime = Field(
+        default_factory=_utc_now,
+        description="UTC timestamp of the most recent progress update.",
+    )
 
 
 class JobDerivedState(BaseModel):
     """A worker's view of the operation's true state, read from source-of-truth entities."""
 
-    total: int | None = None
-    success: int = 0
-    error: int = 0
-    is_complete: bool = False
-    message: str | None = None
+    total: int | None = Field(
+        default=None,
+        description="Total number of items to process, or null when the size is not yet known.",
+    )
+    success: int = Field(
+        default=0,
+        description="Number of items confirmed complete by reading source-of-truth entities.",
+    )
+    error: int = Field(
+        default=0,
+        description="Number of items confirmed failed by reading source-of-truth entities.",
+    )
+    is_complete: bool = Field(
+        default=False,
+        description="Whether the operation is fully complete according to source-of-truth entities.",
+    )
+    message: str | None = Field(
+        default=None,
+        description="Optional human-readable status line describing the derived state.",
+    )
 
 
 class JobError(BaseModel):
     """Small failure summary stamped on the record. Detail lives in the error log."""
 
-    error: str | None = None
-    detail: dict[str, Any] | None = None
+    error: str | None = Field(
+        default=None,
+        description="Short human-readable summary of why the job failed.",
+    )
+    detail: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional structured context for the failure. Fuller detail lives in the error log.",
+    )
 
 
 class JobRecord(BaseModel):
     """Ephemeral, in-memory bookkeeping for a single job. Never persisted to disk."""
 
-    id: str
-    type: str
-    status: BackgroundJobStatus
-    run_id: str | None = None
-    progress: JobProgress = Field(default_factory=JobProgress)
+    id: str = Field(description="Unique identifier for this job.")
+    type: str = Field(
+        description="Registered job type name, determining which worker runs it."
+    )
+    status: BackgroundJobStatus = Field(
+        description="Current lifecycle status: pending, running, paused, succeeded, "
+        "failed, or cancelled."
+    )
+    run_id: str | None = Field(
+        default=None,
+        description="Identifier of the current (or most recent) run attempt, used to "
+        "locate its error log. Null before the job first starts.",
+    )
+    progress: JobProgress = Field(
+        default_factory=JobProgress,
+        description="Generic count-based progress snapshot for the job.",
+    )
     # Typed, per-worker progress detail (validated against the worker's
     # `progress_model`). The generic `progress` above is the universal counter;
     # this carries the rich per-kind shape a worker needs the UI to render
     # (e.g. RAG's four-phase breakdown). Kept as a dict on the wire so the core
     # stays worker-agnostic; the frontend casts it to the worker's model.
-    progress_detail: dict[str, Any] | None = None
-    params: dict[str, Any] = Field(default_factory=dict)
-    result: dict[str, Any] | None = None
-    error: JobError | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    project_id: str | None = None
-    supports_pause: bool = False
-    created_at: datetime = Field(default_factory=_utc_now)
-    updated_at: datetime = Field(default_factory=_utc_now)
-    started_at: datetime | None = None
-    ended_at: datetime | None = None
+    progress_detail: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional typed, worker-specific progress detail (validated against "
+        "the worker's progress_model). Null for workers whose generic count progress is enough.",
+    )
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="The validated parameters this job was created with.",
+    )
+    result: dict[str, Any] | None = Field(
+        default=None,
+        description="The job's output, present only once it has succeeded. Null otherwise.",
+    )
+    error: JobError | None = Field(
+        default=None,
+        description="Failure summary, present only when the job has failed. Null otherwise.",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Free-form attribution passed in at creation, stored verbatim.",
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Project this job is scoped to, used for filtering and visibility.",
+    )
+    supports_pause: bool = Field(
+        default=False,
+        description="Whether this job type can be paused and resumed.",
+    )
+    created_at: datetime = Field(
+        default_factory=_utc_now,
+        description="UTC timestamp of when the job was created.",
+    )
+    updated_at: datetime = Field(
+        default_factory=_utc_now,
+        description="UTC timestamp of the most recent change to the job record.",
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp of when the job first started running. Null until it starts.",
+    )
+    ended_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp of when the job reached a terminal state. Null until it ends.",
+    )
 
 
 ReportProgress = Callable[["JobProgressUpdate"], Awaitable[None]]
@@ -103,10 +185,18 @@ ReportError = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 class JobProgressUpdate(BaseModel):
-    success: int
-    error: int = 0
-    total: int | None = None
-    message: str | None = None
+    success: int = Field(
+        description="Cumulative number of items processed successfully."
+    )
+    error: int = Field(default=0, description="Cumulative number of items that failed.")
+    total: int | None = Field(
+        default=None,
+        description="Total number of items to process, or null when the size is not yet known.",
+    )
+    message: str | None = Field(
+        default=None,
+        description="Optional human-readable status line describing the current step.",
+    )
 
 
 class JobContext:
