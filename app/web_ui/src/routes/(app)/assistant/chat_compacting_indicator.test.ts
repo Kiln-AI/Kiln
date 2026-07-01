@@ -84,6 +84,7 @@ function baseState(
     retry: null,
     upgradeNudgeVersion: null,
     versionRequired: false,
+    queuedMessage: null,
     ...overrides,
   }
 }
@@ -100,6 +101,8 @@ function makeFakeStore(initial: ChatSessionState): {
   const store = {
     subscribe: (state as Readable<ChatSessionState>).subscribe,
     sendMessage: vi.fn().mockResolvedValue(true),
+    sendQueuedNow: noop,
+    clearQueued: noop,
     stop: noop,
     retryLastRequest: noop,
     reset: noop,

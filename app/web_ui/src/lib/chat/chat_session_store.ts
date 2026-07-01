@@ -84,6 +84,13 @@ export interface ChatSessionState extends PersistedChatSession {
    * the composer rather than as a conversation message. Runtime-only.
    */
   versionRequired: boolean
+  /**
+   * A user message typed while a turn was in flight (interactive stream or auto
+   * burst), held client-side until the turn yields — then auto-sent — or sent
+   * immediately via send-now. ``null`` when nothing is queued. A second send
+   * while one is queued appends to it. Runtime-only, not persisted.
+   */
+  queuedMessage: string | null
 }
 
 /**
@@ -96,6 +103,16 @@ export type AutoModeConsentDecision = (
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendMessage(text: string): Promise<boolean>
+  /**
+   * Send the currently queued message right now instead of waiting for the
+   * in-flight turn to end. Interactive: stops the turn (it then auto-sends on
+   * the ready transition). Auto mode: injects immediately, keeping auto mode
+   * running (the runner picks it up at the next round boundary). No-op when
+   * nothing is queued.
+   */
+  sendQueuedNow(): void
+  /** Discard the queued message without sending it. */
+  clearQueued(): void
   stop(): void
   retryLastRequest(): void
   reset(): void
@@ -168,6 +185,7 @@ export function createChatSessionStore(
     retry: null,
     upgradeNudgeVersion: null,
     versionRequired: false,
+    queuedMessage: null,
   })
 
   // Intentionally never unsubscribed — this store is a module-level singleton
@@ -284,11 +302,18 @@ export function createChatSessionStore(
   // Append an echoed (injected) user message, then a fresh assistant turn so the
   // burst it triggers renders into a new turn — mirrors the server's
   // render-immediately + replay model for inject-on-send (functional spec §4.3.2).
-  function appendEchoedUserMessage(content: string) {
+  // Idempotent by echo id: a buffer replay on re-attach (hard-refresh resync /
+  // History restore) re-emits the echo for an in-flight injected message the
+  // restored transcript already shows — skip it (and don't open another assistant
+  // turn) instead of appending a duplicate that would compound on each refresh.
+  function appendEchoedUserMessage(content: string, echoId?: string) {
+    if (echoId && get(persisted).messages.some((m) => m.echoId === echoId)) {
+      return
+    }
     removeErrors()
     updateMessages((msgs) => [
       ...msgs,
-      { id: chatGenerateId(), role: "user", content },
+      { id: chatGenerateId(), role: "user", content, echoId },
     ])
     beginAssistantTurn()
   }
@@ -306,8 +331,13 @@ export function createChatSessionStore(
       pushInlineError(message, traceId, code),
     onToolExecutionStart: () =>
       combined.update((s) => ({ ...s, toolExecuting: true })),
-    onToolExecutionEnd: () =>
-      combined.update((s) => ({ ...s, toolExecuting: false })),
+    onToolExecutionEnd: () => {
+      combined.update((s) => ({ ...s, toolExecuting: false }))
+      // Round boundary: the runner just finished a tool round and is about to
+      // make its next request — flush a queued message so it rides that request
+      // (and its echo lands here, at the pause, rather than mid-round).
+      maybeFlush()
+    },
     onShowActivityIndicator: (show) =>
       combined.update((s) => ({ ...s, showActivityIndicator: show })),
     // Burst liveness drives the same thinking-dots/animated-icon path as the
@@ -317,21 +347,28 @@ export function createChatSessionStore(
     onUserMessage: appendEchoedUserMessage,
     // Idle: a burst ended but the flag stays on. Stop the working affordances;
     // the green indicator persists (it binds to autoModeOn, not autoWorking).
-    onAutoModeIdle: () =>
+    onAutoModeIdle: () => {
       combined.update((s) => ({
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
         compacting: false,
         autoWorking: false,
-      })),
+      }))
+      // The burst settled and auto mode is waiting for the user — the moment to
+      // flush a queued message (injects it, which starts the next burst).
+      maybeFlush()
+    },
     onAutoModeOff: () =>
+      // Auto mode stopped — drop any pending queued message (stopping clears the
+      // queue; the user can re-send if they still want it).
       combined.update((s) => ({
         ...s,
         toolExecuting: false,
         showActivityIndicator: false,
         compacting: false,
         autoWorking: false,
+        queuedMessage: null,
       })),
     onToolCallsPending: handleAutoToolCallsPending,
   })
@@ -572,6 +609,9 @@ export function createChatSessionStore(
           retry: null,
         }))
         setRuntimeState("ready", null)
+        // The interactive turn ended (normal completion or a Stop/abort, which
+        // streamChat reports as a finish) — flush any queued message now.
+        maybeFlush()
       },
       onError: (err) => {
         if (isStale()) return
@@ -658,7 +698,127 @@ export function createChatSessionStore(
     }
   }
 
+  // An interactive turn is "in flight" — sending should queue rather than
+  // dispatch — when the client stream is active or a tool approval is open
+  // (waiting on the user mid-turn). Auto mode is intentionally NOT consulted
+  // here: it never holds client-side. A message sent during an auto burst is
+  // injected immediately so the runner appends it to its next request (its next
+  // round boundary), rather than waiting for the whole auto run to finish.
+  function interactiveTurnActive(): boolean {
+    if (status !== "ready") return true
+    if (get(combined).toolApprovalWaiter) return true
+    return false
+  }
+
+  // Hold a message client-side while a turn is in flight. A second send while one
+  // is queued appends (blank line between) so the coalesced text sends as one.
+  function enqueue(text: string): void {
+    combined.update((s) => ({
+      ...s,
+      queuedMessage: s.queuedMessage ? `${s.queuedMessage}\n\n${text}` : text,
+    }))
+  }
+
+  function clearQueued(): void {
+    combined.update((s) => ({ ...s, queuedMessage: null }))
+  }
+
+  // Dispatch a queued message: clear it, then send. If the send is rejected
+  // (declined consent, a failed auto-mode injection, an armed enable already
+  // pending, …) restore it to the FRONT of whatever has queued since, so a
+  // failed/declined send never silently drops the user's typed text.
+  async function dispatchQueued(queued: string): Promise<void> {
+    clearQueued()
+    const sent = await actuallySend(queued)
+    if (!sent) {
+      combined.update((s) => ({
+        ...s,
+        queuedMessage: s.queuedMessage
+          ? `${queued}\n\n${s.queuedMessage}`
+          : queued,
+      }))
+    }
+  }
+
+  // Auto-send the queued message at the next safe point: an interactive turn
+  // finishing, or — in auto mode — a round boundary / the burst going idle.
+  // Guards on ``interactiveTurnActive`` (never flush mid interactive turn; a
+  // flush hook can fire mid-transition) and ``versionRequired`` (sending would
+  // just be rejected).
+  function maybeFlush(): void {
+    const queued = get(combined).queuedMessage
+    if (!queued) return
+    if (interactiveTurnActive()) return
+    if (get(combined).versionRequired) return
+    void dispatchQueued(queued)
+  }
+
+  // Send the queued message right away instead of waiting for the turn to end.
+  function sendQueuedNow(): void {
+    const queued = get(combined).queuedMessage
+    if (!queued) return
+    if (get(combined).versionRequired) return
+    // Auto mode: inject immediately and keep auto mode running — the runner
+    // picks the message up at its next round boundary. (Auto sends already
+    // dispatch immediately, so a queued message here only exists if auto turned
+    // on after it was queued interactively; inject it now.)
+    if (get(autoRunStore.autoModeOn) || get(autoRunStore.armed)) {
+      void dispatchQueued(queued)
+      return
+    }
+    // Interactive turn in flight: terminate it. The resulting ready transition
+    // (abort → onFinish) flushes the queued message via ``maybeFlush``.
+    if (status !== "ready") {
+      stop()
+      return
+    }
+    // A tool approval can be open while ``status`` is "ready" (a pending-tool
+    // continuation handed off from a graceful auto stop). That's an in-flight
+    // turn too — leave the message queued rather than starting a competing
+    // request; it flushes when that continuation yields.
+    if (get(combined).toolApprovalWaiter) return
+    // Nothing in flight (e.g. the turn already finished/errored): just send it.
+    void dispatchQueued(queued)
+  }
+
   async function sendMessage(text: string): Promise<boolean> {
+    const trimmed = text.trim()
+    if (!trimmed) return false
+    // Coalesce into an existing queued message (the queue holds one squashed
+    // entry) so rapid sends accumulate rather than racing each other out.
+    if (get(combined).queuedMessage !== null) {
+      enqueue(trimmed)
+      return true
+    }
+    // Auto mode with a burst running: hold the message in the queue and inject it
+    // at the runner's next round boundary (or immediately via send-now), so it
+    // rides the next request instead of jumping into the transcript mid-round.
+    // Auto idle / armed has no in-flight round, so dispatch now (which starts a
+    // burst immediately — the "as soon as possible" path).
+    if (get(autoRunStore.autoModeOn)) {
+      if (get(autoRunStore.working)) {
+        enqueue(trimmed)
+        return true
+      }
+      return actuallySend(trimmed)
+    }
+    if (get(autoRunStore.armed)) {
+      return actuallySend(trimmed)
+    }
+    // Interactive: hold while a turn is in flight; it auto-sends when the turn
+    // yields. The composer surfaces it above the input with send-now/edit/cancel.
+    if (interactiveTurnActive()) {
+      enqueue(trimmed)
+      return true
+    }
+    return actuallySend(trimmed)
+  }
+
+  // Dispatch a message to its real transport: armed-first-send (creates the
+  // run), inject-on-send (auto flag on), or the interactive stream. The
+  // interactive stream assumes no client turn is in flight — callers gate on
+  // ``interactiveTurnActive`` or flush on a turn ending.
+  async function actuallySend(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed) return false
     const autoOn = get(autoRunStore.autoModeOn)
@@ -793,6 +953,7 @@ export function createChatSessionStore(
       toolExecuting: false,
       showActivityIndicator: false,
       compacting: false,
+      queuedMessage: null,
     }))
     setRuntimeState("ready", null)
   }
@@ -822,6 +983,7 @@ export function createChatSessionStore(
       toolExecuting: false,
       showActivityIndicator: false,
       compacting: false,
+      queuedMessage: null,
     }))
     setRuntimeState("ready", null)
   }
@@ -864,8 +1026,11 @@ export function createChatSessionStore(
     autoRunStore.beginReconnect()
 
     // Hydrate from the run's CURRENT leaf so the user catches up on rounds that
-    // completed while the tab was gone, then attach for live events + buffer
-    // replay + the indicator/working state.
+    // completed while the tab was gone (the server is authoritative for completed
+    // rounds), then attach for live events + buffer replay + the indicator state.
+    // The in-flight round comes from the buffer replay into a fresh turn (see the
+    // openInflightTurn attach arg below), so this snapshot adoption never clobbers
+    // an in-flight response.
     try {
       const { data: snapshot, error } = await client.GET(
         "/api/chat/sessions/{session_id}",
@@ -886,8 +1051,8 @@ export function createChatSessionStore(
           continuationTraceId: traceId,
           contextUsage,
         } = hydrateSessionFromSnapshot(snapshot)
-        // loadSession detaches any prior observer, sets the messages + trace id,
-        // and resets runtime state — identical to the history-restore apply path.
+        // loadSession detaches any prior observer, sets the messages + trace
+        // id, and resets runtime state — identical to the history-restore path.
         loadSession(messages, traceId, contextUsage)
       }
     } catch {
@@ -899,10 +1064,11 @@ export function createChatSessionStore(
     // clears the flag, so re-mark it for the brief connecting window. attach()
     // clears it on open / first event / off.
     autoRunStore.beginReconnect()
-    // Drive the working sub-state from the resolved status so the thinking
-    // indicator shows immediately when the run is RUNNING (no wait for the first
-    // event); the on-subscribe state marker confirms / corrects it.
-    autoRunStore.attach(resolved.run_id, resolved.status === "running")
+    // initialWorking drives the thinking indicator immediately when RUNNING (no
+    // wait for the first event); openInflightTurn=true renders the replayed
+    // in-flight round into its own assistant turn so it doesn't overwrite the
+    // last hydrated bubble (the buffer replay carries only the current round).
+    autoRunStore.attach(resolved.run_id, resolved.status === "running", true)
   }
 
   function handleToolCallsPending(
@@ -1021,6 +1187,8 @@ export function createChatSessionStore(
   return {
     subscribe: combined.subscribe,
     sendMessage,
+    sendQueuedNow,
+    clearQueued,
     stop,
     retryLastRequest,
     reset,
