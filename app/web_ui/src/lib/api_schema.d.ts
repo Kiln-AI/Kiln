@@ -1962,6 +1962,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Default LLM Judge Prompt */
+        get: operations["get_default_llm_judge_prompt_api_projects__project_id__tasks__task_id__evals__eval_id__default_llm_judge_prompt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval": {
         parameters: {
             query?: never;
@@ -4567,6 +4584,16 @@ export interface components {
              */
             g_eval: boolean;
             /**
+             * Judge Prompt
+             * @description Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.
+             */
+            judge_prompt?: string | null;
+            /**
+             * System Prompt
+             * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
+             */
+            system_prompt?: string | null;
+            /**
              * Name
              * @description The name of the eval config.
              */
@@ -5160,6 +5187,16 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DefaultLlmJudgePromptResponse
+         * @description Response from the default LLM judge prompt endpoint.
+         */
+        DefaultLlmJudgePromptResponse: {
+            /** Judge Prompt */
+            judge_prompt: string;
+            /** System Prompt */
+            system_prompt: string;
+        };
         /**
          * DeleteConfigResponse
          * @description Confirmation that a git sync configuration was deleted.
@@ -7416,6 +7453,16 @@ export interface components {
              * @description Whether to use G-Eval logprob scoring.
              */
             g_eval: boolean;
+            /**
+             * Judge Prompt
+             * @description Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.
+             */
+            judge_prompt?: string | null;
+            /**
+             * System Prompt
+             * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
+             */
+            system_prompt?: string | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -15765,6 +15812,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_default_llm_judge_prompt_api_projects__project_id__tasks__task_id__evals__eval_id__default_llm_judge_prompt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultLlmJudgePromptResponse"];
                 };
             };
             /** @description Validation Error */

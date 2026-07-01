@@ -16,7 +16,11 @@ from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
-from kiln_ai.adapters.eval.base_eval import materialize_llm_judge_properties
+from kiln_ai.adapters.eval.base_eval import (
+    DEFAULT_SYSTEM_PROMPT,
+    build_default_llm_judge_prompt,
+    materialize_llm_judge_properties,
+)
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
     grant_code_eval_trust,
@@ -238,6 +242,21 @@ class LlmJudgeBuilderInput(BaseModel):
     model_name: str = Field(description="The LLM model to use as judge.")
     provider: ModelProviderName = Field(description="The model provider.")
     g_eval: bool = Field(description="Whether to use G-Eval logprob scoring.")
+    judge_prompt: str | None = Field(
+        default=None,
+        description="Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.",
+    )
+    system_prompt: str | None = Field(
+        default=None,
+        description="Override the judge system prompt. Defaults to 'You are an evaluator.'",
+    )
+
+
+class DefaultLlmJudgePromptResponse(BaseModel):
+    """Response from the default LLM judge prompt endpoint."""
+
+    judge_prompt: str
+    system_prompt: str
 
 
 class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
@@ -1067,6 +1086,8 @@ def connect_evals_api(app: FastAPI):
                 model_name=request.model_name,
                 model_provider=request.provider,
                 g_eval=request.g_eval,
+                judge_prompt=request.judge_prompt,
+                system_prompt=request.system_prompt,
             )
             eval_config = EvalConfig(
                 name=name,
@@ -1081,6 +1102,28 @@ def connect_evals_api(app: FastAPI):
             )
         eval_config.save_to_file()
         return eval_config
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
+        summary="Get Default LLM Judge Prompt",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_default_llm_judge_prompt(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+    ) -> DefaultLlmJudgePromptResponse:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        return DefaultLlmJudgePromptResponse(
+            judge_prompt=build_default_llm_judge_prompt(eval),
+            system_prompt=DEFAULT_SYSTEM_PROMPT,
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval",
@@ -1109,6 +1152,8 @@ def connect_evals_api(app: FastAPI):
                     model_name=builder.model_name,
                     model_provider=builder.provider,
                     g_eval=builder.g_eval,
+                    judge_prompt=builder.judge_prompt,
+                    system_prompt=builder.system_prompt,
                 )
             elif request.properties is not None:
                 properties = request.properties

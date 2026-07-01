@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, fireEvent, cleanup } from "@testing-library/svelte"
+import { render, cleanup } from "@testing-library/svelte"
+import * as svelteMod from "svelte"
 import { tick } from "svelte"
 import { writable } from "svelte/store"
 import type { AvailableModels } from "$lib/types"
@@ -27,6 +28,17 @@ vi.mock(
     return { default: StubModule.default }
   },
 )
+
+const { mockGetDefaultLlmJudgePrompt } = vi.hoisted(() => ({
+  mockGetDefaultLlmJudgePrompt: vi.fn().mockResolvedValue({
+    judge_prompt: "Default judge prompt {{ task_input }} {{ final_message }}",
+    system_prompt: "You are an evaluator.",
+  }),
+}))
+
+vi.mock("$lib/api/v2_eval_api", () => ({
+  getDefaultLlmJudgePrompt: mockGetDefaultLlmJudgePrompt,
+}))
 
 const LlmJudgeForm = (await import("./llm_judge_form.svelte")).default
 
@@ -109,7 +121,7 @@ describe("LlmJudgeForm", () => {
     it("model cards have min-h-[120px] class", async () => {
       setModels([noLogprobsProvider])
       const { container } = render(LlmJudgeForm, {
-        props: { task_id: "task1" },
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
       })
       await tick()
 
@@ -127,7 +139,7 @@ describe("LlmJudgeForm", () => {
     it("does not contain 'Supports graded scoring across the full score range.'", () => {
       setModels([noLogprobsProvider])
       const { container } = render(LlmJudgeForm, {
-        props: { task_id: "task1" },
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
       })
       expect(container.textContent).not.toContain(
         "Supports graded scoring across the full score range.",
@@ -142,6 +154,8 @@ describe("LlmJudgeForm", () => {
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -161,6 +175,8 @@ describe("LlmJudgeForm", () => {
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -183,6 +199,8 @@ describe("LlmJudgeForm", () => {
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -209,6 +227,8 @@ describe("LlmJudgeForm", () => {
       const { container: c1 } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -223,6 +243,8 @@ describe("LlmJudgeForm", () => {
       const { container: c2 } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -241,6 +263,8 @@ describe("LlmJudgeForm", () => {
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -264,6 +288,8 @@ describe("LlmJudgeForm", () => {
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -286,6 +312,8 @@ describe("LlmJudgeForm", () => {
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
           model_name: "gpt-4o",
           provider_name: "openai",
           combined_model_name: "openai/gpt-4o",
@@ -301,6 +329,112 @@ describe("LlmJudgeForm", () => {
         expect(radio.classList.contains("my-8")).toBe(true)
         expect(radio.classList.contains("my-4")).toBe(false)
       }
+    })
+  })
+
+  describe("Advanced: Judge Prompt section", () => {
+    afterEach(() => {
+      mockGetDefaultLlmJudgePrompt.mockResolvedValue({
+        judge_prompt:
+          "Default judge prompt {{ task_input }} {{ final_message }}",
+        system_prompt: "You are an evaluator.",
+      })
+    })
+
+    it("renders the collapse with judge prompt helper text", () => {
+      setModels([noLogprobsProvider])
+      const { container } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+      expect(container.textContent).toContain("Advanced: Judge Prompt")
+      expect(container.textContent).toContain(
+        "Customizing the judge prompt can improve eval quality",
+      )
+    })
+
+    // Svelte 4 async onMount callbacks do not execute in jsdom/vitest,
+    // so we capture onMount callbacks via vi.spyOn and invoke them manually.
+
+    it("pre-fills judge_prompt and system_prompt from API on mount", async () => {
+      setModels([noLogprobsProvider])
+
+      const onMountCallbacks: Array<() => unknown> = []
+      const spy = vi
+        .spyOn(svelteMod, "onMount")
+        .mockImplementation((fn: () => unknown) => {
+          onMountCallbacks.push(fn)
+        })
+
+      const { container } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+
+      spy.mockRestore()
+
+      for (const cb of onMountCallbacks) {
+        await cb()
+      }
+      await tick()
+
+      expect(mockGetDefaultLlmJudgePrompt).toHaveBeenCalledWith(
+        "proj1",
+        "task1",
+        "eval1",
+      )
+
+      const judgeTextarea = container.querySelector(
+        "#judge_prompt",
+      ) as HTMLTextAreaElement
+      expect(judgeTextarea).not.toBeNull()
+      expect(judgeTextarea.value).toContain("Default judge prompt")
+
+      const systemTextarea = container.querySelector(
+        "#system_prompt",
+      ) as HTMLTextAreaElement
+      expect(systemTextarea).not.toBeNull()
+      expect(systemTextarea.value).toBe("You are an evaluator.")
+    })
+
+    it("shows warning when fetch fails", async () => {
+      mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+        new Error("Network error"),
+      )
+
+      setModels([noLogprobsProvider])
+
+      const onMountCallbacks: Array<() => unknown> = []
+      const spy = vi
+        .spyOn(svelteMod, "onMount")
+        .mockImplementation((fn: () => unknown) => {
+          onMountCallbacks.push(fn)
+        })
+
+      const { container } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+
+      spy.mockRestore()
+
+      for (const cb of onMountCallbacks) {
+        await cb()
+      }
+      await tick()
+
+      expect(container.textContent).toContain(
+        "Could not load default judge prompt",
+      )
+    })
+
+    it("renders both textarea fields for judge and system prompt", () => {
+      setModels([noLogprobsProvider])
+      const { container } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+
+      const judgeTextarea = container.querySelector("#judge_prompt")
+      const systemTextarea = container.querySelector("#system_prompt")
+      expect(judgeTextarea).not.toBeNull()
+      expect(systemTextarea).not.toBeNull()
     })
   })
 })

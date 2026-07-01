@@ -53,6 +53,8 @@
   let llm_provider_name: string | undefined = undefined
   let llm_combined_model_name: string | undefined = undefined
   let llm_selected_algo: EvalConfigType | undefined = undefined
+  let llm_judge_prompt: string | undefined = undefined
+  let llm_system_prompt: string | undefined = undefined
 
   // Form component references -- bind:this on svelte:component yields a
   // generic component instance, so we keep a loose ref and cast it.
@@ -285,6 +287,8 @@
             provider:
               llm_provider_name! as components["schemas"]["ModelProviderName"],
             g_eval,
+            judge_prompt: llm_judge_prompt ?? null,
+            system_prompt: llm_system_prompt ?? null,
           },
           eval_input,
           test_abort_controller.signal,
@@ -420,6 +424,8 @@
           provider:
             llm_provider_name as components["schemas"]["ModelProviderName"],
           g_eval,
+          judge_prompt: llm_judge_prompt ?? null,
+          system_prompt: llm_system_prompt ?? null,
         })
       } else if (eval_config_type && v2FormComponent) {
         if (v2FormComponent.validate) {
@@ -531,10 +537,14 @@
         <LlmJudgeForm
           bind:this={llmJudgeFormComponent}
           {task_id}
+          {project_id}
+          {eval_id}
           bind:model_name={llm_model_name}
           bind:provider_name={llm_provider_name}
           bind:combined_model_name={llm_combined_model_name}
           bind:selected_algo={llm_selected_algo}
+          bind:judge_prompt={llm_judge_prompt}
+          bind:system_prompt={llm_system_prompt}
         />
       {:else if eval_config_type === "code_eval" && metadata}
         <svelte:component

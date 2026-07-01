@@ -3971,6 +3971,8 @@ class TestTestV2Eval:
             model_name="gpt-4o",
             model_provider="openai",
             g_eval=False,
+            judge_prompt=None,
+            system_prompt=None,
         )
         body = response.json()
         assert "accuracy" in body["scores"]
@@ -4335,3 +4337,158 @@ class TestV1CoexistenceAPI:
         assert scores["relevance"].mean_score == pytest.approx(0.7)
         assert scores["relevance"].n_used == 2
         assert scores["relevance"].n_excluded == 0
+
+
+class TestDefaultLlmJudgePrompt:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/default_llm_judge_prompt"
+
+    def test_returns_rich_prompt(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.get(self._url())
+        assert response.status_code == 200
+        body = response.json()
+        assert "judge_prompt" in body
+        assert "system_prompt" in body
+        assert body["system_prompt"] == "You are an evaluator."
+        assert "{{ task_input }}" in body["judge_prompt"]
+        assert "{{ final_message }}" in body["judge_prompt"]
+        assert "accuracy" in body["judge_prompt"]
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.get(self._url("bad_id"))
+        assert response.status_code == 404
+
+
+class TestCreateLlmJudgeConfigOverrides:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/create_llm_judge_config"
+
+    def test_with_judge_prompt_override(self, client, mock_v2_eval):
+        custom_prompt = "Custom {{ task_input }} {{ final_message }}"
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "judge_prompt": custom_prompt,
+                },
+            )
+        assert response.status_code == 200
+        props = response.json()["properties"]
+        assert props["prompt_template"] == custom_prompt
+
+    def test_with_system_prompt_override(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "system_prompt": "Be very strict.",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["system_prompt"] == "Be very strict."
+
+    def test_empty_judge_prompt_uses_default(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "judge_prompt": "   ",
+                },
+            )
+        assert response.status_code == 200
+        props = response.json()["properties"]
+        assert "Evaluation Steps:" in props["prompt_template"]
+
+    def test_invalid_jinja_returns_400(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "judge_prompt": "{% invalid %}",
+                },
+            )
+        assert response.status_code == 400
+
+
+class TestTestV2EvalOverrides:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
+
+    def test_llm_judge_builder_passes_overrides(self, client, mock_v2_eval):
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "app.desktop.studio_server.eval_api.materialize_llm_judge_properties"
+            ) as mock_mat,
+            patch(
+                "app.desktop.studio_server.eval_api.v2_eval_adapter_from_config"
+            ) as mock_adapter_factory,
+        ):
+            mock_eid.return_value = mock_v2_eval
+
+            from kiln_ai.datamodel.eval import LlmJudgeProperties
+
+            mock_mat.return_value = LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Custom {{ task_input }} {{ final_message }}",
+                system_prompt="Be strict.",
+                thinking_instruction="Think.",
+                required_var=[],
+                g_eval=False,
+            )
+
+            from kiln_ai.datamodel.eval import V2EvalResult
+
+            mock_adapter = MagicMock()
+            mock_adapter.evaluate = AsyncMock(
+                return_value=V2EvalResult(scores={"accuracy": 1.0})
+            )
+            mock_adapter_factory.return_value = mock_adapter
+
+            response = client.post(
+                self._url(),
+                json={
+                    "eval_input": {
+                        "final_message": "test output",
+                        "task_input": "test input",
+                    },
+                    "llm_judge_builder_input": {
+                        "model_name": "gpt-4o",
+                        "provider": "openai",
+                        "g_eval": False,
+                        "judge_prompt": "Custom {{ task_input }} {{ final_message }}",
+                        "system_prompt": "Be strict.",
+                    },
+                },
+            )
+        assert response.status_code == 200
+        mock_mat.assert_called_once()
+        call_kwargs = mock_mat.call_args
+        assert (
+            call_kwargs.kwargs["judge_prompt"]
+            == "Custom {{ task_input }} {{ final_message }}"
+        )
+        assert call_kwargs.kwargs["system_prompt"] == "Be strict."

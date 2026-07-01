@@ -137,6 +137,34 @@ export async function testV2EvalLlmJudge(
   )
 }
 
+/**
+ * Fetch the default (server-assembled) LLM judge prompt for an eval.
+ */
+export async function getDefaultLlmJudgePrompt(
+  projectId: string,
+  taskId: string,
+  evalId: string,
+): Promise<{ judge_prompt: string; system_prompt: string }> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+          eval_id: evalId,
+        },
+      },
+    },
+  )
+  if (error) {
+    throw new Error(
+      `default_llm_judge_prompt failed: ${extractErrorMessage(error)}`,
+    )
+  }
+  return data
+}
+
 const TASK_RUNS_LIMIT = 50
 
 /**

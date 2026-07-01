@@ -3,13 +3,44 @@
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { get_provider_image } from "$lib/ui/provider_image"
   import { available_models } from "$lib/stores"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import { getDefaultLlmJudgePrompt } from "$lib/api/v2_eval_api"
+  import { onMount } from "svelte"
 
   export let task_id: string
+  export let project_id: string
+  export let eval_id: string
 
   export let model_name: string | undefined = undefined
   export let provider_name: string | undefined = undefined
   export let combined_model_name: string | undefined = undefined
   export let selected_algo: EvalConfigType | undefined = undefined
+
+  export let judge_prompt: string | undefined = undefined
+  export let system_prompt: string | undefined = undefined
+
+  let prompt_fetch_error: string | null = null
+
+  onMount(async () => {
+    try {
+      const defaults = await getDefaultLlmJudgePrompt(
+        project_id,
+        task_id,
+        eval_id,
+      )
+      if (judge_prompt === undefined) {
+        judge_prompt = defaults.judge_prompt
+      }
+      if (system_prompt === undefined) {
+        system_prompt = defaults.system_prompt
+      }
+    } catch (e) {
+      prompt_fetch_error =
+        "Could not load default judge prompt. The server will use its default."
+      console.warn("Failed to fetch default LLM judge prompt:", e)
+    }
+  })
 
   const evaluator_algorithms: {
     id: EvalConfigType
@@ -244,4 +275,31 @@
       </div>
     </div>
   {/if}
+
+  <Collapse title="Advanced: Judge Prompt">
+    <p class="text-xs text-gray-500 mb-2">
+      Customizing the judge prompt can improve eval quality. We've pre-filled a
+      default based on your task and spec.
+    </p>
+    {#if prompt_fetch_error}
+      <div class="text-xs text-warning mb-2">{prompt_fetch_error}</div>
+    {/if}
+    <FormElement
+      inputType="textarea"
+      id="judge_prompt"
+      label="Judge Prompt"
+      bind:value={judge_prompt}
+      optional={true}
+      height="xl"
+      description="The Jinja2 template used to prompt the judge model."
+    />
+    <FormElement
+      inputType="textarea"
+      id="system_prompt"
+      label="System Prompt"
+      bind:value={system_prompt}
+      optional={true}
+      height="medium"
+    />
+  </Collapse>
 </div>
