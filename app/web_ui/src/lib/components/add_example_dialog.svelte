@@ -56,8 +56,12 @@
   // field-by-field instead of via a free-text textarea.
   let input_json_schema: string | null = null
   let output_json_schema: string | null = null
-  let rootInputFormElement: { buildValue(): unknown } | null = null
-  let rootOutputFormElement: { buildValue(): unknown } | null = null
+  // Gates the manual form until the schema fetch resolves, so a user can't
+  // start typing in the plaintext fallback only to have it swapped out for
+  // the structured form (discarding their text) once the schema arrives.
+  let schema_loading: boolean = true
+  let rootInputFormElement: RunInputFormElement | null = null
+  let rootOutputFormElement: RunInputFormElement | null = null
   let manual_error: string | null = null
   // Bumped on each open so the structured forms re-mount fresh.
   let formKey = 0
@@ -116,6 +120,8 @@
       output_json_schema = data?.output_json_schema ?? null
     } catch {
       // Non-critical — falls back to the free-text textarea.
+    } finally {
+      schema_loading = false
     }
   })
 
@@ -146,7 +152,7 @@
   // active. Returns { ok, value } so callers can abort on a build error.
   function resolve_side(
     use_structured: boolean,
-    form: { buildValue(): unknown } | null,
+    form: RunInputFormElement | null,
     text_value: string,
   ): { ok: true; value: string } | { ok: false } {
     if (!use_structured) return { ok: true, value: text_value }
@@ -155,7 +161,11 @@
       return { ok: false }
     }
     try {
-      return { ok: true, value: JSON.stringify(form.buildValue(), null, 2) }
+      // buildValue() returns undefined when every field is optional and left
+      // blank; JSON.stringify(undefined) is undefined, so coerce to "".
+      const built = form.buildValue()
+      const value = built === undefined ? "" : JSON.stringify(built, null, 2)
+      return { ok: true, value }
     } catch (e) {
       manual_error = e instanceof Error ? e.message : String(e)
       return { ok: false }
@@ -210,10 +220,14 @@
   title={mode === "edit" ? "Edit Example" : "Add Example"}
   sub_subtitle="Add a task data example to guide generation."
 >
-  {#if mode === "add" && add_method === null}
-    <!-- Method selection -->
-    <div class="flex flex-col gap-4 mt-8">
-      {#if filtered_available_runs.length > 0}
+  {#if mode === "add" && (loading_runs || schema_loading)}
+    <div class="flex justify-center items-center py-8">
+      <span class="loading loading-spinner loading-md text-primary" />
+    </div>
+  {:else}
+    {#if mode === "add" && add_method === null && filtered_available_runs.length > 0}
+      <!-- Method selection -->
+      <div class="flex flex-col gap-4 mt-8">
         <button
           class="btn btn-outline mb-2"
           on:click={() => (add_method = "manual")}
@@ -221,9 +235,7 @@
         >
           Add Manually
         </button>
-      {/if}
 
-      {#if !loading_runs && filtered_available_runs.length > 0}
         <div class="flex items-center gap-2">
           <div class="flex-1 border-t border-base-300"></div>
           <span class="text-sm text-gray-400">or Select Existing</span>
@@ -231,92 +243,88 @@
         </div>
 
         <div class="flex flex-col mt-2 gap-2">
-          {#if loading_runs}
-            <div class="text-sm text-gray-400">Loading existing samples...</div>
+          <TaskRunPicker
+            available_runs={filtered_available_runs}
+            on:select={(e) => select_existing_run(e.detail)}
+          />
+        </div>
+      </div>
+    {/if}
+    {#if mode === "edit" || filtered_available_runs.length === 0 || add_method === "manual"}
+      <!-- Manual input/output form -->
+      <div class="flex flex-col gap-3">
+        {#if include_input}
+          {#if use_structured_input && input_structured_model}
+            <div class="font-medium text-sm">Input</div>
+            {#key formKey}
+              <RunInputFormElement
+                property={input_structured_model}
+                level={0}
+                path="input_root"
+                hideHeaderAndIndent={true}
+                bind:this={rootInputFormElement}
+              />
+            {/key}
           {:else}
-            <TaskRunPicker
-              available_runs={filtered_available_runs}
-              on:select={(e) => select_existing_run(e.detail)}
+            <FormElement
+              label="Input"
+              id="example_input"
+              inputType="textarea"
+              height="medium"
+              bind:value={editing_input}
+              optional={true}
+              hide_optional_badge={true}
             />
           {/if}
-        </div>
-      {/if}
-    </div>
-  {/if}
-  {#if filtered_available_runs.length === 0 || add_method === "manual"}
-    <!-- Manual input/output form -->
-    <div class="flex flex-col gap-3">
-      {#if include_input}
-        {#if use_structured_input && input_structured_model}
-          <div class="font-medium text-sm">Input</div>
-          {#key formKey}
-            <RunInputFormElement
-              property={input_structured_model}
-              level={0}
-              path="input_root"
-              hideHeaderAndIndent={true}
-              bind:this={rootInputFormElement}
-            />
-          {/key}
-        {:else}
-          <FormElement
-            label="Input"
-            id="example_input"
-            inputType="textarea"
-            height="medium"
-            bind:value={editing_input}
-            optional={true}
-            hide_optional_badge={true}
-          />
         {/if}
-      {/if}
 
-      {#if include_output}
-        {#if use_structured_output && output_structured_model}
-          <div class="font-medium text-sm">Output</div>
-          {#key formKey}
-            <RunInputFormElement
-              property={output_structured_model}
-              level={0}
-              path="output_root"
-              hideHeaderAndIndent={true}
-              bind:this={rootOutputFormElement}
+        {#if include_output}
+          {#if use_structured_output && output_structured_model}
+            <div class="font-medium text-sm">Output</div>
+            {#key formKey}
+              <RunInputFormElement
+                property={output_structured_model}
+                level={0}
+                path="output_root"
+                hideHeaderAndIndent={true}
+                bind:this={rootOutputFormElement}
+              />
+            {/key}
+          {:else}
+            <FormElement
+              label="Output"
+              id="example_output"
+              inputType="textarea"
+              height="medium"
+              bind:value={editing_output}
+              optional={true}
+              hide_optional_badge={true}
             />
-          {/key}
-        {:else}
-          <FormElement
-            label="Output"
-            id="example_output"
-            inputType="textarea"
-            height="medium"
-            bind:value={editing_output}
-            optional={true}
-            hide_optional_badge={true}
-          />
+          {/if}
         {/if}
-      {/if}
 
-      {#if manual_error}
-        <div class="text-error text-sm">{manual_error}</div>
-      {/if}
-      <div class="flex flex-row gap-2 justify-end mt-2">
-        {#if mode === "add" && filtered_available_runs.length > 0 && available_runs.length > 0}
+        {#if manual_error}
+          <div class="text-error text-sm">{manual_error}</div>
+        {/if}
+        <div class="flex flex-row gap-2 justify-end mt-2">
+          {#if mode === "add" && filtered_available_runs.length > 0 && available_runs.length > 0}
+            <button
+              type="button"
+              class="btn btn-sm h-10 btn-outline min-w-24"
+              on:click={() => (add_method = null)}
+            >
+              Back
+            </button>
+          {/if}
           <button
             type="button"
-            class="btn btn-sm h-10 btn-outline min-w-24"
-            on:click={() => (add_method = null)}
+            class="btn btn-sm h-10 btn-primary min-w-24"
+            on:click={save_manual}
           >
-            Back
+            {mode === "edit" ? "Save" : "Add"}
           </button>
-        {/if}
-        <button
-          type="button"
-          class="btn btn-sm h-10 btn-primary min-w-24"
-          on:click={save_manual}
-        >
-          {mode === "edit" ? "Save" : "Add"}
-        </button>
+        </div>
       </div>
-    </div>
+    {/if}
   {/if}
 </Dialog>
