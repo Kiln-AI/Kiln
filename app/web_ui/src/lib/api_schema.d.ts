@@ -5938,15 +5938,30 @@ export interface components {
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
         /** EvalJobParams */
         EvalJobParams: {
-            /** Project Id */
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
             project_id: string;
-            /** Task Id */
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
             task_id: string;
-            /** Eval Id */
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
             eval_id: string;
-            /** Eval Config Id */
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
             eval_config_id: string;
-            /** Run Config Id */
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
             run_config_id: string;
         };
         /**
