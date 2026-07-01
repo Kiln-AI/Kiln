@@ -3,6 +3,7 @@ import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
   stripAppUiContext,
+  stripInternalFraming,
   type ChatSessionSnapshot,
 } from "./session_messages"
 
@@ -229,6 +230,49 @@ describe("stripAppUiContext", () => {
 
   it("handles empty string", () => {
     expect(stripAppUiContext("")).toBe("")
+  })
+})
+
+describe("stripInternalFraming", () => {
+  it("removes a leading auto-mode side-note <system-reminder> wrapper", () => {
+    const input =
+      "<system-reminder>This message arrived while you are working autonomously…</system-reminder>\n\nmy name is bobby"
+    expect(stripInternalFraming(input)).toBe("my name is bobby")
+  })
+
+  it("removes both an app-UI context block and a system-reminder", () => {
+    const input =
+      "<new_app_ui_context>\nPath: /assistant\n</new_app_ui_context>\n<system-reminder>side note</system-reminder>\n\nhello"
+    expect(stripInternalFraming(input)).toBe("hello")
+  })
+
+  it("leaves a plain message untouched", () => {
+    expect(stripInternalFraming("just text")).toBe("just text")
+  })
+
+  it("handles empty string", () => {
+    expect(stripInternalFraming("")).toBe("")
+  })
+})
+
+describe("hydrateSessionFromSnapshot strips injected-message framing", () => {
+  it("renders the raw user message for a persisted side-note-wrapped inject", () => {
+    const snapshot: ChatSessionSnapshot = {
+      id: "trace-inject",
+      task_run: {
+        trace: [
+          {
+            role: "user",
+            content:
+              "<system-reminder>Treat it as a side note…</system-reminder>\n\nmy name is bobby whats yours?",
+          },
+          { role: "assistant", content: "Hey Bobby!" },
+        ],
+      },
+    } as unknown as ChatSessionSnapshot
+    const { messages } = hydrateSessionFromSnapshot(snapshot)
+    expect(messages[0].role).toBe("user")
+    expect(messages[0].content).toBe("my name is bobby whats yours?")
   })
 })
 

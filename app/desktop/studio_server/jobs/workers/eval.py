@@ -12,7 +12,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...eval_api import eval_config_from_id, task_run_config_from_id
 from ..models import JobContext, JobDerivedState, JobWorker
@@ -68,17 +68,21 @@ class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
 
 
 class EvalJobParams(BaseModel):
-    project_id: str
-    task_id: str
-    eval_id: str
-    eval_config_id: str
-    run_config_id: str
+    project_id: str = Field(description="Id of the project the eval belongs to.")
+    task_id: str = Field(description="Id of the task the eval belongs to.")
+    eval_id: str = Field(description="Id of the eval to run.")
+    eval_config_id: str = Field(
+        description="Id of the eval config (judge) to evaluate the run's output with."
+    )
+    run_config_id: str = Field(
+        description="Id of the task run config whose outputs are being evaluated."
+    )
 
 
 class EvalJobResult(BaseModel):
-    total: int
-    success: int
-    error: int
+    total: int = Field(description="Total number of dataset items the eval processed.")
+    success: int = Field(description="Number of dataset items evaluated successfully.")
+    error: int = Field(description="Number of dataset items that failed to evaluate.")
 
 
 class EvalJobProperties(BaseModel):
@@ -90,17 +94,37 @@ class EvalJobProperties(BaseModel):
     the frontend resolves them to display names with its model-name helpers.
     """
 
-    eval_name: str
-    run_config_name: str
-    run_config_model_name: str
-    run_config_model_provider: str
-    run_config_prompt_name: str
-    run_config_tools_count: int
-    run_config_skills_count: int
-    judge_name: str
-    judge_algorithm: str
-    judge_model_name: str
-    judge_model_provider: str
+    eval_name: str = Field(description="Display name of the eval being run.")
+    run_config_name: str = Field(
+        description="Display name of the run config whose outputs are being evaluated."
+    )
+    run_config_model_name: str = Field(
+        description="Raw model id used by the run config. The frontend resolves it to a display name."
+    )
+    run_config_model_provider: str = Field(
+        description="Raw model provider id used by the run config. The frontend resolves it to a display name."
+    )
+    run_config_prompt_name: str = Field(
+        description="Display name of the prompt the run config uses."
+    )
+    run_config_tools_count: int = Field(
+        description="Number of tools available to the run config."
+    )
+    run_config_skills_count: int = Field(
+        description="Number of skills available to the run config."
+    )
+    judge_name: str = Field(
+        description="Display name of the judge (eval config) doing the evaluation."
+    )
+    judge_algorithm: str = Field(
+        description="Algorithm the judge (eval config) uses to score outputs."
+    )
+    judge_model_name: str = Field(
+        description="Raw model id used by the judge. The frontend resolves it to a display name."
+    )
+    judge_model_provider: str = Field(
+        description="Raw model provider id used by the judge. The frontend resolves it to a display name."
+    )
 
 
 class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):

@@ -22,6 +22,14 @@ def _new_run_id() -> str:
     return f"ar_{suffix}"
 
 
+def _new_message_id() -> str:
+    """Mint an injected-message id like ``am_<base32>``. Echoed to observers so
+    the client can render the message idempotently (a buffer replay on re-attach
+    re-emits the echo for an in-flight message the transcript already shows)."""
+    suffix = "".join(secrets.choice(_RUN_ID_ALPHABET) for _ in range(_RUN_ID_LENGTH))
+    return f"am_{suffix}"
+
+
 class AutoRunStatus(str, Enum):
     RUNNING = "running"  # a burst is actively driving the loop
     # Revision R1: a burst settled but the conversation auto-mode flag stays ON
@@ -56,6 +64,9 @@ class InboundMessage(BaseModel):
     (appended to the continuation as a ``role:"user"`` message); when the run is
     idle it seeds a fresh burst."""
 
+    # Stable id minted server-side, echoed to observers (see _new_message_id) so
+    # the client can dedupe the echo on a buffer replay / re-attach.
+    id: str = Field(default_factory=_new_message_id)
     # Fixed to the user role: /message is documented as user-message input only,
     # so the schema enforces it rather than trusting a client-supplied role.
     role: Literal["user"] = "user"

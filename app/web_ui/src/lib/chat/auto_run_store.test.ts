@@ -606,6 +606,77 @@ describe("auto_run_store", () => {
     expect(get(store.autoModeOn)).toBe(true)
   })
 
+  it("resets accumulated parts on a user-message echo so the prior round isn't duplicated into the new turn", () => {
+    store.attach("ar_dup")
+    const source = FakeEventSource.latest()
+    source.message({ type: "auto-mode-on", run_id: "ar_dup" })
+
+    // Round 1 renders some assistant text into the current turn.
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "Round one." })
+    source.message({ type: "text-end" })
+
+    // An injected user message opens a fresh assistant turn (beginAssistantTurn).
+    source.message({ type: "user-message", content: "hi there" })
+
+    // Round 2 renders into the new turn.
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "Round two." })
+    source.message({ type: "text-end" })
+
+    const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
+    const text = (last.parts ?? [])
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("")
+    // Without the processor reset, round one's text would be re-flushed into the
+    // new turn alongside round two's.
+    expect(text).toBe("Round two.")
+    expect(text).not.toContain("Round one")
+  })
+
+  it("opens a fresh assistant turn for the in-flight round on re-attach (openInflightTurn)", () => {
+    // Re-attach with openInflightTurn: the replayed in-flight round must render
+    // into its OWN turn instead of overwriting the last hydrated bubble.
+    store.attach("ar_reattach", true, true)
+    const source = FakeEventSource.latest()
+    // No turn opened until the in-flight round actually produces content.
+    expect(calls.beginAssistantTurn).toBe(0)
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "in-flight" })
+    expect(calls.beginAssistantTurn).toBe(1)
+  })
+
+  it("does not open an in-flight turn on re-attach to an idle run (no content)", () => {
+    store.attach("ar_idle_reattach", false, true)
+    const source = FakeEventSource.latest()
+    source.message({
+      type: "auto-mode-idle",
+      run_id: "ar_idle_reattach",
+      reason: "done",
+    })
+    expect(calls.beginAssistantTurn).toBe(0)
+  })
+
+  it("does not open an extra in-flight turn on the initial attach (openInflightTurn omitted)", () => {
+    store.attach("ar_initial")
+    const source = FakeEventSource.latest()
+    source.message({ type: "text-delta", delta: "hi" })
+    expect(calls.beginAssistantTurn).toBe(0)
+  })
+
+  it("an injected-message echo consumes the pending in-flight turn (no double turn)", () => {
+    store.attach("ar_echo_consume", true, true)
+    const source = FakeEventSource.latest()
+    // The echo opens its own turn (via the sink); the subsequent in-flight
+    // content must NOT also trigger the pending fresh turn.
+    source.message({ type: "user-message", content: "hi", id: "am_1" })
+    source.message({ type: "text-delta", delta: "resp" })
+    // The fake sink's onUserMessage doesn't call beginAssistantTurn, so the only
+    // way beginAssistantTurn fires here is the (unwanted) pending in-flight turn.
+    expect(calls.beginAssistantTurn).toBe(0)
+  })
+
   it("resolve returns {run_id, current_trace_id, status} for an active run", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

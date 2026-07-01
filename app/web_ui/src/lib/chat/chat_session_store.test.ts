@@ -192,7 +192,7 @@ describe("createChatSessionStore", () => {
       expect(get(store).status).toBe("ready")
     })
 
-    it("guards against sending when not ready", async () => {
+    it("queues a second message sent while a turn is in flight instead of dispatching it", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       streamChatMock.mockImplementation(noopStreamChat)
@@ -202,8 +202,11 @@ describe("createChatSessionStore", () => {
       expect(get(store).status).toBe("submitted")
 
       await store.sendMessage("second")
+      // The second send is held client-side: no new conversation messages, no
+      // second stream — just the queued buffer.
       expect(get(store).messages).toHaveLength(2)
       expect(streamChatMock).toHaveBeenCalledTimes(1)
+      expect(get(store).queuedMessage).toBe("second")
     })
 
     it("transitions to streaming when onAssistantMessage is called", async () => {
@@ -639,6 +642,31 @@ describe("createChatSessionStore", () => {
       expect(msgs[msgs.length - 1].role).toBe("assistant")
     })
 
+    it("renders an echoed user message once per echo id (dedupes a replayed echo)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
+      ;(
+        fakeAutoRun as unknown as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        boundSink = s
+      }
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      // Live echo + a buffer-replay echo on re-attach carry the SAME id.
+      boundSink!.onUserMessage("hello there", "am_1")
+      boundSink!.onUserMessage("hello there", "am_1")
+
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(1)
+      expect(users[0].content).toBe("hello there")
+      expect(users[0].echoId).toBe("am_1")
+    })
+
     it("surfaces an inline error when injecting a message fails", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
@@ -653,6 +681,271 @@ describe("createChatSessionStore", () => {
       expect(sent).toBe(false)
       const errorMsg = get(store).messages.find((m) => m.role === "error")
       expect(errorMsg?.content).toBe("Couldn't send the message: Run is gone")
+    })
+  })
+
+  describe("queued messages", () => {
+    // Reach into the type-erased fake's writable store to simulate burst state.
+    function workingStore(fake: unknown): Writable<boolean> {
+      return (fake as { working: Writable<boolean> }).working
+    }
+
+    // Capture the sink the store binds into the auto-run store so tests can
+    // drive the runner's control/round events (onToolExecutionEnd, idle, off).
+    function bindSink(fake: unknown): {
+      get: () => import("./auto_run_store").AutoRunChatSink | null
+    } {
+      let sink: import("./auto_run_store").AutoRunChatSink | null = null
+      ;(
+        fake as {
+          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+        }
+      ).bind = (s) => {
+        sink = s
+      }
+      return { get: () => sink }
+    }
+
+    it("appends a second queued message to the first instead of replacing it", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first") // status -> submitted
+      await store.sendMessage("second")
+      await store.sendMessage("third")
+
+      expect(get(store).queuedMessage).toBe("second\n\nthird")
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("coalesces a new send into an already-queued message even after the turn ends", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      // The turn errors, leaving the message queued (not auto-flushed on error).
+      capture.options!.onError(new Error("boom"))
+      expect(get(store).status).toBe("ready")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      // A follow-up send appends to the pending message instead of dispatching a
+      // separate stream alongside it.
+      await store.sendMessage("more")
+      expect(get(store).queuedMessage).toBe("queued\n\nmore")
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("flushes the queued message when the interactive turn finishes", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      // Turn ends -> the queued message dispatches as a fresh stream.
+      capture.options!.onFinish()
+
+      expect(get(store).queuedMessage).toBeNull()
+      expect(streamChatMock).toHaveBeenCalledTimes(2)
+      const secondCall = streamChatMock.mock.calls[1][0] as StreamChatOptions
+      expect(secondCall.messages[0].content).toBe("queued")
+    })
+
+    it("clearQueued discards the queued message without sending", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      store.clearQueued()
+      expect(get(store).queuedMessage).toBeNull()
+      // Still mid-turn, and only the original stream was ever dispatched.
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("sendQueuedNow stops the interactive turn so the queue flushes on finish", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      const controller = get(store).abortController
+      const abortSpy = vi.spyOn(controller!, "abort")
+
+      store.sendQueuedNow()
+      // Interactive send-now terminates the turn; streamChat reports the abort
+      // as a finish, which flushes the queued message.
+      expect(abortSpy).toHaveBeenCalled()
+      capture.options!.onFinish()
+      expect(get(store).queuedMessage).toBeNull()
+      expect(streamChatMock).toHaveBeenCalledTimes(2)
+    })
+
+    it("queues during an active auto burst and injects at the next round boundary", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      // A burst is running -> hold client-side (no immediate inject, so the echo
+      // doesn't jump into the transcript mid-round).
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("while working")
+      expect(inject).not.toHaveBeenCalled()
+      expect(get(store).queuedMessage).toBe("while working")
+
+      // Round boundary (a tool round finished) -> inject so it rides the next
+      // request.
+      sink.get()!.onToolExecutionEnd(1)
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("while working")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("injects immediately when auto mode is idle (no in-flight round to wait for)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      // working defaults false -> auto mode is idle ("waiting for you").
+      await store.sendMessage("go")
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("go")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("flushes a queued message by injecting when the burst goes idle", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("at idle")
+      expect(inject).not.toHaveBeenCalled()
+
+      workingStore(fakeAutoRun).set(false)
+      sink.get()!.onAutoModeIdle("done")
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("at idle")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("sendQueuedNow injects immediately in auto mode without waiting for a round boundary", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("urgent")
+      expect(inject).not.toHaveBeenCalled()
+
+      store.sendQueuedNow()
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect(inject.mock.calls[0][0]).toBe("urgent")
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("clears the queued message when auto mode stops (auto-mode-off)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const inject = vi.fn().mockResolvedValue({ ok: true })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("pending")
+      expect(get(store).queuedMessage).toBe("pending")
+
+      sink.get()!.onAutoModeOff("user_stopped")
+      expect(get(store).queuedMessage).toBeNull()
+      expect(inject).not.toHaveBeenCalled()
+    })
+
+    it("restores the queued message if a flush dispatch is rejected (no silent data loss)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      // The inject fails — the queued text must not vanish.
+      const inject = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "run is gone" })
+      const fakeAutoRun = makeFakeAutoRun({
+        autoModeOn: true,
+        sendMessage: inject,
+      })
+      const sink = bindSink(fakeAutoRun)
+      const store = createChatSessionStore(undefined, fakeAutoRun)
+
+      workingStore(fakeAutoRun).set(true)
+      await store.sendMessage("keep me")
+      expect(get(store).queuedMessage).toBe("keep me")
+
+      // Round boundary triggers a flush that fails to dispatch.
+      sink.get()!.onToolExecutionEnd(1)
+      expect(inject).toHaveBeenCalledTimes(1)
+      // Cleared optimistically, then restored once the failed send resolves.
+      await vi.waitFor(() => expect(get(store).queuedMessage).toBe("keep me"))
+    })
+
+    it("clears the queue on reset", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+
+      store.reset()
+      expect(get(store).queuedMessage).toBeNull()
     })
   })
 
@@ -1508,9 +1801,11 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
       { params: { path: { session_id: "t_now" } } },
     )
     // Phase 9: attach is driven by the resolved liveness (RUNNING → working) and
-    // the reconnecting affordance is shown for the connecting window.
+    // the reconnecting affordance is shown for the connecting window. The third
+    // arg opens a fresh assistant turn for the replayed in-flight round so it
+    // doesn't overwrite the last hydrated bubble.
     expect(beginReconnect).toHaveBeenCalled()
-    expect(attach).toHaveBeenCalledWith("ar_live", true)
+    expect(attach).toHaveBeenCalledWith("ar_live", true, true)
     // The caught-up messages replaced the stale restored view.
     expect(get(store).messages).toEqual(hydratedMessages)
   })
@@ -1547,8 +1842,8 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     // Hydration did not happen (no messages to apply)...
     expect(mockHydrate).not.toHaveBeenCalled()
     // ...but we STILL attach so the conversation isn't left looking dead (IDLE
-    // status → not working).
-    expect(attach).toHaveBeenCalledWith("ar_live", false)
+    // status → not working), opening a fresh in-flight turn.
+    expect(attach).toHaveBeenCalledWith("ar_live", false, true)
   })
 
   it("bails without hydrating/attaching if the user switches conversations mid-resync", async () => {

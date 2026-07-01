@@ -2,20 +2,32 @@ from __future__ import annotations
 
 import asyncio
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..models import JobContext, JobDerivedState, JobWorker
 
 
 class NoopJobParams(BaseModel):
-    steps: int = 10
-    sleep_per_step_seconds: float = 0.5
-    fail_at_step: int | None = None
-    error_at_steps: list[int] = []
+    steps: int = Field(default=10, description="Number of steps to simulate.")
+    sleep_per_step_seconds: float = Field(
+        default=0.5, description="Seconds to sleep between each simulated step."
+    )
+    fail_at_step: int | None = Field(
+        default=None,
+        description="Step index at which to raise a fatal error, failing the whole job. "
+        "Null to never fail.",
+    )
+    error_at_steps: list[int] = Field(
+        default=[],
+        description="Step indices at which to report a non-fatal per-item error without "
+        "stopping the run.",
+    )
 
 
 class NoopJobResult(BaseModel):
-    completed_steps: int
+    completed_steps: int = Field(
+        description="Total number of steps processed (successes plus non-fatal errors)."
+    )
 
 
 class NoopJobWorker(JobWorker[NoopJobParams, NoopJobResult]):

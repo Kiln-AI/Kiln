@@ -92,7 +92,11 @@
       // the on-subscribe state marker reflects working-vs-idle immediately.
       if (row.auto_active && row.auto_run_id) {
         auto_run_store.beginReconnect()
-        auto_run_store.attach(row.auto_run_id)
+        // openInflightTurn: render the replayed in-flight round into its own
+        // assistant turn so it doesn't overwrite the last hydrated bubble. No
+        // initialWorking here (History has no status); attach presumes a live
+        // burst and the on-subscribe marker corrects it.
+        auto_run_store.attach(row.auto_run_id, undefined, true)
       }
       close()
     } catch (e) {

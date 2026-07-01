@@ -25,8 +25,22 @@ function extractTextContent(content: TraceMessage["content"]): string {
 const APP_UI_CONTEXT_RE =
   /<new_app_ui_context>[\s\S]*?<\/new_app_ui_context>\s*/g
 
+// Auto mode wraps a message injected mid-burst in a <system-reminder> "side
+// note" (see _SIDE_NOTE_REMINDER in the auto runner) before sending it upstream,
+// so the framing is persisted in the trace. Strip it on hydration so a reloaded
+// transcript shows the user's actual message — matching the live echo, which
+// renders the raw content.
+const SYSTEM_REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>\s*/g
+
 export function stripAppUiContext(text: string): string {
   return text.replace(APP_UI_CONTEXT_RE, "")
+}
+
+// Strip the internal framing the client/runner prepend to a user message before
+// sending it to the model (app-UI context header + auto-mode side-note), so the
+// hydrated transcript shows what the user actually typed.
+export function stripInternalFraming(text: string): string {
+  return text.replace(APP_UI_CONTEXT_RE, "").replace(SYSTEM_REMINDER_RE, "")
 }
 
 function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
@@ -77,7 +91,7 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
         messages.push({
           id: chatGenerateId(),
           role: "user",
-          content: stripAppUiContext(extractTextContent(msg.content)),
+          content: stripInternalFraming(extractTextContent(msg.content)),
         })
         break
       }
