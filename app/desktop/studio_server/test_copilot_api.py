@@ -1,6 +1,9 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
+    BuildClaimEvidenceOutput,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
 )
@@ -680,3 +683,119 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         assert response.status_code == 422
         assert "evaluate_full_trace" in str(response.json())
+
+
+@pytest.fixture
+def build_claims_input():
+    return {
+        "raw_input": "What's your return window for opened electronics?",
+        "raw_output": (
+            "Our return window is 30 days from purchase, even for opened "
+            "electronics, and you'll get a full refund."
+        ),
+        "eval_rubric": "The agent must not fabricate or guess at company policies.",
+        "judge_reasoning": "Stated a concrete return window as fact without verifying.",
+        "judge_score": "FAIL",
+    }
+
+
+class TestBuildClaimEvidence:
+    def test_build_claims_no_api_key(self, client, build_claims_input):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+            response = client.post("/api/copilot/build_claims", json=build_claims_input)
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_build_claims_success(self, client, build_claims_input, mock_api_key):
+        mock_output = MagicMock(spec=BuildClaimEvidenceOutput)
+        # to_dict() mirrors the SDK: citations carry the wire key `from`.
+        mock_output.to_dict.return_value = {
+            "claims": [
+                {
+                    "claim": "The agent stated a specific 30-day return window as fact.",
+                    "claim_type": "assertion",
+                    "evidence": "The reply gives a window of 30 days from purchase [1].",
+                    "citations": [
+                        {
+                            "marker": 1,
+                            "source": "output",
+                            "from": "30 days",
+                            "to": "purchase",
+                        }
+                    ],
+                },
+                {
+                    "claim": "Fails Eval: the agent fabricated an unverified policy.",
+                    "claim_type": "final_judgement",
+                    "evidence": "It asserts a return window it never verified [1].",
+                    "citations": [
+                        {
+                            "marker": 1,
+                            "source": "output",
+                            "from": "30 days",
+                            "to": "full refund",
+                        }
+                    ],
+                },
+            ]
+        }
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post("/api/copilot/build_claims", json=build_claims_input)
+            assert response.status_code == 200
+            result = response.json()
+            assert len(result["claims"]) == 2
+            assert result["claims"][0]["claim_type"] == "assertion"
+            assert result["claims"][1]["claim_type"] == "final_judgement"
+
+            # The regression that matters: the serialized citation key must be
+            # `from`, not `from_` (the UI greps the literal `from`).
+            citation = result["claims"][0]["citations"][0]
+            assert "from" in citation
+            assert "from_" not in citation
+            assert citation["from"] == "30 days"
+            assert citation["to"] == "purchase"
+            assert citation["source"] == "output"
+
+    def test_build_claims_no_response(self, client, build_claims_input, mock_api_key):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post("/api/copilot/build_claims", json=build_claims_input)
+            assert response.status_code == 500
+            assert "Failed to build claims" in response.json()["message"]
+
+    def test_build_claims_validation_error(
+        self, client, build_claims_input, mock_api_key
+    ):
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.content = b'{"message": "Validation error from server"}'
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post("/api/copilot/build_claims", json=build_claims_input)
+            assert response.status_code == 422
+            assert "Validation error from server" in response.json()["message"]

@@ -2,6 +2,7 @@ import logging
 from typing import Annotated
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
+    build_claim_evidence_v1_copilot_build_claim_evidence_post,
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
     question_spec_v1_copilot_question_spec_post,
@@ -9,6 +10,8 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    BuildClaimEvidenceInput,
+    BuildClaimEvidenceOutput,
     ClarifySpecInput,
     ClarifySpecOutput,
     GenerateBatchInput,
@@ -31,6 +34,8 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.api_models.copilot_models import (
+    BuildClaimsApiInput,
+    BuildClaimsApiOutput,
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
     GenerateBatchApiInput,
@@ -232,6 +237,39 @@ def connect_copilot_api(app: FastAPI):
 
         if isinstance(result, ClarifySpecOutput):
             return ClarifySpecApiOutput.model_validate(result.to_dict())
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unknown error.",
+        )
+
+    @app.post(
+        "/api/copilot/build_claims",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval(
+            "Build claim/evidence for a trace?"
+        ),
+    )
+    async def build_claims(input: BuildClaimsApiInput) -> BuildClaimsApiOutput:
+        api_key = get_copilot_api_key()
+        client = get_authenticated_client(api_key)
+
+        build_input = BuildClaimEvidenceInput.from_dict(input.model_dump(by_alias=True))
+
+        detailed_result = await build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed(
+            client=client,
+            body=build_input,
+        )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to build claims. Please try again.",
+        )
+
+        # result.to_dict() already emits citations with the `from` key; the
+        # CitationApi alias preserves it on the studio response (the UI greps
+        # that literal key).
+        if isinstance(result, BuildClaimEvidenceOutput):
+            return BuildClaimsApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
             status_code=500,

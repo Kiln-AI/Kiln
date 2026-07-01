@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/copilot/build_claims",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Build claim/evidence for a trace?"
+  }
+}

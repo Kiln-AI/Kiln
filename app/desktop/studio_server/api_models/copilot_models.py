@@ -1,7 +1,9 @@
 """Shared Pydantic models for the Copilot API."""
 
+from typing import Literal
+
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Base models
@@ -147,3 +149,46 @@ class SpecQuestionerApiInput(BaseModel):
         description="The specification to analyze",
         title="target_specification",
     )
+
+
+# Claim/Evidence (per-trace claim builder) — proxies kiln_server
+# /v1/copilot/build_claim_evidence. Shapes must match the UI contract in
+# builder/claim_evidence.ts exactly.
+class BuildClaimsApiInput(BaseModel):
+    """One trace + its judge decision, to distill into claim/evidence pairs."""
+
+    raw_input: str
+    raw_output: str
+    eval_rubric: str
+    judge_reasoning: str
+    judge_score: str
+
+
+class CitationApi(BaseModel):
+    """A start+end anchor into the trace; the UI highlights from `from` to `to`.
+
+    `from` is a Python keyword, so the field is `from_` with an alias — the
+    serialized key MUST stay `from` (the UI greps that literal JSON key).
+    """
+
+    marker: int
+    source: Literal["input", "output"]
+    from_: str = Field(alias="from")
+    to: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ClaimApi(BaseModel):
+    """One atomic claim + its one-sentence evidence with [n] citation markers."""
+
+    claim: str
+    claim_type: Literal["inclusion", "exclusion", "assertion", "final_judgement"]
+    evidence: str
+    citations: list[CitationApi]
+
+
+class BuildClaimsApiOutput(BaseModel):
+    """All claims for one trace, ordered most- to least-important."""
+
+    claims: list[ClaimApi]
