@@ -8680,6 +8680,13 @@ export interface components {
              */
             input_source?: string | null;
             /**
+             * Input Source Properties
+             * @description The properties of the input source.
+             */
+            input_source_properties?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Tags
              * @description Tags applied to the run.
              */
