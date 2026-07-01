@@ -15,10 +15,12 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, field
+from typing import Awaitable, Callable
 
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import _is_retryable_error
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
@@ -46,6 +48,18 @@ logger = logging.getLogger(__name__)
 # Default "pass" bar on the normalized 0-1 scale. 0.75 matches the four-star / is_high_quality
 # threshold for five_star scores (normalize_rating(4, five_star) == 0.75).
 DEFAULT_FAILURE_THRESHOLD = 0.75
+
+
+def _error_detail(error: BaseException) -> str:
+    """The most informative message for a failed item's error log.
+
+    The model adapter wraps failures in `KilnRunError`, whose own message is the user-friendly
+    (often generic) `format_error_message` text; the underlying cause survives on `.original`, so
+    surface that for the developer-facing error log. Mirrors `EvalJobWorker._error_detail`.
+    """
+    if isinstance(error, KilnRunError) and error.original is not None:
+        return str(error.original)
+    return str(error)
 
 
 def score_passes(
@@ -190,6 +204,12 @@ class _ScoredItem:
     error: JudgeFeedbackBatchItemError | None = None
 
 
+# Called after each judged chunk with (num_judged, error_count, planned_total), where
+# planned_total is the number of items this run will judge (the tag-matched set capped at
+# max_samples). Lets a background job stream live progress instead of only a final snapshot.
+JudgeProgressCallback = Callable[[int, int, int], Awaitable[None]]
+
+
 class JudgeFeedbackBatchRunner:
     """Runs a JudgeFeedbackBatch: judges tagged dataset items and persists per-item results."""
 
@@ -256,13 +276,21 @@ class JudgeFeedbackBatchRunner:
             task_run.tags or []
         )
 
-    async def run(self, concurrency: int | None = None) -> JudgeFeedbackBatchRunResult:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        progress_callback: JudgeProgressCallback | None = None,
+    ) -> JudgeFeedbackBatchRunResult:
         """Judge tagged dataset items and persist each result as a JudgeFeedbackBatchRun child.
 
         Two modes, set by `stop_after_failures`:
         - None (gate): judge the WHOLE matching set up to `max_samples` — full coverage, so the
           caller can pair `judged_runs` by task_run_id against another run.
         - set (train signal): stop early once that many failures are found (a cheap minibatch).
+
+        `progress_callback`, if given, is awaited after each judged chunk with
+        (num_judged, error_count, planned_total) so a background job can stream live progress;
+        the synchronous endpoint leaves it None.
 
         Returns the failing runs, all judged runs, counts, and any per-item errors. Per-item errors
         are collected (not raised), so one bad item never aborts the run; the item is left
@@ -324,7 +352,7 @@ class JudgeFeedbackBatchRunner:
                     errors.append(
                         JudgeFeedbackBatchItemError(
                             task_run_id=str(task_run.id),
-                            error=f"Unexpected error judging item: {scored}",
+                            error=f"Unexpected error judging item: {_error_detail(scored)}",
                         )
                     )
                     continue
@@ -334,6 +362,10 @@ class JudgeFeedbackBatchRunner:
                     judged_runs.append(scored.run)
                     if not scored.passed:
                         failing_runs.append(scored.run)
+            # Stream live progress against the planned (capped) count so a background job's bar
+            # advances per chunk and reaches 100% on full coverage.
+            if progress_callback is not None:
+                await progress_callback(num_judged, len(errors), len(candidates))
             # Gate mode (stop_after is None) judges the whole set; only the train signal stops early.
             if stop_after is not None and len(failing_runs) >= stop_after:
                 break
@@ -400,7 +432,7 @@ class JudgeFeedbackBatchRunner:
             return _ScoredItem(
                 error=JudgeFeedbackBatchItemError(
                     task_run_id=str(task_run.id),
-                    error=f"Error judging item: {e}",
+                    error=f"Error judging item: {_error_detail(e)}",
                 )
             )
 

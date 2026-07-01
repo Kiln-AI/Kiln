@@ -7730,9 +7730,15 @@ export interface components {
              * @default 0.75
              */
             threshold: number;
-            /** Project Id */
+            /**
+             * Project Id
+             * @description The ID of the project the task belongs to.
+             */
             project_id: string;
-            /** Task Id */
+            /**
+             * Task Id
+             * @description The ID of the task to run the judge feedback batch under.
+             */
             task_id: string;
         };
         /**

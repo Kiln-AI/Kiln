@@ -181,6 +181,7 @@ async def run_job(
     concurrency=25,
     retry_delay=0,
     fresh_usage=None,
+    progress_callback=None,
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
@@ -198,7 +199,9 @@ async def run_job(
             rng=random.Random(seed),
             retry_delay=retry_delay,
         )
-        return await runner.run(concurrency=concurrency)
+        return await runner.run(
+            concurrency=concurrency, progress_callback=progress_callback
+        )
 
 
 # ---- Pure helper tests ----
@@ -312,6 +315,39 @@ async def test_full_coverage_returns_all_judged_runs(mock_task, data_source):
 
     # All judged items persisted as children (pass and fail)
     assert len(job.runs()) == 6
+
+
+@pytest.mark.asyncio
+async def test_progress_callback_streams_per_chunk(mock_task, data_source):
+    # The callback fires once per chunk with (num_judged, error_count, planned_total),
+    # where planned_total is the capped matching-set size, so a job can stream progress.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
+    for i in range(5):
+        make_train_run(mock_task, data_source, f"item-{i}")
+
+    ticks: list[tuple[int, int, int]] = []
+
+    async def on_progress(num_judged, error_count, planned_total):
+        ticks.append((num_judged, error_count, planned_total))
+
+    # concurrency=2 over 5 items -> chunks of 2,2,1 -> 3 ticks, num_judged monotone.
+    result = await run_job(
+        job,
+        eval_config,
+        lambda tr: {"accuracy": 1.0},
+        concurrency=2,
+        progress_callback=on_progress,
+    )
+
+    assert result.num_judged == 5
+    assert [t[0] for t in ticks] == [2, 4, 5]
+    assert all(t[1] == 0 for t in ticks)
+    # planned_total is the capped set (min(train_set_size, max_samples) = 5).
+    assert all(t[2] == 5 for t in ticks)
 
 
 @pytest.mark.asyncio

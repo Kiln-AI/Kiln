@@ -156,7 +156,12 @@ def _fake_result() -> JudgeFeedbackBatchRunResult:
 
 @contextmanager
 def _stub_runner(result: JudgeFeedbackBatchRunResult):
-    async def fake_run(self) -> JudgeFeedbackBatchRunResult:
+    async def fake_run(self, progress_callback=None) -> JudgeFeedbackBatchRunResult:
+        # Mimic the real runner streaming one progress tick before returning, so
+        # the worker's live-progress wiring is exercised.
+        if progress_callback is not None:
+            planned = min(result.train_set_size, self.judge_feedback_batch.max_samples)
+            await progress_callback(result.num_judged, len(result.errors), planned)
         return result
 
     with (
@@ -214,6 +219,60 @@ async def test_run_reports_progress_and_per_item_errors(
     assert extra["dataset_id"] == "tr1"
     assert extra["run_config_id"] == "run_config1"
 
-    # Single-shot runner: final progress reported once
-    # (success=num_judged, error=len(errors), total=train_set_size).
+    # Progress streams per chunk (via the callback) and a final snapshot is
+    # reported. Total is the planned (capped) count = min(train_set_size,
+    # max_samples) = min(10, 50) = 10, so success can reach total on full
+    # coverage (success=num_judged, error=len(errors), total=planned).
+    assert len(ctx.progress) >= 2
     assert ctx.progress[-1] == (5, 1, 10)
+
+
+async def test_run_progress_total_is_capped_at_max_samples(
+    resolve_project, task, eval_config, run_config
+):
+    """When train_set_size exceeds max_samples, progress totals against the capped
+    count (max_samples), not the full matching set — so a fully-judged run reads
+    as 100% rather than stalling at max_samples/train_set_size."""
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        target_tags=["train_set"],
+        eval_config_id="eval_config1",
+        run_config_id="run_config1",
+        generate_outputs=True,
+        max_samples=20,
+    )
+    result = JudgeFeedbackBatchRunResult(
+        failing_runs=[],
+        judged_runs=[],
+        num_judged=20,
+        failing_count=0,
+        train_set_size=200,
+        hit_cap=True,
+        errors=[],
+    )
+    ctx = _FakeCtx()
+    with _stub_runner(result):
+        await JudgeFeedbackBatchJobWorker().run(params, ctx)
+
+    # planned = min(200, 20) = 20, and all 20 were judged -> success == total.
+    success, error, total = ctx.progress[-1]
+    assert (success, error, total) == (20, 0, 20)
+
+
+async def test_describe_publishes_properties(
+    resolve_project, task, eval_config, run_config, params
+):
+    props = await JudgeFeedbackBatchJobWorker().describe(params)
+
+    assert props.batch_name  # generated or provided, never empty
+    assert props.eval_name == "Test Eval"
+    assert props.judge_name == "Test Eval Config"
+    assert props.judge_model_name == "gpt-4"
+    assert props.judge_model_provider == "openai"
+    assert props.generate_outputs is True
+    # generate_outputs mode: the run config is resolved for display.
+    assert props.run_config_name == "Test Run Config"
+    assert props.run_config_model_name == "gpt-4"
+    assert props.target_tags == ["train_set"]
+    assert props.max_samples == 50
