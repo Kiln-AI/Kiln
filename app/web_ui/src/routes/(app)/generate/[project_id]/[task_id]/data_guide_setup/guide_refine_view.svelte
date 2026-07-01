@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Shown when the user already has a saved data guide and revisits this page.
-  // Skips the build-from-examples setup form and goes straight to "preview the
-  // existing guide → refine via the metaprompter loop".
+  // Shown when the user already has a saved input data guide and revisits
+  // this page. Skips the build-from-examples setup form and goes straight to
+  // "preview the existing guide → refine via the metaprompter loop".
   import { createEventDispatcher } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
@@ -9,7 +9,6 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
-    Task,
     KilnAgentRunConfigProperties,
     RunConfigProperties,
     DataGuide,
@@ -23,7 +22,6 @@
 
   export let project_id: string
   export let guide: string
-  export let task: Task | null = null
   // The full DataGuide model so we can surface metadata (created_at /
   // created_by) in the right column.
   export let data_guide: DataGuide | null = null
@@ -51,7 +49,6 @@
     generate_preview: {
       guide: string
       input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
     }
     save: { guide: string }
   }>()
@@ -97,7 +94,6 @@
     | {
         guide: string
         input_run_config: KilnAgentRunConfigProperties
-        output_run_config: KilnAgentRunConfigProperties
       }
     | { error: KilnError } {
     if (!guide_value.trim()) {
@@ -110,23 +106,18 @@
     }
     const input_run_config: RunConfigProperties | null =
       run_options_tiles?.get_input_run_config() ?? null
-    const output_run_config: RunConfigProperties | null =
-      run_options_tiles?.get_output_run_config() ?? null
-    if (!input_run_config || !output_run_config) {
+    if (!input_run_config) {
       return {
         error: new KilnError(
-          "Please select a model for input and output generation.",
+          "Please select a model for input generation.",
           null,
         ),
       }
     }
-    if (
-      !isKilnAgentRunConfig(input_run_config) ||
-      !isKilnAgentRunConfig(output_run_config)
-    ) {
+    if (!isKilnAgentRunConfig(input_run_config)) {
       return {
         error: new KilnError(
-          "Task Data Guide requires a kiln_agent run config.",
+          "Data Guide requires a kiln_agent run config.",
           null,
         ),
       }
@@ -134,7 +125,6 @@
     return {
       guide: guide_value,
       input_run_config,
-      output_run_config,
     }
   }
 
@@ -200,10 +190,21 @@
 
   $: data_guide_properties = build_data_guide_properties(data_guide)
 
+  const source_labels: Record<NonNullable<DataGuide["source"]>, string> = {
+    manual: "Manual",
+    kiln_pro: "Kiln Pro",
+  }
+
   function build_data_guide_properties(g: DataGuide | null): UiProperty[] {
     const props: UiProperty[] = []
     if (g?.id) {
       props.push({ name: "ID", value: g.id })
+    }
+    if (g?.source) {
+      props.push({
+        name: "Source",
+        value: source_labels[g.source] ?? g.source,
+      })
     }
     if (g?.created_at) {
       props.push({ name: "Created At", value: formatDate(g.created_at) })
@@ -242,11 +243,11 @@
           {#if page_submitting}
             <span class="loading loading-spinner loading-xs"></span>
           {:else}
-            Test Data Guide
+            Refine Data Guide
           {/if}
         </button>
         <InfoTooltip
-          tooltip_text="Run your guide against fresh samples to verify quality. Refine the guide further if any examples need work."
+          tooltip_text="Run your guide against fresh inputs to verify quality. Refine the guide further if any inputs need work."
           position="top"
         />
       </div>
@@ -265,12 +266,7 @@
              right-aligns with the button's edge, not the row's. -->
         <div class="w-6 shrink-0" aria-hidden="true"></div>
       </div>
-      <RunOptionsTiles
-        bind:this={run_options_tiles}
-        mode="link"
-        {project_id}
-        {task}
-      />
+      <RunOptionsTiles bind:this={run_options_tiles} mode="link" {project_id} />
     </aside>
   </div>
 </FormContainer>

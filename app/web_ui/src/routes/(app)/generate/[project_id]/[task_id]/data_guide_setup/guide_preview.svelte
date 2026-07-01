@@ -14,7 +14,6 @@
 
   type ReviewedSample = {
     input: string
-    output: string
     looks_good: boolean | undefined
   }
 
@@ -33,13 +32,16 @@
   export let saved: boolean = false
   // True when the working guide differs from what's persisted on the server,
   // i.e. there's something for the submit button to actually save. When false
-  // and nothing else needs refinement, the submit becomes a "Back to Data
-  // Guide" navigation that skips the redundant PUT.
+  // and nothing else needs refinement, the submit becomes a "Back to Input
+  // Data Guide" navigation that skips the redundant PUT.
   export let requires_save: boolean = true
+  // Copilot flow only: show a "Restart Data Guide" link that abandons the
+  // current draft and starts the setup process over. Hidden in the manual flow.
+  export let show_restart: boolean = false
 
   // True iff the user edited the guide via the Edit dialog after this
   // preview was generated. Drives the submit button label (Refine vs Save
-  // Data Guide).
+  // Input Data Guide).
   $: guide_was_edited = guide !== initial_guide
 
   let see_all_dialog: SeeAllDialog
@@ -125,12 +127,13 @@
       ? "Save Data Guide"
       : "Back to Data Guide"
 
-  type RatedSample = { input: string; output: string; looks_good: boolean }
+  type RatedSample = { input: string; looks_good: boolean }
 
   const dispatch = createEventDispatcher<{
     refine: { feedback: string; rated_samples: RatedSample[] }
     save: void
     back: void
+    restart: void
   }>()
 
   function handle_submit() {
@@ -144,7 +147,6 @@
         )
         .map((s) => ({
           input: s.input,
-          output: s.output,
           looks_good: s.looks_good,
         }))
       dispatch("refine", {
@@ -156,6 +158,10 @@
 
   function handle_save_without_refining() {
     dispatch("save")
+  }
+
+  function handle_restart() {
+    dispatch("restart")
   }
 
   function scroll_to_feedback() {
@@ -183,8 +189,8 @@
   compact_button={true}
 >
   <Callout
-    title="Is synthetic data working as expected?"
-    description={`Mark each example as "Realistic" or "Needs Work" to determine if your guide generates high quality synthetic data. If some need work, we'll iterate to improve.`}
+    title="Is input generation working as expected?"
+    description={`Mark each generated input as "Realistic" or "Needs Work" to determine if your guide produces high-quality synthetic inputs. If some need work, we'll iterate to improve.`}
   >
     <div slot="icon">
       <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
@@ -220,7 +226,6 @@
         <thead>
           <tr>
             <th>Input</th>
-            <th>Output</th>
             <th class="whitespace-nowrap" style="width: 220px; min-width: 220px"
               >Rating</th
             >
@@ -229,7 +234,6 @@
         <tbody>
           {#each reviewed_samples as sample, i}
             {@const input_content = formatExpandedContent(sample.input)}
-            {@const output_content = formatExpandedContent(sample.output)}
             <tr>
               <td class="py-2">
                 <ClampedText
@@ -238,16 +242,6 @@
                     ? input_content.value
                     : null}
                   on:see_all={() => see_all_dialog.show("Input", sample.input)}
-                />
-              </td>
-              <td class="py-2">
-                <ClampedText
-                  content={output_content.isJson ? "" : output_content.value}
-                  html_content={output_content.isJson
-                    ? output_content.value
-                    : null}
-                  on:see_all={() =>
-                    see_all_dialog.show("Output", sample.output)}
                 />
               </td>
               <td class="py-2">
@@ -311,7 +305,7 @@
       ? "Preview Data Guide (edited)"
       : "Preview Data Guide"}
     description={preview_collapse_open
-      ? "Your Data Guide is a prompt that helps define how data is generated."
+      ? "Your Data Guide is a prompt that helps define how inputs are generated."
       : null}
     bind:open={preview_collapse_open}
     small={true}
@@ -331,7 +325,7 @@
   {#if all_look_good && !guide_was_edited}
     <div class="flex justify-end">
       <Warning
-        warning_message="Synthetic data generation is working as expected."
+        warning_message="Synthetic input generation is working as expected."
         warning_color="success"
         warning_icon="check"
         tight
@@ -360,7 +354,6 @@
 
 {#if has_any_failed}
   <div class="flex flex-row gap-1 mt-4 justify-end">
-    <span class="text-sm text-gray-500">or</span>
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
@@ -372,6 +365,16 @@
         Save Without Refining Further
       {/if}
     </button>
+    {#if show_restart}
+      <span class="text-sm text-gray-500">or</span>
+      <button
+        class="link underline text-sm text-gray-500"
+        disabled={submitting}
+        on:click={handle_restart}
+      >
+        Restart Data Guide Setup
+      </button>
+    {/if}
   </div>
 {/if}
 
@@ -432,7 +435,7 @@
         Verify Edit
       </button>
       <div class="text-xs text-gray-500">
-        Generate new examples using only this edit.
+        Generate new inputs using only this edit.
       </div>
     </div>
   </div>

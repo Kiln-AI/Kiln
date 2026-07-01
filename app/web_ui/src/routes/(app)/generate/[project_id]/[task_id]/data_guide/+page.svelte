@@ -12,13 +12,8 @@
   import GuideRefineView from "../data_guide_setup/guide_refine_view.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
-  import type {
-    KilnAgentRunConfigProperties,
-    Task,
-    DataGuide,
-  } from "$lib/types"
+  import type { KilnAgentRunConfigProperties, DataGuide } from "$lib/types"
   import { agentInfo } from "$lib/agent"
-  import { current_task } from "$lib/stores"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import { isMacOS } from "$lib/utils/platform"
   import { pending_data_guide_refine_handoff } from "./refine_handoff_store"
@@ -31,7 +26,6 @@
 
   let guide: string = ""
   let saved_data_guide: DataGuide | null = null
-  let task: Task | null = null
   // Bound so the AppPage's "Edit" action button can drive the dialog inside
   // GuideRefineView without having to lift the dialog state up here.
   let refine_view: GuideRefineView | null = null
@@ -52,7 +46,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Data Guide",
-    description: `View and refine the saved task data guide for project ${project_id}, task ${task_id}.`,
+    description: `View and refine the saved task input data guide for project ${project_id}, task ${task_id}.`,
   })
 
   // Distinguish "load failed" from "no guide saved". Without this, a 5xx
@@ -84,26 +78,11 @@
       return
     }
 
-    // No saved guide content → send them to the setup flow.
+    // No saved guide content → send them to the synth page intro, which is
+    // the single entry point for creating a new guide (manual or Kiln Pro).
     if (!guide.trim()) {
-      goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
+      goto(`/generate/${project_id}/${task_id}/synth`)
       return
-    }
-
-    if ($current_task?.id === task_id) {
-      task = $current_task
-    } else {
-      try {
-        const { data: task_data } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (task_data) {
-          task = task_data
-        }
-      } catch {
-        // Non-critical
-      }
     }
 
     current_state = "saved"
@@ -113,14 +92,12 @@
     event: CustomEvent<{
       guide: string
       input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
     }>,
   ) {
     pending_data_guide_refine_handoff.set({
       guide: event.detail.guide,
       saved_guide: guide,
       input_run_config: event.detail.input_run_config,
-      output_run_config: event.detail.output_run_config,
     })
     goto(`/generate/${project_id}/${task_id}/data_guide/refine`)
   }
@@ -197,14 +174,13 @@
 
     {#if current_state === "loading"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
+        <span class="loading loading-spinner loading-lg" />
       </div>
     {:else if current_state === "saved"}
       <GuideRefineView
         bind:this={refine_view}
         {project_id}
         {guide}
-        {task}
         data_guide={saved_data_guide}
         bind:page_error={error}
         bind:save_error
