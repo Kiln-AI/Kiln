@@ -341,7 +341,8 @@ describe("EvalTestRunPane", () => {
       expect(container.textContent).toContain("0.95")
       expect(container.textContent).toContain("helpfulness")
       expect(container.textContent).toContain("4")
-      expect(container.textContent).toContain("preview")
+      expect(container.textContent).toContain("Scores")
+      expect(container.textContent).toContain("Preview only")
       expect(container.textContent).toContain("not saved")
     })
 
@@ -364,7 +365,6 @@ describe("EvalTestRunPane", () => {
         '[data-testid="skipped-result"]',
       )
       expect(skippedResult).not.toBeNull()
-      expect(container.textContent).toContain("Skipped")
       expect(container.textContent).toContain("No reference data available")
     })
 
@@ -591,7 +591,7 @@ describe("TestRunInputCard", () => {
     expect(label?.classList.contains("text-gray-500")).toBe(false)
   })
 
-  it("renders truncated 2-line input and output", () => {
+  it("renders input and output via the clamped viewer", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunInputCard as any, {
       props: {
@@ -606,8 +606,9 @@ describe("TestRunInputCard", () => {
     expect(card?.textContent).toContain("input one")
     expect(card?.textContent).toContain("output one")
 
-    const lineClampedElements = card?.querySelectorAll(".line-clamp-2")
-    expect(lineClampedElements?.length).toBeGreaterThanOrEqual(2)
+    // ClampedText renders content in <pre> elements (clamping is visual/CSS).
+    const clamped = card?.querySelectorAll("pre")
+    expect(clamped?.length).toBeGreaterThanOrEqual(2)
   })
 
   it("renders pick variant as clickable", () => {
@@ -671,7 +672,7 @@ describe("TestRunInputCard", () => {
     expect(changeBtn?.disabled).toBe(false)
   })
 
-  it("shows full input and output as title attributes (tooltip)", () => {
+  it("keeps full input and output in the DOM without title tooltips", () => {
     const longInput = "a".repeat(200)
     const longOutput = "b".repeat(200)
     const longRun = makeRun("long", longInput, longOutput)
@@ -684,10 +685,11 @@ describe("TestRunInputCard", () => {
       },
     })
 
-    const paragraphs = container.querySelectorAll("p[title]")
-    const titles = Array.from(paragraphs).map((p) => p.getAttribute("title"))
-    expect(titles).toContain(longInput)
-    expect(titles).toContain(longOutput)
+    // Full content stays in the DOM (ClampedText clamps visually, See all opens it).
+    expect(container.textContent).toContain(longInput)
+    expect(container.textContent).toContain(longOutput)
+    // No raw title-attribute tooltips anymore.
+    expect(container.querySelectorAll("p[title]").length).toBe(0)
   })
 
   it("dispatches change event when Change clicked in selected variant", async () => {
@@ -763,7 +765,7 @@ describe("TestRunBrowseDialog", () => {
     expect(dialog?.getAttribute("data-width")).toBe("wide")
   })
 
-  it("renders table with Input, Output, Created columns (no radio column)", () => {
+  it("renders table with Input, Output, Created At columns (no radio column)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
       props: {
@@ -771,16 +773,15 @@ describe("TestRunBrowseDialog", () => {
       },
     })
 
-    const table = container.querySelector('[data-testid="browse-table"]')
+    const table = container.querySelector("table")
     expect(table).not.toBeNull()
-    const headers = table?.querySelectorAll("th")
-    expect(headers?.length).toBe(3)
-    const headerTexts = Array.from(headers || []).map((h) =>
-      h.textContent?.trim(),
+    const headerTexts = Array.from(table?.querySelectorAll("th") || []).map(
+      (h) => h.textContent?.trim(),
     )
-    expect(headerTexts).toContain("Input preview")
-    expect(headerTexts).toContain("Output preview")
-    expect(headerTexts).toContain("Created")
+    expect(headerTexts).toContain("Input")
+    expect(headerTexts).toContain("Output")
+    expect(headerTexts).toContain("Created At")
+    expect(container.querySelectorAll('input[type="radio"]').length).toBe(0)
   })
 
   it("does not render a search field", () => {
@@ -799,7 +800,7 @@ describe("TestRunBrowseDialog", () => {
     expect(searchPlaceholder).toBeNull()
   })
 
-  it("shows 'or add manual example' button with bold styling", () => {
+  it("shows an 'Add Manual Example' link", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
       props: {
@@ -807,13 +808,13 @@ describe("TestRunBrowseDialog", () => {
       },
     })
 
-    const addBtn = container.querySelector('[data-testid="add-manual-example"]')
-    expect(addBtn).not.toBeNull()
-    expect(addBtn?.textContent?.trim()).toContain("or add manual example")
-    expect(addBtn?.classList.contains("font-bold")).toBe(true)
+    const addBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.trim().includes("Add Manual Example"),
+    )
+    expect(addBtn).toBeDefined()
   })
 
-  it("shows clickable rows without radio buttons", () => {
+  it("renders rows with a Select button and no radio buttons", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
       props: {
@@ -826,10 +827,13 @@ describe("TestRunBrowseDialog", () => {
 
     const rows = container.querySelectorAll("tbody tr")
     expect(rows.length).toBe(2)
-    expect(rows[0].classList.contains("cursor-pointer")).toBe(true)
+    const selectButtons = Array.from(
+      container.querySelectorAll("button"),
+    ).filter((b) => b.textContent?.trim() === "Select")
+    expect(selectButtons.length).toBe(2)
   })
 
-  it("dispatches select and closes dialog on row click", async () => {
+  it("dispatches select and closes dialog on Select click", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container, component } = render(TestRunBrowseDialog as any, {
       props: {
@@ -839,8 +843,10 @@ describe("TestRunBrowseDialog", () => {
     const handler = vi.fn()
     component.$on("select", handler)
 
-    const rows = container.querySelectorAll("tbody tr")
-    await fireEvent.click(rows[1])
+    const selectButtons = Array.from(
+      container.querySelectorAll("button"),
+    ).filter((b) => b.textContent?.trim() === "Select")
+    await fireEvent.click(selectButtons[1])
     expect(handler).toHaveBeenCalledTimes(1)
     expect(handler.mock.calls[0][0].detail).toBe(run2)
   })
@@ -865,7 +871,7 @@ describe("TestRunBrowseDialog", () => {
     expect(nextBtn).not.toBeNull()
   })
 
-  it("truncates long text in table cells", () => {
+  it("renders full cell text via ClampedText (clamping is visual, not truncated)", () => {
     const longRun = makeRun("long", "x".repeat(200), "y".repeat(200))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(TestRunBrowseDialog as any, {
@@ -874,10 +880,9 @@ describe("TestRunBrowseDialog", () => {
       },
     })
 
-    const cells = container.querySelectorAll("td span.font-mono")
-    const inputCell = cells[0]?.textContent || ""
-    expect(inputCell.length).toBeLessThan(200)
-    expect(inputCell.endsWith("...")).toBe(true)
+    // ClampedText clamps with CSS, so the full content stays in the DOM.
+    expect(container.textContent).toContain("x".repeat(200))
+    expect(container.textContent).toContain("y".repeat(200))
   })
 
   it("shows subtitle text", () => {
@@ -986,7 +991,9 @@ describe("ManualExampleDialog ephemeral flow", () => {
 
     const dialog = container.querySelector('[data-title="Add Manual Example"]')
     expect(dialog).not.toBeNull()
-    expect(container.textContent).toContain("won't be saved")
+    expect(dialog?.getAttribute("data-sub-subtitle")).toContain(
+      "won't be saved",
+    )
 
     const inputTextarea = container.querySelector(
       '[data-testid="manual-input"]',
@@ -1048,7 +1055,10 @@ describe("ManualExampleDialog", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(ManualExampleDialog as any)
 
-    expect(container.textContent).toContain("won't be saved")
+    const dialog = container.querySelector('[data-testid="dialog-stub"]')
+    expect(dialog?.getAttribute("data-sub-subtitle")).toContain(
+      "won't be saved",
+    )
   })
 
   it("textareas are editable", async () => {

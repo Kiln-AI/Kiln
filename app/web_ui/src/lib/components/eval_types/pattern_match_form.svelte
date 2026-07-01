@@ -10,6 +10,11 @@
     value_expression: null,
   }
 
+  // Read-only mirror of the configured output source, surfaced to the parent so
+  // it can decide whether input/output-only manual examples are usable.
+  export let output_value_expression: string | null = null
+  $: output_value_expression = properties.value_expression ?? null
+
   export function getProperties(): components["schemas"]["PatternMatchProperties"] {
     return properties
   }

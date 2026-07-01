@@ -1,5 +1,7 @@
 <script lang="ts">
   import EvalResultScores from "./eval_result_scores.svelte"
+  import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
+  import XCircleIcon from "$lib/ui/icons/x_circle_icon.svelte"
   import type { EvalConfig } from "$lib/types"
   import { extractV2Props } from "$lib/utils/eval_types/registry"
 
@@ -35,12 +37,12 @@
     <div>
       {#if passed}
         <span class="badge badge-success badge-sm gap-1">
-          <i class="bi bi-check-circle-fill text-xs"></i>
+          <div class="w-3 h-3"><CheckCircleIcon /></div>
           Pass
         </span>
       {:else}
         <span class="badge badge-error badge-sm gap-1">
-          <i class="bi bi-x-circle-fill text-xs"></i>
+          <div class="w-3 h-3"><XCircleIcon /></div>
           Fail
         </span>
       {/if}

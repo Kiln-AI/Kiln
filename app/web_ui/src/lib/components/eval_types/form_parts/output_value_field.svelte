@@ -125,7 +125,7 @@
 <Dialog
   bind:this={examplesDialog}
   title="Jinja Expression Examples"
-  subtitle="Examples of extracting data from final_message and trace using Jinja."
+  sub_subtitle="Examples of extracting data from final_message and trace using Jinja."
 >
   <div class="flex flex-col -mx-2">
     {#each JINJA_EXAMPLES as example}

@@ -182,7 +182,6 @@
     title="Custom Field Name"
     subtitle="Enter the name of a field in your reference data."
     action_buttons={[
-      { label: "Cancel", isCancel: true },
       {
         label: "Add",
         isPrimary: true,

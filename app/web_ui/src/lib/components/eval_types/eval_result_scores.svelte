@@ -10,10 +10,7 @@
 
 {#if skipped_reason}
   <div class="flex flex-col gap-1 text-sm">
-    <div class="badge badge-warning badge-sm gap-1">
-      <i class="bi bi-skip-forward-fill text-xs"></i>
-      Skipped
-    </div>
+    <div class="badge badge-warning badge-sm gap-1">Skipped</div>
     <div class="text-gray-500 capitalize">
       {format_skipped_reason(skipped_reason)}
     </div>

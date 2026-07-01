@@ -339,6 +339,26 @@ export function formatEvalConfigName(
 ): string {
   if (eval_config.config_type === "v2") {
     const typeName = eval_config_to_detailed_ui_name(eval_config)
+    // V2 configs keep the model in their typed properties (not root-level).
+    // Surface it for model-backed types (e.g. llm_judge) like legacy configs did.
+    const props = eval_config.properties
+    const v2_model =
+      props && "model_name" in props && typeof props.model_name === "string"
+        ? props.model_name
+        : null
+    const v2_provider =
+      props &&
+      "model_provider" in props &&
+      typeof props.model_provider === "string"
+        ? props.model_provider
+        : null
+    if (v2_model && v2_provider) {
+      const model_name_value = model_name(v2_model, model_info)
+      if (compact) {
+        return eval_config.name + " — " + model_name_value
+      }
+      return `${eval_config.name} — ${typeName}, ${model_name_value} (${provider_name_from_id(v2_provider)})`
+    }
     return eval_config.name + " — " + typeName
   }
   const model_name_value = model_name(

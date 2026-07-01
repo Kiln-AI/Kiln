@@ -6,6 +6,7 @@ import {
   buildV2EvalTypeRegistry,
   extractV2Props,
   evalTypeJudgeLabel,
+  manualExampleSupport,
   type V2EvalType,
   type V2EvalTypeMetadata,
   type EvalTypeTag,
@@ -425,6 +426,41 @@ describe("extractV2Props", () => {
       const result = extractV2Props(config, t)
       expect(result).not.toBeNull()
       expect(result!.type).toBe(t)
+    }
+  })
+})
+
+describe("manualExampleSupport", () => {
+  // Only the types that inherently operate on the trace (no output-only mode)
+  // block manual examples.
+  const TRACE_ONLY_TYPES: V2EvalType[] = ["tool_call_check", "step_count_check"]
+
+  const MANUAL_SUPPORTED_TYPES: V2EvalType[] = [
+    "exact_match",
+    "pattern_match",
+    "contains",
+    "set_check",
+    "llm_judge",
+    "code_eval",
+  ]
+
+  it("blocks manual examples for trace-only judge types", () => {
+    for (const t of TRACE_ONLY_TYPES) {
+      const result = manualExampleSupport(t)
+      expect(result.supported).toBe(false)
+      expect(result.reason).toBeTruthy()
+    }
+  })
+
+  it("allows manual examples for every other judge type", () => {
+    for (const t of MANUAL_SUPPORTED_TYPES) {
+      expect(manualExampleSupport(t)).toEqual({ supported: true, reason: null })
+    }
+  })
+
+  it("covers every eval type", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(() => manualExampleSupport(t)).not.toThrow()
     }
   })
 })

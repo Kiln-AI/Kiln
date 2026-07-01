@@ -416,16 +416,7 @@
   </div>
 </Dialog>
 
-<Dialog
-  bind:this={thinking_dialog}
-  title="Thinking Output"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
->
+<Dialog bind:this={thinking_dialog} title="Thinking Output">
   <div class="font-light text-sm whitespace-pre-wrap">
     {displayed_result?.intermediate_outputs?.reasoning ||
       displayed_result?.intermediate_outputs?.chain_of_thought ||

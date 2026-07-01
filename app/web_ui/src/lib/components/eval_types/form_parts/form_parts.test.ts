@@ -624,7 +624,7 @@ describe("Examples modal", () => {
       props: { id_prefix: "test", value: "custom_expr" },
     })
     const dialog = container.querySelector('[data-testid="dialog-stub"]')
-    expect(dialog?.getAttribute("data-subtitle")).toBe(
+    expect(dialog?.getAttribute("data-sub-subtitle")).toBe(
       "Examples of extracting data from final_message and trace using Jinja.",
     )
   })

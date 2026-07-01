@@ -42,8 +42,10 @@
 <Dialog
   bind:this={dialog}
   title="Add Manual Example"
+  sub_subtitle="Create a temporary input/output pair to test this scorer. This example
+      won't be saved to your dataset."
+  width="wide"
   action_buttons={[
-    { label: "Cancel", isCancel: true },
     {
       label: "Use Example",
       isPrimary: true,
@@ -53,10 +55,6 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <p class="text-sm text-gray-500">
-      Create a temporary input/output pair to test this scorer. This example
-      won't be saved to your dataset.
-    </p>
     <div class="form-control">
       <label for="manual-input" class="label">
         <span class="label-text text-sm font-medium">Input</span>

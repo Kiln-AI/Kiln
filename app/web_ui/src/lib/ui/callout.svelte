@@ -9,6 +9,7 @@
 
   export let title: string
   export let description: string
+  export let example: string | null = null
   export let button_label: string | null = null
   export let button_href: string | null = null
   export let button_onclick: (() => void) | null = null
@@ -19,8 +20,14 @@
   <slot name="icon" slot="icon" />
   <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
     <div class="flex-grow min-w-0">
-      <div class="font-medium text-primary">{title}</div>
-      <div class="text-sm font-light text-gray-500">{description}</div>
+      <div class="flex items-center gap-2">
+        <div class="font-medium text-base">{title}</div>
+        <slot name="tags" />
+      </div>
+      <div class="text-sm text-gray-500">{description}</div>
+      {#if example}
+        <div class="text-sm text-gray-500 italic mt-1.5">{example}</div>
+      {/if}
     </div>
     {#if button_label}
       {#if button_href}

@@ -4,6 +4,7 @@
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import { formatExpandedContent } from "$lib/utils/format_expanded_content"
+  import { formatDate } from "$lib/utils/formatters"
 
   export let available_runs: (TaskRun | TaskRunOutput)[] = []
 
@@ -28,6 +29,7 @@
         <tr>
           <th>Input</th>
           <th>Output</th>
+          <th style="width: 110px">Created At</th>
           <th style="width: 80px"></th>
         </tr>
       </thead>
@@ -55,6 +57,9 @@
                 text_class="whitespace-pre-wrap break-words text-xs text-gray-600"
                 on:see_all={() => see_all_dialog.show("Output", output_text)}
               />
+            </td>
+            <td class="py-2 text-xs text-gray-600 align-middle">
+              {formatDate(run.created_at ?? undefined)}
             </td>
             <td class="py-2 text-center align-middle">
               <button

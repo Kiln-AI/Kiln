@@ -875,28 +875,13 @@
   width="wide"
   title={displayed_eval_config_dialog_title}
   subtitle={displayed_eval_config_dialog_subtitle}
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
 >
   {#if displayed_eval_config}
     <EvalConfigInstruction eval_config={displayed_eval_config} />
   {/if}
 </Dialog>
 
-<Dialog
-  bind:this={score_legend_dialog}
-  title="How to Compare Judges"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
->
+<Dialog bind:this={score_legend_dialog} title="How to Compare Judges">
   <div class="font-medium text-sm text-gray-500">
     Each score is a correlation score between human ratings and the automated
     judge's scores. Use these scores to find the judge which best matches human

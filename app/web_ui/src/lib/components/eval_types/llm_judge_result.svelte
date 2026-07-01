@@ -57,16 +57,7 @@
   {/if}
 </div>
 
-<Dialog
-  bind:this={reasoning_dialog}
-  title="Judge Reasoning"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
->
+<Dialog bind:this={reasoning_dialog} title="Judge Reasoning">
   <div class="font-light text-sm whitespace-pre-wrap">
     {reasoning}
   </div>

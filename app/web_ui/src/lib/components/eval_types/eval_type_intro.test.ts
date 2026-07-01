@@ -110,7 +110,7 @@ describe("EvalTypeIntro", () => {
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
-    const heading = container.querySelector("h2")
+    const heading = container.querySelector(".font-medium")
     expect(heading?.textContent).toBe("Code Judge")
   })
 
@@ -120,7 +120,7 @@ describe("EvalTypeIntro", () => {
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
-    const heading = container.querySelector("h2")
+    const heading = container.querySelector(".font-medium")
     expect(heading?.textContent).toBe("Exact Match Judge")
   })
 
@@ -130,7 +130,7 @@ describe("EvalTypeIntro", () => {
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
-    const heading = container.querySelector("h2")
+    const heading = container.querySelector(".font-medium")
     expect(heading?.textContent).toBe("Pattern Match Judge")
   })
 
@@ -140,7 +140,7 @@ describe("EvalTypeIntro", () => {
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
-    const heading = container.querySelector("h2")
+    const heading = container.querySelector(".font-medium")
     expect(heading?.textContent).toBe("Contains Judge")
   })
 
@@ -150,18 +150,18 @@ describe("EvalTypeIntro", () => {
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
-    const heading = container.querySelector("h2")
+    const heading = container.querySelector(".font-medium")
     expect(heading?.textContent).toBe("LLM as Judge")
     expect(heading?.textContent).not.toBe("LLM as Judge Judge")
   })
 
-  it("has max-w-[600px] class on the intro wrapper", () => {
+  it("does not constrain the intro wrapper width", () => {
     const evalType = "exact_match" as const
     const metadata = getV2EvalTypeMetadata(evalType)
     const { container } = render(EvalTypeIntro, {
       props: { evalType, metadata },
     })
     const intro = container.querySelector("[data-testid='eval-type-intro']")
-    expect(intro?.classList.contains("max-w-[600px]")).toBe(true)
+    expect(intro?.classList.contains("max-w-[600px]")).toBe(false)
   })
 })

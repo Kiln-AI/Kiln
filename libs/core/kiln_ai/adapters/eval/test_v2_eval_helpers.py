@@ -43,12 +43,12 @@ class TestExtractValue:
         assert skip == SkippedReason.extraction_failed
         assert detail is not None and "undefined" in detail
 
-    def test_none_result_skips(self):
+    def test_missing_trace_skips_with_missing_trace_reason(self):
         inp = _make_input(trace=None)
         value, skip, detail = extract_value("trace", inp)
         assert value is None
-        assert skip == SkippedReason.extraction_failed
-        assert detail is not None and "None" in detail
+        assert skip == SkippedReason.missing_trace
+        assert detail is not None and "trace" in detail
 
     def test_non_none_result_passes(self):
         inp = _make_input(trace=[{"role": "user", "content": "hi"}])
@@ -78,8 +78,8 @@ class TestCheckRequiredVars:
     def test_none_var_skips(self):
         inp = _make_input(trace=None)
         skip, detail = check_required_vars(["trace"], inp)
-        assert skip == SkippedReason.extraction_failed
-        assert detail is not None and "None" in detail
+        assert skip == SkippedReason.missing_trace
+        assert detail is not None and "trace" in detail
 
     def test_empty_list_passes(self):
         inp = _make_input()
@@ -89,7 +89,7 @@ class TestCheckRequiredVars:
     def test_first_none_stops_early(self):
         inp = _make_input(trace=None, task_input="present")
         skip, detail = check_required_vars(["trace", "task_input"], inp)
-        assert skip == SkippedReason.extraction_failed
+        assert skip == SkippedReason.missing_trace
         assert "trace" in (detail or "")
 
 
@@ -187,13 +187,14 @@ class TestExtractOutputValue:
         assert fail_result.skipped_reason is None
         assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
 
-    def test_none_result_fails_not_skips(self):
+    def test_missing_trace_skips_not_fails(self):
         inp = _make_input(trace=None)
         value, fail_result = extract_output_value("trace", inp, _SAMPLE_SCORES)
         assert value is None
         assert fail_result is not None
-        assert fail_result.skipped_reason is None
-        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
+        # Missing trace propagates as a skip, not a scored FAIL.
+        assert fail_result.skipped_reason == SkippedReason.missing_trace
+        assert fail_result.scores == {}
 
     def test_fromjson_invalid_json_fails_not_skips(self):
         inp = _make_input(final_message="not json")

@@ -16,6 +16,7 @@
   import LlmJudgeForm from "$lib/components/eval_types/llm_judge_form.svelte"
   import {
     getV2EvalTypeMetadata,
+    manualExampleSupport,
     type V2EvalType,
     type EvalTypeFormApi,
   } from "$lib/utils/eval_types/registry"
@@ -120,6 +121,11 @@
   ) {
     required_reference_fields = []
   }
+
+  // Output-source expression surfaced by the deterministic forms (drives the
+  // reference-key dropdown and required fields).
+  let active_value_expression: string | null = null
+  $: manual_example_support = manualExampleSupport(eval_config_type)
 
   // Unsaved-changes guard: activate after any real form interaction
   let has_typed = false
@@ -232,6 +238,15 @@
   }
 
   async function run_test() {
+    // Clear all prior test state up front so a re-run never leaves a stale
+    // result/warning/error on screen — even when an early-return validation
+    // path fires before the test runs.
+    test_error = null
+    test_result = null
+    test_has_valid_run = false
+    test_shape_warning = null
+    test_score_range_warning = null
+
     const eval_input = build_eval_input()
     if (!eval_input) return
 
@@ -255,11 +270,6 @@
 
     try {
       test_loading = true
-      test_error = null
-      test_result = null
-      test_has_valid_run = false
-      test_shape_warning = null
-      test_score_range_warning = null
       test_abort_controller = new AbortController()
 
       let result: TestV2EvalResponse
@@ -353,6 +363,9 @@
   }
 
   async function handle_submit() {
+    // Clear any prior error so a re-submit after a fix starts clean.
+    create_evaluator_error = null
+
     if (metadata?.requiresTrust) {
       try {
         const trust_response = await checkCodeEvalTrust(project_id)
@@ -365,6 +378,18 @@
       } catch (e) {
         create_evaluator_loading = false
         create_evaluator_error = createKilnError(e)
+        return
+      }
+    }
+
+    // Surface form validation errors before prompting to save without testing.
+    // A hard error means the config can't be saved at all, so the
+    // "Save Without Testing?" confirmation shouldn't appear yet.
+    if (!is_llm_judge && v2FormComponent?.validate) {
+      const validation_error = v2FormComponent.validate()
+      if (validation_error) {
+        create_evaluator_loading = false
+        create_evaluator_error = createKilnError(new Error(validation_error))
         return
       }
     }
@@ -472,24 +497,32 @@
   bind:this={form_container}
   submit_visible={false}
   keyboard_submit={false}
+  focus_on_mount={false}
   submit_label="Save"
   on:submit={handle_submit}
   bind:error={create_evaluator_error}
   bind:submitting={create_evaluator_loading}
   warn_before_unload={!complete && !!eval_config_type && has_typed}
 >
-  {#if metadata}
-    <EvalTypeIntro evalType={eval_config_type} {metadata} />
-  {/if}
-
   <!-- on:input/on:change capture real form interactions for unsaved-changes guard -->
+  <!--
+    Grid so the intro spans only the form column (row 1, col 1) while the
+    Judge Configuration and Test Judge panes sit side-by-side on row 2 at the
+    same level. Collapses to a single column below xl.
+  -->
   <div
-    class="flex flex-col xl:flex-row gap-8 xl:gap-16 xl:items-start"
+    class="grid grid-cols-1 gap-y-6 xl:gap-x-16 xl:items-start xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]"
     on:input={markDirty}
     on:change={markDirty}
   >
+    {#if metadata}
+      <div class="min-w-0 xl:col-start-1 xl:row-start-1">
+        <EvalTypeIntro evalType={eval_config_type} {metadata} />
+      </div>
+    {/if}
+
     <!-- Left: form -->
-    <div class="flex-1 min-w-0 flex flex-col gap-6">
+    <div class="min-w-0 flex flex-col gap-6 xl:col-start-1 xl:row-start-2">
       <div>
         <div class="text-xl font-bold">Judge Configuration</div>
       </div>
@@ -515,6 +548,13 @@
           bind:this={v2FormComponentRef}
           {reference_candidate_keys}
           bind:required_reference_fields
+          bind:output_value_expression={active_value_expression}
+        />
+      {:else if eval_config_type === "pattern_match" && metadata}
+        <svelte:component
+          this={metadata.createFormComponent}
+          bind:this={v2FormComponentRef}
+          bind:output_value_expression={active_value_expression}
         />
       {:else if eval_config_type === "tool_call_check" && metadata}
         <svelte:component
@@ -548,7 +588,7 @@
     </div>
 
     <!-- Right: test run pane -->
-    <div class="w-72 2xl:w-96 flex-none">
+    <div class="min-w-0 xl:col-start-2 xl:row-start-2">
       <EvalTestRunPane
         {runs_loading}
         {runs_error}
@@ -564,6 +604,7 @@
         {test_has_valid_run}
         {is_llm_judge}
         {can_submit_llm}
+        manual_example_supported={manual_example_support.supported}
         on:select={(e) => select_task_run(e.detail)}
         on:run={run_test}
         on:cancel={cancel_test}
@@ -578,10 +619,6 @@
   bind:this={trust_dialog}
   title="Trust Code and Project?"
   action_buttons={[
-    {
-      label: "Cancel",
-      isCancel: true,
-    },
     {
       label: "Run — I Trust This Code",
       isWarning: true,
@@ -616,10 +653,6 @@
   bind:this={confirm_save_dialog}
   title="Save Without Testing?"
   action_buttons={[
-    {
-      label: "Cancel",
-      isCancel: true,
-    },
     {
       label: "Save Anyway",
       isError: true,

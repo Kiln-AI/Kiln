@@ -13,6 +13,7 @@
 <script lang="ts">
   export let title: string = ""
   export let subtitle: string = ""
+  export let sub_subtitle: string = ""
   export let width: string = ""
   export let action_buttons: Array<Record<string, unknown>> = []
 
@@ -27,6 +28,7 @@
   data-title={title}
   data-width={width}
   data-subtitle={subtitle}
+  data-sub-subtitle={sub_subtitle}
 >
   <slot />
 </div>

@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 from jinja2 import Undefined
@@ -25,6 +26,16 @@ def build_binary_scores(
     return {score.json_key(): value for score in output_scores}
 
 
+# Matches the `trace` identifier as a whole word (e.g. `trace`, `trace[-1]`,
+# `trace | length`) without matching substrings like `retrace` or `tracer`.
+_TRACE_REFERENCE_RE = re.compile(r"\btrace\b")
+
+
+def references_trace(expression: str) -> bool:
+    """True if a Jinja expression references the `trace` variable."""
+    return bool(_TRACE_REFERENCE_RE.search(expression))
+
+
 def extract_value(
     expression: str | None,
     eval_input: EvalTaskInput,
@@ -36,6 +47,14 @@ def extract_value(
     """
     if expression is None:
         return eval_input.final_message, None, None
+    # An expression that needs the trace, but this run has none, is a
+    # data-availability skip (missing_trace) -- not an extraction failure.
+    if eval_input.trace is None and references_trace(expression):
+        return (
+            None,
+            SkippedReason.missing_trace,
+            f"Expression '{expression}' requires a trace, but this run has no trace",
+        )
     data = eval_input.model_dump()
     try:
         result = extract(expression, data)
@@ -69,8 +88,13 @@ def extract_output_value(
     Returns ``(value, None)`` on success, or ``(None, failing_result)`` when the
     extraction fails.
     """
-    value, skip, _detail = extract_value(expression, eval_input)
+    value, skip, detail = extract_value(expression, eval_input)
     if skip is not None:
+        # A missing trace is a data-availability skip (like missing reference
+        # data), not a model failure -- propagate it as a skip rather than
+        # scoring it as a FAIL.
+        if skip == SkippedReason.missing_trace:
+            return None, V2EvalResult(skipped_reason=skip, skipped_detail=detail)
         return None, V2EvalResult(
             scores=build_binary_scores(output_scores, passed=False),
         )
@@ -130,6 +154,11 @@ def check_required_vars(
     """Check that all required_var expressions resolve to non-Undefined/non-None values."""
     data = eval_input.model_dump()
     for var_expr in required_vars:
+        if eval_input.trace is None and references_trace(var_expr):
+            return (
+                SkippedReason.missing_trace,
+                f"required_var '{var_expr}' requires a trace, but this run has no trace",
+            )
         try:
             result = extract(var_expr, data)
         except JinjaExtractionError as e:

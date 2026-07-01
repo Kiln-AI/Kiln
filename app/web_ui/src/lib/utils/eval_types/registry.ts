@@ -58,6 +58,45 @@ export interface EvalTypeFormApi {
 
 export type EvalTypeTag = { label: string; tone: "default" | "beta" }
 
+export interface ManualExampleSupport {
+  /** Whether an input/output-only manual example can be used with this judge. */
+  supported: boolean
+  /** Tooltip reason when unsupported; null when supported. */
+  reason: string | null
+}
+
+const MANUAL_EXAMPLE_TRACE_REASON =
+  "Manual examples only provide an input and output. This judge can use the model's full execution trace, which a manual example doesn't include. Pick a dataset sample instead."
+
+/**
+ * Whether "add manual example" (input/output only, no trace) is offered for a
+ * given judge type.
+ *
+ * - tool_call_check / step_count_check inherently operate on the trace and have
+ *   no output-only mode, so manual examples are never useful for them.
+ * - Every other type (the deterministic string judges, llm_judge, code_eval)
+ *   can work from input/output alone. They *may* be configured to use the trace
+ *   (e.g. a "trace" output expression, or a judge prompt / code that reads it),
+ *   but a manual example is still allowed: if it turns out a trace is required,
+ *   the test run degrades to a clear "skipped -- requires a trace" result.
+ */
+export function manualExampleSupport(type: V2EvalType): ManualExampleSupport {
+  switch (type) {
+    case "tool_call_check":
+    case "step_count_check":
+      return { supported: false, reason: MANUAL_EXAMPLE_TRACE_REASON }
+    case "exact_match":
+    case "pattern_match":
+    case "contains":
+    case "set_check":
+    case "llm_judge":
+    case "code_eval":
+      return { supported: true, reason: null }
+    default:
+      return assertNever(type)
+  }
+}
+
 export interface V2EvalTypeMetadata {
   label: string
   description: string

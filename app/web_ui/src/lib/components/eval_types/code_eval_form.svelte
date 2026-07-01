@@ -104,10 +104,6 @@
   width="wide"
   action_buttons={[
     {
-      label: "Cancel",
-      isCancel: true,
-    },
-    {
       label: "Use This Example",
       isPrimary: true,
       action: use_example,

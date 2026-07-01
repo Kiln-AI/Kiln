@@ -742,12 +742,12 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
 
   it("uses xl breakpoint two-column layout (not lg)", async () => {
     const { container } = await renderBuilder("exact_match")
-    const flexRow = container.querySelector(".xl\\:flex-row")
-    expect(flexRow).not.toBeNull()
-    const lgFlexRow = container.querySelector(
-      ".lg\\:flex-row:not(.xl\\:flex-row)",
-    )
-    expect(lgFlexRow).toBeNull()
+    const grid = container.querySelector(".xl\\:items-start")
+    expect(grid).not.toBeNull()
+    expect(grid?.className).toContain("xl:grid-cols-")
+    expect(grid?.className).not.toContain("lg:grid-cols-")
+    expect(grid?.className).not.toContain("lg:flex-row")
+    expect(grid?.className).not.toContain("xl:flex-row")
   })
 
   it("does not render secondary-title block (icon + label heading)", async () => {
@@ -1204,24 +1204,27 @@ describe("Explainer placement + Judge Configuration header", () => {
     cleanup()
   })
 
-  it("renders eval_type_intro ABOVE the two-column row (sibling, not inside left column)", async () => {
+  it("renders eval_type_intro in its own grid row above the form column (not inside it)", async () => {
     const { container } = await renderBuilder("exact_match")
     const intro = container.querySelector("[data-testid='eval-type-intro']")
     expect(intro).not.toBeNull()
-    const columnsRow = container.querySelector(".xl\\:flex-row")
-    expect(columnsRow).not.toBeNull()
-    // intro should be a sibling preceding the columns, not a child
-    expect(columnsRow!.contains(intro)).toBe(false)
-    // intro should come before the columns row in document order
-    const comparison = intro!.compareDocumentPosition(columnsRow!)
+    // The form column sits in grid row 2, col 1; the intro sits in row 1, col 1.
+    const formColumn = container.querySelector(
+      ".xl\\:col-start-1.xl\\:row-start-2",
+    )
+    expect(formColumn).not.toBeNull()
+    // intro should not be inside the form column
+    expect(formColumn!.contains(intro)).toBe(false)
+    // intro (row 1) should come before the form column (row 2) in document order
+    const comparison = intro!.compareDocumentPosition(formColumn!)
     expect(comparison & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("renders 'Judge Configuration' header at the top of the left column", async () => {
     const { container } = await renderBuilder("exact_match")
-    const columnsRow = container.querySelector(".xl\\:flex-row")
-    expect(columnsRow).not.toBeNull()
-    const leftCol = columnsRow!.querySelector(".flex-1.min-w-0")
+    const leftCol = container.querySelector(
+      ".xl\\:col-start-1.xl\\:row-start-2",
+    )
     expect(leftCol).not.toBeNull()
     const heading = leftCol!.querySelector(".text-xl.font-bold")
     expect(heading).not.toBeNull()

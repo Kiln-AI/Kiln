@@ -5,7 +5,7 @@
     evalTypeJudgeLabel,
   } from "$lib/utils/eval_types/registry"
   import EvalTypeTags from "./select/eval_type_tags.svelte"
-  import CalloutCard from "$lib/ui/callout_card.svelte"
+  import Callout from "$lib/ui/callout.svelte"
   import EvalTypeIcon from "$lib/components/eval_types/eval_type_icon.svelte"
 
   export let evalType: V2EvalType
@@ -14,8 +14,13 @@
   $: introTitle = evalTypeJudgeLabel(evalType)
 </script>
 
-<div class="pb-2 max-w-[600px]" data-testid="eval-type-intro">
-  <CalloutCard testid="eval-type-intro-card">
+<div data-testid="eval-type-intro">
+  <Callout
+    testid="eval-type-intro-card"
+    title={introTitle}
+    description={metadata.explainer || metadata.description}
+    example={metadata.example || null}
+  >
     <div
       slot="icon"
       class="flex items-center justify-center w-full h-full"
@@ -23,22 +28,6 @@
     >
       <EvalTypeIcon {evalType} />
     </div>
-
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 mb-1">
-        <h2 class="font-medium text-base">{introTitle}</h2>
-        {#if metadata.tags.length > 0}
-          <EvalTypeTags tags={metadata.tags} />
-        {/if}
-      </div>
-      <p class="text-sm text-gray-500 leading-relaxed">
-        {metadata.explainer || metadata.description}
-      </p>
-      {#if metadata.example}
-        <p class="text-sm text-gray-500 italic mt-1.5">
-          {metadata.example}
-        </p>
-      {/if}
-    </div>
-  </CalloutCard>
+    <EvalTypeTags slot="tags" tags={metadata.tags} />
+  </Callout>
 </div>

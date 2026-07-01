@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
 
   export let reference_data: string = ""
   export let required_reference_fields: string[] = []
@@ -137,10 +138,10 @@
   class="flex items-center justify-between text-sm py-1"
   data-testid="reference-data-field"
 >
-  <span class="text-gray-500">Reference Data</span>
+  <span>Reference Data</span>
   <button
     type="button"
-    class="link text-sm {display_is_error
+    class="link text-xs {display_is_error
       ? 'text-error'
       : 'text-gray-500 hover:text-primary'}"
     on:click={open_editor}
@@ -157,7 +158,6 @@
   sub_subtitle="Values can be any valid JSON: strings, numbers, booleans, arrays, or objects."
   width="wide"
   action_buttons={[
-    { label: "Cancel", isCancel: true },
     {
       label: "Save",
       isPrimary: true,
@@ -182,8 +182,8 @@
           {/if}
           <input
             type="text"
-            class="input input-bordered input-sm w-full"
-            placeholder="key"
+            class="input input-bordered input-sm w-full font-mono"
+            placeholder="name"
             bind:value={row.key}
             data-testid="reference-data-key"
           />
@@ -210,7 +210,7 @@
             aria-label="Remove row"
             data-testid="reference-data-remove"
           >
-            <i class="bi bi-x-lg text-gray-400"></i>
+            <span class="w-4 h-4 block text-gray-400"><CloseIcon /></span>
           </button>
         </div>
       </div>
@@ -219,12 +219,11 @@
     <div>
       <button
         type="button"
-        class="btn btn-ghost btn-sm text-primary"
+        class="btn btn-ghost btn-xs text-primary"
         on:click={add_row}
         data-testid="reference-data-add"
       >
-        <i class="bi bi-plus-lg"></i>
-        Add Value
+        ＋ Add Value
       </button>
     </div>
 
