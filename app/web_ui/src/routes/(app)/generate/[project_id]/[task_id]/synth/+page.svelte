@@ -33,8 +33,9 @@
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
-  import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
-  import type { GuideSample } from "../data_guide_setup/guide_setup_form.svelte"
+  import AddExampleDialog, {
+    type GuideSample,
+  } from "$lib/components/add_example_dialog.svelte"
   import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
 
   let guidance_data: SynthDataGuidanceDataModel =
