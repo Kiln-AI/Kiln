@@ -5,6 +5,8 @@
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
   import type { TaskRun, TaskRunOutput } from "$lib/types"
 
+  export let project_id: string
+  export let task_id: string
   export let available_runs: TaskRunOutput[] = []
   export let manual_example_supported: boolean = true
 
@@ -54,5 +56,7 @@
 
 <ManualExampleDialog
   bind:this={manual_dialog}
+  {project_id}
+  {task_id}
   on:confirm={handle_manual_confirm}
 />

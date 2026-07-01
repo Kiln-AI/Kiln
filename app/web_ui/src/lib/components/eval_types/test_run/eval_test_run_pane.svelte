@@ -9,6 +9,8 @@
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
+  export let project_id: string
+  export let task_id: string
   export let runs_loading: boolean = false
   export let runs_error: KilnError | null = null
   export let available_runs: TaskRunOutput[] = []
@@ -243,6 +245,8 @@
 
 <TestRunBrowseDialog
   bind:this={browse_dialog}
+  {project_id}
+  {task_id}
   {available_runs}
   {manual_example_supported}
   on:select={handle_browse_select}

@@ -20,6 +20,15 @@ vi.mock("$app/navigation", () => ({
   goto: vi.fn(),
 }))
 
+// ManualExampleDialog now wraps the shared AddExampleDialog. That dialog fetches
+// the task schema in onMount, which never runs under the SSR-style render used
+// here — so stub it. The stub emits the same `submit` event, letting us test
+// the wrapper's prop wiring and submit→confirm conversion.
+vi.mock("$lib/components/add_example_dialog.svelte", async () => {
+  const Stub = await import("../__tests__/add_example_dialog_stub.svelte")
+  return { default: Stub.default }
+})
+
 // Dynamic imports after mocks
 const EvalTestRunPane = (await import("./eval_test_run_pane.svelte")).default
 const TestRunInputCard = (await import("./test_run_input_card.svelte")).default
@@ -55,6 +64,32 @@ function makeRun(
 
 function makeKilnError(msg: string) {
   return { getMessage: () => msg }
+}
+
+// Drive the stubbed AddExampleDialog: fill its input/output fields and click
+// its Add button, which dispatches the shared `submit` event.
+async function fillManualExample(
+  container: HTMLElement,
+  input: string,
+  output: string,
+) {
+  const inputField = container.querySelector(
+    '[data-testid="stub-input"]',
+  ) as HTMLTextAreaElement
+  const outputField = container.querySelector(
+    '[data-testid="stub-output"]',
+  ) as HTMLTextAreaElement
+  await fireEvent.input(inputField, { target: { value: input } })
+  await fireEvent.input(outputField, { target: { value: output } })
+  await tick()
+}
+
+async function clickAdd(container: HTMLElement) {
+  const addBtn = container.querySelector(
+    '[data-testid="stub-add"]',
+  ) as HTMLButtonElement
+  expect(addBtn).not.toBeNull()
+  await fireEvent.click(addBtn)
 }
 
 const run1 = makeRun("r1", "input one", "output one")
@@ -897,35 +932,15 @@ describe("TestRunBrowseDialog", () => {
     expect(dialogStub).not.toBeNull()
   })
 
-  it("handle_manual_confirm dispatches ephemeral run via select event", async () => {
-    resetActionButtons()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container, component } = render(ManualExampleDialog as any)
+  it("handle_manual_confirm dispatches ephemeral run via confirm event", async () => {
+    const { container, component } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
     const handler = vi.fn()
     component.$on("confirm", handler)
 
-    const inputTextarea = container.querySelector(
-      '[data-testid="manual-input"]',
-    ) as HTMLTextAreaElement
-    const outputTextarea = container.querySelector(
-      '[data-testid="manual-output"]',
-    ) as HTMLTextAreaElement
-    await fireEvent.input(inputTextarea, {
-      target: { value: "manual input" },
-    })
-    await fireEvent.input(outputTextarea, {
-      target: { value: "manual output" },
-    })
-    await tick()
-
-    const buttons = actionButtonsByTitle["Add Manual Example"]
-    expect(buttons).toBeDefined()
-    const useExampleBtn = buttons?.find(
-      (b) => b.label === "Use Example",
-    ) as Record<string, unknown>
-    expect(useExampleBtn).toBeDefined()
-    expect(typeof useExampleBtn.action).toBe("function")
-    ;(useExampleBtn.action as () => boolean)()
+    await fillManualExample(container, "manual input", "manual output")
+    await clickAdd(container)
 
     expect(handler).toHaveBeenCalledTimes(1)
     const detail = handler.mock.calls[0][0].detail
@@ -951,31 +966,14 @@ describe("ManualExampleDialog ephemeral flow", () => {
   })
 
   it("ephemeral run constructed by ManualExampleDialog has no id or path", async () => {
-    resetActionButtons()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container, component } = render(ManualExampleDialog as any)
+    const { container, component } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
     const handler = vi.fn()
     component.$on("confirm", handler)
 
-    const inputTextarea = container.querySelector(
-      '[data-testid="manual-input"]',
-    ) as HTMLTextAreaElement
-    const outputTextarea = container.querySelector(
-      '[data-testid="manual-output"]',
-    ) as HTMLTextAreaElement
-    await fireEvent.input(inputTextarea, {
-      target: { value: "ephemeral input" },
-    })
-    await fireEvent.input(outputTextarea, {
-      target: { value: "ephemeral output" },
-    })
-    await tick()
-
-    const buttons = actionButtonsByTitle["Add Manual Example"]
-    const useExampleBtn = buttons?.find(
-      (b) => b.label === "Use Example",
-    ) as Record<string, unknown>
-    ;(useExampleBtn.action as () => boolean)()
+    await fillManualExample(container, "ephemeral input", "ephemeral output")
+    await clickAdd(container)
 
     expect(handler).toHaveBeenCalledTimes(1)
     const detail = handler.mock.calls[0][0].detail
@@ -985,24 +983,33 @@ describe("ManualExampleDialog ephemeral flow", () => {
     expect(detail.tags).toEqual([])
   })
 
-  it("renders dialog and ephemeral note without API calls", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
+  it("does not dispatch a confirm when both fields are empty", async () => {
+    const { container, component } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
+    const handler = vi.fn()
+    component.$on("confirm", handler)
 
-    const dialog = container.querySelector('[data-title="Add Manual Example"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog?.getAttribute("data-sub-subtitle")).toContain(
-      "won't be saved",
-    )
+    await fillManualExample(container, "   ", "")
+    await clickAdd(container)
 
-    const inputTextarea = container.querySelector(
-      '[data-testid="manual-input"]',
-    ) as HTMLTextAreaElement
-    const outputTextarea = container.querySelector(
-      '[data-testid="manual-output"]',
-    ) as HTMLTextAreaElement
-    expect(inputTextarea).not.toBeNull()
-    expect(outputTextarea).not.toBeNull()
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it("configures the shared dialog for manual-only entry", () => {
+    const { container } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
+
+    const stub = container.querySelector('[data-testid="add-example-stub"]')
+    expect(stub).not.toBeNull()
+    expect(stub?.getAttribute("data-title")).toBe("Add Manual Example")
+    expect(stub?.getAttribute("data-sub-subtitle")).toContain("won't be saved")
+    expect(stub?.getAttribute("data-manual-only")).toBe("true")
+    expect(stub?.getAttribute("data-project-id")).toBe("p1")
+    expect(stub?.getAttribute("data-task-id")).toBe("t1")
+    expect(stub?.getAttribute("data-submit-label")).toBe("Use Example")
+    expect(stub?.getAttribute("data-disable-when-empty")).toBe("true")
   })
 })
 
@@ -1015,79 +1022,55 @@ describe("ManualExampleDialog", () => {
     cleanup()
   })
 
-  it("renders input and output textareas", () => {
+  it("renders the shared add-example dialog", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
+    const { container } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
 
-    const inputTextarea = container.querySelector(
-      '[data-testid="manual-input"]',
-    )
-    const outputTextarea = container.querySelector(
-      '[data-testid="manual-output"]',
-    )
-    expect(inputTextarea).not.toBeNull()
-    expect(outputTextarea).not.toBeNull()
+    expect(
+      container.querySelector('[data-testid="add-example-stub"]'),
+    ).not.toBeNull()
   })
 
-  it("renders both textareas empty by default", () => {
+  it("captures both input and output sides", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
+    const { container } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
 
-    const inputTextarea = container.querySelector(
-      '[data-testid="manual-input"]',
-    ) as HTMLTextAreaElement
-    const outputTextarea = container.querySelector(
-      '[data-testid="manual-output"]',
-    ) as HTMLTextAreaElement
-    expect(inputTextarea?.value).toBe("")
-    expect(outputTextarea?.value).toBe("")
+    const stub = container.querySelector('[data-testid="add-example-stub"]')
+    expect(stub?.getAttribute("data-include-input")).toBe("true")
+    expect(stub?.getAttribute("data-include-output")).toBe("true")
   })
 
-  it("dialog title says Add Manual Example", () => {
+  it("passes manual-only, title and ephemeral note to the dialog", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
+    const { container } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
 
-    const dialog = container.querySelector('[data-title="Add Manual Example"]')
-    expect(dialog).not.toBeNull()
+    const stub = container.querySelector('[data-testid="add-example-stub"]')
+    expect(stub?.getAttribute("data-manual-only")).toBe("true")
+    expect(stub?.getAttribute("data-title")).toBe("Add Manual Example")
+    expect(stub?.getAttribute("data-sub-subtitle")).toContain("won't be saved")
   })
 
-  it("includes note about temporary/ephemeral nature", () => {
+  it("forwards a submitted example as a confirm event", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
+    const { container, component } = render(ManualExampleDialog as any, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
+    const handler = vi.fn()
+    component.$on("confirm", handler)
 
-    const dialog = container.querySelector('[data-testid="dialog-stub"]')
-    expect(dialog?.getAttribute("data-sub-subtitle")).toContain(
-      "won't be saved",
-    )
-  })
+    await fillManualExample(container, "test input", "test output")
+    await clickAdd(container)
 
-  it("textareas are editable", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
-
-    const inputTextarea = container.querySelector(
-      '[data-testid="manual-input"]',
-    ) as HTMLTextAreaElement
-    const outputTextarea = container.querySelector(
-      '[data-testid="manual-output"]',
-    ) as HTMLTextAreaElement
-
-    await fireEvent.input(inputTextarea, { target: { value: "test input" } })
-    await fireEvent.input(outputTextarea, { target: { value: "test output" } })
-    await tick()
-
-    expect(inputTextarea.value).toBe("test input")
-    expect(outputTextarea.value).toBe("test output")
-  })
-
-  it("has labels for Input and Output", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(ManualExampleDialog as any)
-
-    const labels = container.querySelectorAll(".label-text")
-    const labelTexts = Array.from(labels).map((l) => l.textContent?.trim())
-    expect(labelTexts).toContain("Input")
-    expect(labelTexts).toContain("Output")
+    expect(handler).toHaveBeenCalledTimes(1)
+    const detail = handler.mock.calls[0][0].detail
+    expect(detail.input).toBe("test input")
+    expect(detail.output.output).toBe("test output")
   })
 })
 

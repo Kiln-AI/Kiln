@@ -590,6 +590,8 @@
     <!-- Right: test run pane -->
     <div class="min-w-0 xl:col-start-2 xl:row-start-2">
       <EvalTestRunPane
+        {project_id}
+        {task_id}
         {runs_loading}
         {runs_error}
         {available_runs}

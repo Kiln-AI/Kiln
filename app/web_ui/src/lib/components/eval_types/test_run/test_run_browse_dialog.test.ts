@@ -11,6 +11,15 @@ vi.mock("$lib/utils/format_expanded_content", () => ({
   formatExpandedContent: (text: string) => ({ isJson: false, value: text }),
 }))
 
+// TestRunBrowseDialog mounts ManualExampleDialog, which wraps the shared
+// AddExampleDialog. Stub the shared dialog — its onMount schema fetch never runs
+// under the SSR-style render here, and these tests only exercise the outer
+// picker/manual-link gating.
+vi.mock("$lib/components/add_example_dialog.svelte", async () => {
+  const Stub = await import("../__tests__/add_example_dialog_stub.svelte")
+  return { default: Stub.default }
+})
+
 const TestRunBrowseDialog = (await import("./test_run_browse_dialog.svelte"))
   .default
 
@@ -33,21 +42,31 @@ function manualLink(container: HTMLElement): HTMLButtonElement | undefined {
 describe("TestRunBrowseDialog manual example gating", () => {
   it("shows the manual example link when supported", () => {
     const { container } = render(TestRunBrowseDialog, {
-      props: { available_runs: runs, manual_example_supported: true },
+      props: {
+        project_id: "p1",
+        task_id: "t1",
+        available_runs: runs,
+        manual_example_supported: true,
+      },
     })
     expect(manualLink(container)).toBeDefined()
   })
 
   it("shows the manual example link by default", () => {
     const { container } = render(TestRunBrowseDialog, {
-      props: { available_runs: runs },
+      props: { project_id: "p1", task_id: "t1", available_runs: runs },
     })
     expect(manualLink(container)).toBeDefined()
   })
 
   it("hides the manual example link when unsupported", () => {
     const { container } = render(TestRunBrowseDialog, {
-      props: { available_runs: runs, manual_example_supported: false },
+      props: {
+        project_id: "p1",
+        task_id: "t1",
+        available_runs: runs,
+        manual_example_supported: false,
+      },
     })
     expect(manualLink(container)).toBeUndefined()
   })
