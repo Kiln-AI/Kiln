@@ -1,11 +1,3 @@
-<script lang="ts" context="module">
-  export type GuideSample = {
-    input: string
-    output: string
-    task_run_id?: string
-  }
-</script>
-
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -14,7 +6,9 @@
   import { isKilnAgentRunConfig } from "$lib/types"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import RunOptionsTiles from "./run_options_tiles.svelte"
-  import AddExampleDialog from "./add_example_dialog.svelte"
+  import AddExampleDialog, {
+    type GuideSample,
+  } from "$lib/components/add_example_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
@@ -42,7 +36,7 @@
   // feedback on the first refine pass.
   function build_guide_md(): string {
     const valid_examples = guide_examples.filter(
-      (e) => e.input.trim() || e.output.trim(),
+      (e) => (e.input ?? "").trim() || (e.output ?? "").trim(),
     )
     if (valid_examples.length === 0) {
       return ""
@@ -50,7 +44,7 @@
     const examples_body = valid_examples
       .map(
         (e, i) =>
-          `## Example ${i + 1}\n\`\`\`input\n${e.input}\n\`\`\`\n\n\`\`\`output\n${e.output}\n\`\`\``,
+          `## Example ${i + 1}\n\`\`\`input\n${e.input ?? ""}\n\`\`\`\n\n\`\`\`output\n${e.output ?? ""}\n\`\`\``,
       )
       .join("\n\n")
     return `# Reference Examples\n\n${examples_body}`
@@ -101,7 +95,7 @@
     page_error = null
     try {
       const valid_examples = guide_examples.filter(
-        (e) => e.input.trim() || e.output.trim(),
+        (e) => (e.input ?? "").trim() || (e.output ?? "").trim(),
       )
       if (valid_examples.length === 0) {
         page_error = new KilnError("At least one example is required.")
@@ -187,8 +181,12 @@
           </thead>
           <tbody>
             {#each guide_examples as example, i}
-              {@const input_content = formatExpandedContent(example.input)}
-              {@const output_content = formatExpandedContent(example.output)}
+              {@const input_content = formatExpandedContent(
+                example.input ?? "",
+              )}
+              {@const output_content = formatExpandedContent(
+                example.output ?? "",
+              )}
               <tr>
                 <td class="py-2">
                   <ClampedText
@@ -197,7 +195,7 @@
                       ? input_content.value
                       : null}
                     on:see_all={() =>
-                      see_all_dialog.show("Input", example.input)}
+                      see_all_dialog.show("Input", example.input ?? "")}
                   />
                 </td>
                 <td class="py-2">
@@ -207,7 +205,7 @@
                       ? output_content.value
                       : null}
                     on:see_all={() =>
-                      see_all_dialog.show("Output", example.output)}
+                      see_all_dialog.show("Output", example.output ?? "")}
                   />
                 </td>
                 <td class="py-2 p-0">

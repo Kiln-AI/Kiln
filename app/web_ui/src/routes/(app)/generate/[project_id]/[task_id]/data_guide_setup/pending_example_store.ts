@@ -1,5 +1,5 @@
 import { writable } from "svelte/store"
-import type { GuideSample } from "./guide_setup_form.svelte"
+import type { GuideSample } from "$lib/components/add_example_dialog.svelte"
 
 // One-shot handoff store: the synth page sets a pending example here when
 // the user adds it from the data-guide intro dialog, then navigates to
