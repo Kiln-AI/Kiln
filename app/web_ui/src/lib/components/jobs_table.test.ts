@@ -216,6 +216,7 @@ describe("JobsTable", () => {
     ])
     const { getByText } = render(JobsTable)
     expect(getByText(/Nightly gate/)).not.toBeNull()
+    expect(getByText(/Eval: Toxicity check/)).not.toBeNull()
     expect(getByText(/Judge: Magical Yeti \(G-Eval\)/)).not.toBeNull()
     // generate_outputs=true -> "Generate & judge" mode + candidate run config.
     expect(getByText(/Mode: Generate & judge/)).not.toBeNull()

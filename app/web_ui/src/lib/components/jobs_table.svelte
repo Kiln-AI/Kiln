@@ -322,6 +322,11 @@
                     >{jp.batch_name}</span
                   >
                   <div class="space-y-1 text-xs text-gray-500">
+                    {#if jp.eval_name}
+                      <div class="truncate" title={jp.eval_name}>
+                        Eval: {jp.eval_name}
+                      </div>
+                    {/if}
                     <div
                       class="truncate"
                       title="{jp.judge_name} ({judge_algorithm_display(
@@ -358,6 +363,9 @@
                       </div>
                     {/if}
                     <div>Max samples: {jp.max_samples}</div>
+                    {#if jp.stop_after_failures != null}
+                      <div>Stop after failures: {jp.stop_after_failures}</div>
+                    {/if}
                   </div>
                 {:else}
                   <span class="font-medium">{job_type_display(job.type)}</span>

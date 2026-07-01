@@ -156,7 +156,9 @@ def _fake_result() -> JudgeFeedbackBatchRunResult:
 
 @contextmanager
 def _stub_runner(result: JudgeFeedbackBatchRunResult):
-    async def fake_run(self, progress_callback=None) -> JudgeFeedbackBatchRunResult:
+    async def fake_run(
+        self, concurrency=None, progress_callback=None
+    ) -> JudgeFeedbackBatchRunResult:
         # Mimic the real runner streaming one progress tick before returning, so
         # the worker's live-progress wiring is exercised.
         if progress_callback is not None:
@@ -221,10 +223,10 @@ async def test_run_reports_progress_and_per_item_errors(
 
     # Progress streams per chunk (via the callback) and a final snapshot is
     # reported. Total is the planned (capped) count = min(train_set_size,
-    # max_samples) = min(10, 50) = 10, so success can reach total on full
-    # coverage (success=num_judged, error=len(errors), total=planned).
+    # max_samples) = min(10, 50) = 10. success excludes errors so success + error
+    # stays <= total: 5 judged, 1 errored -> success=4, error=1, total=10.
     assert len(ctx.progress) >= 2
-    assert ctx.progress[-1] == (5, 1, 10)
+    assert ctx.progress[-1] == (4, 1, 10)
 
 
 async def test_run_progress_total_is_capped_at_max_samples(
@@ -276,3 +278,25 @@ async def test_describe_publishes_properties(
     assert props.run_config_model_name == "gpt-4"
     assert props.target_tags == ["train_set"]
     assert props.max_samples == 50
+
+
+async def test_describe_judge_only_mode_leaves_run_config_blank(
+    resolve_project, task, eval_config, run_config
+):
+    # Judge-only mode (generate_outputs=False, no run_config_id): the run-config display fields are
+    # left blank, but the judge/eval/batch info still resolves.
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        target_tags=["train_set"],
+        eval_config_id="eval_config1",
+        generate_outputs=False,
+    )
+    props = await JudgeFeedbackBatchJobWorker().describe(params)
+
+    assert props.generate_outputs is False
+    assert props.run_config_name == ""
+    assert props.run_config_model_name == ""
+    assert props.run_config_model_provider == ""
+    assert props.judge_name == "Test Eval Config"
+    assert props.eval_name == "Test Eval"

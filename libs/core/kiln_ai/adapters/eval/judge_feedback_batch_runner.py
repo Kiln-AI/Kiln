@@ -178,6 +178,9 @@ class JudgeFeedbackBatchRunResult:
 
     failing_runs: list[JudgeFeedbackBatchRun]
     judged_runs: list[JudgeFeedbackBatchRun]
+    # num_judged counts every item ATTEMPTED this run (errored and cached items included), so it can
+    # exceed len(judged_runs) when items errored. For a scored-item count (e.g. a fail rate), use
+    # failing_count / len(judged_runs), NOT failing_count / num_judged.
     num_judged: int
     failing_count: int
     train_set_size: int
@@ -224,7 +227,7 @@ class JudgeFeedbackBatchRunner:
     ):
         task = judge_feedback_batch.parent_task()
         if task is None:
-            raise ValueError("Judge job must have a parent task")
+            raise ValueError("Judge feedback batch must have a parent task")
         eval = eval_config.parent_eval()
         if eval is None:
             raise ValueError("Eval config must have a parent eval")
@@ -302,12 +305,23 @@ class JudgeFeedbackBatchRunner:
         # a smaller concurrency in that mode.
         if concurrency is None:
             concurrency = 5 if job.generate_outputs else 25
+        # A caller-supplied concurrency of 0 would make range() raise; negatives would mis-chunk.
+        concurrency = max(1, concurrency)
 
         candidates = [
             run for run in self.task.runs(readonly=True) if self._matches_tags(run)
         ]
         train_set_size = len(candidates)
-        self._rng.shuffle(candidates)
+        if stop_after is None:
+            # Gate mode: select deterministically (sorted by id) before capping, so two runs over
+            # the same tag set (e.g. candidate vs baseline batch) cover the SAME task_run_ids and can
+            # be paired. A random sample would pick disjoint subsets whenever the matching set
+            # exceeds max_samples, silently defeating the pairing this mode exists for.
+            candidates.sort(key=lambda run: str(run.id))
+        else:
+            # Train-signal mode: a random minibatch is fine (and desirable for variety), since the
+            # caller only wants some failing examples, not a stable paired subset.
+            self._rng.shuffle(candidates)
         candidates = candidates[: job.max_samples]
 
         # Reuse previously-judged results to avoid re-paying the judge — but only when judging
@@ -382,6 +396,9 @@ class JudgeFeedbackBatchRunner:
         per_dimension = aggregate_normalized_scores(
             judged_runs, self.eval.output_scores
         )
+        # Mean-of-means: each dimension is weighted equally regardless of how many runs carried a
+        # value for it (a dimension scored on 2 runs counts as much as one scored on 50). This is a
+        # simple overall gate signal, not a flat mean over every individual score.
         overall = (
             sum(per_dimension.values()) / len(per_dimension) if per_dimension else None
         )
@@ -469,7 +486,7 @@ class JudgeFeedbackBatchRunner:
             )
             save_error = JudgeFeedbackBatchItemError(
                 task_run_id=str(task_run.id),
-                error=f"Error saving judge result: {e}",
+                error=f"Error saving judge result: {_error_detail(e)}",
             )
 
         return _ScoredItem(

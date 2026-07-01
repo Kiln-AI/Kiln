@@ -24,16 +24,21 @@ from pydantic import BaseModel, Field, model_validator
 
 
 def judge_feedback_batch_from_id(
-    project_id: str, task_id: str, judge_feedback_batch_id: str
+    project_id: str,
+    task_id: str,
+    judge_feedback_batch_id: str,
+    task: Task | None = None,
 ) -> JudgeFeedbackBatch:
-    task = task_from_id(project_id, task_id)
+    # Accept an already-resolved task to avoid a redundant disk load when the caller has one.
+    if task is None:
+        task = task_from_id(project_id, task_id)
     judge_feedback_batch = JudgeFeedbackBatch.from_id_and_parent_path(
         judge_feedback_batch_id, task.path
     )
     if judge_feedback_batch is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Judge job not found. ID: {judge_feedback_batch_id}",
+            detail=f"Judge feedback batch not found. ID: {judge_feedback_batch_id}",
         )
     return judge_feedback_batch
 
@@ -283,8 +288,9 @@ def connect_judge_feedback_batch_api(app: FastAPI):
             str, Path(description="The unique identifier of the judge feedback batch.")
         ],
     ) -> JudgeFeedbackBatchRunResponse:
-        """Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
-        the failing examples + feedback.
+        """Run a judge feedback batch: sample tagged dataset items, judge their outputs (existing, or
+        freshly generated when the batch has generate_outputs=true), and return the failing examples
+        + feedback.
 
         Runs synchronously and returns once judging completes. Each result is persisted as a child
         run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
@@ -294,7 +300,7 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
         judge_feedback_batch = judge_feedback_batch_from_id(
-            project_id, task_id, judge_feedback_batch_id
+            project_id, task_id, judge_feedback_batch_id, task=task
         )
         eval_config = eval_config_from_id(task, judge_feedback_batch.eval_config_id)
         validate_judge_eval(eval_config, judge_feedback_batch.generate_outputs)

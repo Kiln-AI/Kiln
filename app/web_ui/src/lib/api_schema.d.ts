@@ -2139,8 +2139,9 @@ export interface paths {
         put?: never;
         /**
          * Run Judge Feedback Batch
-         * @description Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
-         *     the failing examples + feedback.
+         * @description Run a judge feedback batch: sample tagged dataset items, judge their outputs (existing, or
+         *     freshly generated when the batch has generate_outputs=true), and return the failing examples
+         *     + feedback.
          *
          *     Runs synchronously and returns once judging completes. Each result is persisted as a child
          *     run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts

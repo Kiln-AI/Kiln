@@ -419,6 +419,69 @@ async def test_hit_cap_when_failures_sparse(mock_task, data_source):
 
 
 @pytest.mark.asyncio
+async def test_gate_mode_hit_cap_when_set_exceeds_max_samples(mock_task, data_source):
+    # Gate mode (stop_after_failures=None) with more matching items than max_samples: judge exactly
+    # max_samples, report hit_cap=True (coverage was capped), and select deterministically so the
+    # capped subset is stable/pairable across runs.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=3
+    )
+    for i in range(8):
+        make_train_run(mock_task, data_source, f"item-{i}")
+
+    result = await run_job(job, eval_config, lambda tr: {"accuracy": 1.0})
+
+    assert result.train_set_size == 8
+    assert result.num_judged == 3
+    assert result.hit_cap is True
+    assert len(result.judged_runs) == 3
+
+    # Deterministic (sorted-by-id) capping: a second identical run covers the SAME task_run_ids.
+    job2 = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=3
+    )
+    result2 = await run_job(job2, eval_config, lambda tr: {"accuracy": 1.0}, seed=999)
+    assert {r.task_run_id for r in result.judged_runs} == {
+        r.task_run_id for r in result2.judged_runs
+    }
+
+
+@pytest.mark.asyncio
+async def test_empty_candidate_set(mock_task, data_source):
+    # No dataset item carries the target tags: the chunk loop never runs, so counts are zero, all
+    # aggregate signals are None/empty, hit_cap is False, and no callback fires.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, target_tags=["nonexistent"], stop_after_failures=None
+    )
+    make_train_run(mock_task, data_source, "item-0", tags=["other"])
+
+    ticks: list[tuple[int, int, int]] = []
+
+    async def on_progress(*args):
+        ticks.append(args)
+
+    result = await run_job(
+        job, eval_config, lambda tr: {"accuracy": 1.0}, progress_callback=on_progress
+    )
+
+    assert result.train_set_size == 0
+    assert result.num_judged == 0
+    assert result.failing_count == 0
+    assert result.hit_cap is False
+    assert result.judged_runs == []
+    assert result.failing_runs == []
+    assert result.errors == []
+    assert result.mean_normalized_scores == {}
+    assert result.mean_normalized_score is None
+    assert result.total_usage is None
+    assert ticks == []
+
+
+@pytest.mark.asyncio
 async def test_exhausted_train_set_is_not_hit_cap(mock_task, data_source):
     eval = make_eval(mock_task)
     eval_config = make_eval_config(eval)

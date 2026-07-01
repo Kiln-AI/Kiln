@@ -85,3 +85,31 @@ def test_run_parent_typing(task):
         parent=job, task_run_id="d1", scores={"accuracy": 1.0}, passed=True
     )
     assert run.parent_judge_feedback_batch().id == job.id
+
+
+def test_generate_outputs_requires_run_config_id(task):
+    with pytest.raises(ValueError, match="run_config_id is required"):
+        JudgeFeedbackBatch(
+            name="scan",
+            target_tags=["t"],
+            eval_config_id="ec1",
+            generate_outputs=True,
+            parent=task,
+        )
+    # generate_outputs=True with a run_config_id is valid.
+    job = JudgeFeedbackBatch(
+        name="scan",
+        target_tags=["t"],
+        eval_config_id="ec1",
+        generate_outputs=True,
+        run_config_id="rc1",
+        parent=task,
+    )
+    assert job.generate_outputs is True
+
+
+def test_empty_target_tags_rejected(task):
+    with pytest.raises(ValueError, match="at least one tag"):
+        JudgeFeedbackBatch(
+            name="scan", target_tags=[], eval_config_id="ec1", parent=task
+        )

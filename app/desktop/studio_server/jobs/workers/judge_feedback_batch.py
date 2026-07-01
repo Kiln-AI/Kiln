@@ -216,8 +216,13 @@ class JudgeFeedbackBatchJobWorker(
         async def report_progress(
             num_judged: int, error_count: int, planned_total: int
         ) -> None:
+            # num_judged counts every attempted item (errors included), so subtract the errors to
+            # keep success and error disjoint — the job progress contract is processed = success +
+            # error. Otherwise an errored item is counted in both and the bar overshoots 100%.
             await ctx.report_progress(
-                success=num_judged, error=error_count, total=planned_total
+                success=num_judged - error_count,
+                error=error_count,
+                total=planned_total,
             )
 
         result = await runner.run(progress_callback=report_progress)
@@ -232,13 +237,16 @@ class JudgeFeedbackBatchJobWorker(
                 run_config_id=params.run_config_id,
             )
 
-        # Final snapshot against the planned (capped) count — min(train_set_size,
-        # max_samples) is exactly how many items the run judges, so success ==
-        # total on full coverage (streaming totals use the same denominator).
+        # Final snapshot against the planned (capped) count = min(train_set_size, max_samples), the
+        # number of items the run judges in gate mode (so success + error reaches total on full
+        # coverage). In train-signal mode the run stops early once enough failures are found, so the
+        # bar can legitimately end below total — the job still succeeds. success excludes errors to
+        # keep success + error <= total (see report_progress above).
+        error_count = len(result.errors)
         planned_total = min(result.train_set_size, params.max_samples)
         await ctx.report_progress(
-            success=result.num_judged,
-            error=len(result.errors),
+            success=result.num_judged - error_count,
+            error=error_count,
             total=planned_total or result.num_judged,
         )
 

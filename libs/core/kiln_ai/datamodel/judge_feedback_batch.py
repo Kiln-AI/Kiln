@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, List, Union
 
-from pydantic import Field
+from pydantic import Field, model_validator
+from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -108,6 +109,18 @@ class JudgeFeedbackBatch(
         le=1.0,
         description="The normalized (0-1) pass bar. A score below this counts as failing.",
     )
+
+    @model_validator(mode="after")
+    def validate_config(self) -> Self:
+        # generate_outputs runs run_config_id on each item, so it must be set (defense in depth: the
+        # API request model validates this too, but the datamodel can be built directly).
+        if self.generate_outputs and not self.run_config_id:
+            raise ValueError("run_config_id is required when generate_outputs is true")
+        # Empty target_tags matches every item (empty subset), which is an ambiguous footgun for a
+        # "sample by tag" config — require at least one, mirroring the field description.
+        if not self.target_tags:
+            raise ValueError("target_tags must contain at least one tag")
+        return self
 
     def parent_task(self) -> Union["Task", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "Task":
