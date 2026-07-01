@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -692,6 +693,121 @@ async def test_get_runs_task_not_found(client):
 
     assert response.status_code == 404
     assert response.json()["message"] == "Task not found"
+
+
+def _make_run_with_date(task, created_at):
+    """Create a TaskRun with a specific created_at timestamp."""
+    run = TaskRun(
+        parent=task,
+        input="test",
+        input_source=DataSource(
+            type=DataSourceType.human,
+            properties={"created_by": "test"},
+        ),
+        output=TaskOutput(
+            output="test",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "test",
+                    "model_provider": "test",
+                    "adapter_name": "test",
+                },
+            ),
+        ),
+        created_at=created_at,
+    )
+    run.save_to_file()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_get_runs_ordered_newest_first(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    old_run = _make_run_with_date(task, datetime(2024, 1, 1, tzinfo=timezone.utc))
+    mid_run = _make_run_with_date(task, datetime(2024, 6, 1, tzinfo=timezone.utc))
+    new_run = _make_run_with_date(task, datetime(2024, 12, 1, tzinfo=timezone.utc))
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task = MagicMock()
+        mock_task.runs.return_value = [old_run, new_run, mid_run]
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
+
+    assert response.status_code == 200
+    result = response.json()
+    ids = [r["id"] for r in result]
+    assert ids == [new_run.id, mid_run.id, old_run.id]
+
+
+@pytest.mark.asyncio
+async def test_get_runs_with_limit(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    runs = [
+        _make_run_with_date(task, datetime(2024, 1, i + 1, tzinfo=timezone.utc))
+        for i in range(10)
+    ]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task = MagicMock()
+        mock_task.runs.return_value = runs
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs",
+            params={"limit": 3},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 3
+    returned_ids = [r["id"] for r in result]
+    assert returned_ids == [runs[9].id, runs[8].id, runs[7].id]
+
+
+@pytest.mark.asyncio
+async def test_get_runs_without_limit_returns_all(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    runs = [
+        _make_run_with_date(task, datetime(2024, 1, i + 1, tzinfo=timezone.utc))
+        for i in range(5)
+    ]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task = MagicMock()
+        mock_task.runs.return_value = runs
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 5
+
+
+@pytest.mark.asyncio
+async def test_get_runs_limit_validation(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    response = client.get(
+        f"/api/projects/{project.id}/tasks/{task.id}/runs",
+        params={"limit": 0},
+    )
+    assert response.status_code == 422
+
+    response = client.get(
+        f"/api/projects/{project.id}/tasks/{task.id}/runs",
+        params={"limit": -1},
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
