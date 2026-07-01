@@ -4623,7 +4623,7 @@ export interface components {
         };
         /**
          * CreateTaskRunRequest
-         * @description Request model for creating a synthetic TaskRun directly (without running a model).
+         * @description Request model for creating a TaskRun directly (without running a model).
          */
         CreateTaskRunRequest: {
             /**
@@ -4645,20 +4645,30 @@ export interface components {
             /** @description Optional rating for the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
             /**
-             * Model Name
-             * @description The name of the model used to generate the data
+             * @description The type of the data source (synthetic, human, etc.)
+             * @default synthetic
              */
-            model_name: string;
+            input_source_type: components["schemas"]["DataSourceType"];
+            /**
+             * Model Name
+             * @description The name of the model used to generate the data (required for synthetic source)
+             */
+            model_name?: string | null;
             /**
              * Model Provider
-             * @description The provider of the model used to generate the data
+             * @description The provider of the model used to generate the data (required for synthetic source)
              */
-            model_provider: string;
+            model_provider?: string | null;
             /**
              * Adapter Name
-             * @description The name of the adapter used to generate the data
+             * @description The name of the adapter used to generate the data (required for synthetic source)
              */
-            adapter_name: string;
+            adapter_name?: string | null;
+            /**
+             * Created By
+             * @description The name of the human who created the data (only allowed for human source)
+             */
+            created_by?: string | null;
         };
         /** CreateVectorStoreConfigRequest */
         CreateVectorStoreConfigRequest: {
