@@ -56,10 +56,15 @@ def format_auto_mode_state(run_id: str, *, flag_on: bool, working: bool) -> byte
     )
 
 
-def format_user_message(content: str) -> bytes:
+def format_user_message(content: str, message_id: str | None = None) -> bytes:
     """Echo a user message onto the run stream so observers (including the
-    sender) render it immediately, consistent with re-attach/replay."""
-    return _encode({"type": "user-message", "content": content})
+    sender) render it immediately, consistent with re-attach/replay. ``message_id``
+    is the injected message's stable id, so a client can dedupe the echo if a
+    buffer replay re-emits it for a message it already shows."""
+    payload: dict[str, str] = {"type": "user-message", "content": content}
+    if message_id is not None:
+        payload["id"] = message_id
+    return _encode(payload)
 
 
 def format_tool_exec_start(tool_count: int) -> bytes:

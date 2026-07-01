@@ -150,8 +150,10 @@ class AutoChatRun:
 
     def echo_user_message(self, message: InboundMessage) -> None:
         """Echo a user message onto the bus + current-turn buffer so observers
-        (including the sender) render it immediately, consistent with replay."""
-        self.emit(format_user_message(message.content))
+        (including the sender) render it immediately, consistent with replay. The
+        message id rides along so a re-attaching client can dedupe the replayed
+        echo against a message it already shows."""
+        self.emit(format_user_message(message.content, message.id))
 
     def emit(self, payload: bytes) -> None:
         """Append to the current-turn buffer and publish to subscribers.

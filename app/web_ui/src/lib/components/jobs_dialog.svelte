@@ -22,7 +22,7 @@
   bind:this={dialog}
   title="Jobs"
   width="wide"
-  subtitle="Background work for the current project. Jobs keep running even if you leave this page."
+  subtitle="Track background work for the current project."
   sub_subtitle="View full page →"
   sub_subtitle_link="/jobs"
 >

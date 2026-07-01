@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncGenerator, Callable, Literal, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .models import JobRecord
 
@@ -13,8 +13,14 @@ _T = TypeVar("_T")
 class JobEvent(BaseModel):
     """A single bus event. Per-job events carry the full record (idempotent snapshot)."""
 
-    event: Literal["snapshot", "job", "deleted", "ping"]
-    data: dict[str, Any]
+    event: Literal["snapshot", "job", "deleted", "ping"] = Field(
+        description="Event kind: an initial 'snapshot' of all jobs, a per-job 'job' "
+        "update, a 'deleted' notification, or a 'ping' keepalive."
+    )
+    data: dict[str, Any] = Field(
+        description="Event payload. For 'snapshot' and 'job' events this is the full "
+        "job record(s); for 'deleted' it identifies the removed job."
+    )
 
 
 class KeepalivePing:

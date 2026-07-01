@@ -63,7 +63,7 @@ describe("JobsTable", () => {
     ])
     const { getByText } = render(JobsTable)
 
-    await fireEvent.click(getByText("Clear completed"))
+    await fireEvent.click(getByText("Clear Completed"))
 
     await waitFor(() => {
       expect(api.delete_job).toHaveBeenCalledTimes(3)
@@ -80,7 +80,7 @@ describe("JobsTable", () => {
     api.delete_job.mockRejectedValueOnce(new Error("boom"))
     const { getByText, getByRole } = render(JobsTable)
 
-    await fireEvent.click(getByText("Clear completed"))
+    await fireEvent.click(getByText("Clear Completed"))
 
     await waitFor(() => {
       expect(getByRole("alert").textContent).toContain("boom")
@@ -130,14 +130,14 @@ describe("JobsTable", () => {
     const { container, queryByText } = render(JobsTable)
     expect(container.querySelector(".loading.loading-spinner")).not.toBeNull()
     // Neither the table nor the empty state should render while syncing.
-    expect(queryByText("No jobs yet")).toBeNull()
+    expect(queryByText("This project has no tracked jobs")).toBeNull()
     expect(container.querySelector("table")).toBeNull()
   })
 
   it("shows the empty state when there are no jobs", () => {
     jobs.set([])
     const { getByText } = render(JobsTable)
-    expect(getByText("No jobs yet")).not.toBeNull()
+    expect(getByText("This project has no tracked jobs")).not.toBeNull()
   })
 
   it("shows the connection-error state when errored before first sync", () => {

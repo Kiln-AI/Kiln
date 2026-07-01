@@ -61,8 +61,12 @@ export interface AutoRunChatSink {
    * streaming while the runner works between events. ``false`` on burst end.
    */
   onWorkingChange: (working: boolean) => void
-  /** The runner echoed an injected user message; render it as a new user turn. */
-  onUserMessage: (content: string) => void
+  /**
+   * The runner echoed an injected user message; render it as a new user turn.
+   * ``echoId`` is the message's stable id, so the sink can render it idempotently
+   * (a buffer replay on re-attach re-emits the echo for a message already shown).
+   */
+  onUserMessage: (content: string, echoId?: string) => void
   /**
    * A burst ended but auto mode stays ON (asked_user / done / error /
    * max_rounds). The indicator persists; only the working sub-state clears.
@@ -150,8 +154,15 @@ export interface AutoRunStore {
    * Open the per-run events SSE and re-attach. ``initialWorking`` (from the
    * resolve response status) drives the thinking indicator immediately on
    * attach; omit it when the liveness isn't known up front (History restore).
+   * ``openInflightTurn`` opens a fresh assistant turn for the replayed in-flight
+   * round so it doesn't overwrite the last hydrated bubble — set on re-attach
+   * (resync / History restore), left false on the initial burst attach.
    */
-  attach(runId: string, initialWorking?: boolean): void
+  attach(
+    runId: string,
+    initialWorking?: boolean,
+    openInflightTurn?: boolean,
+  ): void
   /** Stop observing + clear the indicator without ending the run (navigation). */
   detach(): void
   /**
@@ -186,6 +197,22 @@ export function createAutoRunStore(): AutoRunStore {
 
   let sink: AutoRunChatSink | null = null
   let eventSource: EventSource | null = null
+  // On a re-attach (resync / History restore) the buffer replay carries ONLY the
+  // current in-flight round (the run buffer clears on every snapshot), but the
+  // restored/hydrated transcript's last assistant bubble holds earlier rounds.
+  // Without opening a fresh turn first, the in-flight round's first flush would
+  // overwrite that bubble (``draft.parts = next``) and destroy those rounds. So
+  // on re-attach we open a fresh assistant turn lazily — on the first assistant
+  // content of the in-flight round (or it's consumed by an injected-message echo,
+  // which opens its own turn). Lazy so an idle re-attach leaves no empty bubble.
+  let pendingInflightTurn = false
+
+  function consumeInflightTurn(): void {
+    if (pendingInflightTurn) {
+      pendingInflightTurn = false
+      sink?.beginAssistantTurn()
+    }
+  }
 
   function bind(newSink: AutoRunChatSink): void {
     sink = newSink
@@ -193,7 +220,12 @@ export function createAutoRunStore(): AutoRunStore {
 
   function buildProcessor(): StreamEventProcessor {
     return new StreamEventProcessor({
-      onAssistantMessage: (update) => sink?.onAssistantMessage(update),
+      onAssistantMessage: (update) => {
+        // First assistant content of a re-attached in-flight round: open a fresh
+        // turn so it renders into its own bubble instead of overwriting the last.
+        consumeInflightTurn()
+        sink?.onAssistantMessage(update)
+      },
       onChatTrace: (tid) => sink?.onChatTrace(tid),
       onContextUsage: (usage) => sink?.onContextUsage(usage),
       onCompactionStatus: (compacting) => sink?.onCompactionStatus(compacting),
@@ -210,6 +242,9 @@ export function createAutoRunStore(): AutoRunStore {
       eventSource.close()
       eventSource = null
     }
+    // A pending fresh-turn belongs to the stream we're tearing down; drop it so a
+    // later attach can't open a stray empty bubble.
+    pendingInflightTurn = false
   }
 
   function clearToOff(reason: string | null): void {
@@ -303,6 +338,9 @@ export function createAutoRunStore(): AutoRunStore {
       autoModeOn.set(true)
       setWorking(false)
       reconnecting.set(false)
+      // No in-flight round produced content (idle on/just-after re-attach) — drop
+      // the pending fresh-turn so we don't open an empty bubble.
+      pendingInflightTurn = false
       sink?.onAutoModeIdle(event.reason ?? null)
       return true
     }
@@ -313,9 +351,14 @@ export function createAutoRunStore(): AutoRunStore {
     if (event.type === "user-message") {
       // The runner echoed an injected user message. Render it as a fresh user
       // turn (then a new assistant turn for the burst it triggers) so every
-      // observer — including the sender — sees it, consistent with replay.
+      // observer — including the sender — sees it, consistent with replay. The
+      // echo id lets the sink dedupe a replayed echo (re-attach) against a
+      // message it already shows.
       setWorking(true)
-      sink?.onUserMessage(event.content ?? "")
+      // The echo opens (or dedupes into) its own assistant turn, so the in-flight
+      // round renders there — consume any pending fresh-turn to avoid a second.
+      pendingInflightTurn = false
+      sink?.onUserMessage(event.content ?? "", event.id)
       return true
     }
     if (event.type === "tool-calls-pending") {
@@ -331,7 +374,11 @@ export function createAutoRunStore(): AutoRunStore {
     return false
   }
 
-  function attach(newRunId: string, initialWorking?: boolean): void {
+  function attach(
+    newRunId: string,
+    initialWorking?: boolean,
+    openInflightTurn = false,
+  ): void {
     const EventSourceCtor = globalThis.EventSource
     if (!EventSourceCtor) {
       // No SSE support: don't leave a "reconnecting…" affordance stuck on.
@@ -339,6 +386,12 @@ export function createAutoRunStore(): AutoRunStore {
       return
     }
     closeSource()
+
+    // Re-attach (resync / History restore): render the replayed in-flight round
+    // into a fresh assistant turn rather than overwriting the last hydrated one.
+    // (closeSource above cleared any stale value.) Not set on the initial burst
+    // attach, which already opened its turn via requestEnable.
+    pendingInflightTurn = openInflightTurn
 
     runId.set(newRunId)
     autoModeOn.set(true)
@@ -381,7 +434,14 @@ export function createAutoRunStore(): AutoRunStore {
       // Any event other than another retry means the retry window is over (the
       // round recovered, or the burst settled idle/off) — clear the affordance.
       if (event.type !== "kiln-chat-retry") retry.set(null)
-      if (handleControlEvent(event)) return
+      if (handleControlEvent(event)) {
+        // A ``user-message`` echo opens a fresh assistant turn (the sink calls
+        // beginAssistantTurn). Reset the processor so the prior turn's
+        // accumulated parts aren't re-flushed into the new turn (which would
+        // duplicate the previous round's text + tools into it).
+        if (event.type === "user-message") processor.reset()
+        return
+      }
       processor.handleEvent(event)
     }
 
