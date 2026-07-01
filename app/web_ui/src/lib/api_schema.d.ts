@@ -7056,9 +7056,15 @@ export interface components {
          * @description Small failure summary stamped on the record. Detail lives in the error log.
          */
         JobError: {
-            /** Error */
+            /**
+             * Error
+             * @description Short human-readable summary of why the job failed.
+             */
             error?: string | null;
-            /** Detail */
+            /**
+             * Detail
+             * @description Optional structured context for the failure. Fuller detail lives in the error log.
+             */
             detail?: {
                 [key: string]: unknown;
             } | null;
@@ -7071,23 +7077,32 @@ export interface components {
          *     field is a count only — the actual messages live in the per-run error log.
          */
         JobProgress: {
-            /** Total */
+            /**
+             * Total
+             * @description Total number of items to process, or null when the size is not yet known.
+             */
             total?: number | null;
             /**
              * Success
+             * @description Number of items processed successfully so far.
              * @default 0
              */
             success: number;
             /**
              * Error
+             * @description Number of items that failed so far. A count only — the actual messages live in the per-run error log.
              * @default 0
              */
             error: number;
-            /** Message */
+            /**
+             * Message
+             * @description Optional human-readable status line describing the current step.
+             */
             message?: string | null;
             /**
              * Updated At
              * Format: date-time
+             * @description UTC timestamp of the most recent progress update.
              */
             updated_at?: string;
         };
@@ -7096,51 +7111,87 @@ export interface components {
          * @description Ephemeral, in-memory bookkeeping for a single job. Never persisted to disk.
          */
         JobRecord: {
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this job.
+             */
             id: string;
-            /** Type */
+            /**
+             * Type
+             * @description Registered job type name, determining which worker runs it.
+             */
             type: string;
+            /** @description Current lifecycle status: pending, running, paused, succeeded, failed, or cancelled. */
             status: components["schemas"]["BackgroundJobStatus"];
-            /** Run Id */
+            /**
+             * Run Id
+             * @description Identifier of the current (or most recent) run attempt, used to locate its error log. Null before the job first starts.
+             */
             run_id?: string | null;
+            /** @description Generic count-based progress snapshot for the job. */
             progress?: components["schemas"]["JobProgress"];
-            /** Progress Detail */
+            /**
+             * Progress Detail
+             * @description Optional typed, worker-specific progress detail (validated against the worker's progress_model). Null for workers whose generic count progress is enough.
+             */
             progress_detail?: {
                 [key: string]: unknown;
             } | null;
-            /** Params */
+            /**
+             * Params
+             * @description The validated parameters this job was created with.
+             */
             params?: {
                 [key: string]: unknown;
             };
-            /** Result */
+            /**
+             * Result
+             * @description The job's output, present only once it has succeeded. Null otherwise.
+             */
             result?: {
                 [key: string]: unknown;
             } | null;
+            /** @description Failure summary, present only when the job has failed. Null otherwise. */
             error?: components["schemas"]["JobError"] | null;
-            /** Metadata */
+            /**
+             * Metadata
+             * @description Free-form attribution passed in at creation, stored verbatim.
+             */
             metadata?: {
                 [key: string]: unknown;
             };
-            /** Project Id */
+            /**
+             * Project Id
+             * @description Project this job is scoped to, used for filtering and visibility.
+             */
             project_id?: string | null;
             /**
              * Supports Pause
+             * @description Whether this job type can be paused and resumed.
              * @default false
              */
             supports_pause: boolean;
             /**
              * Created At
              * Format: date-time
+             * @description UTC timestamp of when the job was created.
              */
             created_at?: string;
             /**
              * Updated At
              * Format: date-time
+             * @description UTC timestamp of the most recent change to the job record.
              */
             updated_at?: string;
-            /** Started At */
+            /**
+             * Started At
+             * @description UTC timestamp of when the job first started running. Null until it starts.
+             */
             started_at?: string | null;
-            /** Ended At */
+            /**
+             * Ended At
+             * @description UTC timestamp of when the job reached a terminal state. Null until it ends.
+             */
             ended_at?: string | null;
         };
         /**
