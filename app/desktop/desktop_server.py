@@ -31,6 +31,7 @@ from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
 from app.desktop.studio_server.eval_api import connect_evals_api
+from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
@@ -143,6 +144,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_skill_api(app)
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
+    connect_eval_builder_api(app)
     connect_multiturn_sdg_api(app)
     connect_git_sync_api(app)
     connect_agent_api(app)

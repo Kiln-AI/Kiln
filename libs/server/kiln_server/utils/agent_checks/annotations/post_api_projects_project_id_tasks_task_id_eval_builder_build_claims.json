@@ -1,6 +1,6 @@
 {
   "method": "post",
-  "path": "/api/copilot/build_claims",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
   "agent_policy": {
     "permission": "allow",
     "requires_approval": true,
