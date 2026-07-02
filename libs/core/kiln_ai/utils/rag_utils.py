@@ -9,7 +9,7 @@ def global_chunk_id(document_id: str, chunk_idx: int) -> str:
 
 
 def split_global_chunk_id(global_chunk_id: str) -> Tuple[str, int]:
-    document_id, chunk_idx = global_chunk_id.split("::")
+    document_id, chunk_idx = global_chunk_id.rsplit("::", 1)
     return document_id, int(chunk_idx)
 
 
