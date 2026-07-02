@@ -3146,6 +3146,188 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Job Events
+         * @description Server-sent events for jobs. Emits an initial `snapshot`, then per-job
+         *     `job` and `deleted` events. A pure observer: disconnecting never stops a job.
+         */
+        get: operations["stream_job_events_api_jobs_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Job */
+        post: operations["create_job_api_jobs__type__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_jobs__id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Job */
+        delete: operations["delete_job_api_jobs__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job Result */
+        get: operations["get_job_result_api_jobs__id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wait For Job
+         * @description Block until the job reaches a terminal state, then return its record.
+         *
+         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
+         *     cancels this handler coroutine, which cancels the wait() await and tears
+         *     down only the awaiter — the job's supervising task keeps running.
+         */
+        get: operations["wait_for_job_api_jobs__id__wait_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job Errors */
+        get: operations["get_job_errors_api_jobs__id__errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Job */
+        post: operations["pause_job_api_jobs__id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Job */
+        post: operations["resume_job_api_jobs__id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_api_jobs__id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3613,6 +3795,11 @@ export interface components {
              */
             provider_type: "builtin" | "custom";
         };
+        /**
+         * BackgroundJobStatus
+         * @enum {string}
+         */
+        BackgroundJobStatus: "pending" | "running" | "paused" | "succeeded" | "failed" | "cancelled";
         /**
          * BasePrompt
          * @description A prompt for a task. This is the basic data storage format which can be used throughout a project.
@@ -4414,6 +4601,44 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+        };
+        /**
+         * CreateJobRequest
+         * @description Request body for creating a job. Params are validated per job type.
+         */
+        CreateJobRequest: {
+            /**
+             * Params
+             * @description Type-specific job parameters, validated against the type's params model.
+             */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Project Id
+             * @description Project to scope this job to (for filtering/visibility). Falls back to the params' project_id when omitted.
+             */
+            project_id?: string | null;
+            /**
+             * Metadata
+             * @description Free-form pass-through attribution, stored verbatim.
+             */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * CreateJobResponse
+         * @description Response returned when a job is created.
+         */
+        CreateJobResponse: {
+            /**
+             * Job Id
+             * @description The id of the newly created job.
+             */
+            job_id: string;
+            /** @description The job's status immediately after creation. */
+            status: components["schemas"]["BackgroundJobStatus"];
         };
         /** CreateKilnCopilotApiKeyRequest */
         CreateKilnCopilotApiKeyRequest: {
@@ -6825,6 +7050,149 @@ export interface components {
              * @description Jinja2 template source. Validated at save time.
              */
             template: string;
+        };
+        /**
+         * JobError
+         * @description Small failure summary stamped on the record. Detail lives in the error log.
+         */
+        JobError: {
+            /**
+             * Error
+             * @description Short human-readable summary of why the job failed.
+             */
+            error?: string | null;
+            /**
+             * Detail
+             * @description Optional structured context for the failure. Fuller detail lives in the error log.
+             */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * JobProgress
+         * @description Count-based progress for a job.
+         *
+         *     Processed = success + error; remaining = total - success - error. The error
+         *     field is a count only — the actual messages live in the per-run error log.
+         */
+        JobProgress: {
+            /**
+             * Total
+             * @description Total number of items to process, or null when the size is not yet known.
+             */
+            total?: number | null;
+            /**
+             * Success
+             * @description Number of items processed successfully so far.
+             * @default 0
+             */
+            success: number;
+            /**
+             * Error
+             * @description Number of items that failed so far. A count only — the actual messages live in the per-run error log.
+             * @default 0
+             */
+            error: number;
+            /**
+             * Message
+             * @description Optional human-readable status line describing the current step.
+             */
+            message?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description UTC timestamp of the most recent progress update.
+             */
+            updated_at?: string;
+        };
+        /**
+         * JobRecord
+         * @description Ephemeral, in-memory bookkeeping for a single job. Never persisted to disk.
+         */
+        JobRecord: {
+            /**
+             * Id
+             * @description Unique identifier for this job.
+             */
+            id: string;
+            /**
+             * Type
+             * @description Registered job type name, determining which worker runs it.
+             */
+            type: string;
+            /** @description Current lifecycle status: pending, running, paused, succeeded, failed, or cancelled. */
+            status: components["schemas"]["BackgroundJobStatus"];
+            /**
+             * Run Id
+             * @description Identifier of the current (or most recent) run attempt, used to locate its error log. Null before the job first starts.
+             */
+            run_id?: string | null;
+            /** @description Generic count-based progress snapshot for the job. */
+            progress?: components["schemas"]["JobProgress"];
+            /**
+             * Progress Detail
+             * @description Optional typed, worker-specific progress detail (validated against the worker's progress_model). Null for workers whose generic count progress is enough.
+             */
+            progress_detail?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Params
+             * @description The validated parameters this job was created with.
+             */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Result
+             * @description The job's output, present only once it has succeeded. Null otherwise.
+             */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description Failure summary, present only when the job has failed. Null otherwise. */
+            error?: components["schemas"]["JobError"] | null;
+            /**
+             * Metadata
+             * @description Free-form attribution passed in at creation, stored verbatim.
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Project Id
+             * @description Project this job is scoped to, used for filtering and visibility.
+             */
+            project_id?: string | null;
+            /**
+             * Supports Pause
+             * @description Whether this job type can be paused and resumed.
+             * @default false
+             */
+            supports_pause: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             * @description UTC timestamp of when the job was created.
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description UTC timestamp of the most recent change to the job record.
+             */
+            updated_at?: string;
+            /**
+             * Started At
+             * @description UTC timestamp of when the job first started running. Null until it starts.
+             */
+            started_at?: string | null;
+            /**
+             * Ended At
+             * @description UTC timestamp of when the job reached a terminal state. Null until it ends.
+             */
+            ended_at?: string | null;
         };
         /**
          * JobStatus
@@ -17760,6 +18128,387 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_job_events_api_jobs_events_get: {
+        parameters: {
+            query?: {
+                /** @description Only stream events for this job id. */
+                job_id?: string | null;
+                /** @description Only stream events for this job type. */
+                type?: string | null;
+                /** @description Only stream events for this project id. */
+                project_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_jobs_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by job status. */
+                status?: components["schemas"]["BackgroundJobStatus"] | null;
+                /** @description Filter by job type. */
+                type?: string | null;
+                /** @description Filter by project id. */
+                project_id?: string | null;
+                /** @description Only jobs created at or after this ISO-8601 time. */
+                since?: string | null;
+                /** @description Maximum number of jobs to return. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_job_api_jobs__type__post: {
+        parameters: {
+            query?: {
+                /** @description When true, block until the job reaches a terminal state and return the full JobRecord instead of CreateJobResponse. */
+                wait?: boolean;
+                /** @description Seconds to wait when wait=true (504 on timeout). Omit to wait indefinitely. */
+                timeout?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description The registered job type to run. */
+                type: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"] | components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_api_jobs__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_job_api_jobs__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_result_api_jobs__id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_job_api_jobs__id__wait_get: {
+        parameters: {
+            query?: {
+                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
+                timeout?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_errors_api_jobs__id__errors_get: {
+        parameters: {
+            query?: {
+                /** @description Read the error log for a specific past run id. */
+                run_id?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_job_api_jobs__id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_job_api_jobs__id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_jobs__id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
