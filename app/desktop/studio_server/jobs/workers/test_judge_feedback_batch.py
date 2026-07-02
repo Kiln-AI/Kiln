@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 from app.desktop.studio_server.jobs.workers.judge_feedback_batch import (
     JudgeFeedbackBatchJobParams,
     JudgeFeedbackBatchJobResult,
@@ -101,15 +102,28 @@ def run_config(task):
 
 
 @pytest.fixture
-def params():
-    return JudgeFeedbackBatchJobParams(
-        project_id="project1",
-        task_id="task1",
+def batch(task, eval_config, run_config):
+    """A pre-created judge feedback batch on disk — the job runs an existing one."""
+    batch = JudgeFeedbackBatch(
+        id="batch1",
+        name="Test Batch",
         target_tags=["train_set"],
         eval_config_id="eval_config1",
         run_config_id="run_config1",
         generate_outputs=True,
         max_samples=50,
+        parent=task,
+    )
+    batch.save_to_file()
+    return batch
+
+
+@pytest.fixture
+def params(batch):
+    return JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id=batch.id,
     )
 
 
@@ -182,14 +196,16 @@ def _stub_runner(result: JudgeFeedbackBatchRunResult):
         yield
 
 
-async def test_run_creates_batch_and_maps_result(
-    resolve_project, task, eval_config, run_config, params
+async def test_run_loads_existing_batch_and_maps_result(
+    resolve_project, task, eval_config, run_config, batch, params
 ):
     ctx = _FakeCtx()
     with _stub_runner(_fake_result()):
         result = await JudgeFeedbackBatchJobWorker().run(params, ctx)
 
     assert isinstance(result, JudgeFeedbackBatchJobResult)
+    # The job runs the PRE-EXISTING batch named in params; the id round-trips into the result.
+    assert result.judge_feedback_batch_id == batch.id
     assert result.num_judged == 5
     assert result.failing_count == 2
     assert result.train_set_size == 10
@@ -200,70 +216,18 @@ async def test_run_creates_batch_and_maps_result(
     assert result.mean_cost == 0.01
     assert result.mean_latency_ms == 120.0
 
-    # The job created + persisted a batch under the task; its id round-trips.
-    batch = JudgeFeedbackBatch.from_id_and_parent_path(
-        result.judge_feedback_batch_id, task.path
-    )
-    assert batch is not None
-    assert batch.target_tags == ["train_set"]
-    assert batch.eval_config_id == "eval_config1"
-    assert batch.generate_outputs is True
 
-
-async def test_run_wraps_batch_config_save_in_git_context(
-    resolve_project, task, eval_config, run_config, params
-):
-    """The batch-config write must go through the git-sync save_context (not a raw save), fully
-    committed before the runner starts — otherwise auto git-sync's ensure_clean() stashes the
-    untracked config away on the first child write, losing it and orphaning the children."""
-    events: list[str] = []
-
-    @asynccontextmanager
-    async def recording_cm():
-        events.append("enter")
-        try:
-            yield
-        finally:
-            events.append("exit")
-
-    def recording_factory():
-        return recording_cm()
-
-    async def fake_run(
-        self, concurrency=None, progress_callback=None, error_callback=None
-    ) -> JudgeFeedbackBatchRunResult:
-        events.append("run")
-        # The batch config must already be persisted (and its save context closed) by run time.
-        assert (
-            JudgeFeedbackBatch.from_id_and_parent_path(
-                self.judge_feedback_batch.id, task.path
-            )
-            is not None
-        )
-        return _fake_result()
-
+async def test_run_missing_batch_raises(resolve_project, task, eval_config):
+    # No batch persisted for this id -> the run fails cleanly (the registry marks the job failed).
     ctx = _FakeCtx()
-    with (
-        patch(
-            "app.desktop.studio_server.jobs.workers.judge_feedback_batch.save_context_for_project",
-            return_value=recording_factory,
-        ),
-        patch(
-            "kiln_ai.adapters.eval.judge_feedback_batch_runner.JudgeFeedbackBatchRunner.run",
-            new=fake_run,
-        ),
-    ):
-        result = await JudgeFeedbackBatchJobWorker().run(params, ctx)
-
-    # The batch save was wrapped in the git context and its atomic write closed BEFORE the runner
-    # ran (separate, non-nested blocks): enter -> exit -> run.
-    assert events == ["enter", "exit", "run"]
-    assert (
-        JudgeFeedbackBatch.from_id_and_parent_path(
-            result.judge_feedback_batch_id, task.path
-        )
-        is not None
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id="does_not_exist",
     )
+    with pytest.raises(HTTPException) as exc_info:
+        await JudgeFeedbackBatchJobWorker().run(params, ctx)
+    assert exc_info.value.status_code == 404
 
 
 async def test_run_reports_progress_and_per_item_errors(
@@ -294,14 +258,21 @@ async def test_run_progress_total_is_capped_at_max_samples(
     """When train_set_size exceeds max_samples, progress totals against the capped
     count (max_samples), not the full matching set — so a fully-judged run reads
     as 100% rather than stalling at max_samples/train_set_size."""
-    params = JudgeFeedbackBatchJobParams(
-        project_id="project1",
-        task_id="task1",
+    capped_batch = JudgeFeedbackBatch(
+        id="batch_capped",
+        name="Capped Batch",
         target_tags=["train_set"],
         eval_config_id="eval_config1",
         run_config_id="run_config1",
         generate_outputs=True,
         max_samples=20,
+        parent=task,
+    )
+    capped_batch.save_to_file()
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id=capped_batch.id,
     )
     result = JudgeFeedbackBatchRunResult(
         failing_runs=[],
@@ -322,11 +293,12 @@ async def test_run_progress_total_is_capped_at_max_samples(
 
 
 async def test_describe_publishes_properties(
-    resolve_project, task, eval_config, run_config, params
+    resolve_project, task, eval_config, run_config, batch, params
 ):
     props = await JudgeFeedbackBatchJobWorker().describe(params)
 
-    assert props.batch_name  # generated or provided, never empty
+    # Derived from the persisted batch, not from params.
+    assert props.batch_name == "Test Batch"
     assert props.eval_name == "Test Eval"
     assert props.judge_name == "Test Eval Config"
     assert props.judge_model_name == "gpt-4"
@@ -344,12 +316,19 @@ async def test_describe_judge_only_mode_leaves_run_config_blank(
 ):
     # Judge-only mode (generate_outputs=False, no run_config_id): the run-config display fields are
     # left blank, but the judge/eval/batch info still resolves.
-    params = JudgeFeedbackBatchJobParams(
-        project_id="project1",
-        task_id="task1",
+    judge_only_batch = JudgeFeedbackBatch(
+        id="batch_judge_only",
+        name="Judge Only Batch",
         target_tags=["train_set"],
         eval_config_id="eval_config1",
         generate_outputs=False,
+        parent=task,
+    )
+    judge_only_batch.save_to_file()
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id=judge_only_batch.id,
     )
     props = await JudgeFeedbackBatchJobWorker().describe(params)
 

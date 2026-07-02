@@ -19,7 +19,7 @@ from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
-    agent_policy_require_approval,
+    DENY_AGENT,
 )
 from pydantic import BaseModel, Field, model_validator
 
@@ -245,6 +245,8 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches",
         summary="Create Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
+        # Agent-callable: the agent creates the batch here, then runs it via the job endpoint
+        # (POST /api/jobs/judge_feedback_batch/run). Creating is cheap and makes no model calls.
         openapi_extra=ALLOW_AGENT,
     )
     async def create_judge_feedback_batch(
@@ -271,9 +273,7 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/run",
         summary="Run Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
-        openapi_extra=agent_policy_require_approval(
-            "Run judge feedback batch? It makes model calls over the sampled dataset items."
-        ),
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def run_judge_feedback_batch(
@@ -313,9 +313,7 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/run",
         summary="Create And Run Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
-        openapi_extra=agent_policy_require_approval(
-            "Create and run judge feedback batch? It makes model calls over the sampled dataset items."
-        ),
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def create_and_run_judge_feedback_batch(

@@ -9,31 +9,32 @@ from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.usage import Usage
-from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, Field
 
 from ...judge_feedback_batch_api import (
-    CreateJudgeFeedbackBatchRequest,
-    _build_judge_feedback_batch,
     eval_config_from_id,
+    judge_feedback_batch_from_id,
     validate_judge_eval,
     validate_run_config_id,
 )
 from ..models import JobContext, JobWorker
 
 
-class JudgeFeedbackBatchJobParams(CreateJudgeFeedbackBatchRequest):
-    """Create-and-run a judge feedback batch as a background job.
+class JudgeFeedbackBatchJobParams(BaseModel):
+    """Run an existing judge feedback batch as a background job.
 
-    Inherits every CreateJudgeFeedbackBatchRequest field (and its validation) and
-    adds the project/task scope, so the body is the same as the synchronous
-    create-and-run endpoint plus project_id/task_id.
+    The batch config is created first via `POST .../judge_feedback_batches` (which
+    returns its id); the job just runs it — mirroring how `EvalJobParams` runs a
+    pre-existing eval. Because the id is carried in params (not minted inside
+    run()), it's retrievable via `GET /api/jobs/{id}` even if the run fails.
     """
 
     project_id: str = Field(description="The ID of the project the task belongs to.")
-    task_id: str = Field(
-        description="The ID of the task to run the judge feedback batch under."
+    task_id: str = Field(description="The ID of the task the batch belongs to.")
+    judge_feedback_batch_id: str = Field(
+        description="The ID of the judge feedback batch to run. Create it first via "
+        "POST /api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches."
     )
 
 
@@ -49,7 +50,7 @@ class JudgeFeedbackBatchJobResult(BaseModel):
     """
 
     judge_feedback_batch_id: str = Field(
-        description="The ID of the persisted judge feedback batch this job created and ran. "
+        description="The ID of the judge feedback batch this job ran (echoes the id from params). "
         "Fetch its per-item runs (with feedback) via GET /judge_feedback_batches/{id}/runs."
     )
     num_judged: int = Field(
@@ -121,15 +122,17 @@ class JudgeFeedbackBatchJobProperties(BaseModel):
 class JudgeFeedbackBatchJobWorker(
     JobWorker[JudgeFeedbackBatchJobParams, JudgeFeedbackBatchJobResult]
 ):
-    """Background worker that creates and runs a judge feedback batch.
+    """Background worker that runs a pre-existing judge feedback batch.
 
     Wraps `JudgeFeedbackBatchRunner` unchanged (mirrors `EvalJobWorker` wrapping
-    `EvalRunner`). Making the judge run job-backed lets an agent fire many gates
-    at once and `POST /api/jobs/wait` on all of them together, instead of blocking
-    on each synchronous call serially. The runner streams progress per judged
-    chunk. `supports_pause` stays False — re-running creates a fresh batch, so
-    there's nothing to resume, and `compute_state` keeps its default (None): the
-    batch id is minted inside run(), so params alone can't locate it to reconcile.
+    `EvalRunner`). The batch config is created first via the synchronous create
+    endpoint; this job only runs it (the id is in params). Making the judge run
+    job-backed lets an agent fire many gates at once and `POST /api/jobs/wait` on
+    all of them together, instead of blocking on each synchronous call serially.
+    The runner streams progress per judged chunk. `supports_pause` stays False and
+    `compute_state` keeps its default (None) for now — the runner already reuses
+    cached child runs, so a re-run is idempotent, but deriving progress from disk
+    is left as a follow-up.
     """
 
     type_name = "judge_feedback_batch"
@@ -149,7 +152,10 @@ class JudgeFeedbackBatchJobWorker(
         self, params: JudgeFeedbackBatchJobParams
     ) -> JudgeFeedbackBatchJobProperties:
         task = task_from_id(params.project_id, params.task_id)
-        eval_config = eval_config_from_id(task, params.eval_config_id)
+        batch = judge_feedback_batch_from_id(
+            params.project_id, params.task_id, params.judge_feedback_batch_id, task=task
+        )
+        eval_config = eval_config_from_id(task, batch.eval_config_id)
         eval = eval_config.parent_eval()
 
         # The run config only matters when generating fresh outputs; and only the
@@ -158,12 +164,12 @@ class JudgeFeedbackBatchJobWorker(
         run_config_name = ""
         run_config_model_name = ""
         run_config_model_provider = ""
-        if params.run_config_id is not None:
+        if batch.run_config_id is not None:
             run_config = next(
                 (
                     rc
                     for rc in task.run_configs(readonly=True)
-                    if rc.id == params.run_config_id
+                    if rc.id == batch.run_config_id
                 ),
                 None,
             )
@@ -177,55 +183,42 @@ class JudgeFeedbackBatchJobWorker(
                     )
 
         return JudgeFeedbackBatchJobProperties(
-            batch_name=params.name or "Judge Feedback Batch",
+            batch_name=batch.name,
             eval_name=eval.name if eval is not None else "",
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
             judge_model_name=eval_config.model_name,
             judge_model_provider=eval_config.model_provider,
-            generate_outputs=params.generate_outputs,
+            generate_outputs=batch.generate_outputs,
             run_config_name=run_config_name,
             run_config_model_name=run_config_model_name,
             run_config_model_provider=run_config_model_provider,
-            target_tags=list(params.target_tags),
-            max_samples=params.max_samples,
-            stop_after_failures=params.stop_after_failures,
+            target_tags=list(batch.target_tags or []),
+            max_samples=batch.max_samples,
+            stop_after_failures=batch.stop_after_failures,
         )
 
     async def run(
         self, params: JudgeFeedbackBatchJobParams, ctx: JobContext
     ) -> JudgeFeedbackBatchJobResult:
-        # params IS a CreateJudgeFeedbackBatchRequest (plus project/task scope), so
-        # the existing validators + builder accept it directly.
+        # Load the pre-created batch config (the create endpoint already persisted it under the
+        # git-sync write lock), then run it. Nothing is created here, so there is no config write to
+        # wrap — only the runner's per-item child writes, which it wraps in its own save_context.
         task = task_from_id(params.project_id, params.task_id)
-        eval_config = eval_config_from_id(task, params.eval_config_id)
-        validate_judge_eval(eval_config, params.generate_outputs)
-        validate_run_config_id(task, params.run_config_id)
-
-        judge_feedback_batch = _build_judge_feedback_batch(task, params)
-        batch_id = judge_feedback_batch.id
-        if batch_id is None:
-            raise ValueError("Judge feedback batch was not assigned an id")
-
-        # Wrap the batch-config write in the git-sync context too — not just the runner's per-item
-        # child writes. A raw save_to_file would leave the new config as dirty working-tree state,
-        # which the first child write's atomic_write ensure_clean() stashes away — losing the config
-        # and orphaning its children under auto git-sync. None coalesces to a no-op context. The
-        # same context is reused for the child writes; each save is a separate (non-nested) block.
-        save_context = (
-            save_context_for_project(
-                params.project_id,
-                context=f"judge feedback batch {batch_id}",
-            )
-            or default_save_context
+        judge_feedback_batch = judge_feedback_batch_from_id(
+            params.project_id, params.task_id, params.judge_feedback_batch_id, task=task
         )
-        async with save_context():
-            judge_feedback_batch.save_to_file()
+        eval_config = eval_config_from_id(task, judge_feedback_batch.eval_config_id)
+        validate_judge_eval(eval_config, judge_feedback_batch.generate_outputs)
+        validate_run_config_id(task, judge_feedback_batch.run_config_id)
 
         runner = JudgeFeedbackBatchRunner(
             judge_feedback_batch,
             eval_config,
-            save_context=save_context,
+            save_context=save_context_for_project(
+                params.project_id,
+                context=f"judge feedback batch {params.judge_feedback_batch_id}",
+            ),
         )
 
         async def report_progress(
@@ -247,7 +240,7 @@ class JudgeFeedbackBatchJobWorker(
             await ctx.report_error(
                 item_error.error,
                 dataset_id=item_error.task_run_id,
-                run_config_id=params.run_config_id,
+                run_config_id=judge_feedback_batch.run_config_id,
             )
 
         result = await runner.run(
@@ -260,7 +253,7 @@ class JudgeFeedbackBatchJobWorker(
         # bar can legitimately end below total — the job still succeeds. success excludes errors to
         # keep success + error <= total (see report_progress above).
         error_count = len(result.errors)
-        planned_total = min(result.train_set_size, params.max_samples)
+        planned_total = min(result.train_set_size, judge_feedback_batch.max_samples)
         await ctx.report_progress(
             success=result.num_judged - error_count,
             error=error_count,
@@ -268,12 +261,12 @@ class JudgeFeedbackBatchJobWorker(
         )
 
         return JudgeFeedbackBatchJobResult(
-            judge_feedback_batch_id=batch_id,
+            judge_feedback_batch_id=params.judge_feedback_batch_id,
             num_judged=result.num_judged,
             failing_count=result.failing_count,
             train_set_size=result.train_set_size,
             hit_cap=result.hit_cap,
-            error_count=len(result.errors),
+            error_count=error_count,
             mean_normalized_scores=result.mean_normalized_scores,
             mean_normalized_score=result.mean_normalized_score,
             total_usage=result.total_usage,

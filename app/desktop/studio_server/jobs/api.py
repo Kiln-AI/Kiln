@@ -196,13 +196,15 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def run_judge_feedback_batch_job(
         params: JudgeFeedbackBatchJobParams,
     ) -> CreateJobResponse:
-        """Create and run a judge feedback batch as a background job, returning immediately.
+        """Run a pre-existing judge feedback batch as a background job, returning immediately.
 
-        The job-backed counterpart to `POST /judge_feedback_batches/run`: lets an agent
-        fire many gates and `POST /api/jobs/wait` on all of them at once instead of
-        blocking on each synchronous call. The aggregate scores/usage/latency are on the
-        job result; the per-item runs (with the judge's feedback) are persisted — fetch
-        them via `GET /judge_feedback_batches/{id}/runs` (the result carries the batch id).
+        Create the batch first via `POST /judge_feedback_batches` (returns its id), then run
+        it here — mirroring how eval jobs run a pre-existing eval, so the batch id lives in the
+        job's params and is retrievable via `GET /api/jobs/{id}` even if the run fails. Lets an
+        agent fire many gates and `POST /api/jobs/wait` on all of them at once instead of
+        blocking on each synchronous call. The aggregate scores/usage/latency are on the job
+        result; the per-item runs (with the judge's feedback) are persisted — fetch them via
+        `GET /judge_feedback_batches/{id}/runs`.
         """
         job = await job_registry.create(
             type_name=JudgeFeedbackBatchJobWorker.type_name,
