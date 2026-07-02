@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -208,6 +208,62 @@ async def test_run_creates_batch_and_maps_result(
     assert batch.target_tags == ["train_set"]
     assert batch.eval_config_id == "eval_config1"
     assert batch.generate_outputs is True
+
+
+async def test_run_wraps_batch_config_save_in_git_context(
+    resolve_project, task, eval_config, run_config, params
+):
+    """The batch-config write must go through the git-sync save_context (not a raw save), fully
+    committed before the runner starts — otherwise auto git-sync's ensure_clean() stashes the
+    untracked config away on the first child write, losing it and orphaning the children."""
+    events: list[str] = []
+
+    @asynccontextmanager
+    async def recording_cm():
+        events.append("enter")
+        try:
+            yield
+        finally:
+            events.append("exit")
+
+    def recording_factory():
+        return recording_cm()
+
+    async def fake_run(
+        self, concurrency=None, progress_callback=None, error_callback=None
+    ) -> JudgeFeedbackBatchRunResult:
+        events.append("run")
+        # The batch config must already be persisted (and its save context closed) by run time.
+        assert (
+            JudgeFeedbackBatch.from_id_and_parent_path(
+                self.judge_feedback_batch.id, task.path
+            )
+            is not None
+        )
+        return _fake_result()
+
+    ctx = _FakeCtx()
+    with (
+        patch(
+            "app.desktop.studio_server.jobs.workers.judge_feedback_batch.save_context_for_project",
+            return_value=recording_factory,
+        ),
+        patch(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.JudgeFeedbackBatchRunner.run",
+            new=fake_run,
+        ),
+    ):
+        result = await JudgeFeedbackBatchJobWorker().run(params, ctx)
+
+    # The batch save was wrapped in the git context and its atomic write closed BEFORE the runner
+    # ran (separate, non-nested blocks): enter -> exit -> run.
+    assert events == ["enter", "exit", "run"]
+    assert (
+        JudgeFeedbackBatch.from_id_and_parent_path(
+            result.judge_feedback_batch_id, task.path
+        )
+        is not None
+    )
 
 
 async def test_run_reports_progress_and_per_item_errors(

@@ -9,6 +9,7 @@ from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, Field
 
@@ -202,18 +203,29 @@ class JudgeFeedbackBatchJobWorker(
         validate_run_config_id(task, params.run_config_id)
 
         judge_feedback_batch = _build_judge_feedback_batch(task, params)
-        judge_feedback_batch.save_to_file()
         batch_id = judge_feedback_batch.id
         if batch_id is None:
             raise ValueError("Judge feedback batch was not assigned an id")
 
+        # Wrap the batch-config write in the git-sync context too — not just the runner's per-item
+        # child writes. A raw save_to_file would leave the new config as dirty working-tree state,
+        # which the first child write's atomic_write ensure_clean() stashes away — losing the config
+        # and orphaning its children under auto git-sync. None coalesces to a no-op context. The
+        # same context is reused for the child writes; each save is a separate (non-nested) block.
+        save_context = (
+            save_context_for_project(
+                params.project_id,
+                context=f"judge feedback batch {batch_id}",
+            )
+            or default_save_context
+        )
+        async with save_context():
+            judge_feedback_batch.save_to_file()
+
         runner = JudgeFeedbackBatchRunner(
             judge_feedback_batch,
             eval_config,
-            save_context=save_context_for_project(
-                params.project_id,
-                context=f"judge feedback batch {judge_feedback_batch.id}",
-            ),
+            save_context=save_context,
         )
 
         async def report_progress(

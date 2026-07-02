@@ -13,6 +13,7 @@ from kiln_ai.datamodel.judge_feedback_batch import (
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
@@ -335,7 +336,12 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         validate_judge_eval(eval_config, body.generate_outputs)
         validate_run_config_id(task, body.run_config_id)
         judge_feedback_batch = _build_judge_feedback_batch(task, body)
-        judge_feedback_batch.save_to_file()
+        # This endpoint is @no_write_lock, so wrap the batch-config write in the git-sync context
+        # ourselves. Otherwise the raw save leaves dirty working-tree state that the runner's first
+        # child atomic_write ensure_clean() stashes away, losing the config under auto git-sync.
+        save_context = build_save_context(request) or default_save_context
+        async with save_context():
+            judge_feedback_batch.save_to_file()
         return await _run_judge_feedback_batch(
             judge_feedback_batch, eval_config, request
         )
