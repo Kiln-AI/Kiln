@@ -212,6 +212,11 @@ class _ScoredItem:
 # max_samples). Lets a background job stream live progress instead of only a final snapshot.
 JudgeProgressCallback = Callable[[int, int, int], Awaitable[None]]
 
+# Called once per item error the moment it's collected (not batched to the end), so a background
+# job can write it to its error log live — otherwise the "View Errors" button appears mid-run (the
+# streamed error count is non-zero) but the log is still empty until the run finishes.
+JudgeErrorCallback = Callable[["JudgeFeedbackBatchItemError"], Awaitable[None]]
+
 
 class JudgeFeedbackBatchRunner:
     """Runs a JudgeFeedbackBatch: judges tagged dataset items and persists per-item results."""
@@ -283,6 +288,7 @@ class JudgeFeedbackBatchRunner:
         self,
         concurrency: int | None = None,
         progress_callback: JudgeProgressCallback | None = None,
+        error_callback: JudgeErrorCallback | None = None,
     ) -> JudgeFeedbackBatchRunResult:
         """Judge tagged dataset items and persist each result as a JudgeFeedbackBatchRun child.
 
@@ -293,7 +299,9 @@ class JudgeFeedbackBatchRunner:
 
         `progress_callback`, if given, is awaited after each judged chunk with
         (num_judged, error_count, planned_total) so a background job can stream live progress;
-        the synchronous endpoint leaves it None.
+        the synchronous endpoint leaves it None. `error_callback`, if given, is awaited once per
+        item error the moment it's collected, so a job can log errors live (they still appear in the
+        returned result too); the synchronous endpoint leaves it None and reads result.errors.
 
         Returns the failing runs, all judged runs, counts, and any per-item errors. Per-item errors
         are collected (not raised), so one bad item never aborts the run; the item is left
@@ -363,15 +371,18 @@ class JudgeFeedbackBatchRunner:
                         self.judge_feedback_batch.id,
                         exc_info=scored,
                     )
-                    errors.append(
-                        JudgeFeedbackBatchItemError(
-                            task_run_id=str(task_run.id),
-                            error=f"Unexpected error judging item: {_error_detail(scored)}",
-                        )
+                    unexpected_error = JudgeFeedbackBatchItemError(
+                        task_run_id=str(task_run.id),
+                        error=f"Unexpected error judging item: {_error_detail(scored)}",
                     )
+                    errors.append(unexpected_error)
+                    if error_callback is not None:
+                        await error_callback(unexpected_error)
                     continue
                 if scored.error is not None:
                     errors.append(scored.error)
+                    if error_callback is not None:
+                        await error_callback(scored.error)
                 if scored.run is not None:
                     judged_runs.append(scored.run)
                     if not scored.passed:

@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from app.desktop.git_sync.save_context import save_context_for_project
-from kiln_ai.adapters.eval.judge_feedback_batch_runner import JudgeFeedbackBatchRunner
+from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
+    JudgeFeedbackBatchItemError,
+    JudgeFeedbackBatchRunner,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.usage import Usage
 from kiln_server.task_api import task_from_id
@@ -225,17 +228,19 @@ class JudgeFeedbackBatchJobWorker(
                 total=planned_total,
             )
 
-        result = await runner.run(progress_callback=report_progress)
-
-        # Surface any per-item judge/save errors to the job's error log so they
-        # appear in the View Errors UI (progress.error above already gates the
-        # button; this fills in the messages).
-        for item_error in result.errors:
+        async def report_item_error(item_error: JudgeFeedbackBatchItemError) -> None:
+            # Write each per-item error to the job's error log the moment it happens (not batched to
+            # the end), so "View Errors" shows messages live — the streamed progress error count
+            # gates the button mid-run, and this keeps the log in step with it.
             await ctx.report_error(
                 item_error.error,
                 dataset_id=item_error.task_run_id,
                 run_config_id=params.run_config_id,
             )
+
+        result = await runner.run(
+            progress_callback=report_progress, error_callback=report_item_error
+        )
 
         # Final snapshot against the planned (capped) count = min(train_set_size, max_samples), the
         # number of items the run judges in gate mode (so success + error reaches total on full

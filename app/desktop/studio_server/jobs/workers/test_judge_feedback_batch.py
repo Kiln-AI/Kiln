@@ -157,10 +157,13 @@ def _fake_result() -> JudgeFeedbackBatchRunResult:
 @contextmanager
 def _stub_runner(result: JudgeFeedbackBatchRunResult):
     async def fake_run(
-        self, concurrency=None, progress_callback=None
+        self, concurrency=None, progress_callback=None, error_callback=None
     ) -> JudgeFeedbackBatchRunResult:
-        # Mimic the real runner streaming one progress tick before returning, so
-        # the worker's live-progress wiring is exercised.
+        # Mimic the real runner: surface each per-item error live via error_callback, then stream one
+        # progress tick before returning, so the worker's live error + progress wiring is exercised.
+        if error_callback is not None:
+            for item_error in result.errors:
+                await error_callback(item_error)
         if progress_callback is not None:
             planned = min(result.train_set_size, self.judge_feedback_batch.max_samples)
             await progress_callback(result.num_judged, len(result.errors), planned)

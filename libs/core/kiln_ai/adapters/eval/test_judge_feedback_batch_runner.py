@@ -182,6 +182,7 @@ async def run_job(
     retry_delay=0,
     fresh_usage=None,
     progress_callback=None,
+    error_callback=None,
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
@@ -200,7 +201,9 @@ async def run_job(
             retry_delay=retry_delay,
         )
         return await runner.run(
-            concurrency=concurrency, progress_callback=progress_callback
+            concurrency=concurrency,
+            progress_callback=progress_callback,
+            error_callback=error_callback,
         )
 
 
@@ -580,6 +583,53 @@ async def test_threshold_override_five_star(mock_task, data_source):
     )
     result_fail = await run_job(job_fail, eval_config, score_fn)
     assert result_fail.failing_count == 1
+
+
+@pytest.mark.asyncio
+async def test_error_callback_fires_live_not_batched(mock_task, data_source):
+    # Regression: errors must be delivered to error_callback as they happen (interleaved with
+    # progress), not all at the end — otherwise a job's "View Errors" shows nothing mid-run.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    # Gate mode, one item per chunk, so the error in chunk 1 must be reported before chunk 2's
+    # progress tick.
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
+    make_train_run(mock_task, data_source, "error-item")
+    make_train_run(mock_task, data_source, "ok-item")
+
+    def score_fn(task_run):
+        if task_run.input == "error-item":
+            raise RuntimeError("boom")
+        return {"accuracy": 1.0}
+
+    events: list[str] = []
+
+    async def on_progress(num_judged, error_count, planned_total):
+        events.append(f"progress:{num_judged}")
+
+    async def on_error(item_error):
+        events.append(f"error:{item_error.task_run_id}")
+
+    result = await run_job(
+        job,
+        eval_config,
+        score_fn,
+        concurrency=1,
+        progress_callback=on_progress,
+        error_callback=on_error,
+    )
+
+    # The error is collected once and surfaced through the callback.
+    assert len(result.errors) == 1
+    error_events = [e for e in events if e.startswith("error:")]
+    assert len(error_events) == 1
+    assert "boom" in result.errors[0].error
+    # Live delivery: the error event lands before the LAST progress tick (both items examined),
+    # i.e. it was not deferred until after the run completed.
+    assert events.index(error_events[0]) < len(events) - 1
+    assert events[-1] == "progress:2"
 
 
 @pytest.mark.asyncio
