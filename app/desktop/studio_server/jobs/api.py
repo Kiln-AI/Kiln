@@ -18,6 +18,10 @@ from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
 from .registry import JobNotFoundError, JobOperationError, job_registry
 from .workers.eval import EvalJobParams, EvalJobWorker
+from .workers.judge_feedback_batch import (
+    JudgeFeedbackBatchJobParams,
+    JudgeFeedbackBatchJobWorker,
+)
 
 KEEPALIVE_SECONDS = 15.0
 
@@ -27,6 +31,10 @@ _JOB_MUTATION_APPROVAL = agent_policy_require_approval(
 
 _EVAL_JOB_APPROVAL = agent_policy_require_approval(
     "Run an eval in the background? This runs LLM calls across the eval set and uses AI credits."
+)
+
+_JUDGE_FEEDBACK_BATCH_JOB_APPROVAL = agent_policy_require_approval(
+    "Run a judge feedback batch in the background? It makes model calls over the sampled dataset items."
 )
 
 
@@ -94,6 +102,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     # Register the workers this server exposes. register_type overwrites by
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
     job_registry.register_type(EvalJobWorker)
+    job_registry.register_type(JudgeFeedbackBatchJobWorker)
 
     @app.get(
         "/api/jobs/events",
@@ -169,6 +178,36 @@ def connect_jobs_api(app: FastAPI) -> None:
         """
         job = await job_registry.create(
             type_name=EvalJobWorker.type_name,
+            params=params,
+            project_id=params.project_id,
+        )
+        return CreateJobResponse(job_id=job.id, status=job.status)
+
+    # Two-segment path so it can never collide with the generic single-segment
+    # POST /api/jobs/{type}, independent of route order.
+    @app.post(
+        "/api/jobs/judge_feedback_batch/run",
+        summary="Run Judge Feedback Batch Job",
+        tags=["Jobs"],
+        status_code=201,
+        response_model=CreateJobResponse,
+        openapi_extra=_JUDGE_FEEDBACK_BATCH_JOB_APPROVAL,
+    )
+    async def run_judge_feedback_batch_job(
+        params: JudgeFeedbackBatchJobParams,
+    ) -> CreateJobResponse:
+        """Run a pre-existing judge feedback batch as a background job, returning immediately.
+
+        Create the batch first via `POST /judge_feedback_batches` (returns its id), then run
+        it here — mirroring how eval jobs run a pre-existing eval, so the batch id lives in the
+        job's params and is retrievable via `GET /api/jobs/{id}` even if the run fails. Lets an
+        agent fire many gates and `POST /api/jobs/wait` on all of them at once instead of
+        blocking on each synchronous call. The aggregate scores/usage/latency are on the job
+        result; the per-item runs (with the judge's feedback) are persisted — fetch them via
+        `GET /judge_feedback_batches/{id}/runs`.
+        """
+        job = await job_registry.create(
+            type_name=JudgeFeedbackBatchJobWorker.type_name,
             params=params,
             project_id=params.project_id,
         )

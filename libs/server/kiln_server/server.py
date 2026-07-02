@@ -82,6 +82,10 @@ tags_metadata = [
         "description": "Run and monitor prompt optimization jobs.",
     },
     {
+        "name": "Judge Feedback Batches",
+        "description": "Create and run judge feedback batches that sample dataset items by tag and score them with an evaluator.",
+    },
+    {
         "name": "Skills",
         "description": "Create and manage agent skills within projects.",
     },

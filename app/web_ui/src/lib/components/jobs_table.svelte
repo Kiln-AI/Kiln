@@ -19,6 +19,7 @@
     cancel_job,
     delete_job,
     eval_job_properties,
+    judge_feedback_batch_job_properties,
     get_job_errors,
     get_job_result,
     pause_job,
@@ -91,6 +92,9 @@
   function job_type_display(type: string): string {
     if (type === "noop") {
       return "No-op"
+    }
+    if (type === "judge_feedback_batch") {
+      return "Judge Feedback Batch"
     }
     return capitalize(type)
   }
@@ -239,6 +243,7 @@
       <tbody>
         {#each $jobs as job (job.id)}
           {@const p = eval_job_properties(job)}
+          {@const jp = judge_feedback_batch_job_properties(job)}
           <tr>
             <td class="align-top">
               <div class="flex flex-col gap-1 max-w-[280px]">
@@ -296,6 +301,70 @@
                       <div class="truncate" title={judge_model}>
                         Judge model: {judge_model}
                       </div>
+                    {/if}
+                  </div>
+                {:else if jp}
+                  {@const judge_model = jp.judge_model_name
+                    ? getDetailedModelNameFromParts(
+                        jp.judge_model_name,
+                        jp.judge_model_provider,
+                        $model_info,
+                      )
+                    : ""}
+                  {@const run_config_model = jp.run_config_model_name
+                    ? getDetailedModelNameFromParts(
+                        jp.run_config_model_name,
+                        jp.run_config_model_provider,
+                        $model_info,
+                      )
+                    : ""}
+                  <span class="font-medium truncate" title={jp.batch_name}
+                    >{jp.batch_name}</span
+                  >
+                  <div class="space-y-1 text-xs text-gray-500">
+                    {#if jp.eval_name}
+                      <div class="truncate" title={jp.eval_name}>
+                        Eval: {jp.eval_name}
+                      </div>
+                    {/if}
+                    <div
+                      class="truncate"
+                      title="{jp.judge_name} ({judge_algorithm_display(
+                        jp.judge_algorithm,
+                      )})"
+                    >
+                      Judge: {jp.judge_name} ({judge_algorithm_display(
+                        jp.judge_algorithm,
+                      )})
+                    </div>
+                    {#if judge_model}
+                      <div class="truncate" title={judge_model}>
+                        Judge model: {judge_model}
+                      </div>
+                    {/if}
+                    <div>
+                      Mode: {jp.generate_outputs
+                        ? "Generate & judge"
+                        : "Judge existing outputs"}
+                    </div>
+                    {#if jp.generate_outputs && jp.run_config_name}
+                      <div class="truncate" title={jp.run_config_name}>
+                        Run config: {jp.run_config_name}
+                      </div>
+                    {/if}
+                    {#if jp.generate_outputs && run_config_model}
+                      <div class="truncate" title={run_config_model}>
+                        Model: {run_config_model}
+                      </div>
+                    {/if}
+                    {#if jp.target_tags?.length}
+                      <div class="truncate" title={jp.target_tags.join(", ")}>
+                        Tags: {jp.target_tags.join(", ")}
+                      </div>
+                    {/if}
+                    <div>Max samples: {jp.max_samples}</div>
+                    {#if jp.stop_after_failures != null}
+                      <div>Stop after failures: {jp.stop_after_failures}</div>
                     {/if}
                   </div>
                 {:else}

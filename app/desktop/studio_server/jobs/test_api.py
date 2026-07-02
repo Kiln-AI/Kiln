@@ -170,6 +170,7 @@ _EVAL_PARAMS = {
     "eval_id": "e1",
     "eval_config_id": "ec1",
     "run_config_id": "rc1",
+    "concurrency": None,
 }
 
 
