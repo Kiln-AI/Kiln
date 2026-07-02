@@ -36,6 +36,12 @@ class JudgeFeedbackBatchJobParams(BaseModel):
         description="The ID of the judge feedback batch to run. Create it first via "
         "POST /api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches."
     )
+    concurrency: int | None = Field(
+        default=None,
+        ge=1,
+        description="Max items judged in parallel by the runner. Leave null to use the runner's "
+        "default (5 when generating fresh outputs, 25 when judging existing ones).",
+    )
 
 
 class JudgeFeedbackBatchJobResult(BaseModel):
@@ -244,7 +250,9 @@ class JudgeFeedbackBatchJobWorker(
             )
 
         result = await runner.run(
-            progress_callback=report_progress, error_callback=report_item_error
+            concurrency=params.concurrency,
+            progress_callback=report_progress,
+            error_callback=report_item_error,
         )
 
         # Final snapshot against the planned (capped) count = min(train_set_size, max_samples), the
