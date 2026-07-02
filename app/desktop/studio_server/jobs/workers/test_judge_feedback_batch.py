@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from app.desktop.studio_server.jobs.workers.judge_feedback_batch import (
     JudgeFeedbackBatchJobParams,
     JudgeFeedbackBatchJobResult,
@@ -250,6 +251,19 @@ async def test_run_forwards_concurrency_to_runner(
         await JudgeFeedbackBatchJobWorker().run(params, ctx)
 
     assert received["concurrency"] == concurrency
+
+
+@pytest.mark.parametrize("concurrency", [0, -1])
+def test_concurrency_below_one_rejected(concurrency):
+    # concurrency must be >= 1: Pydantic rejects invalid input up front (422) rather than
+    # relying on the runner to clamp it.
+    with pytest.raises(ValidationError):
+        JudgeFeedbackBatchJobParams(
+            project_id="project1",
+            task_id="task1",
+            judge_feedback_batch_id="batch1",
+            concurrency=concurrency,
+        )
 
 
 async def test_run_missing_batch_raises(resolve_project, task, eval_config):

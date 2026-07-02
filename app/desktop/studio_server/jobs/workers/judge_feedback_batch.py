@@ -38,9 +38,9 @@ class JudgeFeedbackBatchJobParams(BaseModel):
     )
     concurrency: int | None = Field(
         default=None,
+        ge=1,
         description="Max items judged in parallel by the runner. Leave null to use the runner's "
-        "default (5 when generating fresh outputs, 25 when judging existing ones). Values below 1 "
-        "are clamped to 1 by the runner.",
+        "default (5 when generating fresh outputs, 25 when judging existing ones).",
     )
 
 
