@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from app.desktop.studio_server.jobs.workers.judge_feedback_batch import (
     JudgeFeedbackBatchJobParams,
     JudgeFeedbackBatchJobResult,
@@ -215,6 +216,54 @@ async def test_run_loads_existing_batch_and_maps_result(
     assert result.mean_normalized_score == 0.8
     assert result.mean_cost == 0.01
     assert result.mean_latency_ms == 120.0
+
+
+@pytest.mark.parametrize("concurrency", [None, 3, 25])
+async def test_run_forwards_concurrency_to_runner(
+    resolve_project, task, eval_config, run_config, batch, concurrency
+):
+    # The job's concurrency param (None -> runner default) flows straight to runner.run.
+    received: dict[str, int | None] = {}
+
+    async def fake_run(
+        self, concurrency=None, progress_callback=None, error_callback=None
+    ) -> JudgeFeedbackBatchRunResult:
+        received["concurrency"] = concurrency
+        return _fake_result()
+
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id=batch.id,
+        concurrency=concurrency,
+    )
+    ctx = _FakeCtx()
+    with (
+        patch(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.JudgeFeedbackBatchRunner.run",
+            new=fake_run,
+        ),
+        patch(
+            "app.desktop.studio_server.jobs.workers.judge_feedback_batch.save_context_for_project",
+            return_value=None,
+        ),
+    ):
+        await JudgeFeedbackBatchJobWorker().run(params, ctx)
+
+    assert received["concurrency"] == concurrency
+
+
+@pytest.mark.parametrize("concurrency", [0, -1])
+def test_concurrency_below_one_rejected(concurrency):
+    # concurrency must be >= 1: Pydantic rejects invalid input up front (422) rather than
+    # relying on the runner to clamp it.
+    with pytest.raises(ValidationError):
+        JudgeFeedbackBatchJobParams(
+            project_id="project1",
+            task_id="task1",
+            judge_feedback_batch_id="batch1",
+            concurrency=concurrency,
+        )
 
 
 async def test_run_missing_batch_raises(resolve_project, task, eval_config):
