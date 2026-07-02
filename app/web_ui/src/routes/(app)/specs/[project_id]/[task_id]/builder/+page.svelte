@@ -17,8 +17,16 @@
   // screens (clarify Q&A, refine). When v1 evolves, v2 follows for free.
   import Questions from "../spec_builder/questions.svelte"
   import RefineSpec from "../spec_builder/refine_spec.svelte"
-  import ReviewExamples from "../spec_builder/review_examples.svelte"
-  import MultiTurnReviewPaginator from "./multi_turn_review_paginator.svelte"
+  // Claim/Evidence replaces the read-the-trace pass/fail review: the reviewer
+  // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
+  import ClaimEvidenceReview from "./claim_evidence_review.svelte"
+  import {
+    all_traces_reviewed,
+    build_trace_reviews,
+    final_judgement_index,
+    type TraceClaims,
+    type TraceReview,
+  } from "./claim_evidence"
   // Reuse v1's themed loading animations on the wizard's transition screens
   // instead of bare dot-spinners, so the two builders feel consistent.
   import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
@@ -26,7 +34,7 @@
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import type { SuggestedEdit, ReviewRow } from "../spec_utils"
+  import type { SuggestedEdit } from "../spec_utils"
   import { KilnError } from "$lib/utils/error_handlers"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { build_default_judge_info } from "$lib/eval/default_judge"
@@ -443,6 +451,11 @@
       single_turn_examples = data.examples_for_feedback ?? []
       sdg_session_config = data.sdg_session_config ?? null
       judge_info = data.judge_result ?? null
+      await build_claims_for_review()
+      if (claims_error) {
+        generation_error = claims_error
+        return
+      }
       replace_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
@@ -678,6 +691,11 @@
         return
       }
 
+      await build_claims_for_review()
+      if (claims_error) {
+        generation_error = claims_error
+        return
+      }
       replace_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
@@ -711,49 +729,141 @@
     on_save()
   }
 
-  // ── Step 5 state — single-turn review (uses v1's ReviewExamples)
-  // ReviewRow is the shape ReviewExamples reads/mutates internally —
-  // it bumps user_says_meets_spec + feedback on each pass/fail click.
-  let review_rows: ReviewRow[] = []
-  let review_form_error: KilnError | null = null
-  let review_submitting = false
-  // Convert generation output to ReviewRow shape when examples become
-  // available (Step 4 → Step 5 transition). Only initializes — subsequent
-  // user edits stay on the array.
-  $: if (
-    single_turn_examples.length > 0 &&
-    review_rows.length !== single_turn_examples.length
-  ) {
-    review_rows = single_turn_examples.map((e, i) => ({
-      input: e.input,
-      output: e.output,
-      model_says_meets_spec: !e.fails_specification,
-      feedback: "",
-      row_id: `row_${i}`,
+  // ── Step 5 state — Claim/Evidence review.
+  // Generated traces are distilled into claims (per-trace server claim builder)
+  // that the reviewer agrees/disagrees with; the trace stays hidden in a modal.
+  let trace_claims: TraceClaims[] = []
+  let trace_reviews: TraceReview[] = []
+  let claims_loading = false
+  let claims_error: string | null = null
+  $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
+
+  // Flatten the generated traces to the claim builder's (raw_input, raw_output)
+  // shape. Multi-turn: first user message + the whole transcript as the output
+  // (citations into "output" highlight within it). Single-turn: the I/O pair.
+  function current_trace_ios(): { raw_input: string; raw_output: string }[] {
+    if (is_multi_turn) {
+      return multi_turn_chains.map((c) => ({
+        raw_input: c.trace.find((t) => t.role === "user")?.content ?? "",
+        raw_output: c.trace.map((t) => `${t.role}: ${t.content}`).join("\n\n"),
+      }))
+    }
+    return single_turn_examples.map((e) => ({
+      raw_input: e.input,
+      raw_output: e.output,
     }))
   }
 
-  // Multi-turn: per-chain pass/fail
-  let chain_verdicts: Array<{
-    verdict: "pass" | "fail" | null
-    feedback: string
-  }> = []
-  $: chain_verdicts =
-    multi_turn_chains.length > 0 &&
-    chain_verdicts.length !== multi_turn_chains.length
-      ? multi_turn_chains.map(() => ({ verdict: null, feedback: "" }))
-      : chain_verdicts
-  // Save is disabled until every chain has a verdict AND every fail-
-  // verdict has a non-empty reason. Pass-without-feedback is fine — the
-  // judge prompt only needs the WHY when something went wrong.
-  $: all_chains_reviewed =
-    multi_turn_chains.length > 0 &&
-    chain_verdicts.length === multi_turn_chains.length &&
-    chain_verdicts.every(
-      (v) =>
-        v.verdict !== null &&
-        (v.verdict !== "fail" || v.feedback.trim().length > 0),
-    )
+  // SSE events from the eval_builder review_traces endpoint. The judge runs
+  // server-side (local, in-app) today via a stub; the claim step calls the
+  // remote claim builder. We only consume these shapes.
+  type ReviewTraceEvent =
+    | { type: "batch_started"; total: number }
+    | {
+        type: "trace_reviewed"
+        trace_index: number
+        judge_score: string
+        judge_reasoning: string
+        claims: TraceClaims["claims"]
+      }
+    | { type: "trace_error"; trace_index: number; error: string }
+
+  // Build claims for every generated trace via the studio-side review pipeline:
+  // ONE call to review_traces, which fans out [judge → claim builder] per trace
+  // (server-side, concurrency-capped) and streams a result per trace back.
+  // Manual fetch + ReadableStream + SSE parsing — same pattern as run_cases_batch.
+  async function build_claims_for_review() {
+    claims_loading = true
+    claims_error = null
+    const eval_rubric =
+      (refined_property_values.issue_description as string | null) ??
+      description
+    const ios = current_trace_ios()
+    // judge_info comes from clarify_spec (single-turn). Multi-turn has none
+    // until save, so fall back to the shared default judge — same as the save
+    // path (build_default_judge_info). The stub judge ignores it either way;
+    // this keeps the contract stable for when the real judge lands.
+    const judge = judge_info ?? build_default_judge_info(eval_rubric)
+    // Fill by trace_index as events arrive (they complete out of order).
+    const built: (TraceClaims | null)[] = new Array(ios.length).fill(null)
+    try {
+      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_traces`
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          traces: ios,
+          eval_rubric,
+          judge: {
+            prompt: judge.prompt,
+            model_name: judge.task_metadata.model_name,
+            model_provider: judge.task_metadata.model_provider_name,
+          },
+        }),
+        signal: new_copilot_abort_signal(),
+      })
+      if (!response.ok || !response.body) {
+        claims_error = `Failed to build claims (${response.status}).`
+        return
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? ""
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          const payload = line.slice(6).trim()
+          if (!payload || payload === "complete") continue
+          let event: ReviewTraceEvent
+          try {
+            event = JSON.parse(payload) as ReviewTraceEvent
+          } catch {
+            continue
+          }
+          if (event.type === "trace_reviewed") {
+            const io = ios[event.trace_index]
+            built[event.trace_index] = {
+              trace_id: `trace_${event.trace_index}`,
+              raw_input: io.raw_input,
+              raw_output: io.raw_output,
+              judge_score: event.judge_score,
+              claims: event.claims ?? [],
+            }
+          } else if (event.type === "trace_error") {
+            claims_error = `Failed to build claims for a trace: ${event.error}`
+          }
+        }
+      }
+
+      if (claims_error) return
+      const complete = built.filter((t): t is TraceClaims => t !== null)
+      trace_claims = complete
+      trace_reviews = build_trace_reviews(complete)
+    } catch (e) {
+      if (is_abort_error(e)) return
+      claims_error = e instanceof Error ? e.message : "Failed to build claims."
+    } finally {
+      claims_loading = false
+    }
+  }
+
+  // Generation → review: build claims (unless already built) then advance.
+  async function continue_to_review() {
+    if (trace_claims.length === 0) {
+      await build_claims_for_review()
+      if (claims_error) return
+    }
+    replace_step("review")
+  }
 
   // ── Step 6 state — save
   let saving = false
@@ -835,15 +945,28 @@
       }
 
       // Single-turn save path.
-      const reviewed_examples: ReviewedExample[] = review_rows
-        .filter((row) => row.user_says_meets_spec !== undefined)
-        .map((row) => ({
-          input: row.input,
-          output: row.output,
-          model_says_meets_spec: row.model_says_meets_spec,
-          user_says_meets_spec: row.user_says_meets_spec as boolean,
-          feedback: row.feedback,
-        }))
+      // Derive reviewed examples from the claim verdicts: agreement with the
+      // final-judgement claim = agreement with the judge's verdict (disagree
+      // flips it); disagreements' reasons become the feedback.
+      const reviewed_examples: ReviewedExample[] = trace_claims.map((tc, i) => {
+        const review = trace_reviews[i]
+        const fj = final_judgement_index(tc.claims)
+        const fjv = fj >= 0 ? review?.claim_verdicts[fj] : undefined
+        const judge_fail = tc.judge_score.toUpperCase().includes("FAIL")
+        const model_meets = !judge_fail
+        const user_meets = fjv?.agrees === false ? judge_fail : model_meets
+        const feedback = (review?.claim_verdicts ?? [])
+          .filter((v) => v.agrees === false && v.why.trim())
+          .map((v) => v.why.trim())
+          .join(" ")
+        return {
+          input: tc.raw_input,
+          output: tc.raw_output,
+          model_says_meets_spec: model_meets,
+          user_says_meets_spec: user_meets,
+          feedback,
+        }
+      })
 
       if (!sdg_session_config || !judge_info) {
         save_error =
@@ -931,8 +1054,8 @@
         event.preventDefault()
         on_refine_submit()
       }
-    } else if (current_step === "review" && is_multi_turn) {
-      if (all_chains_reviewed) {
+    } else if (current_step === "review") {
+      if (all_reviewed) {
         event.preventDefault()
         on_advance_to_save()
       }
@@ -957,7 +1080,7 @@
       case "generate":
         return is_multi_turn ? "Generate Conversations" : "Generate Examples"
       case "review":
-        return is_multi_turn ? "Review Conversations" : "Review Examples"
+        return "Review Claims"
       case "save":
         return "Creating Eval"
       case "done":
@@ -978,9 +1101,7 @@
           ? `Driving ${multi_turn_total} multi-turn conversations against your agent.`
           : "Generating sample inputs and outputs based on your spec."
       case "review":
-        return is_multi_turn
-          ? "Mark each conversation Pass or Fail."
-          : "Mark each example Pass or Fail."
+        return "Agree or disagree with each claim. Open a [n] citation to see the trace."
       case "save":
         return "Persisting the spec, eval, and dataset."
       case "done":
@@ -1242,10 +1363,7 @@
                 <!-- Generation already ran (navigated back into this step) —
                      continue to the existing results instead of re-running,
                      matching the browser Forward path. -->
-                <button
-                  class="btn btn-primary"
-                  on:click={() => replace_step("review")}
-                >
+                <button class="btn btn-primary" on:click={continue_to_review}>
                   Continue to review →
                 </button>
               {:else}
@@ -1262,34 +1380,25 @@
             </div>
           {/if}
         {:else if current_step === "review"}
-          <!-- ── Step 5 — Review ── -->
-          {#if is_multi_turn}
-            <MultiTurnReviewPaginator
-              chains={multi_turn_chains}
-              bind:verdicts={chain_verdicts}
+          <!-- ── Step 5 — Claim/Evidence review (trace hidden in a modal) ── -->
+          {#if claims_loading}
+            <AnalyzingAnimation
+              title="Building claims"
+              description="Distilling each trace into claims for you to review."
+              warning={null}
+            />
+          {:else if claims_error}
+            <Warning warning_color="error" warning_message={claims_error} />
+          {:else}
+            <ClaimEvidenceReview
+              traces={trace_claims}
+              bind:verdicts={trace_reviews}
               on_back={() => history.back()}
               on_save={on_advance_to_save}
-              save_disabled={!all_chains_reviewed}
-              save_disabled_tooltip={all_chains_reviewed
+              save_disabled={!all_reviewed}
+              save_disabled_tooltip={all_reviewed
                 ? null
-                : "Mark each conversation pass or fail; failed conversations need a reason."}
-            />
-          {:else}
-            <!-- Single-turn: reuse v1's ReviewExamples component. Both submit
-             events (create_spec when feedback aligns, continue_to_refine
-             when it doesn't) advance to Save in v2 — we don't re-loop
-             through refine after review. -->
-            <ReviewExamples
-              {name}
-              {spec_type}
-              {property_values}
-              bind:review_rows
-              bind:error={review_form_error}
-              bind:submitting={review_submitting}
-              warn_before_unload={false}
-              on:create_spec={on_advance_to_save}
-              on:continue_to_refine={on_advance_to_save}
-              on:create_spec_secondary={on_advance_to_save}
+                : "Give every trace an overall agree/disagree; disagreements need a reason."}
             />
           {/if}
         {:else if current_step === "save"}
