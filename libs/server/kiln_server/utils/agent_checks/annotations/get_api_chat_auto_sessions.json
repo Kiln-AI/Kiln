@@ -1,8 +1,8 @@
 {
   "method": "get",
-  "path": "/api/jobs/{id}/wait",
+  "path": "/api/chat/auto/sessions",
   "agent_policy": {
-    "permission": "allow",
+    "permission": "deny",
     "requires_approval": false
   }
 }

@@ -14,10 +14,18 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_fr
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
+
+# Default number of dataset items evaluated in parallel when a caller doesn't specify one.
+DEFAULT_EVAL_CONCURRENCY = 25
 
 
 @dataclass
@@ -183,10 +191,22 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+    ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
+
+        Pass `observers` to be notified per-item (e.g. to surface the exception of
+        a failed dataset item — `Progress.errors` is only a count). Optional so the
+        streaming UI paths can keep calling `run()` with no observer.
+
+        `concurrency` bounds how many items run in parallel; None uses the default.
         """
+        if concurrency is None:
+            concurrency = DEFAULT_EVAL_CONCURRENCY
         jobs = self.collect_tasks()
 
         runner = AsyncJobRunner(
@@ -194,6 +214,7 @@ class EvalRunner:
             jobs=jobs,
             run_job_fn=self.run_job,
             max_retries=2,
+            observers=observers,
         )
         async for progress in runner.run():
             yield progress

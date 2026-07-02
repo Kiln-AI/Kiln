@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/jobs/wait",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}
