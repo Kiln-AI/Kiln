@@ -245,7 +245,9 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches",
         summary="Create Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
-        openapi_extra=DENY_AGENT,
+        # Agent-callable: the agent creates the batch here, then runs it via the job endpoint
+        # (POST /api/jobs/judge_feedback_batch/run). Creating is cheap and makes no model calls.
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_judge_feedback_batch(
         project_id: Annotated[
