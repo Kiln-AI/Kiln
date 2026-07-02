@@ -206,6 +206,19 @@ Tests call real LLMs and cost money. Ideally the user only needs to consent to t
 - Good: `-k "test_name[glm_5-fireworks_ai]"` or `-k "glm_5"`
 - Bad: `-k "glm_5 and fireworks"` — `and` is a pytest keyword expression that can match wrong tests
 
+### 4.0 — If the test env can't build (blocked git dependency)
+
+Kiln's core lib pins `together` to a git fork (`libs/core/pyproject.toml`: `together = { git = "https://github.com/scosman/together-python" }`). In a sandboxed environment whose GitHub access is scoped to `kiln-ai/kiln` only (e.g. Claude Code Web), `uv sync` fails to fetch that fork with a **403** from the git proxy, so the test venv can't be built. This is a GitHub repo-scope block, not a network-domain allowlist issue — every non-scoped repo 403s, only `kiln-ai/kiln` resolves.
+
+Workaround to build the venv for testing (the `together` fork isn't exercised by model-integration tests, which route through LiteLLM):
+
+1. **Do NOT use `uv sync --no-sources`** — it strips the workspace `workspace = true` sources too and makes `kiln-root → kiln-ai` unsatisfiable.
+2. Instead, temporarily comment out ONLY the `together = { git = ... }` line in `libs/core/pyproject.toml`, then run `uv sync` (this resolves `together` from PyPI).
+3. Run the tests.
+4. **Revert** `libs/core/pyproject.toml` (and `git checkout -- pyproject.toml uv.lock` if the lock changed) so the git-fork pin is restored. Only `ml_model_list.py` (and any intended test-file edits) should remain modified.
+
+Note: the PyPI `together` may pull slightly different transitive deps (e.g. a newer `starlette`), which can cause unrelated collection ImportErrors in desktop/server/rag/vector-store modules — scope your `-k` filters to the model files and ignore those.
+
 ### 4a. Enable parallel testing
 
 Before running paid tests, enable parallel testing in `pytest.ini`:
@@ -530,17 +543,17 @@ WebFetch https://fireworks.ai/models/fireworks/{model-slug}
 ```
 Or browse the catalog at https://fireworks.ai/models. Kiln slug format: `accounts/fireworks/models/{model-slug}`.
 
-**Together AI** — the `/v1/models` endpoint requires an API key. `$TOGETHER_API_KEY` is typically set in the user's shell:
+**Together AI** — the `/v1/models` endpoint requires an API key. The key is set in the user's shell as **`TOGETHERAI_API_KEY`** (note the `AI` — this matches LiteLLM's `together_ai` env var; the plain `TOGETHER_API_KEY` is usually NOT set):
 ```bash
 # List all Together model IDs matching a term:
 curl -s https://api.together.xyz/v1/models \
-  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
+  -H "Authorization: Bearer $TOGETHERAI_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
 
 # Full record for a specific slug:
 curl -s https://api.together.xyz/v1/models \
-  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | select(.id == "SLUG")'
+  -H "Authorization: Bearer $TOGETHERAI_API_KEY" | jq '.[] | select(.id == "SLUG")'
 ```
-If the key isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
+If `TOGETHERAI_API_KEY` isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
 
 **SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
 ```
