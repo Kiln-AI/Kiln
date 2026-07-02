@@ -4,7 +4,11 @@ import asyncio
 
 from app.desktop.git_sync.save_context import save_context_for_project
 from kiln_ai.adapters.errors import KilnRunError
-from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
+from kiln_ai.adapters.eval.eval_runner import (
+    DEFAULT_EVAL_CONCURRENCY,
+    EvalJob,
+    EvalRunner,
+)
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
 from kiln_ai.datamodel.prompt_type import generator_label
@@ -81,7 +85,7 @@ class EvalJobParams(BaseModel):
         default=None,
         ge=1,
         description="Max dataset items evaluated in parallel by the runner. Leave null to use the "
-        "runner's default (25).",
+        f"runner's default ({DEFAULT_EVAL_CONCURRENCY}).",
     )
 
 
