@@ -7770,6 +7770,11 @@ export interface components {
              * @description The ID of the judge feedback batch to run. Create it first via POST /api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches.
              */
             judge_feedback_batch_id: string;
+            /**
+             * Concurrency
+             * @description Max items judged in parallel by the runner. Leave null to use the runner's default (5 when generating fresh outputs, 25 when judging existing ones). Values below 1 are clamped to 1 by the runner.
+             */
+            concurrency?: number | null;
         };
         /**
          * JudgeFeedbackBatchRun

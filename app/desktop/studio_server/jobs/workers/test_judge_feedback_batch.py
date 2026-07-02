@@ -217,6 +217,41 @@ async def test_run_loads_existing_batch_and_maps_result(
     assert result.mean_latency_ms == 120.0
 
 
+@pytest.mark.parametrize("concurrency", [None, 3, 25])
+async def test_run_forwards_concurrency_to_runner(
+    resolve_project, task, eval_config, run_config, batch, concurrency
+):
+    # The job's concurrency param (None -> runner default) flows straight to runner.run.
+    received: dict[str, int | None] = {}
+
+    async def fake_run(
+        self, concurrency=None, progress_callback=None, error_callback=None
+    ) -> JudgeFeedbackBatchRunResult:
+        received["concurrency"] = concurrency
+        return _fake_result()
+
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id=batch.id,
+        concurrency=concurrency,
+    )
+    ctx = _FakeCtx()
+    with (
+        patch(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.JudgeFeedbackBatchRunner.run",
+            new=fake_run,
+        ),
+        patch(
+            "app.desktop.studio_server.jobs.workers.judge_feedback_batch.save_context_for_project",
+            return_value=None,
+        ),
+    ):
+        await JudgeFeedbackBatchJobWorker().run(params, ctx)
+
+    assert received["concurrency"] == concurrency
+
+
 async def test_run_missing_batch_raises(resolve_project, task, eval_config):
     # No batch persisted for this id -> the run fails cleanly (the registry marks the job failed).
     ctx = _FakeCtx()
