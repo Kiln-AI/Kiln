@@ -34,6 +34,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.utils.async_job_runner import Progress, RetryableError
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -629,6 +630,60 @@ async def test_registry_create_guards_describe_failure(
 
 
 # -- run ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("concurrency", [None, 3, 25])
+async def test_run_forwards_concurrency_to_runner(
+    resolve_project, task, eval_config, run_config, data_source, concurrency
+):
+    # The job's concurrency param (None -> runner default) flows straight to EvalRunner.run.
+    received: dict[str, int | None] = {}
+
+    async def fake_run(
+        self, concurrency=None, observers=None
+    ) -> AsyncIterator[Progress]:
+        received["concurrency"] = concurrency
+        for _ in ():
+            yield  # pragma: no cover — never yields; typed as a generator
+
+    params = EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config1",
+        concurrency=concurrency,
+    )
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            pass
+
+    with patch("kiln_ai.adapters.eval.eval_runner.EvalRunner.run", new=fake_run):
+        await EvalJobWorker().run(params, FakeCtx())
+
+    assert received["concurrency"] == concurrency
+
+
+@pytest.mark.parametrize("bad_value", [0, -1])
+def test_concurrency_below_one_rejected(bad_value):
+    # ge=1 surfaces invalid concurrency as a 422 at the API boundary rather than a
+    # runner-side ValueError (mirrors max_samples / stop_after_failures validation).
+    with pytest.raises(ValidationError):
+        EvalJobParams(
+            project_id="project1",
+            task_id="task1",
+            eval_id="eval1",
+            eval_config_id="eval_config1",
+            run_config_id="run_config1",
+            concurrency=bad_value,
+        )
 
 
 async def test_run_maps_progress_and_returns_result(

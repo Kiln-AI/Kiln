@@ -25,6 +25,10 @@ const api = {
   // Real-shaped passthrough: the table calls this for every row.
   eval_job_properties: (job: JobRecord) =>
     job.type === "eval" && job.properties ? job.properties : null,
+  judge_feedback_batch_job_properties: (job: JobRecord) =>
+    job.type === "judge_feedback_batch" && job.properties
+      ? job.properties
+      : null,
 }
 vi.mock("$lib/stores/jobs_api", () => api)
 
@@ -186,5 +190,38 @@ describe("JobsTable", () => {
     jobs.set([makeJob({ id: "j_noop", type: "noop" })])
     const { queryByText } = render(JobsTable)
     expect(queryByText(/Run config:/)).toBeNull()
+  })
+
+  it("renders judge feedback batch job properties inline", () => {
+    jobs.set([
+      makeJob({
+        id: "j_judge",
+        type: "judge_feedback_batch",
+        properties: {
+          batch_name: "Nightly gate",
+          eval_name: "Toxicity check",
+          judge_name: "Magical Yeti",
+          judge_algorithm: "g_eval",
+          judge_model_name: "claude",
+          judge_model_provider: "anthropic",
+          generate_outputs: true,
+          run_config_name: "Candidate run",
+          run_config_model_name: "gpt-4o",
+          run_config_model_provider: "openai",
+          target_tags: ["val_set"],
+          max_samples: 25,
+          stop_after_failures: null,
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    expect(getByText(/Nightly gate/)).not.toBeNull()
+    expect(getByText(/Eval: Toxicity check/)).not.toBeNull()
+    expect(getByText(/Judge: Magical Yeti \(G-Eval\)/)).not.toBeNull()
+    // generate_outputs=true -> "Generate & judge" mode + candidate run config.
+    expect(getByText(/Mode: Generate & judge/)).not.toBeNull()
+    expect(getByText(/Run config: Candidate run/)).not.toBeNull()
+    expect(getByText(/Tags: val_set/)).not.toBeNull()
+    expect(getByText(/Max samples: 25/)).not.toBeNull()
   })
 })

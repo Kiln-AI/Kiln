@@ -4,7 +4,11 @@ import asyncio
 
 from app.desktop.git_sync.save_context import save_context_for_project
 from kiln_ai.adapters.errors import KilnRunError
-from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
+from kiln_ai.adapters.eval.eval_runner import (
+    DEFAULT_EVAL_CONCURRENCY,
+    EvalJob,
+    EvalRunner,
+)
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
 from kiln_ai.datamodel.prompt_type import generator_label
@@ -76,6 +80,12 @@ class EvalJobParams(BaseModel):
     )
     run_config_id: str = Field(
         description="Id of the task run config whose outputs are being evaluated."
+    )
+    concurrency: int | None = Field(
+        default=None,
+        ge=1,
+        description="Max dataset items evaluated in parallel by the runner. Leave null to use the "
+        f"runner's default ({DEFAULT_EVAL_CONCURRENCY}).",
     )
 
 
@@ -302,7 +312,9 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         success = baseline_success
         total = baseline.total if baseline.total is not None else baseline_success
         error = 0
-        async for progress in eval_runner.run(observers=[_EvalErrorLogObserver(ctx)]):
+        async for progress in eval_runner.run(
+            concurrency=params.concurrency, observers=[_EvalErrorLogObserver(ctx)]
+        ):
             # progress.total = full - baseline_success (the unfinished remainder),
             # so baseline_success + progress.total = the full eval-set size.
             success = baseline_success + progress.complete
