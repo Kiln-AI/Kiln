@@ -215,7 +215,7 @@ Workaround to build the venv for testing (the `together` fork isn't exercised by
 1. **Do NOT use `uv sync --no-sources`** — it strips the workspace `workspace = true` sources too and makes `kiln-root → kiln-ai` unsatisfiable.
 2. Instead, temporarily comment out ONLY the `together = { git = ... }` line in `libs/core/pyproject.toml`, then run `uv sync` (this resolves `together` from PyPI).
 3. Run the tests.
-4. **Revert** `libs/core/pyproject.toml` (and `git checkout -- pyproject.toml uv.lock` if the lock changed) so the git-fork pin is restored. Only `ml_model_list.py` (and any intended test-file edits) should remain modified.
+4. **Revert** the workaround with `git checkout -- libs/core/pyproject.toml uv.lock` — this restores the commented-out `together` git-fork pin in `libs/core/pyproject.toml` (NOT the repo-root `pyproject.toml`, which the workaround never touches) and reverts `uv.lock` if it changed. Only `ml_model_list.py` (and any intended test-file edits) should remain modified.
 
 Note: the PyPI `together` may pull slightly different transitive deps (e.g. a newer `starlette`), which can cause unrelated collection ImportErrors in desktop/server/rag/vector-store modules — scope your `-k` filters to the model files and ignore those.
 
