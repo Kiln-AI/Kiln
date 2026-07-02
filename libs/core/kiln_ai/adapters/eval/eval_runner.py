@@ -190,7 +190,7 @@ class EvalRunner:
 
     async def run(
         self,
-        concurrency: int = 25,
+        concurrency: int | None = None,
         observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
     ) -> AsyncGenerator[Progress, None]:
         """
@@ -199,7 +199,11 @@ class EvalRunner:
         Pass `observers` to be notified per-item (e.g. to surface the exception of
         a failed dataset item — `Progress.errors` is only a count). Optional so the
         streaming UI paths can keep calling `run()` with no observer.
+
+        `concurrency` bounds how many items run in parallel; None uses the default.
         """
+        if concurrency is None:
+            concurrency = 25
         jobs = self.collect_tasks()
 
         runner = AsyncJobRunner(

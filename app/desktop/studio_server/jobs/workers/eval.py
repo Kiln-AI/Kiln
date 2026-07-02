@@ -77,6 +77,12 @@ class EvalJobParams(BaseModel):
     run_config_id: str = Field(
         description="Id of the task run config whose outputs are being evaluated."
     )
+    concurrency: int | None = Field(
+        default=None,
+        ge=1,
+        description="Max dataset items evaluated in parallel by the runner. Leave null to use the "
+        "runner's default (25).",
+    )
 
 
 class EvalJobResult(BaseModel):
@@ -302,7 +308,9 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         success = baseline_success
         total = baseline.total if baseline.total is not None else baseline_success
         error = 0
-        async for progress in eval_runner.run(observers=[_EvalErrorLogObserver(ctx)]):
+        async for progress in eval_runner.run(
+            concurrency=params.concurrency, observers=[_EvalErrorLogObserver(ctx)]
+        ):
             # progress.total = full - baseline_success (the unfinished remainder),
             # so baseline_success + progress.total = the full eval-set size.
             success = baseline_success + progress.complete
