@@ -357,7 +357,7 @@
                         Model: {run_config_model}
                       </div>
                     {/if}
-                    {#if jp.target_tags.length > 0}
+                    {#if jp.target_tags?.length}
                       <div class="truncate" title={jp.target_tags.join(", ")}>
                         Tags: {jp.target_tags.join(", ")}
                       </div>
