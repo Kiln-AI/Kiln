@@ -181,6 +181,8 @@ async def run_job(
     concurrency=25,
     retry_delay=0,
     fresh_usage=None,
+    progress_callback=None,
+    error_callback=None,
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
@@ -198,7 +200,11 @@ async def run_job(
             rng=random.Random(seed),
             retry_delay=retry_delay,
         )
-        return await runner.run(concurrency=concurrency)
+        return await runner.run(
+            concurrency=concurrency,
+            progress_callback=progress_callback,
+            error_callback=error_callback,
+        )
 
 
 # ---- Pure helper tests ----
@@ -315,6 +321,39 @@ async def test_full_coverage_returns_all_judged_runs(mock_task, data_source):
 
 
 @pytest.mark.asyncio
+async def test_progress_callback_streams_per_chunk(mock_task, data_source):
+    # The callback fires once per chunk with (num_judged, error_count, planned_total),
+    # where planned_total is the capped matching-set size, so a job can stream progress.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
+    for i in range(5):
+        make_train_run(mock_task, data_source, f"item-{i}")
+
+    ticks: list[tuple[int, int, int]] = []
+
+    async def on_progress(num_judged, error_count, planned_total):
+        ticks.append((num_judged, error_count, planned_total))
+
+    # concurrency=2 over 5 items -> chunks of 2,2,1 -> 3 ticks, num_judged monotone.
+    result = await run_job(
+        job,
+        eval_config,
+        lambda tr: {"accuracy": 1.0},
+        concurrency=2,
+        progress_callback=on_progress,
+    )
+
+    assert result.num_judged == 5
+    assert [t[0] for t in ticks] == [2, 4, 5]
+    assert all(t[1] == 0 for t in ticks)
+    # planned_total is the capped set (min(train_set_size, max_samples) = 5).
+    assert all(t[2] == 5 for t in ticks)
+
+
+@pytest.mark.asyncio
 async def test_stop_after_failures_trims_minibatch(mock_task, data_source):
     # Train-signal mode: stop_after_failures caps the returned minibatch; judged_runs still holds
     # everything judged this chunk.
@@ -380,6 +419,69 @@ async def test_hit_cap_when_failures_sparse(mock_task, data_source):
     assert result.failing_count == 0
     assert result.hit_cap is True
     assert result.failing_runs == []
+
+
+@pytest.mark.asyncio
+async def test_gate_mode_hit_cap_when_set_exceeds_max_samples(mock_task, data_source):
+    # Gate mode (stop_after_failures=None) with more matching items than max_samples: judge exactly
+    # max_samples, report hit_cap=True (coverage was capped), and select deterministically so the
+    # capped subset is stable/pairable across runs.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=3
+    )
+    for i in range(8):
+        make_train_run(mock_task, data_source, f"item-{i}")
+
+    result = await run_job(job, eval_config, lambda tr: {"accuracy": 1.0})
+
+    assert result.train_set_size == 8
+    assert result.num_judged == 3
+    assert result.hit_cap is True
+    assert len(result.judged_runs) == 3
+
+    # Deterministic (sorted-by-id) capping: a second identical run covers the SAME task_run_ids.
+    job2 = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=3
+    )
+    result2 = await run_job(job2, eval_config, lambda tr: {"accuracy": 1.0}, seed=999)
+    assert {r.task_run_id for r in result.judged_runs} == {
+        r.task_run_id for r in result2.judged_runs
+    }
+
+
+@pytest.mark.asyncio
+async def test_empty_candidate_set(mock_task, data_source):
+    # No dataset item carries the target tags: the chunk loop never runs, so counts are zero, all
+    # aggregate signals are None/empty, hit_cap is False, and no callback fires.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, target_tags=["nonexistent"], stop_after_failures=None
+    )
+    make_train_run(mock_task, data_source, "item-0", tags=["other"])
+
+    ticks: list[tuple[int, int, int]] = []
+
+    async def on_progress(*args):
+        ticks.append(args)
+
+    result = await run_job(
+        job, eval_config, lambda tr: {"accuracy": 1.0}, progress_callback=on_progress
+    )
+
+    assert result.train_set_size == 0
+    assert result.num_judged == 0
+    assert result.failing_count == 0
+    assert result.hit_cap is False
+    assert result.judged_runs == []
+    assert result.failing_runs == []
+    assert result.errors == []
+    assert result.mean_normalized_scores == {}
+    assert result.mean_normalized_score is None
+    assert result.total_usage is None
+    assert ticks == []
 
 
 @pytest.mark.asyncio
@@ -481,6 +583,53 @@ async def test_threshold_override_five_star(mock_task, data_source):
     )
     result_fail = await run_job(job_fail, eval_config, score_fn)
     assert result_fail.failing_count == 1
+
+
+@pytest.mark.asyncio
+async def test_error_callback_fires_live_not_batched(mock_task, data_source):
+    # Regression: errors must be delivered to error_callback as they happen (interleaved with
+    # progress), not all at the end — otherwise a job's "View Errors" shows nothing mid-run.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    # Gate mode, one item per chunk, so the error in chunk 1 must be reported before chunk 2's
+    # progress tick.
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=None, max_samples=10
+    )
+    make_train_run(mock_task, data_source, "error-item")
+    make_train_run(mock_task, data_source, "ok-item")
+
+    def score_fn(task_run):
+        if task_run.input == "error-item":
+            raise RuntimeError("boom")
+        return {"accuracy": 1.0}
+
+    events: list[str] = []
+
+    async def on_progress(num_judged, error_count, planned_total):
+        events.append(f"progress:{num_judged}")
+
+    async def on_error(item_error):
+        events.append(f"error:{item_error.task_run_id}")
+
+    result = await run_job(
+        job,
+        eval_config,
+        score_fn,
+        concurrency=1,
+        progress_callback=on_progress,
+        error_callback=on_error,
+    )
+
+    # The error is collected once and surfaced through the callback.
+    assert len(result.errors) == 1
+    error_events = [e for e in events if e.startswith("error:")]
+    assert len(error_events) == 1
+    assert "boom" in result.errors[0].error
+    # Live delivery: the error event lands before the LAST progress tick (both items examined),
+    # i.e. it was not deferred until after the run completed.
+    assert events.index(error_events[0]) < len(events) - 1
+    assert events[-1] == "progress:2"
 
 
 @pytest.mark.asyncio

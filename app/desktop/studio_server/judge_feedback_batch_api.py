@@ -13,27 +13,33 @@ from kiln_ai.datamodel.judge_feedback_batch import (
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
-    agent_policy_require_approval,
+    DENY_AGENT,
 )
 from pydantic import BaseModel, Field, model_validator
 
 
 def judge_feedback_batch_from_id(
-    project_id: str, task_id: str, judge_feedback_batch_id: str
+    project_id: str,
+    task_id: str,
+    judge_feedback_batch_id: str,
+    task: Task | None = None,
 ) -> JudgeFeedbackBatch:
-    task = task_from_id(project_id, task_id)
+    # Accept an already-resolved task to avoid a redundant disk load when the caller has one.
+    if task is None:
+        task = task_from_id(project_id, task_id)
     judge_feedback_batch = JudgeFeedbackBatch.from_id_and_parent_path(
         judge_feedback_batch_id, task.path
     )
     if judge_feedback_batch is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Judge job not found. ID: {judge_feedback_batch_id}",
+            detail=f"Judge feedback batch not found. ID: {judge_feedback_batch_id}",
         )
     return judge_feedback_batch
 
@@ -239,6 +245,8 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches",
         summary="Create Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
+        # Agent-callable: the agent creates the batch here, then runs it via the job endpoint
+        # (POST /api/jobs/judge_feedback_batch/run). Creating is cheap and makes no model calls.
         openapi_extra=ALLOW_AGENT,
     )
     async def create_judge_feedback_batch(
@@ -265,9 +273,7 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/run",
         summary="Run Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
-        openapi_extra=agent_policy_require_approval(
-            "Run judge feedback batch? It makes model calls over the sampled dataset items."
-        ),
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def run_judge_feedback_batch(
@@ -283,8 +289,9 @@ def connect_judge_feedback_batch_api(app: FastAPI):
             str, Path(description="The unique identifier of the judge feedback batch.")
         ],
     ) -> JudgeFeedbackBatchRunResponse:
-        """Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
-        the failing examples + feedback.
+        """Run a judge feedback batch: sample tagged dataset items, judge their outputs (existing, or
+        freshly generated when the batch has generate_outputs=true), and return the failing examples
+        + feedback.
 
         Runs synchronously and returns once judging completes. Each result is persisted as a child
         run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
@@ -294,7 +301,7 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
         judge_feedback_batch = judge_feedback_batch_from_id(
-            project_id, task_id, judge_feedback_batch_id
+            project_id, task_id, judge_feedback_batch_id, task=task
         )
         eval_config = eval_config_from_id(task, judge_feedback_batch.eval_config_id)
         validate_judge_eval(eval_config, judge_feedback_batch.generate_outputs)
@@ -306,9 +313,7 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/run",
         summary="Create And Run Judge Feedback Batch",
         tags=["Judge Feedback Batches"],
-        openapi_extra=agent_policy_require_approval(
-            "Create and run judge feedback batch? It makes model calls over the sampled dataset items."
-        ),
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def create_and_run_judge_feedback_batch(
@@ -329,7 +334,12 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         validate_judge_eval(eval_config, body.generate_outputs)
         validate_run_config_id(task, body.run_config_id)
         judge_feedback_batch = _build_judge_feedback_batch(task, body)
-        judge_feedback_batch.save_to_file()
+        # This endpoint is @no_write_lock, so wrap the batch-config write in the git-sync context
+        # ourselves. Otherwise the raw save leaves dirty working-tree state that the runner's first
+        # child atomic_write ensure_clean() stashes away, losing the config under auto git-sync.
+        save_context = build_save_context(request) or default_save_context
+        async with save_context():
+            judge_feedback_batch.save_to_file()
         return await _run_judge_feedback_batch(
             judge_feedback_batch, eval_config, request
         )

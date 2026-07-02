@@ -15,10 +15,12 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, field
+from typing import Awaitable, Callable
 
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import _is_retryable_error
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
@@ -46,6 +48,18 @@ logger = logging.getLogger(__name__)
 # Default "pass" bar on the normalized 0-1 scale. 0.75 matches the four-star / is_high_quality
 # threshold for five_star scores (normalize_rating(4, five_star) == 0.75).
 DEFAULT_FAILURE_THRESHOLD = 0.75
+
+
+def _error_detail(error: BaseException) -> str:
+    """The most informative message for a failed item's error log.
+
+    The model adapter wraps failures in `KilnRunError`, whose own message is the user-friendly
+    (often generic) `format_error_message` text; the underlying cause survives on `.original`, so
+    surface that for the developer-facing error log. Mirrors `EvalJobWorker._error_detail`.
+    """
+    if isinstance(error, KilnRunError) and error.original is not None:
+        return str(error.original)
+    return str(error)
 
 
 def score_passes(
@@ -164,6 +178,9 @@ class JudgeFeedbackBatchRunResult:
 
     failing_runs: list[JudgeFeedbackBatchRun]
     judged_runs: list[JudgeFeedbackBatchRun]
+    # num_judged counts every item ATTEMPTED this run (errored and cached items included), so it can
+    # exceed len(judged_runs) when items errored. For a scored-item count (e.g. a fail rate), use
+    # failing_count / len(judged_runs), NOT failing_count / num_judged.
     num_judged: int
     failing_count: int
     train_set_size: int
@@ -190,6 +207,17 @@ class _ScoredItem:
     error: JudgeFeedbackBatchItemError | None = None
 
 
+# Called after each judged chunk with (num_judged, error_count, planned_total), where
+# planned_total is the number of items this run will judge (the tag-matched set capped at
+# max_samples). Lets a background job stream live progress instead of only a final snapshot.
+JudgeProgressCallback = Callable[[int, int, int], Awaitable[None]]
+
+# Called once per item error the moment it's collected (not batched to the end), so a background
+# job can write it to its error log live — otherwise the "View Errors" button appears mid-run (the
+# streamed error count is non-zero) but the log is still empty until the run finishes.
+JudgeErrorCallback = Callable[["JudgeFeedbackBatchItemError"], Awaitable[None]]
+
+
 class JudgeFeedbackBatchRunner:
     """Runs a JudgeFeedbackBatch: judges tagged dataset items and persists per-item results."""
 
@@ -204,7 +232,7 @@ class JudgeFeedbackBatchRunner:
     ):
         task = judge_feedback_batch.parent_task()
         if task is None:
-            raise ValueError("Judge job must have a parent task")
+            raise ValueError("Judge feedback batch must have a parent task")
         eval = eval_config.parent_eval()
         if eval is None:
             raise ValueError("Eval config must have a parent eval")
@@ -256,13 +284,24 @@ class JudgeFeedbackBatchRunner:
             task_run.tags or []
         )
 
-    async def run(self, concurrency: int | None = None) -> JudgeFeedbackBatchRunResult:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        progress_callback: JudgeProgressCallback | None = None,
+        error_callback: JudgeErrorCallback | None = None,
+    ) -> JudgeFeedbackBatchRunResult:
         """Judge tagged dataset items and persist each result as a JudgeFeedbackBatchRun child.
 
         Two modes, set by `stop_after_failures`:
         - None (gate): judge the WHOLE matching set up to `max_samples` — full coverage, so the
           caller can pair `judged_runs` by task_run_id against another run.
         - set (train signal): stop early once that many failures are found (a cheap minibatch).
+
+        `progress_callback`, if given, is awaited after each judged chunk with
+        (num_judged, error_count, planned_total) so a background job can stream live progress;
+        the synchronous endpoint leaves it None. `error_callback`, if given, is awaited once per
+        item error the moment it's collected, so a job can log errors live (they still appear in the
+        returned result too); the synchronous endpoint leaves it None and reads result.errors.
 
         Returns the failing runs, all judged runs, counts, and any per-item errors. Per-item errors
         are collected (not raised), so one bad item never aborts the run; the item is left
@@ -274,12 +313,23 @@ class JudgeFeedbackBatchRunner:
         # a smaller concurrency in that mode.
         if concurrency is None:
             concurrency = 5 if job.generate_outputs else 25
+        # A caller-supplied concurrency of 0 would make range() raise; negatives would mis-chunk.
+        concurrency = max(1, concurrency)
 
         candidates = [
             run for run in self.task.runs(readonly=True) if self._matches_tags(run)
         ]
         train_set_size = len(candidates)
-        self._rng.shuffle(candidates)
+        if stop_after is None:
+            # Gate mode: select deterministically (sorted by id) before capping, so two runs over
+            # the same tag set (e.g. candidate vs baseline batch) cover the SAME task_run_ids and can
+            # be paired. A random sample would pick disjoint subsets whenever the matching set
+            # exceeds max_samples, silently defeating the pairing this mode exists for.
+            candidates.sort(key=lambda run: str(run.id))
+        else:
+            # Train-signal mode: a random minibatch is fine (and desirable for variety), since the
+            # caller only wants some failing examples, not a stable paired subset.
+            self._rng.shuffle(candidates)
         candidates = candidates[: job.max_samples]
 
         # Reuse previously-judged results to avoid re-paying the judge — but only when judging
@@ -321,19 +371,26 @@ class JudgeFeedbackBatchRunner:
                         self.judge_feedback_batch.id,
                         exc_info=scored,
                     )
-                    errors.append(
-                        JudgeFeedbackBatchItemError(
-                            task_run_id=str(task_run.id),
-                            error=f"Unexpected error judging item: {scored}",
-                        )
+                    unexpected_error = JudgeFeedbackBatchItemError(
+                        task_run_id=str(task_run.id),
+                        error=f"Unexpected error judging item: {_error_detail(scored)}",
                     )
+                    errors.append(unexpected_error)
+                    if error_callback is not None:
+                        await error_callback(unexpected_error)
                     continue
                 if scored.error is not None:
                     errors.append(scored.error)
+                    if error_callback is not None:
+                        await error_callback(scored.error)
                 if scored.run is not None:
                     judged_runs.append(scored.run)
                     if not scored.passed:
                         failing_runs.append(scored.run)
+            # Stream live progress against the planned (capped) count so a background job's bar
+            # advances per chunk and reaches 100% on full coverage.
+            if progress_callback is not None:
+                await progress_callback(num_judged, len(errors), len(candidates))
             # Gate mode (stop_after is None) judges the whole set; only the train signal stops early.
             if stop_after is not None and len(failing_runs) >= stop_after:
                 break
@@ -350,6 +407,9 @@ class JudgeFeedbackBatchRunner:
         per_dimension = aggregate_normalized_scores(
             judged_runs, self.eval.output_scores
         )
+        # Mean-of-means: each dimension is weighted equally regardless of how many runs carried a
+        # value for it (a dimension scored on 2 runs counts as much as one scored on 50). This is a
+        # simple overall gate signal, not a flat mean over every individual score.
         overall = (
             sum(per_dimension.values()) / len(per_dimension) if per_dimension else None
         )
@@ -400,7 +460,7 @@ class JudgeFeedbackBatchRunner:
             return _ScoredItem(
                 error=JudgeFeedbackBatchItemError(
                     task_run_id=str(task_run.id),
-                    error=f"Error judging item: {e}",
+                    error=f"Error judging item: {_error_detail(e)}",
                 )
             )
 
@@ -437,7 +497,7 @@ class JudgeFeedbackBatchRunner:
             )
             save_error = JudgeFeedbackBatchItemError(
                 task_run_id=str(task_run.id),
-                error=f"Error saving judge result: {e}",
+                error=f"Error saving judge result: {_error_detail(e)}",
             )
 
         return _ScoredItem(

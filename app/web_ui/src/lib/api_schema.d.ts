@@ -2139,8 +2139,9 @@ export interface paths {
         put?: never;
         /**
          * Run Judge Feedback Batch
-         * @description Run a judge feedback batch: sample tagged dataset items, judge their existing outputs, and return
-         *     the failing examples + feedback.
+         * @description Run a judge feedback batch: sample tagged dataset items, judge their outputs (existing, or
+         *     freshly generated when the batch has generate_outputs=true), and return the failing examples
+         *     + feedback.
          *
          *     Runs synchronously and returns once judging completes. Each result is persisted as a child
          *     run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
@@ -3489,13 +3490,15 @@ export interface paths {
         put?: never;
         /**
          * Run Judge Feedback Batch Job
-         * @description Create and run a judge feedback batch as a background job, returning immediately.
+         * @description Run a pre-existing judge feedback batch as a background job, returning immediately.
          *
-         *     The job-backed counterpart to `POST /judge_feedback_batches/run`: lets an agent
-         *     fire many gates and `POST /api/jobs/wait` on all of them at once instead of
-         *     blocking on each synchronous call. The aggregate scores/usage/latency are on the
-         *     job result; the per-item runs (with the judge's feedback) are persisted — fetch
-         *     them via `GET /judge_feedback_batches/{id}/runs` (the result carries the batch id).
+         *     Create the batch first via `POST /judge_feedback_batches` (returns its id), then run
+         *     it here — mirroring how eval jobs run a pre-existing eval, so the batch id lives in the
+         *     job's params and is retrievable via `GET /api/jobs/{id}` even if the run fails. Lets an
+         *     agent fire many gates and `POST /api/jobs/wait` on all of them at once instead of
+         *     blocking on each synchronous call. The aggregate scores/usage/latency are on the job
+         *     result; the per-item runs (with the judge's feedback) are persisted — fetch them via
+         *     `GET /judge_feedback_batches/{id}/runs`.
          */
         post: operations["run_judge_feedback_batch_job_api_jobs_judge_feedback_batch_run_post"];
         delete?: never;
@@ -7744,65 +7747,29 @@ export interface components {
         };
         /**
          * JudgeFeedbackBatchJobParams
-         * @description Create-and-run a judge feedback batch as a background job.
+         * @description Run an existing judge feedback batch as a background job.
          *
-         *     Inherits every CreateJudgeFeedbackBatchRequest field (and its validation) and
-         *     adds the project/task scope, so the body is the same as the synchronous
-         *     create-and-run endpoint plus project_id/task_id.
+         *     The batch config is created first via `POST .../judge_feedback_batches` (which
+         *     returns its id); the job just runs it — mirroring how `EvalJobParams` runs a
+         *     pre-existing eval. Because the id is carried in params (not minted inside
+         *     run()), it's retrievable via `GET /api/jobs/{id}` even if the run fails.
          */
         JudgeFeedbackBatchJobParams: {
             /**
-             * Name
-             * @description The name of the judge feedback batch. A memorable name is generated if omitted.
+             * Project Id
+             * @description The ID of the project the task belongs to.
              */
-            name?: string | null;
-            /**
-             * Description
-             * @description A description of the judge feedback batch.
-             */
-            description?: string | null;
-            /**
-             * Target Tags
-             * @description Dataset items must carry all of these tags to be sampled. At least one required.
-             */
-            target_tags: string[];
-            /**
-             * Eval Config Id
-             * @description The ID of the eval config (the judge) used to score sampled items.
-             */
-            eval_config_id: string;
-            /**
-             * Run Config Id
-             * @description The ID of the run config. Metadata when judging existing outputs; required and run on each item when generate_outputs=true.
-             */
-            run_config_id?: string | null;
-            /**
-             * Generate Outputs
-             * @description If true, run run_config_id on each sampled item to generate a fresh output and judge that (gate a candidate, scoped to the tagged items). If false, judge existing outputs.
-             * @default false
-             */
-            generate_outputs: boolean;
-            /**
-             * Stop After Failures
-             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
-             */
-            stop_after_failures?: number | null;
-            /**
-             * Max Samples
-             * @description The maximum number of items to judge.
-             * @default 50
-             */
-            max_samples: number;
-            /**
-             * Threshold
-             * @description The normalized (0-1) pass bar. A score below this counts as failing.
-             * @default 0.75
-             */
-            threshold: number;
-            /** Project Id */
             project_id: string;
-            /** Task Id */
+            /**
+             * Task Id
+             * @description The ID of the task the batch belongs to.
+             */
             task_id: string;
+            /**
+             * Judge Feedback Batch Id
+             * @description The ID of the judge feedback batch to run. Create it first via POST /api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches.
+             */
+            judge_feedback_batch_id: string;
         };
         /**
          * JudgeFeedbackBatchRun
