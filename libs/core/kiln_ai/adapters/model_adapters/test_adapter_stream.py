@@ -565,6 +565,33 @@ class TestAdapterStreamEdgeCases:
                 async for _ in stream:
                     pass
 
+    @pytest.mark.asyncio
+    async def test_content_filter_raises_specific_error(
+        self, mock_adapter, mock_provider
+    ):
+        response = _make_model_response(content=None, tool_calls=None)
+        response.choices[0].message.content = None
+        response.choices[0].finish_reason = "content_filter"
+        fake_stream = FakeStreamingCompletion(
+            response, [_make_streaming_chunk(finish_reason="content_filter")]
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+                async for _ in stream:
+                    pass
+        assert "no content or tool calls" not in str(exc_info.value)
+
 
 class TestAdapterStreamPerMessageUsage:
     """Per-message usage capture mirroring the non-streaming adapter."""
