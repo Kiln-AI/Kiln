@@ -274,7 +274,9 @@ class EvalRunner:
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )
-                raise RetryableError(str(e)) from e
+                # KilnRunError's own message is genericized user-facing text; keep
+                # the underlying provider detail for the developer-facing error log.
+                raise RetryableError(str(_unwrap_kiln_run_error(e))) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
