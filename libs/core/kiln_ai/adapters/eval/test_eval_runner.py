@@ -938,6 +938,22 @@ def test_is_retryable_error_wrapped_non_transient_returns_false():
     assert _is_retryable_error(wrapped) is False
 
 
+def test_is_retryable_error_unwraps_nested_kiln_run_error():
+    # Not produced by the current adapter chain (it passes through already-wrapped
+    # errors), but the unwrap walks nested wrappers so classification and error
+    # detail can't silently diverge if that ever changes.
+    nested = KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=KilnRunError(
+            message="Rate limit exceeded. Wait a moment and try again.",
+            partial_trace=None,
+            original=litellm.RateLimitError("rate limited", "provider", "model", None),
+        ),
+    )
+    assert _is_retryable_error(nested) is True
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "run_kwargs,expected_max_retries,expected_retry_delay",

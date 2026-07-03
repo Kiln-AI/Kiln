@@ -307,8 +307,7 @@ class EvalRunner:
                 )
                 # KilnRunError's own message is genericized user-facing text; keep
                 # the underlying provider detail for the developer-facing error log.
-                detail = str(e.original) if isinstance(e, KilnRunError) else str(e)
-                raise RetryableError(detail) from e
+                raise RetryableError(str(_unwrap_kiln_run_error(e))) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
@@ -316,11 +315,21 @@ class EvalRunner:
             raise
 
 
+def _unwrap_kiln_run_error(e: BaseException) -> BaseException:
+    """The innermost non-wrapper error.
+
+    The model adapter wraps provider exceptions in KilnRunError (to carry the
+    partial trace), whose own message is genericized user-facing text — so both
+    retry classification and error detail must use the underlying error. The
+    isinstance guard on `original` keeps a (contract-violating) None from
+    escaping as the result."""
+    while isinstance(e, KilnRunError) and isinstance(e.original, BaseException):
+        e = e.original
+    return e
+
+
 def _is_retryable_error(e: BaseException) -> bool:
-    # The model adapter wraps provider exceptions in KilnRunError (to carry the
-    # partial trace), so classify by the underlying error it wraps.
-    if isinstance(e, KilnRunError):
-        return _is_retryable_error(e.original)
+    e = _unwrap_kiln_run_error(e)
 
     if isinstance(
         e,
