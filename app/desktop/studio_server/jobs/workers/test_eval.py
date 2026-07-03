@@ -5,7 +5,11 @@ from typing import AsyncIterator
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.jobs.models import BackgroundJobStatus
+from app.desktop.studio_server.jobs.models import (
+    JOB_TRANSIENT_ERROR_MAX_RETRIES,
+    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+    BackgroundJobStatus,
+)
 from app.desktop.studio_server.jobs.registry import JobRegistry
 from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobParams,
@@ -174,7 +178,7 @@ def _make_eval_run(eval_config, dataset_id, run_config_id) -> EvalRun:
 @contextmanager
 def _stub_eval_runner_run(progresses: list[Progress]):
     async def fake_run(
-        self, concurrency: int = 25, observers=None
+        self, concurrency: int = 25, observers=None, max_retries=0, retry_delay=1.0
     ) -> AsyncIterator[Progress]:
         for progress in progresses:
             yield progress
@@ -636,13 +640,17 @@ async def test_registry_create_guards_describe_failure(
 async def test_run_forwards_concurrency_to_runner(
     resolve_project, task, eval_config, run_config, data_source, concurrency
 ):
-    # The job's concurrency param (None -> runner default) flows straight to EvalRunner.run.
-    received: dict[str, int | None] = {}
+    # The job's concurrency param (None -> runner default) flows straight to
+    # EvalRunner.run, and the job overrides the runner's default retry schedule
+    # with the more patient job one (non-job endpoints keep the defaults).
+    received: dict[str, int | float | None] = {}
 
     async def fake_run(
-        self, concurrency=None, observers=None
+        self, concurrency=None, observers=None, max_retries=0, retry_delay=1.0
     ) -> AsyncIterator[Progress]:
         received["concurrency"] = concurrency
+        received["max_retries"] = max_retries
+        received["retry_delay"] = retry_delay
         for _ in ():
             yield  # pragma: no cover — never yields; typed as a generator
 
@@ -669,6 +677,8 @@ async def test_run_forwards_concurrency_to_runner(
         await EvalJobWorker().run(params, FakeCtx())
 
     assert received["concurrency"] == concurrency
+    assert received["max_retries"] == JOB_TRANSIENT_ERROR_MAX_RETRIES
+    assert received["retry_delay"] == JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS
 
 
 @pytest.mark.parametrize("bad_value", [0, -1])

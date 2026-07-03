@@ -18,7 +18,12 @@ from ...judge_feedback_batch_api import (
     validate_judge_eval,
     validate_run_config_id,
 )
-from ..models import JobContext, JobWorker
+from ..models import (
+    JOB_TRANSIENT_ERROR_MAX_RETRIES,
+    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+    JobContext,
+    JobWorker,
+)
 
 
 class JudgeFeedbackBatchJobParams(BaseModel):
@@ -225,6 +230,8 @@ class JudgeFeedbackBatchJobWorker(
                 params.project_id,
                 context=f"judge feedback batch {params.judge_feedback_batch_id}",
             ),
+            max_retries=JOB_TRANSIENT_ERROR_MAX_RETRIES,
+            retry_delay=JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
         )
 
         async def report_progress(

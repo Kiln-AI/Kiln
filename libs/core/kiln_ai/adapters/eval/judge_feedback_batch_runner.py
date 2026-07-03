@@ -41,6 +41,7 @@ from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.utils.async_job_runner import jittered_backoff_delay
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
@@ -513,6 +514,7 @@ class JudgeFeedbackBatchRunner:
         they'd be collected as per-item errors and silently shrink coverage (skewing a gate). Reuses
         the eval runner's transient-error classification. Raises on a non-transient error or once
         retries are exhausted — the caller turns that into a collected JudgeFeedbackBatchItemError.
+        Background jobs override the constructor's retry defaults with a more patient schedule.
 
         Returns the judge's scores, its intermediate outputs, and — in generate_outputs mode — the
         generation's token/cost/latency Usage (None when an existing output was judged, since nothing
@@ -538,9 +540,6 @@ class JudgeFeedbackBatchRunner:
                 last_error = e
                 if not (_is_retryable_error(e) and attempt < self._max_retries):
                     break
-                # Exponential backoff: rate limits don't clear on a fixed 1s gap, and several
-                # generate+judge calls retrying in lockstep just re-floods a throttled provider.
-                # Back off progressively (delay, 2x, 4x, ...) so a 429 gets room to recover.
-                await asyncio.sleep(self._retry_delay * (2**attempt))
+                await asyncio.sleep(jittered_backoff_delay(self._retry_delay, attempt))
         assert last_error is not None  # the loop runs at least once
         raise last_error

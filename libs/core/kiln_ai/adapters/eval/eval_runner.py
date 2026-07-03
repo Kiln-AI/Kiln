@@ -6,6 +6,7 @@ from typing import AsyncGenerator, Dict, List, Literal, Set
 import litellm
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -195,6 +196,8 @@ class EvalRunner:
         self,
         concurrency: int | None = None,
         observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0,
     ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
@@ -204,6 +207,11 @@ class EvalRunner:
         streaming UI paths can keep calling `run()` with no observer.
 
         `concurrency` bounds how many items run in parallel; None uses the default.
+
+        `max_retries` re-attempts items that fail with a transient error (rate limit,
+        connection blip) with exponential backoff starting at `retry_delay` seconds,
+        only surfacing the error if every attempt fails. Background jobs override the
+        defaults with a more patient schedule.
         """
         if concurrency is None:
             concurrency = DEFAULT_EVAL_CONCURRENCY
@@ -213,7 +221,8 @@ class EvalRunner:
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
-            max_retries=2,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
             observers=observers,
         )
         async for progress in runner.run():
@@ -290,11 +299,16 @@ class EvalRunner:
             return True
         except Exception as e:
             if _is_retryable_error(e):
-                logger.error(
+                # Warning, not error: this fires per attempt, and the runner may
+                # still retry. A final failure is reported via the runner's observers.
+                logger.warning(
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )
-                raise RetryableError(str(e)) from e
+                # KilnRunError's own message is genericized user-facing text; keep
+                # the underlying provider detail for the developer-facing error log.
+                detail = str(e.original) if isinstance(e, KilnRunError) else str(e)
+                raise RetryableError(detail) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
@@ -303,6 +317,11 @@ class EvalRunner:
 
 
 def _is_retryable_error(e: BaseException) -> bool:
+    # The model adapter wraps provider exceptions in KilnRunError (to carry the
+    # partial trace), so classify by the underlying error it wraps.
+    if isinstance(e, KilnRunError):
+        return _is_retryable_error(e.original)
+
     if isinstance(
         e,
         (

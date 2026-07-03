@@ -179,6 +179,7 @@ async def run_job(
     calls=None,
     seed=1,
     concurrency=25,
+    max_retries=0,
     retry_delay=0,
     fresh_usage=None,
     progress_callback=None,
@@ -198,6 +199,7 @@ async def run_job(
             judge_feedback_batch,
             eval_config,
             rng=random.Random(seed),
+            max_retries=max_retries,
             retry_delay=retry_delay,
         )
         return await runner.run(
@@ -710,7 +712,7 @@ async def test_transient_error_retries_then_succeeds(mock_task, data_source):
             raise ValueError("This task requires a specific output schema")
         return {"accuracy": 0.0}
 
-    result = await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn, max_retries=2)
 
     # Retried once then succeeded — the item is judged, no error surfaced.
     assert attempts["n"] == 2
@@ -734,13 +736,29 @@ async def test_non_transient_error_not_retried(mock_task, data_source):
         attempts["n"] += 1
         raise RuntimeError("hard failure")
 
-    result = await run_job(job, eval_config, score_fn)
+    result = await run_job(job, eval_config, score_fn, max_retries=2)
 
-    # A non-transient error is collected once, not retried.
+    # A non-transient error is collected once, not retried (even with retries enabled).
     assert attempts["n"] == 1
     assert len(result.judged_runs) == 0
     assert len(result.errors) == 1
     assert "hard failure" in result.errors[0].error
+
+
+def test_default_retry_config(mock_task, data_source):
+    # The constructor keeps the historical default (2 retries, 2s base delay) so
+    # existing callers are unaffected; background jobs override with a more
+    # patient schedule.
+    eval = make_eval(mock_task)
+    eval_config = make_eval_config(eval)
+    job = make_judge_feedback_batch(
+        mock_task, eval_config, stop_after_failures=1, max_samples=1
+    )
+
+    runner = JudgeFeedbackBatchRunner(job, eval_config)
+
+    assert runner._max_retries == 2
+    assert runner._retry_delay == 2.0
 
 
 @pytest.mark.asyncio
@@ -777,8 +795,13 @@ async def test_transient_retries_back_off_exponentially(mock_task, data_source):
             "kiln_ai.adapters.eval.judge_feedback_batch_runner.asyncio.sleep",
             fake_sleep,
         )
+        # Pin the jitter factor so the exponential progression is exact.
+        mp.setattr(
+            "kiln_ai.utils.async_job_runner.random.uniform",
+            lambda a, b: 1.0,
+        )
         runner = JudgeFeedbackBatchRunner(
-            job, eval_config, rng=random.Random(1), retry_delay=1.0
+            job, eval_config, rng=random.Random(1), max_retries=2, retry_delay=1.0
         )
         result = await runner.run(concurrency=1)
 
