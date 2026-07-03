@@ -1,8 +1,10 @@
 """Tests for LlmJudgeEval adapter."""
 
+import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from litellm.types.utils import ModelResponse
 
 from kiln_ai.adapters.eval.v2_eval_llm_judge import (
     _DEFAULT_SYSTEM_PROMPT,
@@ -88,20 +90,10 @@ class TestLlmJudgeTask:
     def test_basic_creation(self):
         task = _LlmJudgeTask(
             system_prompt="You are a judge.",
-            thinking_instruction="Think carefully.",
             output_json_schema=_VALID_SCHEMA,
         )
         assert task.instruction == "You are a judge."
-        assert task.thinking_instruction == "Think carefully."
         assert task.output_json_schema == _VALID_SCHEMA
-
-    def test_none_thinking_instruction(self):
-        task = _LlmJudgeTask(
-            system_prompt="Judge it.",
-            thinking_instruction=None,
-            output_json_schema=_VALID_SCHEMA,
-        )
-        assert task.thinking_instruction is None
 
 
 class TestLlmJudgeEvalLlmAsJudge:
@@ -233,23 +225,6 @@ class TestLlmJudgeEvalLlmAsJudge:
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
-    async def test_thinking_instruction_passed(self, mock_adapter_for_task):
-        mock_adapter = AsyncMock()
-        mock_adapter.invoke_returning_run_output.return_value = (
-            Mock(),
-            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
-        )
-        mock_adapter_for_task.return_value = mock_adapter
-
-        props = _make_props(thinking_instruction="Think about quality.")
-        cfg = _make_config(props)
-        await LlmJudgeEval(cfg).evaluate(_inp())
-
-        task_arg = mock_adapter_for_task.call_args[0][0]
-        assert task_arg.thinking_instruction == "Think about quality."
-
-    @pytest.mark.asyncio
-    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
     async def test_adapter_config_llm_as_judge(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
@@ -266,7 +241,6 @@ class TestLlmJudgeEvalLlmAsJudge:
         adapter_config = call_kwargs["base_adapter_config"]
         assert adapter_config.allow_saving is False
         assert adapter_config.top_logprobs is None
-        assert adapter_config.forward_thinking_instructions is True
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -539,3 +513,141 @@ class TestLlmJudgeEvalTemplateRenderError:
         assert result.skipped_reason == SkippedReason.extraction_failed
         assert result.skipped_detail is not None
         assert "not valid JSON" in result.skipped_detail
+
+
+class TestLlmJudgeE2EMessageConstruction:
+    """End-to-end test exercising the REAL adapter/chat-formatter pipeline.
+
+    Mocks only at the model boundary (litellm.acompletion) to verify that
+    the messages sent to the LLM are exactly the rendered prompt (no
+    <user_input> wrapping, no appended 'Think step by step' instruction)
+    and the system message equals the configured system_prompt.
+
+    g_eval variant omitted: logprob mocking is non-trivial; g_eval scoring
+    is covered by existing unit tests and shares the same message path.
+    """
+
+    _SYSTEM_PROMPT = "You are an expert code reviewer. Be strict."
+    _PROMPT_TEMPLATE = (
+        "Task: {{ task_input }}\n"
+        "Response: {{ final_message }}\n"
+        "Trace: {{ trace | tojson }}\n"
+        "Ref: {{ reference_data.expected_answer }}"
+    )
+    _TASK_INPUT = "Implement a binary search function."
+    _FINAL_MESSAGE = "def binary_search(arr, target): ..."
+
+    @staticmethod
+    def _trace() -> list[dict[str, str]]:
+        return [
+            {"role": "user", "content": "Implement binary search"},
+            {"role": "assistant", "content": "def binary_search(arr, target): ..."},
+        ]
+
+    @staticmethod
+    def _reference_data() -> dict[str, str]:
+        return {"expected_answer": "A correct O(log n) implementation"}
+
+    def _build_config(self) -> EvalConfig:
+        props = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template=self._PROMPT_TEMPLATE,
+            system_prompt=self._SYSTEM_PROMPT,
+        )
+        parent = Mock()
+        parent.output_scores = [
+            EvalOutputScore(
+                name="quality",
+                instruction="Rate quality",
+                type=TaskOutputRatingType.five_star,
+            ),
+            EvalOutputScore(
+                name="correctness",
+                instruction="Is the answer correct?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ]
+        cfg = Mock(spec=EvalConfig)
+        cfg.config_type = EvalConfigType.v2
+        cfg.properties = props
+        cfg.parent_eval.return_value = parent
+        cfg.model_name = None
+        cfg.model_provider = None
+        return cfg
+
+    def _build_input(self) -> EvalTaskInput:
+        return EvalTaskInput(
+            task_input=self._TASK_INPUT,
+            final_message=self._FINAL_MESSAGE,
+            trace=self._trace(),
+            reference_data=self._reference_data(),
+        )
+
+    def _expected_user_message(self) -> str:
+        trace_json = json.dumps(self._trace(), sort_keys=True)
+        ref = self._reference_data()
+        return (
+            f"Task: {self._TASK_INPUT}\n"
+            f"Response: {self._FINAL_MESSAGE}\n"
+            f"Trace: {trace_json}\n"
+            f"Ref: {ref['expected_answer']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_llm_as_judge_messages_sent_verbatim(self):
+        """The user message must be the rendered prompt verbatim — no wrapping."""
+        model_response = ModelResponse(
+            model="gpt-4o",
+            choices=[
+                {
+                    "message": {
+                        "content": json.dumps({"quality": 4, "correctness": "pass"}),
+                    }
+                }
+            ],
+        )
+
+        captured_kwargs: list[dict] = []
+
+        async def fake_acompletion(**kwargs):
+            captured_kwargs.append(kwargs)
+            return model_response
+
+        mock_config_obj = Mock()
+        mock_config_obj.open_ai_api_key = "fake-key"
+        mock_config_obj.user_id = "test_user"
+
+        cfg = self._build_config()
+        eval_input = self._build_input()
+
+        with (
+            patch("litellm.acompletion", side_effect=fake_acompletion),
+            patch(
+                "kiln_ai.utils.config.Config.shared",
+                return_value=mock_config_obj,
+            ),
+        ):
+            result = await LlmJudgeEval(cfg).evaluate(eval_input)
+
+        assert len(captured_kwargs) == 1
+        messages = captured_kwargs[0]["messages"]
+
+        system_msgs = [m for m in messages if m["role"] == "system"]
+        user_msgs = [m for m in messages if m["role"] == "user"]
+
+        assert len(system_msgs) == 1
+        assert len(user_msgs) == 1
+
+        system_content = system_msgs[0]["content"]
+        user_content = user_msgs[0]["content"]
+
+        assert system_content == self._SYSTEM_PROMPT
+        assert user_content == self._expected_user_message()
+
+        assert "The input is:" not in user_content
+        assert "<user_input>" not in user_content
+        assert "Think step by step" not in user_content
+
+        assert result.scores == {"quality": 4.0, "correctness": 1.0}
+        assert result.skipped_reason is None

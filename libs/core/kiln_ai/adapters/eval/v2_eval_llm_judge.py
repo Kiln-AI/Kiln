@@ -53,14 +53,13 @@ _DEFAULT_SYSTEM_PROMPT = (
 class _LlmJudgeTask(Task, parent_of={}):
     """Ephemeral Task for invoking an LLM judge via adapter_for_task().
 
-    Follows the GEvalTask pattern: creates a temporary Project/Task with the
-    system prompt, thinking instruction, and output JSON schema.
+    Creates a temporary Project/Task with the system prompt and output
+    JSON schema.
     """
 
     def __init__(
         self,
         system_prompt: str,
-        thinking_instruction: str | None,
         output_json_schema: str,
     ):
         tmp_project = Project(name="LlmJudge")
@@ -68,7 +67,6 @@ class _LlmJudgeTask(Task, parent_of={}):
             name="LlmJudge Task",
             parent=tmp_project,
             instruction=system_prompt,
-            thinking_instruction=thinking_instruction,
             output_json_schema=output_json_schema,
         )
 
@@ -123,7 +121,6 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         judge_task = _LlmJudgeTask(
             system_prompt=system_prompt,
-            thinking_instruction=props.thinking_instruction,
             output_json_schema=output_json_schema,
         )
 
@@ -156,13 +153,12 @@ class LlmJudgeEval(BaseV2EvalBridge):
             run_config_properties=KilnAgentRunConfigProperties(
                 model_name=model_name,
                 model_provider_name=provider,
-                prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+                prompt_id=PromptGenerators.SIMPLE,
                 structured_output_mode=structured_output_mode,
             ),
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 top_logprobs=top_logprobs,
-                forward_thinking_instructions=True,
             ),
         )
 
