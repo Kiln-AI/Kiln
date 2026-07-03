@@ -538,6 +538,16 @@ CLAUDE_SONNET_5_ANTHROPIC_THINKING_LEVELS = {
     "Max": "max",
 }
 
+CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 # Fable 5 requires reasoning and cannot disable it, so "none" is omitted (unlike
 # the standard Claude OpenRouter levels which default to "none").
 CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS = {
@@ -1955,7 +1965,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
