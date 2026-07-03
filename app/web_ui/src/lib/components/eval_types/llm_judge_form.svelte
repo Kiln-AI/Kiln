@@ -277,31 +277,33 @@
   {/if}
 
   <Collapse title="Advanced: Judge Prompt">
-    <p class="text-xs text-gray-500">
-      Customizing the judge prompt can improve eval quality. We've pre-filled a
-      default based on your task and spec.
-    </p>
-    <p class="text-xs text-gray-500">
-      The judge prompt is in Jinja2 format and may contain the following
-      variables:
-    </p>
-    <ul class="text-xs text-gray-500 list-disc list-inside mb-2">
-      <li>
-        <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input to
-        the task.
-      </li>
-      <li>
-        <span class="font-mono font-bold">{"{{ final_message }}"}</span> The final
-        message from the model.
-      </li>
-      <li>
-        <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire trace.
-      </li>
-      <li>
-        <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
-        data attached to to eval case.
-      </li>
-    </ul>
+    <div class="flex flex-col gap-2">
+      <p class="text-xs text-gray-500 font-medium">
+        Customizing the judge prompt can improve eval quality. We've pre-filled
+        a default based on your task and spec.
+      </p>
+      <p class="text-xs text-gray-500">
+        The judge prompt is in Jinja2 format and may contain the following
+        variables:
+      </p>
+      <ul class="text-xs text-gray-500 list-disc list-inside mb-2 indent-2">
+        <li>
+          <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input
+          to the task.
+        </li>
+        <li>
+          <span class="font-mono font-bold">{"{{ final_message }}"}</span> The final
+          message from the model.
+        </li>
+        <li>
+          <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire trace.
+        </li>
+        <li>
+          <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
+          data attached to to eval case.
+        </li>
+      </ul>
+    </div>
     {#if prompt_fetch_error}
       <div class="text-xs text-warning mb-2">{prompt_fetch_error}</div>
     {/if}
@@ -320,7 +322,7 @@
       label="System Prompt"
       bind:value={system_prompt}
       optional={true}
-      height="medium"
+      height="base"
     />
   </Collapse>
 </div>
