@@ -39,6 +39,14 @@ TERMINAL_STATUSES = frozenset(
     }
 )
 
+# Background jobs retry items that fail with a transient provider error (rate limit,
+# connection blip) with exponential backoff, and only surface the error to the job's
+# error log once every attempt fails. This is a more patient schedule than the
+# runners' own defaults (which interactive endpoints keep): with a 5s base delay the
+# waits are ~5/10/20/40s (jittered), giving a throttled provider room to recover.
+JOB_TRANSIENT_ERROR_MAX_RETRIES = 4
+JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS = 5.0
+
 
 class JobProgress(BaseModel):
     """Count-based progress for a job.

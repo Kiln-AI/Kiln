@@ -6,6 +6,10 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from app.desktop.studio_server.jobs.models import (
+    JOB_TRANSIENT_ERROR_MAX_RETRIES,
+    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+)
 from app.desktop.studio_server.jobs.workers.judge_feedback_batch import (
     JudgeFeedbackBatchJobParams,
     JudgeFeedbackBatchJobResult,
@@ -251,6 +255,37 @@ async def test_run_forwards_concurrency_to_runner(
         await JudgeFeedbackBatchJobWorker().run(params, ctx)
 
     assert received["concurrency"] == concurrency
+
+
+async def test_run_enables_transient_retries_on_runner(
+    resolve_project, task, eval_config, run_config, batch, params
+):
+    # Background jobs override the runner's default retry schedule with the more
+    # patient job one; the synchronous endpoint keeps the runner defaults.
+    received: dict[str, float] = {}
+
+    async def fake_run(
+        self, concurrency=None, progress_callback=None, error_callback=None
+    ) -> JudgeFeedbackBatchRunResult:
+        received["max_retries"] = self._max_retries
+        received["retry_delay"] = self._retry_delay
+        return _fake_result()
+
+    ctx = _FakeCtx()
+    with (
+        patch(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.JudgeFeedbackBatchRunner.run",
+            new=fake_run,
+        ),
+        patch(
+            "app.desktop.studio_server.jobs.workers.judge_feedback_batch.save_context_for_project",
+            return_value=None,
+        ),
+    ):
+        await JudgeFeedbackBatchJobWorker().run(params, ctx)
+
+    assert received["max_retries"] == JOB_TRANSIENT_ERROR_MAX_RETRIES
+    assert received["retry_delay"] == JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS
 
 
 @pytest.mark.parametrize("concurrency", [0, -1])

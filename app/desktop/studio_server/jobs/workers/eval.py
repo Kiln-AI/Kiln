@@ -19,7 +19,13 @@ from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel, Field
 
 from ...eval_api import eval_config_from_id, task_run_config_from_id
-from ..models import JobContext, JobDerivedState, JobWorker
+from ..models import (
+    JOB_TRANSIENT_ERROR_MAX_RETRIES,
+    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+    JobContext,
+    JobDerivedState,
+    JobWorker,
+)
 
 
 def _safe_str(exc: Exception) -> str:
@@ -313,7 +319,10 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         total = baseline.total if baseline.total is not None else baseline_success
         error = 0
         async for progress in eval_runner.run(
-            concurrency=params.concurrency, observers=[_EvalErrorLogObserver(ctx)]
+            concurrency=params.concurrency,
+            observers=[_EvalErrorLogObserver(ctx)],
+            max_retries=JOB_TRANSIENT_ERROR_MAX_RETRIES,
+            retry_delay=JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
         ):
             # progress.total = full - baseline_success (the unfinished remainder),
             # so baseline_success + progress.total = the full eval-set size.
