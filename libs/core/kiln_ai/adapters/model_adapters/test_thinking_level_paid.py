@@ -27,6 +27,7 @@ ANTHROPIC_ADAPTIVE_THINKING_MODELS = {
     ModelName.claude_opus_4_7.value,
     ModelName.claude_opus_4_8.value,
     ModelName.claude_sonnet_4_6.value,
+    ModelName.claude_sonnet_5.value,
 }
 
 
