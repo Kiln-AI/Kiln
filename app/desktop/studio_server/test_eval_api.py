@@ -4354,7 +4354,7 @@ class TestDefaultLlmJudgePrompt:
         assert body["system_prompt"] == "You are an evaluator."
         assert "{{ task_input }}" in body["judge_prompt"]
         assert "{{ final_message }}" in body["judge_prompt"]
-        assert "accuracy" in body["judge_prompt"]
+        assert "Is the answer accurate?" in body["judge_prompt"]
 
     def test_eval_not_found(self, client):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
@@ -4415,7 +4415,7 @@ class TestCreateLlmJudgeConfigOverrides:
             )
         assert response.status_code == 200
         props = response.json()["properties"]
-        assert "Evaluation Steps:" in props["prompt_template"]
+        assert "<steps>" in props["prompt_template"]
 
     def test_invalid_jinja_returns_400(self, client, mock_v2_eval):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
