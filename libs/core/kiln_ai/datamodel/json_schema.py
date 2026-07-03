@@ -157,6 +157,69 @@ def single_string_field_name(schema: Dict) -> str | None:
     return None
 
 
+def strip_numeric_bounds(schema: Dict) -> Dict:
+    """Return a deep-copied schema with numeric-constraint keywords removed.
+
+    Any schema node whose 'type' is 'integer' or 'number' has the keywords
+    'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', and
+    'multipleOf' removed. This normalization is recursive and walks nested
+    schema structures such as 'properties', 'items', '$defs'/'definitions', and
+    composed schemas like 'anyOf'/'oneOf'/'allOf'.
+
+    This is used only for the json_schema wire format sent to some providers
+    (e.g. Claude via OpenRouter, which maps onto Anthropic's newer
+    output_config.format.schema API that rejects numeric bounds on
+    integer/number types). It does NOT change how Kiln validates model outputs:
+    the valid ranges are still enforced by the prompt and post-hoc validation.
+    """
+
+    numeric_bound_keys = (
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+    )
+
+    def _normalize(node: Any) -> Any:
+        if isinstance(node, list):
+            return [_normalize(item) for item in node]
+
+        if not isinstance(node, dict):
+            return node
+
+        normalized = deepcopy(node)
+
+        for key in (
+            "properties",
+            "$defs",
+            "definitions",
+            "patternProperties",
+            "dependentSchemas",
+        ):
+            if key in normalized and isinstance(normalized[key], dict):
+                normalized[key] = {
+                    child_key: _normalize(child_value)
+                    for child_key, child_value in normalized[key].items()
+                }
+
+        for key in ("items", "additionalProperties", "not", "if", "then", "else"):
+            if key in normalized:
+                normalized[key] = _normalize(normalized[key])
+
+        for key in ("prefixItems", "allOf", "anyOf", "oneOf"):
+            if key in normalized and isinstance(normalized[key], list):
+                normalized[key] = [_normalize(item) for item in normalized[key]]
+
+        if normalized.get("type") in ("integer", "number"):
+            for key in numeric_bound_keys:
+                normalized.pop(key, None)
+
+        return normalized
+
+    return _normalize(schema)
+
+
 def close_object_schemas(schema: Dict, strict: bool = False) -> Dict:
     """Return a deep-copied schema with object nodes closed by default.
 
