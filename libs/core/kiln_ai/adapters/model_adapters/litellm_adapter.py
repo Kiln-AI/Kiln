@@ -39,6 +39,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
+    strip_numeric_bounds,
     validate_schema_with_value_error,
 )
 from kiln_ai.datamodel.run_config import (
@@ -482,6 +483,13 @@ class LiteLlmAdapter(BaseAdapter):
                 "Invalid output schema for this task. Cannot use JSON schema response format."
             )
         output_schema = close_object_schemas(output_schema, strict=True)
+        # Strip numeric bounds (min/max/etc.) from integer/number nodes for the
+        # json_schema wire format. Some providers (e.g. Claude via OpenRouter,
+        # which maps onto Anthropic's newer output_config.format.schema API)
+        # reject numeric bounds on integer/number types and return HTTP 400.
+        # The valid ranges are still enforced by the prompt + post-hoc
+        # validation, so this only affects the schema sent over the wire.
+        output_schema = strip_numeric_bounds(output_schema)
         return {
             "response_format": {
                 "type": "json_schema",
