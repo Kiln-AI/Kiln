@@ -27,7 +27,11 @@ from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     StructuredOutputMode,
 )
-from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    EMPTY_RESPONSE_ERROR_MESSAGE,
+    AdapterStream,
+    raise_for_empty_model_response,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
@@ -167,9 +171,7 @@ class LiteLlmAdapter(BaseAdapter):
             content = response_choice.message.content
             tool_calls = response_choice.message.tool_calls
             if not content and not tool_calls:
-                raise ValueError(
-                    "Model returned an assistant message, but no content or tool calls. This is not supported."
-                )
+                raise_for_empty_model_response(response_choice)
 
             # Add message to messages, so it can be used in the next turn
             messages.append(response_choice.message)
@@ -981,9 +983,7 @@ class LiteLlmAdapter(BaseAdapter):
             message["usage"] = usage
 
         if not message.get("content") and not message.get("tool_calls"):
-            raise ValueError(
-                "Model returned an assistant message, but no content or tool calls. This is not supported."
-            )
+            raise ValueError(EMPTY_RESPONSE_ERROR_MESSAGE)
 
         return message
 
