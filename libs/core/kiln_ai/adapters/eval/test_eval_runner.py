@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import litellm
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner, _is_retryable_error
 from kiln_ai.adapters.ml_model_list import ModelProviderName
@@ -866,6 +867,43 @@ def test_is_retryable_error_returns_true(error):
 )
 def test_is_retryable_error_returns_false(error):
     assert _is_retryable_error(error) is False
+
+
+def test_is_retryable_error_unwraps_kiln_run_error():
+    # The model adapter wraps provider exceptions in KilnRunError (to carry the
+    # partial trace), so the classifier must look through the wrapper — otherwise
+    # rate limits from a real adapter run would never be retried.
+    wrapped = KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=litellm.RateLimitError("rate limited", "provider", "model", None),
+    )
+    assert _is_retryable_error(wrapped) is True
+
+
+def test_is_retryable_error_wrapped_non_transient_returns_false():
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=RuntimeError("boom"),
+    )
+    assert _is_retryable_error(wrapped) is False
+
+
+def test_is_retryable_error_unwraps_nested_kiln_run_error():
+    # Not produced by the current adapter chain (it passes through already-wrapped
+    # errors), but the unwrap walks nested wrappers so classification can't
+    # silently break if that ever changes.
+    nested = KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=KilnRunError(
+            message="Rate limit exceeded. Wait a moment and try again.",
+            partial_trace=None,
+            original=litellm.RateLimitError("rate limited", "provider", "model", None),
+        ),
+    )
+    assert _is_retryable_error(nested) is True
 
 
 # --- save_context tests ---
