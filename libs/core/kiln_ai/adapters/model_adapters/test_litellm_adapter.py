@@ -3292,10 +3292,46 @@ class TestEmptyResponseErrors:
                 "acompletion_checking_response",
                 return_value=(response, response.choices[0]),
             ):
-                with pytest.raises(ValueError, match="content-filter/refusal"):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
                     await adapter._run_model_turn(
                         provider, [{"role": "user", "content": "Hi"}], None, False
                     )
+        # LiteLLM normalizes a "refusal" stop reason to finish_reason='content_filter'
+        # on a real ModelResponse; the actual (normalized) value is interpolated.
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_message_refusal_field_raises_specific_error(self, adapter, provider):
+        # OpenAI can signal a refusal via message.refusal while finish_reason='stop'.
+        response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": None,
+                        "refusal": "I cannot help with that request.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        )
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        assert "no content or tool calls" not in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_normal_finish_reason_raises_generic_error(self, adapter, provider):
