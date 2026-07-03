@@ -160,9 +160,11 @@ def single_string_field_name(schema: Dict) -> str | None:
 def strip_numeric_bounds(schema: Dict) -> Dict:
     """Return a deep-copied schema with numeric-constraint keywords removed.
 
-    Any schema node whose 'type' is 'integer' or 'number' has the keywords
-    'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', and
-    'multipleOf' removed. This normalization is recursive and walks nested
+    Any schema node whose 'type' is 'integer' or 'number' (either as a string
+    or as a list that contains 'integer' or 'number', e.g. ['integer', 'null']
+    for nullable fields) has the keywords 'minimum', 'maximum',
+    'exclusiveMinimum', 'exclusiveMaximum', and 'multipleOf' removed. This
+    normalization is recursive and walks nested
     schema structures such as 'properties', 'items', '$defs'/'definitions', and
     composed schemas like 'anyOf'/'oneOf'/'allOf'.
 
@@ -211,7 +213,12 @@ def strip_numeric_bounds(schema: Dict) -> Dict:
             if key in normalized and isinstance(normalized[key], list):
                 normalized[key] = [_normalize(item) for item in normalized[key]]
 
-        if normalized.get("type") in ("integer", "number"):
+        node_type = normalized.get("type")
+        is_numeric = node_type in ("integer", "number") or (
+            isinstance(node_type, list)
+            and any(x in ("integer", "number") for x in node_type)
+        )
+        if is_numeric:
             for key in numeric_bound_keys:
                 normalized.pop(key, None)
 

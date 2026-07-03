@@ -423,6 +423,54 @@ def test_strip_numeric_bounds_nested_structures():
     assert result["$defs"]["Rating"] == {"type": "integer"}
 
 
+def test_strip_numeric_bounds_nullable_types():
+    schema = {
+        "type": "object",
+        "properties": {
+            "five_star": {
+                "type": ["integer", "null"],
+                "minimum": 1,
+                "maximum": 5,
+                "description": "A rating",
+            },
+            "score": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 1,
+                "exclusiveMinimum": 0,
+                "exclusiveMaximum": 1,
+                "multipleOf": 0.1,
+                "title": "Score",
+            },
+            "name": {
+                "type": ["string", "null"],
+                "minLength": 1,
+                "maxLength": 10,
+            },
+        },
+    }
+    result = strip_numeric_bounds(schema)
+
+    # nullable integer node: numeric bounds stripped, other fields intact
+    assert result["properties"]["five_star"] == {
+        "type": ["integer", "null"],
+        "description": "A rating",
+    }
+    # nullable number node: all numeric bound keywords stripped, other fields intact
+    assert result["properties"]["score"] == {
+        "type": ["number", "null"],
+        "title": "Score",
+    }
+    # nullable string node: length keywords are NOT numeric bounds, left intact
+    assert result["properties"]["name"] == {
+        "type": ["string", "null"],
+        "minLength": 1,
+        "maxLength": 10,
+    }
+    # original schema is not mutated
+    assert schema["properties"]["five_star"]["minimum"] == 1
+
+
 def test_close_object_schemas_strict_no_properties():
     schema = {
         "type": "object",
