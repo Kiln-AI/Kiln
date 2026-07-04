@@ -248,6 +248,23 @@ class TestScoreValidation:
             CodeEvalAdapter(cfg)
 
 
+class TestAsyncScorerEndToEnd:
+    @pytest.mark.asyncio
+    async def test_async_scorer_returns_validated_scores(self):
+        code = (
+            "async def score(output, trace, reference_data, task_input):\n"
+            "    return {'accuracy': 0.75}\n"
+        )
+        cfg = _make_config(code=code)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust("/fake/project/path")
+
+        result = await adapter.evaluate(_inp(final_message="test"))
+        assert result.scores == {"accuracy": 0.75}
+        assert result.skipped_reason is None
+        assert result.skipped_detail is None
+
+
 class TestResolveProjectPath:
     def test_no_project_returns_none(self):
         cfg = _make_config()

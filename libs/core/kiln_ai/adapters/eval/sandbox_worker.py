@@ -3,6 +3,8 @@
 Thin module: stdlib only. No Pydantic / Kiln-model / DB / UI imports.
 """
 
+import asyncio
+import inspect
 import io
 import multiprocessing
 import multiprocessing.queues
@@ -22,8 +24,11 @@ def _execute_scorer(
 ) -> None:
     """Target function for the child process.
 
-    Runs user scorer code in an isolated namespace. Puts exactly one
-    JSON-serializable dict on *result_queue*:
+    Runs user scorer code in an isolated namespace. Both ``def score``
+    and ``async def score`` are supported -- if the call returns a
+    coroutine it is transparently awaited via ``asyncio.run()``.
+
+    Puts exactly one JSON-serializable dict on *result_queue*:
       - success:  {"ok": <result>, "stdout": ..., "stderr": ...}
       - error:    {"error": str, "traceback": str, "stdout": ..., "stderr": ...}
       - missing:  {"error": "...does not define score...", "stdout": ..., "stderr": ...}
@@ -67,6 +72,9 @@ def _execute_scorer(
             reference_data=inputs.get("reference_data"),
             task_input=inputs["task_input"],
         )
+
+        if inspect.iscoroutine(result):
+            result = asyncio.run(result)
 
         result_queue.put(
             {
