@@ -58,6 +58,46 @@ export interface EvalTypeFormApi {
 
 export type EvalTypeTag = { label: string; tone: "default" | "beta" }
 
+/**
+ * How a V2 eval type uses reference data in the Test Judge pane.
+ *
+ * - `"llm_judge"` — referenced via Jinja in the judge prompt
+ * - `"reference_field"` — compared via a selected Reference Data Field
+ * - `"code"` — passed as the `reference_data` argument to scoring code
+ * - `"none"` — never read; the Reference Data field is hidden entirely
+ */
+export type ReferenceDataUsageMode =
+  | "llm_judge"
+  | "reference_field"
+  | "code"
+  | "none"
+
+/**
+ * Maps a V2 eval type to its reference-data usage mode.
+ * Uses assertNever so adding a new V2EvalType forces a compile error
+ * until its mode is declared here.
+ */
+export function referenceDataUsageMode(
+  type: V2EvalType,
+): ReferenceDataUsageMode {
+  switch (type) {
+    case "llm_judge":
+      return "llm_judge"
+    case "exact_match":
+    case "contains":
+    case "set_check":
+      return "reference_field"
+    case "code_eval":
+      return "code"
+    case "pattern_match":
+    case "tool_call_check":
+    case "step_count_check":
+      return "none"
+    default:
+      return assertNever(type)
+  }
+}
+
 export interface ManualExampleSupport {
   /** Whether an input/output-only manual example can be used with this judge. */
   supported: boolean

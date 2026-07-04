@@ -1319,7 +1319,7 @@ describe("ReferenceDataField", () => {
       expect(rows.length).toBe(1)
     })
 
-    it("shows Name and Value column labels on first row only", async () => {
+    it("shows Name and Value column headers in a separate header row", async () => {
       resetActionButtons()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(ReferenceDataField as any, {
@@ -1334,11 +1334,15 @@ describe("ReferenceDataField", () => {
       await fireEvent.click(editBtn)
       await tick()
 
+      const headerRow = container.querySelector(
+        '[data-testid="reference-data-column-headers"]',
+      )
+      expect(headerRow).not.toBeNull()
+
       const labels = container.querySelectorAll(".label-text")
       const labelTexts = Array.from(labels).map((l) => l.textContent?.trim())
       expect(labelTexts).toContain("Name")
       expect(labelTexts).toContain("Value")
-      // Only 2 labels total (Name + Value), not repeated per row
       expect(labels.length).toBe(2)
     })
   })
@@ -1866,5 +1870,241 @@ describe("ReferenceDataField missing-field red-state", () => {
     expect(editBtn?.textContent).toContain("expected_answer")
     expect(editBtn?.textContent).not.toContain("Missing")
     expect(editBtn?.classList.contains("text-gray-500")).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests: ReferenceDataField "How it works" callout per usage mode
+// ---------------------------------------------------------------------------
+
+describe("ReferenceDataField callout per usage mode", () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("renders llm_judge callout with Jinja example snippet", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: { reference_data: "", usage_mode: "llm_judge" },
+    })
+    const callout = container.querySelector('[data-testid="ref-data-callout"]')
+    expect(callout).not.toBeNull()
+    expect(callout?.textContent).toContain("expected values (ground truth)")
+    expect(callout?.textContent).toContain("{{ reference_data.expected_type }}")
+  })
+
+  it("renders reference_field callout with From reference data wording", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: { reference_data: "", usage_mode: "reference_field" },
+    })
+    const callout = container.querySelector('[data-testid="ref-data-callout"]')
+    expect(callout).not.toBeNull()
+    expect(callout?.textContent).toContain("expected values (ground truth)")
+    expect(callout?.textContent).toContain("From reference data")
+    expect(callout?.textContent).toContain("select the field to compare")
+  })
+
+  it("renders code callout with reference_data argument and example", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: { reference_data: "", usage_mode: "code" },
+    })
+    const callout = container.querySelector('[data-testid="ref-data-callout"]')
+    expect(callout).not.toBeNull()
+    expect(callout?.textContent).toContain("expected values (ground truth)")
+    expect(callout?.textContent).toContain("reference_data")
+    expect(callout?.textContent).toContain(".get(")
+  })
+
+  it("uses the shared CalloutCard component (blue style)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: { reference_data: "", usage_mode: "llm_judge" },
+    })
+    const callout = container.querySelector('[data-testid="ref-data-callout"]')
+    expect(callout).not.toBeNull()
+    expect(callout?.classList.contains("border-primary/30")).toBe(true)
+    expect(callout?.classList.contains("bg-primary/5")).toBe(true)
+  })
+
+  it("shows the JSON format note under Value column header", async () => {
+    resetActionButtons()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: {
+        reference_data: '{"a": 1}',
+        usage_mode: "llm_judge",
+      },
+    })
+
+    const editBtn = container.querySelector(
+      '[data-testid="reference-data-edit"]',
+    ) as HTMLButtonElement
+    await fireEvent.click(editBtn)
+    await tick()
+
+    const note = container.querySelector('[data-testid="json-format-note"]')
+    expect(note).not.toBeNull()
+    expect(note?.textContent).toContain("Any valid JSON")
+    expect(note?.textContent).not.toContain("Values can be")
+  })
+
+  it("dialog has no subtitle (callout replaces it)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(ReferenceDataField as any, {
+      props: { reference_data: "", usage_mode: "llm_judge" },
+    })
+    const dialogStub = container.querySelector('[data-title="Reference Data"]')
+    expect(dialogStub).not.toBeNull()
+    expect(dialogStub?.getAttribute("data-subtitle")).toBe("")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests: EvalTestRunPane hides reference data for "none" mode types
+// ---------------------------------------------------------------------------
+
+describe("EvalTestRunPane reference data visibility by eval type", () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("hides reference data field for pattern_match (none mode) in ready state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "pattern_match",
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).toBeNull()
+  })
+
+  it("hides reference data field for tool_call_check (none mode) in ready state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "tool_call_check",
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).toBeNull()
+  })
+
+  it("hides reference data field for step_count_check (none mode) in ready state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "step_count_check",
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).toBeNull()
+  })
+
+  it("shows reference data field for llm_judge in ready state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "llm_judge",
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).not.toBeNull()
+  })
+
+  it("shows reference data field for exact_match in ready state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "exact_match",
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).not.toBeNull()
+  })
+
+  it("shows reference data field for code_eval in ready state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "code_eval",
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).not.toBeNull()
+  })
+
+  it("hides reference data field for pattern_match in results state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "pattern_match",
+        test_result: {
+          scores: { match: 1.0 },
+          skipped_reason: null,
+        },
+        test_has_valid_run: true,
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).toBeNull()
+  })
+
+  it("shows reference data field for llm_judge in results state", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { container } = render(EvalTestRunPane as any, {
+      props: {
+        available_runs: [run1],
+        selected_run: run1,
+        runs_loading: false,
+        eval_config_type: "llm_judge",
+        test_result: {
+          scores: { accuracy: 1.0 },
+          skipped_reason: null,
+        },
+        test_has_valid_run: true,
+      },
+    })
+    const refField = container.querySelector(
+      '[data-testid="reference-data-field"]',
+    )
+    expect(refField).not.toBeNull()
   })
 })

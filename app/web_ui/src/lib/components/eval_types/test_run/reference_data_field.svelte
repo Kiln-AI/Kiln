@@ -2,9 +2,13 @@
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import CalloutCard from "$lib/ui/callout_card.svelte"
+  import BookIcon from "$lib/ui/icons/book_icon.svelte"
+  import type { ReferenceDataUsageMode } from "$lib/utils/eval_types/registry"
 
   export let reference_data: string = ""
   export let required_reference_fields: string[] = []
+  export let usage_mode: ReferenceDataUsageMode = "llm_judge"
 
   let dialog: Dialog
   let rows: Array<{ key: string; value: string }> = []
@@ -154,8 +158,6 @@
 <Dialog
   bind:this={dialog}
   title="Reference Data"
-  subtitle="Provide reference data used during evaluation."
-  sub_subtitle="Values can be any valid JSON: strings, numbers, booleans, arrays, or objects."
   width="wide"
   action_buttons={[
     {
@@ -166,20 +168,76 @@
   ]}
 >
   <div class="flex flex-col gap-3" data-testid="reference-data-editor">
+    {#if usage_mode === "llm_judge"}
+      <CalloutCard testid="ref-data-callout">
+        <svelte:fragment slot="icon"><BookIcon /></svelte:fragment>
+        <p class="text-sm text-gray-500">
+          Reference data is the expected values (ground truth) for this test
+          case. Use it in your judge prompt, like so:
+        </p>
+        <p class="mt-1">
+          <code class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
+            >{'The output type should equal "{{ reference_data.expected_type }}"'}</code
+          >
+        </p>
+      </CalloutCard>
+    {:else if usage_mode === "reference_field"}
+      <CalloutCard testid="ref-data-callout">
+        <svelte:fragment slot="icon"><BookIcon /></svelte:fragment>
+        <p class="text-sm text-gray-500">
+          Reference data is the expected values (ground truth) for this test
+          case. In the judge config, choose <span class="font-medium"
+            >From reference data</span
+          >, then select the field to compare against.
+        </p>
+      </CalloutCard>
+    {:else if usage_mode === "code"}
+      <CalloutCard testid="ref-data-callout">
+        <svelte:fragment slot="icon"><BookIcon /></svelte:fragment>
+        <p class="text-sm text-gray-500">
+          Reference data is the expected values (ground truth) for this test
+          case. Your scoring code receives it as the <code
+            class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
+            >reference_data</code
+          > argument, like so:
+        </p>
+        <p class="mt-1">
+          <code class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
+            >expected = (reference_data or {"{}"}).get("expected_answer")</code
+          >
+        </p>
+      </CalloutCard>
+    {/if}
+
     {#if rows.length === 0}
       <p class="text-sm text-gray-500">
         No values yet. Add one to get started.
       </p>
     {/if}
 
-    {#each rows as row, index}
-      <div class="flex items-start gap-2" data-testid="reference-data-row">
+    <!-- Column headers rendered once above all rows -->
+    {#if rows.length > 0}
+      <div
+        class="flex items-end gap-2"
+        data-testid="reference-data-column-headers"
+      >
         <div class="flex-1">
-          {#if index === 0}
-            <div class="py-0 pb-1">
-              <span class="label-text text-xs">Name</span>
-            </div>
-          {/if}
+          <span class="label-text text-xs">Name</span>
+        </div>
+        <div class="flex-[2] flex flex-col">
+          <span class="label-text text-xs">Value</span>
+          <span class="text-xs text-gray-500" data-testid="json-format-note"
+            >Any valid JSON: strings, numbers, booleans, arrays, or objects.</span
+          >
+        </div>
+        <!-- Spacer matching the remove button width -->
+        <div class="w-8 flex-shrink-0"></div>
+      </div>
+    {/if}
+
+    {#each rows as row, index}
+      <div class="flex items-center gap-2" data-testid="reference-data-row">
+        <div class="flex-1">
           <input
             type="text"
             class="input input-bordered input-sm w-full font-mono"
@@ -189,11 +247,6 @@
           />
         </div>
         <div class="flex-[2]">
-          {#if index === 0}
-            <div class="py-0 pb-1">
-              <span class="label-text text-xs">Value</span>
-            </div>
-          {/if}
           <input
             type="text"
             class="input input-bordered input-sm w-full font-mono"
@@ -202,7 +255,7 @@
             data-testid="reference-data-value"
           />
         </div>
-        <div class={index === 0 ? "mt-6" : ""}>
+        <div class="flex-shrink-0">
           <button
             type="button"
             class="btn btn-ghost btn-sm btn-square"

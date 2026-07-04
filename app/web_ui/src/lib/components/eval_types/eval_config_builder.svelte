@@ -602,6 +602,7 @@
       <EvalTestRunPane
         {project_id}
         {task_id}
+        {eval_config_type}
         {runs_loading}
         {runs_error}
         {available_runs}

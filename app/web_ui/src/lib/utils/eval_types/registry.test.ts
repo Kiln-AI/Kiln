@@ -7,9 +7,11 @@ import {
   extractV2Props,
   evalTypeJudgeLabel,
   manualExampleSupport,
+  referenceDataUsageMode,
   type V2EvalType,
   type V2EvalTypeMetadata,
   type EvalTypeTag,
+  type ReferenceDataUsageMode,
 } from "./registry"
 import type { EvalConfig } from "$lib/types"
 
@@ -461,6 +463,50 @@ describe("manualExampleSupport", () => {
   it("covers every eval type", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
       expect(() => manualExampleSupport(t)).not.toThrow()
+    }
+  })
+})
+
+describe("referenceDataUsageMode", () => {
+  const EXPECTED_MODES: Record<V2EvalType, ReferenceDataUsageMode> = {
+    llm_judge: "llm_judge",
+    exact_match: "reference_field",
+    contains: "reference_field",
+    set_check: "reference_field",
+    code_eval: "code",
+    pattern_match: "none",
+    tool_call_check: "none",
+    step_count_check: "none",
+  }
+
+  it("maps every V2EvalType to the correct mode", () => {
+    for (const [type, expectedMode] of Object.entries(EXPECTED_MODES)) {
+      expect(referenceDataUsageMode(type as V2EvalType)).toBe(expectedMode)
+    }
+  })
+
+  it("covers every eval type without throwing", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(() => referenceDataUsageMode(t)).not.toThrow()
+    }
+  })
+
+  it("throws for an invalid type via assertNever", () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      referenceDataUsageMode("invalid_type" as any),
+    ).toThrow("Unexpected value")
+  })
+
+  it("returns one of the four valid mode strings for every type", () => {
+    const validModes: ReferenceDataUsageMode[] = [
+      "llm_judge",
+      "reference_field",
+      "code",
+      "none",
+    ]
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(validModes).toContain(referenceDataUsageMode(t))
     }
   })
 })

@@ -8,9 +8,14 @@
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import {
+    referenceDataUsageMode,
+    type V2EvalType,
+  } from "$lib/utils/eval_types/registry"
 
   export let project_id: string
   export let task_id: string
+  export let eval_config_type: V2EvalType = "llm_judge"
   export let runs_loading: boolean = false
   export let runs_error: KilnError | null = null
   export let available_runs: TaskRunOutput[] = []
@@ -26,6 +31,8 @@
   export let is_llm_judge: boolean = false
   export let can_submit_llm: boolean = false
   export let manual_example_supported: boolean = true
+
+  $: ref_data_mode = referenceDataUsageMode(eval_config_type)
 
   let browse_dialog: TestRunBrowseDialog
   let see_all_dialog: SeeAllDialog
@@ -125,11 +132,14 @@
       />
     {/if}
 
-    <ReferenceDataField
-      {reference_data}
-      {required_reference_fields}
-      on:change={(e) => dispatch("updateReferenceData", e.detail)}
-    />
+    {#if ref_data_mode !== "none"}
+      <ReferenceDataField
+        {reference_data}
+        {required_reference_fields}
+        usage_mode={ref_data_mode}
+        on:change={(e) => dispatch("updateReferenceData", e.detail)}
+      />
+    {/if}
 
     <button
       type="button"
@@ -212,11 +222,14 @@
       on:see_all={handle_see_all}
     />
 
-    <ReferenceDataField
-      {reference_data}
-      {required_reference_fields}
-      on:change={(e) => dispatch("updateReferenceData", e.detail)}
-    />
+    {#if ref_data_mode !== "none"}
+      <ReferenceDataField
+        {reference_data}
+        {required_reference_fields}
+        usage_mode={ref_data_mode}
+        on:change={(e) => dispatch("updateReferenceData", e.detail)}
+      />
+    {/if}
 
     <button
       type="button"
