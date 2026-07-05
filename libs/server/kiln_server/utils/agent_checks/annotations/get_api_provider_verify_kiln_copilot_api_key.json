@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/provider/verify_kiln_copilot_api_key",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

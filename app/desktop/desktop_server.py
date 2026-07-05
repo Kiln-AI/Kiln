@@ -26,6 +26,7 @@ from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.agent_api import connect_agent_api
+from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.chat import connect_chat_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
@@ -146,6 +147,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_copilot_api(app)
     connect_eval_builder_api(app)
     connect_multiturn_sdg_api(app)
+    connect_batch_plan_api(app)
     connect_git_sync_api(app)
     connect_agent_api(app)
     connect_dev_tools(app)
