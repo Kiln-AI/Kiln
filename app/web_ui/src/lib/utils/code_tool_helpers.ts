@@ -6,7 +6,8 @@
  * Return a static JSON Schema for plain-text parameter mode.
  * When the user selects "Plain Text" instead of "Structured Parameter List",
  * the tool still needs a single `input` string parameter so the model knows
- * to pass text and the placeholder codegen produces `def run(input: str) -> str:`.
+ * to pass text and the placeholder codegen produces
+ * `def run(input: str | None = None) -> str:`.
  */
 export function plainTextParamsSchema(): { [key: string]: unknown } {
   return {
@@ -18,7 +19,7 @@ export function plainTextParamsSchema(): { [key: string]: unknown } {
         description: "Plain text input passed to the tool.",
       },
     },
-    required: ["input"],
+    required: [],
     additionalProperties: false,
   }
 }

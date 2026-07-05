@@ -356,7 +356,7 @@ describe("plainTextParamsSchema", () => {
     const schema = plainTextParamsSchema()
     expect(schema.type).toBe("object")
     expect(schema.additionalProperties).toBe(false)
-    expect(schema.required).toEqual(["input"])
+    expect(schema.required).toEqual([])
     const props = schema.properties as Record<
       string,
       { type: string; title: string; description: string }
@@ -377,10 +377,10 @@ describe("plainTextParamsSchema", () => {
 })
 
 describe("plainTextParamsSchema integration with generateCodeToolPlaceholder", () => {
-  it("produces def run(input: str) -> str:", () => {
+  it("produces def run(input: str | None = None) -> str:", () => {
     const schema = plainTextParamsSchema()
     const result = generateCodeToolPlaceholder(schema, "A tool")
-    expect(result).toContain("def run(input: str) -> str:")
+    expect(result).toContain("def run(input: str | None = None) -> str:")
   })
 
   it("plain-text schema differs from empty structured schema", () => {
@@ -398,7 +398,7 @@ describe("plainTextParamsSchema integration with generateCodeToolPlaceholder", (
       "test",
     )
 
-    expect(plainResult).toContain("def run(input: str) -> str:")
+    expect(plainResult).toContain("def run(input: str | None = None) -> str:")
     expect(structuredResult).toContain("def run() -> str:")
     expect(plainResult).not.toEqual(structuredResult)
   })
