@@ -167,10 +167,6 @@
     }, 0)
   }
 
-  function back_to_define() {
-    history.back()
-  }
-
   function on_code_change(e: CustomEvent<string>) {
     code = e.detail
     schema_changed_hint = false
@@ -287,6 +283,10 @@
         label: "Tools",
         href: `/tools/${project_id}`,
       },
+      {
+        label: "Add Tools",
+        href: `/tools/${project_id}/add_tools`,
+      },
     ]}
   >
     <div class="max-w-2xl">
@@ -335,6 +335,7 @@
           bind:this={schema_section}
           schema_string={clone_schema_string}
           warn_about_required={true}
+          structured_label="Structured Parameter List"
         />
       </FormContainer>
     </div>
@@ -342,7 +343,7 @@
 {:else}
   <AppPage
     title="New Code Tool"
-    subtitle="Write your code and test it"
+    subtitle="Write a tool that invokes a Python function, optionally calling other tools."
     breadcrumbs={[
       {
         label: "Optimize",
@@ -352,30 +353,28 @@
         label: "Tools",
         href: `/tools/${project_id}`,
       },
-    ]}
-    action_buttons={[
       {
-        label: "Back",
-        handler: back_to_define,
+        label: "Add Tools",
+        href: `/tools/${project_id}/add_tools`,
       },
     ]}
   >
     <div class="flex flex-col lg:flex-row gap-6">
       <!-- Left: Code Editor -->
       <div class="flex-1 min-w-0 flex flex-col gap-4">
-        <div class="flex items-center justify-between">
-          <FormElement
-            id="code_editor_label"
-            label="Code"
-            description="Write a Python function named 'run' that implements your tool."
-            inputType="header_only"
-            inline_action={{
-              handler: show_examples,
-              label: "More Examples",
-            }}
-            value=""
-          />
-        </div>
+        <h3 class="text-xl font-bold">Code</h3>
+        <FormElement
+          id="code_editor_label"
+          label="Python Function"
+          description="Write a Python function named 'run' that implements your tool."
+          info_description="Must include either `def run(...):` or `async def run(...):`."
+          inputType="header_only"
+          inline_action={{
+            handler: show_examples,
+            label: "Examples",
+          }}
+          value=""
+        />
 
         {#if schema_changed_hint}
           <div
@@ -433,19 +432,22 @@
 
       <!-- Right: Tools + Test Panel -->
       <div class="w-full lg:w-80 flex flex-col gap-6">
-        <ToolsSelector
-          {project_id}
-          label="Tool Access"
-          settings={{
-            description: "The code can only call tools listed here.",
-            info_description:
-              "Select the tools this code tool is allowed to call. Tool calls use the kiln.tools or kiln.async_tools module.",
-            hide_create_kiln_task_tool_button: true,
-            optional: true,
-            empty_label: "None (no tool access)",
-          }}
-          bind:tools={tool_allowlist}
-        />
+        <div>
+          <h3 class="text-xl font-bold mb-3">Tool Access</h3>
+          <ToolsSelector
+            {project_id}
+            label="Tools"
+            settings={{
+              description: "The code can only call tools listed here.",
+              info_description:
+                "Select the tools this code tool is allowed to call. Tool calls use the kiln.tools or kiln.async_tools module.",
+              hide_create_kiln_task_tool_button: true,
+              optional: true,
+              empty_label: "None (no tool access)",
+            }}
+            bind:tools={tool_allowlist}
+          />
+        </div>
 
         <div class="border-t pt-4">
           <CodeToolTestPanel

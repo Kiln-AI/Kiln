@@ -6,6 +6,7 @@ import {
   shouldInsertImport,
   isCodeUnmodified,
   generateExamples,
+  formatParamPreview,
 } from "./code_tool_helpers"
 
 describe("extractParams", () => {
@@ -346,5 +347,48 @@ describe("generateExamples", () => {
     const filterEx = examples.find((e) => e.label === "Filter & Transform")
     expect(filterEx).toBeDefined()
     expect(filterEx!.code).toContain("json.loads")
+  })
+})
+
+describe("formatParamPreview", () => {
+  it("returns empty string for undefined", () => {
+    expect(formatParamPreview(undefined)).toBe("")
+  })
+
+  it("returns empty string for null", () => {
+    expect(formatParamPreview(null)).toBe("")
+  })
+
+  it("returns string unchanged", () => {
+    expect(formatParamPreview("hello")).toBe("hello")
+  })
+
+  it("returns long string unchanged", () => {
+    const long = "a".repeat(500)
+    expect(formatParamPreview(long)).toBe(long)
+  })
+
+  it("renders number as string", () => {
+    expect(formatParamPreview(42)).toBe("42")
+  })
+
+  it("renders float as string", () => {
+    expect(formatParamPreview(3.14)).toBe("3.14")
+  })
+
+  it("renders boolean true", () => {
+    expect(formatParamPreview(true)).toBe("true")
+  })
+
+  it("renders boolean false", () => {
+    expect(formatParamPreview(false)).toBe("false")
+  })
+
+  it("serialises object to JSON", () => {
+    expect(formatParamPreview({ a: 1 })).toBe('{"a":1}')
+  })
+
+  it("serialises array to JSON", () => {
+    expect(formatParamPreview([1, 2, 3])).toBe("[1,2,3]")
   })
 })

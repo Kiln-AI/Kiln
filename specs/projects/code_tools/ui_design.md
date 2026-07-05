@@ -15,7 +15,7 @@ All UI lives in the Kiln desktop web UI (`kiln:app/web_ui`, SvelteKit + Tailwind
 | Create Code Tool | `tools/[project_id]/add_tools/code_tool` | New — one route, two wizard steps |
 | Code Tool detail | `tools/[project_id]/code_tools/[code_tool_id]` | New |
 
-Breadcrumbs: `Tools → New Code Tool` / `Tools → <name>`. Both new pages set `agentInfo` (per-page copilot context) and fire `posthog.capture` on create, per convention.
+Breadcrumbs: `Optimize → Tools → Add Tools → New Code Tool` (create wizard) / `Optimize → Tools → <name>` (detail page). Both new pages set `agentInfo` (per-page copilot context) and fire `posthog.capture` on create, per convention.
 
 ## 2. Tools index
 
@@ -25,12 +25,12 @@ Breadcrumbs: `Tools → New Code Tool` / `Tools → <name>`. Both new pages set 
 
 Two insertions in `add_tools/+page.svelte`:
 
-1. **Suggested Tools carousel**: a "Code Tool" feature card — *"Write a Python function that runs as a tool, and can call other tools."* → `goto` the create route. **Remove the "Control GitHub" card** to make room.
+1. **Suggested Tools carousel**: a "Code Tool" feature card — *"Write a Python function that runs as a tool, and can call other tools."* → `goto` the create route. Positioned 4th in the carousel, after "Kiln Task as Tool".
 2. **Custom Tools section** (`KilnSection`): a "Code Tool" entry with the same copy, between Kiln Task as Tool and Remote MCP.
 
 ## 4. Create flow — one route, two steps
 
-Single route hosting a two-step wizard. **Steps are history entries** (SvelteKit shallow routing / `pushState`), so browser Back returns to step 1 with state intact — never surprise data loss. Nothing is persisted until Create on step 2 (confirmed); `warn_before_unload` guards the whole flow.
+Single route hosting a two-step wizard. **Steps are history entries** (SvelteKit shallow routing / `pushState`), so browser Back returns to step 1 with state intact — never surprise data loss. There is no in-UI Back button; browser Back is the only step-navigation affordance. Nothing is persisted until Create on step 2 (confirmed); `warn_before_unload` guards the whole flow.
 
 ### Step 1 — Define
 
@@ -39,13 +39,15 @@ Single route hosting a two-step wizard. **Steps are history entries** (SvelteKit
 - **Name** — display name (`FormElement`).
 - **Tool Name** — function name, `tool_name_validator`, live-validated.
 - **Description** — the model-facing `tool_description` ("Shown to the model — describe what it does and when to use it"). The user-facing `description` field is **P2** and omitted from this screen (functional spec §1.1) — if added later it lives on the detail page's edit dialog, not here.
-- **Parameters** — the create-task `SchemaSection` experience (structured mode only — no plaintext toggle, tools are schema'd; empty properties allowed for zero-arg tools). No output schema (MCP outputs are untyped in practice).
+- **Parameters** — the create-task `SchemaSection` experience (structured mode only — no plaintext toggle, tools are schema'd; empty properties allowed for zero-arg tools). The structured option radio label is overridden to "Structured Parameter List" (default elsewhere is "Structured JSON") via the `structured_label` prop. No output schema (MCP outputs are untyped in practice).
 
 ### Step 2 — Code & Test
 
-The code-eval page shape: **code left, right panel with tools + test**.
+Subtitle: *"Write a tool that invokes a Python function, optionally calling other tools."*
 
-**Left — editor**: `code_editor.svelte` (CodeMirror 6, python). Pre-filled on first entry with a **typed placeholder generated from step 1's schema** (`code_tool_helpers.ts`, mirroring `code_eval_helpers.ts`):
+The code-eval page shape: **code left, right panel with tools + test**. Three equal-weight section headers (`text-xl font-bold`): **Code** (left column), **Tool Access** and **Test** (right column).
+
+**Left — Code**: section header "Code", then a `FormElement` sub-label "Python Function" with an info tooltip (*Must include either \`def run(...)\` or \`async def run(...)\`.*). The sub-label spans the full column width. Editor is `code_editor.svelte` (CodeMirror 6, python). Pre-filled on first entry with a **typed placeholder generated from step 1's schema** (`code_tool_helpers.ts`, mirroring `code_eval_helpers.ts`):
 
 ```python
 def run(job_ids: list[str], limit: int = 10) -> str:
@@ -56,10 +58,10 @@ def run(job_ids: list[str], limit: int = 10) -> str:
 
 - Type mapping: `string→str`, `integer→int`, `number→float`, `boolean→bool`, `array→list[<item>]`, `object→dict`; properties not in `required` get `| None = None`.
 - If the user navigates back and edits the schema, **never clobber written code** — the placeholder only fills an editor that is empty or still exactly the generated text; otherwise show a subtle hint ("Schema changed — check `run()`'s parameters").
-- "More Examples" dialog (code-evals pattern): parallel-with-retries (threads + `tools`), async fan-out (`async_tools` + `gather`), filtering a noisy tool result with `json.loads`.
+- "Examples" dialog (code-evals pattern): parallel-with-retries (threads + `tools`), async fan-out (`async_tools` + `gather`), filtering a noisy tool result with `json.loads`.
 - Below the editor, collapsed **Advanced**: timeout seconds (default 60, min 1).
 
-**Right panel, top — Tool Access**: reuse the run-config tools picker (`$lib/ui/run_config_component/tools_selector.svelte` + settings), fed by `available_tools`, filtered per functional spec §4.1 (no skills; the CODE group included). Inline warning when two selected tools share a function name ("ambiguous — calls to `search` will fail"). Helper text: "The code can only call tools listed here."
+**Right panel, top — Tool Access**: section header "Tool Access", then the run-config tools picker (`$lib/ui/run_config_component/tools_selector.svelte` + settings, own label "Tools"), fed by `available_tools`, filtered per functional spec §4.1 (no skills; the CODE group included). Inline warning when two selected tools share a function name ("ambiguous — calls to `search` will fail"). Helper text: "The code can only call tools listed here."
 
 - **Import-helper UX**: when a tool is selected and the code does not contain `from kiln import tools`, prepend to the top of the editor:
 
@@ -88,9 +90,9 @@ def run(job_ids: list[str], limit: int = 10) -> str:
 
 ## 6. Test panel (shared component, create + detail)
 
-RAG "Test Search Tool" shape + code-evals trust orchestration:
+RAG "Test Search Tool" shape + code-evals trust orchestration. Mirrors the code-evals test panel interaction pattern: inputs are edited in a **wide modal** (`Dialog width="wide"`), while the sidebar shows a **compact truncated preview** of the current values with an "Edit" affordance.
 
-- **Inputs**: form generated from `parameters_schema` via the existing run-input form elements (`run_input_form_element.svelte`) — the same rendering as running a task with an input schema. Zero-param tools show just Run.
+- **Inputs**: sidebar shows a compact card (`rounded-lg border`) with per-parameter truncated previews (`line-clamp-2`) and an "Edit" link. Clicking "Edit" opens a wide `Dialog` titled "Edit Test Input" containing the full form generated from `parameters_schema` via the existing run-input form elements (`run_input_form_element.svelte`). Zero-param tools show just Run (no input card or modal).
 - **Warning line** (always visible): "Runs your code live against real tools — side effects included." (Security-related copy: ships behind a `# TODO` requiring human sign-off, per functional spec §7.)
 - **Run** → POST test endpoint with current editor/tool state + params; spinner; cancellable.
 - **Trust intercept**: `not_trusted` response → **stopgap**: the existing code-eval trust dialog pattern/endpoints verbatim (functional spec §5 — final trust UX is out of this spec's scope; replaced in the last implementation phase).
@@ -111,4 +113,4 @@ RAG "Test Search Tool" shape + code-evals trust orchestration:
 
 **Reused as-is**: `AppPage`, `FormContainer`/`FormElement`, create-task `SchemaSection` (structured mode), `code_editor.svelte` (edit + readonly), `tools_selector.svelte`, `run_input_form_element`, `Output`, `error_with_trace`, `property_list`, `Dialog`/`edit_dialog`/`delete_dialog`, `Collapse`, `KilnSection`, `FeatureCarousel`, `tool_name_validator`, code-eval trust-dialog pattern (stopgap).
 
-**Removed**: "Control GitHub" suggested-tools card.
+**Removed**: none (no existing cards were removed).

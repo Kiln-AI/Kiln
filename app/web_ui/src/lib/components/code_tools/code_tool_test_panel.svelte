@@ -6,6 +6,7 @@
     model_from_schema,
     type SchemaModelProperty,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { formatParamPreview } from "$lib/utils/code_tool_helpers"
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -25,6 +26,7 @@
   let test_result: TestCodeToolResponse | null = null
   let test_error: KilnError | null = null
   let trust_dialog: Dialog
+  let edit_inputs_dialog: Dialog
   let abort_controller: AbortController | null = null
 
   // Track whether a successful test has run since last edit
@@ -34,6 +36,15 @@
   $: has_params = schema_model?.properties && schema_model.properties.length > 0
 
   let input_components: Record<string, RunInputFormElement> = {}
+
+  // Stores the last-built param values for preview display
+  let param_values: Record<string, unknown> = {}
+
+  // Reset component refs and cached values when the schema changes
+  $: if (schema_model) {
+    input_components = {}
+    param_values = {}
+  }
 
   function parse_schema(
     schema: { [key: string]: unknown } | undefined,
@@ -61,6 +72,19 @@
     return params
   }
 
+  function save_and_close_inputs(): boolean {
+    try {
+      param_values = build_params()
+    } catch {
+      // Let build_params errors surface at run time
+    }
+    return true
+  }
+
+  function open_edit_inputs() {
+    edit_inputs_dialog.show()
+  }
+
   async function run_test() {
     test_loading = true
     test_result = null
@@ -69,6 +93,7 @@
     let params: { [key: string]: unknown }
     try {
       params = build_params()
+      param_values = params
     } catch (e) {
       test_error = createKilnError(e)
       test_loading = false
@@ -148,7 +173,7 @@
 
 <div class="flex flex-col gap-3" data-testid="code-tool-test-panel">
   <div>
-    <div class="text-xl font-bold">Test</div>
+    <h3 class="text-xl font-bold">Test</h3>
     <!-- TODO: security-related string — human sign-off required to finalize/remove -->
     <p class="text-sm text-gray-500 mt-0.5">
       Runs your code live against real tools — side effects included.
@@ -156,14 +181,33 @@
   </div>
 
   {#if has_params && schema_model?.properties}
-    <div class="flex flex-col gap-4">
-      {#each schema_model.properties as prop}
-        <RunInputFormElement
-          property={prop}
-          path={prop.id}
-          bind:this={input_components[prop.id]}
-        />
-      {/each}
+    <div
+      class="rounded-lg border border-base-300 bg-base-200/50 p-3 flex flex-col gap-2"
+      data-testid="test-input-preview"
+    >
+      <div class="flex items-center justify-between">
+        <span class="font-medium text-sm">Test Input</span>
+        <button
+          class="link underline text-xs text-gray-500"
+          on:click={open_edit_inputs}
+          data-testid="edit-inputs-btn"
+        >
+          Edit
+        </button>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        {#each schema_model.properties as prop}
+          <div class="text-xs">
+            <span class="font-medium text-gray-500">{prop.id}</span>
+            <p
+              class="text-gray-500 break-words mt-0.5 line-clamp-2"
+              title={formatParamPreview(param_values[prop.id])}
+            >
+              {formatParamPreview(param_values[prop.id]) || "—"}
+            </p>
+          </div>
+        {/each}
+      </div>
     </div>
   {/if}
 
@@ -319,6 +363,32 @@
     </div>
   {/if}
 </div>
+
+<!-- Edit inputs modal (wide, mirrors the code-evals browse dialog pattern) -->
+<Dialog
+  bind:this={edit_inputs_dialog}
+  title="Edit Test Input"
+  width="wide"
+  action_buttons={[
+    {
+      label: "Done",
+      isPrimary: true,
+      action: save_and_close_inputs,
+    },
+  ]}
+>
+  {#if has_params && schema_model?.properties}
+    <div class="flex flex-col gap-4">
+      {#each schema_model.properties as prop}
+        <RunInputFormElement
+          property={prop}
+          path={prop.id}
+          bind:this={input_components[prop.id]}
+        />
+      {/each}
+    </div>
+  {/if}
+</Dialog>
 
 <!-- TODO: replace with real trust mechanism (Phase 6) -->
 <Dialog

@@ -178,6 +178,18 @@ export function isCodeUnmodified(
 }
 
 /**
+ * Format a parameter value for inline preview display.
+ *
+ * - `null` / `undefined` → empty string (the component renders a "—" fallback)
+ * - strings are returned as-is
+ * - other values are JSON-serialised
+ */
+export function formatParamPreview(value: unknown): string {
+  if (value === null || value === undefined) return ""
+  return typeof value === "string" ? value : JSON.stringify(value)
+}
+
+/**
  * Generate example code snippets for the "More Examples" dialog.
  */
 export function generateExamples(): { label: string; code: string }[] {

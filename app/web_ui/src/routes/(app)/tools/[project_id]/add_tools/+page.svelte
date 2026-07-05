@@ -122,13 +122,6 @@
 
   const sample_tools = [
     {
-      name: "Code Tool",
-      subtitle: "by Kiln",
-      description:
-        "Write a Python function that runs as a tool, and can call other tools.",
-      on_click: () => goto(`/tools/${project_id}/add_tools/code_tool`),
-    },
-    {
       name: "Math Tools Demo",
       subtitle: "by Kiln",
       description:
@@ -148,6 +141,13 @@
       description:
         "Build smarter workflows with Kiln tasks as tools, acting as subtasks.",
       on_click: () => goto(`/tools/${project_id}/add_tools/kiln_task`),
+    },
+    {
+      name: "Code Tool",
+      subtitle: "by Kiln",
+      description:
+        "Write a Python function that runs as a tool, and can call other tools.",
+      on_click: () => goto(`/tools/${project_id}/add_tools/code_tool`),
     },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
