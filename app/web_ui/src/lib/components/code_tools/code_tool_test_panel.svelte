@@ -11,6 +11,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { grantCodeEvalTrust } from "$lib/api/v2_eval_api"
   import type { TestCodeToolResponse } from "$lib/types"
+  import posthog from "posthog-js"
 
   export let project_id: string
   export let tool_function_name: string
@@ -108,6 +109,11 @@
 
       test_result = data
       has_tested = true
+      posthog.capture("test_code_tool", {
+        project_id,
+        tool_function_name,
+        success: !data.error,
+      })
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
         // User cancelled
@@ -262,6 +268,26 @@
           </table>
         </div>
       </div>
+    {/if}
+
+    {#if test_result.stdout}
+      <details class="text-sm" data-testid="test-stdout">
+        <summary class="cursor-pointer text-gray-500 text-xs font-medium"
+          >stdout</summary
+        >
+        <pre
+          class="bg-base-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap mt-1 max-h-40 overflow-y-auto">{test_result.stdout}</pre>
+      </details>
+    {/if}
+
+    {#if test_result.stderr}
+      <details class="text-sm" data-testid="test-stderr">
+        <summary class="cursor-pointer text-gray-500 text-xs font-medium"
+          >stderr</summary
+        >
+        <pre
+          class="bg-base-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap mt-1 max-h-40 overflow-y-auto">{test_result.stderr}</pre>
+      </details>
     {/if}
 
     <button

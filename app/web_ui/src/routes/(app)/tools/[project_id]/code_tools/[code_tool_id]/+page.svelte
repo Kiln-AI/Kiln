@@ -16,6 +16,7 @@
     ui_state,
   } from "$lib/stores"
   import type { CodeToolResponse } from "$lib/types"
+  import posthog from "posthog-js"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -75,6 +76,11 @@
       )
       if (error) throw error
       code_tool = data
+      posthog.capture("archive_code_tool", {
+        project_id,
+        code_tool_id,
+        archived: data.is_archived,
+      })
       uncache_available_tools(project_id)
       await load_available_tools(project_id, true)
     } catch (err) {
@@ -86,6 +92,10 @@
 
   function handle_clone() {
     if (!code_tool) return
+    posthog.capture("clone_code_tool", {
+      project_id,
+      code_tool_id,
+    })
     goto(`/tools/${project_id}/add_tools/code_tool`, {
       state: {
         name: `${code_tool.name} (copy)`,
@@ -102,6 +112,10 @@
   }
 
   function handle_after_delete() {
+    posthog.capture("delete_code_tool", {
+      project_id,
+      code_tool_id,
+    })
     uncache_available_tools(project_id)
     goto(`/tools/${project_id}`)
   }
@@ -128,6 +142,20 @@
         },
       ]
     : []
+
+  let code_copied = false
+  function copy_code() {
+    if (!code_tool) return
+    navigator.clipboard
+      .writeText(code_tool.code)
+      .then(() => {
+        code_copied = true
+        setTimeout(() => (code_copied = false), 2000)
+      })
+      .catch((err) => {
+        console.error("Failed to copy code to clipboard:", err)
+      })
+  }
 
   $: allowlist_names =
     code_tool?.tool_allowlist && code_tool.tool_allowlist.length > 0
@@ -210,7 +238,43 @@
           <PropertyList properties={detail_properties} title="Properties" />
 
           <div>
-            <h3 class="text-xl font-bold mb-3">Code</h3>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-xl font-bold">Code</h3>
+              <button
+                class="btn btn-sm btn-ghost text-gray-400 hover:text-gray-900 gap-1"
+                on:click={copy_code}
+                data-testid="copy-code-btn"
+              >
+                {#if code_copied}
+                  <svg
+                    class="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Copied
+                {:else}
+                  <svg
+                    class="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path
+                      d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                    />
+                  </svg>
+                  Copy
+                {/if}
+              </button>
+            </div>
             <CodeEditor
               value={code_tool.code}
               readonly={true}
