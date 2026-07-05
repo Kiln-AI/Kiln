@@ -40,12 +40,6 @@
   // Stores the last-built param values for preview display
   let param_values: Record<string, unknown> = {}
 
-  // Reset component refs and cached values when the schema changes
-  $: if (schema_model) {
-    input_components = {}
-    param_values = {}
-  }
-
   function parse_schema(
     schema: { [key: string]: unknown } | undefined,
   ): SchemaModelProperty | null {
@@ -64,6 +58,7 @@
     if (!has_params) return {}
     const params: Record<string, unknown> = {}
     for (const [id, component] of Object.entries(input_components)) {
+      if (!component) continue
       const val = component.buildValue()
       if (val !== undefined) {
         params[id] = val
