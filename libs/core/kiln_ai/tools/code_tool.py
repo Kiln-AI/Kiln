@@ -278,6 +278,7 @@ class PythonCodeTool(KilnToolInterface):
 
         tool_name = msg["tool_name"]
         arguments = msg["arguments"]
+        positional_args: list[Any] = msg.get("positional_args", [])
         start = monotonic()
 
         try:
@@ -286,13 +287,17 @@ class PythonCodeTool(KilnToolInterface):
 
             tool_ids = name_map.get(tool_name)
             if tool_ids is None:
+                err_msg = (
+                    f"Tool '{tool_name}' is not available. "
+                    f"Available tools: {available_names}."
+                )
                 responses.put(
                     {
                         "type": "tool_result",
                         "call_id": call_id,
                         "error": {
                             "kind": "not_allowed",
-                            "message": f"Tool '{tool_name}' is not in the allowlist. Available tools: {available_names}",
+                            "message": err_msg,
                             "raw": None,
                             "available": available_names,
                         },
@@ -326,9 +331,31 @@ class PythonCodeTool(KilnToolInterface):
             )
 
             tool_def = await tool.toolcall_definition()
-            schema_str = json.dumps(
-                tool_def["function"]["parameters"], ensure_ascii=False
-            )
+            params_schema = tool_def["function"]["parameters"]
+            params_desc = _render_params_schema(params_schema)
+
+            if positional_args:
+                err_msg = (
+                    f"Tool '{tool_name}' must be called with keyword arguments, "
+                    f"e.g. tools.{tool_name}({_example_kwargs(params_schema)}). "
+                    f"Expected parameters: {params_desc}."
+                )
+                responses.put(
+                    {
+                        "type": "tool_result",
+                        "call_id": call_id,
+                        "error": {
+                            "kind": "call_error",
+                            "message": err_msg,
+                            "raw": None,
+                            "available": None,
+                        },
+                    }
+                )
+                self._record(tool_name, arguments, err_msg, True, start)
+                return
+
+            schema_str = json.dumps(params_schema, ensure_ascii=False)
             try:
                 validate_schema_with_value_error(
                     arguments,
@@ -336,19 +363,20 @@ class PythonCodeTool(KilnToolInterface):
                     f"Invalid arguments for tool '{tool_name}'.",
                 )
             except ValueError as exc:
+                err_msg = f"{exc} Expected parameters: {params_desc}."
                 responses.put(
                     {
                         "type": "tool_result",
                         "call_id": call_id,
                         "error": {
                             "kind": "call_error",
-                            "message": str(exc),
+                            "message": err_msg,
                             "raw": None,
                             "available": None,
                         },
                     }
                 )
-                self._record(tool_name, arguments, str(exc), True, start)
+                self._record(tool_name, arguments, err_msg, True, start)
                 return
 
             result = await tool.run(context, **arguments)
@@ -449,63 +477,24 @@ class PythonCodeTool(KilnToolInterface):
 
         name_map: dict[str, list[ToolId]] = {}
         for tool_id in self._code_tool.tool_allowlist:
-            fn_name = await self._function_name_for_tool_id(tool_id)
+            fn_name = await self._canonical_tool_name(tool_id)
             name_map.setdefault(fn_name, []).append(tool_id)
 
         self._name_map = name_map
         return name_map
 
-    async def _function_name_for_tool_id(self, tool_id: str) -> str:
-        """Derive the function name for a tool ID from local data only."""
-        from kiln_ai.datamodel.tool_id import (
-            CODE_TOOL_ID_PREFIX,
-            KILN_TASK_TOOL_ID_PREFIX,
-            MCP_LOCAL_TOOL_ID_PREFIX,
-            MCP_REMOTE_TOOL_ID_PREFIX,
-            RAG_TOOL_ID_PREFIX,
-            KilnBuiltInToolId,
-            mcp_server_and_tool_name_from_id,
-        )
+    async def _canonical_tool_name(self, tool_id: str) -> str:
+        """Return the canonical function name for *tool_id*.
 
-        if tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)):
-            _, tool_name = mcp_server_and_tool_name_from_id(tool_id)
-            return tool_name
+        This is the SINGLE source of truth for the dispatch name used by
+        both ``_build_name_map()`` and ``_get_tools_info()`` / ``list_tools()``.
+        It resolves every tool kind via the same path the child sees,
+        guaranteeing the name the user calls matches the name in the map.
+        """
+        from kiln_ai.tools.tool_registry import tool_from_id_and_project
 
-        if tool_id.startswith(CODE_TOOL_ID_PREFIX):
-            from kiln_ai.datamodel.code_tool import CodeTool as CT
-            from kiln_ai.datamodel.tool_id import code_tool_id_from_tool_id
-
-            ct_id = code_tool_id_from_tool_id(tool_id)
-            ct = CT.from_id_and_parent_path(ct_id, self._project.path)
-            if ct is not None:
-                return ct.tool_function_name
-            return ct_id
-
-        if tool_id.startswith(RAG_TOOL_ID_PREFIX):
-            from kiln_ai.datamodel.rag import RagConfig
-            from kiln_ai.datamodel.tool_id import rag_config_id_from_id
-
-            rag_id = rag_config_id_from_id(tool_id)
-            rag = RagConfig.from_id_and_parent_path(rag_id, self._project.path)
-            if rag is not None:
-                return rag.tool_name
-            return rag_id
-
-        if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
-            from kiln_ai.tools.tool_registry import tool_from_id_and_project
-
-            tool = tool_from_id_and_project(
-                tool_id, project=self._project, task=self._task
-            )
-            return await tool.name()
-
-        try:
-            builtin = KilnBuiltInToolId(tool_id)
-            return builtin.value.split("::")[-1]
-        except ValueError:
-            pass
-
-        return tool_id
+        tool = tool_from_id_and_project(tool_id, project=self._project, task=self._task)
+        return await tool.name()
 
     async def _get_tools_info(self) -> list[dict[str, Any]]:
         """Return tool definitions for ``list_tools()``."""
@@ -526,7 +515,7 @@ class PythonCodeTool(KilnToolInterface):
                     }
                 )
             except Exception:
-                fn_name = await self._function_name_for_tool_id(tool_id)
+                fn_name = await self._canonical_tool_name(tool_id)
                 result.append(
                     {
                         "name": fn_name,
@@ -535,6 +524,34 @@ class PythonCodeTool(KilnToolInterface):
                     }
                 )
         return result
+
+
+def _render_params_schema(schema: dict[str, Any]) -> str:
+    """Render a JSON schema's properties into a readable parameter list.
+
+    Example output: ``a: number (required), b: number (required)``
+    """
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
+    if not props:
+        return "(no parameters)"
+    parts: list[str] = []
+    for name, prop in props.items():
+        ptype = prop.get("type", "any")
+        req = "required" if name in required else "optional"
+        parts.append(f"{name}: {ptype} ({req})")
+    return ", ".join(parts)
+
+
+def _example_kwargs(schema: dict[str, Any]) -> str:
+    """Render example keyword-argument syntax from a schema.
+
+    Example output: ``a=..., b=...``
+    """
+    props = schema.get("properties", {})
+    if not props:
+        return ""
+    return ", ".join(f"{name}=..." for name in props)
 
 
 def _poll_get(q: multiprocessing.Queue) -> dict[str, Any] | None:  # type: ignore[type-arg]

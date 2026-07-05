@@ -115,9 +115,9 @@ from kiln.async_tools import ToolNotAllowed, ToolTimeout, ToolCallError
 
 | Exception | When |
 |---|---|
-| `ToolNotAllowed` | The tool name is not in the allowlist. The `.message` includes available names. |
+| `ToolNotAllowed` | The tool name is not in the allowlist. The `.message` lists available tool names. |
 | `ToolTimeout` | A nested tool call timed out. |
-| `ToolCallError` | Everything else: the tool returned an error, arguments failed schema validation, the tool couldn't be resolved. Has `.tool`, `.message`, and `.raw` (the raw output string when available). |
+| `ToolCallError` | Everything else: the tool returned an error, arguments failed schema validation, positional arguments were used instead of keyword arguments, or the tool couldn't be resolved. The `.message` includes the expected parameter schema. Has `.tool`, `.message`, and `.raw` (the raw output string when available). |
 
 Use these for retry logic:
 
@@ -137,7 +137,7 @@ def run(item_id: str) -> str:
 ## Timeout and allowlist
 
 - **Timeout**: Wall-clock timeout for one invocation, including time spent in nested tool calls. Default is 60 seconds, minimum 1, no maximum. Set when creating the tool.
-- **Allowlist**: Explicit list of tools this code tool may call. Only tools in the allowlist are callable. Tools are resolved by function name at call time.
+- **Allowlist**: Explicit list of tools this code tool may call. Only tools in the allowlist are callable. Tools are resolved by the canonical function name (the name returned by `list_tools()`).
 - **Nesting**: Code tools can call other code tools (they're just tools). A maximum nesting depth of 10 prevents runaways.
 
 ## Concurrency

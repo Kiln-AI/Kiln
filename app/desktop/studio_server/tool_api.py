@@ -182,6 +182,7 @@ class ToolApiDescription(BaseModel):
     id: ToolId
     name: str
     description: str | None
+    function_name: str | None = None
 
 
 class ToolSetType(Enum):
@@ -254,6 +255,7 @@ async def available_mcp_tools(
                 id=f"{prefix}{server.id}::{tool.name}",
                 name=tool.name,
                 description=tool.description,
+                function_name=tool.name,
             )
             for tool in tools_result.tools
         ]
@@ -299,6 +301,7 @@ def connect_tool_servers_api(app: FastAPI):
                     id=build_rag_tool_id(rag_config.id),
                     name=rag_config.tool_name,
                     description=f"{rag_config.name}: {rag_config.tool_description}",
+                    function_name=rag_config.tool_name,
                 )
                 for rag_config in rag_configs
                 if not rag_config.is_archived
@@ -328,11 +331,13 @@ def connect_tool_servers_api(app: FastAPI):
                         # Skip the tool when we can't connect to the server
                         continue
                 case ToolServerType.kiln_task:
+                    kt_name = server.properties.get("name") or ""
                     task_tools.append(
                         ToolApiDescription(
                             id=build_kiln_task_tool_id(server.id),
-                            name=server.properties.get("name") or "",
+                            name=kt_name,
                             description=server.properties.get("description") or "",
+                            function_name=kt_name,
                         )
                     )
                 case _:
@@ -368,6 +373,7 @@ def connect_tool_servers_api(app: FastAPI):
                     id=build_skill_tool_id(skill.id),
                     name=skill.name,
                     description=skill.description,
+                    function_name=skill.name,
                 )
                 for skill in skills
                 if skill.id is not None and not skill.is_archived
@@ -392,21 +398,25 @@ def connect_tool_servers_api(app: FastAPI):
                             id=f"{KilnBuiltInToolId.ADD_NUMBERS.value}",
                             name="Addition",
                             description="Add two numbers together",
+                            function_name="add",
                         ),
                         ToolApiDescription(
                             id=f"{KilnBuiltInToolId.SUBTRACT_NUMBERS.value}",
                             name="Subtraction",
                             description="Subtract two numbers",
+                            function_name="subtract",
                         ),
                         ToolApiDescription(
                             id=f"{KilnBuiltInToolId.MULTIPLY_NUMBERS.value}",
                             name="Multiplication",
                             description="Multiply two numbers",
+                            function_name="multiply",
                         ),
                         ToolApiDescription(
                             id=f"{KilnBuiltInToolId.DIVIDE_NUMBERS.value}",
                             name="Division",
                             description="Divide two numbers",
+                            function_name="divide",
                         ),
                     ],
                 )
@@ -420,6 +430,7 @@ def connect_tool_servers_api(app: FastAPI):
                     id=build_code_tool_id(ct.id),
                     name=ct.tool_function_name,
                     description=ct.tool_description,
+                    function_name=ct.tool_function_name,
                 )
                 for ct in code_tools
                 if not ct.is_archived

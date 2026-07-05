@@ -78,7 +78,7 @@ class ToolCallBridge:
 
     # -- public API --
 
-    def call(self, name: str, kwargs: dict[str, Any]) -> str:
+    def call(self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
         """Issue a ``tool_call`` to the parent; block until reply.
 
         Returns the raw output string on success.  Raises one of the
@@ -92,15 +92,22 @@ class ToolCallBridge:
                 message=f"tool arguments must be JSON-serializable: {exc}",
             ) from exc
 
+        # Serialize positional args so the parent can produce a helpful error
+        try:
+            safe_args = json.loads(json.dumps(list(args), ensure_ascii=False))
+        except (TypeError, ValueError):
+            safe_args = [repr(a) for a in args]
+
         call_id, pending = self._allocate()
-        self._requests.put(
-            {
-                "type": "tool_call",
-                "call_id": call_id,
-                "tool_name": name,
-                "arguments": safe_kwargs,
-            }
-        )
+        msg: dict[str, Any] = {
+            "type": "tool_call",
+            "call_id": call_id,
+            "tool_name": name,
+            "arguments": safe_kwargs,
+        }
+        if safe_args:
+            msg["positional_args"] = safe_args
+        self._requests.put(msg)
         pending.event.wait()
         return self._resolve(call_id, name, pending)
 
@@ -228,7 +235,7 @@ class _SyncToolsModule(types.ModuleType):
         if name.startswith("_"):
             raise AttributeError(name)
         bridge: ToolCallBridge = self._bridge  # type: ignore[attr-defined]
-        return lambda **kw: bridge.call(name, kw)
+        return lambda *args, **kw: bridge.call(name, args, kw)
 
 
 class _AsyncToolsModule(types.ModuleType):
@@ -239,7 +246,7 @@ class _AsyncToolsModule(types.ModuleType):
             raise AttributeError(name)
         bridge: ToolCallBridge = self._bridge  # type: ignore[attr-defined]
 
-        async def _async_proxy(**kw: Any) -> str:
-            return await asyncio.to_thread(bridge.call, name, kw)
+        async def _async_proxy(*args: Any, **kw: Any) -> str:
+            return await asyncio.to_thread(bridge.call, name, args, kw)
 
         return _async_proxy

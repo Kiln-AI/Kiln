@@ -7,7 +7,7 @@ mock tool doubles. Shaped after the existing ``test_sandbox_worker.py`` suite.
 import asyncio
 import json
 import textwrap
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -82,7 +82,13 @@ def _make_python_code_tool(
 
 
 class FakeTool(KilnToolInterface):
-    """Minimal tool double for testing nested calls."""
+    """Minimal tool double for testing nested calls.
+
+    IMPORTANT: ``fn_name`` intentionally DIFFERS from the tool_id slug
+    (e.g. ``fn_name="fake_add"`` for ``tool_id="kiln_tool::add_numbers"``).
+    This ensures tests catch name-derivation bugs where the dispatch map
+    would use the slug instead of ``tool.name()``.
+    """
 
     def __init__(
         self,
@@ -466,14 +472,14 @@ class TestNestedToolCalls:
     async def test_nested_tool_success(self, tmp_path):
         fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             params=EMPTY_SCHEMA,
             result=ToolCallResult(output="42"),
         )
         code = textwrap.dedent("""\
             from kiln import tools
             def run(x):
-                result = tools.add_numbers()
+                result = tools.fake_add()
                 return "got: " + result
         """)
         tool = _make_python_code_tool(
@@ -493,7 +499,7 @@ class TestNestedToolCalls:
     async def test_nested_tool_is_error(self, tmp_path):
         fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             params=EMPTY_SCHEMA,
             result=ToolCallResult(
                 output="tool failed", is_error=True, error_message="tool failed"
@@ -504,7 +510,7 @@ class TestNestedToolCalls:
             from kiln import tools
             def run(x):
                 try:
-                    tools.add_numbers()
+                    tools.fake_add()
                 except ToolCallError as e:
                     return f"error: {e.message}"
                 return "no error"
@@ -524,6 +530,11 @@ class TestNestedToolCalls:
 
     @pytest.mark.asyncio
     async def test_nested_tool_not_allowed(self, tmp_path):
+        fake = FakeTool(
+            "kiln_tool::add_numbers",
+            "fake_add",
+            params=EMPTY_SCHEMA,
+        )
         code = textwrap.dedent("""\
             from kiln.tools import ToolNotAllowed
             from kiln import tools
@@ -540,9 +551,8 @@ class TestNestedToolCalls:
             tool_allowlist=["kiln_tool::add_numbers"],
         )
         with patch(
-            "kiln_ai.tools.code_tool.PythonCodeTool._function_name_for_tool_id",
-            new_callable=AsyncMock,
-            return_value="add_numbers",
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            return_value=fake,
         ):
             result = await tool.run(None, x="test")
         assert not result.is_error
@@ -550,6 +560,12 @@ class TestNestedToolCalls:
 
     @pytest.mark.asyncio
     async def test_nested_tool_ambiguous(self, tmp_path):
+        fake1 = FakeTool("mcp::remote::server1::search", "search")
+        fake2 = FakeTool("mcp::remote::server2::search", "search")
+        fakes = {
+            "mcp::remote::server1::search": fake1,
+            "mcp::remote::server2::search": fake2,
+        }
         code = textwrap.dedent("""\
             from kiln.tools import ToolCallError
             from kiln import tools
@@ -568,7 +584,11 @@ class TestNestedToolCalls:
                 "mcp::remote::server2::search",
             ],
         )
-        result = await tool.run(None, x="test")
+        with patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            side_effect=lambda tid, **kw: fakes[tid],
+        ):
+            result = await tool.run(None, x="test")
         assert not result.is_error
         assert "ambiguous" in result.output.lower()
 
@@ -576,7 +596,7 @@ class TestNestedToolCalls:
     async def test_nested_tool_invalid_kwargs(self, tmp_path):
         fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             params={
                 "type": "object",
                 "properties": {"a": {"type": "integer"}},
@@ -589,7 +609,7 @@ class TestNestedToolCalls:
             from kiln import tools
             def run(x):
                 try:
-                    tools.add_numbers(a="not_an_int")
+                    tools.fake_add(a="not_an_int")
                 except ToolCallError as e:
                     return f"invalid: {e.tool}"
                 return "no error"
@@ -605,7 +625,7 @@ class TestNestedToolCalls:
         ):
             result = await tool.run(None, x="test")
         assert not result.is_error
-        assert "invalid: add_numbers" in result.output
+        assert "invalid: fake_add" in result.output
 
 
 class TestListTools:
@@ -613,7 +633,7 @@ class TestListTools:
     async def test_list_tools_returns_content(self, tmp_path):
         fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             fn_desc="Add two numbers",
             params={
                 "type": "object",
@@ -640,7 +660,7 @@ class TestListTools:
         assert not result.is_error
         tool_list = json.loads(result.output)
         assert len(tool_list) == 1
-        assert tool_list[0]["name"] == "add_numbers"
+        assert tool_list[0]["name"] == "fake_add"
         assert tool_list[0]["description"] == "Add two numbers"
 
 
@@ -660,7 +680,7 @@ class TestTimeout:
     async def test_timeout_during_nested_call(self, tmp_path):
         slow_fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             params=EMPTY_SCHEMA,
             result=ToolCallResult(output="42"),
             delay=30,
@@ -668,7 +688,7 @@ class TestTimeout:
         code = textwrap.dedent("""\
             from kiln import tools
             def run(x):
-                return tools.add_numbers()
+                return tools.fake_add()
         """)
         tool = _make_python_code_tool(
             tmp_path,
@@ -761,7 +781,7 @@ class TestToolCallRecorder:
     async def test_recorder_gets_entries(self, tmp_path):
         fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             params=EMPTY_SCHEMA,
             result=ToolCallResult(output="42"),
         )
@@ -769,7 +789,7 @@ class TestToolCallRecorder:
         code = textwrap.dedent("""\
             from kiln import tools
             def run(x):
-                r = tools.add_numbers()
+                r = tools.fake_add()
                 return r
         """)
         tool = _make_python_code_tool(
@@ -785,7 +805,7 @@ class TestToolCallRecorder:
             result = await tool.run(None, x="test")
         assert not result.is_error
         assert len(log) == 1
-        assert log[0].tool_name == "add_numbers"
+        assert log[0].tool_name == "fake_add"
         assert not log[0].is_error
         assert log[0].output_preview == "42"
         assert log[0].duration_ms >= 0
@@ -801,7 +821,7 @@ class TestAsyncToolsConcurrency:
         """
         slow_fake = FakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_add",
             params=EMPTY_SCHEMA,
             result=ToolCallResult(output="done"),
             delay=0.3,
@@ -812,8 +832,8 @@ class TestAsyncToolsConcurrency:
             async def run(x):
                 start = time.monotonic()
                 a, b = await asyncio.gather(
-                    async_tools.add_numbers(),
-                    async_tools.add_numbers(),
+                    async_tools.fake_add(),
+                    async_tools.fake_add(),
                 )
                 elapsed = time.monotonic() - start
                 return f"{elapsed:.2f}"
@@ -886,7 +906,7 @@ class TestCallIdRouting:
                 errors = []
                 def call_tool(i):
                     try:
-                        raw = tools.add_numbers(idx=str(i))
+                        raw = tools.fake_echo(idx=str(i))
                         results[i] = json.loads(raw)["idx"]
                     except Exception as e:
                         errors.append(f"thread {i}: {e}")
@@ -901,7 +921,7 @@ class TestCallIdRouting:
         """)
         fake = _EchoFakeTool(
             "kiln_tool::add_numbers",
-            "add_numbers",
+            "fake_echo",
             params=idx_schema,
         )
         tool = _make_python_code_tool(
@@ -947,3 +967,242 @@ class TestSpawnLockIdentity:
         from kiln_ai.sandbox.spawn import _spawn_lock as shared_lock
 
         assert shared_lock is _spawn_lock
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tests using REAL built-in tools (no mocking)
+# ---------------------------------------------------------------------------
+
+
+class TestRealBuiltInTools:
+    """Tests that exercise real built-in tool dispatch without mocking
+    ``tool_from_id_and_project``, ensuring the name-derivation path is
+    exercised end-to-end.
+    """
+
+    @pytest.mark.asyncio
+    async def test_keyword_call_by_canonical_name_succeeds(self, tmp_path):
+        """tools.add(a=1, b=2) returns '3' — the canonical name from list_tools."""
+        code = textwrap.dedent("""\
+            from kiln import tools
+            def run(x):
+                return tools.add(a=1, b=2)
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        assert result.output == "3"
+
+    @pytest.mark.asyncio
+    async def test_list_tools_driven_call_succeeds(self, tmp_path):
+        """Call using the name returned by list_tools() succeeds."""
+        code = textwrap.dedent("""\
+            from kiln import tools
+            def run(x):
+                tl = tools.list_tools()
+                fn_name = tl[0]["name"]
+                result = getattr(tools, fn_name)(a=5, b=3)
+                return fn_name + ":" + result
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        assert result.output == "add:8"
+
+    @pytest.mark.asyncio
+    async def test_friendly_name_not_allowed(self, tmp_path):
+        """tools.Addition(a=1,b=2) raises ToolNotAllowed listing canonical names."""
+        code = textwrap.dedent("""\
+            from kiln.tools import ToolNotAllowed
+            from kiln import tools
+            def run(x):
+                try:
+                    tools.Addition(a=1, b=2)
+                except ToolNotAllowed as e:
+                    return e.message
+                return "no error"
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error
+        assert "not available" in result.output
+        assert "'add'" in result.output
+
+    @pytest.mark.asyncio
+    async def test_nonsense_name_not_allowed(self, tmp_path):
+        """tools.bad_tool() raises ToolNotAllowed listing available names."""
+        code = textwrap.dedent("""\
+            from kiln.tools import ToolNotAllowed
+            from kiln import tools
+            def run(x):
+                try:
+                    tools.bad_tool(a=1)
+                except ToolNotAllowed as e:
+                    return e.message
+                return "no error"
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error
+        assert "not available" in result.output
+        assert "'add'" in result.output
+
+    @pytest.mark.asyncio
+    async def test_positional_args_error_message(self, tmp_path):
+        """tools.add(1, 2) raises ToolCallError mentioning keyword args and params."""
+        code = textwrap.dedent("""\
+            from kiln.tools import ToolCallError
+            from kiln import tools
+            def run(x):
+                try:
+                    tools.add(1, 2)
+                except ToolCallError as e:
+                    return e.message
+                return "no error"
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error
+        assert "keyword arguments" in result.output
+        assert "tools.add(" in result.output
+        assert "a: number (required)" in result.output
+        assert "b: number (required)" in result.output
+
+    @pytest.mark.asyncio
+    async def test_wrong_kwargs_error_shows_schema(self, tmp_path):
+        """tools.add(x=1) raises ToolCallError showing expected parameters."""
+        code = textwrap.dedent("""\
+            from kiln.tools import ToolCallError
+            from kiln import tools
+            def run(x):
+                try:
+                    tools.add(x=1)
+                except ToolCallError as e:
+                    return e.message
+                return "no error"
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error
+        assert "Expected parameters:" in result.output
+        assert "a: number (required)" in result.output
+
+    @pytest.mark.asyncio
+    async def test_name_consistency_across_all_builtins(self, tmp_path):
+        """For every KilnBuiltInToolId the dispatch-map name matches tool.name()
+        AND matches what list_tools reports."""
+        from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+        from kiln_ai.tools.tool_registry import tool_from_id_and_project
+
+        project = _make_project(tmp_path)
+
+        math_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS,
+            KilnBuiltInToolId.DIVIDE_NUMBERS,
+        ]
+
+        for builtin_id in math_ids:
+            tool_id = builtin_id.value
+            real_tool = tool_from_id_and_project(tool_id, project=project)
+            real_name = await real_tool.name()
+
+            ct = _make_code_tool(
+                'def run(x): return "ok"',
+                tool_allowlist=[tool_id],
+            )
+            ct.parent = project
+            pct = PythonCodeTool(ct, project)
+            name_map = await pct._build_name_map()
+            dispatch_names = list(name_map.keys())
+
+            assert dispatch_names == [real_name], (
+                f"For {builtin_id}: dispatch name {dispatch_names} != "
+                f"tool.name() '{real_name}'"
+            )
+
+    @pytest.mark.asyncio
+    async def test_async_proxy_keyword_call(self, tmp_path):
+        """async_tools.subtract(a=5, b=3) returns '2'."""
+        code = textwrap.dedent("""\
+            from kiln import async_tools
+            async def run(x):
+                return await async_tools.subtract(a=5, b=3)
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::subtract_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        assert result.output == "2"
+
+    @pytest.mark.asyncio
+    async def test_async_proxy_positional_error(self, tmp_path):
+        """async_tools.add(1, 2) raises ToolCallError with a helpful message."""
+        code = textwrap.dedent("""\
+            from kiln.tools import ToolCallError
+            from kiln import async_tools
+            async def run(x):
+                try:
+                    await async_tools.add(1, 2)
+                except ToolCallError as e:
+                    return e.message
+                return "no error"
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error
+        assert "keyword arguments" in result.output
+
+    @pytest.mark.asyncio
+    async def test_positional_on_nonsense_name_still_not_allowed(self, tmp_path):
+        """tools.bad_tool(1) raises ToolNotAllowed (not TypeError), regardless of args."""
+        code = textwrap.dedent("""\
+            from kiln.tools import ToolNotAllowed
+            from kiln import tools
+            def run(x):
+                try:
+                    tools.bad_tool(1, 2)
+                except ToolNotAllowed as e:
+                    return e.message
+                return "no error"
+        """)
+        tool = _make_python_code_tool(
+            tmp_path,
+            code,
+            tool_allowlist=["kiln_tool::add_numbers"],
+        )
+        result = await tool.run(None, x="test")
+        assert not result.is_error
+        assert "not available" in result.output

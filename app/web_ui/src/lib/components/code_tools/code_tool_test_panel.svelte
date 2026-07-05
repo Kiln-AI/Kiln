@@ -13,6 +13,7 @@
   import { grantCodeEvalTrust } from "$lib/api/v2_eval_api"
   import type { TestCodeToolResponse } from "$lib/types"
   import posthog from "posthog-js"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   export let project_id: string
   export let tool_function_name: string
@@ -265,7 +266,12 @@
 
     {#if test_result.tool_call_log && test_result.tool_call_log.length > 0}
       <div class="flex flex-col gap-1" data-testid="tool-call-log">
-        <span class="text-sm font-medium">Tool Calls</span>
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium">Internal Tool Calls</span>
+          <InfoTooltip
+            tooltip_text="Calls made by the code tool to other tools. These are not visible to the agent"
+          />
+        </div>
         <div class="overflow-x-auto rounded-lg border">
           <table class="table table-xs">
             <thead>

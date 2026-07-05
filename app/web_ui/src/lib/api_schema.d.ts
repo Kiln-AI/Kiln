@@ -10822,6 +10822,8 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+            /** Function Name */
+            function_name?: string | null;
         };
         /** ToolCallCheckProperties */
         ToolCallCheckProperties: {

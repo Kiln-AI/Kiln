@@ -187,7 +187,7 @@
     if (!tool_sets) return tool_id
     for (const ts of tool_sets) {
       for (const t of ts.tools) {
-        if (t.id === tool_id) return t.name
+        if (t.id === tool_id) return t.function_name ?? t.name
       }
     }
     return tool_id
