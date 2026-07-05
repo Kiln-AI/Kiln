@@ -7,6 +7,7 @@ import {
   isCodeUnmodified,
   generateExamples,
   formatParamPreview,
+  plainTextParamsSchema,
 } from "./code_tool_helpers"
 
 describe("extractParams", () => {
@@ -347,6 +348,59 @@ describe("generateExamples", () => {
     const filterEx = examples.find((e) => e.label === "Filter & Transform")
     expect(filterEx).toBeDefined()
     expect(filterEx!.code).toContain("json.loads")
+  })
+})
+
+describe("plainTextParamsSchema", () => {
+  it("returns a valid JSON Schema object with a single 'input' string property", () => {
+    const schema = plainTextParamsSchema()
+    expect(schema.type).toBe("object")
+    expect(schema.additionalProperties).toBe(false)
+    expect(schema.required).toEqual(["input"])
+    const props = schema.properties as Record<
+      string,
+      { type: string; title: string; description: string }
+    >
+    expect(Object.keys(props)).toEqual(["input"])
+    expect(props.input.type).toBe("string")
+    expect(props.input.title).toBe("input")
+    expect(typeof props.input.description).toBe("string")
+    expect(props.input.description.length).toBeGreaterThan(0)
+  })
+
+  it("returns a fresh object each call (no shared mutation)", () => {
+    const a = plainTextParamsSchema()
+    const b = plainTextParamsSchema()
+    expect(a).toEqual(b)
+    expect(a).not.toBe(b)
+  })
+})
+
+describe("plainTextParamsSchema integration with generateCodeToolPlaceholder", () => {
+  it("produces def run(input: str) -> str:", () => {
+    const schema = plainTextParamsSchema()
+    const result = generateCodeToolPlaceholder(schema, "A tool")
+    expect(result).toContain("def run(input: str) -> str:")
+  })
+
+  it("plain-text schema differs from empty structured schema", () => {
+    const plainText = plainTextParamsSchema()
+    const emptyStructured = {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    }
+
+    const plainResult = generateCodeToolPlaceholder(plainText, "test")
+    const structuredResult = generateCodeToolPlaceholder(
+      emptyStructured,
+      "test",
+    )
+
+    expect(plainResult).toContain("def run(input: str) -> str:")
+    expect(structuredResult).toContain("def run() -> str:")
+    expect(plainResult).not.toEqual(structuredResult)
   })
 })
 

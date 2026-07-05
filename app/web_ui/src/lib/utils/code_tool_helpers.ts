@@ -2,6 +2,27 @@
  * Helpers for Code Tool UI: typed placeholder codegen, import-helper, examples.
  */
 
+/**
+ * Return a static JSON Schema for plain-text parameter mode.
+ * When the user selects "Plain Text" instead of "Structured Parameter List",
+ * the tool still needs a single `input` string parameter so the model knows
+ * to pass text and the placeholder codegen produces `def run(input: str) -> str:`.
+ */
+export function plainTextParamsSchema(): { [key: string]: unknown } {
+  return {
+    type: "object",
+    properties: {
+      input: {
+        type: "string",
+        title: "input",
+        description: "Plain text input passed to the tool.",
+      },
+    },
+    required: ["input"],
+    additionalProperties: false,
+  }
+}
+
 interface JsonSchemaProperty {
   type?: string
   items?: JsonSchemaProperty

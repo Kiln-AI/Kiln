@@ -109,6 +109,10 @@
     }
     return schema_form_element?.get_schema_string(name) || null
   }
+
+  export function is_plaintext(): boolean {
+    return plaintext
+  }
 </script>
 
 <div>

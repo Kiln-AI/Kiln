@@ -26,6 +26,7 @@
     shouldInsertImport,
     isCodeUnmodified,
     generateExamples,
+    plainTextParamsSchema,
   } from "$lib/utils/code_tool_helpers"
 
   import { agentInfo } from "$lib/agent"
@@ -111,24 +112,30 @@
 
   function continue_to_code() {
     // Build parameters_schema from SchemaSection
-    const schema_str = schema_section.get_schema_string("parameters")
-    if (schema_str) {
-      try {
-        parameters_schema = JSON.parse(schema_str)
-      } catch {
+    if (schema_section.is_plaintext()) {
+      // Plain text mode: use a static schema with a single `input` string param
+      parameters_schema = plainTextParamsSchema()
+    } else {
+      const schema_str = schema_section.get_schema_string("parameters")
+      if (schema_str) {
+        try {
+          parameters_schema = JSON.parse(schema_str)
+        } catch {
+          parameters_schema = {
+            type: "object",
+            properties: {},
+            required: [],
+            additionalProperties: false,
+          }
+        }
+      } else {
+        // Structured mode but get_schema_string returned null (e.g. empty)
         parameters_schema = {
           type: "object",
           properties: {},
           required: [],
           additionalProperties: false,
         }
-      }
-    } else {
-      parameters_schema = {
-        type: "object",
-        properties: {},
-        required: [],
-        additionalProperties: false,
       }
     }
 

@@ -39,7 +39,9 @@ Single route hosting a two-step wizard. **Steps are history entries** (SvelteKit
 - **Name** — display name (`FormElement`).
 - **Tool Name** — function name, `tool_name_validator`, live-validated.
 - **Description** — the model-facing `tool_description` ("Shown to the model — describe what it does and when to use it"). The user-facing `description` field is **P2** and omitted from this screen (functional spec §1.1) — if added later it lives on the detail page's edit dialog, not here.
-- **Parameters** — the create-task `SchemaSection` experience (structured mode only — no plaintext toggle, tools are schema'd; empty properties allowed for zero-arg tools). The structured option radio label is overridden to "Structured Parameter List" (default elsewhere is "Structured JSON") via the `structured_label` prop. No output schema (MCP outputs are untyped in practice).
+- **Parameters** — the create-task `SchemaSection` experience with both **Plain Text** and **Structured Parameter List** modes. The structured option radio label is overridden to "Structured Parameter List" (default elsewhere is "Structured JSON") via the `structured_label` prop. No output schema (MCP outputs are untyped in practice).
+  - **Plain Text** mode: produces a static schema with a single required `input: str` parameter. The placeholder codegen becomes `def run(input: str) -> str:` and the test panel renders a plaintext input field for `input`. The static schema is built by `plainTextParamsSchema()` in `code_tool_helpers.ts`.
+  - **Structured Parameter List** mode: parameters are derived from the user-built schema as before. An empty structured schema (zero properties) yields `def run() -> str:` — a valid zero-arg tool.
 
 ### Step 2 — Code & Test
 
