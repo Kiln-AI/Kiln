@@ -2542,6 +2542,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/code_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Code Tools */
+        get: operations["list_code_tools_api_projects__project_id__code_tools_get"];
+        put?: never;
+        /** Create Code Tool */
+        post: operations["create_code_tool_api_projects__project_id__code_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/test_code_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Code Tool */
+        post: operations["test_code_tool_api_projects__project_id__test_code_tool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/code_tools/{code_tool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Code Tool */
+        get: operations["get_code_tool_api_projects__project_id__code_tools__code_tool_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Code Tool */
+        delete: operations["delete_code_tool_api_projects__project_id__code_tools__code_tool_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Code Tool Metadata */
+        patch: operations["update_code_tool_api_projects__project_id__code_tools__code_tool_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/code_tools/{code_tool_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive/Unarchive Code Tool */
+        post: operations["archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/skills": {
         parameters: {
             query?: never;
@@ -4288,6 +4359,105 @@ export interface components {
         CodeEvalTrustResponse: {
             /** Trusted */
             trusted: boolean;
+        };
+        /** CodeToolArchiveRequest */
+        CodeToolArchiveRequest: {
+            /**
+             * Archived
+             * @description Whether to archive or unarchive the tool.
+             */
+            archived: boolean;
+        };
+        /** CodeToolCreateRequest */
+        CodeToolCreateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes shown in the UI.
+             */
+            description?: string | null;
+            /**
+             * Tool Function Name
+             * @description The function name exposed to the model.
+             */
+            tool_function_name: string;
+            /**
+             * Tool Description
+             * @description Shown to agents as the tool description.
+             */
+            tool_description: string;
+            /**
+             * Parameters Schema
+             * @description JSON Schema for the tool's parameters.
+             */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Code
+             * @description Inline Python source.
+             */
+            code: string;
+            /**
+             * Timeout Seconds
+             * @description Wall-clock timeout.
+             * @default 60
+             */
+            timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Tools this code tool may call.
+             */
+            tool_allowlist?: string[];
+        };
+        /** CodeToolResponse */
+        CodeToolResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** CodeToolUpdateRequest */
+        CodeToolUpdateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description User-facing notes shown in the UI.
+             */
+            description?: string | null;
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -10504,6 +10674,67 @@ export interface components {
              */
             auth_method?: string | null;
         };
+        /** TestCodeToolRequest */
+        TestCodeToolRequest: {
+            /** Tool Function Name */
+            tool_function_name: string;
+            /**
+             * Tool Description
+             * @default test
+             */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /**
+             * Timeout Seconds
+             * @default 60
+             */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /**
+             * Params
+             * @description Invocation arguments for the test.
+             */
+            params: {
+                [key: string]: unknown;
+            };
+        };
+        /** TestCodeToolResponse */
+        TestCodeToolResponse: {
+            /** Result */
+            result?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Traceback */
+            traceback?: string | null;
+            /**
+             * Not Trusted
+             * @default false
+             */
+            not_trusted: boolean;
+            /**
+             * Stdout
+             * @default
+             */
+            stdout: string;
+            /**
+             * Stderr
+             * @default
+             */
+            stderr: string;
+            /** Tool Call Log */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+        };
         /**
          * TestV2EvalRequest
          * @description Request to test-run a V2 eval config without persisting.
@@ -10627,6 +10858,21 @@ export interface components {
             /** Requiresapproval */
             requiresApproval: boolean;
         };
+        /** ToolCallLogEntryResponse */
+        ToolCallLogEntryResponse: {
+            /** Tool Name */
+            tool_name: string;
+            /** Arguments */
+            arguments: {
+                [key: string]: unknown;
+            };
+            /** Output Preview */
+            output_preview: string;
+            /** Is Error */
+            is_error: boolean;
+            /** Duration Ms */
+            duration_ms: number;
+        };
         /** ToolCallSpec */
         ToolCallSpec: {
             /** Tool Name */
@@ -10676,7 +10922,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -17041,6 +17287,256 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_code_tools_api_projects__project_id__code_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_code_tool_api_projects__project_id__code_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeToolCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_code_tool_api_projects__project_id__test_code_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestCodeToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestCodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_code_tool_api_projects__project_id__code_tools__code_tool_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_code_tool_api_projects__project_id__code_tools__code_tool_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_code_tool_api_projects__project_id__code_tools__code_tool_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeToolUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeToolArchiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
                 };
             };
             /** @description Validation Error */

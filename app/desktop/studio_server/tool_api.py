@@ -18,6 +18,7 @@ from kiln_ai.datamodel.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
+    build_code_tool_id,
     build_kiln_task_tool_id,
     build_rag_tool_id,
     build_skill_tool_id,
@@ -190,6 +191,7 @@ class ToolSetType(Enum):
     DEMO = "demo"
     SKILL = "skill"
     BUILTIN = "builtin"
+    CODE = "code"
 
 
 class ToolSetApiDescription(BaseModel):
@@ -409,6 +411,27 @@ def connect_tool_servers_api(app: FastAPI):
                     ],
                 )
             )
+
+        # Add code tools
+        code_tools = project.code_tools(readonly=True)
+        if code_tools:
+            code_tool_items = [
+                ToolApiDescription(
+                    id=build_code_tool_id(ct.id),
+                    name=ct.tool_function_name,
+                    description=ct.tool_description,
+                )
+                for ct in code_tools
+                if not ct.is_archived
+            ]
+            if code_tool_items:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        type=ToolSetType.CODE,
+                        set_name="Code Tools",
+                        tools=code_tool_items,
+                    )
+                )
 
         # Note: the Call Kiln API built-in tool (KilnBuiltInToolId.CALL_KILN_API)
         # is intentionally not listed here. It's an internal agent tool — still
