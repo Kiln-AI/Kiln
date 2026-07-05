@@ -29,6 +29,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
 )
 from fastapi import FastAPI, Path
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Run judge and build claims for alignment traces?"
         ),
     )
+    @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
     async def review_traces(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

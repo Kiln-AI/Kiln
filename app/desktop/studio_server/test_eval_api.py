@@ -1,12 +1,13 @@
 import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    compute_score_summary,
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
@@ -51,6 +52,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import Usage
 
 
@@ -522,6 +524,77 @@ async def test_create_eval_config(
     assert config.model_provider == valid_eval_config_request.provider
     assert config.properties["eval_steps"][0] == "step1"
     assert config.properties["eval_steps"][1] == "step2"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_missing_model_for_llm_type(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Config",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": None,
+                "provider": None,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "model_name and provider are required" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_invalid_properties(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Config",
+                "type": "g_eval",
+                "properties": {"not_a_valid_field": True},
+                "model_name": "gpt-4",
+                "provider": "openai",
+            },
+        )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_invalid_v2_properties(
+    client, mock_task_from_id, mock_v2_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_v2_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval_v2/create_eval_config",
+            json={
+                "name": "Bad V2 Config",
+                "type": "v2",
+                "properties": {"type": "not_a_real_type"},
+            },
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "Invalid properties for eval config type" in body["message"]
+    assert "v2" in body["message"]
 
 
 def test_get_eval_config(
@@ -1027,11 +1100,15 @@ async def test_get_eval_config_score_summary(
 
         # Check average scores for run1
         assert results["run1"]["accuracy"]["mean_score"] == 0.7  # (0.8 + 0.6) / 2
+        assert results["run1"]["accuracy"]["n_used"] == 2
+        assert results["run1"]["accuracy"]["n_excluded"] == 0
         assert results["run1"]["relevance"]["mean_score"] == 0.8  # Only one valid score
         assert run_config_percent_complete["run1"] == 1.0
 
         # Check average scores for run2
         assert results["run2"]["accuracy"]["mean_score"] == 0.9
+        assert results["run2"]["accuracy"]["n_used"] == 1
+        assert results["run2"]["accuracy"]["n_excluded"] == 0
         assert results["run2"]["relevance"]["mean_score"] == 0.85
         assert run_config_percent_complete["run2"] == 0.5
 
@@ -1041,11 +1118,15 @@ async def test_get_eval_config_score_summary(
 
         # run 4 has no scores
         assert results["run4"]["accuracy"]["mean_score"] == 0.5
+        assert results["run4"]["accuracy"]["n_used"] == 1
+        assert results["run4"]["accuracy"]["n_excluded"] == 0
         assert "relevance" not in results["run4"]
         assert run_config_percent_complete["run4"] == 0.0
 
         # Check average scores for run5 - duplicate dataset_id not double counted
         assert results["run5"]["accuracy"]["mean_score"] == 0.7  # (0.8 + 0.6) / 2
+        assert results["run5"]["accuracy"]["n_used"] == 2
+        assert results["run5"]["accuracy"]["n_excluded"] == 0
         assert results["run5"]["relevance"]["mean_score"] == 0.8  # Only one valid score
         assert run_config_percent_complete["run5"] == 1.0
 
@@ -1058,6 +1139,94 @@ async def test_get_eval_config_score_summary(
         mock_dataset_ids_in_filter.assert_called_once_with(
             mock_task, "tag::eval_set", readonly=True
         )
+
+
+def test_score_summary_n_used_n_excluded(mock_eval_for_score_summary):
+    eval = mock_eval_for_score_summary
+    config = Mock(spec=EvalConfig)
+
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8, "relevance": 0.9},
+            input="input",
+            output="output",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={},
+            input="input",
+            output="output",
+            dataset_id="ds2",
+            skipped_reason="missing_reference_key",
+            skipped_detail="key foo",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6, "relevance": 0.7},
+            input="input",
+            output="output",
+            dataset_id="ds3",
+        ),
+    ]
+    config.runs.return_value = runs
+
+    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+    expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2", "ds3"}
+
+    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+
+    assert result.dataset_size == 3
+    scores = result.results["rc1"]
+    assert scores["accuracy"].mean_score == pytest.approx(0.7)
+    assert scores["accuracy"].n_used == 2
+    assert scores["accuracy"].n_excluded == 1
+    assert scores["relevance"].mean_score == pytest.approx(0.8)
+    assert scores["relevance"].n_used == 2
+    assert scores["relevance"].n_excluded == 1
+    assert result.run_config_percent_complete["rc1"] == 1.0
+
+
+def test_score_summary_all_skipped(mock_eval_for_score_summary):
+    eval = mock_eval_for_score_summary
+    config = Mock(spec=EvalConfig)
+
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={},
+            input="input",
+            output="output",
+            dataset_id="ds1",
+            skipped_reason="extraction_failed",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={},
+            input="input",
+            output="output",
+            dataset_id="ds2",
+            skipped_reason="missing_trace",
+        ),
+    ]
+    config.runs.return_value = runs
+
+    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+    expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
+
+    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+
+    assert result.dataset_size == 2
+    scores = result.results["rc1"]
+    assert len(scores) == 2
+    assert scores["accuracy"].mean_score is None
+    assert scores["accuracy"].n_used == 0
+    assert scores["accuracy"].n_excluded == 2
+    assert scores["relevance"].mean_score is None
+    assert scores["relevance"].n_used == 0
+    assert scores["relevance"].n_excluded == 2
+    assert result.run_config_percent_complete["rc1"] == 1.0
 
 
 @pytest.mark.asyncio
@@ -2489,6 +2658,188 @@ async def test_get_run_config_eval_scores_latency_below_threshold(
     assert mean_usage["mean_total_llm_latency_ms"] is None
 
 
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_inline_aggregation(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Verify the inline aggregation path returns correct n_used, n_excluded, and percent_complete."""
+    mock_task_from_id.return_value = mock_task
+
+    task_runs = []
+    for i in range(3):
+        tr = TaskRun(
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "test",
+                },
+            ),
+            output=TaskOutput(output=f"output {i}"),
+            parent=mock_task,
+        )
+        tr.save_to_file()
+        task_runs.append(tr)
+
+    scored_run = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 3.0, "overall_rating": 4.0},
+        input="input 0",
+        output="output 0",
+        dataset_id=task_runs[0].id,
+        parent=mock_eval_config,
+    )
+    scored_run.save_to_file()
+
+    skipped_run = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={},
+        input="input 1",
+        output="output 1",
+        dataset_id=task_runs[1].id,
+        skipped_reason="extraction_failed",
+        parent=mock_eval_config,
+    )
+    skipped_run.save_to_file()
+
+    mock_task_api = MagicMock()
+    mock_task_api.runs.return_value = task_runs
+    mock_task_api.evals.return_value = [mock_eval]
+    mock_task_api.specs.return_value = []
+
+    mock_ec_api = MagicMock()
+    mock_ec_api.runs.return_value = [scored_run, skipped_run]
+    mock_ec_api.id = mock_eval_config.id
+
+    mock_eval_api = MagicMock()
+    mock_eval_api.configs.return_value = [mock_ec_api]
+    mock_eval_api.id = mock_eval.id
+    mock_eval_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_api.output_scores = mock_eval.output_scores
+    mock_eval_api.name = mock_eval.name
+
+    mock_eval.current_config_id = mock_eval_config.id
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as p_eval,
+        patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
+        patch("app.desktop.studio_server.eval_api.dataset_ids_in_filter") as p_ds,
+    ):
+        p_task.return_value = mock_task_api
+        p_eval.return_value = mock_eval_api
+        p_rc.return_value = mock_run_config
+        p_ds.return_value = {tr.id for tr in task_runs}
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    er = data["eval_results"][0]
+    ecr = er["eval_config_result"]
+
+    assert ecr["n_excluded"] == 1
+    assert ecr["results"]["score1"]["n_used"] == 1
+    assert ecr["results"]["score1"]["n_excluded"] == 1
+    assert ecr["results"]["score1"]["mean_score"] == 3.0
+    assert ecr["results"]["overall_rating"]["n_used"] == 1
+    assert ecr["results"]["overall_rating"]["n_excluded"] == 1
+    assert ecr["results"]["overall_rating"]["mean_score"] == 4.0
+    assert ecr["percent_complete"] == pytest.approx(2.0 / 3.0)
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_all_skipped(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """When every EvalRun is skipped, mean_score should be None and n_used == 0."""
+    mock_task_from_id.return_value = mock_task
+
+    task_runs = []
+    for i in range(2):
+        tr = TaskRun(
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "test",
+                },
+            ),
+            output=TaskOutput(output=f"output {i}"),
+            parent=mock_task,
+        )
+        tr.save_to_file()
+        task_runs.append(tr)
+
+    skipped_runs = [
+        EvalRun(
+            task_run_config_id=mock_run_config.id,
+            scores={},
+            input=f"input {i}",
+            output=f"output {i}",
+            dataset_id=task_runs[i].id,
+            skipped_reason="incompatible_input_shape",
+            parent=mock_eval_config,
+        )
+        for i in range(2)
+    ]
+    for sr in skipped_runs:
+        sr.save_to_file()
+
+    mock_task_api = MagicMock()
+    mock_task_api.runs.return_value = task_runs
+    mock_task_api.evals.return_value = [mock_eval]
+    mock_task_api.specs.return_value = []
+
+    mock_ec_api = MagicMock()
+    mock_ec_api.runs.return_value = skipped_runs
+    mock_ec_api.id = mock_eval_config.id
+
+    mock_eval_api = MagicMock()
+    mock_eval_api.configs.return_value = [mock_ec_api]
+    mock_eval_api.id = mock_eval.id
+    mock_eval_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_api.output_scores = mock_eval.output_scores
+    mock_eval_api.name = mock_eval.name
+
+    mock_eval.current_config_id = mock_eval_config.id
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as p_eval,
+        patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
+        patch("app.desktop.studio_server.eval_api.dataset_ids_in_filter") as p_ds,
+    ):
+        p_task.return_value = mock_task_api
+        p_eval.return_value = mock_eval_api
+        p_rc.return_value = mock_run_config
+        p_ds.return_value = {tr.id for tr in task_runs}
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    er = data["eval_results"][0]
+    ecr = er["eval_config_result"]
+
+    assert ecr["n_excluded"] == 2
+    assert ecr["results"]["score1"]["n_used"] == 0
+    assert ecr["results"]["score1"]["n_excluded"] == 2
+    assert ecr["results"]["score1"]["mean_score"] is None
+    assert ecr["results"]["overall_rating"]["n_used"] == 0
+    assert ecr["results"]["overall_rating"]["n_excluded"] == 2
+    assert ecr["results"]["overall_rating"]["mean_score"] is None
+    assert ecr["percent_complete"] == 1.0
+
+
 def test_get_eval_configs_score_summary_no_filter_id(
     client, mock_task, mock_task_from_id
 ):
@@ -3369,3 +3720,775 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
 
     assert response.status_code == 200
     assert runs_call_count == 1
+
+
+class TestCodeEvalTrustEndpoints:
+    @pytest.fixture(autouse=True)
+    def _clear_trust(self):
+        from kiln_ai.adapters.eval.v2_eval_code_eval import _trusted_projects
+
+        _trusted_projects.clear()
+        yield
+        _trusted_projects.clear()
+
+    def test_grant_trust(self, client):
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
+            mock_proj.return_value = Mock()
+            response = client.post("/api/projects/proj-1/grant_code_eval_trust")
+
+        assert response.status_code == 200
+        assert response.json() == {"trusted": True}
+
+    def test_grant_trust_invalid_project(self, client):
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
+            mock_proj.side_effect = HTTPException(status_code=404, detail="Not found")
+            response = client.post("/api/projects/bad-id/grant_code_eval_trust")
+
+        assert response.status_code == 404
+
+    def test_check_trust_untrusted(self, client):
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
+            mock_proj.return_value = Mock()
+            response = client.get("/api/projects/proj-1/code_eval_trust")
+        assert response.status_code == 200
+        assert response.json() == {"trusted": False}
+
+    def test_check_trust_after_grant(self, client):
+        mock_project = Mock()
+        with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
+            mock_proj.return_value = mock_project
+            client.post("/api/projects/proj-1/grant_code_eval_trust")
+            response = client.get("/api/projects/proj-1/code_eval_trust")
+        assert response.status_code == 200
+        assert response.json() == {"trusted": True}
+
+
+@pytest.fixture
+def mock_v2_eval(mock_task):
+    eval = Eval(
+        id="eval_v2",
+        name="V2 Test Eval",
+        description="V2 eval for testing",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Is the answer accurate?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        eval_input_filter_id="tag::v2_eval_set",
+        evaluation_data_type=None,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
+class TestTestV2Eval:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
+
+    def _exact_match_payload(self) -> dict:
+        return {
+            "properties": {
+                "type": "exact_match",
+                "expected_value": "hello",
+            },
+            "eval_input": {
+                "final_message": "hello",
+            },
+        }
+
+    def test_exact_match_pass(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["skipped_reason"] is None
+        assert body["skipped_detail"] is None
+
+    def test_exact_match_fail(self, client, mock_v2_eval):
+        payload = self._exact_match_payload()
+        payload["eval_input"]["final_message"] = "world"
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 0.0
+        assert body["skipped_reason"] is None
+
+    def test_code_eval_untrusted_skip(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"] == {}
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+        assert body["skipped_detail"] == "Project not trusted for code eval execution."
+
+    def test_code_eval_trusted_execution(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
+                return_value={"ok": {"accuracy": 0.75}},
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 0.75
+        assert body["skipped_reason"] is None
+
+    def test_llm_judge_with_mocked_model(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "prompt_template": "Is this correct? Output: {{ final_message }}",
+            },
+            "eval_input": {
+                "final_message": "test output",
+            },
+        }
+        mock_run_output = RunOutput(
+            output={"accuracy": 5},
+            intermediate_outputs=None,
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(None, mock_run_output)
+        )
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+                return_value=mock_adapter,
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert "accuracy" in body["scores"]
+        assert body["skipped_reason"] is None
+
+    def test_nothing_persisted(self, client, mock_v2_eval):
+        eval_dir = mock_v2_eval.path.parent
+        files_before = set(str(f) for f in eval_dir.rglob("*"))
+
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            client.post(self._url(), json=self._exact_match_payload())
+
+        files_after = set(str(f) for f in eval_dir.rglob("*"))
+        new_files = files_after - files_before
+        assert len(new_files) == 0, f"Unexpected new files created: {new_files}"
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.post(
+                self._url("bad_id"),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 404
+
+    def test_llm_judge_builder_input(self, client, mock_v2_eval):
+        payload = {
+            "llm_judge_builder_input": {
+                "model_name": "gpt-4o",
+                "provider": "openai",
+                "g_eval": False,
+            },
+            "eval_input": {
+                "final_message": "test output",
+            },
+        }
+        mock_run_output = RunOutput(
+            output={"accuracy": 5},
+            intermediate_outputs=None,
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(None, mock_run_output)
+        )
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "app.desktop.studio_server.eval_api.materialize_llm_judge_properties"
+            ) as mock_materialize,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+                return_value=mock_adapter,
+            ),
+        ):
+            mock_materialize.return_value = {
+                "type": "llm_judge",
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "g_eval": False,
+                "prompt_template": "test template {{ final_message }}",
+            }
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        mock_materialize.assert_called_once_with(
+            eval=mock_v2_eval,
+            model_name="gpt-4o",
+            model_provider="openai",
+            g_eval=False,
+            judge_prompt=None,
+            system_prompt=None,
+        )
+        body = response.json()
+        assert "accuracy" in body["scores"]
+        assert body["skipped_reason"] is None
+
+    def test_400_when_no_properties_or_builder_input(self, client, mock_v2_eval):
+        payload = {
+            "eval_input": {
+                "final_message": "test output",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 400
+        body = response.json()
+        msg = (body.get("message") or body.get("detail") or "").lower()
+        assert "properties" in msg or "llm_judge" in msg
+
+    def test_score_range_errors_none_for_in_range(self, client, mock_v2_eval):
+        """In-range scores should NOT produce score_range_errors."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json=self._exact_match_payload(),
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["score_range_errors"] is None
+
+    def test_score_range_errors_populated_for_out_of_range(self, client, mock_v2_eval):
+        """Out-of-range scores should populate score_range_errors."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 5.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
+                return_value={"ok": {"accuracy": 5.0}},
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 5.0
+        assert body["score_range_errors"] is not None
+        assert len(body["score_range_errors"]) == 1
+        assert "pass_fail" in body["score_range_errors"][0]
+
+    def test_score_range_errors_none_when_skipped(self, client, mock_v2_eval):
+        """Skipped results should not have score_range_errors."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+            },
+            "eval_input": {
+                "final_message": "test",
+            },
+        }
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+        assert body["score_range_errors"] is None
+
+
+class TestCreateLlmJudgeConfig:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/create_llm_judge_config"
+
+    def test_success(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["config_type"] == "v2"
+        props = body["properties"]
+        assert props["type"] == "llm_judge"
+        assert props["model_name"] == "gpt-4o"
+        assert props["model_provider"] == "openai"
+        assert props["g_eval"] is False
+        assert "{{ task_input }}" in props["prompt_template"]
+        assert "{{ final_message }}" in props["prompt_template"]
+        assert props["system_prompt"] is not None
+        assert props["thinking_instruction"] is not None
+        assert props["required_var"] == []
+
+    def test_g_eval_true(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": True,
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["g_eval"] is True
+
+    def test_persisted_to_disk(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        configs = mock_v2_eval.configs()
+        assert len(configs) == 1
+        cfg = configs[0]
+        assert cfg.config_type.value == "v2"
+        assert cfg.properties.type.value == "llm_judge"
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.post(
+                self._url("bad_id"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 404
+
+    def test_missing_model(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 422
+
+    def test_with_custom_name(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "name": "My Custom Judge",
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My Custom Judge"
+
+
+class TestV1CoexistenceAPI:
+    """V1 coexistence regression guards at the API layer.
+
+    Ensures that V1 g_eval / llm_as_judge configs and their runs continue to
+    work through score-summary and eval-results endpoints after V2 additions.
+    """
+
+    def test_v1_g_eval_score_summary(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        run = EvalRun(
+            parent=mock_eval_config,
+            dataset_id="dataset_id1",
+            task_run_config_id="run_config1",
+            input="test input",
+            output="test output",
+            scores={"score1": 4.0, "overall_rating": 3.0},
+        )
+        run.save_to_file()
+
+        run2 = EvalRun(
+            parent=mock_eval_config,
+            dataset_id="dataset_id2",
+            task_run_config_id="run_config1",
+            input="test input 2",
+            output="test output 2",
+            scores={"score1": 2.0, "overall_rating": 5.0},
+        )
+        run2.save_to_file()
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+            ) as mock_ds_filter,
+        ):
+            mock_ds_filter.return_value = {"dataset_id1", "dataset_id2"}
+
+            response = client.get(
+                "/api/projects/project1/tasks/task1/evals/eval1"
+                "/eval_config/eval_config1/score_summary"
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "results" in body
+        assert "dataset_size" in body
+        assert body["dataset_size"] == 2
+
+        scores = body["results"]["run_config1"]
+        assert scores["score1"]["mean_score"] == pytest.approx(3.0)
+        assert scores["score1"]["n_used"] == 2
+        assert scores["score1"]["n_excluded"] == 0
+        assert scores["overall_rating"]["mean_score"] == pytest.approx(4.0)
+
+        assert body["run_config_percent_complete"]["run_config1"] == 1.0
+
+    def test_v1_g_eval_run_results(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        run = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.5, "overall_rating": 4.0},
+            input="hello",
+            output="world",
+            dataset_id="ds1",
+        )
+        run.save_to_file()
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1"
+            "/eval_config/eval_config1/run_config/run_config1/results"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "results" in data
+        assert "eval" in data
+        assert "eval_config" in data
+        assert "run_config" in data
+
+        assert len(data["results"]) == 1
+        result = data["results"][0]
+        assert result["scores"] == {"score1": 3.5, "overall_rating": 4.0}
+        assert result["dataset_id"] == "ds1"
+        assert result["task_run_config_id"] == "run_config1"
+        assert result["input"] == "hello"
+        assert result["output"] == "world"
+
+        for v2_field in (
+            "eval_input_id",
+            "reference_data",
+            "skipped_reason",
+            "skipped_detail",
+        ):
+            assert v2_field in result
+            assert result[v2_field] is None
+
+    def test_v1_llm_as_judge_config_accepted(
+        self,
+        mock_eval,
+    ):
+        config = EvalConfig(
+            name="LLM Judge V1",
+            config_type=EvalConfigType.llm_as_judge,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["judge step"]},
+            parent=mock_eval,
+        )
+        config.save_to_file()
+
+        loaded = EvalConfig.load_from_file(str(config.path))
+        assert loaded.config_type == EvalConfigType.llm_as_judge
+        assert isinstance(loaded.properties, dict)
+        assert loaded.properties["eval_steps"] == ["judge step"]
+        assert loaded.model_name == "gpt-4"
+        assert loaded.model_provider == "openai"
+
+    def test_v1_score_summary_with_v2_optional_fields_on_runs(
+        self,
+        mock_eval_for_score_summary,
+    ):
+        config = Mock(spec=EvalConfig)
+
+        runs = [
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": 0.9, "relevance": 0.8},
+                input="input1",
+                output="output1",
+                dataset_id="ds1",
+            ),
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": 0.7, "relevance": 0.6},
+                input="input2",
+                output="output2",
+                dataset_id="ds2",
+            ),
+        ]
+        for r in runs:
+            assert r.eval_input_id is None
+            assert r.reference_data is None
+            assert r.skipped_reason is None
+
+        config.runs.return_value = runs
+
+        task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+        expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
+
+        result = compute_score_summary(
+            mock_eval_for_score_summary, config, task_run_configs, expected_dataset_ids
+        )
+
+        assert result.dataset_size == 2
+        scores = result.results["rc1"]
+        assert scores["accuracy"].mean_score == pytest.approx(0.8)
+        assert scores["accuracy"].n_used == 2
+        assert scores["accuracy"].n_excluded == 0
+        assert scores["relevance"].mean_score == pytest.approx(0.7)
+        assert scores["relevance"].n_used == 2
+        assert scores["relevance"].n_excluded == 0
+
+
+class TestDefaultLlmJudgePrompt:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/default_llm_judge_prompt"
+
+    def test_returns_rich_prompt(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.get(self._url())
+        assert response.status_code == 200
+        body = response.json()
+        assert "judge_prompt" in body
+        assert "system_prompt" in body
+        assert body["system_prompt"] == "You are an evaluator."
+        assert "{{ task_input }}" in body["judge_prompt"]
+        assert "{{ final_message }}" in body["judge_prompt"]
+        assert "Is the answer accurate?" in body["judge_prompt"]
+
+    def test_eval_not_found(self, client):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.side_effect = HTTPException(
+                status_code=404, detail="Eval not found. ID: bad_id"
+            )
+            response = client.get(self._url("bad_id"))
+        assert response.status_code == 404
+
+
+class TestCreateLlmJudgeConfigOverrides:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/create_llm_judge_config"
+
+    def test_with_judge_prompt_override(self, client, mock_v2_eval):
+        custom_prompt = "Custom {{ task_input }} {{ final_message }}"
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "judge_prompt": custom_prompt,
+                },
+            )
+        assert response.status_code == 200
+        props = response.json()["properties"]
+        assert props["prompt_template"] == custom_prompt
+
+    def test_with_system_prompt_override(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "system_prompt": "Be very strict.",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["system_prompt"] == "Be very strict."
+
+    def test_empty_judge_prompt_uses_default(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "judge_prompt": "   ",
+                },
+            )
+        assert response.status_code == 200
+        props = response.json()["properties"]
+        assert "<steps>" in props["prompt_template"]
+
+    def test_invalid_jinja_returns_400(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "judge_prompt": "{% invalid %}",
+                },
+            )
+        assert response.status_code == 400
+
+
+class TestTestV2EvalOverrides:
+    def _url(self, eval_id: str = "eval_v2") -> str:
+        return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
+
+    def test_llm_judge_builder_passes_overrides(self, client, mock_v2_eval):
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "app.desktop.studio_server.eval_api.materialize_llm_judge_properties"
+            ) as mock_mat,
+            patch(
+                "app.desktop.studio_server.eval_api.v2_eval_adapter_from_config"
+            ) as mock_adapter_factory,
+        ):
+            mock_eid.return_value = mock_v2_eval
+
+            from kiln_ai.datamodel.eval import LlmJudgeProperties
+
+            mock_mat.return_value = LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Custom {{ task_input }} {{ final_message }}",
+                system_prompt="Be strict.",
+                thinking_instruction="Think.",
+                required_var=[],
+                g_eval=False,
+            )
+
+            from kiln_ai.datamodel.eval import V2EvalResult
+
+            mock_adapter = MagicMock()
+            mock_adapter.evaluate = AsyncMock(
+                return_value=V2EvalResult(scores={"accuracy": 1.0})
+            )
+            mock_adapter_factory.return_value = mock_adapter
+
+            response = client.post(
+                self._url(),
+                json={
+                    "eval_input": {
+                        "final_message": "test output",
+                        "task_input": "test input",
+                    },
+                    "llm_judge_builder_input": {
+                        "model_name": "gpt-4o",
+                        "provider": "openai",
+                        "g_eval": False,
+                        "judge_prompt": "Custom {{ task_input }} {{ final_message }}",
+                        "system_prompt": "Be strict.",
+                    },
+                },
+            )
+        assert response.status_code == 200
+        mock_mat.assert_called_once()
+        call_kwargs = mock_mat.call_args
+        assert (
+            call_kwargs.kwargs["judge_prompt"]
+            == "Custom {{ task_input }} {{ final_message }}"
+        )
+        assert call_kwargs.kwargs["system_prompt"] == "Be strict."

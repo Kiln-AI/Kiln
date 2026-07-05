@@ -24,7 +24,7 @@ dependencies = [
     "kiln-ai>=1.0.3",
     "pydantic>=2.9.2",
     "python-dotenv>=1.0.1",
-    "python-multipart>=0.0.20",
+    "python-multipart>=0.0.31",
     "uvicorn>=0.32.0",
 ]
 

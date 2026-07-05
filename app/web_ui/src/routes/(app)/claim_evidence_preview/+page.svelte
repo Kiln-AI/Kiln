@@ -52,7 +52,8 @@
           ],
         },
         {
-          claim: "Fails Eval: the agent fabricated an unverified policy detail.",
+          claim:
+            "Fails Eval: the agent fabricated an unverified policy detail.",
           claim_type: "final_judgement",
           evidence:
             "It asserts a concrete return window and refund terms [1] it never verified — the exact behavior the spec forbids.",
