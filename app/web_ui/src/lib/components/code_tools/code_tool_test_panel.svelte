@@ -391,7 +391,9 @@
   {/if}
 </Dialog>
 
-<!-- TODO: replace with real trust mechanism (Phase 6) -->
+<!-- TODO(trust): Do NOT merge Code Tools to main until the real project-trust
+     dialog (delivered by the parallel project-trust project) exists on main AND
+     is wired in here, replacing this borrowed eval-trust dialog in the UI. -->
 <Dialog
   bind:this={trust_dialog}
   title="Trust Code and Project?"

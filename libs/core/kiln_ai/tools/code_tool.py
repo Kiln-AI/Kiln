@@ -117,7 +117,9 @@ class PythonCodeTool(KilnToolInterface):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs: Any
     ) -> ToolCallResult:
-        # TODO: replace with real trust mechanism (Phase 6)
+        # TODO(trust): Do NOT merge Code Tools to main until the real project-trust
+        # dialog (delivered by the parallel project-trust project) exists on main AND
+        # is wired in here, replacing this interim eval-trust stopgap in the run() gate.
         from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
 
         if not is_code_eval_trusted(str(self._project.path)):

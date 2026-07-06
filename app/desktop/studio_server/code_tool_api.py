@@ -255,7 +255,9 @@ def connect_code_tool_api(app: FastAPI):
         except (ValueError, PydanticValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # TODO: replace with real trust mechanism (Phase 6)
+        # TODO(trust): Do NOT merge Code Tools to main until the real project-trust
+        # dialog (delivered by the parallel project-trust project) exists on main AND
+        # is wired in here, replacing this interim eval-trust stopgap in the test endpoint.
         if not is_code_eval_trusted(str(project.path)):
             return TestCodeToolResponse(not_trusted=True)
 
