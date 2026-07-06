@@ -740,12 +740,18 @@
 
   // Flatten the generated traces to the claim builder's (raw_input, raw_output)
   // shape. Multi-turn: first user message + the whole transcript as the output
-  // (citations into "output" highlight within it). Single-turn: the I/O pair.
-  function current_trace_ios(): { raw_input: string; raw_output: string }[] {
+  // (citations into "output" highlight within it), plus the structured trace so
+  // the judge scores the real conversation. Single-turn: the I/O pair.
+  function current_trace_ios(): {
+    raw_input: string
+    raw_output: string
+    trace?: ChainTurn[]
+  }[] {
     if (is_multi_turn) {
       return multi_turn_chains.map((c) => ({
         raw_input: c.trace.find((t) => t.role === "user")?.content ?? "",
         raw_output: c.trace.map((t) => `${t.role}: ${t.content}`).join("\n\n"),
+        trace: c.trace,
       }))
     }
     return single_turn_examples.map((e) => ({
@@ -755,8 +761,8 @@
   }
 
   // SSE events from the eval_builder review_traces endpoint. The judge runs
-  // server-side (local, in-app) today via a stub; the claim step calls the
-  // remote claim builder. We only consume these shapes.
+  // server-side (local, in-app) via the Eval V2 llm_judge adapter; the claim
+  // step calls the remote claim builder. We only consume these shapes.
   type ReviewTraceEvent =
     | { type: "batch_started"; total: number }
     | {
@@ -781,8 +787,7 @@
     const ios = current_trace_ios()
     // judge_info comes from clarify_spec (single-turn). Multi-turn has none
     // until save, so fall back to the shared default judge — same as the save
-    // path (build_default_judge_info). The stub judge ignores it either way;
-    // this keeps the contract stable for when the real judge lands.
+    // path (build_default_judge_info).
     const judge = judge_info ?? build_default_judge_info(eval_rubric)
     // Fill by trace_index as events arrive (they complete out of order).
     const built: (TraceClaims | null)[] = new Array(ios.length).fill(null)

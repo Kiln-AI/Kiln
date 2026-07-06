@@ -5,8 +5,8 @@ Orchestrates the alignment-phase review as one unit of work per trace —
 streaming each result to the UI. See specs/projects/eval_builder/review_pipeline.md.
 
 The remote kiln_server is only reached for the claim builder (secret sauce); the
-judge runs locally (stubbed until Eval V2 / PR #1454). Fan-out + concurrency live
-here so the UI stays a thin SSE consumer.
+judge runs locally via the Eval V2 llm_judge adapter (the user's keys). Fan-out +
+concurrency live here so the UI stays a thin SSE consumer.
 """
 
 import asyncio
@@ -35,8 +35,8 @@ from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 logger = logging.getLogger(__name__)
 
 # Cap concurrent (local judge + remote claim) work per batch. Protects the local
-# judge (LLM calls) and the remote claim calls; tune or swap to EvalRunner
-# batching when the real judge lands (#1454).
+# judge (LLM calls) and the remote claim calls; consider EvalRunner batching if
+# review batches outgrow this.
 REVIEW_CONCURRENCY = 5
 
 
@@ -57,7 +57,12 @@ async def review_one_trace(
 ) -> TraceReviewedEvent:
     """One unit of work: judge the trace (local), then build claims (remote)."""
     verdict = await run_judge_for_trace(
-        project_id, task_id, trace.raw_input, trace.raw_output, judge
+        project_id,
+        task_id,
+        trace.raw_input,
+        trace.raw_output,
+        judge,
+        trace=trace.trace,
     )
     claims = await build_claims_for_trace(
         raw_input=trace.raw_input,

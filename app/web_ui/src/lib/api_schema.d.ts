@@ -11599,13 +11599,20 @@ export interface components {
         };
         /**
          * TraceInput
-         * @description One generated trace to review (single- or multi-turn, flattened).
+         * @description One generated trace to review (single- or multi-turn).
          */
         TraceInput: {
             /** Raw Input */
             raw_input: string;
             /** Raw Output */
             raw_output: string;
+            /**
+             * Trace
+             * @description Structured message list ({role, content}, chronological) for multi-turn traces, so the judge scores the full conversation instead of the flattened raw_output. Single-turn traces omit it. Kept as loose dicts: the claim builder still receives the flattened text, and message shapes (tool calls etc.) will churn.
+             */
+            trace?: {
+                [key: string]: unknown;
+            }[] | null;
         };
         /** TraceMessage */
         TraceMessage: {

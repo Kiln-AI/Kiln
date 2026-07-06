@@ -7,16 +7,24 @@ maps between these UI-facing models and the SDK internally. No SDK types leak
 to the UI.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class TraceInput(BaseModel):
-    """One generated trace to review (single- or multi-turn, flattened)."""
+    """One generated trace to review (single- or multi-turn)."""
 
     raw_input: str
     raw_output: str
+    trace: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Structured message list ({role, content}, chronological) "
+        "for multi-turn traces, so the judge scores the full conversation "
+        "instead of the flattened raw_output. Single-turn traces omit it. "
+        "Kept as loose dicts: the claim builder still receives the flattened "
+        "text, and message shapes (tool calls etc.) will churn.",
+    )
 
 
 class JudgeConfig(BaseModel):
