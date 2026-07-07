@@ -24,6 +24,7 @@ driver model is exposed to the caller because the choice of model
 affects probe quality and cost — deliberate, not internal.
 """
 
+import asyncio
 import dataclasses
 import json
 import logging
@@ -57,8 +58,11 @@ from kiln_server.cancellable_streaming_response import CancellableStreamingRespo
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SyntheticUserCase as SdkSyntheticUserCase,
+)
 from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserClient,
     SyntheticUserRequestError,
@@ -89,6 +93,27 @@ _CASE_DICT_DESCRIPTION = (
 class GenerateCasesApiInput(BaseModel):
     target_specification: str = Field(..., min_length=1)
     num_cases: int = Field(..., ge=1, le=NUM_CASES_MAX)
+    case_prompts: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional per-case scenario prompts (e.g. from an approved batch "
+            "plan). When provided, one case is generated per prompt — case i "
+            "is designed around prompt i — instead of leaving case design to "
+            "the upstream generator. Length must equal num_cases."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _case_prompts_match_num_cases(self) -> "GenerateCasesApiInput":
+        if self.case_prompts is not None:
+            if len(self.case_prompts) != self.num_cases:
+                raise ValueError(
+                    "case_prompts length must equal num_cases "
+                    f"({len(self.case_prompts)} != {self.num_cases})."
+                )
+            if any(not p.strip() for p in self.case_prompts):
+                raise ValueError("case_prompts entries must be non-empty.")
+        return self
 
 
 class GenerateCasesApiOutput(BaseModel):
@@ -149,6 +174,69 @@ class RunCasesBatchApiInput(BaseModel):
 
 
 # ───────────────────────── helpers ─────────────────────────
+
+# Concurrent upstream /generate calls when fanning out per-case prompts.
+# Mirrors the eval_builder review pipeline's REVIEW_CONCURRENCY.
+CASE_GEN_CONCURRENCY = 5
+
+
+def _case_target_specification(target_specification: str, case_prompt: str) -> str:
+    """Append the plan prompt to the shared spec as a scenario constraint —
+    the upstream generator has no per-case field, and this avoids adding one.
+    """
+    return (
+        f"{target_specification}\n\n"
+        "<case_scenario>\n"
+        f"{case_prompt}\n"
+        "</case_scenario>\n"
+        "Design this single case around the scenario above."
+    )
+
+
+async def _generate_cases_from_prompts(
+    client: SyntheticUserClient,
+    target_task_prompt: str,
+    target_specification: str,
+    case_prompts: list[str],
+) -> list[SdkSyntheticUserCase]:
+    """One upstream single-case call per prompt, concurrency-capped and order
+    preserving (case i ← prompt i), so an approved plan maps 1:1 onto cases.
+    Any failure fails the whole request; the caller retries from the plan.
+    """
+    semaphore = asyncio.Semaphore(CASE_GEN_CONCURRENCY)
+
+    async def one(case_prompt: str) -> SdkSyntheticUserCase:
+        async with semaphore:
+            cases = await client.generate(
+                target_task_prompt=target_task_prompt,
+                target_specification=_case_target_specification(
+                    target_specification, case_prompt
+                ),
+                num_cases=1,
+            )
+            if not cases:
+                # Upstream 200 with zero cases — keep it on the typed error
+                # path rather than crashing on cases[0].
+                raise SyntheticUserServerError(
+                    code="upstream_invalid_output",
+                    message="Synthetic-user generator returned no case for a plan prompt.",
+                    status_code=502,
+                )
+            return cases[0]
+
+    # Not gather(): on first failure we cancel the in-flight siblings so
+    # abandoned upstream LLM calls stop spending, then re-raise.
+    tasks = [asyncio.ensure_future(one(p)) for p in case_prompts]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        failed = next((t for t in tasks if t.done() and t.exception()), None)
+        if failed is not None:
+            raise failed.exception()  # type: ignore[misc] # narrowed by the check above
+        return [t.result() for t in tasks]
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _guard_multiturn(task: Task) -> None:
@@ -287,11 +375,19 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         client = SyntheticUserClient(api_key=api_key)
 
         try:
-            sdk_cases = await client.generate(
-                target_task_prompt=task.instruction,
-                target_specification=input.target_specification,
-                num_cases=input.num_cases,
-            )
+            if input.case_prompts is not None:
+                sdk_cases = await _generate_cases_from_prompts(
+                    client=client,
+                    target_task_prompt=task.instruction,
+                    target_specification=input.target_specification,
+                    case_prompts=input.case_prompts,
+                )
+            else:
+                sdk_cases = await client.generate(
+                    target_task_prompt=task.instruction,
+                    target_specification=input.target_specification,
+                    num_cases=input.num_cases,
+                )
         except (SyntheticUserRequestError, SyntheticUserServerError) as exc:
             raise _to_http_exception(exc) from exc
 

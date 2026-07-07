@@ -20,6 +20,10 @@
   // Claim/Evidence replaces the read-the-trace pass/fail review: the reviewer
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
+  // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
+  // per conversation for approval before any conversation is driven.
+  import BatchPlanApproval from "./batch_plan_approval.svelte"
+  import { multiturn_plan_guidance } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,
     build_trace_reviews,
@@ -131,7 +135,9 @@
   //
   //   goto_step    — forward to a step the user dwells on (pushes an entry).
   //   replace_step — swap the current entry for a result step, so transient
-  //                  loading steps (generate, save) don't become Back targets.
+  //                  loading steps (single-turn generate, save) don't become
+  //                  Back targets. Multi-turn generate holds the interactive
+  //                  plan-approval view, so review is PUSHED over it instead.
   function goto_step(next: BuilderStep) {
     current_step = next
     pushState("", { builder_step: next })
@@ -404,18 +410,41 @@
   const NUM_CASES = 10
   let multi_turn_chains: Chain[] = []
   let multi_turn_progress = 0 // 0..N as cases complete
-  const multi_turn_total = NUM_CASES
+  // Batch plan for multi-turn Step 4 — one scenario prompt per conversation,
+  // drafted by the copilot batch planner and approved (with edits/deletions)
+  // by the user before any conversation is driven.
+  type BatchPlan = { prompts: string[]; summary: string }
+  let batch_plan: BatchPlan | null = null
+  // The summary isn't regenerated when the user edits/deletes prompts — flag
+  // that it may no longer match (mirrors the /generate route's plan UI).
+  let batch_plan_edited = false
+  // Snapshot of the prompts a drive actually ran — gates "Continue to Review"
+  // so results are never presented for a plan edited after the drive.
+  let driven_prompts_json: string | null = null
+  // Approved plan length drives the batch size; NUM_CASES is the requested
+  // plan size before any deletions.
+  $: multi_turn_total = batch_plan?.prompts.length ?? NUM_CASES
   // Total assistant turns streamed so far (one per turn_completed event),
   // across all cases. Drives a smooth progress indicator: cases complete in
   // concurrency-limited waves, so a case-only count sits still then jumps —
   // counting turns instead makes steady progress visible while the backend
   // works in parallel.
   let multi_turn_turns_done = 0
-  // Sub-phase for the Step 4 UI: distinguishes the up-front LLM call
-  // (generate_cases) from the longer batch-run stream so the user sees
-  // distinct progress instead of one ambiguous spinner.
-  type MultiTurnPhase = "idle" | "generating_cases" | "running_batch"
+  // Which loading stage Step 4 is in — drives the spinner title/caption only.
+  // The interactive plan-approval view is DERIVED (show_plan_approval below),
+  // not a phase, so no code path can strand it behind a stale flag.
+  type MultiTurnPhase =
+    | "idle"
+    | "planning"
+    | "generating_cases"
+    | "running_batch"
+    | "reviewing"
   let multi_turn_phase: MultiTurnPhase = "idle"
+  $: show_plan_approval =
+    is_multi_turn &&
+    batch_plan !== null &&
+    !generation_loading &&
+    !generation_error
   // batch_tag from run_cases_batch's BatchStartedEvent — passed to the
   // save endpoint so the backend can tag the matching chains for the
   // eval dataset.
@@ -468,12 +497,14 @@
   // ── Step 4 multi-turn — drives real run_cases_batch SSE.
   //
   // Sequence:
-  //   1. Pull the task's default run config → target_run_config for the
+  //   1. POST copilot/batch_plan → one scenario prompt per conversation;
+  //      the user approves (edit/delete/regenerate) before anything runs.
+  //   2. Pull the task's default run config → target_run_config for the
   //      drive loop. Multi-turn requires a KilnAgentRunConfig (the
   //      conversation needs an agent-shaped invoker).
-  //   2. POST /multiturn_sdg/generate_cases → list of synthetic-user
-  //      cases (seed prompt + persona blob).
-  //   3. POST /multiturn_sdg/run_cases_batch as SSE; consume the stream
+  //   3. POST /multiturn_sdg/generate_cases with the approved prompts →
+  //      one synthetic-user case per prompt (seed prompt + persona blob).
+  //   4. POST /multiturn_sdg/run_cases_batch as SSE; consume the stream
   //      and surface BatchEvent dispatch into component state.
   //
   // SU driver model is hardcoded for MVP (see design.md) — claude_4_5_haiku
@@ -521,14 +552,108 @@
         total_cost: number
       }
 
-  async function on_generate_multi_turn() {
+  // The spec text driving generation — Step 3's refined description, falling
+  // back to the Step 1 free text (same fallback the save path uses).
+  function current_spec_text(): string {
+    return (
+      (refined_property_values.issue_description as string | null) ??
+      description
+    )
+  }
+
+  // Step 4 (multi-turn) part 1 — plan. Ask the batch planner for one
+  // conversation scenario per case, balanced ~50/50 expected-pass /
+  // expected-fail (the balance policy lives in multiturn_plan_guidance), then
+  // pause on the approval screen. Nothing is driven until the user approves.
+  async function on_plan_multi_turn() {
+    generation_loading = true
+    generation_error = null
+    batch_plan = null
+    batch_plan_edited = false
+    multi_turn_chains = []
+    multi_turn_progress = 0
+    multi_turn_turns_done = 0
+    multi_turn_batch_tag = null
+    // Claims belong to the discarded plan's conversations — clear them so
+    // browser Forward can't re-enter review over stale results.
+    trace_claims = []
+    trace_reviews = []
+    driven_prompts_json = null
+    multi_turn_phase = "planning"
+    try {
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            guidance: multiturn_plan_guidance(current_spec_text()),
+            count: NUM_CASES,
+          },
+          signal: new_copilot_abort_signal(),
+        },
+      )
+      if (error || !data) {
+        generation_error = "Failed to plan the conversation batch."
+        return
+      }
+      // Clamp: the planner is an LLM and can over-deliver or emit blanks;
+      // both would 422 at drive time with no visible cause.
+      const prompts = data.prompts
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .slice(0, NUM_CASES)
+      if (prompts.length === 0) {
+        generation_error = "The planner returned no usable scenarios — retry."
+        return
+      }
+      batch_plan = { prompts, summary: data.summary }
+    } catch (e) {
+      if (is_abort_error(e)) return
+      generation_error =
+        e instanceof Error ? e.message : "Batch planning failed."
+    } finally {
+      generation_loading = false
+    }
+  }
+
+  function on_delete_plan_prompt(index: number) {
+    if (!batch_plan) return
+    batch_plan = {
+      ...batch_plan,
+      prompts: batch_plan.prompts.filter((_, i) => i !== index),
+    }
+    batch_plan_edited = true
+  }
+
+  function on_edit_plan_prompt(index: number, value: string) {
+    if (!batch_plan) return
+    batch_plan = {
+      ...batch_plan,
+      prompts: batch_plan.prompts.map((p, i) => (i === index ? value : p)),
+    }
+    batch_plan_edited = true
+  }
+
+  // Step 4 (multi-turn) part 2 — drive from the approved plan. Each approved
+  // scenario prompt becomes one synthetic-user case (case i ← prompt i via
+  // generate_cases' case_prompts), then run_cases_batch drives one
+  // conversation per case.
+  async function on_drive_multi_turn() {
+    if (!batch_plan || batch_plan.prompts.length === 0) {
+      generation_error = "No approved plan — plan the batch first."
+      return
+    }
+    const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
     multi_turn_progress = 0
     multi_turn_turns_done = 0
     multi_turn_chains = []
     multi_turn_batch_tag = null
-    multi_turn_phase = "idle"
+    trace_claims = []
+    trace_reviews = []
+    driven_prompts_json = JSON.stringify(approved_prompts)
+    multi_turn_phase = "generating_cases"
 
     try {
       // 1. Resolve target_run_config: prefer the task's default; if none
@@ -568,18 +693,17 @@
         prompt_id: rcp.prompt_id ?? "simple_prompt_builder",
       }
 
-      // 2. Generate synthetic-user cases via copilot.
+      // 2. Generate synthetic-user cases via copilot — one per approved
+      // scenario prompt, so the driven batch is exactly the approved plan.
       multi_turn_phase = "generating_cases"
-      const refined_description =
-        (refined_property_values.issue_description as string | null) ??
-        description
       const cases_resp = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
         {
           params: { path: { project_id, task_id } },
           body: {
-            target_specification: refined_description,
-            num_cases: NUM_CASES,
+            target_specification: current_spec_text(),
+            num_cases: approved_prompts.length,
+            case_prompts: approved_prompts,
           },
           signal: new_copilot_abort_signal(),
         },
@@ -691,12 +815,19 @@
         return
       }
 
+      // The drive is done but the judge + claim builder still run per trace —
+      // surface that instead of sitting on a full progress bar.
+      multi_turn_phase = "reviewing"
       await build_claims_for_review()
       if (claims_error) {
         generation_error = claims_error
         return
       }
-      replace_step("review")
+      // Empty with no error = the user aborted (browser Back) — respect the
+      // navigation instead of yanking them onto an empty review.
+      if (trace_claims.length === 0) return
+      // PUSH review (single-turn replaces): Back must return to the plan.
+      goto_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error =
@@ -708,7 +839,16 @@
 
   function on_continue_from_generate_step() {
     if (is_multi_turn) {
-      on_generate_multi_turn()
+      // No plan → plan. Chains driven but claims missing (judge/claims
+      // failed or was aborted) → retry just that cheap stage, never the
+      // whole drive. Otherwise → (re)drive the approved plan.
+      if (batch_plan === null) {
+        on_plan_multi_turn()
+      } else if (multi_turn_chains.length > 0 && trace_claims.length === 0) {
+        continue_to_review()
+      } else {
+        on_drive_multi_turn()
+      }
     } else {
       on_generate_single_turn()
     }
@@ -719,6 +859,9 @@
   // surfaces if generation errored, as a retry affordance.
   function on_advance_to_generate() {
     goto_step("generate")
+    // An existing plan renders for re-approval instead of auto-driving —
+    // the spec may have changed since it was planned.
+    if (is_multi_turn && batch_plan !== null) return
     on_continue_from_generate_step()
   }
 
@@ -862,12 +1005,16 @@
   }
 
   // Generation → review: build claims (unless already built) then advance.
+  // Pushes (not replaces) so Back from review returns here — this path is
+  // only reachable when Step 4 has real content to come back to.
   async function continue_to_review() {
     if (trace_claims.length === 0) {
       await build_claims_for_review()
       if (claims_error) return
+      // Still empty with no error = aborted mid-build — stay put.
+      if (trace_claims.length === 0) return
     }
-    replace_step("review")
+    goto_step("review")
   }
 
   // ── Step 6 state — save
@@ -1103,7 +1250,7 @@
         return "Review and edit the refined spec before generating examples."
       case "generate":
         return is_multi_turn
-          ? `Driving ${multi_turn_total} multi-turn conversations against your agent.`
+          ? `Planning, then driving ${multi_turn_total} multi-turn conversations against your agent.`
           : "Generating sample inputs and outputs based on your spec."
       case "review":
         return "Agree or disagree with each claim. Open a [n] citation to see the trace."
@@ -1120,6 +1267,9 @@
   function page_max_w_for(step: BuilderStep): string {
     if (step === "review") return "max-w-[1400px]"
     if (step === "refine" && !is_multi_turn) return "max-w-[1400px]"
+    // Multi-turn generate hosts the plan-approval table (long scenario
+    // prompts) — give it the same wide layout as review.
+    if (step === "generate" && is_multi_turn) return "max-w-[1400px]"
     return "max-w-[900px]"
   }
 
@@ -1135,9 +1285,13 @@
   // Step 4 animation caption. Multi-turn shows turn-level progress while the
   // batch runs (smooth), then how many full conversations are ready.
   $: generate_animation_description = is_multi_turn
-    ? multi_turn_phase === "generating_cases"
-      ? `Generating ${NUM_CASES} synthetic-user cases…`
-      : `Driving ${multi_turn_total} conversations — ${multi_turn_turns_done} of ${multi_turn_total_turns} turns (${multi_turn_progress} ready).`
+    ? multi_turn_phase === "planning"
+      ? `Planning a balanced batch of ${NUM_CASES} conversation scenarios…`
+      : multi_turn_phase === "generating_cases"
+        ? `Generating ${multi_turn_total} synthetic-user cases from the approved plan…`
+        : multi_turn_phase === "reviewing"
+          ? `Judging ${multi_turn_chains.length} conversations and distilling claims for review…`
+          : `Driving ${multi_turn_total} conversations — ${multi_turn_turns_done} of ${multi_turn_total_turns} turns (${multi_turn_progress} ready).`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
@@ -1332,7 +1486,11 @@
           {#if generation_loading}
             <AnalyzingAnimation
               title={is_multi_turn
-                ? "Generating Conversations"
+                ? multi_turn_phase === "planning"
+                  ? "Planning Conversations"
+                  : multi_turn_phase === "reviewing"
+                    ? "Reviewing Conversations"
+                    : "Generating Conversations"
                 : "Analyzing Eval"}
               description={generate_animation_description}
               warning={is_multi_turn ? null : "This may take a while"}
@@ -1352,7 +1510,19 @@
 
           {#if generation_error}
             <Warning warning_color="error" warning_message={generation_error} />
-            <div class="text-center py-4">
+            <div class="text-center py-4 flex justify-center gap-2">
+              {#if is_multi_turn && batch_plan !== null}
+                <!-- Drive failed after approval — let the user rework the plan
+                     instead of only retrying it verbatim. -->
+                <button
+                  class="btn"
+                  on:click={() => {
+                    generation_error = null
+                  }}
+                >
+                  ← Back to plan
+                </button>
+              {/if}
               <button
                 class="btn btn-primary"
                 on:click={on_continue_from_generate_step}
@@ -1362,7 +1532,23 @@
             </div>
           {/if}
 
-          {#if !generation_loading && !generation_error}
+          {#if show_plan_approval && batch_plan}
+            <!-- Plan approval: the batch runs only after the user approves
+                 (optionally edited) scenario prompts. -->
+            <BatchPlanApproval
+              plan={batch_plan}
+              summary_out_of_sync={batch_plan_edited}
+              on_approve={on_drive_multi_turn}
+              on_regenerate={on_plan_multi_turn}
+              on_delete_prompt={on_delete_plan_prompt}
+              on_edit_prompt={on_edit_plan_prompt}
+              on_continue={multi_turn_chains.length > 0 &&
+              driven_prompts_json === JSON.stringify(batch_plan.prompts)
+                ? continue_to_review
+                : null}
+              on_back={() => history.back()}
+            />
+          {:else if !generation_loading && !generation_error}
             <div class="flex justify-end mt-8">
               {#if single_turn_examples.length > 0 || multi_turn_chains.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
@@ -1377,8 +1563,11 @@
                   class="btn btn-primary"
                   on:click={on_continue_from_generate_step}
                 >
+                  <!-- Multi-turn only reaches this branch with no plan (a plan
+                       renders the approval view above), so planning is always
+                       the next action. -->
                   {is_multi_turn
-                    ? "Generate conversations →"
+                    ? "Plan conversations →"
                     : "Generate examples →"}
                 </button>
               {/if}

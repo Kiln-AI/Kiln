@@ -7439,6 +7439,11 @@ export interface components {
             target_specification: string;
             /** Num Cases */
             num_cases: number;
+            /**
+             * Case Prompts
+             * @description Optional per-case scenario prompts (e.g. from an approved batch plan). When provided, one case is generated per prompt — case i is designed around prompt i — instead of leaving case design to the upstream generator. Length must equal num_cases.
+             */
+            case_prompts?: string[] | null;
         };
         /** GenerateCasesApiOutput */
         GenerateCasesApiOutput: {
