@@ -277,247 +277,249 @@
   }
 </script>
 
-{#if current_step === "define"}
-  <AppPage
-    title="New Code Tool"
-    subtitle="Define the tool's identity and parameters"
-    breadcrumbs={[
-      {
-        label: "Optimize",
-        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-      },
-      {
-        label: "Tools",
-        href: `/tools/${project_id}`,
-      },
-      {
-        label: "Add Tools",
-        href: `/tools/${project_id}/add_tools`,
-      },
-    ]}
-  >
-    <div class="max-w-2xl">
-      <FormContainer
-        submit_label="Continue"
-        on:submit={continue_to_code}
-        warn_before_unload={has_started}
-      >
-        <FormElement
-          id="name"
-          label="Display Name"
-          description="User-facing name for this tool."
-          inputType="input"
-          bind:value={name}
-          placeholder="e.g. User Lookup"
-        />
+<div class="max-w-[1400px]">
+  {#if current_step === "define"}
+    <AppPage
+      title="New Code Tool"
+      subtitle="Define the tool's identity and parameters"
+      breadcrumbs={[
+        {
+          label: "Optimize",
+          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+        },
+        {
+          label: "Tools",
+          href: `/tools/${project_id}`,
+        },
+        {
+          label: "Add Tools",
+          href: `/tools/${project_id}/add_tools`,
+        },
+      ]}
+    >
+      <div class="max-w-2xl">
+        <FormContainer
+          submit_label="Continue"
+          on:submit={continue_to_code}
+          warn_before_unload={has_started}
+        >
+          <FormElement
+            id="name"
+            label="Display Name"
+            description="User-facing name for this tool."
+            inputType="input"
+            bind:value={name}
+            placeholder="e.g. User Lookup"
+          />
 
-        <FormElement
-          id="tool_function_name"
-          label="Tool Name"
-          description="The function name exposed to the model. Must be lowercase with underscores."
-          inputType="input"
-          bind:value={tool_function_name}
-          placeholder="e.g. get_user"
-          validator={tool_name_validator}
-        />
+          <FormElement
+            id="tool_function_name"
+            label="Tool Name"
+            description="The function name exposed to the model. Must be lowercase with underscores."
+            inputType="input"
+            bind:value={tool_function_name}
+            placeholder="e.g. get_user"
+            validator={tool_name_validator}
+          />
 
-        <FormElement
-          id="tool_description"
-          label="Description"
-          description="Shown to the model — describe what this tool does and when to use it."
-          inputType="textarea"
-          bind:value={tool_description}
-          placeholder="e.g. Look up a user by ID and return their profile information."
-        />
+          <FormElement
+            id="tool_description"
+            label="Description"
+            description="Shown to the model — describe what this tool does and when to use it."
+            inputType="textarea"
+            bind:value={tool_description}
+            placeholder="e.g. Look up a user by ID and return their profile information."
+          />
 
-        <FormElement
-          id="parameters"
-          label="Parameters"
-          description="Define the parameters the model will pass to this tool."
-          info_description="Parameters use JSON Schema. Each parameter has a name, type, and optional description. The model uses these to know what arguments to provide."
-          inputType="header_only"
-          value=""
-        />
-        <SchemaSection
-          bind:this={schema_section}
-          schema_string={clone_schema_string}
-          warn_about_required={true}
-          structured_label="Structured Parameter List"
-        />
-      </FormContainer>
-    </div>
-  </AppPage>
-{:else}
-  <AppPage
-    title="New Code Tool"
-    subtitle="Write a tool that invokes a Python function, optionally calling other tools."
-    breadcrumbs={[
-      {
-        label: "Optimize",
-        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-      },
-      {
-        label: "Tools",
-        href: `/tools/${project_id}`,
-      },
-      {
-        label: "Add Tools",
-        href: `/tools/${project_id}/add_tools`,
-      },
-    ]}
-  >
-    <div class="flex flex-col lg:flex-row gap-6">
-      <!-- Left: Code Editor -->
-      <div class="flex-1 min-w-0 flex flex-col gap-4">
-        <h3 class="text-xl font-bold">Code</h3>
-        <FormElement
-          id="code_editor_label"
-          label="Python Function"
-          description="Write a Python function named 'run' that implements your tool."
-          info_description="Must include either `def run(...):` or `async def run(...):`."
-          inputType="header_only"
-          inline_action={{
-            handler: show_examples,
-            label: "Examples",
-          }}
-          value=""
-        />
+          <FormElement
+            id="parameters"
+            label="Parameters"
+            description="Define the parameters the model will pass to this tool."
+            info_description="Parameters use JSON Schema. Each parameter has a name, type, and optional description. The model uses these to know what arguments to provide."
+            inputType="header_only"
+            value=""
+          />
+          <SchemaSection
+            bind:this={schema_section}
+            schema_string={clone_schema_string}
+            warn_about_required={true}
+            structured_label="Structured Parameter List"
+          />
+        </FormContainer>
+      </div>
+    </AppPage>
+  {:else}
+    <AppPage
+      title="New Code Tool"
+      subtitle="Write a tool that invokes a Python function, optionally calling other tools."
+      breadcrumbs={[
+        {
+          label: "Optimize",
+          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+        },
+        {
+          label: "Tools",
+          href: `/tools/${project_id}`,
+        },
+        {
+          label: "Add Tools",
+          href: `/tools/${project_id}/add_tools`,
+        },
+      ]}
+    >
+      <div class="flex flex-col lg:flex-row gap-8 lg:gap-16">
+        <!-- Left: Code Editor -->
+        <div class="flex-1 min-w-0 flex flex-col gap-4">
+          <h3 class="text-xl font-bold">Code</h3>
+          <FormElement
+            id="code_editor_label"
+            label="Python Function"
+            description="Write a Python function named 'run' that implements your tool."
+            info_description="Must include either `def run(...):` or `async def run(...):`."
+            inputType="header_only"
+            inline_action={{
+              handler: show_examples,
+              label: "Examples",
+            }}
+            value=""
+          />
 
-        {#if schema_changed_hint}
-          <div
-            class="text-xs text-warning bg-warning/10 rounded px-3 py-1.5"
-            data-testid="schema-changed-hint"
+          {#if schema_changed_hint}
+            <div
+              class="text-xs text-warning bg-warning/10 rounded px-3 py-1.5"
+              data-testid="schema-changed-hint"
+            >
+              Schema changed — check <code>run()</code>'s parameters.
+            </div>
+          {/if}
+
+          <CodeEditor
+            bind:this={code_editor}
+            value={code}
+            min_height="400px"
+            on:change={on_code_change}
+          />
+
+          <Collapse title="Advanced Options">
+            <div class="flex flex-col gap-4 py-2">
+              <FormElement
+                id="timeout_seconds"
+                label="Timeout (seconds)"
+                description="Maximum time allowed for the tool to execute."
+                inputType="input_number"
+                bind:value={timeout_seconds}
+                placeholder="60"
+                min={1}
+              />
+            </div>
+          </Collapse>
+
+          {#if create_error}
+            <div class="mt-2">
+              <div
+                class="bg-error/10 text-error rounded-lg p-3 text-sm"
+                data-testid="create-error"
+              >
+                {create_error.getMessage()}
+              </div>
+            </div>
+          {/if}
+
+          <button
+            class="btn btn-primary w-full mt-2"
+            on:click={handle_create}
+            disabled={create_loading}
+            data-testid="create-btn"
           >
-            Schema changed — check <code>run()</code>'s parameters.
-          </div>
-        {/if}
+            {#if create_loading}
+              <span class="loading loading-spinner loading-sm"></span>
+            {/if}
+            Create Code Tool
+          </button>
+        </div>
 
-        <CodeEditor
-          bind:this={code_editor}
-          value={code}
-          min_height="400px"
-          on:change={on_code_change}
-        />
-
-        <Collapse title="Advanced Options">
-          <div class="flex flex-col gap-4 py-2">
-            <FormElement
-              id="timeout_seconds"
-              label="Timeout (seconds)"
-              description="Maximum time allowed for the tool to execute. Default is 60."
-              inputType="input_number"
-              bind:value={timeout_seconds}
-              placeholder="60"
-              min={1}
+        <!-- Right: Tools + Test Panel -->
+        <div class="w-full lg:w-[420px] flex flex-col gap-6">
+          <div>
+            <h3 class="text-xl font-bold mb-3">Tool Access</h3>
+            <ToolsSelector
+              {project_id}
+              label="Tools"
+              settings={{
+                description: "The code can only call tools listed here.",
+                info_description:
+                  "Select the tools this code tool is allowed to call. Tool calls use the kiln.tools or kiln.async_tools module.",
+                hide_create_kiln_task_tool_button: true,
+                optional: true,
+                empty_label: "None (no tool access)",
+              }}
+              bind:tools={tool_allowlist}
             />
           </div>
-        </Collapse>
 
-        {#if create_error}
-          <div class="mt-2">
-            <div
-              class="bg-error/10 text-error rounded-lg p-3 text-sm"
-              data-testid="create-error"
-            >
-              {create_error.getMessage()}
-            </div>
+          <div class="border-t pt-4">
+            <CodeToolTestPanel
+              {project_id}
+              {tool_function_name}
+              {tool_description}
+              {parameters_schema}
+              {code}
+              {timeout_seconds}
+              {tool_allowlist}
+              bind:has_tested={test_panel_has_tested}
+            />
           </div>
-        {/if}
+        </div>
+      </div>
+    </AppPage>
 
-        <button
-          class="btn btn-primary w-full mt-2"
-          on:click={handle_create}
-          disabled={create_loading}
-          data-testid="create-btn"
+    <Dialog
+      bind:this={confirm_save_dialog}
+      title="Save Without Testing?"
+      action_buttons={[
+        {
+          label: "Save Anyway",
+          isWarning: true,
+          asyncAction: confirm_save_without_test,
+        },
+      ]}
+    >
+      <p class="text-sm">
+        You haven't run a successful test since your last edit. It's recommended
+        to test your code before saving.
+      </p>
+    </Dialog>
+
+    <Dialog
+      bind:this={examples_dialog}
+      title="Code Tool Examples"
+      width="wide"
+      action_buttons={[
+        {
+          label: "Use This Example",
+          isPrimary: true,
+          action: use_example,
+        },
+      ]}
+    >
+      <div class="flex flex-col gap-4">
+        <div class="tabs tabs-bordered">
+          {#each examples as example, i}
+            <button
+              type="button"
+              class="tab {active_example_tab === i ? 'tab-active' : ''}"
+              on:click={() => (active_example_tab = i)}
+            >
+              {example.label}
+            </button>
+          {/each}
+        </div>
+        <div
+          class="bg-base-200 rounded-lg p-4 overflow-x-auto font-mono text-sm whitespace-pre"
         >
-          {#if create_loading}
-            <span class="loading loading-spinner loading-sm"></span>
-          {/if}
-          Create Code Tool
-        </button>
-      </div>
-
-      <!-- Right: Tools + Test Panel -->
-      <div class="w-full lg:w-80 flex flex-col gap-6">
-        <div>
-          <h3 class="text-xl font-bold mb-3">Tool Access</h3>
-          <ToolsSelector
-            {project_id}
-            label="Tools"
-            settings={{
-              description: "The code can only call tools listed here.",
-              info_description:
-                "Select the tools this code tool is allowed to call. Tool calls use the kiln.tools or kiln.async_tools module.",
-              hide_create_kiln_task_tool_button: true,
-              optional: true,
-              empty_label: "None (no tool access)",
-            }}
-            bind:tools={tool_allowlist}
-          />
-        </div>
-
-        <div class="border-t pt-4">
-          <CodeToolTestPanel
-            {project_id}
-            {tool_function_name}
-            {tool_description}
-            {parameters_schema}
-            {code}
-            {timeout_seconds}
-            {tool_allowlist}
-            bind:has_tested={test_panel_has_tested}
-          />
+          {examples[active_example_tab].code}
         </div>
       </div>
-    </div>
-  </AppPage>
-
-  <Dialog
-    bind:this={confirm_save_dialog}
-    title="Save Without Testing?"
-    action_buttons={[
-      {
-        label: "Save Anyway",
-        isWarning: true,
-        asyncAction: confirm_save_without_test,
-      },
-    ]}
-  >
-    <p class="text-sm">
-      You haven't run a successful test since your last edit. It's recommended
-      to test your code before saving.
-    </p>
-  </Dialog>
-
-  <Dialog
-    bind:this={examples_dialog}
-    title="Code Tool Examples"
-    width="wide"
-    action_buttons={[
-      {
-        label: "Use This Example",
-        isPrimary: true,
-        action: use_example,
-      },
-    ]}
-  >
-    <div class="flex flex-col gap-4">
-      <div class="tabs tabs-bordered">
-        {#each examples as example, i}
-          <button
-            type="button"
-            class="tab {active_example_tab === i ? 'tab-active' : ''}"
-            on:click={() => (active_example_tab = i)}
-          >
-            {example.label}
-          </button>
-        {/each}
-      </div>
-      <div
-        class="bg-base-200 rounded-lg p-4 overflow-x-auto font-mono text-sm whitespace-pre"
-      >
-        {examples[active_example_tab].code}
-      </div>
-    </div>
-  </Dialog>
-{/if}
+    </Dialog>
+  {/if}
+</div>

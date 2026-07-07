@@ -13,9 +13,15 @@
   import {
     load_available_tools,
     uncache_available_tools,
+    available_tools,
     ui_state,
   } from "$lib/stores"
-  import type { CodeToolResponse } from "$lib/types"
+  import type {
+    CodeToolResponse,
+    ToolApiDescription,
+    ToolSetType,
+  } from "$lib/types"
+  import { tool_link, tool_set_type_label } from "$lib/utils/link_builder"
   import posthog from "posthog-js"
 
   import { agentInfo } from "$lib/agent"
@@ -161,6 +167,42 @@
     code_tool?.tool_allowlist && code_tool.tool_allowlist.length > 0
       ? code_tool.tool_allowlist
       : null
+
+  // Load available_tools so we can resolve allowlist IDs to friendly names
+  $: if (project_id) {
+    load_available_tools(project_id)
+  }
+
+  type ResolvedTool = {
+    tool_id: string
+    name: string
+    type_label: string
+    href: string | null
+  }
+
+  $: resolved_allowlist = ((): ResolvedTool[] => {
+    if (!allowlist_names) return []
+    const project_tools = $available_tools[project_id]
+    return allowlist_names.map((tool_id) => {
+      if (!project_tools) {
+        return { tool_id, name: tool_id, type_label: "", href: null }
+      }
+      for (const tool_set of project_tools) {
+        const found = tool_set.tools.find(
+          (t: ToolApiDescription) => t.id === tool_id,
+        )
+        if (found) {
+          return {
+            tool_id,
+            name: found.name,
+            type_label: tool_set_type_label(tool_set.type as ToolSetType),
+            href: tool_link(project_id, tool_id),
+          }
+        }
+      }
+      return { tool_id, name: tool_id, type_label: "", href: null }
+    })
+  })()
 </script>
 
 <div class="max-w-[1400px]">
@@ -232,11 +274,9 @@
         </button>
       </div>
     {:else if code_tool}
-      <div class="flex flex-col lg:flex-row gap-6">
-        <!-- Left column: properties, code, tool access -->
+      <div class="flex flex-col lg:flex-row gap-8 lg:gap-16">
+        <!-- Left column: code, tool access, notes -->
         <div class="flex-1 min-w-0 flex flex-col gap-8">
-          <PropertyList properties={detail_properties} title="Properties" />
-
           <div>
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-xl font-bold">Code</h3>
@@ -284,15 +324,48 @@
 
           {#if allowlist_names}
             <div>
-              <h3 class="text-xl font-bold mb-3">Tool Access</h3>
-              <div class="flex flex-col gap-1">
-                {#each allowlist_names as tool_id}
-                  <div
-                    class="text-sm font-mono bg-base-200 rounded px-3 py-1.5"
-                  >
-                    {tool_id}
-                  </div>
-                {/each}
+              <h3 class="text-xl font-bold mb-1">Tool Access</h3>
+              <p class="text-sm text-gray-500 mb-3">
+                The tools this code tool can call.
+              </p>
+              <div class="rounded-lg border">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each resolved_allowlist as tool}
+                      {#if tool.href}
+                        <tr
+                          class="hover:bg-base-200 cursor-pointer"
+                          on:click={() => tool.href && goto(tool.href)}
+                          on:keydown={(e) => {
+                            if (
+                              (e.key === "Enter" || e.key === " ") &&
+                              tool.href
+                            ) {
+                              e.preventDefault()
+                              goto(tool.href)
+                            }
+                          }}
+                          role="button"
+                          tabindex="0"
+                        >
+                          <td class="font-medium">{tool.name}</td>
+                          <td class="text-sm">{tool.type_label}</td>
+                        </tr>
+                      {:else}
+                        <tr>
+                          <td class="font-mono text-sm">{tool.name}</td>
+                          <td class="text-sm">{tool.type_label}</td>
+                        </tr>
+                      {/if}
+                    {/each}
+                  </tbody>
+                </table>
               </div>
             </div>
           {/if}
@@ -305,8 +378,9 @@
           {/if}
         </div>
 
-        <!-- Right column: test panel -->
-        <div class="w-full lg:w-80">
+        <!-- Right column: properties, test panel -->
+        <div class="w-full lg:w-[420px] flex flex-col gap-6">
+          <PropertyList properties={detail_properties} title="Properties" />
           <CodeToolTestPanel
             {project_id}
             tool_function_name={code_tool.tool_function_name}
