@@ -315,6 +315,11 @@ class SaveConfigRequest(BaseModel):
         description="When true and a duplicate project ID conflict is detected, "
         "remove the existing project registration before saving.",
     )
+    trusted: bool = Field(
+        default=False,
+        description="Must be true to confirm trust before importing. "
+        "Kiln projects can contain code that runs on your machine.",
+    )
 
 
 class GitSyncConfigResponse(BaseModel):
@@ -604,6 +609,11 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_save_config(request: SaveConfigRequest) -> GitSyncConfigResponse:
+        if not request.trusted:
+            raise HTTPException(
+                status_code=400,
+                detail="Import cancelled: you must confirm you trust this project before importing. Kiln projects can contain code that runs on your machine.",
+            )
         _validate_clone_path(request.clone_path)
         if Path(request.project_path).is_absolute():
             raise HTTPException(

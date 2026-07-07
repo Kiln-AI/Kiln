@@ -35,10 +35,12 @@ export function clear_wizard_store() {
 export type WizardStep =
   | "method"
   | "local_file"
+  | "local_trust_confirm"
   | "url"
   | "credentials"
   | "branch"
   | "project"
+  | "trust_confirm"
   | "complete"
 
 export function validate_step_requirements(step: WizardStep): boolean {
@@ -47,6 +49,7 @@ export function validate_step_requirements(step: WizardStep): boolean {
   switch (step) {
     case "method":
     case "local_file":
+    case "local_trust_confirm":
     case "url":
       return true
     case "credentials":
@@ -58,6 +61,11 @@ export function validate_step_requirements(step: WizardStep): boolean {
       return true
     case "project":
       return !!state.clone_path
+    case "trust_confirm":
+      if (!state.git_url) return false
+      if (state.auth_mode === "pat_token" && !state.pat_token) return false
+      if (state.auth_mode === "github_oauth" && !state.oauth_token) return false
+      return true
     case "complete":
       return (
         !!state.clone_path &&

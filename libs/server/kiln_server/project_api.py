@@ -143,7 +143,19 @@ def connect_project_api(app: FastAPI):
                 "remove the existing project registration before importing."
             ),
         ] = False,
+        trusted: Annotated[
+            bool,
+            Query(
+                description="Must be true to confirm trust before importing. "
+                "Kiln projects can contain code that runs on your machine."
+            ),
+        ] = False,
     ) -> Project:
+        if not trusted:
+            raise HTTPException(
+                status_code=400,
+                detail="Import cancelled: you must confirm you trust this project before importing. Kiln projects can contain code that runs on your machine.",
+            )
         if project_path is None or not os.path.exists(project_path):
             raise HTTPException(
                 status_code=400,

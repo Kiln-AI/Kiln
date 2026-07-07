@@ -141,6 +141,8 @@ export type ToolCallMessageParam =
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
 export type CodeToolResponse = components["schemas"]["CodeToolResponse"]
+export type CodeToolCreateResponse =
+  components["schemas"]["CodeToolCreateResponse"]
 export type TestCodeToolResponse = components["schemas"]["TestCodeToolResponse"]
 export type ToolCallLogEntryResponse =
   components["schemas"]["ToolCallLogEntryResponse"]

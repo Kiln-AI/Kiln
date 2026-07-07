@@ -8,6 +8,7 @@
   import SchemaSection from "../../../../../(fullscreen)/setup/(setup)/create_task/schema_section.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import CodeToolTestPanel from "$lib/components/code_tools/code_tool_test_panel.svelte"
+  import CodeTrustDialog from "$lib/components/code_tools/code_trust_dialog.svelte"
   import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -86,6 +87,7 @@
   let create_loading = false
   let test_panel_has_tested = false
   let confirm_save_dialog: Dialog
+  let create_trust_dialog: CodeTrustDialog
   let examples_dialog: Dialog
   let active_example_tab = 0
 
@@ -262,6 +264,12 @@
         throw error
       }
 
+      if (data.not_trusted) {
+        create_trust_dialog.show()
+        create_loading = false
+        return
+      }
+
       posthog.capture("create_code_tool", {
         project_id,
         tool_function_name,
@@ -274,6 +282,10 @@
     } finally {
       create_loading = false
     }
+  }
+
+  function on_create_trust_granted() {
+    do_create()
   }
 </script>
 
@@ -489,6 +501,12 @@
         to test your code before saving.
       </p>
     </Dialog>
+
+    <CodeTrustDialog
+      bind:this={create_trust_dialog}
+      {project_id}
+      on_trust_granted={on_create_trust_granted}
+    />
 
     <Dialog
       bind:this={examples_dialog}

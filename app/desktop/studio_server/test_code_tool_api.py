@@ -87,10 +87,11 @@ class TestCreateCodeTool:
     def test_create_success(
         self, client, test_project, mock_project_from_id, create_request
     ):
-        response = client.post(
-            f"/api/projects/{test_project.id}/code_tools",
-            json=create_request,
-        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
         assert response.status_code == 200
         result = response.json()
         assert result["tool_function_name"] == "double_it"
@@ -101,6 +102,19 @@ class TestCreateCodeTool:
         assert loaded is not None
         assert loaded.tool_function_name == "double_it"
 
+    def test_create_not_trusted(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        with patch(TRUST_PATCH, return_value=False):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["not_trusted"] is True
+        assert result["id"] is None
+
     def test_create_uniqueness_conflict(
         self,
         client,
@@ -110,10 +124,11 @@ class TestCreateCodeTool:
         create_request,
     ):
         create_request["tool_function_name"] = saved_code_tool.tool_function_name
-        response = client.post(
-            f"/api/projects/{test_project.id}/code_tools",
-            json=create_request,
-        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
         assert response.status_code == 400
         assert "already exists" in response.json()["message"]
 
@@ -128,23 +143,25 @@ class TestCreateCodeTool:
         saved_code_tool.is_archived = True
         saved_code_tool.save_to_file()
         create_request["tool_function_name"] = saved_code_tool.tool_function_name
-        response = client.post(
-            f"/api/projects/{test_project.id}/code_tools",
-            json=create_request,
-        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
         assert response.status_code == 200
 
     def test_create_validation_error(self, client, test_project, mock_project_from_id):
-        response = client.post(
-            f"/api/projects/{test_project.id}/code_tools",
-            json={
-                "name": "bad",
-                "tool_function_name": "bad",
-                "tool_description": "test",
-                "parameters_schema": SIMPLE_SCHEMA,
-                "code": "x = 1",
-            },
-        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json={
+                    "name": "bad",
+                    "tool_function_name": "bad",
+                    "tool_description": "test",
+                    "parameters_schema": SIMPLE_SCHEMA,
+                    "code": "x = 1",
+                },
+            )
         assert response.status_code == 400
         assert "run" in response.json()["message"].lower()
 

@@ -10,7 +10,7 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { grantCodeEvalTrust } from "$lib/api/v2_eval_api"
+  import CodeTrustDialog from "$lib/components/code_tools/code_trust_dialog.svelte"
   import type { TestCodeToolResponse } from "$lib/types"
   import posthog from "posthog-js"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -26,7 +26,7 @@
   let test_loading = false
   let test_result: TestCodeToolResponse | null = null
   let test_error: KilnError | null = null
-  let trust_dialog: Dialog
+  let trust_dialog: CodeTrustDialog
   let edit_inputs_dialog: Dialog
   let abort_controller: AbortController | null = null
 
@@ -155,22 +155,14 @@
     test_loading = false
   }
 
-  async function grant_trust_and_retry(): Promise<boolean> {
-    try {
-      await grantCodeEvalTrust(project_id)
-    } catch (e) {
-      test_error = createKilnError(e)
-      return false
-    }
+  function on_trust_granted() {
     run_test()
-    return true
   }
 </script>
 
 <div class="flex flex-col gap-3" data-testid="code-tool-test-panel">
   <div>
     <h3 class="text-xl font-bold">Test</h3>
-    <!-- TODO: security-related string — human sign-off required to finalize/remove -->
     <p class="text-sm text-gray-500 mt-0.5">
       Runs your code live against real tools — side effects included.
     </p>
@@ -391,37 +383,4 @@
   {/if}
 </Dialog>
 
-<!-- TODO(trust): Do NOT merge Code Tools to main until the real project-trust
-     dialog (delivered by the parallel project-trust project) exists on main AND
-     is wired in here, replacing this borrowed eval-trust dialog in the UI. -->
-<Dialog
-  bind:this={trust_dialog}
-  title="Trust Code and Project?"
-  action_buttons={[
-    {
-      label: "Run — I Trust This Code",
-      isWarning: true,
-      asyncAction: grant_trust_and_retry,
-    },
-  ]}
->
-  <div class="flex flex-row items-start gap-4">
-    <svg
-      class="w-10 h-10 text-warning flex-none"
-      fill="currentColor"
-      viewBox="0 0 256 256"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
-      />
-    </svg>
-    <div class="flex flex-col gap-2 text-sm text-left">
-      <p>
-        This project wants to run Python code on your machine. Only proceed if
-        you trust the code and this project.
-      </p>
-      <p class="font-bold">Never paste code from a stranger or the internet.</p>
-    </div>
-  </div>
-</Dialog>
+<CodeTrustDialog bind:this={trust_dialog} {project_id} {on_trust_granted} />

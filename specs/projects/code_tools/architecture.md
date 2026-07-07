@@ -15,7 +15,7 @@ agent loop (LiteLlmAdapter.process_tool_calls)          test endpoint (code_tool
         │  schema-validates args, asyncio.gather                │ transient CodeTool, persist nothing
         ▼                                                       ▼
    PythonCodeTool.run(context, **kwargs)      ◄── tools/code_tool.py (parent-side, heavy imports OK)
-        │ trust check (stopgap) → depth check → semaphore (top-level only)
+        │ trust check → depth check → semaphore (top-level only)
         │ spawn child (shared _spawn_lock + __main__ stub swap)
         ▼
    child process: kiln_ai/sandbox/worker.py   ◄── stdlib-only; injects `kiln.tools` / `kiln.async_tools`
@@ -45,7 +45,7 @@ agent loop (LiteLlmAdapter.process_tool_calls)          test endpoint (code_tool
 | `tools/code_tool.py` | **New.** `PythonCodeTool(KilnToolInterface)` — parent-side runtime (§4 + component doc). |
 | `tools/tool_registry.py` | New branch for `CODE_TOOL_ID_PREFIX`; refactor to expose `tool_from_id_and_project(tool_id, project, task=None)` with `tool_from_id(tool_id, task)` as the existing thin wrapper (needed so the test endpoint and the nested-call dispatcher can resolve tools without a `Task`). `tool_from_id` behavior unchanged. |
 
-**Not** in the inventory: any trust module or trust endpoints — the trust gate is unspecified (functional spec §5). Stopgap wiring imports `is_code_eval_trusted` from `v2_eval_code_eval` directly, clearly marked (`# TODO` interim-trust comment; TODO blocks merge to main, so the stopgap physically can't ship — the final phase replaces it).
+Trust enforcement imports `is_code_eval_trusted` from `v2_eval_code_eval` at the three call sites described in §5.2. Import-time trust is enforced via the `trusted` parameter on the import/sync endpoints (§5.1).
 
 ### Desktop — `app/desktop/studio_server`
 
@@ -99,7 +99,7 @@ class PythonCodeTool(KilnToolInterface):
 
 `run()` orchestration (full pseudocode + IPC protocol in the [component doc](components/execution_engine.md)):
 
-1. **Trust check (stopgap)**: `is_code_eval_trusted(str(project.path))` — untrusted → `ToolCallResult(is_error=True, ...)` per the functional-spec error table; never executes. Marked with the interim-trust `# TODO`. Desktop-only enforcement rides on trust never being granted server-side.
+1. **Trust check**: `is_code_eval_trusted(str(project.path))` — untrusted → `ToolCallResult(is_error=True, ...)` per the functional-spec error table; never executes. Desktop-only enforcement rides on trust never being granted server-side.
 2. **Depth check**: contextvar `_code_tool_depth`; at entry, `depth >= 10` → error result ("max code tool depth exceeded — check for a cycle"); else set `depth + 1` for the run's scope (token reset in `finally`). Nested code tools dispatched from this run's message pump inherit the incremented value through the async context.
 3. **Semaphore — top-level only**: module-level bounded `asyncio.Semaphore(8)` (library constant, lazily created inside the running loop), acquired **only when `depth == 0`**. Nested executions bypass it — counting them deadlocks the pool (parents hold slots while blocked on children). Worst case 8 × 10 processes.
 4. **Execute**: spawn child + pump messages until result/timeout (component doc).
@@ -114,13 +114,31 @@ Nested-call dispatch (the message pump's `tool_call` handler):
 - Reply: success → raw output string, **passed through verbatim — no parsing** (string-returns decision); `is_error=True` → kind `timeout` when identifiable (nested code-tool timeout / `asyncio.TimeoutError`), else `call_error` with `.raw = output`.
 - `tool_call_recorder` (test endpoint) records `{tool_name, arguments, output_preview (1 KB), is_error, duration_ms}`.
 
-## 5. Trust gate — stopgap only
+## 5. Trust gate — two complementary layers
 
-Per functional spec §5, unspecified. Concretely in code: phases 1–4 ship exactly two call sites — `PythonCodeTool.run()` step 1, and the test endpoint's not-trusted response — both importing the existing `is_code_eval_trusted`, both under the interim-trust `# TODO`. The UI's trust intercept reuses the existing eval trust endpoints + dialog verbatim as a stopgap. The final phase replaces all of it; CI's TODO-block makes shipping the stopgap impossible.
+Per functional spec §5, trust enforcement uses two layers:
+
+### 5.1 Import-time project trust gate (Phase 6)
+
+- `POST /api/import_project` gains a `trusted: bool = False` query param; returns HTTP 400 when false/missing.
+- `POST /api/git_sync/save_config`'s `SaveConfigRequest` gains a `trusted: bool = False` body field; returns HTTP 400 when false/missing.
+- Both use the same error message: "Import cancelled: you must confirm you trust this project before importing. Kiln projects can contain code that runs on your machine."
+- Frontend: `import_project.svelte` inserts a trust interstitial page for both import flows. For local file import, the page appears after the path is entered. For the git wizard, the page appears immediately after URL validation / credential entry, **before** any clone or local write (step order: url -> credentials -> trust -> branch -> project -> complete). The page uses the warning exclaim-circle SVG icon, title "Trust this Project?", and [Cancel]/[Trust Project] buttons. Only on [Trust Project] does the flow proceed with `trusted=true`.
+
+### 5.2 Session-scoped code-execution trust (Phases 2–6)
+
+Three call sites import `is_code_eval_trusted`:
+1. `PythonCodeTool.run()` — untrusted returns `ToolCallResult(is_error=True)`.
+2. Test endpoint (`test_code_tool`) — untrusted returns `{not_trusted: true}` (200).
+3. Create endpoint (`create_code_tool`) — untrusted returns `{not_trusted: true}` (200), preventing persistence without trust.
+
+The UI trust dialog is factored into a shared `CodeTrustDialog` component (`lib/components/code_tools/code_trust_dialog.svelte`) used by both the test panel and the create wizard. On trust grant (via `grantCodeEvalTrust`), the dialog retries the operation.
+
+All trust-related strings have been human-reviewed and approved.
 
 ## 6. API — `code_tool_api.py`
 
-All tagged `Code Tools`. Agent policies use the existing `x-agent-policy` machinery (`kiln_server/utils/agent_checks/policy.py`). **Every approval string below is a draft**: in code it carries a `# TODO: security-related string — human sign-off required to finalize/remove` (CI blocks TODO on main — a real backstop). Code-eval endpoints are untouched.
+All tagged `Code Tools`. Agent policies use the existing `x-agent-policy` machinery (`kiln_server/utils/agent_checks/policy.py`). All approval strings have been human-reviewed and approved. Code-eval endpoints are untouched.
 
 | Endpoint | Method | Agent policy | Notes |
 |---|---|---|---|
@@ -145,7 +163,7 @@ class TestCodeToolRequest(BaseModel):
 class TestCodeToolResponse(BaseModel):
     result: str | None = None
     error: str | None = None; traceback: str | None = None
-    not_trusted: bool = False                    # nothing executed; UI shows (stopgap) trust dialog + retries
+    not_trusted: bool = False                    # nothing executed; UI shows trust dialog + retries
     stdout: str = ""; stderr: str = ""           # 64 KB truncation + marker; UI display is P2
     tool_call_log: list[ToolCallLogEntry] = []
     duration_ms: int = 0

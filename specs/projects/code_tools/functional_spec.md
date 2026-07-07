@@ -163,14 +163,24 @@ Any resolvable `ToolId`: MCP tools (remote/local, individually — never per-ser
 - Name not found → `ToolNotAllowed`. Two allowlisted tools sharing a function name (e.g. two MCP servers both exposing `search`) → `ToolCallError` "ambiguous" at call time; the UI warns about duplicates in the picker but save isn't blocked (external names can drift post-save regardless).
 - New tools appearing on an allowlisted MCP *server* are **not** callable — the allowlist pins exact tools; capability never silently leaks (locked decision 2).
 
-## 5. Trust gate — deliberately unspecified (parallel work in flight)
+## 5. Trust gate — two complementary layers
 
-There is in-flight work on the project-trust experience, so this spec **does not define** the trust mechanism, persistence, revocation, dialog UX, endpoint shapes, or whether one grant covers both code-evals and code tools. Only these invariants hold regardless of what that work produces:
+Trust enforcement uses two complementary mechanisms, both required before code can execute:
 
-1. **Code never executes in an untrusted project.** Agent runs get the §2.4 error tool-result; the test endpoint gets a structured not-trusted response the UI can react to.
+### 5.1 Import-time project trust gate
+
+All project import paths (local file import via `POST /api/import_project` and git-sync setup via `POST /api/git_sync/save_config`) require a `trusted` parameter (query param or body field, respectively) set to `true`. When `false` or missing, the endpoint returns HTTP 400 with a descriptive message: "Import cancelled: you must confirm you trust this project before importing. Kiln projects can contain code that runs on your machine."
+
+The UI presents a full interstitial trust page — not a small modal — for both import methods (local file and git wizard). For local file import, the trust page appears after the path is entered. For the git wizard, the trust page appears immediately after URL validation / credential entry, **before** any clone or local write (step order: url -> credentials -> trust -> branch -> project -> complete). The page displays a yellow warning icon, the title "Trust this Project?", body text "Kiln projects can contain code that runs on your machine. Only import projects from sources you trust.", and two buttons: [Cancel] and [Trust Project].
+
+### 5.2 Session-scoped code-execution trust
+
+Code execution (create, test, run) is gated by `is_code_eval_trusted`, a session-scoped check. The create endpoint (`POST .../code_tools`) and the test endpoint (`POST .../test_code_tool`) both return a `not_trusted` flag in their response when the project is not trusted. The UI detects this and shows a shared `CodeTrustDialog` component (factored out of the test panel's inline dialog) that grants session trust and retries the operation. `PythonCodeTool.run()` also checks trust and returns an error result for untrusted projects in agent runs.
+
+### 5.3 Invariants
+
+1. **Code never executes in an untrusted project.** Agent runs get the §2.4 error tool-result; the test and create endpoints get a structured not-trusted response the UI can react to.
 2. **The grant lives desktop-side only** — `kiln_server` never grants trust; this is part of the desktop-only enforcement.
-3. **Interim wiring during development** (phases 1–4): code tools call the existing code-eval trust check (`is_code_eval_trusted`) and the test flow reuses the existing eval trust endpoints/dialog pattern as a stopgap — zero new footprint on the trust module.
-4. **Ship blocker**: the final implementation phase replaces the stopgap with whatever the trust work lands. Code Tools does not ship without it.
 
 ## 6. Testing a code tool (live test)
 
@@ -211,7 +221,7 @@ Agent access uses the existing `x-agent-policy` machinery (`ALLOW_AGENT` / `DENY
 
 **Code-eval endpoints are out of scope** — do not change their agent policies (or anything else about them) in this project.
 
-**Security-string backstop**: the approval-prompt strings above (and any other security-related copy, e.g. trust/side-effects warnings) are drafts pending human review. In code, each must carry a `# TODO` comment stating that removing/finalizing it requires human sign-off. This is a real backstop, not documentation: CI blocks `TODO` from merging to main, so the strings physically cannot ship unreviewed.
+All security-related strings (approval prompts, trust/side-effects warnings) have been human-reviewed and approved.
 
 After create/archive, the UI calls `uncache_available_tools()` (existing convention) so run-page dropdowns refresh.
 
@@ -241,7 +251,7 @@ After create/archive, the UI calls `uncache_available_tools()` (existing convent
 
 ## 10. Out of scope
 
-Tool-writing agent / AI authoring; server-side execution (never); mock/simulated tool backends; dependency management beyond stdlib + Kiln bundle; secrets storage; companion Python test files; batch/parallelism helper API (docs example instead); typing stubs for editor autocomplete (later enhancement); **containers for safer unattended agent usage** (tracked separately — until then, approval gates cover agent usage); trust-gate design (in-flight elsewhere, §5).
+Tool-writing agent / AI authoring; server-side execution (never); mock/simulated tool backends; dependency management beyond stdlib + Kiln bundle; secrets storage; companion Python test files; batch/parallelism helper API (docs example instead); typing stubs for editor autocomplete (later enhancement); **containers for safer unattended agent usage** (tracked separately — until then, approval gates cover agent usage).
 
 ## 11. Decisions log (Q&A with scosman, 2026-07-05)
 
@@ -251,6 +261,6 @@ Tool-writing agent / AI authoring; server-side execution (never); mock/simulated
 4. Composition unrestricted — code tools are just tools. Depth cap 10 as runaway/cycle guard only. Semaphore (8) counts top-level invocations only (nested bypass to avoid pool deadlock). Timeout = whole-invocation wall clock including nested calls.
 5. stdout/stderr: discarded in agent runs; in the test API response from v1; test-pane display P2.
 6. **Immutability**: functional content frozen at create; clone to change; only display name/description/archived editable. Two-screen authoring flow (define → code+test) with typed placeholder codegen from the schema; no output schema.
-7. Agent access: reads/metadata-edit/archive allowed; create/test **approval-gated** (not denied); delete denied. Containers for safer agent usage tracked separately. Code-eval endpoint policies: out of scope, don't touch. Security-related strings ship behind `# TODO` comments requiring human sign-off (CI blocks TODO on main — a real backstop).
-8. Trust gate: **deliberately unspecified** — parallel in-flight work; invariants + interim stopgap wiring only; final phase of the implementation plan; ship blocker.
+7. Agent access: reads/metadata-edit/archive allowed; create/test **approval-gated** (not denied); delete denied. Containers for safer agent usage tracked separately. Code-eval endpoint policies: out of scope, don't touch. Security-related strings have been human-reviewed and approved.
+8. Trust gate: two complementary layers (§5) — import-time project trust + session-scoped code-execution trust. Implemented in Phase 6.
 9. User-facing `description` field is P2 — cut if unneeded or if it clutters the UI.

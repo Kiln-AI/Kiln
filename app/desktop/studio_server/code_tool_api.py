@@ -70,6 +70,22 @@ class CodeToolResponse(BaseModel):
     created_by: str | None = None
 
 
+class CodeToolCreateResponse(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    description: str | None = None
+    is_archived: bool = False
+    tool_function_name: str | None = None
+    tool_description: str | None = None
+    parameters_schema: dict[str, Any] | None = None
+    code: str | None = None
+    timeout_seconds: int | None = None
+    tool_allowlist: list[ToolId] = Field(default_factory=list)
+    created_at: datetime | None = None
+    created_by: str | None = None
+    not_trusted: bool = False
+
+
 class CodeToolUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -182,7 +198,6 @@ def connect_code_tool_api(app: FastAPI):
         "/api/projects/{project_id}/code_tools",
         summary="Create Code Tool",
         tags=["Code Tools"],
-        # TODO: security-related string — human sign-off required to finalize/remove
         openapi_extra=agent_policy_require_approval(
             "Allow agent to create and save a code tool (Python that runs on your machine)?"
         ),
@@ -192,8 +207,11 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
         request: CodeToolCreateRequest,
-    ) -> CodeToolResponse:
+    ) -> CodeToolCreateResponse:
         project = project_from_id(project_id)
+
+        if not is_code_eval_trusted(str(project.path)):
+            return CodeToolCreateResponse(not_trusted=True)
 
         existing = project.code_tools(readonly=True)
         for ct in existing:
@@ -222,13 +240,12 @@ def connect_code_tool_api(app: FastAPI):
             raise HTTPException(status_code=400, detail=str(e))
 
         code_tool.save_to_file()
-        return _code_tool_to_response(code_tool)
+        return CodeToolCreateResponse(**_code_tool_to_response(code_tool).model_dump())
 
     @app.post(
         "/api/projects/{project_id}/test_code_tool",
         summary="Test Code Tool",
         tags=["Code Tools"],
-        # TODO: security-related string — human sign-off required to finalize/remove
         openapi_extra=agent_policy_require_approval(
             "Allow agent to run Python code on your machine? It may call your tools, with side effects."
         ),
@@ -255,9 +272,6 @@ def connect_code_tool_api(app: FastAPI):
         except (ValueError, PydanticValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # TODO(trust): Do NOT merge Code Tools to main until the real project-trust
-        # dialog (delivered by the parallel project-trust project) exists on main AND
-        # is wired in here, replacing this interim eval-trust stopgap in the test endpoint.
         if not is_code_eval_trusted(str(project.path)):
             return TestCodeToolResponse(not_trusted=True)
 

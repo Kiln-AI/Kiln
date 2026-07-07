@@ -4414,6 +4414,43 @@ export interface components {
              */
             tool_allowlist?: string[];
         };
+        /** CodeToolCreateResponse */
+        CodeToolCreateResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Tool Function Name */
+            tool_function_name?: string | null;
+            /** Tool Description */
+            tool_description?: string | null;
+            /** Parameters Schema */
+            parameters_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Code */
+            code?: string | null;
+            /** Timeout Seconds */
+            timeout_seconds?: number | null;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Not Trusted
+             * @default false
+             */
+            not_trusted: boolean;
+        };
         /** CodeToolResponse */
         CodeToolResponse: {
             /** Id */
@@ -9309,6 +9346,12 @@ export interface components {
              * @default false
              */
             remove_conflicting_id: boolean;
+            /**
+             * Trusted
+             * @description Must be true to confirm trust before importing. Kiln projects can contain code that runs on your machine.
+             * @default false
+             */
+            trusted: boolean;
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -11445,6 +11488,8 @@ export interface operations {
                 project_path: string;
                 /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
                 remove_conflicting_id?: boolean;
+                /** @description Must be true to confirm trust before importing. Kiln projects can contain code that runs on your machine. */
+                trusted?: boolean;
             };
             header?: never;
             path?: never;
@@ -17356,7 +17401,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CodeToolResponse"];
+                    "application/json": components["schemas"]["CodeToolCreateResponse"];
                 };
             };
             /** @description Validation Error */
