@@ -735,9 +735,14 @@ def _multiturn_task_mock():
 
 @pytest.fixture
 def pipeline_seams():
-    """Patch the pipeline's four seams: task resolution, the drive runner,
-    the judge, and the claim builder. Yields the mocks for assertions."""
+    """Patch the pipeline's seams: the copilot key, task resolution, the
+    drive runner, the judge, and the claim builder. Yields the mocks for
+    assertions."""
     with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.get_copilot_api_key",
+            return_value="test_api_key",
+        ),
         patch(
             "app.desktop.studio_server.eval_builder_api.task_from_id",
             return_value=_multiturn_task_mock(),
@@ -1013,6 +1018,27 @@ class TestReviewPipeline:
         assert failed[0]["code"] == "internal_error"
         assert "runner exploded" in failed[0]["message"]
         assert events[-1] == "complete"
+
+    def test_missing_copilot_key_is_401_before_any_drive(
+        self, client, pipeline_request
+    ):
+        """Fail fast for non-Pro users: without a copilot key the claims
+        stage can never succeed, so the request must 4xx before the user
+        burns their own model spend driving and judging every case."""
+        with (
+            patch(
+                "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+            ) as mock_config,
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_cases_batch"
+            ) as runner_mock,
+        ):
+            mock_config.return_value.kiln_copilot_api_key = None
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 401
+        assert "API key not configured" in resp.json()["message"]
+        runner_mock.assert_not_called()
 
     def test_rejects_own_batch_tag_in_replace_list(
         self, client, pipeline_request, pipeline_seams
