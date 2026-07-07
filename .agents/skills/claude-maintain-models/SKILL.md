@@ -137,7 +137,7 @@ The LiteLLM catalog and models.dev responses include capability flags (`supports
 
 - If the catalog says `supports_vision: true` → enable `supports_vision`, `multimodal_capable`, and vision MIME types (see 2c)
 - If the catalog says `supports_function_calling: true` → use `StructuredOutputMode.json_schema` (or `function_calling` depending on provider norms — check predecessor)
-- If the catalog says `supports_reasoning: true` → enable `reasoning_capable` and check if parser/formatter/thinking flags are needed
+- If the catalog says `supports_reasoning: true` → the model can reason, but **do NOT reflexively set `reasoning_capable=True`** — default to `reasoning_capable=False` (see [Reasoning Capable Default](#reasoning-capable-default)). Still add `available_thinking_levels` if it supports effort levels, and check parser/formatter flags.
 
 Then **cross-check against the predecessor**. The predecessor tells you *how* Kiln configures a similar model (which `structured_output_mode`, which provider-specific flags, etc.). The catalog tells you *what* the model can do. Use both:
 - Catalog says the model supports vision but predecessor doesn't have it? Enable it — this is a new capability.
@@ -148,7 +148,7 @@ Then **cross-check against the predecessor**. The predecessor tells you *how* Ki
 - `structured_output_mode` – how the model handles JSON output
 - `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
 - `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
-- `reasoning_capable` – for thinking/reasoning models
+- `reasoning_capable` – for thinking/reasoning models. **Default new models to `reasoning_capable=False`** unless the model *always* emits its reasoning (see [Reasoning Capable Default](#reasoning-capable-default))
 - `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
 - `parser` / `formatter` – for models needing special parsing (e.g. R1-style thinking)
 
@@ -205,6 +205,19 @@ Tests call real LLMs and cost money. Ideally the user only needs to consent to t
 **`-k` filter syntax:** Always use bracket notation for model+provider filtering, never `and`:
 - Good: `-k "test_name[glm_5-fireworks_ai]"` or `-k "glm_5"`
 - Bad: `-k "glm_5 and fireworks"` — `and` is a pytest keyword expression that can match wrong tests
+
+### 4.0 — If the test env can't build (blocked git dependency)
+
+Kiln's core lib pins `together` to a git fork (`libs/core/pyproject.toml`: `together = { git = "https://github.com/scosman/together-python" }`). In a sandboxed environment whose GitHub access is scoped to `kiln-ai/kiln` only (e.g. Claude Code Web), `uv sync` fails to fetch that fork with a **403** from the git proxy, so the test venv can't be built. This is a GitHub repo-scope block, not a network-domain allowlist issue — every non-scoped repo 403s, only `kiln-ai/kiln` resolves.
+
+Workaround to build the venv for testing (the `together` fork isn't exercised by model-integration tests, which route through LiteLLM):
+
+1. **Do NOT use `uv sync --no-sources`** — it strips the workspace `workspace = true` sources too and makes `kiln-root → kiln-ai` unsatisfiable.
+2. Instead, temporarily comment out ONLY the `together = { git = ... }` line in `libs/core/pyproject.toml`, then run `uv sync` (this resolves `together` from PyPI).
+3. Run the tests.
+4. **Revert** the workaround with `git checkout -- libs/core/pyproject.toml uv.lock` — this restores the commented-out `together` git-fork pin in `libs/core/pyproject.toml` (NOT the repo-root `pyproject.toml`, which the workaround never touches) and reverts `uv.lock` if it changed. Only `ml_model_list.py` (and any intended test-file edits) should remain modified.
+
+Note: the PyPI `together` may pull slightly different transitive deps (e.g. a newer `starlette`), which can cause unrelated collection ImportErrors in desktop/server/rag/vector-store modules — scope your `-k` filters to the model files and ignore those.
 
 ### 4a. Enable parallel testing
 
@@ -374,6 +387,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] `ModelFamily` enum updated (only if new family)
 - [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
+- [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
@@ -383,6 +397,27 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Full test suite passed
 - [ ] Parallel testing reverted in `pytest.ini` (re-commented)
 - [ ] PR created against `main` with test results in the body
+
+---
+
+## Reasoning Capable Default
+
+**Default newly-added models to `reasoning_capable=False`, even when the catalog reports `supports_reasoning: true`.**
+
+Most recent models use *adaptive* reasoning and sometimes return no reasoning at all. Kiln raises `RuntimeError("Reasoning is required for this model, but no reasoning was returned.")` whenever a provider has `reasoning_capable=True` and no reasoning comes back, so evals and data-gen runs fail sporadically on adaptive-reasoning models.
+
+`reasoning_capable` is **orthogonal to `available_thinking_levels`** — you keep the important behavior with it set to `False`:
+- Thinking-level / effort selection still works (every GPT-5.x entry sets `available_thinking_levels` with `reasoning_capable` unset).
+- Reasoning is still parsed and displayed when the model returns it (parser-driven, independent of this flag).
+- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels.
+
+What you give up with `reasoning_capable=False`:
+- The conditional "reasoning is present in `intermediate_outputs`" assertion inside the structured-output / structured-input paid tests stops firing (the tests themselves still run — no whole test is skipped).
+- When a user attaches a chain-of-thought prompt, the model uses the two-call `two_message_cot` strategy instead of the single-call native `single_turn_r1_thinking`.
+
+**Keep `reasoning_capable=True` only for models that *always* emit reasoning** in a native `<think>` format — DeepSeek R1, QwQ, Qwen thinking variants, gpt-oss — where reasoning is guaranteed and you want the single-call COT strategy.
+
+**Narrower alternative:** if a model reliably reasons but you only hit the error on structured output, set `reasoning_optional_for_structured_output=True` (requires `reasoning_capable=True`) instead of disabling reasoning entirely.
 
 ---
 
@@ -530,17 +565,17 @@ WebFetch https://fireworks.ai/models/fireworks/{model-slug}
 ```
 Or browse the catalog at https://fireworks.ai/models. Kiln slug format: `accounts/fireworks/models/{model-slug}`.
 
-**Together AI** — the `/v1/models` endpoint requires an API key. `$TOGETHER_API_KEY` is typically set in the user's shell:
+**Together AI** — the `/v1/models` endpoint requires an API key. The key is set in the user's shell as **`TOGETHERAI_API_KEY`** (note the `AI` — this matches LiteLLM's `together_ai` env var; the plain `TOGETHER_API_KEY` is usually NOT set):
 ```bash
 # List all Together model IDs matching a term:
 curl -s https://api.together.xyz/v1/models \
-  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
+  -H "Authorization: Bearer $TOGETHERAI_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
 
 # Full record for a specific slug:
 curl -s https://api.together.xyz/v1/models \
-  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | select(.id == "SLUG")'
+  -H "Authorization: Bearer $TOGETHERAI_API_KEY" | jq '.[] | select(.id == "SLUG")'
 ```
-If the key isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
+If `TOGETHERAI_API_KEY` isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
 
 **SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
 ```
