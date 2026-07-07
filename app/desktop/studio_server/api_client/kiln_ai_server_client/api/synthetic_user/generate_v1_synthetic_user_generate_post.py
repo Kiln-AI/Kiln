@@ -110,7 +110,11 @@ def sync_detailed(
 ]:
     """Generate
 
-     Return `num_cases` synthetic-user cases for the authoring UX.
+     Return up to `num_cases` synthetic-user cases for the authoring UX.
+
+    See `GenerateSyntheticUsersResponse` for the salvage contract: response
+    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
+    failure surfaces as 502 `upstream_invalid_output`.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
@@ -152,7 +156,11 @@ def sync(
 ):
     """Generate
 
-     Return `num_cases` synthetic-user cases for the authoring UX.
+     Return up to `num_cases` synthetic-user cases for the authoring UX.
+
+    See `GenerateSyntheticUsersResponse` for the salvage contract: response
+    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
+    failure surfaces as 502 `upstream_invalid_output`.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
@@ -188,7 +196,11 @@ async def asyncio_detailed(
 ]:
     """Generate
 
-     Return `num_cases` synthetic-user cases for the authoring UX.
+     Return up to `num_cases` synthetic-user cases for the authoring UX.
+
+    See `GenerateSyntheticUsersResponse` for the salvage contract: response
+    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
+    failure surfaces as 502 `upstream_invalid_output`.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
@@ -228,7 +240,11 @@ async def asyncio(
 ):
     """Generate
 
-     Return `num_cases` synthetic-user cases for the authoring UX.
+     Return up to `num_cases` synthetic-user cases for the authoring UX.
+
+    See `GenerateSyntheticUsersResponse` for the salvage contract: response
+    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
+    failure surfaces as 502 `upstream_invalid_output`.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
