@@ -76,6 +76,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_server.custom_errors import connect_custom_errors
 
 # The UI runs 10 cases x 5 turns; both are request parameters, so the
@@ -220,7 +221,7 @@ def temp_task(tmp_path, monkeypatch):
     task = Task(
         name="E2E Harness Task",
         instruction=TASK_INSTRUCTION,
-        turn_mode="multiturn",
+        turn_mode=TurnMode.multiturn,
         parent=project,
     )
     task.save_to_file()
@@ -324,6 +325,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     _require(not failed_cases, f"SU cases failed during the drive: {failed_cases}")
     _require(batch_tag is not None, "run_cases_batch emitted no batch_started")
+    assert batch_tag is not None  # for the type checker; _require failed above
     _require(
         len(leaf_by_case) == NUM_CASES,
         f"expected {NUM_CASES} completed cases, got {len(leaf_by_case)}",
