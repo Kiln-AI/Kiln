@@ -64,7 +64,7 @@ class CodeTool(KilnParentedModel):
     @field_validator("tool_function_name")
     @classmethod
     def validate_function_name(cls, v: str) -> str:
-        if not _FUNCTION_NAME_RE.match(v):
+        if not _FUNCTION_NAME_RE.fullmatch(v):
             raise ValueError(
                 f"tool_function_name must match ^[a-z][a-z0-9_]{{0,63}}$, got: '{v}'"
             )

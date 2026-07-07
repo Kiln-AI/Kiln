@@ -142,17 +142,30 @@ class ToolCallBridge:
             return cid, p
 
     def _dispatch_loop(self) -> None:
-        while True:
-            try:
-                msg = self._responses.get()
-            except (EOFError, OSError):
-                break
-            cid = msg.get("call_id")
+        try:
+            while True:
+                try:
+                    msg = self._responses.get()
+                except (EOFError, OSError, ValueError):
+                    break
+                cid = msg.get("call_id")
+                with self._lock:
+                    pending = self._pending.pop(cid, None)
+                if pending is not None:
+                    pending.result = msg
+                    pending.event.set()
+        finally:
             with self._lock:
-                pending = self._pending.pop(cid, None)
-            if pending is not None:
-                pending.result = msg
-                pending.event.set()
+                orphans = list(self._pending.values())
+                self._pending.clear()
+            for p in orphans:
+                p.result = {
+                    "error": {
+                        "kind": "call_error",
+                        "message": "Parent process disconnected or queue closed.",
+                    }
+                }
+                p.event.set()
 
     def _resolve(self, call_id: int, name: str, pending: "_PendingCall") -> str:
         msg = pending.result

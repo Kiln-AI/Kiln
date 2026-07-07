@@ -53,6 +53,9 @@
     (tool) => !tool.is_archived,
   )
 
+  $: unarchived_code_tools = (code_tools || []).filter((ct) => !ct.is_archived)
+  $: archived_code_tools = (code_tools || []).filter((ct) => ct.is_archived)
+
   async function fetch_available_tool_servers() {
     try {
       error = null
@@ -330,7 +333,7 @@
                 </td>
               </tr>
             {/if}
-            {#each (code_tools || []).filter((ct) => !ct.is_archived) as ct}
+            {#each [...unarchived_code_tools, ...archived_code_tools] as ct}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() =>
@@ -348,38 +351,20 @@
                 <td class="text-sm">Code Tool</td>
                 <td class="text-sm">{ct.description || ct.tool_description}</td>
                 <td class="text-sm">
-                  <Warning
-                    warning_message="Ready"
-                    warning_color="success"
-                    warning_icon="check"
-                    tight={true}
-                  />
-                </td>
-              </tr>
-            {/each}
-            {#each (code_tools || []).filter((ct) => ct.is_archived) as ct}
-              <tr
-                class="hover:bg-base-200 cursor-pointer"
-                on:click={() =>
-                  goto(`/tools/${project_id}/code_tools/${ct.id}`)}
-                on:keydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    goto(`/tools/${project_id}/code_tools/${ct.id}`)
-                  }
-                }}
-                role="button"
-                tabindex="0"
-              >
-                <td class="font-medium">{ct.name}</td>
-                <td class="text-sm">Code Tool</td>
-                <td class="text-sm">{ct.description || ct.tool_description}</td>
-                <td class="text-sm">
-                  <Warning
-                    warning_message="Archived"
-                    warning_color="warning"
-                    tight={true}
-                  />
+                  {#if ct.is_archived}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      tight={true}
+                    />
+                  {/if}
                 </td>
               </tr>
             {/each}

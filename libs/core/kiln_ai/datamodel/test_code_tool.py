@@ -92,6 +92,7 @@ class TestFunctionName:
             "tool-name",  # hyphen
             "a" * 65,  # too long
             "",  # empty
+            "my_tool\n",  # trailing newline
         ],
     )
     def test_invalid_names(self, name):

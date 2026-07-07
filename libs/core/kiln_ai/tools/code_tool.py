@@ -202,7 +202,7 @@ class PythonCodeTool(KilnToolInterface):
                 if monotonic() > deadline:
                     elapsed = int((monotonic() - start_time) * 1000)
                     p.kill()
-                    p.join(timeout=5)
+                    await loop.run_in_executor(None, p.join, 5)
                     return ChildOutcome(timed_out=True, duration_ms=elapsed)
 
                 if msg is None:
@@ -222,7 +222,7 @@ class PythonCodeTool(KilnToolInterface):
 
                 elif msg["type"] == "result":
                     elapsed = int((monotonic() - start_time) * 1000)
-                    p.join(timeout=5)
+                    await loop.run_in_executor(None, p.join, 5)
                     if "ok" in msg:
                         return ChildOutcome(
                             ok=msg["ok"],
@@ -243,7 +243,7 @@ class PythonCodeTool(KilnToolInterface):
                 t.cancel()
             if p.is_alive():
                 p.kill()
-                p.join(timeout=5)
+                await loop.run_in_executor(None, p.join, 5)
             _close_queues(requests, responses)
 
     async def _serve(
@@ -557,7 +557,7 @@ def _poll_get(q: multiprocessing.Queue) -> dict[str, Any] | None:  # type: ignor
     """Non-blocking get with short timeout so the pump can re-check deadlines."""
     try:
         return q.get(timeout=0.1)
-    except (queue.Empty, EOFError):
+    except (queue.Empty, EOFError, OSError, ValueError):
         return None
 
 

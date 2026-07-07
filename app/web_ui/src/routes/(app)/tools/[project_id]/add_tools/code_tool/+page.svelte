@@ -123,12 +123,11 @@
         try {
           parameters_schema = JSON.parse(schema_str)
         } catch {
-          parameters_schema = {
-            type: "object",
-            properties: {},
-            required: [],
-            additionalProperties: false,
-          }
+          create_error = new KilnError(
+            "Parameter schema is invalid JSON.",
+            null,
+          )
+          return
         }
       } else {
         // Structured mode but get_schema_string returned null (e.g. empty)
@@ -192,7 +191,8 @@
         if (t.id === tool_id) return t.function_name ?? t.name
       }
     }
-    return tool_id
+    const segments = tool_id.split("::")
+    return segments[segments.length - 1]
   }
 
   // Import helper: when tools are selected and code lacks the import

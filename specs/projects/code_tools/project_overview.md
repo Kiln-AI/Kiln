@@ -31,7 +31,7 @@ O3's translation-layer thesis: agents fail on messy interfaces — N+1 tool loop
    def run(job_ids: list[str]) -> dict:
        user = tools.get_user(id=1234)  # attribute = tool name, resolved against the allowlist at call time
    ```
-   - kwargs match the tool's JSON Schema; results are plain Python (dict/list/str).
+   - kwargs match the tool's JSON Schema; results are always `str` (authors `json.loads` when the tool returns JSON).
    - Typed exceptions: `ToolNotAllowed`, `ToolTimeout`, `ToolCallError` (`.tool`, `.message`, `.raw`).
    - Sync facade in user code; the worker bridges to the async harness (`tool_from_id().run()`; agent-run contextvars propagate so nested MCP sessions work).
    - **No batch/parallelism helper API.** Tool calls must be **safe to invoke concurrently** (threads / gathered coroutines under the sync facade) so authors can write their own parallelism with stdlib; ship a parallel-with-retries *example* in the accompanying skill/docs instead of API surface.

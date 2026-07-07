@@ -86,17 +86,10 @@
     test_result = null
     test_error = null
 
-    let params: { [key: string]: unknown }
-    try {
-      params = build_params()
-      param_values = params
-    } catch (e) {
-      test_error = createKilnError(e)
-      test_loading = false
-      return
-    }
+    const params = { ...param_values }
 
-    abort_controller = new AbortController()
+    const controller = new AbortController()
+    abort_controller = controller
 
     try {
       const { data, error } = await client.POST(
@@ -114,7 +107,7 @@
             tool_allowlist: tool_allowlist || [],
             params,
           },
-          signal: abort_controller.signal,
+          signal: controller.signal,
         },
       )
 
@@ -142,17 +135,17 @@
         test_error = createKilnError(e)
       }
     } finally {
-      test_loading = false
-      abort_controller = null
+      if (abort_controller === controller) {
+        test_loading = false
+        abort_controller = null
+      }
     }
   }
 
   function cancel_test() {
     if (abort_controller) {
       abort_controller.abort()
-      abort_controller = null
     }
-    test_loading = false
   }
 
   function on_trust_granted() {
