@@ -16,6 +16,9 @@ def tmp_settings_dir(tmp_path, monkeypatch):
         "settings_dir",
         classmethod(lambda cls, create=True: str(tmp_path)),
     )
+    # Drop the module-level ledger cache so a test that writes the ledger file
+    # directly (rather than via the ledger API) isn't served a stale cache.
+    spend_ledger._reset_cache()
     return tmp_path
 
 
@@ -161,6 +164,26 @@ class TestPersistence:
         spend_ledger.set_budget(CONVERSATION_ID, 1.0)
         status = spend_ledger.get_status(CONVERSATION_ID)
         assert status is not None
+
+    def test_record_spend_tolerates_wrong_typed_entry(self, tmp_settings_dir):
+        # The write path (record_spend) must also coerce: a tampered entry must
+        # not raise, otherwise record_spend_for_current_conversation swallows it
+        # and crediting silently stops forever (fail-open — cap disabled).
+        tampered = {
+            CONVERSATION_ID: {
+                "budget_usd": 5.0,
+                "spent_usd": "not-a-number",
+                "unpriced_runs": "x",
+            }
+        }
+        (tmp_settings_dir / "conversation_budgets.json").write_text(
+            json.dumps(tampered)
+        )
+        # Does not raise; the bad spent_usd coerces to 0, then adds the new cost.
+        spend_ledger.record_spend(CONVERSATION_ID, 2.0, 100)
+        status = spend_ledger.get_status(CONVERSATION_ID)
+        assert status is not None
+        assert status.spent_usd == pytest.approx(2.0)
 
     def test_wrong_typed_entry_degrades_on_read_path(self, tmp_settings_dir):
         # A structurally-valid entry with wrong-typed fields (manual tampering /

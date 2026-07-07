@@ -61,7 +61,17 @@ export function createBudgetStore(): BudgetStore {
         },
       )
       if (error) {
-        return { ok: false, error: "Couldn't update the budget" }
+        // Surface the server's own message when it sent one (e.g. a validation
+        // detail), falling back to a generic message. The desktop error shape
+        // is `{ message }` or FastAPI's `{ detail }`.
+        const detail =
+          (error as { detail?: unknown; message?: unknown })?.detail ??
+          (error as { message?: unknown })?.message
+        return {
+          ok: false,
+          error:
+            typeof detail === "string" ? detail : "Couldn't update the budget",
+        }
       }
       if (cid === conversationId && data) status.set(data)
       return { ok: true }

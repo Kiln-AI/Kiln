@@ -314,6 +314,63 @@ describe("resumePendingToolCalls (graceful-stop handoff)", () => {
 
     vi.unstubAllGlobals()
   })
+
+  it("forwards conversation_id on the execute-tools POST and reports the echo", async () => {
+    const CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+    const contLines = [
+      'data: {"type":"kiln_chat_trace","trace_id":"trace-2","conversation_id":"' +
+        CONVERSATION_ID +
+        '"}\n\n',
+    ]
+    let i = 0
+    let sentBody: Record<string, unknown> | null = null
+    const fetchMock = vi.fn().mockImplementation((_url, init?: RequestInit) => {
+      sentBody = JSON.parse(init?.body as string) as Record<string, unknown>
+      return Promise.resolve({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: () => {
+              if (i >= contLines.length) {
+                return Promise.resolve({ done: true, value: undefined })
+              }
+              const enc = new TextEncoder()
+              const line = contLines[i]
+              i += 1
+              return Promise.resolve({ done: false, value: enc.encode(line) })
+            },
+          }),
+        },
+      })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const seenConversationIds: string[] = []
+    await resumePendingToolCalls({
+      apiUrl: "https://example.test/api/chat",
+      traceId: "trace-stop",
+      conversationId: CONVERSATION_ID,
+      items: [
+        {
+          toolCallId: "tc1",
+          toolName: "call_kiln_api",
+          input: {},
+          requiresApproval: true,
+        },
+      ],
+      onToolCallsPending: async () => ({ tc1: true }),
+      onConversationId: (cid) => seenConversationIds.push(cid),
+      onAssistantMessage: () => {},
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    const body = sentBody as Record<string, unknown> | null
+    expect(body?.conversation_id).toBe(CONVERSATION_ID)
+    expect(seenConversationIds).toContain(CONVERSATION_ID)
+
+    vi.unstubAllGlobals()
+  })
 })
 
 describe("normalizeContextUsage", () => {

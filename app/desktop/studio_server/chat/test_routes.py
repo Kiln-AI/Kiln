@@ -1354,6 +1354,28 @@ class TestConversationIdThreading:
         )
         assert body["conversation_id"] == CONVERSATION_ID
 
+    def test_chat_rejects_invalid_conversation_id(self, client, mock_api_key):
+        response = client.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "hi"}],
+                "conversation_id": "not-a-uuid",
+            },
+        )
+        assert response.status_code == 400
+
+    def test_execute_tools_rejects_invalid_conversation_id(self, client, mock_api_key):
+        response = client.post(
+            "/api/chat/execute-tools",
+            json={
+                "trace_id": "t1",
+                "tool_calls": [],
+                "decisions": {},
+                "conversation_id": "bad-id",
+            },
+        )
+        assert response.status_code == 400
+
     def test_execute_tools_passes_conversation_id_to_batch(self, client, mock_api_key):
         mock_class, mock_client, _ = make_httpx_mock()
         batch_mock = AsyncMock(return_value={"tc1": "ok"})
@@ -1450,3 +1472,32 @@ class TestBudgetEndpoints:
         budget_path = openapi["paths"]["/api/chat/budget/{conversation_id}"]
         assert budget_path["post"]["x-agent-policy"]["permission"] == "deny"
         assert budget_path["get"]["x-agent-policy"]["permission"] == "allow"
+
+    def test_get_budget_rejects_mismatched_bound_conversation(self, client):
+        """When the agent's conversation is bound (contextvar set), it may only
+        read its own budget — a mismatched id is 403 (can't read another's spend)."""
+        other = "9e8d7c6b-5a49-4321-9fed-cba987654321"
+        mock_cv = MagicMock()
+        mock_cv.get.return_value = other
+        with patch(
+            "app.desktop.studio_server.chat.routes.spend_ledger.current_conversation_id",
+            mock_cv,
+        ):
+            response = client.get(f"/api/chat/budget/{CONVERSATION_ID}")
+        assert response.status_code == 403
+
+    def test_get_budget_allows_matching_bound_conversation(self, client):
+        mock_cv = MagicMock()
+        mock_cv.get.return_value = CONVERSATION_ID
+        with (
+            patch(
+                "app.desktop.studio_server.chat.routes.spend_ledger.current_conversation_id",
+                mock_cv,
+            ),
+            patch(
+                "app.desktop.studio_server.chat.routes.spend_ledger.get_status",
+                return_value=None,
+            ),
+        ):
+            response = client.get(f"/api/chat/budget/{CONVERSATION_ID}")
+        assert response.status_code == 200

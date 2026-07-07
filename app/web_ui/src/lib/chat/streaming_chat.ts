@@ -938,6 +938,8 @@ export interface ResumePendingToolCallsOptions {
   ) => Promise<Record<string, boolean>>
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace?: (traceId: string) => void
+  /** Fired when the execute-tools continuation echoes the conversation id. */
+  onConversationId?: (conversationId: string) => void
   onContextUsage?: (usage: ContextUsage) => void
   onCompactionStatus?: (compacting: boolean) => void
   onInlineError?: (message: string, traceId?: string, code?: string) => void
@@ -974,6 +976,7 @@ export async function resumePendingToolCalls(
     onToolCallsPending,
     onAssistantMessage,
     onChatTrace,
+    onConversationId,
     onContextUsage,
     onCompactionStatus,
     onInlineError,
@@ -993,6 +996,7 @@ export async function resumePendingToolCalls(
       currentTraceId = tid
       onChatTrace?.(tid)
     },
+    onConversationId,
     onContextUsage,
     onCompactionStatus,
     onInlineError,

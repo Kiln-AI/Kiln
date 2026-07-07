@@ -446,6 +446,10 @@ export function createChatSessionStore(
         if (isStale()) return
         setLastAssistantTraceId(tid)
       },
+      onConversationId: (cid) => {
+        if (isStale()) return
+        setConversationId(cid)
+      },
       onContextUsage: (usage) => {
         if (isStale()) return
         setContextUsage(usage)
@@ -1102,7 +1106,15 @@ export function createChatSessionStore(
         } = hydrateSessionFromSnapshot(snapshot)
         // loadSession detaches any prior observer, sets the messages + trace
         // id, and resets runtime state — identical to the history-restore path.
-        loadSession(messages, traceId, contextUsage, conversationId)
+        // Preserve the already-known conversation id when the snapshot omits it
+        // (a pre-feature / not-yet-echoed snapshot) so a hard-refresh resync of
+        // the SAME conversation never clears its budget-tracking identity.
+        loadSession(
+          messages,
+          traceId,
+          contextUsage,
+          conversationId ?? get(persisted).conversationId,
+        )
       }
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at

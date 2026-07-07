@@ -106,6 +106,27 @@ describe("createBudgetStore", () => {
     expect(result.ok).toBe(false)
   })
 
+  it("setBudget surfaces the server's error detail/message when present", async () => {
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID)
+    mockPost.mockResolvedValue({
+      data: undefined,
+      error: { detail: "budget_usd must be a non-negative finite number" },
+    })
+    const detailResult = await store.setBudget(-1)
+    expect(detailResult.error).toBe(
+      "budget_usd must be a non-negative finite number",
+    )
+
+    // Also handles the desktop `{ message }` shape.
+    mockPost.mockResolvedValue({
+      data: undefined,
+      error: { message: "Invalid conversation id" },
+    })
+    const messageResult = await store.setBudget(1)
+    expect(messageResult.error).toBe("Invalid conversation id")
+  })
+
   it("ignores a stale refresh response for a conversation switched away from", async () => {
     const OTHER = "9e8d7c6b-5a49-4321-9fed-cba987654321"
     // A deferred GET for conversation A that we resolve only after switching to B.

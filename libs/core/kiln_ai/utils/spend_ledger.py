@@ -62,9 +62,25 @@ _LEDGER_FILENAME = "conversation_budgets.json"
 # writer would drop the other's update (os.replace still prevents corruption).
 # If Kiln is ever run multi-worker, replace this with a cross-process file lock.
 # The gate's "checked per call" correctness also relies on record_spend having
-# written to disk before the next is_exhausted read observes it — that coupling
-# holds because both go through this lock and the ledger is re-read each call.
+# observed the latest write before the next is_exhausted read — that coupling
+# holds because both go through this lock and read the same (cached) ledger.
 _lock = threading.Lock()
+
+# In-memory cache of the ledger, so is_exhausted (called per tool call and per
+# eval progress tick) and get_status don't hit disk every time. Keyed on the
+# ledger path so a settings-dir change (e.g. between tests) invalidates it. Kept
+# coherent with disk because every write goes through _write_ledger, which
+# updates the cache under _lock — consistent with the single-process assumption
+# above (a second process's writes would not be observed).
+_ledger_cache: dict[str, dict] | None = None
+_cached_path: str | None = None
+
+
+def _reset_cache() -> None:
+    """Drop the in-memory cache. For tests that write the ledger file directly."""
+    global _ledger_cache, _cached_path
+    _ledger_cache = None
+    _cached_path = None
 
 
 def is_valid_conversation_id(conversation_id: str) -> bool:
@@ -128,27 +144,39 @@ def _coerce_budget(value: object) -> float | None:
 
 
 def _load_ledger() -> dict[str, dict]:
+    global _ledger_cache, _cached_path
     path = _ledger_path()
+    if _ledger_cache is not None and _cached_path == path:
+        return _ledger_cache
+    _cached_path = path
     if not os.path.isfile(path):
-        return {}
+        _ledger_cache = {}
+        return _ledger_cache
     try:
         with open(path, "r") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         # A corrupt ledger should never break assistant chat; better to lose
         # budget state than to hard-fail every tool call.
-        return {}
+        _ledger_cache = {}
+        return _ledger_cache
     if not isinstance(data, dict):
-        return {}
-    return {k: v for k, v in data.items() if isinstance(v, dict)}
+        _ledger_cache = {}
+        return _ledger_cache
+    _ledger_cache = {k: v for k, v in data.items() if isinstance(v, dict)}
+    return _ledger_cache
 
 
 def _write_ledger(ledger: dict[str, dict]) -> None:
+    global _ledger_cache, _cached_path
     now = time.time()
+    # A missing/invalid updated_at defaults to `now` so a freshly-written entry
+    # (or a legacy one that predates the field) is never spuriously pruned.
     pruned = {
         cid: entry
         for cid, entry in ledger.items()
-        if now - _coerce_float(entry.get("updated_at")) < _PRUNE_AFTER_SECONDS
+        if now - _coerce_float(entry.get("updated_at"), default=now)
+        < _PRUNE_AFTER_SECONDS
     }
     path = _ledger_path()
     tmp_path = f"{path}.tmp"
@@ -158,6 +186,9 @@ def _write_ledger(ledger: dict[str, dict]) -> None:
     with open(tmp_path, "w") as f:
         json.dump(pruned, f, indent=2, ensure_ascii=False, allow_nan=False)
     os.replace(tmp_path, path)
+    # Keep the cache coherent with what we just persisted.
+    _ledger_cache = pruned
+    _cached_path = path
 
 
 def _entry_to_status(conversation_id: str, entry: dict) -> BudgetStatus:
@@ -212,13 +243,18 @@ def record_spend(
     with _lock:
         ledger = _load_ledger()
         entry = ledger.get(conversation_id, {})
+        # Coerce defensively (same as the read path): a wrong-typed stored field
+        # must not raise here. record_spend_for_current_conversation swallows any
+        # exception, so a raw float()/int() on a tampered entry would silently
+        # stop all further crediting for the conversation — i.e. fail OPEN, the
+        # budget cap effectively disabled. Coercion keeps it fail-safe.
         if cost_usd is not None and cost_usd > 0:
-            entry["spent_usd"] = float(entry.get("spent_usd") or 0.0) + cost_usd
+            entry["spent_usd"] = _coerce_float(entry.get("spent_usd")) + cost_usd
         elif cost_usd is None:
-            entry["unpriced_runs"] = int(entry.get("unpriced_runs") or 0) + 1
+            entry["unpriced_runs"] = _coerce_int(entry.get("unpriced_runs")) + 1
             if total_tokens:
                 entry["unpriced_tokens"] = (
-                    int(entry.get("unpriced_tokens") or 0) + total_tokens
+                    _coerce_int(entry.get("unpriced_tokens")) + total_tokens
                 )
         entry["updated_at"] = time.time()
         ledger[conversation_id] = entry

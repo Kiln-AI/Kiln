@@ -37,6 +37,16 @@ from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 
+def _require_valid_conversation_id(conversation_id: str | None) -> None:
+    """400 on a malformed client-supplied conversation_id before it is forwarded
+    upstream / used to key the spend ledger — matching the budget endpoints, so a
+    buggy client gets a clear error instead of silently untracked spend."""
+    if conversation_id is not None and not spend_ledger.is_valid_conversation_id(
+        conversation_id
+    ):
+        raise HTTPException(status_code=400, detail="Invalid conversation id")
+
+
 def _build_upstream_headers(api_key: str) -> dict[str, str]:
     return {
         **_get_common_headers(),
@@ -221,6 +231,7 @@ def connect_chat_api(app: FastAPI) -> None:
         toolcalls in the UI, then send back the decisions through this endpoint, which will execute
         the toolcalls and continue the chat stream.
         """
+        _require_valid_conversation_id(body.conversation_id)
         api_key = get_copilot_api_key()
         tool_results = await execute_tool_batch(
             body.tool_calls, body.decisions, conversation_id=body.conversation_id
@@ -387,7 +398,11 @@ def connect_chat_api(app: FastAPI) -> None:
         # Readable by the assistant so the model can check its remaining budget.
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_chat_budget(
+    # Sync def (not async): the body does blocking ledger disk I/O and awaits
+    # nothing, so FastAPI runs it in a threadpool instead of on the event loop.
+    # (The conversation contextvar set by the middleware propagates into the
+    # threadpool via contextvars context copy.)
+    def get_chat_budget(
         conversation_id: Annotated[
             str, Path(description="Stable conversation id (uuid4).")
         ],
@@ -395,6 +410,18 @@ def connect_chat_api(app: FastAPI) -> None:
         """The conversation's spend-budget status; null when nothing recorded."""
         if not spend_ledger.is_valid_conversation_id(conversation_id):
             raise HTTPException(status_code=400, detail="Invalid conversation id")
+        # ALLOW_AGENT: the assistant can call this. Scope its reads to its own
+        # conversation — when this request carries the conversation contextvar
+        # (set by the budget middleware from the X-Kiln-Conversation-Id header an
+        # assistant call_kiln_api stamps), reject a mismatched id so the model
+        # can't read another conversation's spend. UI requests carry no header,
+        # so the contextvar is unset and any conversation is readable.
+        bound = spend_ledger.current_conversation_id.get()
+        if bound is not None and bound != conversation_id:
+            raise HTTPException(
+                status_code=403,
+                detail="conversation_id does not match the active conversation",
+            )
         status = spend_ledger.get_status(conversation_id)
         if status is None:
             return None
@@ -407,7 +434,8 @@ def connect_chat_api(app: FastAPI) -> None:
         # The assistant must never raise its own budget — user-only endpoint.
         openapi_extra=DENY_AGENT,
     )
-    async def set_chat_budget(
+    # Sync def: blocking ledger disk I/O, no awaits — runs in FastAPI's threadpool.
+    def set_chat_budget(
         conversation_id: Annotated[
             str, Path(description="Stable conversation id (uuid4).")
         ],
@@ -431,6 +459,7 @@ def connect_chat_api(app: FastAPI) -> None:
     @no_write_lock
     async def chat(body: ChatRequest) -> StreamingResponse:
         """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
+        _require_valid_conversation_id(body.conversation_id)
         api_key = get_copilot_api_key()
 
         session = ChatStreamSession(
