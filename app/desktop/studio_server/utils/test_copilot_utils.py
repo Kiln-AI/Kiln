@@ -19,6 +19,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     create_dataset_task_runs,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
+    delete_multi_turn_batch_chains,
     get_copilot_api_key,
     rate_multi_turn_chain_leaves,
     sample_and_remove,
@@ -26,7 +27,11 @@ from app.desktop.studio_server.utils.copilot_utils import (
 )
 from fastapi import HTTPException
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import FeedbackSource, TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    FeedbackSource,
+    TaskOutputRatingType,
+    TurnMode,
+)
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
@@ -639,3 +644,132 @@ class TestSavePendingChildren:
         assert reviews[0].judge_score == "fail"
         assert len(reviews[0].claims) == 1
         assert reviews[0].claims[0].human_grade == "agree"
+
+
+# ───────────────── delete_multi_turn_batch_chains ─────────────────
+
+
+def _su_source(turn_index: int) -> DataSource:
+    return DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "haiku",
+            "model_provider": "openrouter",
+            "adapter_name": "kiln_synthetic_user_runner",
+            "batch_tag": "batch1",
+            "turn_index": turn_index,
+        },
+    )
+
+
+def _build_chain(task: Task, batch_tag: str, turns: int = 2) -> list[TaskRun]:
+    """A root→leaf chain shaped like the SU runner's output: only the leaf
+    carries the discovery tags."""
+    chain: list[TaskRun] = []
+    parent_id = None
+    for i in range(turns):
+        run = TaskRun(
+            parent=task,
+            input=f"turn input {i}",
+            input_source=_su_source(i + 1),
+            output=TaskOutput(output=f"turn output {i}", source=_su_source(i + 1)),
+            parent_task_run_id=parent_id,
+        )
+        run.save_to_file()
+        chain.append(run)
+        parent_id = str(run.id)
+    leaf = chain[-1]
+    leaf.tags = sorted({"synthetic_user_case", f"synthetic_user_batch:{batch_tag}"})
+    leaf.save_to_file()
+    return chain
+
+
+@pytest.fixture
+def multiturn_task(tmp_path):
+    project_path = tmp_path / "mt_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="MT Project", path=project_path)
+    project.save_to_file()
+    task = Task(
+        name="MT Task",
+        instruction="Test instruction",
+        turn_mode=TurnMode.multiturn,
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+class TestDeleteMultiTurnBatchChains:
+    def test_deletes_whole_chains_of_the_batch(self, multiturn_task):
+        chain_a = _build_chain(multiturn_task, "old-batch", turns=3)
+        chain_b = _build_chain(multiturn_task, "old-batch", turns=2)
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 5
+        assert multiturn_task.runs(include_intermediate_runs=True) == []
+        for run in [*chain_a, *chain_b]:
+            assert run.path is not None and not run.path.exists()
+
+    def test_other_batches_survive(self, multiturn_task):
+        _build_chain(multiturn_task, "old-batch", turns=2)
+        keep = _build_chain(multiturn_task, "new-batch", turns=2)
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 2
+        remaining_ids = {
+            str(r.id) for r in multiturn_task.runs(include_intermediate_runs=True)
+        }
+        assert remaining_ids == {str(r.id) for r in keep}
+
+    def test_skips_chain_claimed_by_another_flow(self, multiturn_task):
+        """A leaf with tags beyond the runner's own (an eval save tagged it)
+        is part of a dataset, not an abandoned drive — left alone."""
+        chain = _build_chain(multiturn_task, "old-batch", turns=2)
+        leaf = chain[-1]
+        leaf.tags = sorted({*(leaf.tags or []), "eval_config_my_spec"})
+        leaf.save_to_file()
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 0
+        assert len(multiturn_task.runs(include_intermediate_runs=True)) == 2
+
+    def test_skips_rated_leaf(self, multiturn_task):
+        """A rated leaf is answer-key material — never delete it."""
+        chain = _build_chain(multiturn_task, "old-batch", turns=2)
+        leaf = chain[-1]
+        leaf.output.rating = TaskOutputRating(
+            type=TaskOutputRatingType.pass_fail, value=1.0
+        )
+        leaf.save_to_file()
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 0
+        assert len(multiturn_task.runs(include_intermediate_runs=True)) == 2
+
+    def test_unknown_batch_tag_is_a_noop(self, multiturn_task):
+        _build_chain(multiturn_task, "some-batch", turns=2)
+        assert delete_multi_turn_batch_chains(multiturn_task, "nonexistent") == 0
+        assert len(multiturn_task.runs(include_intermediate_runs=True)) == 2
+
+    def test_skips_leaf_with_descendants(self, multiturn_task):
+        """A tagged run that gained children (a continued conversation) is no
+        longer a chain leaf — deleting it would strand its descendants."""
+        chain = _build_chain(multiturn_task, "old-batch", turns=2)
+        continued = TaskRun(
+            parent=multiturn_task,
+            input="follow-up turn",
+            input_source=_su_source(3),
+            output=TaskOutput(output="reply", source=_su_source(3)),
+            parent_task_run_id=str(chain[-1].id),
+        )
+        continued.save_to_file()
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 0
+        assert len(multiturn_task.runs(include_intermediate_runs=True)) == 3

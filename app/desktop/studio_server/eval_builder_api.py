@@ -1,51 +1,155 @@
 """Eval Builder review-pipeline API (studio side).
 
-Orchestrates the alignment-phase review as one unit of work per trace —
-`judge → claim builder` — and fans out across N traces server-side (local),
-streaming each result to the UI. See specs/projects/eval_builder/review_pipeline.md.
+Two streams, one frame contract (see api_models/eval_builder_models.py):
 
-The remote kiln_server is only reached for the claim builder (secret sauce); the
-judge runs locally via the Eval V2 llm_judge adapter (the user's keys). Fan-out +
-concurrency live here so the UI stays a thin SSE consumer.
+  review_pipeline (multi-turn) — runs [drive → judge → claims] as one unit
+  of work per case. The await order inside each case's coroutine IS the
+  stage dependency; per-stage semaphores bound the fan-out (DRIVE_CONCURRENCY
+  drive loops, REVIEW_CONCURRENCY judge+claims units). A case failing at any
+  stage emits case_failed and the other cases keep flowing — completed
+  results are never discarded. The judge and claim builder receive the
+  runner's REAL trace (tool calls and system turns included), rendered once
+  into the canonical transcript.
+
+  review_traces (single-turn) — judge + claims over already-generated I/O
+  pairs, fanned out per trace.
+
+The remote kiln_server is only reached for the claim builder (secret sauce);
+the judge runs locally via the Eval V2 llm_judge adapter (the user's keys).
+Orchestration and concurrency live here so the UI stays a thin SSE consumer.
 """
 
 import asyncio
 import json
 import logging
-from typing import Annotated
+import re
+from typing import Annotated, Any, cast
 
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiInput,
     BuildClaimsApiOutput,
     JudgeConfig,
+    PipelineBatchCompletedEvent,
+    PipelineBatchStartedEvent,
+    PipelineCaseDrivenEvent,
+    PipelineCaseFailedEvent,
+    PipelineCaseReviewedEvent,
+    PipelineTurnCompletedEvent,
     ReviewTracesRequest,
     TraceErrorEvent,
     TraceInput,
     TraceReviewedEvent,
+    spec_name_must_have_a_json_key,
+)
+from app.desktop.studio_server.multiturn_sdg_api import (
+    RunCasesBatchApiInput,
+    guard_multiturn,
+    to_su_driver_config,
+    to_target_run_config,
+)
+from app.desktop.studio_server.utils.copilot_utils import (
+    delete_multi_turn_batch_chains,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_claims_for_trace,
     run_judge_for_trace,
     transcript_io_for_trace,
 )
-from fastapi import FastAPI, Path
+from fastapi import FastAPI, HTTPException, Path, Request
+from kiln_ai.datamodel.basemodel import FilenameStringShort
+from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
+from kiln_ai.synthetic_user.runner import (
+    BatchStartedEvent,
+    CaseCompletedEvent,
+    CaseFailedEvent,
+    TurnCompletedEvent,
+    run_cases_batch,
+)
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import no_write_lock
+from kiln_ai.utils.git_sync_protocols import default_save_context
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
-# Cap concurrent (local judge + remote claim) work per batch. Protects the local
-# judge (LLM calls) and the remote claim calls; consider EvalRunner batching if
-# review batches outgrow this.
+# The builder's two concurrency knobs, one per pipeline stage:
+#   DRIVE_CONCURRENCY  — concurrent SU drive loops (target model + SU driver
+#                        both burn tokens per turn; the most expensive stage).
+#   REVIEW_CONCURRENCY — concurrent [judge → claims] units (a local judge
+#                        call then a remote claim-builder call), shared by
+#                        the merged pipeline and the single-turn review.
+DRIVE_CONCURRENCY = 4
 REVIEW_CONCURRENCY = 5
 
 
-def _sse(payload: dict | TraceReviewedEvent | TraceErrorEvent) -> str:
-    """Format one SSE `data:` frame (matches the eval_api / multiturn_sdg convention)."""
-    if isinstance(payload, (TraceReviewedEvent, TraceErrorEvent)):
+def _sse(payload: dict | BaseModel) -> str:
+    """Format one SSE `data:` frame (the shared eval_builder frame contract)."""
+    if isinstance(payload, BaseModel):
         payload = payload.model_dump(by_alias=True)  # by_alias → citations use `from`
     return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
+SSE_TERMINATOR = "data: complete\n\n"
+
+
+class ReviewPipelineRequest(RunCasesBatchApiInput):
+    """The merged multi-turn pipeline's request: everything a drive takes
+    (inherited — the two drive contracts can't drift) plus the judge that
+    scores the results and the batch lifecycle field.
+
+    `judge.prompt` doubles as the claim builder's eval_rubric — the builder
+    pressure-tests the rubric the verdict was really produced under.
+    """
+
+    replace_batch_tags: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        description=(
+            "Batch tags of previous drives this one supersedes (aborted "
+            "re-drives can leave several behind). Their chains are deleted "
+            "once this drive has produced replacement chains "
+            "(delete-on-redrive), so abandoned batches don't accumulate on "
+            "disk — and a wholesale drive failure never destroys the only "
+            "batch the user has."
+        ),
+    )
+
+    # forbid: a retired or misspelled field on this request must 422, not be
+    # silently dropped (a dropped replace_batch_tags quietly disables the
+    # batch cleanup with no signal anywhere).
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("replace_batch_tags")
+    @classmethod
+    def replace_batch_tags_must_be_valid(cls, value: list[str]) -> list[str]:
+        for tag in value:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tag):
+                raise ValueError(f"invalid batch tag: {tag!r}")
+        return value
+
+    @model_validator(mode="after")
+    def batch_tag_cannot_be_replaced(self) -> Self:
+        # Deleting the batch this drive is about to create would destroy the
+        # results the moment they were produced.
+        if self.batch_tag is not None and self.batch_tag in self.replace_batch_tags:
+            raise ValueError(
+                "replace_batch_tags must not contain this drive's own batch_tag."
+            )
+        return self
+
+    spec_name: FilenameStringShort = Field(
+        description="The spec's name. The review judge scores under the same "
+        "output-score identity the saved eval will use, so the prompt the "
+        "user calibrates here is byte-identical to the one that ships."
+    )
+    judge: JudgeConfig
+
+    _spec_name_has_json_key = field_validator("spec_name")(
+        spec_name_must_have_a_json_key
+    )
 
 
 async def review_one_trace(
@@ -56,41 +160,29 @@ async def review_one_trace(
     judge: JudgeConfig,
     spec_name: str,
 ) -> TraceReviewedEvent:
-    """One unit of work: judge the trace (local), then build claims (remote).
-
-    Multi-turn (raw_input, raw_output) are derived here from the structured
-    trace — the canonical transcript rendering — and echoed back on the event
-    so the UI cites exactly what the claim builder saw. The claim builder's
-    eval_rubric is the judge's actual prompt: it pressure-tests the rubric the
-    verdict was produced under, not a paraphrase of it.
+    """One single-turn unit of work: judge the I/O pair (local), then build
+    claims (remote). The claim builder's eval_rubric is the judge's actual
+    prompt: it pressure-tests the rubric the verdict was produced under.
     """
-    if trace.trace is not None:
-        raw_input, raw_output = transcript_io_for_trace(trace.trace)
-    else:
-        # The TraceInput validator guarantees the single-turn I/O pair here.
-        assert trace.raw_input is not None and trace.raw_output is not None
-        raw_input, raw_output = trace.raw_input, trace.raw_output
-
     verdict = await run_judge_for_trace(
         project_id,
         task_id,
-        raw_input,
-        raw_output,
+        trace.raw_input,
+        trace.raw_output,
         judge,
         spec_name=spec_name,
-        trace=trace.trace,
     )
     claims_output = await build_claims_for_trace(
-        raw_input=raw_input,
-        raw_output=raw_output,
+        raw_input=trace.raw_input,
+        raw_output=trace.raw_output,
         eval_rubric=judge.prompt,
         judge_score=verdict.judge_score,
         judge_reasoning=verdict.judge_reasoning,
     )
     return TraceReviewedEvent(
         trace_index=index,
-        raw_input=raw_input,
-        raw_output=raw_output,
+        raw_input=trace.raw_input,
+        raw_output=trace.raw_output,
         judge_score=verdict.judge_score,
         judge_reasoning=verdict.judge_reasoning,
         claims=claims_output.claims,
@@ -99,6 +191,345 @@ async def review_one_trace(
 
 
 def connect_eval_builder_api(app: FastAPI):
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_pipeline",
+        tags=["Eval Builder"],
+        summary="Run Multi-Turn Review Pipeline",
+        openapi_extra=agent_policy_require_approval(
+            "Drive multi-turn synthetic-user conversations and run judge + "
+            "claims on each? Invokes the target model, SU driver, and judge "
+            "(cost)."
+        ),
+    )
+    @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
+    async def review_pipeline(
+        request: Request,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: ReviewPipelineRequest,
+    ) -> CancellableStreamingResponse:
+        """The merged multi-turn stream: [drive → judge → claims] per case.
+
+        Emits (all frames `type`-discriminated; errors carry {code, message}):
+          - batch_started   { batch_tag, total_cases }
+          - turn_completed  { case_index, turns_completed, total_turns }
+          - case_driven     { case_index, leaf_run_id }
+          - case_reviewed   { case_index, leaf_run_id, raw_input, raw_output,
+                              judge_score, judge_reasoning, claims,
+                              final_judgement, total_cost }
+          - case_failed     { case_index, stage, code, message }  (batch continues)
+          - batch_completed { reviewed, failed, batch_tag, total_cost }
+        Terminated by `data: complete`.
+        """
+        # Guard + decode before the stream opens so the client sees a clean
+        # 400/422 rather than a half-open text/event-stream on bad input.
+        task = task_from_id(project_id, task_id)
+        guard_multiturn(task)
+        try:
+            runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError + any future shape drift
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_case_shape",
+                    "message": f"Could not parse cases against the runner shape: {exc}",
+                },
+            ) from exc
+
+        target_run_config = to_target_run_config(input.target_run_config)
+        su_driver_config = to_su_driver_config(input.su_driver)
+        save_context = build_save_context(request)
+
+        async def delete_superseded_batches() -> None:
+            """Delete-on-redrive, AFTER the drive produced replacement chains
+            — deleting up front could leave the user with neither batch when
+            a re-drive fails wholesale. Best-effort cleanup: a failure here
+            must never cost the batch's results.
+            """
+            for tag in input.replace_batch_tags:
+                try:
+                    # build_save_context returns None outside a git-synced
+                    # request; fall back the same way the runner does. The
+                    # delete is sync file I/O over the task's run corpus —
+                    # run it off the event loop so other requests and streams
+                    # keep moving.
+                    async with (save_context or default_save_context)():
+                        deleted = await asyncio.to_thread(
+                            delete_multi_turn_batch_chains, task, tag
+                        )
+                    logger.info(
+                        "review_pipeline: deleted %d chain runs of superseded batch %s",
+                        deleted,
+                        tag,
+                    )
+                except Exception:  # noqa: BLE001 — cleanup must not fail the batch
+                    logger.exception(
+                        "review_pipeline: failed to delete superseded batch %s",
+                        tag,
+                    )
+
+        async def event_generator():
+            # Frames from concurrently-running stages funnel through one
+            # queue; `None` is the end-of-stream sentinel.
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
+            review_sem = asyncio.Semaphore(REVIEW_CONCURRENCY)
+            review_tasks: list[asyncio.Task] = []
+            # Latest cumulative trace per case, captured from the runner's
+            # in-process turn events — the REAL trace (tool calls, system
+            # turns), not a wire projection. Popped when the review starts.
+            latest_trace: dict[int, list[dict[str, Any]]] = {}
+            turns_completed: dict[int, int] = {}
+            reviewed_count = 0
+            failed_count = 0
+            total_cost = 0.0
+            batch_tag = input.batch_tag or ""
+
+            async def review_case(
+                case_index: int,
+                leaf_run_id: str,
+                trace: list[dict[str, Any]],
+                drive_cost: float,
+            ) -> None:
+                nonlocal reviewed_count, failed_count, total_cost
+
+                async def fail(stage: str, code: str, error: Exception) -> None:
+                    nonlocal failed_count
+                    logger.exception(
+                        "review_pipeline: %s failed for case %d", stage, case_index
+                    )
+                    failed_count += 1
+                    await queue.put(
+                        _sse(
+                            PipelineCaseFailedEvent(
+                                case_index=case_index,
+                                stage=stage,  # type: ignore[arg-type] # callers pass the literal values
+                                code=code,
+                                message=f"{type(error).__name__}: {error}",
+                            )
+                        )
+                    )
+
+                async with review_sem:
+                    try:
+                        raw_input, raw_output = transcript_io_for_trace(trace)
+                        verdict = await run_judge_for_trace(
+                            project_id,
+                            task_id,
+                            raw_input,
+                            raw_output,
+                            input.judge,
+                            spec_name=input.spec_name,
+                            trace=trace,
+                        )
+                    except Exception as e:  # noqa: BLE001 — isolate to this case
+                        await fail("judge", "judge_failed", e)
+                        return
+                    try:
+                        claims_output = await build_claims_for_trace(
+                            raw_input=raw_input,
+                            raw_output=raw_output,
+                            eval_rubric=input.judge.prompt,
+                            judge_score=verdict.judge_score,
+                            judge_reasoning=verdict.judge_reasoning,
+                        )
+                        # Frame construction/serialization is inside the try:
+                        # a failure here must surface as case_failed too, or
+                        # the batch totals would claim a review the client
+                        # never received.
+                        frame = _sse(
+                            PipelineCaseReviewedEvent(
+                                case_index=case_index,
+                                leaf_run_id=leaf_run_id,
+                                raw_input=raw_input,
+                                raw_output=raw_output,
+                                judge_score=verdict.judge_score,
+                                judge_reasoning=verdict.judge_reasoning,
+                                claims=claims_output.claims,
+                                final_judgement=claims_output.final_judgement,
+                                total_cost=drive_cost,
+                            )
+                        )
+                    except Exception as e:  # noqa: BLE001 — isolate to this case
+                        await fail("claims", "claims_failed", e)
+                        return
+                    reviewed_count += 1
+                    await queue.put(frame)
+
+            async def run_drive() -> None:
+                nonlocal batch_tag, failed_count, total_cost
+                any_case_driven = False
+                async for event in run_cases_batch(
+                    cases=runner_cases,
+                    target_task=task,
+                    target_run_config=target_run_config,
+                    su_driver_config=su_driver_config,
+                    turns=input.turns,
+                    concurrency=DRIVE_CONCURRENCY,
+                    batch_tag=input.batch_tag,
+                    save_context=save_context,
+                ):
+                    if isinstance(event, BatchStartedEvent):
+                        batch_tag = event.batch_tag
+                        await queue.put(
+                            _sse(
+                                PipelineBatchStartedEvent(
+                                    batch_tag=event.batch_tag,
+                                    total_cases=event.num_cases,
+                                )
+                            )
+                        )
+                    elif isinstance(event, TurnCompletedEvent):
+                        # The runner emits a fresh snapshot list per event;
+                        # its typed message params are plain dicts at runtime,
+                        # which the judge/claims layer treats loosely.
+                        latest_trace[event.case_index] = cast(
+                            list[dict[str, Any]], event.trace
+                        )
+                        turns_completed[event.case_index] = (
+                            turns_completed.get(event.case_index, 0) + 1
+                        )
+                        await queue.put(
+                            _sse(
+                                PipelineTurnCompletedEvent(
+                                    case_index=event.case_index,
+                                    turns_completed=turns_completed[event.case_index],
+                                    total_turns=input.turns,
+                                )
+                            )
+                        )
+                    elif isinstance(event, CaseCompletedEvent):
+                        # Drive spend is real once the conversation ran,
+                        # whatever the review stage does with it later.
+                        total_cost += event.total_cost
+                        trace = latest_trace.pop(event.case_index, [])
+                        if not trace:
+                            # turns >= 1 guarantees a turn event before the
+                            # case completes; an empty trace means that
+                            # invariant broke — fail the case, keep the batch.
+                            failed_count += 1
+                            await queue.put(
+                                _sse(
+                                    PipelineCaseFailedEvent(
+                                        case_index=event.case_index,
+                                        stage="drive",
+                                        code="missing_trace",
+                                        message=(
+                                            "The drive produced no trace for this case."
+                                        ),
+                                    )
+                                )
+                            )
+                            continue
+                        any_case_driven = True
+                        await queue.put(
+                            _sse(
+                                PipelineCaseDrivenEvent(
+                                    case_index=event.case_index,
+                                    leaf_run_id=event.leaf_run_id,
+                                )
+                            )
+                        )
+                        # The case pipelines straight into judge+claims while
+                        # other cases are still driving — no stage barrier.
+                        review_tasks.append(
+                            asyncio.create_task(
+                                review_case(
+                                    event.case_index,
+                                    event.leaf_run_id,
+                                    trace,
+                                    event.total_cost,
+                                ),
+                                name=f"review_case_{event.case_index}",
+                            )
+                        )
+                    elif isinstance(event, CaseFailedEvent):
+                        failed_count += 1
+                        await queue.put(
+                            _sse(
+                                PipelineCaseFailedEvent(
+                                    case_index=event.case_index,
+                                    stage="drive",
+                                    code=event.error_code,
+                                    message=event.message,
+                                )
+                            )
+                        )
+                    # The runner's BatchCompletedEvent is not forwarded: the
+                    # pipeline's own batch_completed fires after reviews drain.
+                if any_case_driven:
+                    # Replacement chains exist on disk — now the superseded
+                    # batches can go. A drive that produced nothing keeps the
+                    # previous batches untouched.
+                    await delete_superseded_batches()
+
+            drive_task = asyncio.create_task(run_drive(), name="pipeline_drive")
+
+            async def close_when_done() -> None:
+                # review_tasks only grows while drive_task runs, so once the
+                # drive is done the list is final and the gather is complete.
+                try:
+                    await drive_task
+                finally:
+                    if review_tasks:
+                        await asyncio.gather(*review_tasks, return_exceptions=True)
+                    await queue.put(None)
+
+            closer = asyncio.create_task(close_when_done(), name="pipeline_closer")
+
+            try:
+                while True:
+                    frame = await queue.get()
+                    if frame is None:
+                        break
+                    yield frame
+                # The closer swallows a drive-level crash (its finally still
+                # closes the queue) — re-raise it here so the client sees
+                # batch_failed, not a clean-looking batch_completed. Our own
+                # teardown never reaches this line, so a cancelled drive here
+                # means a stray CancelledError killed it: also a failure.
+                if drive_task.cancelled():
+                    raise RuntimeError("The drive was cancelled unexpectedly.")
+                drive_error = drive_task.exception() if drive_task.done() else None
+                if drive_error is not None:
+                    raise drive_error
+                yield _sse(
+                    PipelineBatchCompletedEvent(
+                        reviewed=reviewed_count,
+                        failed=failed_count,
+                        batch_tag=batch_tag,
+                        total_cost=total_cost,
+                    )
+                )
+            except Exception as e:  # noqa: BLE001 — last-resort surface for developer bugs
+                # Per-case failures never reach here (they become case_failed
+                # frames); this catches orchestration bugs only.
+                logger.exception("review_pipeline failed mid-stream")
+                yield _sse(
+                    {
+                        "type": "batch_failed",
+                        "code": "internal_error",
+                        "message": f"{type(e).__name__}: {e}",
+                    }
+                )
+            finally:
+                # Consumer disconnect (or any exit): stop the drive and any
+                # in-flight reviews so abandoned LLM calls stop spending.
+                drive_task.cancel()
+                for t in review_tasks:
+                    t.cancel()
+                closer.cancel()
+                await asyncio.gather(
+                    drive_task, closer, *review_tasks, return_exceptions=True
+                )
+            yield SSE_TERMINATOR
+
+        return CancellableStreamingResponse(
+            content=event_generator(),
+            media_type="text/event-stream",
+        )
+
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_traces",
         tags=["Eval Builder"],
@@ -114,13 +545,14 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         request: ReviewTracesRequest,
     ) -> CancellableStreamingResponse:
-        """Per-trace `judge → claim builder`, fanned out (local) and streamed.
+        """Per-trace `judge → claim builder` over single-turn I/O pairs,
+        fanned out (local) and streamed.
 
         Emits one SSE event per trace as it completes:
           - `trace_reviewed` { trace_index, raw_input, raw_output,
                                judge_score, judge_reasoning, claims,
                                final_judgement }
-          - `trace_error`    { trace_index, error }   (batch continues)
+          - `trace_error`    { trace_index, code, message }   (batch continues)
         Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
         """
 
@@ -145,7 +577,9 @@ def connect_eval_builder_api(app: FastAPI):
                         )
                         return _sse(
                             TraceErrorEvent(
-                                trace_index=index, error=f"{type(e).__name__}: {e}"
+                                trace_index=index,
+                                code="review_failed",
+                                message=f"{type(e).__name__}: {e}",
                             )
                         )
 
@@ -155,7 +589,7 @@ def connect_eval_builder_api(app: FastAPI):
             ]
             for finished in asyncio.as_completed(tasks):
                 yield await finished
-            yield "data: complete\n\n"
+            yield SSE_TERMINATOR
 
         return CancellableStreamingResponse(
             content=event_generator(),

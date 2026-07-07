@@ -3116,6 +3116,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Multi-Turn Review Pipeline
+         * @description The merged multi-turn stream: [drive → judge → claims] per case.
+         *
+         *     Emits (all frames `type`-discriminated; errors carry {code, message}):
+         *       - batch_started   { batch_tag, total_cases }
+         *       - turn_completed  { case_index, turns_completed, total_turns }
+         *       - case_driven     { case_index, leaf_run_id }
+         *       - case_reviewed   { case_index, leaf_run_id, raw_input, raw_output,
+         *                           judge_score, judge_reasoning, claims,
+         *                           final_judgement, total_cost }
+         *       - case_failed     { case_index, stage, code, message }  (batch continues)
+         *       - batch_completed { reviewed, failed, batch_tag, total_cost }
+         *     Terminated by `data: complete`.
+         */
+        post: operations["review_pipeline_api_projects__project_id__tasks__task_id__eval_builder_review_pipeline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_traces": {
         parameters: {
             query?: never;
@@ -3127,13 +3158,14 @@ export interface paths {
         put?: never;
         /**
          * Review Traces
-         * @description Per-trace `judge → claim builder`, fanned out (local) and streamed.
+         * @description Per-trace `judge → claim builder` over single-turn I/O pairs,
+         *     fanned out (local) and streamed.
          *
          *     Emits one SSE event per trace as it completes:
          *       - `trace_reviewed` { trace_index, raw_input, raw_output,
          *                            judge_score, judge_reasoning, claims,
          *                            final_judgement }
-         *       - `trace_error`    { trace_index, error }   (batch continues)
+         *       - `trace_error`    { trace_index, code, message }   (batch continues)
          *     Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
          */
         post: operations["review_traces_api_projects__project_id__tasks__task_id__eval_builder_review_traces_post"];
@@ -7489,7 +7521,7 @@ export interface components {
             num_cases: number;
             /**
              * Case Prompts
-             * @description Optional per-case scenario prompts (e.g. from an approved batch plan). When provided, one case is generated per prompt — case i is designed around prompt i — instead of leaving case design to the upstream generator. Length must equal num_cases.
+             * @description Optional per-case scenario prompts (e.g. from an approved batch plan). When provided, the batch is generated in ONE upstream call with case i designed around prompt i; each returned case carries scenario_index. Under the upstream salvage contract a flaky case is dropped rather than failing the batch, so the response may hold fewer cases than prompts — scenario_index, not position, maps a case to its prompt. Length must equal num_cases.
              */
             case_prompts?: string[] | null;
         };
@@ -7497,7 +7529,7 @@ export interface components {
         GenerateCasesApiOutput: {
             /**
              * Cases
-             * @description A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
+             * @description A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
              */
             cases: {
                 [key: string]: unknown;
@@ -9750,6 +9782,48 @@ export interface components {
             models: components["schemas"]["RerankerModelDetails"][];
         };
         /**
+         * ReviewPipelineRequest
+         * @description The merged multi-turn pipeline's request: everything a drive takes
+         *     (inherited — the two drive contracts can't drift) plus the judge that
+         *     scores the results and the batch lifecycle field.
+         *
+         *     `judge.prompt` doubles as the claim builder's eval_rubric — the builder
+         *     pressure-tests the rubric the verdict was really produced under.
+         */
+        ReviewPipelineRequest: {
+            /**
+             * Cases
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
+             */
+            cases: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Turns
+             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @default 5
+             */
+            turns: number;
+            target_run_config: components["schemas"]["TargetRunConfigSpec"];
+            su_driver: components["schemas"]["SyntheticUserDriverSpec"];
+            /**
+             * Batch Tag
+             * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
+             */
+            batch_tag?: string | null;
+            /**
+             * Replace Batch Tags
+             * @description Batch tags of previous drives this one supersedes (aborted re-drives can leave several behind). Their chains are deleted once this drive has produced replacement chains (delete-on-redrive), so abandoned batches don't accumulate on disk — and a wholesale drive failure never destroys the only batch the user has.
+             */
+            replace_batch_tags?: string[];
+            /**
+             * Spec Name
+             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
+             */
+            spec_name: string;
+            judge: components["schemas"]["JudgeConfig"];
+        };
+        /**
          * ReviewTracesRequest
          * @description Batch request: judge + build claims for every trace, streamed back.
          *
@@ -9812,7 +9886,7 @@ export interface components {
         RunCasesBatchApiInput: {
             /**
              * Cases
-             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser.
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
              */
             cases: {
                 [key: string]: unknown;
@@ -11720,32 +11794,24 @@ export interface components {
         };
         /**
          * TraceInput
-         * @description One generated trace to review (single- or multi-turn).
+         * @description One single-turn example to review: the task's raw I/O pair.
          *
-         *     Exactly one source shape per trace: single-turn sends the raw I/O pair;
-         *     multi-turn sends the structured message list and the studio derives the
-         *     canonical transcript from it server-side — the UI never fabricates a
-         *     flattened rendering, so the text the claim builder cites is authoritative
-         *     (it's echoed back on the trace_reviewed event).
+         *     Multi-turn conversations never ride this request — they are driven,
+         *     judged, and distilled server-side by the review pipeline, which reads
+         *     the runner's real trace directly. Structured traces therefore have no
+         *     wire shape here at all.
          */
         TraceInput: {
             /**
              * Raw Input
-             * @description Single-turn: the task's raw input. Omitted for multi-turn traces (derived from the trace's first user message).
+             * @description The task's raw input.
              */
-            raw_input?: string | null;
+            raw_input: string;
             /**
              * Raw Output
-             * @description Single-turn: the task's raw output. Omitted for multi-turn traces (the canonical transcript is rendered from trace).
+             * @description The task's raw output.
              */
-            raw_output?: string | null;
-            /**
-             * Trace
-             * @description Structured message list ({role, content}, chronological) for multi-turn traces: the judge scores it directly and the claim builder receives its canonical rendering. Kept as loose dicts — message shapes (tool calls etc.) will churn.
-             */
-            trace?: {
-                [key: string]: unknown;
-            }[] | null;
+            raw_output: string;
         };
         /** TraceMessage */
         TraceMessage: {
@@ -19141,6 +19207,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_pipeline_api_projects__project_id__tasks__task_id__eval_builder_review_pipeline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewPipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

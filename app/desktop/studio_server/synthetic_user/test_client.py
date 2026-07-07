@@ -117,6 +117,30 @@ async def test_generate_passes_request_body_correctly(
     assert sent.target_task_prompt == "my task prompt"
     assert sent.target_specification == "my spec"
     assert sent.num_cases == 5
+    # No scenarios given → the field is omitted from the wire body entirely.
+    assert "case_scenarios" not in sent.to_dict()
+
+
+@pytest.mark.asyncio
+async def test_generate_passes_case_scenarios_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list = []
+
+    async def _capture(*, client, body):  # noqa: ARG001
+        captured.append(body)
+        return _ok_response()
+
+    _patch_generate(monkeypatch, AsyncMock(side_effect=_capture))
+
+    await _make_client().generate(
+        target_task_prompt="prompt",
+        target_specification="spec",
+        num_cases=2,
+        case_scenarios=["scenario A", "scenario B"],
+    )
+
+    assert captured[0].to_dict()["case_scenarios"] == ["scenario A", "scenario B"]
 
 
 # ───────────────────────── 502 (typed code) ─────────────────────────

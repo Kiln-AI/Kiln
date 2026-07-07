@@ -29,6 +29,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
+    UNSET,
     Response,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
@@ -82,15 +83,23 @@ class SyntheticUserClient:
         target_task_prompt: str,
         target_specification: str,
         num_cases: int,
+        case_scenarios: list[str] | None = None,
     ) -> list[SyntheticUserCase]:
         """POST /v1/synthetic_user/generate. Returns the SDK's case models
         as-is; each carries `seed_prompt` and `synthetic_user_info` (the
         tagged blob — see kiln_ai.synthetic_user.parser for the schema).
+
+        `case_scenarios` (length must equal num_cases) makes it a scenario
+        batch: one server pass generates case i around scenario i, and each
+        returned case carries `scenario_index`. Under the server's salvage
+        contract the response may be shorter than num_cases — scenario_index,
+        not position, is the scenario mapping.
         """
         body = GenerateSyntheticUsersRequest(
             target_task_prompt=target_task_prompt,
             target_specification=target_specification,
             num_cases=num_cases,
+            case_scenarios=case_scenarios if case_scenarios is not None else UNSET,
         )
         response = await generate_v1_synthetic_user_generate_post.asyncio_detailed(
             client=self._client, body=body

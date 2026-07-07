@@ -216,7 +216,8 @@ def test_review_traces_emits_trace_error_and_still_completes(client, review_requ
         e for e in events if isinstance(e, dict) and e.get("type") == "trace_error"
     ]
     assert len(errors) == 2
-    assert all("boom" in e["error"] for e in errors)
+    assert all(e["code"] == "review_failed" for e in errors)
+    assert all("boom" in e["message"] for e in errors)
     assert events[-1] == "complete"
 
 
@@ -460,57 +461,15 @@ def test_review_traces_judge_skip_streams_trace_error(
         e for e in events if isinstance(e, dict) and e.get("type") == "trace_error"
     ]
     assert len(errors) == 2
-    assert all("Judge skipped this trace" in e["error"] for e in errors)
-    assert all("missing_trace" in e["error"] for e in errors)
+    assert all("Judge skipped this trace" in e["message"] for e in errors)
+    assert all("missing_trace" in e["message"] for e in errors)
     assert events[-1] == "complete"
 
 
-def test_review_traces_forwards_structured_trace(client, review_request):
-    # Multi-turn traces send ONLY the structured trace; the studio derives the
-    # canonical (raw_input, raw_output) and hands the judge the trace itself.
-    trace = [
-        {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "hello"},
-    ]
-    review_request["traces"][0] = {"trace": trace}
-    judge_mock = AsyncMock(return_value=JudgeVerdict("pass", "fine"))
-    with (
-        patch(
-            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=judge_mock,
-        ),
-        patch(
-            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(return_value=_claims_output()),
-        ) as claims_mock,
-    ):
-        resp = client.post(REVIEW_URL, json=review_request)
-
-    assert resp.status_code == 200
-    traces_by_input = {
-        call.args[2]: call.kwargs["trace"] for call in judge_mock.call_args_list
-    }
-    # Multi-turn raw_input = the opening user message, derived server-side.
-    assert traces_by_input["hi"] == trace
-    assert traces_by_input["in-2"] is None
-    # The claim builder received the canonical transcript as raw_output, and
-    # the judge's actual prompt as the rubric.
-    claims_calls = {
-        call.kwargs["raw_input"]: call.kwargs for call in claims_mock.call_args_list
-    }
-    multi_turn_call = claims_calls["hi"]
-    assert multi_turn_call["raw_output"] == (
-        "user:\n<user_message>\nhi\n</user_message>\n\n"
-        "assistant:\n<assistant_message>\nhello\n</assistant_message>"
-    )
-    assert (
-        multi_turn_call["eval_rubric"] == "Judge whether the output fabricates policy."
-    )
-
-
-def test_review_traces_rejects_ambiguous_trace_shape(client, review_request):
-    # A trace AND a raw I/O pair on one entry is ambiguous — the studio owns
-    # the multi-turn rendering, so the request is rejected outright.
+def test_review_traces_rejects_retired_trace_key(client, review_request):
+    # Multi-turn traces never ride this request (the review pipeline drives
+    # and reviews them server-side); a stale client sending `trace` must
+    # fail loudly, not have its trace silently dropped.
     review_request["traces"][0]["trace"] = [{"role": "user", "content": "hi"}]
     resp = client.post(REVIEW_URL, json=review_request)
     assert resp.status_code == 422
@@ -518,6 +477,14 @@ def test_review_traces_rejects_ambiguous_trace_shape(client, review_request):
 
 def test_review_traces_rejects_sourceless_trace(client, review_request):
     review_request["traces"][0] = {}
+    resp = client.post(REVIEW_URL, json=review_request)
+    assert resp.status_code == 422
+
+
+def test_review_traces_rejects_oversized_batch(client, review_request):
+    review_request["traces"] = [
+        {"raw_input": f"in-{i}", "raw_output": f"out-{i}"} for i in range(51)
+    ]
     resp = client.post(REVIEW_URL, json=review_request)
     assert resp.status_code == 422
 
@@ -640,3 +607,426 @@ class TestBuildClaims:
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 422
             assert "Validation error from server" in response.json()["message"]
+
+
+# ───────────────────────── review_pipeline (SSE) ─────────────────────────
+
+PIPELINE_URL = "/api/projects/p1/tasks/t1/eval_builder/review_pipeline"
+
+
+def _pipeline_case(i: int) -> dict:
+    return {
+        "seed_prompt": f"seed-{i}",
+        "synthetic_user_info": (
+            f"<persona>persona-{i}</persona>"
+            f"<goal>goal-{i}</goal>"
+            f"<behavior_guidance>guide-{i}</behavior_guidance>"
+        ),
+        "scenario_index": i,
+    }
+
+
+@pytest.fixture
+def pipeline_request():
+    return {
+        "cases": [_pipeline_case(0), _pipeline_case(1)],
+        "turns": 2,
+        "target_run_config": {
+            "model_name": "gpt_5_5",
+            "model_provider": "openrouter",
+        },
+        "su_driver": {
+            "model_name": "claude_4_5_haiku",
+            "model_provider": "openrouter",
+        },
+        "spec_name": "Test Spec",
+        "judge": {
+            "prompt": "Judge whether the output fabricates policy.",
+            "model_name": "claude_sonnet_4_6",
+            "model_provider": "anthropic",
+        },
+    }
+
+
+# A drive trace shaped like the runner's real traces: system turn, tool
+# call, tool result — the full fidelity the judge and claim builder consume.
+def _real_trace(i: int) -> list[dict]:
+    return [
+        {"role": "system", "content": "You are a support agent."},
+        {"role": "user", "content": f"question {i}"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "lookup_policy", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "30 day window"},
+        {"role": "assistant", "content": f"answer {i}"},
+    ]
+
+
+def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int = 2):
+    """An async-generator stand-in for the libs/core runner: batch_started,
+    then per case its turn events and completion (or failure)."""
+    from kiln_ai.synthetic_user.runner import (
+        BatchCompletedEvent,
+        BatchStartedEvent,
+        CaseCompletedEvent,
+        CaseFailedEvent,
+        TurnCompletedEvent,
+    )
+
+    async def fake(*, cases, turns, **_kwargs):
+        yield BatchStartedEvent(batch_tag="tag123", num_cases=len(cases))
+        successful = 0
+        failed = 0
+        for i in range(len(cases)):
+            if fail_case == i:
+                yield CaseFailedEvent(
+                    case_index=i,
+                    error_code="unexpected_error",
+                    message="drive blew up",
+                )
+                failed += 1
+                continue
+            for _turn in range(turns):
+                yield TurnCompletedEvent(
+                    case_index=i,
+                    assistant_run_id=f"run-{i}",
+                    su_next_message="next",
+                    cumulative_cost=0.01,
+                    trace=_real_trace(i),
+                )
+            yield CaseCompletedEvent(
+                case_index=i,
+                chain_run_ids=[f"run-{i}-a", f"run-{i}-b"],
+                leaf_run_id=f"leaf-{i}",
+                total_turns=turns,
+                total_cost=0.05,
+            )
+            successful += 1
+        yield BatchCompletedEvent(
+            successful=successful,
+            failed=failed,
+            batch_tag="tag123",
+            total_cost=0.05 * successful,
+        )
+
+    return fake
+
+
+def _multiturn_task_mock():
+    from unittest.mock import Mock
+
+    from kiln_ai.datamodel.datamodel_enums import TurnMode
+    from kiln_ai.datamodel.task import Task as KilnTask
+
+    task = Mock(spec=KilnTask)
+    task.name = "support_agent"
+    task.instruction = "You are a customer support agent."
+    task.turn_mode = TurnMode.multiturn
+    return task
+
+
+@pytest.fixture
+def pipeline_seams():
+    """Patch the pipeline's four seams: task resolution, the drive runner,
+    the judge, and the claim builder. Yields the mocks for assertions."""
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.task_from_id",
+            return_value=_multiturn_task_mock(),
+        ) as task_mock,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+            new=_fake_run_cases_batch(),
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
+        ) as judge_mock,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
+            new=AsyncMock(return_value=_claims_output()),
+        ) as claims_mock,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.delete_multi_turn_batch_chains",
+            return_value=0,
+        ) as delete_mock,
+    ):
+        yield {
+            "task": task_mock,
+            "judge": judge_mock,
+            "claims": claims_mock,
+            "delete": delete_mock,
+        }
+
+
+def _events_of(events: list, type_name: str) -> list[dict]:
+    return [e for e in events if isinstance(e, dict) and e.get("type") == type_name]
+
+
+class TestReviewPipeline:
+    def test_happy_path_full_stream(self, client, pipeline_request, pipeline_seams):
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(resp.text)
+
+        started = _events_of(events, "batch_started")
+        assert started == [
+            {"type": "batch_started", "batch_tag": "tag123", "total_cases": 2}
+        ]
+
+        turns = _events_of(events, "turn_completed")
+        assert len(turns) == 4  # 2 cases x 2 turns
+        # Per-case turn counters climb 1..turns, each with the denominator.
+        for case_index in (0, 1):
+            case_turns = [t for t in turns if t["case_index"] == case_index]
+            assert [t["turns_completed"] for t in case_turns] == [1, 2]
+            assert all(t["total_turns"] == 2 for t in case_turns)
+
+        driven = _events_of(events, "case_driven")
+        assert {(d["case_index"], d["leaf_run_id"]) for d in driven} == {
+            (0, "leaf-0"),
+            (1, "leaf-1"),
+        }
+
+        reviewed = _events_of(events, "case_reviewed")
+        assert len(reviewed) == 2
+        for e in reviewed:
+            assert e["judge_score"] == "fail"
+            assert e["leaf_run_id"] == f"leaf-{e['case_index']}"
+            assert e["total_cost"] == 0.05
+            # Canonical transcript rendering of the REAL trace: tool calls
+            # and tool results are present; the UI never sees a projection.
+            assert "<assistant_requested_tool_calls>" in e["raw_output"]
+            assert "<tool_tool_message>" in e["raw_output"]
+            assert f"answer {e['case_index']}" in e["raw_output"]
+            # raw_input = the conversation's opening user message.
+            assert e["raw_input"] == f"question {e['case_index']}"
+            # Citations keep the literal `from` key.
+            citation = e["claims"][0]["citations"][0]
+            assert citation["from"] == "30 days" and "from_" not in citation
+
+        completed = _events_of(events, "batch_completed")
+        assert completed == [
+            {
+                "type": "batch_completed",
+                "reviewed": 2,
+                "failed": 0,
+                "batch_tag": "tag123",
+                "total_cost": 0.1,
+            }
+        ]
+        assert events[-1] == "complete"
+
+        # The judge received the runner's REAL trace, not a projection.
+        for call in pipeline_seams["judge"].call_args_list:
+            trace = call.kwargs["trace"]
+            assert any(m.get("role") == "system" for m in trace)
+            assert any(m.get("role") == "tool" for m in trace)
+        # The claim builder's rubric is the judge's actual prompt.
+        for call in pipeline_seams["claims"].call_args_list:
+            assert call.kwargs["eval_rubric"] == (
+                "Judge whether the output fabricates policy."
+            )
+        # No replace_batch_tag → no delete.
+        pipeline_seams["delete"].assert_not_called()
+
+    def test_drive_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
+        """THE failure-isolation contract: a case dying in the drive stage
+        must not discard the other case's completed review."""
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+            new=_fake_run_cases_batch(fail_case=0),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert failed == [
+            {
+                "type": "case_failed",
+                "case_index": 0,
+                "stage": "drive",
+                "code": "unexpected_error",
+                "message": "drive blew up",
+            }
+        ]
+        reviewed = _events_of(events, "case_reviewed")
+        assert [e["case_index"] for e in reviewed] == [1]
+        completed = _events_of(events, "batch_completed")[0]
+        assert completed["reviewed"] == 1
+        assert completed["failed"] == 1
+        assert events[-1] == "complete"
+
+    def test_judge_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
+        async def judge(
+            _project_id, _task_id, _raw_input, _raw_output, _judge, **kwargs
+        ):
+            if kwargs["trace"][1]["content"] == "question 0":
+                raise ValueError("judge exploded")
+            return JudgeVerdict("pass", "fine")
+
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(side_effect=judge),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 0
+        assert failed[0]["stage"] == "judge"
+        assert failed[0]["code"] == "judge_failed"
+        assert "judge exploded" in failed[0]["message"]
+        reviewed = _events_of(events, "case_reviewed")
+        assert [e["case_index"] for e in reviewed] == [1]
+        assert events[-1] == "complete"
+
+    def test_claims_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
+        async def claims(*, raw_input, **_kwargs):
+            if raw_input == "question 1":
+                raise RuntimeError("claims exploded")
+            return _claims_output()
+
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
+            new=AsyncMock(side_effect=claims),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 1
+        assert failed[0]["stage"] == "claims"
+        assert failed[0]["code"] == "claims_failed"
+        reviewed = _events_of(events, "case_reviewed")
+        assert [e["case_index"] for e in reviewed] == [0]
+        assert events[-1] == "complete"
+
+    def test_replace_batch_tags_deleted_after_successful_drive(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        # Aborted re-drives can strand several batches; all of them are
+        # cleaned once this drive has produced replacement chains.
+        pipeline_request["replace_batch_tags"] = ["oldbatch123", "olderbatch456"]
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        assert len(_events_of(events, "case_reviewed")) == 2
+        delete_mock = pipeline_seams["delete"]
+        assert [c.args[1] for c in delete_mock.call_args_list] == [
+            "oldbatch123",
+            "olderbatch456",
+        ]
+
+    def test_replace_batch_tag_not_deleted_when_nothing_drove(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A wholesale drive failure must keep the superseded batch — the
+        user must never end up with neither batch."""
+
+        async def all_fail_runner(*, cases, **_kwargs):
+            from kiln_ai.synthetic_user.runner import (
+                BatchStartedEvent,
+                CaseFailedEvent,
+            )
+
+            yield BatchStartedEvent(batch_tag="tag123", num_cases=len(cases))
+            for i in range(len(cases)):
+                yield CaseFailedEvent(
+                    case_index=i, error_code="unexpected_error", message="down"
+                )
+
+        pipeline_request["replace_batch_tags"] = ["oldbatch123"]
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+            new=all_fail_runner,
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        completed = _events_of(events, "batch_completed")[0]
+        assert completed["failed"] == 2
+        pipeline_seams["delete"].assert_not_called()
+
+    def test_rejects_single_turn_task(self, client, pipeline_request, pipeline_seams):
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        pipeline_seams["task"].return_value.turn_mode = TurnMode.single_turn
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 400
+        assert resp.json()["message"]["code"] == "task_not_multiturn"
+
+    def test_rejects_invalid_case_shape(self, client, pipeline_request, pipeline_seams):
+        pipeline_request["cases"] = [{"seed_prompt": "only a seed"}]
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 400
+        assert resp.json()["message"]["code"] == "invalid_case_shape"
+
+    def test_rejects_oversized_batch(self, client, pipeline_request, pipeline_seams):
+        pipeline_request["cases"] = [_pipeline_case(i) for i in range(11)]
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 422
+
+    def test_rejects_unkeyable_spec_name(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        pipeline_request["spec_name"] = "!!!"
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 422
+
+    def test_drive_crash_surfaces_batch_failed(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A runner-level crash (developer bug, not a per-case failure) must
+        end the stream with batch_failed — never a clean batch_completed."""
+
+        async def crashing_runner(**_kwargs):
+            from kiln_ai.synthetic_user.runner import BatchStartedEvent
+
+            yield BatchStartedEvent(batch_tag="tag123", num_cases=2)
+            raise RuntimeError("runner exploded")
+
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+            new=crashing_runner,
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        assert _events_of(events, "batch_completed") == []
+        failed = _events_of(events, "batch_failed")
+        assert len(failed) == 1
+        assert failed[0]["code"] == "internal_error"
+        assert "runner exploded" in failed[0]["message"]
+        assert events[-1] == "complete"
+
+    def test_rejects_own_batch_tag_in_replace_list(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        pipeline_request["batch_tag"] = "mybatch"
+        pipeline_request["replace_batch_tags"] = ["mybatch"]
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 422
+
+    def test_rejects_unknown_request_fields(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A retired or misspelled field must 422 — silently dropping it can
+        disable behavior (e.g. batch cleanup) with no signal."""
+        pipeline_request["replace_batch_tag"] = "oldbatch123"
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 422

@@ -7,7 +7,6 @@ BatchEvents and assert the serialized `data:` frames match the expected
 event schema.
 """
 
-import asyncio
 import json
 from typing import AsyncIterator
 from unittest.mock import AsyncMock, Mock, patch
@@ -91,7 +90,7 @@ def patch_api_key():
         yield
 
 
-def _sdk_cases(n: int) -> list[SyntheticUserCase]:
+def _sdk_cases(n: int, with_indices: bool = False) -> list[SyntheticUserCase]:
     return [
         SyntheticUserCase(
             seed_prompt=f"seed-{i}",
@@ -100,6 +99,7 @@ def _sdk_cases(n: int) -> list[SyntheticUserCase]:
                 f"<goal>goal-{i}</goal>"
                 f"<behavior_guidance>guide-{i}</behavior_guidance>"
             ),
+            scenario_index=i if with_indices else None,
         )
         for i in range(n)
     ]
@@ -269,27 +269,19 @@ def test_generate_cases_validates_num_cases_upper_bound(
 # ─────────────── generate_cases with per-case prompts (batch plan) ───────────────
 
 
-def test_generate_cases_with_case_prompts_fans_out_one_call_per_prompt(
+def test_generate_cases_with_case_prompts_makes_one_batch_call(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
-    """One upstream call per prompt, each num_cases=1, with the prompt embedded
-    in that call's target_specification — and results in prompt order."""
+    """Plan prompts ride as case_scenarios on ONE upstream call — the spec is
+    passed through untouched (scenario composition happens server-side)."""
     patch_task_from_id.return_value = _multiturn_task()
     prompts = ["scenario A", "scenario B", "scenario C"]
-
-    async def generate_one(
-        *, target_task_prompt: str, target_specification: str, num_cases: int
-    ):
-        assert num_cases == 1
-        # Recover which prompt this call carries to prove 1:1 order mapping.
-        idx = next(i for i, p in enumerate(prompts) if p in target_specification)
-        return _sdk_cases(len(prompts))[idx : idx + 1]
 
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
     ) as MockClient:
         instance = MockClient.return_value
-        instance.generate = AsyncMock(side_effect=generate_one)
+        instance.generate = AsyncMock(return_value=_sdk_cases(3, with_indices=True))
 
         body = _generate_cases_body(num=3)
         body["case_prompts"] = prompts
@@ -301,12 +293,39 @@ def test_generate_cases_with_case_prompts_fans_out_one_call_per_prompt(
     assert resp.status_code == 200
     cases = resp.json()["cases"]
     assert [c["seed_prompt"] for c in cases] == ["seed-0", "seed-1", "seed-2"]
-    assert instance.generate.await_count == 3
-    # Every call carries the shared spec plus exactly one scenario prompt.
-    for call in instance.generate.await_args_list:
-        spec = call.kwargs["target_specification"]
-        assert "agent waives policy under pressure" in spec
-        assert "<case_scenario>" in spec
+    assert [c["scenario_index"] for c in cases] == [0, 1, 2]
+    assert instance.generate.await_count == 1
+    call = instance.generate.await_args
+    assert call.kwargs["case_scenarios"] == prompts
+    assert call.kwargs["num_cases"] == 3
+    assert call.kwargs["target_specification"] == "agent waives policy under pressure"
+
+
+def test_generate_cases_salvaged_batch_keeps_scenario_index(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """A scenario batch may come back short (upstream salvage) — the response
+    passes the survivors through with their scenario_index mapping intact."""
+    patch_task_from_id.return_value = _multiturn_task()
+    survivors = _sdk_cases(3, with_indices=True)
+    del survivors[1]  # scenario 1's case degraded upstream
+
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
+    ) as MockClient:
+        instance = MockClient.return_value
+        instance.generate = AsyncMock(return_value=survivors)
+
+        body = _generate_cases_body(num=3)
+        body["case_prompts"] = ["a", "b", "c"]
+        resp = client.post(
+            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
+            json=body,
+        )
+
+    assert resp.status_code == 200
+    cases = resp.json()["cases"]
+    assert [c["scenario_index"] for c in cases] == [0, 2]
 
 
 def test_generate_cases_case_prompts_length_mismatch_is_422(
@@ -335,28 +354,21 @@ def test_generate_cases_blank_case_prompt_is_422(
     assert resp.status_code == 422
 
 
-def test_generate_cases_case_prompt_failure_fails_whole_request(
+def test_generate_cases_scenario_batch_upstream_error_passes_through_typed(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
-    """A single per-case upstream failure surfaces as the typed error for the
-    whole request — no partial batch on the wire."""
+    """A scenario batch is one upstream call — its typed failure IS the
+    request's failure (no partial batch on the wire)."""
     patch_task_from_id.return_value = _multiturn_task()
-    calls = 0
-
-    async def flaky(**_kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            raise SyntheticUserServerError(
-                "llm_unavailable", "upstream timed out", status_code=502
-            )
-        return _sdk_cases(1)
-
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
     ) as MockClient:
         instance = MockClient.return_value
-        instance.generate = AsyncMock(side_effect=flaky)
+        instance.generate = AsyncMock(
+            side_effect=SyntheticUserServerError(
+                "llm_unavailable", "upstream timed out", status_code=502
+            )
+        )
 
         body = _generate_cases_body(num=3)
         body["case_prompts"] = ["a", "b", "c"]
@@ -369,48 +381,11 @@ def test_generate_cases_case_prompt_failure_fails_whole_request(
     assert resp.json()["message"]["code"] == "llm_unavailable"
 
 
-def test_generate_cases_case_prompt_failure_cancels_in_flight_siblings(
-    client: TestClient, patch_task_from_id, patch_api_key
-) -> None:
-    """One prompt failing must cancel the still-running sibling calls — they
-    would otherwise keep spending upstream LLM cost after the error response."""
-    patch_task_from_id.return_value = _multiturn_task()
-    sibling_cancelled = asyncio.Event()
-
-    async def generate(*, target_specification: str, **_kwargs):
-        if "scenario B" in target_specification:
-            raise SyntheticUserServerError(
-                "llm_unavailable", "upstream timed out", status_code=502
-            )
-        try:
-            await asyncio.sleep(60)  # long-running sibling; must get cancelled
-        except asyncio.CancelledError:
-            sibling_cancelled.set()
-            raise
-        return _sdk_cases(1)
-
-    with patch(
-        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
-    ) as MockClient:
-        instance = MockClient.return_value
-        instance.generate = AsyncMock(side_effect=generate)
-
-        body = _generate_cases_body(num=2)
-        body["case_prompts"] = ["scenario A", "scenario B"]
-        resp = client.post(
-            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-            json=body,
-        )
-
-    assert resp.status_code == 502
-    assert sibling_cancelled.is_set()
-
-
 def test_generate_cases_empty_upstream_case_list_is_typed_502(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
-    """Upstream 200 with zero cases must surface as a typed 502, not an
-    IndexError-driven raw 500."""
+    """Upstream promises >= 1 case or a 502; an empty 200 must surface as a
+    typed 502, not an empty batch the UI fails on later."""
     patch_task_from_id.return_value = _multiturn_task()
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"

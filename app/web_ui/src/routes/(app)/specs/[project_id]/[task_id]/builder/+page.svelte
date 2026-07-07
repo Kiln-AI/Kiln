@@ -23,6 +23,7 @@
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   import BatchPlanApproval from "./batch_plan_approval.svelte"
+  import type { RowStatusPill } from "../../../../generate/[project_id]/[task_id]/kiln_pro_prompts_table.svelte"
   import { multiturn_plan_guidance } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,
@@ -43,6 +44,7 @@
   import type { SuggestedEdit } from "../spec_utils"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
+  import { sse_data_payloads } from "$lib/utils/sse"
   import {
     build_default_judge_info,
     judge_config_from_sdg_step,
@@ -424,22 +426,9 @@
   // after review would ship a judge the review never calibrated.
   let reviewed_identity: string | null = null
 
-  // multi-turn output — chains populated from run_cases_batch SSE events.
-  type ChainTurn = { role: "user" | "assistant"; content: string }
-  type Chain = {
-    case_index: number
-    persona_summary: string
-    total_cost: number
-    trace: ChainTurn[]
-    // Durable id of the chain's leaf TaskRun (from case_completed) — the save
-    // path writes the golden rating onto this run.
-    leaf_run_id: string
-  }
   // Number of synthetic-user cases to drive in one multi-turn batch —
   // matches NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py.
   const NUM_CASES = 10
-  let multi_turn_chains: Chain[] = []
-  let multi_turn_progress = 0 // 0..N as cases complete
   // Batch plan for multi-turn Step 4 — one scenario prompt per conversation,
   // drafted by the copilot batch planner and approved (with edits/deletions)
   // by the user before any conversation is driven.
@@ -454,12 +443,12 @@
   // Approved plan length drives the batch size; NUM_CASES is the requested
   // plan size before any deletions.
   $: multi_turn_total = batch_plan?.prompts.length ?? NUM_CASES
-  // Total assistant turns streamed so far (one per turn_completed event),
-  // across all cases. Drives a smooth progress indicator: cases complete in
-  // concurrency-limited waves, so a case-only count sits still then jumps —
-  // counting turns instead makes steady progress visible while the backend
-  // works in parallel.
-  let multi_turn_turns_done = 0
+  // Total assistant turns streamed so far, across all cases — derived from
+  // the per-row counters so it can never drift from what the pills show.
+  // Drives a smooth progress indicator: cases complete in concurrency-limited
+  // waves, so a case-only count sits still then jumps; counting turns makes
+  // steady progress visible while the backend works in parallel.
+  $: multi_turn_turns_done = case_rows.reduce((n, r) => n + r.turns_done, 0)
   // Which loading stage Step 4 is in — drives the spinner title/caption only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
   // not a phase, so no code path can strand it behind a stale flag.
@@ -467,18 +456,84 @@
     | "idle"
     | "planning"
     | "generating_cases"
-    | "running_batch"
-    | "reviewing"
+    | "running_pipeline"
   let multi_turn_phase: MultiTurnPhase = "idle"
+  // While the pipeline runs, the plan table stays on screen as a live status
+  // board (per-row pills) instead of being replaced by a blob spinner.
+  $: pipeline_running =
+    generation_loading && multi_turn_phase === "running_pipeline"
   $: show_plan_approval =
     is_multi_turn &&
     batch_plan !== null &&
-    !generation_loading &&
+    (!generation_loading || pipeline_running) &&
     !generation_error
-  // batch_tag from run_cases_batch's BatchStartedEvent — passed to the
-  // save endpoint so the backend can tag the matching chains for the
-  // eval dataset.
+  // Live per-row pipeline status, indexed by PLAN ROW (scenario index) — the
+  // pipeline's case_index maps back through the generated case's
+  // scenario_index, so a salvaged (shorter) batch still lights the right rows.
+  type CaseRowStatus = {
+    state:
+      | "planned"
+      | "generating"
+      | "failed_generation"
+      | "queued"
+      | "driving"
+      | "judging"
+      | "reviewed"
+      | "failed"
+    turns_done: number
+    message: string | null
+  }
+  let case_rows: CaseRowStatus[] = []
+  function set_case_row(row: number, patch: Partial<CaseRowStatus>) {
+    if (row < 0 || row >= case_rows.length) return
+    case_rows = case_rows.map((r, i) => (i === row ? { ...r, ...patch } : r))
+  }
+  $: reviewed_case_count = case_rows.filter(
+    (r) => r.state === "reviewed",
+  ).length
+  // Presentation of case_rows for the plan table's Status column.
+  $: row_status_pills = case_rows.map((row): RowStatusPill => {
+    switch (row.state) {
+      case "planned":
+        return { label: "Planned", tone: "pending" }
+      case "generating":
+        return { label: "Generating", tone: "active" }
+      case "failed_generation":
+        return { label: "No case", tone: "error", title: row.message }
+      case "queued":
+        return { label: "Queued", tone: "pending" }
+      case "driving":
+        return {
+          label: `Driving ${row.turns_done}/${TURNS_PER_CASE}`,
+          tone: "active",
+        }
+      case "judging":
+        return { label: "Judging", tone: "active" }
+      case "reviewed":
+        return { label: "Reviewed", tone: "done" }
+      case "failed":
+        return { label: "Failed", tone: "error", title: row.message }
+    }
+  })
+  // batch_tag from the pipeline's batch_started event — passed to the save
+  // endpoint so the backend can tag the matching chains for the eval
+  // dataset.
   let multi_turn_batch_tag: string | null = null
+  // Every batch that put chains on disk and hasn't been cleaned up yet —
+  // aborted re-drives can strand several. The next drive passes ALL of them
+  // as replace_batch_tags so none is orphaned (delete-on-redrive).
+  let undeleted_batch_tags: string[] = []
+  // Cases actually driven this run (salvage can make it smaller than the
+  // plan) — the denominator for pipeline progress.
+  let pipeline_total_cases = 0
+  // Non-fatal outcome notice (e.g. some cases failed but survivors exist) —
+  // shown above the status table without hiding it, unlike generation_error.
+  let pipeline_warning: string | null = null
+  // The pills only mean something for THIS plan as driven — hide them once
+  // the user edits/deletes prompts after a drive (row alignment is gone).
+  $: row_statuses_current =
+    batch_plan !== null &&
+    driven_prompts_json === JSON.stringify(batch_plan.prompts)
   // Set when on_generate_multi_turn had to fall back to the first available
   // run config because the task has no default set — surfaced in the UI so
   // testers know which model the chains were generated against.
@@ -526,7 +581,7 @@
     }
   }
 
-  // ── Step 4 multi-turn — drives real run_cases_batch SSE.
+  // ── Step 4 multi-turn — one review_pipeline SSE stream.
   //
   // Sequence:
   //   1. POST copilot/batch_plan → one scenario prompt per conversation;
@@ -535,9 +590,10 @@
   //      drive loop. Multi-turn requires a KilnAgentRunConfig (the
   //      conversation needs an agent-shaped invoker).
   //   3. POST /multiturn_sdg/generate_cases with the approved prompts →
-  //      one synthetic-user case per prompt (seed prompt + persona blob).
-  //   4. POST /multiturn_sdg/run_cases_batch as SSE; consume the stream
-  //      and surface BatchEvent dispatch into component state.
+  //      ONE batch call, one synthetic-user case per prompt.
+  //   4. POST /eval_builder/review_pipeline as SSE; the server runs
+  //      [drive → judge → claims] per case and the PipelineEvent frames
+  //      drive the per-row status pills + the review results.
   //
   // SU driver model is hardcoded for MVP (see design.md) — claude_4_5_haiku
   // via openrouter. Exposing the choice in the UI is deferred.
@@ -547,42 +603,46 @@
   } as const
   const TURNS_PER_CASE = 5
 
-  type SseEvent =
+  // Events on the merged review-pipeline stream (one stream runs
+  // [drive → judge → claims] per case; see eval_builder_api.review_pipeline).
+  // All eval_builder frames share the `type` discriminator and the
+  // {code, message} error shape.
+  type PipelineEvent =
+    | { type: "batch_started"; batch_tag: string; total_cases: number }
     | {
-        event: "batch_started"
-        batch_tag: string
-        num_cases: number
-      }
-    | {
-        event: "turn_completed"
+        type: "turn_completed"
         case_index: number
-        assistant_run_id: string
-        su_next_message: string
-        cumulative_cost: number
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        trace: any[]
-      }
-    | {
-        event: "case_completed"
-        case_index: number
-        chain_run_ids: string[]
-        leaf_run_id: string
+        turns_completed: number
         total_turns: number
+      }
+    | { type: "case_driven"; case_index: number; leaf_run_id: string }
+    | {
+        type: "case_reviewed"
+        case_index: number
+        leaf_run_id: string
+        raw_input: string
+        raw_output: string
+        judge_score: TraceClaims["judge_score"]
+        judge_reasoning: string
+        claims: TraceClaims["claims"]
+        final_judgement: TraceClaims["final_judgement"]
         total_cost: number
       }
     | {
-        event: "case_failed"
+        type: "case_failed"
         case_index: number
-        error_code: string
+        stage: "drive" | "judge" | "claims"
+        code: string
         message: string
       }
     | {
-        event: "batch_completed"
-        successful: number
+        type: "batch_completed"
+        reviewed: number
         failed: number
         batch_tag: string
         total_cost: number
       }
+    | { type: "batch_failed"; code: string; message: string }
 
   // THE spec text — the single source every consumer reads (batch planning,
   // synthetic-user generation, the default judge prompt, and the saved Spec),
@@ -605,10 +665,12 @@
     generation_error = null
     batch_plan = null
     batch_plan_edited = false
-    multi_turn_chains = []
-    multi_turn_progress = 0
-    multi_turn_turns_done = 0
-    multi_turn_batch_tag = null
+    case_rows = []
+    pipeline_warning = null
+    // Deliberately NOT clearing multi_turn_batch_tag (save still needs it)
+    // or undeleted_batch_tags: the next drive passes the cleanup list as
+    // replace_batch_tags, and the server deletes those batches once the new
+    // drive has produced replacement chains.
     // Claims belong to the discarded plan's conversations — clear them so
     // browser Forward can't re-enter review over stale results.
     trace_claims = []
@@ -658,6 +720,8 @@
       prompts: batch_plan.prompts.filter((_, i) => i !== index),
     }
     batch_plan_edited = true
+    // The last run's outcome no longer describes this plan.
+    pipeline_warning = null
   }
 
   function on_edit_plan_prompt(index: number, value: string) {
@@ -667,27 +731,36 @@
       prompts: batch_plan.prompts.map((p, i) => (i === index ? value : p)),
     }
     batch_plan_edited = true
+    pipeline_warning = null
   }
 
-  // Step 4 (multi-turn) part 2 — drive from the approved plan. Each approved
-  // scenario prompt becomes one synthetic-user case (case i ← prompt i via
-  // generate_cases' case_prompts), then run_cases_batch drives one
-  // conversation per case.
+  // Step 4 (multi-turn) part 2 — drive from the approved plan. The approved
+  // prompts become synthetic-user cases in ONE batch call (case i ← prompt i
+  // via generate_cases' case_prompts), then a single review_pipeline stream
+  // runs [drive → judge → claims] per case — each case flows through
+  // independently, so the plan rows light up as their case progresses.
   async function on_drive_multi_turn() {
     if (!batch_plan || batch_plan.prompts.length === 0) {
       generation_error = "No approved plan — plan the batch first."
       return
     }
     const approved_prompts = batch_plan.prompts
+    // Every undeleted previous batch is superseded — the pipeline deletes
+    // their chains once this drive has produced replacements.
+    const previous_batch_tag = multi_turn_batch_tag
+    const tags_to_replace = [...undeleted_batch_tags]
     generation_loading = true
     generation_error = null
-    multi_turn_progress = 0
-    multi_turn_turns_done = 0
-    multi_turn_chains = []
-    multi_turn_batch_tag = null
+    pipeline_warning = null
     trace_claims = []
     trace_reviews = []
     driven_prompts_json = JSON.stringify(approved_prompts)
+    pipeline_total_cases = approved_prompts.length
+    case_rows = approved_prompts.map(() => ({
+      state: "generating" as const,
+      turns_done: 0,
+      message: null,
+    }))
     multi_turn_phase = "generating_cases"
 
     try {
@@ -728,8 +801,10 @@
         prompt_id: rcp.prompt_id ?? "simple_prompt_builder",
       }
 
-      // 2. Generate synthetic-user cases via copilot — one per approved
-      // scenario prompt, so the driven batch is exactly the approved plan.
+      // 2. Generate synthetic-user cases via copilot — ONE batch call, one
+      // case per approved scenario prompt. Under the upstream salvage
+      // contract a flaky case is dropped instead of failing the batch;
+      // scenario_index maps each survivor back to its plan row.
       multi_turn_phase = "generating_cases"
       const cases_resp = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
@@ -747,12 +822,36 @@
         generation_error = "Failed to generate synthetic-user cases."
         return
       }
+      const cases = cases_resp.data.cases as {
+        seed_prompt: string
+        synthetic_user_info: string
+        scenario_index?: number | null
+      }[]
+      // Pipeline case_index (position in `cases`) → plan row.
+      const row_of_case = cases.map((c, i) => c.scenario_index ?? i)
+      pipeline_total_cases = cases.length
+      case_rows = approved_prompts.map((_, row) => ({
+        state: row_of_case.includes(row)
+          ? ("queued" as const)
+          : ("failed_generation" as const),
+        turns_done: 0,
+        message: row_of_case.includes(row)
+          ? null
+          : "The synthetic-user generator produced no usable case for this scenario.",
+      }))
 
-      // 3. Stream run_cases_batch. The endpoint is POST so we can't use
-      // EventSource (which is GET-only). Manual fetch + ReadableStream +
-      // SSE line parsing — same pattern as streaming_chat.ts.
-      multi_turn_phase = "running_batch"
-      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/multiturn_sdg/run_cases_batch`
+      // 3. The review, in the ONE JudgeConfig shape used by review and save
+      // alike — remember the judge and identity BEFORE the pipeline runs so
+      // save can verify nothing changed under the results.
+      const judge = judge_info ?? build_default_judge_info(spec_text())
+      review_judge = judge
+      reviewed_identity = JSON.stringify({ name, spec: spec_text() })
+
+      // 4. One SSE stream runs the whole pipeline: [drive → judge → claims]
+      // per case. POST endpoint, so fetch + shared SSE reader (EventSource
+      // is GET-only).
+      multi_turn_phase = "running_pipeline"
+      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_pipeline`
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -760,10 +859,13 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          cases: cases_resp.data.cases,
+          cases,
           turns: TURNS_PER_CASE,
           target_run_config,
           su_driver: SU_DRIVER_DEFAULT,
+          replace_batch_tags: tags_to_replace,
+          spec_name: name,
+          judge,
         }),
         signal: new_copilot_abort_signal(),
       })
@@ -776,112 +878,147 @@
         } catch {
           detail = await response.text().catch(() => "unknown")
         }
-        generation_error = `run_cases_batch failed (${response.status}): ${detail}`
+        generation_error = `review_pipeline failed (${response.status}): ${detail}`
         return
       }
 
-      // Per-case cumulative trace from turn_completed events. The leaf's
-      // trace at case_completed time is what we render on the review cards.
-      const traces_by_case: Record<number, ChainTurn[]> = {}
+      // Fill by case_index as case_reviewed events arrive (cases complete
+      // out of order); compacted into trace_claims at batch end.
+      const built: (TraceClaims | null)[] = new Array(cases.length).fill(null)
+      let any_case_driven = false
+      let failed_case_count = 0
       const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-
-      stream_loop: while (true) {
-        const { done, value } = await reader.read()
-        if (done) break stream_loop
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue
-          const payload = line.slice(6).trim()
-          if (!payload) continue
-          let event: SseEvent
-          try {
-            event = JSON.parse(payload) as SseEvent
-          } catch {
-            continue
-          }
-
-          if (event.event === "batch_started") {
-            multi_turn_batch_tag = event.batch_tag
-          } else if (event.event === "turn_completed") {
-            // event.trace is OpenAI-format messages; project to ChainTurn.
-            const turns: ChainTurn[] = (event.trace ?? [])
-              .map((msg) => ({
-                role: msg.role as ChainTurn["role"],
-                content:
-                  typeof msg.content === "string"
-                    ? msg.content
-                    : JSON.stringify(msg.content),
-              }))
-              .filter(
-                (t: ChainTurn) => t.role === "user" || t.role === "assistant",
-              )
-            traces_by_case[event.case_index] = turns
-            // One turn_completed == one assistant turn finished, across all
-            // cases — drives the smooth progress indicator.
-            multi_turn_turns_done += 1
-          } else if (event.event === "case_completed") {
-            multi_turn_chains = [
-              ...multi_turn_chains,
-              {
-                case_index: event.case_index,
-                persona_summary: `Case ${event.case_index + 1}`,
-                total_cost: event.total_cost ?? 0,
-                trace: traces_by_case[event.case_index] ?? [],
-                leaf_run_id: event.leaf_run_id,
-              },
-            ]
-            multi_turn_progress = multi_turn_chains.length
-          } else if (event.event === "case_failed") {
-            console.warn(
-              `SU case ${event.case_index} failed: ${event.error_code} ${event.message}`,
-            )
-          } else if (event.event === "batch_completed") {
-            break stream_loop
-          }
+      stream_loop: for await (const payload of sse_data_payloads(reader)) {
+        if (payload === "complete") break
+        let event: PipelineEvent
+        try {
+          event = JSON.parse(payload) as PipelineEvent
+        } catch {
+          continue
         }
+
+        if (event.type === "batch_started") {
+          multi_turn_batch_tag = event.batch_tag
+        } else if (event.type === "turn_completed") {
+          set_case_row(row_of_case[event.case_index], {
+            state: "driving",
+            turns_done: event.turns_completed,
+          })
+        } else if (event.type === "case_driven") {
+          any_case_driven = true
+          // Chains exist on disk under this batch's tag from here on —
+          // record it immediately so an abort can't orphan the batch.
+          if (
+            multi_turn_batch_tag &&
+            !undeleted_batch_tags.includes(multi_turn_batch_tag)
+          ) {
+            undeleted_batch_tags = [
+              ...undeleted_batch_tags,
+              multi_turn_batch_tag,
+            ]
+          }
+          set_case_row(row_of_case[event.case_index], { state: "judging" })
+        } else if (event.type === "case_reviewed") {
+          built[event.case_index] = {
+            trace_id: `case_${event.case_index}`,
+            leaf_run_id: event.leaf_run_id || null,
+            raw_input: event.raw_input,
+            raw_output: event.raw_output,
+            judge_score: event.judge_score,
+            judge_reasoning: event.judge_reasoning,
+            claims: event.claims ?? [],
+            final_judgement: event.final_judgement,
+          }
+          set_case_row(row_of_case[event.case_index], { state: "reviewed" })
+        } else if (event.type === "case_failed") {
+          failed_case_count += 1
+          set_case_row(row_of_case[event.case_index], {
+            state: "failed",
+            message: `${event.stage}: ${event.message}`,
+          })
+          posthog.capture("eval_v2_pipeline_case_failed", {
+            stage: event.stage,
+            code: event.code,
+          })
+        } else if (event.type === "batch_failed") {
+          posthog.capture("eval_v2_pipeline_batch_failed", {
+            code: event.code,
+          })
+          generation_error = `The pipeline failed: ${event.message}`
+          break stream_loop
+        }
+        // batch_completed carries totals the rows already reflect; the
+        // `complete` terminator ends the loop.
+      }
+      if (any_case_driven) {
+        // The server deleted the superseded batches once replacements
+        // existed — drop them from the cleanup list.
+        undeleted_batch_tags = undeleted_batch_tags.filter(
+          (t) => !tags_to_replace.includes(t),
+        )
+      } else {
+        // Nothing was driven: no replacement chains, no deletions — keep
+        // pointing at the previous batch so save/cleanup still work.
+        multi_turn_batch_tag = previous_batch_tag
       }
 
-      if (multi_turn_chains.length === 0) {
+      // Compact survivors BEFORE any error/warning path: completed reviews
+      // are paid results and must never be discarded by a late failure.
+      const complete = built.filter((t): t is TraceClaims => t !== null)
+      if (complete.length > 0) {
+        trace_claims = complete
+        trace_reviews = build_trace_reviews(complete)
+      }
+      if (generation_error) return
+      if (complete.length === 0) {
         generation_error =
-          "All synthetic-user cases failed — check task and SU driver model availability."
+          "All conversations failed — check task and model availability, then retry."
         return
       }
-
-      // The drive is done but the judge + claim builder still run per trace —
-      // surface that instead of sitting on a full progress bar.
-      multi_turn_phase = "reviewing"
-      await build_claims_for_review()
-      if (claims_error) {
-        generation_error = claims_error
+      const dropped = approved_prompts.length - complete.length
+      if (failed_case_count > 0 || dropped > 0) {
+        // Don't yank the user into a review of a silently smaller sample —
+        // stay on the status board and let them choose: review the
+        // survivors (Continue button) or re-drive.
+        pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
         return
       }
-      // Empty with no error = the user aborted (browser Back) — respect the
-      // navigation instead of yanking them onto an empty review.
-      if (trace_claims.length === 0) return
       // PUSH review (single-turn replaces): Back must return to the plan.
       goto_step("review")
     } catch (e) {
-      if (is_abort_error(e)) return
+      if (is_abort_error(e)) {
+        // The run is gone; its live pills would otherwise animate forever.
+        case_rows = []
+        return
+      }
       generation_error =
         e instanceof Error ? e.message : "Multi-turn generation failed."
     } finally {
       generation_loading = false
+      // Any row still showing an in-flight state after the stream ended
+      // never finished — freeze it as failed so the board can't imply a
+      // run that isn't happening.
+      case_rows = case_rows.map((r) =>
+        r.state === "generating" ||
+        r.state === "queued" ||
+        r.state === "driving" ||
+        r.state === "judging"
+          ? {
+              ...r,
+              state: "failed" as const,
+              message: "The run ended before this conversation completed.",
+            }
+          : r,
+      )
     }
   }
 
   function on_continue_from_generate_step() {
     if (is_multi_turn) {
-      // No plan → plan. Chains driven but claims missing (judge/claims
-      // failed or was aborted) → retry just that cheap stage, never the
-      // whole drive. Otherwise → (re)drive the approved plan.
+      // No plan → plan; otherwise (re)drive the approved plan. A re-drive
+      // passes the previous batch_tag so its chains are deleted server-side.
       if (batch_plan === null) {
         on_plan_multi_turn()
-      } else if (multi_turn_chains.length > 0 && trace_claims.length === 0) {
-        continue_to_review()
       } else {
         on_drive_multi_turn()
       }
@@ -917,39 +1054,16 @@
   let claims_error: string | null = null
   $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
 
-  // The traces to review, in the review request's shape. Multi-turn sends
-  // ONLY the structured trace — the studio renders the canonical transcript
-  // (the same rendering the judge template uses) and echoes it back on each
-  // trace_reviewed event, so the UI never fabricates its own flattening.
-  // Single-turn sends the raw I/O pair.
-  function current_trace_ios(): {
-    raw_input?: string
-    raw_output?: string
-    trace?: ChainTurn[]
-    leaf_run_id?: string
-  }[] {
-    if (is_multi_turn) {
-      return multi_turn_chains.map((c) => ({
-        trace: c.trace,
-        leaf_run_id: c.leaf_run_id,
-      }))
-    }
-    return single_turn_examples.map((e) => ({
-      raw_input: e.input,
-      raw_output: e.output,
-    }))
-  }
-
-  // SSE events from the eval_builder review_traces endpoint. The judge runs
-  // server-side (local, in-app) via the Eval V2 llm_judge adapter; the claim
-  // step calls the remote claim builder. We only consume these shapes.
+  // SSE events from the eval_builder review_traces endpoint (single-turn).
+  // The judge runs server-side (local, in-app) via the Eval V2 llm_judge
+  // adapter; the claim step calls the remote claim builder.
   type ReviewTraceEvent =
     | { type: "batch_started"; total: number }
     | {
         type: "trace_reviewed"
         trace_index: number
-        // The exact text the claim builder saw (multi-turn: the canonical
-        // transcript) — the UI displays and resolves citations against these.
+        // The exact text the claim builder saw — the UI displays and
+        // resolves citations against these.
         raw_input: string
         raw_output: string
         judge_score: TraceClaims["judge_score"]
@@ -957,19 +1071,27 @@
         claims: TraceClaims["claims"]
         final_judgement: TraceClaims["final_judgement"]
       }
-    | { type: "trace_error"; trace_index: number; error: string }
+    | {
+        type: "trace_error"
+        trace_index: number
+        code: string
+        message: string
+      }
 
-  // Build claims for every generated trace via the studio-side review pipeline:
-  // ONE call to review_traces, which fans out [judge → claim builder] per trace
-  // (server-side, concurrency-capped) and streams a result per trace back.
-  // Manual fetch + ReadableStream + SSE parsing — same pattern as run_cases_batch.
+  // Build claims for every SINGLE-TURN example via review_traces, which fans
+  // out [judge → claim builder] per trace (server-side, concurrency-capped)
+  // and streams a result per trace back. Multi-turn never comes here — its
+  // claims arrive on the merged review_pipeline stream during the drive.
   async function build_claims_for_review() {
     claims_loading = true
     claims_error = null
-    const ios = current_trace_ios()
-    // judge_info comes from clarify_spec (single-turn). Multi-turn has none,
-    // so fall back to the shared default. Either way, remember the judge the
-    // review ran — save persists that exact object.
+    const ios = single_turn_examples.map((e) => ({
+      raw_input: e.input,
+      raw_output: e.output,
+    }))
+    // judge_info comes from clarify_spec; fall back to the shared default.
+    // Either way, remember the judge the review ran — save persists that
+    // exact object.
     const judge = judge_info ?? build_default_judge_info(spec_text())
     review_judge = judge
     reviewed_identity = JSON.stringify({ name, spec: spec_text() })
@@ -999,39 +1121,28 @@
       }
 
       const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue
-          const payload = line.slice(6).trim()
-          if (!payload || payload === "complete") continue
-          let event: ReviewTraceEvent
-          try {
-            event = JSON.parse(payload) as ReviewTraceEvent
-          } catch {
-            continue
+      for await (const payload of sse_data_payloads(reader)) {
+        if (payload === "complete") continue
+        let event: ReviewTraceEvent
+        try {
+          event = JSON.parse(payload) as ReviewTraceEvent
+        } catch {
+          continue
+        }
+        if (event.type === "trace_reviewed") {
+          built[event.trace_index] = {
+            trace_id: `trace_${event.trace_index}`,
+            leaf_run_id: null,
+            raw_input: event.raw_input,
+            raw_output: event.raw_output,
+            judge_score: event.judge_score,
+            judge_reasoning: event.judge_reasoning,
+            claims: event.claims ?? [],
+            final_judgement: event.final_judgement,
           }
-          if (event.type === "trace_reviewed") {
-            const io = ios[event.trace_index]
-            built[event.trace_index] = {
-              trace_id: `trace_${event.trace_index}`,
-              leaf_run_id: io.leaf_run_id ?? null,
-              raw_input: event.raw_input,
-              raw_output: event.raw_output,
-              judge_score: event.judge_score,
-              judge_reasoning: event.judge_reasoning,
-              claims: event.claims ?? [],
-              final_judgement: event.final_judgement,
-            }
-          } else if (event.type === "trace_error") {
-            claims_error = `Failed to build claims for a trace: ${event.error}`
-          }
+        } else if (event.type === "trace_error") {
+          posthog.capture("eval_v2_review_trace_error", { code: event.code })
+          claims_error = `Failed to build claims for a trace: ${event.message}`
         }
       }
 
@@ -1047,20 +1158,32 @@
     }
   }
 
-  // Generation → review: build claims (unless already built) then advance.
+  // Generation → review: advance to existing results, rebuilding when stale.
   // Pushes (not replaces) so Back from review returns here — this path is
   // only reachable when Step 4 has real content to come back to.
   async function continue_to_review() {
     // Results reviewed under an old name/spec text are stale — the judge
-    // identity changed, so re-run the review rather than presenting them.
-    if (
+    // identity changed, so the review must be re-run, not presented.
+    const stale =
       trace_claims.length > 0 &&
       reviewed_identity !== JSON.stringify({ name, spec: spec_text() })
-    ) {
+    if (stale) {
       trace_claims = []
       trace_reviews = []
+      if (is_multi_turn) {
+        // Multi-turn results come from the merged pipeline (judge rides the
+        // drive), so a stale review means re-driving the plan.
+        generation_error =
+          "The eval's name or description changed since the review — drive the conversations again."
+        return
+      }
     }
     if (trace_claims.length === 0) {
+      if (is_multi_turn) {
+        // Nothing to show (a Back aborted the pipeline) — re-drive.
+        on_drive_multi_turn()
+        return
+      }
       await build_claims_for_review()
       if (claims_error) return
       // Still empty with no error = aborted mid-build — stay put.
@@ -1160,7 +1283,7 @@
         }
         posthog.capture("eval_v2_save_success", {
           is_multi_turn: true,
-          num_cases: multi_turn_chains.length,
+          num_cases: trace_claims.length,
         })
         const saved = data as { id?: string }
         if (saved.id) {
@@ -1346,20 +1469,20 @@
 
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
-  // climbs steadily where the case count would sit still then jump).
-  $: multi_turn_total_turns = multi_turn_total * TURNS_PER_CASE
+  // climbs steadily where the case count would sit still then jump). Uses
+  // the DRIVEN case count: salvage can drive fewer cases than the plan has.
+  $: multi_turn_total_turns = pipeline_total_cases * TURNS_PER_CASE
 
-  // Step 4 animation caption. Multi-turn shows turn-level progress while the
-  // batch runs (smooth), then how many full conversations are ready.
+  // Step 4 animation caption for the pre-pipeline loading phases (once the
+  // pipeline streams, the plan table itself is the live status view).
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "planning"
       ? `Planning a balanced batch of ${NUM_CASES} conversation scenarios…`
-      : multi_turn_phase === "generating_cases"
-        ? `Generating ${multi_turn_total} synthetic-user cases from the approved plan…`
-        : multi_turn_phase === "reviewing"
-          ? `Judging ${multi_turn_chains.length} conversations and distilling claims for review…`
-          : `Driving ${multi_turn_total} conversations — ${multi_turn_turns_done} of ${multi_turn_total_turns} turns (${multi_turn_progress} ready).`
+      : `Generating ${multi_turn_total} synthetic-user cases from the approved plan…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
+
+  // Header line above the live status table while the pipeline runs.
+  $: pipeline_status_description = `Driving, judging, and distilling ${pipeline_total_cases} conversations — ${multi_turn_turns_done} of ${multi_turn_total_turns} turns driven, ${reviewed_case_count} reviewed.`
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
   // the save copy differs from single-turn's generate-then-save.
@@ -1560,29 +1683,31 @@
               warning_message={`Using run config ${multi_turn_fallback_run_config_name} — set a default in task settings to silence this notice.`}
             />
           {/if}
-          {#if generation_loading}
+          {#if generation_loading && !pipeline_running}
             <AnalyzingAnimation
               title={is_multi_turn
                 ? multi_turn_phase === "planning"
                   ? "Planning Conversations"
-                  : multi_turn_phase === "reviewing"
-                    ? "Reviewing Conversations"
-                    : "Generating Conversations"
+                  : "Generating Conversations"
                 : "Analyzing Eval"}
               description={generate_animation_description}
               warning={is_multi_turn ? null : "This may take a while"}
             />
-            {#if is_multi_turn && multi_turn_phase === "running_batch"}
-              <!-- Turn-level bar: fills steadily as turns stream in, so the
-                   parallel-but-wavy case completions don't read as stalled. -->
-              <div class="max-w-md mx-auto mt-4">
-                <progress
-                  class="progress progress-primary w-full"
-                  value={multi_turn_turns_done}
-                  max={multi_turn_total_turns}
-                ></progress>
+          {/if}
+          {#if pipeline_running}
+            <!-- The plan table below is the live status board; a turn-level
+                 bar on top fills steadily as turns stream in, so the
+                 parallel-but-wavy case completions don't read as stalled. -->
+            <div class="mb-4">
+              <div class="text-sm text-gray-500 mb-2">
+                {pipeline_status_description}
               </div>
-            {/if}
+              <progress
+                class="progress progress-primary w-full max-w-md"
+                value={multi_turn_turns_done}
+                max={multi_turn_total_turns}
+              ></progress>
+            </div>
           {/if}
 
           {#if generation_error}
@@ -1610,16 +1735,31 @@
           {/if}
 
           {#if show_plan_approval && batch_plan}
+            {#if pipeline_warning && !pipeline_running}
+              <div class="mb-4">
+                <Warning
+                  warning_color="warning"
+                  warning_message={pipeline_warning}
+                />
+              </div>
+            {/if}
             <!-- Plan approval: the batch runs only after the user approves
-                 (optionally edited) scenario prompts. -->
+                 (optionally edited) scenario prompts. While the pipeline
+                 runs, the same table stays up read-only with live per-row
+                 status pills (Planned → Driving n/T → Judging → Reviewed). -->
             <BatchPlanApproval
               plan={batch_plan}
               summary_out_of_sync={batch_plan_edited}
+              running={pipeline_running}
+              row_statuses={pipeline_running ||
+              (case_rows.length > 0 && row_statuses_current)
+                ? row_status_pills
+                : null}
               on_approve={on_drive_multi_turn}
               on_regenerate={on_plan_multi_turn}
               on_delete_prompt={on_delete_plan_prompt}
               on_edit_prompt={on_edit_plan_prompt}
-              on_continue={multi_turn_chains.length > 0 &&
+              on_continue={trace_claims.length > 0 &&
               driven_prompts_json === JSON.stringify(batch_plan.prompts)
                 ? continue_to_review
                 : null}
@@ -1627,7 +1767,7 @@
             />
           {:else if !generation_loading && !generation_error}
             <div class="flex justify-end mt-8">
-              {#if single_turn_examples.length > 0 || multi_turn_chains.length > 0}
+              {#if single_turn_examples.length > 0 || trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
                      continue to the existing results instead of re-running,
                      matching the browser Forward path. -->
@@ -1660,6 +1800,19 @@
             />
           {:else if claims_error}
             <Warning warning_color="error" warning_message={claims_error} />
+          {:else if trace_claims.length === 0}
+            <!-- Browser Forward can land here after results were cleared
+                 (plan regenerated / drive restarted) — offer the way back
+                 instead of an empty review. -->
+            <Warning
+              warning_color="warning"
+              warning_message="There are no reviewed conversations — generate them first."
+            />
+            <div class="text-center py-4">
+              <button class="btn btn-primary" on:click={() => history.back()}>
+                ← Back
+              </button>
+            </div>
           {:else}
             <ClaimEvidenceReview
               traces={trace_claims}

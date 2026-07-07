@@ -7,62 +7,45 @@ maps between these UI-facing models and the SDK internally. No SDK types leak
 to the UI.
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.json_schema import string_to_json_key
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing_extensions import Self
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # The binary verdict vocabulary, shared by every judge_score/expected_result
 # field on this API surface (mirrors the server contract's enum).
 JudgeScoreLiteral = Literal["pass", "fail"]
 
 
-class TraceInput(BaseModel):
-    """One generated trace to review (single- or multi-turn).
+def spec_name_must_have_a_json_key(value: str) -> str:
+    """Shared spec_name rule for every review request: the judge's score key
+    is derived from the name, so a name with no [a-z0-9_] characters would
+    produce an empty key and fail every trace deep inside the judge — reject
+    it up front instead.
+    """
+    if not string_to_json_key(value):
+        raise ValueError(
+            "spec_name must contain at least one letter or digit usable in a score key."
+        )
+    return value
 
-    Exactly one source shape per trace: single-turn sends the raw I/O pair;
-    multi-turn sends the structured message list and the studio derives the
-    canonical transcript from it server-side — the UI never fabricates a
-    flattened rendering, so the text the claim builder cites is authoritative
-    (it's echoed back on the trace_reviewed event).
+
+class TraceInput(BaseModel):
+    """One single-turn example to review: the task's raw I/O pair.
+
+    Multi-turn conversations never ride this request — they are driven,
+    judged, and distilled server-side by the review pipeline, which reads
+    the runner's real trace directly. Structured traces therefore have no
+    wire shape here at all.
     """
 
-    raw_input: str | None = Field(
-        default=None,
-        description="Single-turn: the task's raw input. Omitted for "
-        "multi-turn traces (derived from the trace's first user message).",
-    )
-    raw_output: str | None = Field(
-        default=None,
-        description="Single-turn: the task's raw output. Omitted for "
-        "multi-turn traces (the canonical transcript is rendered from trace).",
-    )
-    trace: list[dict[str, Any]] | None = Field(
-        default=None,
-        min_length=1,
-        description="Structured message list ({role, content}, chronological) "
-        "for multi-turn traces: the judge scores it directly and the claim "
-        "builder receives its canonical rendering. Kept as loose dicts — "
-        "message shapes (tool calls etc.) will churn.",
-    )
+    raw_input: str = Field(description="The task's raw input.")
+    raw_output: str = Field(description="The task's raw output.")
 
-    @model_validator(mode="after")
-    def validate_one_source_shape(self) -> Self:
-        has_io = self.raw_input is not None and self.raw_output is not None
-        if self.trace is None and not has_io:
-            raise ValueError(
-                "Provide raw_input + raw_output (single-turn) or trace (multi-turn)."
-            )
-        if self.trace is not None and (
-            self.raw_input is not None or self.raw_output is not None
-        ):
-            raise ValueError(
-                "Multi-turn traces send only `trace` — raw_input/raw_output are "
-                "derived server-side so the rendering is canonical."
-            )
-        return self
+    # forbid: a client still sending the retired multi-turn `trace` key must
+    # fail loudly here, not have its trace silently dropped.
+    model_config = ConfigDict(extra="forbid")
 
 
 class JudgeConfig(BaseModel):
@@ -87,7 +70,7 @@ class ReviewTracesRequest(BaseModel):
     the verdict was really produced under.
     """
 
-    traces: list[TraceInput]
+    traces: list[TraceInput] = Field(min_length=1, max_length=50)
     spec_name: FilenameStringShort = Field(
         description="The spec's name. The review judge scores under the same "
         "output-score identity the saved eval will use, so the prompt the "
@@ -95,18 +78,9 @@ class ReviewTracesRequest(BaseModel):
     )
     judge: JudgeConfig
 
-    @field_validator("spec_name")
-    @classmethod
-    def spec_name_must_have_a_json_key(cls, value: str) -> str:
-        # The score's JSON-schema key is derived from the name; a name with no
-        # [a-z0-9_] characters would produce an empty key and fail every trace
-        # deep inside the judge — reject it up front instead.
-        if not string_to_json_key(value):
-            raise ValueError(
-                "spec_name must contain at least one letter or digit usable "
-                "in a score key."
-            )
-        return value
+    _spec_name_has_json_key = field_validator("spec_name")(
+        spec_name_must_have_a_json_key
+    )
 
 
 class CitationApi(BaseModel):
@@ -174,14 +148,17 @@ class BuildClaimsApiOutput(BaseModel):
     final_judgement: FinalJudgementApi
 
 
-# ── SSE event payloads (serialized to JSON in the review_traces stream) ──────
+# ── SSE event payloads ────────────────────────────────────────────────────
+#
+# ONE frame contract across every eval_builder stream: each frame is a JSON
+# object under a `data:` line, discriminated by `type`; error-class frames
+# carry {code, message}; the stream terminator is the bare `data: complete`.
 
 
 class TraceReviewedEvent(BaseModel):
-    """Emitted once per trace as its judge+claims complete.
+    """Emitted once per trace as its judge+claims complete (single-turn).
 
-    raw_input/raw_output echo the exact text the claim builder saw (for
-    multi-turn, the canonical transcript rendered server-side) — the UI
+    raw_input/raw_output echo the exact text the claim builder saw — the UI
     displays and resolves citations against these, never its own rendering.
     """
 
@@ -200,4 +177,79 @@ class TraceErrorEvent(BaseModel):
 
     type: Literal["trace_error"] = "trace_error"
     trace_index: int
-    error: str
+    code: str
+    message: str
+
+
+# ── Review-pipeline SSE events (the merged multi-turn stream) ─────────────
+#
+# One stream runs [drive → judge → claims] per case; each case flows through
+# independently, so events from different cases interleave. Ordering WITHIN
+# a case: turn_completed* → case_driven → (case_reviewed | case_failed), or
+# case_failed at any earlier point. A failed case never discards other
+# cases' results.
+
+
+class PipelineBatchStartedEvent(BaseModel):
+    """First frame: the resolved batch tag and how many cases will run."""
+
+    type: Literal["batch_started"] = "batch_started"
+    batch_tag: str
+    total_cases: int
+
+
+class PipelineTurnCompletedEvent(BaseModel):
+    """One assistant turn finished for a case (drives per-row progress)."""
+
+    type: Literal["turn_completed"] = "turn_completed"
+    case_index: int
+    turns_completed: int
+    total_turns: int
+
+
+class PipelineCaseDrivenEvent(BaseModel):
+    """A case's conversation finished driving; its judge+claims stage begins."""
+
+    type: Literal["case_driven"] = "case_driven"
+    case_index: int
+    leaf_run_id: str
+
+
+class PipelineCaseReviewedEvent(BaseModel):
+    """A case completed the full [drive → judge → claims] pipeline.
+
+    raw_input/raw_output are the canonical transcript rendering of the
+    runner's REAL trace (tool calls and system turns included) — the same
+    text the judge and claim builder saw, so citations resolve against it.
+    """
+
+    type: Literal["case_reviewed"] = "case_reviewed"
+    case_index: int
+    leaf_run_id: str
+    raw_input: str
+    raw_output: str
+    judge_score: JudgeScoreLiteral
+    judge_reasoning: str
+    claims: list[ClaimApi]
+    final_judgement: FinalJudgementApi
+    total_cost: float
+
+
+class PipelineCaseFailedEvent(BaseModel):
+    """A case died at some stage; the batch continues without it."""
+
+    type: Literal["case_failed"] = "case_failed"
+    case_index: int
+    stage: Literal["drive", "judge", "claims"]
+    code: str
+    message: str
+
+
+class PipelineBatchCompletedEvent(BaseModel):
+    """Last frame before the terminator: per-batch outcome counts."""
+
+    type: Literal["batch_completed"] = "batch_completed"
+    reviewed: int
+    failed: int
+    batch_tag: str
+    total_cost: float

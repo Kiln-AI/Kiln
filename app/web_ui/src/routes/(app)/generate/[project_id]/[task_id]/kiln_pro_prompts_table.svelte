@@ -1,3 +1,13 @@
+<script lang="ts" context="module">
+  // Per-row Status pill. `tone` maps to a dot colour; `title` surfaces
+  // detail (e.g. a failure message) on hover.
+  export type RowStatusPill = {
+    label: string
+    tone: "pending" | "active" | "done" | "error"
+    title?: string | null
+  }
+</script>
+
 <script lang="ts">
   import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
   import EditIcon from "$lib/ui/icons/edit_icon.svelte"
@@ -14,6 +24,16 @@
   // user-facing noun (the eval builder plans one synthetic user per row).
   export let item_label = "prompts"
   export let item_label_singular = "Prompt"
+  // Live per-row status (index-aligned with prompts). When null every row
+  // shows the static "Planned" pill.
+  export let row_statuses: RowStatusPill[] | null = null
+
+  const status_dot_class: Record<RowStatusPill["tone"], string> = {
+    pending: "bg-gray-400",
+    active: "bg-primary animate-pulse",
+    done: "bg-success",
+    error: "bg-error",
+  }
 
   let show_prompts = start_expanded
 
@@ -101,12 +121,26 @@
             <td class="text-gray-500 align-top">{pad(start + i + 1)}</td>
             <td class="whitespace-normal align-top">{prompt}</td>
             <td class="align-top">
-              <span
-                class="inline-flex items-center gap-1.5 text-xs text-gray-500"
-              >
-                <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                Planned
-              </span>
+              {#if row_statuses && row_statuses[start + i]}
+                <span
+                  class="inline-flex items-center gap-1.5 text-xs text-gray-500"
+                  title={row_statuses[start + i].title ?? null}
+                >
+                  <span
+                    class="w-1.5 h-1.5 rounded-full {status_dot_class[
+                      row_statuses[start + i].tone
+                    ]}"
+                  ></span>
+                  {row_statuses[start + i].label}
+                </span>
+              {:else}
+                <span
+                  class="inline-flex items-center gap-1.5 text-xs text-gray-500"
+                >
+                  <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                  Planned
+                </span>
+              {/if}
             </td>
             {#if on_edit || on_delete}
               <td class="align-top">

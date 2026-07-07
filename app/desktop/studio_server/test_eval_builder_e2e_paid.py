@@ -14,22 +14,21 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        conversation scenario per case; the user approves an
                        editable plan. Headless we approve it as-is.)
   Step 4b  SU CASES    POST .../multiturn_sdg/generate_cases
-                       (UI: on_drive_multi_turn part 1 — one synthetic-user
-                       case per approved scenario prompt, case i <- prompt i.)
-  Step 4c  DRIVE       POST .../multiturn_sdg/run_cases_batch   [SSE]
-                       (UI: on_drive_multi_turn part 2 — the SU driver plays
-                       the customer against the target model for N turns;
-                       chains persist to disk; each case yields a leaf_run_id
-                       and a growing trace via turn_completed events.)
-  Step 5   REVIEW      POST .../eval_builder/review_traces      [SSE]
-                       (UI: build_claims_for_review — per trace, the judge
-                       runs LOCALLY on the user's keys, then kiln_server's
-                       claim builder distills the trace + verdict into
-                       claim/evidence pairs. Multi-turn sends ONLY the
-                       structured trace; the studio renders the canonical
-                       transcript and echoes it back on each event. The human
-                       then agrees/disagrees per claim — headless we agree
-                       with every final judgement.)
+                       (UI: on_drive_multi_turn part 1 — ONE batch call, one
+                       synthetic-user case per approved scenario prompt,
+                       case i <- prompt i; each case carries scenario_index.)
+  Steps 4c+5 PIPELINE  POST .../eval_builder/review_pipeline    [SSE]
+                       (UI: on_drive_multi_turn part 2 — ONE stream runs
+                       [drive -> judge -> claims] per case: the SU driver
+                       plays the customer against the target model for N
+                       turns, chains persist to disk, then the judge runs
+                       LOCALLY on the user's keys and kiln_server's claim
+                       builder distills the REAL trace + verdict into
+                       claim/evidence pairs. Cases flow through
+                       independently; a failed case never discards the
+                       others. The human then agrees/disagrees per claim on
+                       each case_reviewed event — headless we agree with
+                       every final judgement.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
                        judge config, and the answer key: golden ratings +
@@ -54,14 +53,13 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
   - OPENROUTER_API_KEY in the environment (or .env) — target model, SU
     driver, and judge all run locally on your keys.
 
-Cost per run: ~15 small model calls (one plan, 2 SU configs, 2x2 drive
+Cost per run: ~15 small model calls (one plan, one SU batch call, 2x2 drive
 turns + SU turns, 2 judge calls, 2 claim-builder calls) — cents.
 """
 
 import json
 import os
 import warnings
-from typing import Any
 
 import httpx
 import pytest
@@ -158,16 +156,6 @@ def _parse_sse(text: str) -> list[dict | str]:
     return events
 
 
-def _chain_turns(openai_trace: list[dict]) -> list[dict[str, Any]]:
-    """The UI's ChainTurn projection of a drive trace: user/assistant turns
-    with string content (tool/system fidelity is a phase-5.2 item)."""
-    return [
-        {"role": m["role"], "content": m["content"]}
-        for m in openai_trace
-        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
-    ]
-
-
 @pytest.fixture
 def preflight():
     """Environment gate. Fails (never skips) so a broken setup is loud."""
@@ -233,6 +221,7 @@ def temp_task(tmp_path, monkeypatch):
         "app.desktop.studio_server.batch_plan_api",
         "app.desktop.studio_server.multiturn_sdg_api",
         "app.desktop.studio_server.copilot_api",
+        "app.desktop.studio_server.eval_builder_api",
         "app.desktop.studio_server.utils.eval_builder_utils",
     ):
         monkeypatch.setattr(f"{module}.task_from_id", resolve)
@@ -276,8 +265,9 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     prompts = (prompts * NUM_CASES)[:NUM_CASES]
 
     # ── Step 4b — SU CASES (UI: on_drive_multi_turn, part 1) ────────────
-    # One synthetic-user case (seed prompt + persona blob) per approved
-    # scenario, case i designed around prompt i.
+    # ONE batch call: one synthetic-user case (seed prompt + persona blob)
+    # per approved scenario, case i designed around prompt i. scenario_index
+    # maps each case to its plan row even if upstream salvage drops one.
     resp = client.post(
         "/api/projects/p/tasks/t/multiturn_sdg/generate_cases",
         json={
@@ -288,88 +278,86 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
     _require(resp.status_code == 200, f"generate_cases failed: {resp.text}")
     cases = resp.json()["cases"]
-    _require(len(cases) == NUM_CASES, f"expected {NUM_CASES} cases, got {len(cases)}")
+    _require(len(cases) >= 1, "generate_cases returned no cases")
+    if len(cases) < NUM_CASES:
+        # Upstream salvage dropped a flaky case — the batch degrades rather
+        # than failing, and the pipeline drives the survivors.
+        warnings.warn(
+            f"SU salvage: {NUM_CASES - len(cases)} case(s) dropped upstream; "
+            f"driving {len(cases)}",
+            stacklevel=1,
+        )
+    for case in cases:
+        _require(
+            case.get("scenario_index") is not None,
+            f"case missing scenario_index: {case.keys()}",
+        )
 
-    # ── Step 4c — DRIVE (UI: on_drive_multi_turn, part 2; SSE) ──────────
-    # The SU driver plays the customer against the target model for
-    # TURNS_PER_CASE turns per case. Chains persist to disk as TaskRun
-    # trees; the leaf run id is the durable identity the save path rates.
+    # ── Steps 4c+5 — PIPELINE (UI: on_drive_multi_turn, part 2; SSE) ────
+    # ONE stream runs [drive → judge → claims] per case. The SU driver plays
+    # the customer for TURNS_PER_CASE turns; chains persist to disk (the
+    # leaf run id is the durable identity the save path rates); the judge
+    # runs locally under the SAME output-score identity the saved eval will
+    # use (spec_name); the claim builder receives the canonical transcript
+    # of the runner's REAL trace, echoed back on each case_reviewed event so
+    # citations resolve against exactly that text.
+    num_driven = len(cases)
     resp = client.post(
-        "/api/projects/p/tasks/t/multiturn_sdg/run_cases_batch",
+        "/api/projects/p/tasks/t/eval_builder/review_pipeline",
         json={
             "cases": cases,
             "turns": TURNS_PER_CASE,
             "target_run_config": TARGET_RUN_CONFIG,
             "su_driver": SU_DRIVER,
-        },
-    )
-    _require(resp.status_code == 200, f"run_cases_batch failed: {resp.text}")
-    events = _parse_sse(resp.text)
-
-    batch_tag: str | None = None
-    traces_by_case: dict[int, list[dict]] = {}
-    leaf_by_case: dict[int, str] = {}
-    failed_cases: list[dict] = []
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        if event.get("event") == "batch_started":
-            batch_tag = event["batch_tag"]
-        elif event.get("event") == "turn_completed":
-            # Cumulative trace; the last one per case is the full chain.
-            traces_by_case[event["case_index"]] = event["trace"]
-        elif event.get("event") == "case_completed":
-            leaf_by_case[event["case_index"]] = event["leaf_run_id"]
-        elif event.get("event") == "case_failed":
-            failed_cases.append(event)
-
-    _require(not failed_cases, f"SU cases failed during the drive: {failed_cases}")
-    _require(batch_tag is not None, "run_cases_batch emitted no batch_started")
-    assert batch_tag is not None  # for the type checker; _require failed above
-    _require(
-        len(leaf_by_case) == NUM_CASES,
-        f"expected {NUM_CASES} completed cases, got {len(leaf_by_case)}",
-    )
-
-    case_order = sorted(leaf_by_case)
-    chains = {index: _chain_turns(traces_by_case[index]) for index in case_order}
-    for index, turns in chains.items():
-        _require(
-            any(t["role"] == "assistant" for t in turns),
-            f"case {index} drove no assistant turns",
-        )
-
-    # ── Step 5 — REVIEW (UI: build_claims_for_review; SSE) ──────────────
-    # Per trace: the judge runs locally under the SAME output-score identity
-    # the saved eval will use (spec_name), then kiln_server's claim builder
-    # distills trace + verdict into claim/evidence pairs. Multi-turn sends
-    # ONLY the structured trace; the studio renders the canonical transcript
-    # and echoes it back, so citations resolve against exactly that text.
-    resp = client.post(
-        "/api/projects/p/tasks/t/eval_builder/review_traces",
-        json={
-            "traces": [{"trace": chains[i]} for i in case_order],
             "spec_name": SPEC_NAME,
             "judge": JUDGE,
         },
     )
-    _require(resp.status_code == 200, f"review_traces failed: {resp.text}")
-    review_events = _parse_sse(resp.text)
-    errors = [
-        e
-        for e in review_events
-        if isinstance(e, dict) and e.get("type") == "trace_error"
-    ]
-    _require(not errors, f"review pipeline emitted trace errors: {errors}")
-    reviewed = {
-        e["trace_index"]: e
-        for e in review_events
-        if isinstance(e, dict) and e.get("type") == "trace_reviewed"
-    }
+    _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
+    events = _parse_sse(resp.text)
+
+    batch_tag: str | None = None
+    leaf_by_case: dict[int, str] = {}
+    reviewed: dict[int, dict] = {}
+    failed_cases: list[dict] = []
+    turns_seen: dict[int, int] = {}
+    batch_completed: dict | None = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "batch_started":
+            batch_tag = event["batch_tag"]
+        elif event.get("type") == "turn_completed":
+            turns_seen[event["case_index"]] = event["turns_completed"]
+        elif event.get("type") == "case_driven":
+            leaf_by_case[event["case_index"]] = event["leaf_run_id"]
+        elif event.get("type") == "case_reviewed":
+            reviewed[event["case_index"]] = event
+        elif event.get("type") == "batch_completed":
+            batch_completed = event
+        elif event.get("type") in ("case_failed", "batch_failed"):
+            failed_cases.append(event)
+
+    _require(not failed_cases, f"pipeline emitted failures: {failed_cases}")
+    _require(batch_tag is not None, "review_pipeline emitted no batch_started")
+    assert batch_tag is not None  # for the type checker; _require failed above
     _require(
-        len(reviewed) == NUM_CASES,
-        f"expected {NUM_CASES} reviewed traces, got {len(reviewed)}",
+        len(reviewed) == num_driven,
+        f"expected {num_driven} reviewed cases, got {len(reviewed)}",
     )
+    _require(
+        all(turns_seen.get(i) == TURNS_PER_CASE for i in reviewed),
+        f"turn progress incomplete: {turns_seen}",
+    )
+    _require(
+        batch_completed is not None and batch_completed["reviewed"] == num_driven,
+        f"batch_completed totals disagree with reviewed events: {batch_completed}",
+    )
+    for index, event in reviewed.items():
+        _require(
+            event["leaf_run_id"] == leaf_by_case.get(index),
+            f"case {index}: case_reviewed leaf id != case_driven leaf id",
+        )
 
     citation_total = 0
     citation_misses: list[str] = []
@@ -420,11 +408,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # user_says_meets_spec/build_claim_review_payload helpers do the same
     # mapping for real reviews).
     reviewed_chains = []
-    for position, index in enumerate(case_order):
-        event = reviewed[position]
+    for index in sorted(reviewed):
+        event = reviewed[index]
         reviewed_chains.append(
             {
-                "leaf_run_id": leaf_by_case[index],
+                "leaf_run_id": event["leaf_run_id"],
                 "user_says_meets_spec": event["judge_score"] == "pass",
                 "feedback": "",
                 "claim_review": {
@@ -472,7 +460,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
 
     leaves = find_multi_turn_chain_leaves(temp_task, batch_tag)
-    _require(len(leaves) == NUM_CASES, f"expected {NUM_CASES} chain leaves")
+    _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
     for leaf in leaves:
         rating = leaf.output.rating
         _require(

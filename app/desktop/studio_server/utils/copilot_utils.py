@@ -41,11 +41,11 @@ from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
-# Tag prefix the multi-turn synthetic-user runner stamps on each chain's leaf
-# TaskRun — see kiln_ai.synthetic_user.runner._TAG_PREFIX_SU_BATCH. Kept in
-# sync manually; if the runner ever changes its tag scheme this constant
-# moves too.
+# Tag scheme the multi-turn synthetic-user runner stamps on each chain's leaf
+# TaskRun — see kiln_ai.synthetic_user.runner. Kept in sync manually; if the
+# runner ever changes its tag scheme these constants move too.
 _TAG_PREFIX_SU_BATCH = "synthetic_user_batch:"
+_TAG_SU_CASE = "synthetic_user_case"
 
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
@@ -362,6 +362,60 @@ def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
     """
     target_tag = f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"
     return [run for run in task.runs() if target_tag in (run.tags or [])]
+
+
+def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
+    """Delete every chain TaskRun of an abandoned synthetic-user batch.
+
+    Re-driving a batch mints a new batch_tag, which would orphan the previous
+    batch's chains on disk forever — the caller passes the superseded tag and
+    this removes those chains (every run from leaf to root) before the new
+    drive begins. Returns the number of TaskRuns deleted.
+
+    Safety: a chain is only deleted when its leaf carries EXACTLY the
+    runner's own tags, no rating, and no descendants. Any extra tag, a
+    rating, or a child run means some other flow (an eval save, a manual
+    rating, a continued conversation) claimed the chain — it is no longer an
+    abandoned drive artifact, so it is left alone. The exact-set match fails
+    CLOSED: if the runner's tag scheme ever grows, batches get skipped
+    (orphaned) rather than risking deletion of claimed chains.
+    """
+    # include_intermediate_runs: the ancestor walk needs the complete on-disk
+    # set, not the default leaves-only view. One corpus load serves the leaf
+    # scan, the descendant check, and the ancestor lookups.
+    all_runs = task.runs(include_intermediate_runs=True)
+    runs_by_id = {str(run.id): run for run in all_runs}
+    parent_ids = {
+        str(run.parent_task_run_id)
+        for run in all_runs
+        if run.parent_task_run_id is not None
+    }
+    target_tag = f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"
+    runner_tags = {_TAG_SU_CASE, target_tag}
+    deleted = 0
+    for leaf in (run for run in all_runs if target_tag in (run.tags or [])):
+        if (
+            set(leaf.tags or []) != runner_tags
+            or leaf.output.rating is not None
+            or str(leaf.id) in parent_ids
+        ):
+            logger.info(
+                "Skipping delete of chain leaf %s: claimed by another flow",
+                leaf.id,
+            )
+            continue
+        chain: list[TaskRun] = [leaf]
+        current = leaf
+        while current.parent_task_run_id is not None:
+            parent = runs_by_id.get(str(current.parent_task_run_id))
+            if parent is None:
+                break
+            chain.append(parent)
+            current = parent
+        for run in chain:
+            run.delete()
+            deleted += 1
+    return deleted
 
 
 def tag_multi_turn_chains_for_eval(
