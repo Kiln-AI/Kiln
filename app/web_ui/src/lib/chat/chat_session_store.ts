@@ -736,6 +736,7 @@ export function createChatSessionStore(
         trace_id: traceId,
         enable_tool_call_id: payload.enableToolCallId,
         siblings,
+        conversation_id: ensureConversationId(),
       }
       await autoRunStore.decline(req)
     }

@@ -103,6 +103,12 @@ class AutoRunRecord(BaseModel):
 
     run_id: str
     status: AutoRunStatus
+    # Stable conversation identity (uuid4) for spend budgeting. Persisted on the
+    # run so it survives seed reconstruction: an idle→running resume (send_message)
+    # builds a FRESH seed, so the id must be recovered from run state rather than
+    # re-supplied by the client — otherwise the resumed burst runs unattributed
+    # and the budget gate never fires.
+    conversation_id: str | None = None
     # Latest persisted leaf the runner has seen. Optional (Revision R2): a
     # no-trace seed (brand-new conversation) has no leaf until the backend emits
     # the first kiln_chat_trace, at which point _on_trace populates it.

@@ -1057,7 +1057,7 @@
           bind:this={budgetControl}
           status={budgetStatus}
           disabled={!$store.conversationId}
-          on:setbudget={(e) => budget_store.setBudget(e.detail.budgetUsd)}
+          onSetBudget={(budgetUsd) => budget_store.setBudget(budgetUsd)}
         />
         {#if contextUsage}
           <ContextUsageGauge usage={contextUsage} />

@@ -44,6 +44,11 @@ class DeclineAutoRequest(BaseModel):
     # for. Normally empty (the model is instructed to call enable_auto_mode alone);
     # each is resolved as denied so the conversation can continue interactively.
     siblings: list[ToolCallInfo] = Field(default_factory=list)
+    # Stable conversation identity (uuid4) for spend budgeting. No auto run exists
+    # on the decline path (the user declined at the consent gate), so the id must
+    # come from the client rather than run state — without it the post-decline
+    # interactive continuation would bypass the budget gate.
+    conversation_id: str | None = None
 
 
 class SendMessageRequest(BaseModel):
@@ -147,10 +152,16 @@ def connect_chat_auto_api(app: FastAPI) -> None:
                     "content": DENIED_TOOL_OUTPUT,
                 }
             )
+        initial_body: dict[str, Any] = {
+            "trace_id": body.trace_id,
+            "messages": messages,
+        }
+        if body.conversation_id is not None:
+            initial_body["conversation_id"] = body.conversation_id
         session = ChatStreamSession(
             upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(api_key),
-            initial_body={"trace_id": body.trace_id, "messages": messages},
+            initial_body=initial_body,
         )
         return CancellableStreamingResponse(
             content=session.stream(),

@@ -38,5 +38,13 @@
   },
   "eslint.validate": ["javascript", "javascriptreact", "typescript", "svelte"],
   "typescript.preferences.importModuleSpecifier": "shortest",
-  "typescript.suggest.autoImports": true
+  "typescript.suggest.autoImports": true,
+  "cursorpyright.analysis.autoImportCompletions": true,
+  "cursorpyright.analysis.extraPaths": [
+    "./"
+  ],
+  "cursorpyright.analysis.ignore": [
+    "**/test_*.py"
+  ],
+  "cursorpyright.analysis.typeCheckingMode": "basic"
 }

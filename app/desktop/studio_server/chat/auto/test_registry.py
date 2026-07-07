@@ -487,6 +487,48 @@ async def test_send_message_while_idle_starts_new_burst():
 
 
 @pytest.mark.asyncio
+async def test_idle_resume_carries_conversation_id_from_run_state():
+    # Regression: an idle→running resume rebuilds a fresh AutoChatSeed. The
+    # conversation_id must be recovered from run state (the client does not
+    # re-send it on /message), otherwise the resumed burst runs with
+    # conversation_id=None — silently disabling the budget gate and spend
+    # tracking for exactly the "budget exhausted → extend → continue" flow.
+    conversation_id = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+    reg = AutoChatRegistry()
+    burst1 = [trace("tr-1"), text_delta("hi"), finish("stop")]
+    burst2 = [trace("tr-2"), text_delta("resumed"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(chunks=burst1), FakeUpstreamResponse(chunks=burst2)]
+    )
+    seed = AutoChatSeed(
+        trace_id="tr-0",
+        enable_tool_call_id="enable-1",
+        conversation_id=conversation_id,
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        rec = reg.start(seed, reason=None, upstream_url=URL, headers={})
+        # The run persists the identity so it survives seed reconstruction.
+        run = reg.get(rec.run_id)
+        assert run is not None
+        assert run.record.conversation_id == conversation_id
+
+        await _wait_settled(reg, rec.run_id)
+        assert run.record.status == AutoRunStatus.IDLE
+
+        # Resume via /message WITHOUT re-supplying conversation_id.
+        accepted = reg.send_message(
+            rec.run_id, InboundMessage(content="resume please", trace_id="tr-1")
+        )
+        assert accepted is True
+        await _wait_settled(reg, rec.run_id)
+
+    # The resumed burst's upstream continuation carries the conversation_id,
+    # so the backend keeps persisting it and the gate/credit stay active.
+    second_body = client.bodies[1]
+    assert second_body["conversation_id"] == conversation_id
+
+
+@pytest.mark.asyncio
 async def test_send_message_unknown_or_off_returns_false():
     reg = AutoChatRegistry()
     assert reg.send_message("ar_nope", InboundMessage(content="x")) is False

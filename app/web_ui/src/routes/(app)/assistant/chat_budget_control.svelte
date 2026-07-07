@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { BudgetStatus } from "$lib/chat/budget_store"
 
@@ -9,12 +8,16 @@
   // Disabled before a conversation exists (no id to key a budget by).
   export let disabled = false
 
-  const dispatch = createEventDispatcher<{
-    setbudget: { budgetUsd: number | null }
-  }>()
+  // Caller persists the value and reports success/failure so we can keep the
+  // dialog open and surface an error on failure.
+  export let onSetBudget: (
+    budgetUsd: number | null,
+  ) => Promise<{ ok: boolean; error?: string }> = async () => ({ ok: true })
 
   let dialog: Dialog
-  let inputValue = ""
+  // Bound to <input type="number">, so Svelte writes back a `number` (or `null`
+  // when the field is cleared) — NOT a string. Must be typed accordingly.
+  let inputValue: number | null = null
   let inputError: string | null = null
 
   $: hasBudget = status?.budget_usd != null
@@ -36,27 +39,29 @@
 
   function open(): void {
     if (disabled) return
-    inputValue = status?.budget_usd != null ? String(status.budget_usd) : ""
+    inputValue = status?.budget_usd ?? null
     inputError = null
     dialog.show()
   }
 
-  function save(): boolean {
-    const trimmed = inputValue.trim()
-    if (trimmed === "") {
-      // Empty clears the budget (spend tracking continues).
-      dispatch("setbudget", { budgetUsd: null })
-      return true
-    }
-    const parsed = Number(trimmed)
-    if (!Number.isFinite(parsed) || parsed < 0) {
+  // Returns whether the dialog should close. Keeps it open (surfacing an error)
+  // on invalid input or a failed persist, so failures aren't silently swallowed.
+  async function save(): Promise<boolean> {
+    inputError = null
+    // Empty field → null → clear the budget (spend tracking continues).
+    if (
+      inputValue !== null &&
+      (!Number.isFinite(inputValue) || inputValue < 0)
+    ) {
       inputError = "Enter a non-negative dollar amount."
-      return false // keep dialog open
+      return false
     }
-    // Guard against setting a new budget already below what's been spent — the
-    // conversation would be immediately exhausted. Allowed, but warn-worthy;
-    // we still permit it (the user may want to hard-stop).
-    dispatch("setbudget", { budgetUsd: parsed })
+    const result = await onSetBudget(inputValue)
+    if (!result.ok) {
+      inputError =
+        result.error ?? "Couldn't update the budget. Please try again."
+      return false
+    }
     return true
   }
 </script>
@@ -87,7 +92,7 @@
   subtitle="Cap the total cost of operations the assistant runs in this conversation — evals, data generation, task runs. These bill to your own model providers."
   action_buttons={[
     { label: "Cancel", isCancel: true },
-    { label: "Save", isPrimary: true, action: save },
+    { label: "Save", isPrimary: true, asyncAction: save },
   ]}
 >
   <div class="flex flex-col gap-3">

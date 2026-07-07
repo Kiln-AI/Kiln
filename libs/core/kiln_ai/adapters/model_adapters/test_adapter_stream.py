@@ -801,3 +801,90 @@ class TestFindToolName:
             function=Function(name=None, arguments="{}"),
         )
         assert _find_tool_name([tc], "call_1") == "unknown"
+
+
+class TestStreamingSpendCredit:
+    """The streaming turn credits the per-conversation spend ledger once per LLM
+    call — the mirror of test_run_model_turn_credits_spend_ledger for the
+    streaming path (adapter_stream.py). Assistant chat streams, so this is the
+    path that actually runs in production."""
+
+    CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+    @pytest.mark.asyncio
+    async def test_credits_once_when_contextvar_set(self, mock_adapter, mock_provider):
+        from kiln_ai.utils import spend_ledger
+
+        response = _make_model_response(content="Hello world")
+        fake_stream = FakeStreamingCompletion(response)
+        formatter = FakeChatFormatter()
+        call_usage = MessageUsage(
+            input_tokens=10, output_tokens=5, total_tokens=15, cost=0.5
+        )
+        mock_adapter.usage_from_response = MagicMock(return_value=call_usage)
+
+        token = spend_ledger.current_conversation_id.set(self.CONVERSATION_ID)
+        try:
+            with (
+                patch(
+                    "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+                    return_value=fake_stream,
+                ),
+                patch.object(
+                    spend_ledger, "record_spend_for_current_conversation"
+                ) as mock_record,
+            ):
+                stream = AdapterStream(
+                    adapter=mock_adapter,
+                    provider=mock_provider,
+                    chat_formatter=formatter,
+                    initial_messages=[],
+                    top_logprobs=None,
+                )
+                async for _ in stream:
+                    pass
+        finally:
+            spend_ledger.current_conversation_id.reset(token)
+
+        mock_record.assert_called_once_with(0.5, 15)
+
+    @pytest.mark.asyncio
+    async def test_noop_when_contextvar_unset(self, mock_adapter, mock_provider):
+        # The contextvar is unset (normal, non-assistant run). The credit call
+        # still fires but is a no-op internally; verify it never records against
+        # a conversation. (Uses the real ledger indirection with the contextvar
+        # cleared, so a stray recording would create ledger state.)
+        from kiln_ai.utils import spend_ledger
+
+        response = _make_model_response(content="Hi")
+        fake_stream = FakeStreamingCompletion(response)
+        formatter = FakeChatFormatter()
+        mock_adapter.usage_from_response = MagicMock(
+            return_value=MessageUsage(total_tokens=3, cost=0.1)
+        )
+
+        # Ensure unset.
+        token = spend_ledger.current_conversation_id.set(None)
+        try:
+            with (
+                patch(
+                    "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+                    return_value=fake_stream,
+                ),
+                patch.object(spend_ledger, "record_spend") as mock_record_spend,
+            ):
+                stream = AdapterStream(
+                    adapter=mock_adapter,
+                    provider=mock_provider,
+                    chat_formatter=formatter,
+                    initial_messages=[],
+                    top_logprobs=None,
+                )
+                async for _ in stream:
+                    pass
+        finally:
+            spend_ledger.current_conversation_id.reset(token)
+
+        # record_spend is the ledger-mutating call; it must never fire with no
+        # conversation in scope.
+        mock_record_spend.assert_not_called()

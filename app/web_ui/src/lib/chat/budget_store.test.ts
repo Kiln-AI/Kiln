@@ -105,4 +105,36 @@ describe("createBudgetStore", () => {
     const result = await store.setBudget(-1)
     expect(result.ok).toBe(false)
   })
+
+  it("ignores a stale refresh response for a conversation switched away from", async () => {
+    const OTHER = "9e8d7c6b-5a49-4321-9fed-cba987654321"
+    // A deferred GET for conversation A that we resolve only after switching to B.
+    let resolveA: (v: unknown) => void = () => {}
+    const aPending = new Promise((r) => {
+      resolveA = r
+    })
+    mockGet.mockImplementation((_url, opts) => {
+      const cid = opts.params.path.conversation_id
+      if (cid === CONVERSATION_ID) return aPending
+      // B resolves immediately with its own status.
+      return Promise.resolve({
+        data: status({ conversation_id: OTHER, budget_usd: 99 }),
+        error: undefined,
+      })
+    })
+
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID) // fires the slow A refresh
+    // Switch to B before A resolves, then settle B deterministically.
+    store.setConversation(OTHER)
+    await store.refresh()
+    expect(get(store)?.conversation_id).toBe(OTHER)
+
+    // Now A's slow response arrives — it must be dropped, not adopted.
+    resolveA({ data: status({ budget_usd: 5 }), error: undefined })
+    await aPending
+    await Promise.resolve()
+    expect(get(store)?.conversation_id).toBe(OTHER)
+    expect(get(store)?.budget_usd).toBe(99)
+  })
 })

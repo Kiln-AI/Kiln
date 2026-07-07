@@ -295,6 +295,9 @@ class AutoChatRegistry:
         record = AutoRunRecord(
             run_id=run_id,
             status=AutoRunStatus.IDLE if is_armed_only else AutoRunStatus.RUNNING,
+            # Stable for the life of the run; recovered into the resume seed so
+            # an idle→running resume keeps crediting/gating the conversation.
+            conversation_id=seed.conversation_id,
             # Revision R2: a no-trace seed (brand-new conversation) has no leaf
             # until the backend emits the first kiln_chat_trace; _on_trace then
             # populates current_trace_id / seen_trace_ids / the trace index.
@@ -358,10 +361,13 @@ class AutoChatRegistry:
             run.enqueue(message)
             return True
 
-        # IDLE → start a new burst seeded with the queued message(s).
+        # IDLE → start a new burst seeded with the queued message(s). Carry the
+        # conversation_id forward from run state (the client doesn't re-send it
+        # on /message) so the resumed burst still credits + gates spend.
         seed = AutoChatSeed(
             trace_id=message.trace_id or run.record.current_trace_id,
             extra_messages=[message.as_chat_message()],
+            conversation_id=run.record.conversation_id,
         )
         run.record.status = AutoRunStatus.RUNNING
         run.start_burst(seed)

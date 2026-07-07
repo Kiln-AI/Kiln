@@ -41,9 +41,13 @@ class TestValidation:
         with pytest.raises(ValueError, match="conversation id"):
             spend_ledger.set_budget("junk", 5.0)
 
-    @pytest.mark.parametrize("bad_budget", [-1.0, float("nan")])
+    @pytest.mark.parametrize(
+        "bad_budget", [-1.0, float("nan"), float("inf"), float("-inf")]
+    )
     def test_set_budget_rejects_bad_amounts(self, bad_budget):
-        with pytest.raises(ValueError, match="non-negative"):
+        # Non-finite values must be rejected: they can't serialize as valid JSON
+        # (would write the non-standard Infinity/NaN tokens into the shared file).
+        with pytest.raises(ValueError):
             spend_ledger.set_budget(CONVERSATION_ID, bad_budget)
 
 
@@ -157,6 +161,36 @@ class TestPersistence:
         spend_ledger.set_budget(CONVERSATION_ID, 1.0)
         status = spend_ledger.get_status(CONVERSATION_ID)
         assert status is not None
+
+    def test_wrong_typed_entry_degrades_on_read_path(self, tmp_settings_dir):
+        # A structurally-valid entry with wrong-typed fields (manual tampering /
+        # a future format change) must NOT raise out of the read path — the gate
+        # (is_exhausted) calls it bare during tool execution / eval runs.
+        tampered = {
+            CONVERSATION_ID: {
+                "budget_usd": "oops",
+                "spent_usd": "not-a-number",
+                "unpriced_runs": None,
+                "updated_at": "yesterday",
+            }
+        }
+        (tmp_settings_dir / "conversation_budgets.json").write_text(
+            json.dumps(tampered)
+        )
+        # None of these raise; the malformed budget coerces to "no cap".
+        status = spend_ledger.get_status(CONVERSATION_ID)
+        assert status is not None
+        assert status.budget_usd is None
+        assert status.spent_usd == 0.0
+        assert spend_ledger.is_exhausted(CONVERSATION_ID) is False
+
+    def test_ledger_written_as_valid_json(self, tmp_settings_dir):
+        # allow_nan=False guarantees the file is standard JSON any reader accepts.
+        spend_ledger.set_budget(CONVERSATION_ID, 2.0)
+        spend_ledger.record_spend(CONVERSATION_ID, 0.5, 100)
+        text = (tmp_settings_dir / "conversation_budgets.json").read_text()
+        assert "Infinity" not in text and "NaN" not in text
+        json.loads(text)  # parses cleanly
 
     def test_old_entries_pruned_on_write(self, tmp_settings_dir):
         stale = {

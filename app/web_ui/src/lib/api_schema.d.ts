@@ -5680,6 +5680,8 @@ export interface components {
             enable_tool_call_id: string;
             /** Siblings */
             siblings?: components["schemas"]["ToolCallInfo"][];
+            /** Conversation Id */
+            conversation_id?: string | null;
         };
         /**
          * DeleteConfigResponse

@@ -305,6 +305,40 @@ async def test_decline_resumes_interactive_stream(client, registry, mock_api_key
     }
 
 
+@pytest.mark.asyncio
+async def test_decline_threads_conversation_id(client, registry, mock_api_key):
+    # No auto run exists on the decline path, so the conversation_id must come
+    # from the client and be forwarded into the interactive continuation so its
+    # call_kiln_api calls stay budget-gated.
+    conversation_id = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+    continuation = [sse_text_delta("continuing"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat/auto/decline",
+            json={
+                "trace_id": "t1",
+                "enable_tool_call_id": "tc_enable",
+                "conversation_id": conversation_id,
+            },
+        )
+    assert r.status_code == 200
+    assert fake.bodies[0]["conversation_id"] == conversation_id
+
+
+@pytest.mark.asyncio
+async def test_decline_without_conversation_id_omits_it(client, registry, mock_api_key):
+    continuation = [sse_text_delta("continuing"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            "/api/chat/auto/decline",
+            json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+        )
+    assert r.status_code == 200
+    assert "conversation_id" not in fake.bodies[0]
+
+
 # ── stop ─────────────────────────────────────────────────────────────────────
 
 

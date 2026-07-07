@@ -55,6 +55,15 @@ _PRUNE_AFTER_SECONDS = 90 * 24 * 60 * 60
 
 _LEDGER_FILENAME = "conversation_budgets.json"
 
+# Serializes the load→mutate→write cycle so concurrent in-process credits can't
+# lose updates or expose a torn file (writes finish with an atomic os.replace).
+# NOTE: this is thread-safe, not process-safe — it assumes the desktop app runs
+# as a single process. Two processes could each load→mutate→write and the last
+# writer would drop the other's update (os.replace still prevents corruption).
+# If Kiln is ever run multi-worker, replace this with a cross-process file lock.
+# The gate's "checked per call" correctness also relies on record_spend having
+# written to disk before the next is_exhausted read observes it — that coupling
+# holds because both go through this lock and the ledger is re-read each call.
 _lock = threading.Lock()
 
 
@@ -87,6 +96,37 @@ def _ledger_path() -> str:
     return os.path.join(Config.settings_dir(), _LEDGER_FILENAME)
 
 
+def _coerce_float(value: object, default: float = 0.0) -> float:
+    """Best-effort float from a ledger field. A wrong-typed value (from manual
+    tampering or a future format change) falls back to the default rather than
+    raising — budget tracking must degrade, never break a run."""
+    try:
+        result = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return result if math.isfinite(result) else default
+
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_budget(value: object) -> float | None:
+    """A stored ``budget_usd`` as a finite float, or None. A missing or
+    wrong-typed value → None ("no cap") rather than 0.0, so a tampered field
+    can never silently mark a conversation exhausted."""
+    if value is None:
+        return None
+    try:
+        result = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) and result >= 0 else None
+
+
 def _load_ledger() -> dict[str, dict]:
     path = _ledger_path()
     if not os.path.isfile(path):
@@ -108,22 +148,28 @@ def _write_ledger(ledger: dict[str, dict]) -> None:
     pruned = {
         cid: entry
         for cid, entry in ledger.items()
-        if now - float(entry.get("updated_at") or 0) < _PRUNE_AFTER_SECONDS
+        if now - _coerce_float(entry.get("updated_at")) < _PRUNE_AFTER_SECONDS
     }
     path = _ledger_path()
     tmp_path = f"{path}.tmp"
+    # ``allow_nan=False`` rejects non-finite floats (a stray inf/nan would emit
+    # the non-standard ``Infinity``/``NaN`` tokens, which are invalid JSON for
+    # any strict / other-language reader of the shared ledger file).
     with open(tmp_path, "w") as f:
-        json.dump(pruned, f, indent=2)
+        json.dump(pruned, f, indent=2, ensure_ascii=False, allow_nan=False)
     os.replace(tmp_path, path)
 
 
 def _entry_to_status(conversation_id: str, entry: dict) -> BudgetStatus:
+    # Coerce defensively: a structurally-valid entry with a wrong-typed field
+    # must not raise on the read path (is_exhausted → get_status), which the gate
+    # call sites invoke bare during tool execution / eval runs.
     return BudgetStatus(
         conversation_id=conversation_id,
-        budget_usd=entry.get("budget_usd"),
-        spent_usd=float(entry.get("spent_usd") or 0.0),
-        unpriced_runs=int(entry.get("unpriced_runs") or 0),
-        unpriced_tokens=int(entry.get("unpriced_tokens") or 0),
+        budget_usd=_coerce_budget(entry.get("budget_usd")),
+        spent_usd=_coerce_float(entry.get("spent_usd")),
+        unpriced_runs=_coerce_int(entry.get("unpriced_runs")),
+        unpriced_tokens=_coerce_int(entry.get("unpriced_tokens")),
     )
 
 
@@ -135,8 +181,10 @@ def set_budget(conversation_id: str, budget_usd: float | None) -> BudgetStatus:
     """
     if not is_valid_conversation_id(conversation_id):
         raise ValueError(f"Invalid conversation id: {conversation_id[:80]!r}")
-    if budget_usd is not None and (budget_usd < 0 or math.isnan(budget_usd)):
-        raise ValueError("budget_usd must be a non-negative number")
+    if budget_usd is not None and (not math.isfinite(budget_usd) or budget_usd < 0):
+        # Reject inf/nan too: they can't be serialized as valid JSON, and an
+        # "infinite budget" is just a confusing spelling of None ("no cap").
+        raise ValueError("budget_usd must be a non-negative finite number")
     with _lock:
         ledger = _load_ledger()
         entry = ledger.get(conversation_id, {})
