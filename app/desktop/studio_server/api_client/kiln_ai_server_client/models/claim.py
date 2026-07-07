@@ -24,7 +24,7 @@ class Claim:
             single 'though …' clause. Do NOT quote long spans.
         expected_result (ExpectedResult):
         citations (list[Citation]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
-            the span from `from` to `to`.
+            the span from `from` to `to`. Empty when the trace offers nothing to anchor.
     """
 
     claim: str

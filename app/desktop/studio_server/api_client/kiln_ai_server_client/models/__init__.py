@@ -31,7 +31,6 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
 )
 from .check_model_supported_response import CheckModelSupportedResponse
 from .citation import Citation
-from .citation_1 import Citation1
 from .claim import Claim
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
@@ -94,6 +93,7 @@ from .input_audio_format import InputAudioFormat
 from .jinja_input_transform import JinjaInputTransform
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
+from .judge_score import JudgeScore
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
 from .kiln_agent_run_config_properties import KilnAgentRunConfigProperties
@@ -177,7 +177,6 @@ __all__ = (
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
     "Citation",
-    "Citation1",
     "Claim",
     "ClarifySpecInput",
     "ClarifySpecOutput",
@@ -230,6 +229,7 @@ __all__ = (
     "JinjaInputTransform",
     "JobStartResponse",
     "JobStatus",
+    "JudgeScore",
     "JobStatusResponse",
     "JobType",
     "KilnAgentRunConfigProperties",

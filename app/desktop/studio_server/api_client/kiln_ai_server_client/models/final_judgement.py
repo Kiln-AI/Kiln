@@ -9,7 +9,7 @@ from attrs import field as _attrs_field
 from ..models.expected_result import ExpectedResult
 
 if TYPE_CHECKING:
-    from ..models.citation_1 import Citation1
+    from ..models.citation import Citation
 
 
 T = TypeVar("T", bound="FinalJudgement")
@@ -21,16 +21,16 @@ class FinalJudgement:
     Attributes:
         claim (str): The overall verdict as a claim, e.g. 'Eval passes'.
         evidence (str): ONE sentence. States the decisive fact with [n] markers; fold any real counter-point into a
-            single 'though …' clause.
+            single 'though …' clause. Do NOT quote long spans.
         expected_result (ExpectedResult):
-        citations (list[Citation1]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
-            the span from `from` to `to`.
+        citations (list[Citation]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
+            the span from `from` to `to`. Empty when the trace offers nothing to anchor.
     """
 
     claim: str
     evidence: str
     expected_result: ExpectedResult
-    citations: list[Citation1]
+    citations: list[Citation]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,7 +60,7 @@ class FinalJudgement:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.citation_1 import Citation1
+        from ..models.citation import Citation
 
         d = dict(src_dict)
         claim = d.pop("claim")
@@ -72,7 +72,7 @@ class FinalJudgement:
         citations = []
         _citations = d.pop("citations")
         for citations_item_data in _citations:
-            citations_item = Citation1.from_dict(citations_item_data)
+            citations_item = Citation.from_dict(citations_item_data)
 
             citations.append(citations_item)
 

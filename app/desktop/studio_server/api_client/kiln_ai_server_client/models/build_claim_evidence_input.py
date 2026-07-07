@@ -6,6 +6,8 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..models.judge_score import JudgeScore
+
 T = TypeVar("T", bound="BuildClaimEvidenceInput")
 
 
@@ -13,21 +15,23 @@ T = TypeVar("T", bound="BuildClaimEvidenceInput")
 class BuildClaimEvidenceInput:
     """
     Attributes:
-        raw_input (str): The task's raw input, verbatim. Part of the trace and GROUND TRUTH. Anchor citations into this
-            with source 'input'.
-        raw_output (str): The task's raw output, verbatim. Part of the trace and GROUND TRUTH. Anchor citations into
-            this with source 'output'.
-        eval_rubric (str): The rubric / judge prompt. Take hints from it but QUESTION it; may be under-specified or
-            wrong.
-        judge_reasoning (str): The judge's explanation. Treat as a claim to validate against the trace, not truth.
-        judge_score (str): The judge's verdict (e.g. PASS/FAIL or a score).
+        raw_input (str): The task's raw input, verbatim. Part of the trace and GROUND TRUTH. For conversational tasks,
+            the conversation's opening user message. Anchor citations into this with source 'input'.
+        raw_output (str): The task's raw output, verbatim. Part of the trace and GROUND TRUTH. For conversational tasks,
+            the full multi-speaker transcript (role-labelled turns in <role_message> tags). Anchor citations into this with
+            source 'output'.
+        eval_rubric (str): The prompt the judge ran with — the rubric judge_score was produced under. Take hints from it
+            but QUESTION it; may be under-specified or wrong.
+        judge_reasoning (str): The judge's explanation. May be thin or a mechanical placeholder; validate against the
+            trace, never treat as truth or required evidence.
+        judge_score (JudgeScore):
     """
 
     raw_input: str
     raw_output: str
     eval_rubric: str
     judge_reasoning: str
-    judge_score: str
+    judge_score: JudgeScore
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -39,7 +43,7 @@ class BuildClaimEvidenceInput:
 
         judge_reasoning = self.judge_reasoning
 
-        judge_score = self.judge_score
+        judge_score = self.judge_score.value
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -66,7 +70,7 @@ class BuildClaimEvidenceInput:
 
         judge_reasoning = d.pop("judge_reasoning")
 
-        judge_score = d.pop("judge_score")
+        judge_score = JudgeScore(d.pop("judge_score"))
 
         build_claim_evidence_input = cls(
             raw_input=raw_input,

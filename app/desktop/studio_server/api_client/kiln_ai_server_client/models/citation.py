@@ -17,8 +17,9 @@ class Citation:
     Attributes:
         marker (int): The [n] used in evidence.
         source (Source):
-        from_ (str): Short verbatim snippet (a few words) marking the START of the span to highlight.
-        to (str): Short verbatim snippet (a few words) marking the END of the span. For a short span, may equal `from`.
+        from_ (str): Short verbatim snippet marking the START of the span to highlight. Located by FIRST occurrence —
+            must be unique within its source; extend the snippet if the phrase repeats.
+        to (str): Short verbatim snippet marking the END of the span. For a short span, may equal `from`.
     """
 
     marker: int

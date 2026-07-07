@@ -3130,8 +3130,9 @@ export interface paths {
          * @description Per-trace `judge → claim builder`, fanned out (local) and streamed.
          *
          *     Emits one SSE event per trace as it completes:
-         *       - `trace_reviewed` { trace_index, judge_score, judge_reasoning,
-         *                            claims, final_judgement }
+         *       - `trace_reviewed` { trace_index, raw_input, raw_output,
+         *                            judge_score, judge_reasoning, claims,
+         *                            final_judgement }
          *       - `trace_error`    { trace_index, error }   (batch continues)
          *     Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
          */
@@ -4224,8 +4225,11 @@ export interface components {
             eval_rubric: string;
             /** Judge Reasoning */
             judge_reasoning: string;
-            /** Judge Score */
-            judge_score: string;
+            /**
+             * Judge Score
+             * @enum {string}
+             */
+            judge_score: "pass" | "fail";
         };
         /**
          * BuildClaimsApiOutput
@@ -4644,8 +4648,11 @@ export interface components {
          *     the golden TaskRun and judge refinement can consume it later.
          */
         ClaimReviewApi: {
-            /** Judge Score */
-            judge_score: string;
+            /**
+             * Judge Score
+             * @enum {string}
+             */
+            judge_score: "pass" | "fail";
             /** Judge Reasoning */
             judge_reasoning: string;
             /** Claims */
@@ -5268,15 +5275,10 @@ export interface components {
             evaluate_full_trace: boolean;
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
-            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            /** @description The judge to persist as the eval's V2 config — the same shape (and, from the builder, the same values) the review step ran, so the calibrated judge is the one that ships. */
+            judge_info: components["schemas"]["JudgeConfig"];
             sdg_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfigApi"] | null;
             multi_turn?: components["schemas"]["MultiTurnSaveInfo"] | null;
-            /**
-             * Task Description
-             * @description Unused since the judge config moved to the V2 shape (the legacy config's properties carried it); kept so existing clients' request bodies stay valid.
-             * @default
-             */
-            task_description: string;
             /**
              * Task Prompt With Example
              * @default
@@ -7853,12 +7855,12 @@ export interface components {
         JsonValue: unknown;
         /**
          * JudgeConfig
-         * @description The candidate judge to run over each trace.
+         * @description The judge: a plain-text prompt plus the model that runs it.
          *
-         *     PROVISIONAL: the judge is WIP (today a prompt+model; with Eval V2 it becomes
-         *     a typed EvalConfig, then more eval types). Kept intentionally thin — the
-         *     orchestrator maps this to whatever the judge execution currently needs, so
-         *     the UI contract doesn't churn with the server.
+         *     The ONE judge shape across the builder — the review step runs it
+         *     transiently and the save path persists it as a V2 EvalConfig, both through
+         *     the same prompt-template wrap, so the judge the user calibrates is the
+         *     judge that ships.
          */
         JudgeConfig: {
             /** Prompt */
@@ -9750,15 +9752,19 @@ export interface components {
         /**
          * ReviewTracesRequest
          * @description Batch request: judge + build claims for every trace, streamed back.
+         *
+         *     The claim builder's eval_rubric is the judge's ACTUAL prompt (from
+         *     `judge`), not a separate spec text — the builder pressure-tests the rubric
+         *     the verdict was really produced under.
          */
         ReviewTracesRequest: {
             /** Traces */
             traces: components["schemas"]["TraceInput"][];
             /**
-             * Eval Rubric
-             * @description The spec intent / rubric passed to the claim builder (distinct from the judge prompt).
+             * Spec Name
+             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
              */
-            eval_rubric: string;
+            spec_name: string;
             judge: components["schemas"]["JudgeConfig"];
         };
         /**
@@ -11715,15 +11721,27 @@ export interface components {
         /**
          * TraceInput
          * @description One generated trace to review (single- or multi-turn).
+         *
+         *     Exactly one source shape per trace: single-turn sends the raw I/O pair;
+         *     multi-turn sends the structured message list and the studio derives the
+         *     canonical transcript from it server-side — the UI never fabricates a
+         *     flattened rendering, so the text the claim builder cites is authoritative
+         *     (it's echoed back on the trace_reviewed event).
          */
         TraceInput: {
-            /** Raw Input */
-            raw_input: string;
-            /** Raw Output */
-            raw_output: string;
+            /**
+             * Raw Input
+             * @description Single-turn: the task's raw input. Omitted for multi-turn traces (derived from the trace's first user message).
+             */
+            raw_input?: string | null;
+            /**
+             * Raw Output
+             * @description Single-turn: the task's raw output. Omitted for multi-turn traces (the canonical transcript is rendered from trace).
+             */
+            raw_output?: string | null;
             /**
              * Trace
-             * @description Structured message list ({role, content}, chronological) for multi-turn traces, so the judge scores the full conversation instead of the flattened raw_output. Single-turn traces omit it. Kept as loose dicts: the claim builder still receives the flattened text, and message shapes (tool calls etc.) will churn.
+             * @description Structured message list ({role, content}, chronological) for multi-turn traces: the judge scores it directly and the claim builder receives its canonical rendering. Kept as loose dicts — message shapes (tool calls etc.) will churn.
              */
             trace?: {
                 [key: string]: unknown;
