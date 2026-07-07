@@ -26,8 +26,10 @@
   import { multiturn_plan_guidance } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,
+    build_claim_review_payload,
     build_trace_reviews,
-    final_judgement_index,
+    disagreement_feedback,
+    user_says_meets_spec,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -404,6 +406,9 @@
     persona_summary: string
     total_cost: number
     trace: ChainTurn[]
+    // Durable id of the chain's leaf TaskRun (from case_completed) — the save
+    // path writes the golden rating onto this run.
+    leaf_run_id: string
   }
   // Number of synthetic-user cases to drive in one multi-turn batch —
   // matches NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py.
@@ -796,6 +801,7 @@
                 persona_summary: `Case ${event.case_index + 1}`,
                 total_cost: event.total_cost ?? 0,
                 trace: traces_by_case[event.case_index] ?? [],
+                leaf_run_id: event.leaf_run_id,
               },
             ]
             multi_turn_progress = multi_turn_chains.length
@@ -889,12 +895,14 @@
     raw_input: string
     raw_output: string
     trace?: ChainTurn[]
+    leaf_run_id?: string
   }[] {
     if (is_multi_turn) {
       return multi_turn_chains.map((c) => ({
         raw_input: c.trace.find((t) => t.role === "user")?.content ?? "",
         raw_output: c.trace.map((t) => `${t.role}: ${t.content}`).join("\n\n"),
         trace: c.trace,
+        leaf_run_id: c.leaf_run_id,
       }))
     }
     return single_turn_examples.map((e) => ({
@@ -914,6 +922,7 @@
         judge_score: string
         judge_reasoning: string
         claims: TraceClaims["claims"]
+        final_judgement: TraceClaims["final_judgement"]
       }
     | { type: "trace_error"; trace_index: number; error: string }
 
@@ -981,10 +990,13 @@
             const io = ios[event.trace_index]
             built[event.trace_index] = {
               trace_id: `trace_${event.trace_index}`,
+              leaf_run_id: io.leaf_run_id ?? null,
               raw_input: io.raw_input,
               raw_output: io.raw_output,
               judge_score: event.judge_score,
+              judge_reasoning: event.judge_reasoning,
               claims: event.claims ?? [],
+              final_judgement: event.final_judgement,
             }
           } else if (event.type === "trace_error") {
             claims_error = `Failed to build claims for a trace: ${event.error}`
@@ -1057,6 +1069,20 @@
         }
         const multi_turn_judge_info =
           build_default_judge_info(issue_description)
+        // Carry the human's review through save: each reviewed trace maps to
+        // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
+        // studio writes the golden rating + per-claim grades onto that leaf.
+        const reviewed_chains = trace_claims
+          .map((tc, i) => ({ tc, review: trace_reviews[i] }))
+          // Truthy check: the batch runner emits "" (not null) when a leaf
+          // has no id — such a chain can't be rated, so skip it.
+          .filter(({ tc, review }) => tc.leaf_run_id && review)
+          .map(({ tc, review }) => ({
+            leaf_run_id: tc.leaf_run_id as string,
+            user_says_meets_spec: user_says_meets_spec(tc, review),
+            feedback: disagreement_feedback(review),
+            claim_review: build_claim_review_payload(tc, review),
+          }))
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
           {
@@ -1068,7 +1094,10 @@
               evaluate_full_trace: true,
               reviewed_examples: [],
               judge_info: multi_turn_judge_info,
-              multi_turn: { batch_tag: multi_turn_batch_tag },
+              multi_turn: {
+                batch_tag: multi_turn_batch_tag,
+                reviewed_chains,
+              },
               task_description: "",
               task_prompt_with_example: task?.instruction ?? "",
             },
@@ -1097,26 +1126,19 @@
       }
 
       // Single-turn save path.
-      // Derive reviewed examples from the claim verdicts: agreement with the
-      // final-judgement claim = agreement with the judge's verdict (disagree
-      // flips it); disagreements' reasons become the feedback.
+      // Derive reviewed examples from the claim verdicts. The judge's verdict
+      // anchors to final_judgement.expected_result (the server pins it to
+      // judge_score deterministically); disagreeing with the final judgement
+      // flips it, and disagreements' reasons become the feedback.
       const reviewed_examples: ReviewedExample[] = trace_claims.map((tc, i) => {
         const review = trace_reviews[i]
-        const fj = final_judgement_index(tc.claims)
-        const fjv = fj >= 0 ? review?.claim_verdicts[fj] : undefined
-        const judge_fail = tc.judge_score.toUpperCase().includes("FAIL")
-        const model_meets = !judge_fail
-        const user_meets = fjv?.agrees === false ? judge_fail : model_meets
-        const feedback = (review?.claim_verdicts ?? [])
-          .filter((v) => v.agrees === false && v.why.trim())
-          .map((v) => v.why.trim())
-          .join(" ")
         return {
           input: tc.raw_input,
           output: tc.raw_output,
-          model_says_meets_spec: model_meets,
-          user_says_meets_spec: user_meets,
-          feedback,
+          model_says_meets_spec: tc.final_judgement.expected_result === "pass",
+          user_says_meets_spec: user_says_meets_spec(tc, review),
+          feedback: disagreement_feedback(review),
+          claim_review: build_claim_review_payload(tc, review),
         }
       })
 

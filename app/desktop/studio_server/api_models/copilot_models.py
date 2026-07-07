@@ -2,6 +2,7 @@
 
 from typing import Annotated
 
+from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -48,6 +49,20 @@ class SampleApi(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ClaimReviewApi(BaseModel):
+    """The reviewer's grades on one trace's claim/evidence distillation.
+
+    Mirrors the persisted ClaimReview shape (judge verdict + per-claim
+    agree/disagree with optional whys) so the save path can write it onto
+    the golden TaskRun and judge refinement can consume it later.
+    """
+
+    judge_score: str
+    judge_reasoning: str
+    claims: list[GradedClaim]
+    final_judgement: GradedClaim
+
+
 class ReviewedExample(BaseModel):
     """A reviewed example from the spec review process.
 
@@ -60,8 +75,27 @@ class ReviewedExample(BaseModel):
     model_says_meets_spec: bool
     user_says_meets_spec: bool
     feedback: str
+    claim_review: ClaimReviewApi | None = Field(
+        default=None,
+        description="Per-claim grades from the claim/evidence review, when "
+        "the example was reviewed that way (v2 builder).",
+    )
 
     model_config = {"populate_by_name": True}
+
+
+class ReviewedChainApi(BaseModel):
+    """A reviewer's verdict on one multi-turn chain, keyed by its leaf run.
+
+    The leaf TaskRun id is the durable identity that rides from the drive
+    batch through review to save — the save path writes the golden rating
+    (and the claim review) onto that leaf.
+    """
+
+    leaf_run_id: str
+    user_says_meets_spec: bool
+    feedback: str = ""
+    claim_review: ClaimReviewApi | None = None
 
 
 # Input models

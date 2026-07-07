@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 from app.desktop.studio_server.api_models.copilot_models import (
+    ClaimReviewApi,
+    ReviewedChainApi,
     ReviewedExample,
     SampleApi,
 )
@@ -18,11 +20,19 @@ from app.desktop.studio_server.utils.copilot_utils import (
     create_task_run_from_reviewed,
     create_task_run_from_sample,
     get_copilot_api_key,
+    rate_multi_turn_chain_leaves,
     sample_and_remove,
+    unrate_multi_turn_chain_leaves,
 )
 from fastapi import HTTPException
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.task_output import DataSourceType
+from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import FeedbackSource, TaskOutputRatingType
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    TaskOutput,
+    TaskOutputRating,
+)
 
 
 class TestGetCopilotApiKey:
@@ -413,3 +423,219 @@ class TestCreateDatasetTaskRuns:
 
         # Should use all available examples
         assert len(task_runs) == 5
+
+
+def _claim_review_api(judge_score: str = "FAIL") -> ClaimReviewApi:
+    return ClaimReviewApi(
+        judge_score=judge_score,
+        judge_reasoning="Stated an unverified policy as fact.",
+        claims=[
+            GradedClaim(
+                claim="The agent stated a specific return window as fact.",
+                evidence="The reply gives a window of 30 days [1].",
+                expected_result="fail",
+                human_grade="agree",
+                human_feedback=None,
+            )
+        ],
+        final_judgement=GradedClaim(
+            claim="Fails Eval: fabricated policy.",
+            evidence="Asserts a window it never verified [1].",
+            expected_result="fail",
+            human_grade="disagree",
+            human_feedback="The policy quoted is actually correct.",
+        ),
+    )
+
+
+@pytest.fixture
+def task_with_leaves(tmp_path):
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+    source = DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "haiku",
+            "model_provider": "openrouter",
+            "adapter_name": "kiln_synthetic_user_runner",
+        },
+    )
+    leaves = []
+    for i in range(2):
+        run = TaskRun(
+            parent=task,
+            input=f"input {i}",
+            input_source=source,
+            output=TaskOutput(output=f"output {i}", source=source),
+        )
+        run.save_to_file()
+        leaves.append(run)
+    return task, leaves
+
+
+class TestRateMultiTurnChainLeaves:
+    def test_writes_rating_feedback_and_claim_review(self, task_with_leaves):
+        _, leaves = task_with_leaves
+        reviewed = [
+            ReviewedChainApi(
+                leaf_run_id=leaves[0].id,
+                user_says_meets_spec=False,
+                feedback="Fabricated the return window.",
+                claim_review=_claim_review_api(),
+            ),
+            ReviewedChainApi(
+                leaf_run_id=leaves[1].id,
+                user_says_meets_spec=True,
+            ),
+        ]
+
+        rated_out: list = []
+        rate_multi_turn_chain_leaves(
+            leaves, reviewed, spec_name="My Spec", rated_out=rated_out
+        )
+
+        # Leaf 0: FAIL rating + feedback + claim review persisted.
+        rating = leaves[0].output.rating
+        assert rating is not None
+        req = rating.requirement_ratings["named::My Spec"]
+        assert req.type == TaskOutputRatingType.pass_fail
+        assert req.value == 0.0
+        feedback = leaves[0].feedback()
+        assert len(feedback) == 1
+        assert feedback[0].source == FeedbackSource.spec_feedback
+        assert feedback[0].feedback == "Fabricated the return window."
+        reviews = leaves[0].claim_reviews()
+        assert len(reviews) == 1
+        assert reviews[0].judge_score == "FAIL"
+        assert reviews[0].final_judgement.human_grade == "disagree"
+        assert (
+            reviews[0].final_judgement.human_feedback
+            == "The policy quoted is actually correct."
+        )
+
+        # Leaf 1: PASS rating, no feedback/claim-review children.
+        rating = leaves[1].output.rating
+        assert rating is not None
+        assert rating.requirement_ratings["named::My Spec"].value == 1.0
+        assert leaves[1].feedback() == []
+        assert leaves[1].claim_reviews() == []
+
+        # Both mutations were captured for rollback.
+        assert len(rated_out) == 2
+
+    def test_unknown_leaf_id_raises_404(self, task_with_leaves):
+        _, leaves = task_with_leaves
+        reviewed = [
+            ReviewedChainApi(leaf_run_id="no_such_run", user_says_meets_spec=True)
+        ]
+        with pytest.raises(HTTPException) as exc:
+            rate_multi_turn_chain_leaves(leaves, reviewed, spec_name="My Spec")
+        assert exc.value.status_code == 404
+
+    def test_unrate_restores_prior_state(self, task_with_leaves):
+        _, leaves = task_with_leaves
+        # Leaf 0 starts with a pre-existing rating that must survive rollback.
+        prior = TaskOutputRating(
+            type=TaskOutputRatingType.five_star,
+            value=None,
+            requirement_ratings={
+                "named::Other Spec": {
+                    "type": TaskOutputRatingType.pass_fail,
+                    "value": 1.0,
+                }
+            },
+        )
+        leaves[0].output.rating = prior
+        leaves[0].save_to_file()
+
+        reviewed = [
+            ReviewedChainApi(
+                leaf_run_id=leaves[0].id,
+                user_says_meets_spec=False,
+                feedback="why",
+                claim_review=_claim_review_api(),
+            ),
+        ]
+        rated_out: list = []
+        rate_multi_turn_chain_leaves(
+            leaves, reviewed, spec_name="My Spec", rated_out=rated_out
+        )
+        assert "named::My Spec" in leaves[0].output.rating.requirement_ratings
+        assert len(leaves[0].feedback()) == 1
+        assert len(leaves[0].claim_reviews()) == 1
+
+        unrate_multi_turn_chain_leaves(rated_out)
+
+        rating = leaves[0].output.rating
+        assert rating is not None
+        assert "named::My Spec" not in rating.requirement_ratings
+        assert "named::Other Spec" in rating.requirement_ratings
+        assert leaves[0].feedback() == []
+        assert leaves[0].claim_reviews() == []
+
+    def test_failure_mid_children_still_rolls_back_the_rating(self, task_with_leaves):
+        # The rating is persisted before the Feedback/ClaimReview children; a
+        # failure saving a child must still leave the leaf recoverable via
+        # rated_out (recorded as soon as the rating hits disk).
+        _, leaves = task_with_leaves
+        reviewed = [
+            ReviewedChainApi(
+                leaf_run_id=leaves[0].id,
+                user_says_meets_spec=False,
+                feedback="why",
+                claim_review=_claim_review_api(),
+            ),
+        ]
+        rated_out: list = []
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.save_claim_review",
+            side_effect=RuntimeError("disk full"),
+        ):
+            with pytest.raises(RuntimeError, match="disk full"):
+                rate_multi_turn_chain_leaves(
+                    leaves, reviewed, spec_name="My Spec", rated_out=rated_out
+                )
+
+        # The mutated leaf was captured despite the mid-children failure...
+        assert len(rated_out) == 1
+        assert "named::My Spec" in leaves[0].output.rating.requirement_ratings
+
+        # ...so rollback restores it (rating gone, feedback child deleted).
+        unrate_multi_turn_chain_leaves(rated_out)
+        assert leaves[0].output.rating is None
+        assert leaves[0].feedback() == []
+        assert leaves[0].claim_reviews() == []
+
+
+class TestSavePendingChildren:
+    def test_persists_feedback_and_claim_review(self, task_with_leaves):
+        task, _ = task_with_leaves
+        reviewed = ReviewedExample(
+            input="What's the return window?",
+            output="30 days.",
+            model_says_meets_spec=False,
+            user_says_meets_spec=False,
+            feedback="Fabricated the window.",
+            claim_review=_claim_review_api(),
+        )
+        dataset = create_dataset_task_runs(
+            [], [reviewed], "eval_tag", "train_tag", "golden_tag", "My Spec"
+        )
+        assert len(dataset.task_runs) == 1
+        run = dataset.task_runs[0]
+        run.parent = task
+        run.save_to_file()
+        dataset.save_pending_children(run)
+
+        feedback = run.feedback()
+        assert len(feedback) == 1
+        assert feedback[0].feedback == "Fabricated the window."
+        reviews = run.claim_reviews()
+        assert len(reviews) == 1
+        assert reviews[0].judge_score == "FAIL"
+        assert len(reviews[0].claims) == 1
+        assert reviews[0].claims[0].human_grade == "agree"

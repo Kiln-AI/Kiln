@@ -9,28 +9,28 @@ from attrs import field as _attrs_field
 from ..models.expected_result import ExpectedResult
 
 if TYPE_CHECKING:
-    from ..models.citation import Citation
+    from ..models.citation_1 import Citation1
 
 
-T = TypeVar("T", bound="Claim")
+T = TypeVar("T", bound="FinalJudgement")
 
 
 @_attrs_define
-class Claim:
+class FinalJudgement:
     """
     Attributes:
-        claim (str): Atomic: a SINGLE inclusion, exclusion, or property. Inclusions affirmative; exclusions negative.
+        claim (str): The overall verdict as a claim, e.g. 'Eval passes'.
         evidence (str): ONE sentence. States the decisive fact with [n] markers; fold any real counter-point into a
-            single 'though …' clause. Do NOT quote long spans.
+            single 'though …' clause.
         expected_result (ExpectedResult):
-        citations (list[Citation]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
+        citations (list[Citation1]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
             the span from `from` to `to`.
     """
 
     claim: str
     evidence: str
     expected_result: ExpectedResult
-    citations: list[Citation]
+    citations: list[Citation1]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,7 +60,7 @@ class Claim:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.citation import Citation
+        from ..models.citation_1 import Citation1
 
         d = dict(src_dict)
         claim = d.pop("claim")
@@ -72,19 +72,19 @@ class Claim:
         citations = []
         _citations = d.pop("citations")
         for citations_item_data in _citations:
-            citations_item = Citation.from_dict(citations_item_data)
+            citations_item = Citation1.from_dict(citations_item_data)
 
             citations.append(citations_item)
 
-        claim = cls(
+        final_judgement = cls(
             claim=claim,
             evidence=evidence,
             expected_result=expected_result,
             citations=citations,
         )
 
-        claim.additional_properties = d
-        return claim
+        final_judgement.additional_properties = d
+        return final_judgement
 
     @property
     def additional_keys(self) -> list[str]:

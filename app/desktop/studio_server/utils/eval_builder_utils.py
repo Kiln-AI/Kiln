@@ -25,7 +25,6 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
-    ClaimApi,
     JudgeConfig,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
@@ -64,6 +63,8 @@ class JudgeVerdict:
 def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
     """Turn the UI's plain-text judge prompt into an llm_judge Jinja template.
 
+    Shared by the transient review judge AND the judge config persisted at
+    spec save (one judge, two lifetimes) — changes here alter both.
     The prompt is raw-wrapped so spec text containing Jinja syntax can't break
     rendering or inject template code; the appended data blocks are filled from
     EvalTaskInput by the adapter (full trace for multi-turn, I/O pair otherwise).
@@ -217,8 +218,8 @@ async def build_claims_for_trace(
     eval_rubric: str,
     judge_score: str,
     judge_reasoning: str,
-) -> list[ClaimApi]:
-    """Distill one trace + verdict into claim/evidence pairs via kiln_server.
+) -> BuildClaimsApiOutput:
+    """Distill one trace + verdict into claims + a final judgement via kiln_server.
 
     Thin remote passthrough: marshal → SDK call → map back. The claim generation
     (LLM) runs on kiln_server. Preserves the `from` citation alias for the UI.
@@ -248,6 +249,6 @@ async def build_claims_for_trace(
     # result.to_dict() emits citations with the `from` key; CitationApi's alias
     # preserves it on the studio response (the UI greps that literal key).
     if isinstance(result, BuildClaimEvidenceOutput):
-        return BuildClaimsApiOutput.model_validate(result.to_dict()).claims
+        return BuildClaimsApiOutput.model_validate(result.to_dict())
 
     raise HTTPException(status_code=500, detail="Unknown error building claims.")

@@ -31,8 +31,8 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
 )
 from .check_model_supported_response import CheckModelSupportedResponse
 from .citation import Citation
+from .citation_1 import Citation1
 from .claim import Claim
-from .claim_type import ClaimType
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
@@ -60,7 +60,9 @@ from .draft_input_data_guide_input import DraftInputDataGuideInput
 from .draft_input_data_guide_output import DraftInputDataGuideOutput
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
+from .expected_result import ExpectedResult
 from .file import File
+from .final_judgement import FinalJudgement
 from .file_file import FileFile
 from .function import Function
 from .function_call import FunctionCall
@@ -175,8 +177,8 @@ __all__ = (
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
     "Citation",
+    "Citation1",
     "Claim",
-    "ClaimType",
     "ClarifySpecInput",
     "ClarifySpecOutput",
     "ClientChatMessage",
@@ -196,7 +198,9 @@ __all__ = (
     "DraftInputDataGuideOutput",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
+    "ExpectedResult",
     "File",
+    "FinalJudgement",
     "FileFile",
     "Function",
     "FunctionCall",

@@ -6,8 +6,10 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_cla
     BuildClaimEvidenceOutput,
 )
 from app.desktop.studio_server.api_models.eval_builder_models import (
+    BuildClaimsApiOutput,
     CitationApi,
     ClaimApi,
+    FinalJudgementApi,
     JudgeConfig,
 )
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
@@ -70,13 +72,33 @@ def _parse_sse(response_text: str) -> list[dict | str]:
 def _claim_with_citation() -> ClaimApi:
     return ClaimApi(
         claim="The agent stated a specific 30-day return window as fact.",
-        claim_type="assertion",
+        expected_result="fail",
         evidence="The reply gives a window of 30 days from purchase [1].",
         citations=[
             CitationApi.model_validate(
                 {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
             )
         ],
+    )
+
+
+def _final_judgement() -> FinalJudgementApi:
+    return FinalJudgementApi(
+        claim="Fails Eval: the agent fabricated an unverified policy.",
+        expected_result="fail",
+        evidence="It asserts a return window it never verified [1].",
+        citations=[
+            CitationApi.model_validate(
+                {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
+            )
+        ],
+    )
+
+
+def _claims_output(claims: list[ClaimApi] | None = None) -> BuildClaimsApiOutput:
+    return BuildClaimsApiOutput(
+        claims=claims if claims is not None else [_claim_with_citation()],
+        final_judgement=_final_judgement(),
     )
 
 
@@ -107,7 +129,7 @@ def test_review_traces_streams_reviewed_events(client, review_request):
         ),
         patch(
             "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(return_value=[_claim_with_citation()]),
+            new=AsyncMock(return_value=_claims_output()),
         ),
     ):
         resp = client.post(REVIEW_URL, json=review_request)
@@ -128,14 +150,45 @@ def test_review_traces_streams_reviewed_events(client, review_request):
     assert {e["trace_index"] for e in reviewed} == {0, 1}
     assert events[-1] == "complete"
 
-    # every reviewed event carries the verdict + claims, and the citation key
-    # is the literal `from` (the UI greps it), not `from_`.
+    # every reviewed event carries the verdict + claims + the top-level final
+    # judgement, and the citation key is the literal `from` (the UI greps it),
+    # not `from_`.
     for e in reviewed:
         assert e["judge_score"] == "FAIL"
-        assert e["claims"][0]["claim_type"] == "assertion"
+        assert e["claims"][0]["expected_result"] == "fail"
+        assert e["final_judgement"]["expected_result"] == "fail"
         citation = e["claims"][0]["citations"][0]
         assert citation["from"] == "30 days" and "from_" not in citation
         assert citation["source"] == "output"
+        fj_citation = e["final_judgement"]["citations"][0]
+        assert fj_citation["from"] == "30 days" and "from_" not in fj_citation
+
+
+def test_review_traces_supports_empty_claims(client, review_request):
+    # claims may be EMPTY (trivial single-property evals) — the final
+    # judgement alone carries the review.
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(return_value=JudgeVerdict("FAIL", "fabricated a policy")),
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
+            new=AsyncMock(return_value=_claims_output(claims=[])),
+        ),
+    ):
+        resp = client.post(REVIEW_URL, json=review_request)
+
+    assert resp.status_code == 200
+    reviewed = [
+        e
+        for e in _parse_sse(resp.text)
+        if isinstance(e, dict) and e.get("type") == "trace_reviewed"
+    ]
+    assert len(reviewed) == 2
+    for e in reviewed:
+        assert e["claims"] == []
+        assert e["final_judgement"]["expected_result"] == "fail"
 
 
 def test_review_traces_emits_trace_error_and_still_completes(client, review_request):
@@ -402,7 +455,7 @@ def test_review_traces_forwards_structured_trace(client, review_request):
         ),
         patch(
             "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(return_value=[_claim_with_citation()]),
+            new=AsyncMock(return_value=_claims_output()),
         ),
     ):
         resp = client.post(REVIEW_URL, json=review_request)
@@ -450,7 +503,7 @@ class TestBuildClaims:
             "claims": [
                 {
                     "claim": "The agent stated a specific 30-day return window as fact.",
-                    "claim_type": "assertion",
+                    "expected_result": "fail",
                     "evidence": "The reply gives a window of 30 days from purchase [1].",
                     "citations": [
                         {
@@ -461,20 +514,20 @@ class TestBuildClaims:
                         }
                     ],
                 },
-                {
-                    "claim": "Fails Eval: the agent fabricated an unverified policy.",
-                    "claim_type": "final_judgement",
-                    "evidence": "It asserts a return window it never verified [1].",
-                    "citations": [
-                        {
-                            "marker": 1,
-                            "source": "output",
-                            "from": "30 days",
-                            "to": "full refund",
-                        }
-                    ],
-                },
-            ]
+            ],
+            "final_judgement": {
+                "claim": "Fails Eval: the agent fabricated an unverified policy.",
+                "expected_result": "fail",
+                "evidence": "It asserts a return window it never verified [1].",
+                "citations": [
+                    {
+                        "marker": 1,
+                        "source": "output",
+                        "from": "30 days",
+                        "to": "full refund",
+                    }
+                ],
+            },
         }
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -488,16 +541,20 @@ class TestBuildClaims:
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 200
             result = response.json()
-            assert len(result["claims"]) == 2
-            assert result["claims"][0]["claim_type"] == "assertion"
-            assert result["claims"][1]["claim_type"] == "final_judgement"
+            assert len(result["claims"]) == 1
+            assert result["claims"][0]["expected_result"] == "fail"
+            assert result["final_judgement"]["expected_result"] == "fail"
 
-            # The regression that matters: serialized citation key must be `from`.
+            # The regression that matters: serialized citation key must be `from`
+            # — on claims AND on the top-level final judgement.
             citation = result["claims"][0]["citations"][0]
             assert "from" in citation and "from_" not in citation
             assert citation["from"] == "30 days"
             assert citation["to"] == "purchase"
             assert citation["source"] == "output"
+            fj_citation = result["final_judgement"]["citations"][0]
+            assert "from" in fj_citation and "from_" not in fj_citation
+            assert fj_citation["to"] == "full refund"
 
     def test_build_claims_no_response(self, client, build_claims_input, mock_api_key):
         mock_response = MagicMock()

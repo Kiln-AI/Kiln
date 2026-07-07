@@ -2,9 +2,9 @@
   // One claim in the Claim/Evidence review — to the reviewer it's just a
   // question to answer: the atomic statement, its one-sentence evidence with
   // clickable [n] citations into the trace, and agree/disagree (+ a required
-  // reason on disagree, which feeds the refine loop). Uniform across claim
-  // types — the type (inclusion/exclusion/final_judgement) is server-side
-  // signal the reviewer doesn't need to see.
+  // reason on disagree, which feeds the refine loop). Uniform across claims
+  // and the final judgement — expected_result is server-side signal the
+  // reviewer doesn't need to see.
   import {
     type Citation,
     type Claim,

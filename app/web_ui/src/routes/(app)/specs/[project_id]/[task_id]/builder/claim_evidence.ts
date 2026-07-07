@@ -1,22 +1,23 @@
 // Claim/Evidence review — client mirror of the kiln_server buildClaimEvidence
-// task (PR #223). The contract is WIP on the server; keep this loosely coupled
-// and re-sync if Mike tweaks the shape.
+// task contract. Hand-mirrored because the task lives outside this repo's
+// generated API schema.
 //
 // The server task is PER-TRACE: one call distills one trace (raw_input +
-// raw_output) plus the judge's decision into atomic claim/evidence pairs, so a
-// reviewer can agree/disagree with each without reading the whole trace. The UI
-// holds N of these (one per generated trace) and manages trace identity itself,
-// since the server output carries no id.
+// raw_output) plus the judge's decision into atomic claim/evidence pairs plus
+// ONE top-level final judgement. The reviewer agrees/disagrees with each
+// without reading the whole trace. The UI holds N of these (one per generated
+// trace) and manages trace identity itself, since the server output carries
+// no id.
 
-// ── Server contract (mirror of BuildClaimEvidenceInput/Output) ───────────
-
-export type ClaimType =
-  | "inclusion" // an affirmative "X is included / present"
-  | "exclusion" // a negative "X was left out, and why it qualified"
-  | "assertion" // a single property of the output
-  | "final_judgement" // the one overall pass/fail call (exactly one per trace)
+import type { components } from "$lib/api_schema"
 
 export type CitationSource = "input" | "output"
+
+// The verdict an AGREE on a claim supports. On the final judgement this
+// always equals the judge's verdict (the server pins it deterministically);
+// on other claims it's a direction bit — claims pointing opposite the judge
+// are counter-evidence for catching a wrong judge.
+export type ExpectedResult = "pass" | "fail"
 
 // A start+end anchor into raw_input/raw_output. The parser highlights the span
 // from the first occurrence of `from` through the end of `to`. Snippets (not
@@ -30,15 +31,23 @@ export type Citation = {
 
 export type Claim = {
   claim: string
-  claim_type: ClaimType
+  expected_result: ExpectedResult
   // One sentence with inline [n] markers; counter-points folded into a
   // "…, though …" clause. Markers resolve via `citations`.
   evidence: string
   citations: Citation[]
 }
 
-// What buildClaimEvidence returns for a single trace.
-export type BuildClaimEvidenceOutput = { claims: Claim[] }
+// The one overall verdict entry — top-level, no longer a claim in the list.
+// Structurally identical to Claim; kept as an alias so call sites read right.
+export type FinalJudgement = Claim
+
+// What buildClaimEvidence returns for a single trace. `claims` may be EMPTY
+// (trivial single-property evals) — the final judgement always exists.
+export type BuildClaimEvidenceOutput = {
+  claims: Claim[]
+  final_judgement: FinalJudgement
+}
 
 // What buildClaimEvidence takes for a single trace.
 export type BuildClaimEvidenceInput = {
@@ -53,18 +62,24 @@ export type BuildClaimEvidenceInput = {
 
 // One generated trace + the claims built for it. raw_input/raw_output are kept
 // client-side so the trace modal can render them and resolve citation spans.
+// leaf_run_id is the durable TaskRun identity for multi-turn chains (from
+// run_cases_batch) — the save path writes the golden rating onto it; null for
+// single-turn traces (their TaskRuns are created at save time).
 export type TraceClaims = {
   trace_id: string
+  leaf_run_id: string | null
   raw_input: string
   raw_output: string
   judge_score: string
+  judge_reasoning: string
   claims: Claim[]
+  final_judgement: FinalJudgement
 }
 
 // ── Human review (UI output) ─────────────────────────────────────────────
 
 // Server claims carry no id, so verdicts are positional (index into
-// TraceClaims.claims).
+// TraceClaims.claims). The final judgement gets its own slot.
 export type ClaimVerdict = {
   agrees: boolean | null // null = not yet reviewed
   why: string // required when the human disagrees — feeds the refine loop
@@ -73,16 +88,7 @@ export type ClaimVerdict = {
 export type TraceReview = {
   trace_id: string
   claim_verdicts: ClaimVerdict[]
-}
-
-// ── Display helpers ──────────────────────────────────────────────────────
-
-// Claim types (inclusion/exclusion/assertion/final_judgement) are server-side
-// signal, not shown to the reviewer — each claim is just a question to answer.
-// Only the final_judgement type is used by the UI, to locate the overall call.
-
-export function final_judgement_index(claims: Claim[]): number {
-  return claims.findIndex((c) => c.claim_type === "final_judgement")
+  final_judgement_verdict: ClaimVerdict
 }
 
 // ── Citation resolution ──────────────────────────────────────────────────
@@ -114,10 +120,11 @@ export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
   return traces.map((t) => ({
     trace_id: t.trace_id,
     claim_verdicts: t.claims.map(() => ({ agrees: null, why: "" })),
+    final_judgement_verdict: { agrees: null, why: "" },
   }))
 }
 
-// A trace is reviewed once its final-judgement claim has an agree/disagree and
+// A trace is reviewed once the final judgement has an agree/disagree and
 // every disagreement (on any claim) carries a reason. Sub-claim verdicts are
 // optional — we force only the overall call plus reasons for dissent.
 export function is_trace_reviewed(
@@ -125,9 +132,8 @@ export function is_trace_reviewed(
   review: TraceReview | undefined,
 ): boolean {
   if (!review) return false
-  const fj = final_judgement_index(trace.claims)
-  if (fj >= 0 && review.claim_verdicts[fj]?.agrees === null) return false
-  return review.claim_verdicts.every(
+  if (review.final_judgement_verdict.agrees === null) return false
+  return [...review.claim_verdicts, review.final_judgement_verdict].every(
     (v) => v.agrees !== false || v.why.trim().length > 0,
   )
 }
@@ -138,4 +144,65 @@ export function all_traces_reviewed(
 ): boolean {
   if (traces.length === 0 || reviews.length !== traces.length) return false
   return traces.every((t, i) => is_trace_reviewed(t, reviews[i]))
+}
+
+// ── Save payload (per-claim grades) ──────────────────────────────────────
+
+// The studio save contract IS in the generated schema — alias it (don't
+// hand-mirror) so a backend change to the payload shape fails to compile here.
+export type GradedClaim = components["schemas"]["GradedClaim"]
+export type ClaimReviewPayload = components["schemas"]["ClaimReviewApi"]
+
+function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
+  return {
+    claim: claim.claim,
+    evidence: claim.evidence,
+    expected_result: claim.expected_result,
+    human_grade: verdict.agrees ? "agree" : "disagree",
+    human_feedback: verdict.why.trim() || null,
+  }
+}
+
+// Build the persisted per-claim grades for one reviewed trace. Only claims
+// the reviewer actually graded are included (sub-claim verdicts are
+// optional); the final judgement is always graded by the time save is
+// reachable (is_trace_reviewed gates it).
+export function build_claim_review_payload(
+  trace: TraceClaims,
+  review: TraceReview,
+): ClaimReviewPayload {
+  return {
+    judge_score: trace.judge_score,
+    judge_reasoning: trace.judge_reasoning,
+    claims: trace.claims
+      .map((claim, i) => ({ claim, verdict: review.claim_verdicts[i] }))
+      .filter(({ verdict }) => verdict && verdict.agrees !== null)
+      .map(({ claim, verdict }) => graded_claim(claim, verdict)),
+    final_judgement: graded_claim(
+      trace.final_judgement,
+      review.final_judgement_verdict,
+    ),
+  }
+}
+
+// The reviewer's overall verdict on a trace: the judge's verdict (pinned on
+// final_judgement.expected_result), flipped when the human disagrees with the
+// final judgement.
+export function user_says_meets_spec(
+  trace: TraceClaims,
+  review: TraceReview,
+): boolean {
+  const judge_passes = trace.final_judgement.expected_result === "pass"
+  return review.final_judgement_verdict.agrees === false
+    ? !judge_passes
+    : judge_passes
+}
+
+// Concatenated disagree-whys across all claims (incl. the final judgement) —
+// the legacy free-text feedback field alongside the structured grades.
+export function disagreement_feedback(review: TraceReview): string {
+  return [...review.claim_verdicts, review.final_judgement_verdict]
+    .filter((v) => v.agrees === false && v.why.trim())
+    .map((v) => v.why.trim())
+    .join(" ")
 }

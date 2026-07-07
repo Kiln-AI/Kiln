@@ -64,7 +64,7 @@ async def review_one_trace(
         judge,
         trace=trace.trace,
     )
-    claims = await build_claims_for_trace(
+    claims_output = await build_claims_for_trace(
         raw_input=trace.raw_input,
         raw_output=trace.raw_output,
         eval_rubric=eval_rubric,
@@ -75,7 +75,8 @@ async def review_one_trace(
         trace_index=index,
         judge_score=verdict.judge_score,
         judge_reasoning=verdict.judge_reasoning,
-        claims=claims,
+        claims=claims_output.claims,
+        final_judgement=claims_output.final_judgement,
     )
 
 
@@ -98,7 +99,8 @@ def connect_eval_builder_api(app: FastAPI):
         """Per-trace `judge → claim builder`, fanned out (local) and streamed.
 
         Emits one SSE event per trace as it completes:
-          - `trace_reviewed` { trace_index, judge_score, judge_reasoning, claims }
+          - `trace_reviewed` { trace_index, judge_score, judge_reasoning,
+                               claims, final_judgement }
           - `trace_error`    { trace_index, error }   (batch continues)
         Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
         """
@@ -159,12 +161,10 @@ def connect_eval_builder_api(app: FastAPI):
 
         Used by the refine loop (regenerate claims without re-running the judge).
         """
-        return BuildClaimsApiOutput(
-            claims=await build_claims_for_trace(
-                raw_input=input.raw_input,
-                raw_output=input.raw_output,
-                eval_rubric=input.eval_rubric,
-                judge_score=input.judge_score,
-                judge_reasoning=input.judge_reasoning,
-            )
+        return await build_claims_for_trace(
+            raw_input=input.raw_input,
+            raw_output=input.raw_output,
+            eval_rubric=input.eval_rubric,
+            judge_score=input.judge_score,
+            judge_reasoning=input.judge_reasoning,
         )

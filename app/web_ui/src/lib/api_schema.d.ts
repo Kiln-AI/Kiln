@@ -3130,7 +3130,8 @@ export interface paths {
          * @description Per-trace `judge → claim builder`, fanned out (local) and streamed.
          *
          *     Emits one SSE event per trace as it completes:
-         *       - `trace_reviewed` { trace_index, judge_score, judge_reasoning, claims }
+         *       - `trace_reviewed` { trace_index, judge_score, judge_reasoning,
+         *                            claims, final_judgement }
          *       - `trace_error`    { trace_index, error }   (batch continues)
          *     Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
          */
@@ -4228,11 +4229,14 @@ export interface components {
         };
         /**
          * BuildClaimsApiOutput
-         * @description All claims for one trace, ordered most- to least-important.
+         * @description Claims for one trace (importance-ordered, may be empty) + the one
+         *     final judgement. Trivial single-property evals can carry everything in
+         *     the final judgement alone.
          */
         BuildClaimsApiOutput: {
             /** Claims */
             claims: components["schemas"]["ClaimApi"][];
+            final_judgement: components["schemas"]["FinalJudgementApi"];
         };
         /**
          * BuildPromptRequest
@@ -4613,19 +4617,40 @@ export interface components {
         /**
          * ClaimApi
          * @description One atomic claim + its one-sentence evidence with [n] citation markers.
+         *
+         *     `expected_result` is the verdict a reviewer's AGREE on this claim supports —
+         *     a direction bit, not a re-judging: claims pointing opposite the judge's
+         *     verdict are counter-evidence the reviewer can use to catch a bad judge.
          */
         ClaimApi: {
             /** Claim */
             claim: string;
             /**
-             * Claim Type
+             * Expected Result
              * @enum {string}
              */
-            claim_type: "inclusion" | "exclusion" | "assertion" | "final_judgement";
+            expected_result: "pass" | "fail";
             /** Evidence */
             evidence: string;
             /** Citations */
             citations: components["schemas"]["CitationApi"][];
+        };
+        /**
+         * ClaimReviewApi
+         * @description The reviewer's grades on one trace's claim/evidence distillation.
+         *
+         *     Mirrors the persisted ClaimReview shape (judge verdict + per-claim
+         *     agree/disagree with optional whys) so the save path can write it onto
+         *     the golden TaskRun and judge refinement can consume it later.
+         */
+        ClaimReviewApi: {
+            /** Judge Score */
+            judge_score: string;
+            /** Judge Reasoning */
+            judge_reasoning: string;
+            /** Claims */
+            claims: components["schemas"]["GradedClaim"][];
+            final_judgement: components["schemas"]["GradedClaim"];
         };
         /**
          * ClarifySpecApiInput
@@ -5248,6 +5273,7 @@ export interface components {
             multi_turn?: components["schemas"]["MultiTurnSaveInfo"] | null;
             /**
              * Task Description
+             * @description Unused since the judge config moved to the V2 shape (the legacy config's properties carried it); kept so existing clients' request bodies stay valid.
              * @default
              */
             task_description: string;
@@ -7057,6 +7083,26 @@ export interface components {
             };
         };
         /**
+         * FinalJudgementApi
+         * @description The one overall verdict entry (top-level, not a claim in the list).
+         *
+         *     Its expected_result always equals the judge's verdict — the server pins it
+         *     deterministically, so the answer key can anchor to it.
+         */
+        FinalJudgementApi: {
+            /** Claim */
+            claim: string;
+            /**
+             * Expected Result
+             * @enum {string}
+             */
+            expected_result: "pass" | "fail";
+            /** Evidence */
+            evidence: string;
+            /** Citations */
+            citations: components["schemas"]["CitationApi"][];
+        };
+        /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
          */
@@ -7587,6 +7633,43 @@ export interface components {
              * @default false
              */
             has_oauth_token: boolean;
+        };
+        /**
+         * GradedClaim
+         * @description One claim/evidence pair with a human grade on it.
+         *
+         *     `expected_result` is the verdict an AGREE on the claim supports, so a
+         *     grade is meaningful relative to a judge's verdict: agreeing with a claim
+         *     that points opposite the judge is evidence the judge was wrong.
+         */
+        GradedClaim: {
+            /**
+             * Claim
+             * @description The claim that was graded.
+             */
+            claim: string;
+            /**
+             * Evidence
+             * @description The one-sentence evidence backing the claim.
+             */
+            evidence: string;
+            /**
+             * Expected Result
+             * @description The verdict an AGREE on this claim supports.
+             * @enum {string}
+             */
+            expected_result: "pass" | "fail";
+            /**
+             * Human Grade
+             * @description The human's grade on this claim.
+             * @enum {string}
+             */
+            human_grade: "agree" | "disagree";
+            /**
+             * Human Feedback
+             * @description Optional plaintext reason for the grade.
+             */
+            human_feedback?: string | null;
         };
         /** GuidePreviewInput */
         GuidePreviewInput: {
@@ -8466,6 +8549,11 @@ export interface components {
              * @description The batch_tag emitted by the multi-turn synthetic-user runner (see kiln_ai.synthetic_user.runner). Identifies the set of conversation chains already persisted to disk that this Eval should evaluate.
              */
             batch_tag: string;
+            /**
+             * Reviewed Chains
+             * @description The human's review verdicts, one per reviewed chain keyed by leaf TaskRun id. Each becomes a golden RequirementRating on the chain leaf (plus Feedback / per-claim grades when present).
+             */
+            reviewed_chains?: components["schemas"]["ReviewedChainApi"][];
         };
         /**
          * NewProposedSpecEditApi
@@ -9674,6 +9762,26 @@ export interface components {
             judge: components["schemas"]["JudgeConfig"];
         };
         /**
+         * ReviewedChainApi
+         * @description A reviewer's verdict on one multi-turn chain, keyed by its leaf run.
+         *
+         *     The leaf TaskRun id is the durable identity that rides from the drive
+         *     batch through review to save — the save path writes the golden rating
+         *     (and the claim review) onto that leaf.
+         */
+        ReviewedChainApi: {
+            /** Leaf Run Id */
+            leaf_run_id: string;
+            /** User Says Meets Spec */
+            user_says_meets_spec: boolean;
+            /**
+             * Feedback
+             * @default
+             */
+            feedback: string;
+            claim_review?: components["schemas"]["ClaimReviewApi"] | null;
+        };
+        /**
          * ReviewedExample
          * @description A reviewed example from the spec review process.
          *
@@ -9691,6 +9799,8 @@ export interface components {
             user_says_meets_spec: boolean;
             /** Feedback */
             feedback: string;
+            /** @description Per-claim grades from the claim/evidence review, when the example was reviewed that way (v2 builder). */
+            claim_review?: components["schemas"]["ClaimReviewApi"] | null;
         };
         /** RunCasesBatchApiInput */
         RunCasesBatchApiInput: {

@@ -24,8 +24,9 @@
   let trace_modal: ClaimTraceModal | null = null
 
   // The server returns every claim importance-ordered; we show only the most
-  // important few. Keep the overall verdict (final_judgement) plus the top
-  // others, ≤ this many, so the decision-flipping claim is always reviewable.
+  // important few plus the (always-present, top-level) final judgement pinned
+  // last as the conclusion. Claims may be EMPTY for trivial evals — the final
+  // judgement alone is then the whole review.
   const MAX_CLAIMS = 3
 
   $: total = traces.length
@@ -33,14 +34,9 @@
   $: current_verdicts = verdicts[current_index]
 
   // Keep original indices, since verdicts are positional.
-  $: indexed = (current?.claims ?? []).map((claim, index) => ({ claim, index }))
-  $: final = indexed.find((c) => c.claim.claim_type === "final_judgement")
-  $: others = indexed.filter((c) => c.claim.claim_type !== "final_judgement")
-  // Most-important others first; the overall verdict pinned last as the
-  // conclusion.
-  $: visible = final
-    ? [...others.slice(0, MAX_CLAIMS - 1), final]
-    : others.slice(0, MAX_CLAIMS)
+  $: visible = (current?.claims ?? [])
+    .map((claim, index) => ({ claim, index }))
+    .slice(0, MAX_CLAIMS - 1)
 
   function open_citation(citation: Citation) {
     if (current) trace_modal?.open_citation(current, citation)
@@ -109,6 +105,13 @@
           on_cite={open_citation}
         />
       {/each}
+      <!-- The overall verdict, pinned last as the conclusion. Always present
+           even when the claims list is empty. -->
+      <ClaimCard
+        claim={current.final_judgement}
+        bind:verdict={current_verdicts.final_judgement_verdict}
+        on_cite={open_citation}
+      />
     </div>
   {/if}
 

@@ -61,6 +61,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     GenerateBatchApiInput,
     GenerateBatchApiOutput,
     RefineSpecApiInput,
+    ReviewedChainApi,
     ReviewedExample,
     SpecQuestionerApiInput,
     SyntheticDataGenerationSessionConfigApi,
@@ -72,15 +73,20 @@ from app.desktop.studio_server.utils.copilot_utils import (
     find_multi_turn_chain_leaves,
     generate_copilot_examples,
     get_copilot_api_key,
+    rate_multi_turn_chain_leaves,
     tag_multi_turn_chains_for_eval,
+    unrate_multi_turn_chain_leaves,
     untag_multi_turn_chains_for_eval,
+)
+from app.desktop.studio_server.utils.eval_builder_utils import (
+    build_judge_prompt_template,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, LlmJudgeProperties
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
     Spec,
@@ -90,6 +96,7 @@ from kiln_ai.datamodel.spec import (
     TaskSample,
 )
 from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
+from kiln_ai.datamodel.task_output import TaskOutputRating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.spec_utils import (
@@ -159,6 +166,12 @@ class MultiTurnSaveInfo(BaseModel):
         "(see kiln_ai.synthetic_user.runner). Identifies the set of conversation "
         "chains already persisted to disk that this Eval should evaluate."
     )
+    reviewed_chains: list[ReviewedChainApi] = Field(
+        default_factory=list,
+        description="The human's review verdicts, one per reviewed chain keyed "
+        "by leaf TaskRun id. Each becomes a golden RequirementRating on the "
+        "chain leaf (plus Feedback / per-claim grades when present).",
+    )
 
 
 class CreateSpecWithCopilotRequest(BaseModel):
@@ -195,7 +208,12 @@ class CreateSpecWithCopilotRequest(BaseModel):
     judge_info: SyntheticDataGenerationStepConfigApi
     sdg_session_config: SyntheticDataGenerationSessionConfigApi | None = None
     multi_turn: MultiTurnSaveInfo | None = None
-    task_description: str = ""
+    task_description: str = Field(
+        default="",
+        description="Unused since the judge config moved to the V2 shape "
+        "(the legacy config's properties carried it); kept so existing "
+        "clients' request bodies stay valid.",
+    )
     task_prompt_with_example: str = ""
     task_sample: TaskSample | None = None
 
@@ -835,6 +853,32 @@ def connect_copilot_api(app: FastAPI):
                         f"'{request.multi_turn.batch_tag}'."
                     ),
                 )
+            # Reviewed chains must reference leaves of THIS batch, each at
+            # most once — check up front so a stale or malformed review fails
+            # before any models are created (rate_multi_turn_chain_leaves
+            # re-checks membership as a backstop).
+            leaf_ids = {leaf.id for leaf in multi_turn_leaves if leaf.id}
+            reviewed_ids = [rc.leaf_run_id for rc in request.multi_turn.reviewed_chains]
+            missing = [rid for rid in reviewed_ids if rid not in leaf_ids]
+            if missing:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        "Reviewed chain leaves not found in batch "
+                        f"'{request.multi_turn.batch_tag}': {', '.join(missing)}."
+                    ),
+                )
+            duplicates = sorted(
+                {rid for rid in reviewed_ids if reviewed_ids.count(rid) > 1}
+            )
+            if duplicates:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Each chain leaf can be reviewed at most once; "
+                        f"duplicated: {', '.join(duplicates)}."
+                    ),
+                )
 
         # Build models but don't save yet, collect all models first
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
@@ -857,17 +901,22 @@ def connect_copilot_api(app: FastAPI):
         )
         models_to_save.append(eval)
 
-        # 2. Create judge eval config
+        # 2. Create the judge eval config — V2 shape, the same judge the review
+        # step ran transiently (one judge, persisted vs transient). V2 rails
+        # give it an editable prompt_template the refine loop can write back
+        # into, instead of the legacy llm_as_judge dispatch.
         eval_config = EvalConfig(
             parent=eval,
             name=generate_memorable_name(),
-            config_type=EvalConfigType.llm_as_judge,
-            model_name=request.judge_info.task_metadata.model_name,
-            model_provider=request.judge_info.task_metadata.model_provider_name,
-            properties={
-                "eval_steps": [request.judge_info.prompt],
-                "task_description": request.task_description,
-            },
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name=request.judge_info.task_metadata.model_name,
+                model_provider=request.judge_info.task_metadata.model_provider_name,
+                prompt_template=build_judge_prompt_template(
+                    request.judge_info.prompt,
+                    multi_turn=request.evaluate_full_trace,
+                ),
+            ),
         )
         models_to_save.append(eval_config)
 
@@ -954,6 +1003,9 @@ def connect_copilot_api(app: FastAPI):
         # Save everything, with cleanup on failure.
         saved_models: list[Eval | EvalConfig | TaskRun | Spec] = []
         tagged_leaves: list[tuple[TaskRun, set[str]]] = []
+        rated_leaves: list[
+            tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
+        ] = []
         try:
             eval.save_to_file()
             saved_models.append(eval)
@@ -965,7 +1017,7 @@ def connect_copilot_api(app: FastAPI):
                 run.save_to_file()
                 saved_models.append(run)
                 if dataset_runs is not None:
-                    dataset_runs.save_pending_feedback(run)
+                    dataset_runs.save_pending_children(run)
 
             spec.save_to_file()
             saved_models.append(spec)
@@ -982,10 +1034,21 @@ def connect_copilot_api(app: FastAPI):
                     golden_tag,
                     tagged_out=tagged_leaves,
                 )
+                # Then write the human's verdicts: golden ratings (+ feedback
+                # and per-claim grades) on the reviewed chain leaves.
+                rate_multi_turn_chain_leaves(
+                    multi_turn_leaves,
+                    request.multi_turn.reviewed_chains,
+                    spec_name=request.name,
+                    rated_out=rated_leaves,
+                )
         except Exception:
-            # Reverse any leaf tags we added in this run before deleting the
-            # saved models, so a failed multi-turn save doesn't leave orphan
-            # tags pointing at a now-deleted eval.
+            # Reverse any leaf mutations we made in this run (ratings first —
+            # they were applied last) before deleting the saved models, so a
+            # failed multi-turn save doesn't leave orphan ratings or tags
+            # pointing at a now-deleted eval.
+            if rated_leaves:
+                unrate_multi_turn_chain_leaves(rated_leaves)
             if tagged_leaves:
                 untag_multi_turn_chains_for_eval(tagged_leaves)
             for model in reversed(saved_models):

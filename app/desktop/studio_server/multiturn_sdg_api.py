@@ -176,8 +176,9 @@ class RunCasesBatchApiInput(BaseModel):
 # ───────────────────────── helpers ─────────────────────────
 
 # Concurrent upstream /generate calls when fanning out per-case prompts.
-# Mirrors the eval_builder review pipeline's REVIEW_CONCURRENCY.
-CASE_GEN_CONCURRENCY = 5
+# Equal to NUM_CASES_MAX so a full batch runs as one wave — stage latency is
+# a single call's, not ceil(N/cap) waves of it.
+CASE_GEN_CONCURRENCY = NUM_CASES_MAX
 
 
 def _case_target_specification(target_specification: str, case_prompt: str) -> str:

@@ -68,10 +68,28 @@ class CitationApi(BaseModel):
 
 
 class ClaimApi(BaseModel):
-    """One atomic claim + its one-sentence evidence with [n] citation markers."""
+    """One atomic claim + its one-sentence evidence with [n] citation markers.
+
+    `expected_result` is the verdict a reviewer's AGREE on this claim supports —
+    a direction bit, not a re-judging: claims pointing opposite the judge's
+    verdict are counter-evidence the reviewer can use to catch a bad judge.
+    """
 
     claim: str
-    claim_type: Literal["inclusion", "exclusion", "assertion", "final_judgement"]
+    expected_result: Literal["pass", "fail"]
+    evidence: str
+    citations: list[CitationApi]
+
+
+class FinalJudgementApi(BaseModel):
+    """The one overall verdict entry (top-level, not a claim in the list).
+
+    Its expected_result always equals the judge's verdict — the server pins it
+    deterministically, so the answer key can anchor to it.
+    """
+
+    claim: str
+    expected_result: Literal["pass", "fail"]
     evidence: str
     citations: list[CitationApi]
 
@@ -91,9 +109,12 @@ class BuildClaimsApiInput(BaseModel):
 
 
 class BuildClaimsApiOutput(BaseModel):
-    """All claims for one trace, ordered most- to least-important."""
+    """Claims for one trace (importance-ordered, may be empty) + the one
+    final judgement. Trivial single-property evals can carry everything in
+    the final judgement alone."""
 
     claims: list[ClaimApi]
+    final_judgement: FinalJudgementApi
 
 
 # ── SSE event payloads (serialized to JSON in the review_traces stream) ──────
@@ -107,6 +128,7 @@ class TraceReviewedEvent(BaseModel):
     judge_score: str
     judge_reasoning: str
     claims: list[ClaimApi]
+    final_judgement: FinalJudgementApi
 
 
 class TraceErrorEvent(BaseModel):

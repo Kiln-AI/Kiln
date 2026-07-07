@@ -19,6 +19,8 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.api_models.copilot_models import (
+    ClaimReviewApi,
+    ReviewedChainApi,
     ReviewedExample,
     SampleApi,
     SyntheticDataGenerationSessionConfigApi,
@@ -26,7 +28,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
-from kiln_ai.datamodel import Feedback, FeedbackSource, Task, TaskRun
+from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -184,8 +186,9 @@ def create_task_run_from_reviewed(
 ) -> tuple[TaskRun, str | None]:
     """Create a TaskRun from a reviewed example with rating (without parent set).
 
-    Returns a (TaskRun, feedback_text) tuple. The caller should create a Feedback
-    child on the TaskRun after saving it, if feedback_text is not None.
+    Returns a (TaskRun, feedback_text) tuple. The caller should create Feedback
+    and ClaimReview children on the TaskRun after saving it (see
+    DatasetTaskRuns.save_pending_children).
     """
     data_source = DataSource(
         type=DataSourceType.synthetic,
@@ -227,19 +230,28 @@ def create_task_run_from_reviewed(
 
 
 class DatasetTaskRuns:
-    """Result of creating dataset task runs, with pending feedback to attach after saving."""
+    """Result of creating dataset task runs, with pending review children
+    (feedback + claim reviews) to attach after saving."""
 
     def __init__(self) -> None:
         self.task_runs: list[TaskRun] = []
         self._pending_feedback: dict[str, str] = {}
+        self._pending_claim_reviews: dict[str, ClaimReviewApi] = {}
 
-    def add_run(self, task_run: TaskRun, feedback_text: str | None = None) -> None:
+    def add_run(
+        self,
+        task_run: TaskRun,
+        feedback_text: str | None = None,
+        claim_review: ClaimReviewApi | None = None,
+    ) -> None:
         self.task_runs.append(task_run)
         if feedback_text and task_run.id:
             self._pending_feedback[task_run.id] = feedback_text
+        if claim_review and task_run.id:
+            self._pending_claim_reviews[task_run.id] = claim_review
 
-    def save_pending_feedback(self, task_run: TaskRun) -> None:
-        """Create Feedback children for a saved TaskRun if it has pending feedback."""
+    def save_pending_children(self, task_run: TaskRun) -> None:
+        """Create Feedback / ClaimReview children for a saved TaskRun."""
         if not task_run.id:
             return
         feedback_text = self._pending_feedback.get(task_run.id)
@@ -250,6 +262,23 @@ class DatasetTaskRuns:
                 parent=task_run,
             )
             fb.save_to_file()
+        claim_review = self._pending_claim_reviews.get(task_run.id)
+        if claim_review:
+            save_claim_review(task_run, claim_review)
+
+
+def save_claim_review(task_run: TaskRun, claim_review: ClaimReviewApi) -> ClaimReview:
+    """Persist a reviewer's per-claim grades as a ClaimReview child of the run.
+
+    This is the durable half of the answer key: the golden rating records the
+    human's verdict, the ClaimReview records WHY (per-claim agree/disagree +
+    whys) in the shape judge-prompt refinement consumes.
+    """
+    # model_dump instead of a field-by-field copy: the API model mirrors the
+    # datamodel, so a new field flows through without a silent drop here.
+    review = ClaimReview(**claim_review.model_dump(), parent=task_run)
+    review.save_to_file()
+    return review
 
 
 def create_dataset_task_runs(
@@ -268,7 +297,7 @@ def create_dataset_task_runs(
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
 
     Returns DatasetTaskRuns without parent set - caller must set parent and call
-    save_pending_feedback after saving each run.
+    save_pending_children after saving each run.
     """
     result = DatasetTaskRuns()
 
@@ -282,7 +311,7 @@ def create_dataset_task_runs(
         task_run, feedback_text = create_task_run_from_reviewed(
             reviewed, golden_tag, spec_name, extra_tags
         )
-        result.add_run(task_run, feedback_text)
+        result.add_run(task_run, feedback_text, reviewed.claim_review)
 
     # Create more unrated golden examples from remaining pool if needed
     unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
@@ -369,3 +398,95 @@ def untag_multi_turn_chains_for_eval(
             leaf.save_to_file()
         except Exception:
             logger.exception(f"Failed to untag leaf {leaf.id} during cleanup")
+
+
+def rate_multi_turn_chain_leaves(
+    leaves: list[TaskRun],
+    reviewed_chains: list[ReviewedChainApi],
+    spec_name: str,
+    rated_out: list[
+        tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
+    ]
+    | None = None,
+) -> None:
+    """Write the human's review verdicts onto the chain-leaf TaskRuns.
+
+    Each reviewed chain becomes a golden RequirementRating (pass_fail under
+    `named::{spec_name}`) on its leaf, plus a Feedback for the disagree-why
+    text and a ClaimReview child carrying the per-claim grades — the same
+    answer-key shape single-turn golden runs get.
+
+    If `rated_out` is provided, each mutated leaf is appended as
+    `(leaf, rating_before_this_call, children_added)` so a failed save can
+    be reversed via `unrate_multi_turn_chain_leaves`.
+
+    Raises HTTPException(404) when a reviewed chain references a leaf id not
+    in `leaves` — the review must describe the batch being saved.
+    """
+    leaves_by_id = {leaf.id: leaf for leaf in leaves if leaf.id}
+    rating_key = f"named::{spec_name}"
+
+    for reviewed in reviewed_chains:
+        leaf = leaves_by_id.get(reviewed.leaf_run_id)
+        if leaf is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Reviewed chain leaf '{reviewed.leaf_run_id}' is not part "
+                    "of this batch."
+                ),
+            )
+
+        prior_rating = (
+            leaf.output.rating.model_copy(deep=True) if leaf.output.rating else None
+        )
+        rating = leaf.output.rating or TaskOutputRating(
+            type=TaskOutputRatingType.five_star,
+            value=None,  # Actual rating is in requirement_ratings
+        )
+        rating.requirement_ratings[rating_key] = RequirementRating(
+            type=TaskOutputRatingType.pass_fail,
+            value=1.0 if reviewed.user_says_meets_spec else 0.0,
+        )
+        leaf.output.rating = rating
+        leaf.save_to_file()
+
+        # Record for rollback the moment the leaf is mutated on disk;
+        # added_children is filled in place below, so a failure while saving
+        # a child still rolls back everything already persisted.
+        added_children: list[Feedback | ClaimReview] = []
+        if rated_out is not None:
+            rated_out.append((leaf, prior_rating, added_children))
+
+        if reviewed.feedback:
+            fb = Feedback(
+                feedback=reviewed.feedback,
+                source=FeedbackSource.spec_feedback,
+                parent=leaf,
+            )
+            fb.save_to_file()
+            added_children.append(fb)
+        if reviewed.claim_review:
+            added_children.append(save_claim_review(leaf, reviewed.claim_review))
+
+
+def unrate_multi_turn_chain_leaves(
+    rated_leaves: list[
+        tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
+    ],
+) -> None:
+    """Reverse the mutations done by rate_multi_turn_chain_leaves.
+
+    Restores each leaf's prior rating and deletes the Feedback/ClaimReview
+    children this run added. Best-effort like the untag path: per-leaf
+    failures are logged and the loop continues so the original error stays
+    visible.
+    """
+    for leaf, prior_rating, added_children in rated_leaves:
+        try:
+            leaf.output.rating = prior_rating
+            leaf.save_to_file()
+            for child in added_children:
+                child.delete()
+        except Exception:
+            logger.exception(f"Failed to unrate leaf {leaf.id} during cleanup")

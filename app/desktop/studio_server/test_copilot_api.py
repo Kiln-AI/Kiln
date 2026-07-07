@@ -37,7 +37,8 @@ from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task, TaskRun
-from kiln_ai.datamodel.eval import EvalDataType
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import EvalConfigType, EvalDataType, LlmJudgeProperties
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
@@ -466,6 +467,20 @@ class TestCreateSpecWithCopilot:
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
 
+        # The saved judge is a V2 config: typed LlmJudgeProperties with the
+        # judge prompt wrapped into a template (single-turn → I/O data blocks),
+        # not the legacy llm_as_judge dict.
+        configs = evals[0].configs()
+        assert len(configs) == 1
+        config = configs[0]
+        assert config.config_type == EvalConfigType.v2
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.model_name == "gpt-4"
+        assert config.properties.model_provider == "openai"
+        assert "Test prompt" in config.properties.prompt_template
+        assert "{{ task_input }}" in config.properties.prompt_template
+        assert config.model_name is None and config.model_provider is None
+
         specs = task.specs()
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
@@ -559,6 +574,34 @@ class TestCreateSpecWithCopilotMultiTurn:
             "task_prompt_with_example": "Test prompt",
         }
 
+    @staticmethod
+    def _reviewed_chain(leaf_run_id: str, meets_spec: bool) -> dict:
+        return {
+            "leaf_run_id": leaf_run_id,
+            "user_says_meets_spec": meets_spec,
+            "feedback": "" if meets_spec else "Fabricated a return window.",
+            "claim_review": {
+                "judge_score": "PASS" if meets_spec else "FAIL",
+                "judge_reasoning": "Judge reasoning here.",
+                "claims": [
+                    {
+                        "claim": "The agent stated a return window.",
+                        "evidence": "Gives 30 days [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    }
+                ],
+                "final_judgement": {
+                    "claim": "Overall verdict.",
+                    "evidence": "Decisive fact [1].",
+                    "expected_result": "pass" if meets_spec else "fail",
+                    "human_grade": "agree",
+                    "human_feedback": None,
+                },
+            },
+        }
+
     def test_multi_turn_save_success_tags_chains_and_creates_eval(
         self,
         client,
@@ -567,6 +610,11 @@ class TestCreateSpecWithCopilotMultiTurn:
         multi_turn_request_data,
     ):
         project, task = project_and_task
+        # Two of the three chains were reviewed: one pass, one fail.
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain(synthetic_chain_leaves[1].id, meets_spec=True),
+        ]
 
         with (
             patch(
@@ -605,6 +653,13 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert eval_obj.eval_set_filter_id == "tag::eval_multi_turn_spec"
         assert eval_obj.current_config_id is not None
 
+        # The saved judge is a V2 config with a multi-turn (trace) template.
+        configs = eval_obj.configs()
+        assert len(configs) == 1
+        assert configs[0].config_type == EvalConfigType.v2
+        assert isinstance(configs[0].properties, LlmJudgeProperties)
+        assert "{{ trace | tojson }}" in configs[0].properties.prompt_template
+
         # Leaves got the eval + golden tags applied on top of their existing
         # synthetic_user_* tags. No train tag (multi-turn has no train set).
         expected_eval_tag = "eval_multi_turn_spec"
@@ -615,6 +670,143 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert expected_golden_tag in leaf.tags
             assert train_tag not in leaf.tags
             assert "synthetic_user_case" in leaf.tags
+
+        # Reviewed leaves carry golden ratings matching the review clicks,
+        # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
+        runs_by_id = {run.id: run for run in task.runs()}
+        rating_key = "named::Multi Turn Spec"
+        failed = runs_by_id[synthetic_chain_leaves[0].id]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert len(failed.feedback()) == 1
+        assert failed.feedback()[0].feedback == "Fabricated a return window."
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "FAIL"
+        assert failed.claim_reviews()[0].final_judgement.expected_result == "fail"
+
+        passed = runs_by_id[synthetic_chain_leaves[1].id]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert len(passed.claim_reviews()) == 1
+
+        unreviewed = runs_by_id[synthetic_chain_leaves[2].id]
+        assert unreviewed.output.rating is None
+        assert unreviewed.claim_reviews() == []
+
+    def test_multi_turn_save_unknown_leaf_fails_before_any_save(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A reviewed chain referencing a leaf outside the batch is rejected up
+        # front — nothing is created and no leaf is mutated.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain("not_a_real_leaf", meets_spec=True),
+        ]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 404
+        assert "not_a_real_leaf" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+            assert leaf.feedback() == []
+            assert leaf.claim_reviews() == []
+            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_multi_turn_save_rejects_duplicate_reviewed_leaves(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # The same leaf reviewed twice is a malformed request — rejected up
+        # front (422) with nothing created or mutated.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=True),
+        ]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "at most once" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+
+    def test_multi_turn_save_failure_mid_rating_rolls_back(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A failure AFTER tagging/rating started reverses everything: leaf
+        # tags and ratings revert, created models are deleted.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def rate_then_boom(*args, **kwargs):
+            copilot_utils.rate_multi_turn_chain_leaves(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.rate_multi_turn_chain_leaves",
+                side_effect=rate_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+            assert leaf.feedback() == []
+            assert leaf.claim_reviews() == []
+            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "eval_golden_multi_turn_spec" not in leaf.tags
 
     def test_multi_turn_save_404_when_batch_tag_matches_nothing(
         self, client, project_and_task, multi_turn_request_data
