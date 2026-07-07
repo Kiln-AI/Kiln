@@ -138,6 +138,7 @@ class ModelName(str, Enum):
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
     claude_sonnet_4 = "claude_sonnet_4"
+    claude_sonnet_5 = "claude_sonnet_5"
     claude_sonnet_4_6 = "claude_sonnet_4_6"
     claude_sonnet_4_5 = "claude_sonnet_4_5"
     claude_opus_4 = "claude_opus_4"
@@ -526,6 +527,25 @@ CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+CLAUDE_SONNET_5_ANTHROPIC_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
 }
 
 # Fable 5 requires reasoning and cannot disable it, so "none" is omitted (unlike
@@ -1849,6 +1869,8 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1869,6 +1891,8 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
                 anthropic_summarized_thinking=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1934,6 +1958,55 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Sonnet 5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_5,
+        friendly_name="Claude 5 Sonnet",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-sonnet-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-sonnet-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_SONNET_5_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Claude Sonnet 4.6
     KilnModel(
         family=ModelFamily.claude,
@@ -1947,8 +2020,6 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1968,8 +2039,6 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
                 default_thinking_level="high",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -3257,14 +3326,17 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="nvidia/nemotron-3-ultra-550b-a55b",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
                 require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/nemotron-3-ultra-nvfp4",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="nvidia/nemotron-3-ultra-550b-a55b",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                reasoning_capable=True,
             ),
         ],
     ),
@@ -7110,7 +7182,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="z-ai/glm-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
@@ -7118,7 +7189,13 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),

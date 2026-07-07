@@ -265,11 +265,14 @@
     <!-- Intro / empty state ---------------------------------------------- -->
     <div class="flex items-center justify-center py-12 sm:py-16">
       <Intro
-        title="Start by Adding Examples"
-        description_markdown={"Show Kiln what good inputs look like. Add real or representative examples of the inputs your task will receive.\nKiln Pro uses them to draft a Data Guide you can review and refine. More examples lead to a better guide."}
+        title="Add Example Inputs"
+        description_paragraphs={[
+          "Give Kiln real or representative examples of the inputs your task receives.",
+          "Kiln Pro analyzes them to draft a Data Guide describing what your inputs look like, which you'll review and refine. The more you add, the better the guide.",
+        ]}
         action_buttons={[
           {
-            label: "Add Examples",
+            label: "Add Inputs",
             is_primary: true,
             onClick: open_source_picker,
           },

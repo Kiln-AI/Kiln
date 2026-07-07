@@ -27,7 +27,11 @@ from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     StructuredOutputMode,
 )
-from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    EMPTY_RESPONSE_ERROR_MESSAGE,
+    AdapterStream,
+    raise_for_empty_model_response,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
@@ -39,6 +43,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
+    strip_numeric_bounds,
     validate_schema_with_value_error,
 )
 from kiln_ai.datamodel.run_config import (
@@ -166,9 +171,7 @@ class LiteLlmAdapter(BaseAdapter):
             content = response_choice.message.content
             tool_calls = response_choice.message.tool_calls
             if not content and not tool_calls:
-                raise ValueError(
-                    "Model returned an assistant message, but no content or tool calls. This is not supported."
-                )
+                raise_for_empty_model_response(response_choice)
 
             # Add message to messages, so it can be used in the next turn
             messages.append(response_choice.message)
@@ -482,6 +485,13 @@ class LiteLlmAdapter(BaseAdapter):
                 "Invalid output schema for this task. Cannot use JSON schema response format."
             )
         output_schema = close_object_schemas(output_schema, strict=True)
+        # Strip numeric bounds (min/max/etc.) from integer/number nodes for the
+        # json_schema wire format. Some providers (e.g. Claude via OpenRouter,
+        # which maps onto Anthropic's newer output_config.format.schema API)
+        # reject numeric bounds on integer/number types and return HTTP 400.
+        # The valid ranges are still enforced by the prompt + post-hoc
+        # validation, so this only affects the schema sent over the wire.
+        output_schema = strip_numeric_bounds(output_schema)
         return {
             "response_format": {
                 "type": "json_schema",
@@ -973,9 +983,7 @@ class LiteLlmAdapter(BaseAdapter):
             message["usage"] = usage
 
         if not message.get("content") and not message.get("tool_calls"):
-            raise ValueError(
-                "Model returned an assistant message, but no content or tool calls. This is not supported."
-            )
+            raise ValueError(EMPTY_RESPONSE_ERROR_MESSAGE)
 
         return message
 

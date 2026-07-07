@@ -16,16 +16,22 @@
     model_info,
     load_model_info,
     model_name as friendly_model_name,
+    provider_name_from_id,
   } from "$lib/stores"
   import type { AvailableModels, RunConfigProperties } from "$lib/types"
 
   export let project_id: string
   export let mode: "tiles" | "link" = "tiles"
+  // Bindable friendly names for the currently-selected input model, so a
+  // `link`-mode parent can render its own trigger (e.g. "GPT-5.5" / "OpenRouter").
+  export let selected_model_name_display: string = ""
+  export let selected_provider_display: string = ""
 
   let input_config_dialog: Dialog
   let combined_config_dialog: Dialog
   let input_run_config_component: RunConfigComponent | null = null
   let input_model_name: string = ""
+  let input_provider: string = ""
 
   function pick_data_gen_model(providers: AvailableModels[]): string | null {
     for (const provider of providers) {
@@ -51,6 +57,15 @@
   $: if (!recommended_data_gen_model && $available_models.length > 0) {
     recommended_data_gen_model = pick_data_gen_model($available_models)
   }
+
+  // `input_model_name` is the model id, `input_provider` the provider id — both
+  // kept in sync by RunConfigComponent. Resolve each to a friendly name.
+  $: selected_model_name_display = input_model_name
+    ? friendly_model_name(input_model_name, $model_info)
+    : ""
+  $: selected_provider_display = input_provider
+    ? provider_name_from_id(input_provider)
+    : ""
 
   onMount(() => {
     load_available_models()
@@ -94,13 +109,14 @@
 
   <Dialog
     bind:this={input_config_dialog}
-    title="Generation Options"
+    title="Generation Settings"
     sub_subtitle="The run options used to generate synthetic inputs for review."
     action_buttons={[{ label: "Done", isPrimary: true }]}
   >
     <RunConfigComponent
       bind:this={input_run_config_component}
       bind:model_name={input_model_name}
+      bind:provider={input_provider}
       model={recommended_data_gen_model}
       {project_id}
       requires_structured_output={true}
@@ -116,7 +132,7 @@
 {:else}
   <Dialog
     bind:this={combined_config_dialog}
-    title="Generation Options"
+    title="Generation Settings"
     sub_subtitle="The run options used to generate synthetic inputs for review."
     width="wide"
     action_buttons={[{ label: "Done", isPrimary: true }]}
@@ -124,6 +140,7 @@
     <RunConfigComponent
       bind:this={input_run_config_component}
       bind:model_name={input_model_name}
+      bind:provider={input_provider}
       model={recommended_data_gen_model}
       {project_id}
       requires_structured_output={true}

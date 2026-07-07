@@ -27,9 +27,7 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
   import Intro from "$lib/ui/intro.svelte"
-  import Callout from "$lib/ui/callout.svelte"
   import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
-  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
   import SynthBatchChooser from "../synth_batch_chooser.svelte"
@@ -83,12 +81,6 @@
   let task: Task | null = null
   let task_error: KilnError | null = null
   let task_loading = true
-
-  // Set when the user just returned from data guide setup (manual or copilot)
-  // so the synth page
-  // can confirm the guide was saved (the new guide is below the fold). Read
-  // once on mount and stripped from the URL so a refresh doesn't re-show it.
-  let data_guide_just_saved = false
 
   $: error = $loading_error || task_error
 
@@ -212,12 +204,6 @@
   }
 
   onMount(async () => {
-    if ($page.url.searchParams.get("data_guide_saved") === "true") {
-      data_guide_just_saved = true
-      const cleaned = new URL($page.url.toString())
-      cleaned.searchParams.delete("data_guide_saved")
-      history.replaceState(history.state, "", cleaned.toString())
-    }
     await Promise.all([get_task(), fetch_data_guide()])
     if (!task) {
       task_error = new KilnError(
@@ -928,16 +914,6 @@
           </Intro>
         </div>
       {:else if is_empty && is_setup && !guide_loading && (data_guide || skip_data_guide) && batch_mode === null}
-        {#if data_guide_just_saved}
-          <div class="mt-8">
-            <Callout
-              title="Data Guide saved"
-              description="Your data guide will be available to use when generating inputs below."
-            >
-              <div slot="icon"><CheckmarkIcon /></div>
-            </Callout>
-          </div>
-        {/if}
         <SynthBatchChooser
           on_manual={() => advance_synth_step("batch", "manual")}
           on_kiln_pro={() => advance_synth_step("batch", "pro")}

@@ -53,14 +53,15 @@
           {
             id: "upload",
             name: "Upload Documents",
-            description: "Import documents from your computer.",
+            description:
+              "Add document files from your computer as example inputs.",
             icon: UploadIcon,
           },
           {
             id: "library",
-            name: "Document Library",
+            name: "Project Documents",
             description:
-              "Pick from documents already uploaded to this project.",
+              "Reuse documents from this project's Document Library as example inputs.",
             icon: DocumentIcon,
           },
         ]
@@ -68,13 +69,13 @@
     {
       id: "dataset",
       name: "Dataset",
-      description: "Pick examples already in your Kiln Dataset.",
+      description: "Reuse real inputs from past runs in your Kiln dataset.",
       icon: DatabaseIcon,
     },
     {
       id: "csv",
       name: "CSV Import",
-      description: "Import a CSV file to bulk-add examples.",
+      description: "Bulk-add many example inputs at once from a CSV file.",
       icon: CsvIcon,
     },
     ...(is_structured_task
@@ -83,7 +84,7 @@
             id: "manual_structured",
             name: "Manual Entry",
             description:
-              "Write an example input by hand using your task's input schema.",
+              "Write an example input by hand, following your task's input schema.",
             icon: EditIcon,
           },
         ]
@@ -92,8 +93,8 @@
 </script>
 
 <Dialog
-  title="Add Examples"
-  sub_subtitle="Choose a source to get started. You'll be able to add more examples later."
+  title="Choose an Input Source"
+  sub_subtitle="Pick where your example inputs come from. You can add more later."
   bind:this={dialog}
   width="wide"
 >

@@ -109,6 +109,10 @@ tags_metadata = [
         "name": "Settings & Utilities",
         "description": "Server settings, connectivity checks, and utility endpoints.",
     },
+    {
+        "name": "Jobs",
+        "description": "Run, monitor, and control background jobs, and stream their events.",
+    },
 ]
 
 
