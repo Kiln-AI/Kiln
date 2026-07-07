@@ -408,8 +408,7 @@ def connect_chat_api(app: FastAPI) -> None:
         ],
     ) -> BudgetStatusResponse | None:
         """The conversation's spend-budget status; null when nothing recorded."""
-        if not spend_ledger.is_valid_conversation_id(conversation_id):
-            raise HTTPException(status_code=400, detail="Invalid conversation id")
+        _require_valid_conversation_id(conversation_id)
         # ALLOW_AGENT: the assistant can call this. Scope its reads to its own
         # conversation — when this request carries the conversation contextvar
         # (set by the budget middleware from the X-Kiln-Conversation-Id header an
@@ -442,8 +441,7 @@ def connect_chat_api(app: FastAPI) -> None:
         body: SetBudgetRequest,
     ) -> BudgetStatusResponse:
         """Set or extend (absolute value) the conversation's USD spend budget."""
-        if not spend_ledger.is_valid_conversation_id(conversation_id):
-            raise HTTPException(status_code=400, detail="Invalid conversation id")
+        _require_valid_conversation_id(conversation_id)
         try:
             status = spend_ledger.set_budget(conversation_id, body.budget_usd)
         except ValueError as e:
