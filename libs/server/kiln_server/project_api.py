@@ -130,7 +130,9 @@ def connect_project_api(app: FastAPI):
         "/api/import_project",
         summary="Import Project",
         tags=["Projects"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to import a project? Kiln projects can contain code that runs on your machine."
+        ),
     )
     async def import_project(
         project_path: Annotated[
