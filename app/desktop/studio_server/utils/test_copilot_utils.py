@@ -425,7 +425,7 @@ class TestCreateDatasetTaskRuns:
         assert len(task_runs) == 5
 
 
-def _claim_review_api(judge_score: str = "FAIL") -> ClaimReviewApi:
+def _claim_review_api(judge_score: str = "fail") -> ClaimReviewApi:
     return ClaimReviewApi(
         judge_score=judge_score,
         judge_reasoning="Stated an unverified policy as fact.",
@@ -510,7 +510,7 @@ class TestRateMultiTurnChainLeaves:
         assert feedback[0].feedback == "Fabricated the return window."
         reviews = leaves[0].claim_reviews()
         assert len(reviews) == 1
-        assert reviews[0].judge_score == "FAIL"
+        assert reviews[0].judge_score == "fail"
         assert reviews[0].final_judgement.human_grade == "disagree"
         assert (
             reviews[0].final_judgement.human_feedback
@@ -636,6 +636,6 @@ class TestSavePendingChildren:
         assert feedback[0].feedback == "Fabricated the window."
         reviews = run.claim_reviews()
         assert len(reviews) == 1
-        assert reviews[0].judge_score == "FAIL"
+        assert reviews[0].judge_score == "fail"
         assert len(reviews[0].claims) == 1
         assert reviews[0].claims[0].human_grade == "agree"

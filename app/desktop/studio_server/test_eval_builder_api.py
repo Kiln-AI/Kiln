@@ -31,6 +31,7 @@ from kiln_ai.datamodel.eval import (
     V2EvalResult,
 )
 from kiln_server.custom_errors import connect_custom_errors
+from kiln_server.utils.spec_utils import spec_eval_output_score
 
 REVIEW_URL = "/api/projects/p1/tasks/t1/eval_builder/review_traces"
 BUILD_CLAIMS_URL = "/api/projects/p1/tasks/t1/eval_builder/build_claims"
@@ -112,7 +113,7 @@ def review_request():
             {"raw_input": "in-1", "raw_output": "out-1"},
             {"raw_input": "in-2", "raw_output": "out-2"},
         ],
-        "eval_rubric": "The agent must not fabricate company policies.",
+        "spec_name": "Test Spec",
         "judge": {
             "prompt": "Judge whether the output fabricates policy.",
             "model_name": "claude_sonnet_4_6",
@@ -125,7 +126,7 @@ def test_review_traces_streams_reviewed_events(client, review_request):
     with (
         patch(
             "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(return_value=JudgeVerdict("FAIL", "fabricated a policy")),
+            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
         ),
         patch(
             "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
@@ -154,7 +155,10 @@ def test_review_traces_streams_reviewed_events(client, review_request):
     # judgement, and the citation key is the literal `from` (the UI greps it),
     # not `from_`.
     for e in reviewed:
-        assert e["judge_score"] == "FAIL"
+        assert e["judge_score"] == "fail"
+        # The event echoes the exact text the claim builder saw.
+        assert e["raw_input"] in {"in-1", "in-2"}
+        assert e["raw_output"] in {"out-1", "out-2"}
         assert e["claims"][0]["expected_result"] == "fail"
         assert e["final_judgement"]["expected_result"] == "fail"
         citation = e["claims"][0]["citations"][0]
@@ -170,7 +174,7 @@ def test_review_traces_supports_empty_claims(client, review_request):
     with (
         patch(
             "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(return_value=JudgeVerdict("FAIL", "fabricated a policy")),
+            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
         ),
         patch(
             "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
@@ -197,7 +201,7 @@ def test_review_traces_emits_trace_error_and_still_completes(client, review_requ
     with (
         patch(
             "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(return_value=JudgeVerdict("PASS", "fine")),
+            new=AsyncMock(return_value=JudgeVerdict("pass", "fine")),
         ),
         patch(
             "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
@@ -266,10 +270,12 @@ class TestBuildJudgePromptTemplate:
         assert "{{ final_message }}" in template
         assert "trace" not in template
 
-    def test_multi_turn_uses_trace_block(self):
+    def test_multi_turn_uses_canonical_transcript_block(self):
         template = build_judge_prompt_template("Check the policy.", multi_turn=True)
         assert "Check the policy." in template
-        assert "{{ trace | tojson }}" in template
+        # format_trace = the shared canonical rendering (EvalTraceFormatter),
+        # the same text the claim builder receives as raw_output.
+        assert "{{ trace | format_trace }}" in template
         assert "{{ final_message }}" not in template
 
     def test_jinja_in_judge_prompt_is_raw_wrapped(self):
@@ -289,7 +295,7 @@ class TestBuildJudgePromptTemplate:
 class TestBuildTransientJudgeEvalConfig:
     def test_single_turn_config_shape(self, in_memory_task, judge_config):
         config = build_transient_judge_eval_config(
-            in_memory_task, judge_config, multi_turn=False
+            in_memory_task, judge_config, multi_turn=False, spec_name="Test Spec"
         )
         assert config.config_type == EvalConfigType.v2
         properties = config.properties
@@ -305,19 +311,22 @@ class TestBuildTransientJudgeEvalConfig:
         assert eval_obj.evaluation_data_type == EvalDataType.final_answer
         assert len(eval_obj.output_scores) == 1
         assert eval_obj.output_scores[0].type == TaskOutputRatingType.pass_fail
-        assert eval_obj.output_scores[0].json_key() == "overall"
+        # The review judge scores under the SAME identity the saved eval uses
+        # (spec_eval_output_score), so the calibrated prompt is the shipped one.
+        assert eval_obj.output_scores[0] == spec_eval_output_score("Test Spec")
+        assert eval_obj.output_scores[0].json_key() == "test_spec"
         assert eval_obj.parent_task() is in_memory_task
 
     def test_multi_turn_scores_full_trace(self, in_memory_task, judge_config):
         config = build_transient_judge_eval_config(
-            in_memory_task, judge_config, multi_turn=True
+            in_memory_task, judge_config, multi_turn=True, spec_name="Test Spec"
         )
         eval_obj = config.parent_eval()
         assert eval_obj is not None
         assert eval_obj.evaluation_data_type == EvalDataType.full_trace
         properties = config.properties
         assert isinstance(properties, LlmJudgeProperties)
-        assert "{{ trace | tojson }}" in properties.prompt_template
+        assert "{{ trace | format_trace }}" in properties.prompt_template
 
 
 class TestRunJudgeForTrace:
@@ -325,27 +334,31 @@ class TestRunJudgeForTrace:
     async def test_pass_verdict_with_reasoning(self, in_memory_task, judge_config):
         adapter = _judge_adapter(
             V2EvalResult(
-                scores={"overall": 1.0},
+                scores={"test_spec": 1.0},
                 intermediate_outputs={"reasoning": "The reply follows the policy."},
             )
         )
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
-            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
+            verdict = await run_judge_for_trace(
+                "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
+            )
 
-        assert verdict.judge_score == "PASS"
+        assert verdict.judge_score == "pass"
         assert verdict.judge_reasoning == "The reply follows the policy."
 
     @pytest.mark.asyncio
     async def test_fail_verdict_falls_back_when_no_reasoning(
         self, in_memory_task, judge_config
     ):
-        adapter = _judge_adapter(V2EvalResult(scores={"overall": 0.0}))
+        adapter = _judge_adapter(V2EvalResult(scores={"test_spec": 0.0}))
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
-            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
+            verdict = await run_judge_for_trace(
+                "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
+            )
 
-        assert verdict.judge_score == "FAIL"
+        assert verdict.judge_score == "fail"
         assert "FAIL" in verdict.judge_reasoning  # honest placeholder, not fabricated
 
     @pytest.mark.asyncio
@@ -354,13 +367,15 @@ class TestRunJudgeForTrace:
     ):
         adapter = _judge_adapter(
             V2EvalResult(
-                scores={"overall": 1.0},
+                scores={"test_spec": 1.0},
                 intermediate_outputs={"chain_of_thought": "Step by step it holds."},
             )
         )
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
-            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
+            verdict = await run_judge_for_trace(
+                "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
+            )
 
         assert verdict.judge_reasoning == "Step by step it holds."
 
@@ -368,7 +383,7 @@ class TestRunJudgeForTrace:
     async def test_multi_turn_passes_trace_and_final_message(
         self, in_memory_task, judge_config
     ):
-        adapter = _judge_adapter(V2EvalResult(scores={"overall": 1.0}))
+        adapter = _judge_adapter(V2EvalResult(scores={"test_spec": 1.0}))
         trace = [
             {"role": "user", "content": "Can I return opened items?"},
             {"role": "assistant", "content": "Let me check the policy."},
@@ -378,7 +393,13 @@ class TestRunJudgeForTrace:
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch as mock_registry:
             await run_judge_for_trace(
-                "p1", "t1", "in", "flattened transcript", judge_config, trace=trace
+                "p1",
+                "t1",
+                "in",
+                "flattened transcript",
+                judge_config,
+                spec_name="Test Spec",
+                trace=trace,
             )
 
         eval_input = adapter.evaluate.call_args.args[0]
@@ -403,7 +424,9 @@ class TestRunJudgeForTrace:
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
             with pytest.raises(ValueError, match="Judge skipped this trace"):
-                await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
+                await run_judge_for_trace(
+                    "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
+                )
 
     @pytest.mark.asyncio
     async def test_missing_score_raises(self, in_memory_task, judge_config):
@@ -411,7 +434,9 @@ class TestRunJudgeForTrace:
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
             with pytest.raises(ValueError, match="no score"):
-                await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
+                await run_judge_for_trace(
+                    "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
+                )
 
 
 def test_review_traces_judge_skip_streams_trace_error(
@@ -441,13 +466,14 @@ def test_review_traces_judge_skip_streams_trace_error(
 
 
 def test_review_traces_forwards_structured_trace(client, review_request):
-    # Multi-turn requests carry the structured trace through to the judge.
+    # Multi-turn traces send ONLY the structured trace; the studio derives the
+    # canonical (raw_input, raw_output) and hands the judge the trace itself.
     trace = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello"},
     ]
-    review_request["traces"][0]["trace"] = trace
-    judge_mock = AsyncMock(return_value=JudgeVerdict("PASS", "fine"))
+    review_request["traces"][0] = {"trace": trace}
+    judge_mock = AsyncMock(return_value=JudgeVerdict("pass", "fine"))
     with (
         patch(
             "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
@@ -456,7 +482,7 @@ def test_review_traces_forwards_structured_trace(client, review_request):
         patch(
             "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
             new=AsyncMock(return_value=_claims_output()),
-        ),
+        ) as claims_mock,
     ):
         resp = client.post(REVIEW_URL, json=review_request)
 
@@ -464,8 +490,36 @@ def test_review_traces_forwards_structured_trace(client, review_request):
     traces_by_input = {
         call.args[2]: call.kwargs["trace"] for call in judge_mock.call_args_list
     }
-    assert traces_by_input["in-1"] == trace
+    # Multi-turn raw_input = the opening user message, derived server-side.
+    assert traces_by_input["hi"] == trace
     assert traces_by_input["in-2"] is None
+    # The claim builder received the canonical transcript as raw_output, and
+    # the judge's actual prompt as the rubric.
+    claims_calls = {
+        call.kwargs["raw_input"]: call.kwargs for call in claims_mock.call_args_list
+    }
+    multi_turn_call = claims_calls["hi"]
+    assert multi_turn_call["raw_output"] == (
+        "user:\n<user_message>\nhi\n</user_message>\n\n"
+        "assistant:\n<assistant_message>\nhello\n</assistant_message>"
+    )
+    assert (
+        multi_turn_call["eval_rubric"] == "Judge whether the output fabricates policy."
+    )
+
+
+def test_review_traces_rejects_ambiguous_trace_shape(client, review_request):
+    # A trace AND a raw I/O pair on one entry is ambiguous — the studio owns
+    # the multi-turn rendering, so the request is rejected outright.
+    review_request["traces"][0]["trace"] = [{"role": "user", "content": "hi"}]
+    resp = client.post(REVIEW_URL, json=review_request)
+    assert resp.status_code == 422
+
+
+def test_review_traces_rejects_sourceless_trace(client, review_request):
+    review_request["traces"][0] = {}
+    resp = client.post(REVIEW_URL, json=review_request)
+    assert resp.status_code == 422
 
 
 # ───────────────────────── build_claims primitive ─────────────────────────
@@ -481,7 +535,7 @@ def build_claims_input():
         ),
         "eval_rubric": "The agent must not fabricate or guess at company policies.",
         "judge_reasoning": "Stated a concrete return window as fact without verifying.",
-        "judge_score": "FAIL",
+        "judge_score": "fail",
     }
 
 

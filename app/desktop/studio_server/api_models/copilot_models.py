@@ -1,6 +1,6 @@
 """Shared Pydantic models for the Copilot API."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -57,7 +57,7 @@ class ClaimReviewApi(BaseModel):
     the golden TaskRun and judge refinement can consume it later.
     """
 
-    judge_score: str
+    judge_score: Literal["pass", "fail"]
     judge_reasoning: str
     claims: list[GradedClaim]
     final_judgement: GradedClaim

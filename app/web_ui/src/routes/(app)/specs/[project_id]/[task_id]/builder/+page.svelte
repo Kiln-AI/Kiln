@@ -41,9 +41,13 @@
   import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import type { SuggestedEdit } from "../spec_utils"
-  import { KilnError } from "$lib/utils/error_handlers"
+  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
-  import { build_default_judge_info } from "$lib/eval/default_judge"
+  import {
+    build_default_judge_info,
+    judge_config_from_sdg_step,
+    type JudgeConfig,
+  } from "$lib/eval/default_judge"
   import {
     kilnCopilotConnected,
     initCopilotConnectionStore,
@@ -57,7 +61,6 @@
     SpecType,
     SubsampleBatchOutputItemApi,
     SyntheticDataGenerationSessionConfigApi,
-    SyntheticDataGenerationStepConfigApi,
     ReviewedExample,
   } from "$lib/types"
   import posthog from "posthog-js"
@@ -317,6 +320,9 @@
   let refine_form_error: KilnError | null = null
   let refine_submitting = false
   let refined_preview_loading = false
+  // Non-blocking: refinement failing still lands the user on an editable
+  // refine step, but they should know their answers weren't incorporated.
+  let refine_warning: string | null = null
 
   // Called by Questions component on Continue. Fires the refinement call and
   // populates the state shape consumed by RefineSpec. Matches v1's flow:
@@ -326,6 +332,7 @@
   ) {
     goto_step("refine")
     refined_preview_loading = true
+    refine_warning = null
     try {
       const spec_fields: Record<string, string> = {}
       const spec_field_current_values: Record<string, string> = {}
@@ -345,7 +352,12 @@
           signal: new_copilot_abort_signal(),
         },
       )
-      if (error || !data) return
+      if (error || !data) {
+        refine_warning = `Couldn't refine the spec from your answers (${createKilnError(
+          error,
+        ).getMessage()}) — edit it directly below.`
+        return
+      }
 
       const refine_response = data as {
         new_proposed_spec_edits?: {
@@ -371,9 +383,12 @@
       suggested_edits = edits
       not_incorporated_feedback =
         refine_response.not_incorporated_feedback ?? ""
-    } catch {
-      // Silent — the refine response is optional; on error we land on the
-      // refine step with no suggested edits and the user can advance.
+    } catch (e) {
+      if (is_abort_error(e)) return
+      // Refinement is optional — the user lands on an editable refine step
+      // either way — but the failure must not be silent.
+      refine_warning =
+        "Couldn't refine the spec from your answers — edit it directly below."
     } finally {
       refined_preview_loading = false
     }
@@ -397,7 +412,17 @@
   let generation_error: string | null = null
   let single_turn_examples: SubsampleBatchOutputItemApi[] = []
   let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
-  let judge_info: SyntheticDataGenerationStepConfigApi | null = null
+  // The judge, in the ONE JudgeConfig shape used by review and save alike.
+  // Single-turn: mapped from clarify_spec's judge_result. Multi-turn: none
+  // until review builds the default.
+  let judge_info: JudgeConfig | null = null
+  // The judge the review step actually ran — save persists THIS object, so
+  // the judge the user calibrated against is the judge that ships.
+  let review_judge: JudgeConfig | null = null
+  // Identity snapshot of what the review judged (spec name + spec text).
+  // Save is refused when it no longer matches: renaming or editing the spec
+  // after review would ship a judge the review never calibrated.
+  let reviewed_identity: string | null = null
 
   // multi-turn output — chains populated from run_cases_batch SSE events.
   type ChainTurn = { role: "user" | "assistant"; content: string }
@@ -484,7 +509,9 @@
       }
       single_turn_examples = data.examples_for_feedback ?? []
       sdg_session_config = data.sdg_session_config ?? null
-      judge_info = data.judge_result ?? null
+      judge_info = data.judge_result
+        ? judge_config_from_sdg_step(data.judge_result)
+        : null
       await build_claims_for_review()
       if (claims_error) {
         generation_error = claims_error
@@ -557,13 +584,16 @@
         total_cost: number
       }
 
-  // The spec text driving generation — Step 3's refined description, falling
-  // back to the Step 1 free text (same fallback the save path uses).
-  function current_spec_text(): string {
-    return (
-      (refined_property_values.issue_description as string | null) ??
-      description
-    )
+  // THE spec text — the single source every consumer reads (batch planning,
+  // synthetic-user generation, the default judge prompt, and the saved Spec),
+  // so no two stages can see different text. Step 3's refined values win;
+  // property_values covers a skipped refine; Step 1's free text is the floor.
+  function spec_text(): string {
+    const values =
+      Object.keys(refined_property_values).length > 0
+        ? refined_property_values
+        : property_values
+    return (values.issue_description as string | null) ?? description
   }
 
   // Step 4 (multi-turn) part 1 — plan. Ask the batch planner for one
@@ -591,7 +621,7 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guidance: multiturn_plan_guidance(current_spec_text()),
+            guidance: multiturn_plan_guidance(spec_text()),
             count: NUM_CASES,
           },
           signal: new_copilot_abort_signal(),
@@ -706,7 +736,7 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            target_specification: current_spec_text(),
+            target_specification: spec_text(),
             num_cases: approved_prompts.length,
             case_prompts: approved_prompts,
           },
@@ -887,20 +917,19 @@
   let claims_error: string | null = null
   $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
 
-  // Flatten the generated traces to the claim builder's (raw_input, raw_output)
-  // shape. Multi-turn: first user message + the whole transcript as the output
-  // (citations into "output" highlight within it), plus the structured trace so
-  // the judge scores the real conversation. Single-turn: the I/O pair.
+  // The traces to review, in the review request's shape. Multi-turn sends
+  // ONLY the structured trace — the studio renders the canonical transcript
+  // (the same rendering the judge template uses) and echoes it back on each
+  // trace_reviewed event, so the UI never fabricates its own flattening.
+  // Single-turn sends the raw I/O pair.
   function current_trace_ios(): {
-    raw_input: string
-    raw_output: string
+    raw_input?: string
+    raw_output?: string
     trace?: ChainTurn[]
     leaf_run_id?: string
   }[] {
     if (is_multi_turn) {
       return multi_turn_chains.map((c) => ({
-        raw_input: c.trace.find((t) => t.role === "user")?.content ?? "",
-        raw_output: c.trace.map((t) => `${t.role}: ${t.content}`).join("\n\n"),
         trace: c.trace,
         leaf_run_id: c.leaf_run_id,
       }))
@@ -919,7 +948,11 @@
     | {
         type: "trace_reviewed"
         trace_index: number
-        judge_score: string
+        // The exact text the claim builder saw (multi-turn: the canonical
+        // transcript) — the UI displays and resolves citations against these.
+        raw_input: string
+        raw_output: string
+        judge_score: TraceClaims["judge_score"]
         judge_reasoning: string
         claims: TraceClaims["claims"]
         final_judgement: TraceClaims["final_judgement"]
@@ -933,14 +966,13 @@
   async function build_claims_for_review() {
     claims_loading = true
     claims_error = null
-    const eval_rubric =
-      (refined_property_values.issue_description as string | null) ??
-      description
     const ios = current_trace_ios()
-    // judge_info comes from clarify_spec (single-turn). Multi-turn has none
-    // until save, so fall back to the shared default judge — same as the save
-    // path (build_default_judge_info).
-    const judge = judge_info ?? build_default_judge_info(eval_rubric)
+    // judge_info comes from clarify_spec (single-turn). Multi-turn has none,
+    // so fall back to the shared default. Either way, remember the judge the
+    // review ran — save persists that exact object.
+    const judge = judge_info ?? build_default_judge_info(spec_text())
+    review_judge = judge
+    reviewed_identity = JSON.stringify({ name, spec: spec_text() })
     // Fill by trace_index as events arrive (they complete out of order).
     const built: (TraceClaims | null)[] = new Array(ios.length).fill(null)
     try {
@@ -951,14 +983,13 @@
           "Content-Type": "application/json",
           Accept: "text/event-stream",
         },
+        // spec_name pins the review judge's score identity to the one the
+        // saved eval will use; the judge's prompt doubles as the claim
+        // builder's rubric server-side.
         body: JSON.stringify({
           traces: ios,
-          eval_rubric,
-          judge: {
-            prompt: judge.prompt,
-            model_name: judge.task_metadata.model_name,
-            model_provider: judge.task_metadata.model_provider_name,
-          },
+          spec_name: name,
+          judge,
         }),
         signal: new_copilot_abort_signal(),
       })
@@ -991,8 +1022,8 @@
             built[event.trace_index] = {
               trace_id: `trace_${event.trace_index}`,
               leaf_run_id: io.leaf_run_id ?? null,
-              raw_input: io.raw_input,
-              raw_output: io.raw_output,
+              raw_input: event.raw_input,
+              raw_output: event.raw_output,
               judge_score: event.judge_score,
               judge_reasoning: event.judge_reasoning,
               claims: event.claims ?? [],
@@ -1020,6 +1051,15 @@
   // Pushes (not replaces) so Back from review returns here — this path is
   // only reachable when Step 4 has real content to come back to.
   async function continue_to_review() {
+    // Results reviewed under an old name/spec text are stale — the judge
+    // identity changed, so re-run the review rather than presenting them.
+    if (
+      trace_claims.length > 0 &&
+      reviewed_identity !== JSON.stringify({ name, spec: spec_text() })
+    ) {
+      trace_claims = []
+      trace_reviews = []
+    }
     if (trace_claims.length === 0) {
       await build_claims_for_review()
       if (claims_error) return
@@ -1037,16 +1077,22 @@
     saving = true
     save_error = null
     try {
+      if (reviewed_identity !== JSON.stringify({ name, spec: spec_text() })) {
+        save_error =
+          "The eval's name or description changed since the review — go back and re-run the review."
+        return
+      }
       // Source of truth for the saved spec is refined_property_values —
       // populated from Step 1 description initially, then updated in Step 3
       // via v1's RefineSpec component when the user accepts/edits the LLM's
       // proposed refinements. Fall back to property_values if Step 3 was
-      // skipped (no refinements were proposed).
+      // skipped (no refinements were proposed). spec_text() applies the same
+      // precedence, so the saved definition equals what generation/review saw.
       const final_values =
         Object.keys(refined_property_values).length > 0
           ? refined_property_values
           : property_values
-      const issue_description = final_values.issue_description ?? description
+      const issue_description = spec_text()
       const filtered = Object.fromEntries(
         Object.entries(final_values).filter(
           ([_, v]) => v !== null && v !== "" && (v ?? "").trim() !== "",
@@ -1058,17 +1104,18 @@
         issue_description,
       }
 
+      // The judge to persist = the judge the review ran (review_judge). The
+      // fallback only fires if save is somehow reached without a review.
+      const save_judge =
+        review_judge ?? judge_info ?? build_default_judge_info(spec_text())
+
       // Multi-turn save: tag the chains produced by run_cases_batch.
-      // Synthesize the judge_info locally rather than calling clarify_spec
-      // (which runs full topic/input/output gen, takes 5-10 minutes).
       if (is_multi_turn) {
         if (multi_turn_batch_tag === null) {
           save_error =
             "No multi-turn chains were generated — go back to Step 4."
           return
         }
-        const multi_turn_judge_info =
-          build_default_judge_info(issue_description)
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
@@ -1093,19 +1140,18 @@
               properties: spec_properties,
               evaluate_full_trace: true,
               reviewed_examples: [],
-              judge_info: multi_turn_judge_info,
+              judge_info: save_judge,
               multi_turn: {
                 batch_tag: multi_turn_batch_tag,
                 reviewed_chains,
               },
-              task_description: "",
               task_prompt_with_example: task?.instruction ?? "",
             },
             signal: new_copilot_abort_signal(),
           },
         )
         if (error || !data) {
-          save_error = "Save failed — try again."
+          save_error = createKilnError(error).getMessage()
           posthog.capture("eval_v2_save_error", {
             is_multi_turn: true,
             error_code: (error as { status?: number } | undefined)?.status,
@@ -1142,7 +1188,7 @@
         }
       })
 
-      if (!sdg_session_config || !judge_info) {
+      if (!sdg_session_config) {
         save_error =
           "Missing generation config — go back to Step 4 and regenerate."
         return
@@ -1158,16 +1204,15 @@
             properties: spec_properties,
             evaluate_full_trace: false,
             reviewed_examples,
-            judge_info,
+            judge_info: save_judge,
             sdg_session_config,
-            task_description: "",
             task_prompt_with_example: task?.instruction ?? "",
           },
           signal: new_copilot_abort_signal(),
         },
       )
       if (error || !data) {
-        save_error = "Save failed — try again."
+        save_error = createKilnError(error).getMessage()
         posthog.capture("eval_v2_save_error", {
           is_multi_turn: false,
           error_code: (error as { status?: number } | undefined)?.status,
@@ -1429,72 +1474,82 @@
               title="Refining Eval"
               description="Kiln is refining your eval with the feedback you provided. Hold tight!"
             />
-          {:else if is_multi_turn}
-            <!-- Multi-turn variant: examples fields don't apply (real examples
+          {:else}
+            {#if refine_warning}
+              <div class="mb-4">
+                <Warning
+                  warning_color="warning"
+                  warning_message={refine_warning}
+                />
+              </div>
+            {/if}
+            {#if is_multi_turn}
+              <!-- Multi-turn variant: examples fields don't apply (real examples
              come from Step 4 synthetic chains). Just name + description. -->
-            <div class="mb-6">
-              <FormElement
-                label="Eval Name"
-                description="A short name for your own reference (max 32 characters)."
-                id="multi_turn_name"
-                inputType="input"
-                bind:value={name}
-                validator={filename_string_short_validator}
-              />
-            </div>
+              <div class="mb-6">
+                <FormElement
+                  label="Eval Name"
+                  description="A short name for your own reference (max 32 characters)."
+                  id="multi_turn_name"
+                  inputType="input"
+                  bind:value={name}
+                  validator={filename_string_short_validator}
+                />
+              </div>
 
-            <div class="mb-4">
-              <FormElement
-                label="Issue Description"
-                description="What the agent must avoid doing."
-                id="multi_turn_issue_description"
-                inputType="textarea"
-                height="large"
-                bind:value={refined_property_values.issue_description}
-              />
-              {#if suggested_edits.issue_description?.reason_for_edit}
-                <div class="text-xs text-gray-500 italic mt-2">
-                  Refinement: {suggested_edits.issue_description
-                    .reason_for_edit}
-                </div>
+              <div class="mb-4">
+                <FormElement
+                  label="Issue Description"
+                  description="What the agent must avoid doing."
+                  id="multi_turn_issue_description"
+                  inputType="textarea"
+                  height="large"
+                  bind:value={refined_property_values.issue_description}
+                />
+                {#if suggested_edits.issue_description?.reason_for_edit}
+                  <div class="text-xs text-gray-500 italic mt-2">
+                    Refinement: {suggested_edits.issue_description
+                      .reason_for_edit}
+                  </div>
+                {/if}
+              </div>
+
+              {#if not_incorporated_feedback}
+                <Warning
+                  warning_color="primary"
+                  warning_icon="info"
+                  warning_message={`Unincorporated feedback: ${not_incorporated_feedback}`}
+                />
               {/if}
-            </div>
 
-            {#if not_incorporated_feedback}
-              <Warning
-                warning_color="primary"
-                warning_icon="info"
-                warning_message={`Unincorporated feedback: ${not_incorporated_feedback}`}
+              <div class="flex justify-end mt-8">
+                <button
+                  class="btn btn-primary"
+                  on:click={on_refine_submit}
+                  disabled={!name.trim() ||
+                    !(refined_property_values.issue_description ?? "").trim()}
+                >
+                  Generate conversations →
+                </button>
+              </div>
+            {:else}
+              <!-- Single-turn variant: keep v1's RefineSpec component (handles
+             examples, two-column diff, restore-suggestion buttons). -->
+              <RefineSpec
+                bind:name
+                original_property_values={property_values}
+                bind:refined_property_values
+                {suggested_edits}
+                {not_incorporated_feedback}
+                {field_configs}
+                bind:error={refine_form_error}
+                bind:submitting={refine_submitting}
+                warn_before_unload={false}
+                hide_secondary_button={true}
+                on:analyze_refined={on_refine_submit}
+                on:create_spec={on_refine_submit}
               />
             {/if}
-
-            <div class="flex justify-end mt-8">
-              <button
-                class="btn btn-primary"
-                on:click={on_refine_submit}
-                disabled={!name.trim() ||
-                  !(refined_property_values.issue_description ?? "").trim()}
-              >
-                Generate conversations →
-              </button>
-            </div>
-          {:else}
-            <!-- Single-turn variant: keep v1's RefineSpec component (handles
-             examples, two-column diff, restore-suggestion buttons). -->
-            <RefineSpec
-              bind:name
-              original_property_values={property_values}
-              bind:refined_property_values
-              {suggested_edits}
-              {not_incorporated_feedback}
-              {field_configs}
-              bind:error={refine_form_error}
-              bind:submitting={refine_submitting}
-              warn_before_unload={false}
-              hide_secondary_button={true}
-              on:analyze_refined={on_refine_submit}
-              on:create_spec={on_refine_submit}
-            />
           {/if}
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->

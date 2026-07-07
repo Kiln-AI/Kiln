@@ -9,31 +9,69 @@ to the UI.
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from kiln_ai.datamodel.basemodel import FilenameStringShort
+from kiln_ai.datamodel.json_schema import string_to_json_key
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import Self
+
+# The binary verdict vocabulary, shared by every judge_score/expected_result
+# field on this API surface (mirrors the server contract's enum).
+JudgeScoreLiteral = Literal["pass", "fail"]
 
 
 class TraceInput(BaseModel):
-    """One generated trace to review (single- or multi-turn)."""
+    """One generated trace to review (single- or multi-turn).
 
-    raw_input: str
-    raw_output: str
+    Exactly one source shape per trace: single-turn sends the raw I/O pair;
+    multi-turn sends the structured message list and the studio derives the
+    canonical transcript from it server-side — the UI never fabricates a
+    flattened rendering, so the text the claim builder cites is authoritative
+    (it's echoed back on the trace_reviewed event).
+    """
+
+    raw_input: str | None = Field(
+        default=None,
+        description="Single-turn: the task's raw input. Omitted for "
+        "multi-turn traces (derived from the trace's first user message).",
+    )
+    raw_output: str | None = Field(
+        default=None,
+        description="Single-turn: the task's raw output. Omitted for "
+        "multi-turn traces (the canonical transcript is rendered from trace).",
+    )
     trace: list[dict[str, Any]] | None = Field(
         default=None,
+        min_length=1,
         description="Structured message list ({role, content}, chronological) "
-        "for multi-turn traces, so the judge scores the full conversation "
-        "instead of the flattened raw_output. Single-turn traces omit it. "
-        "Kept as loose dicts: the claim builder still receives the flattened "
-        "text, and message shapes (tool calls etc.) will churn.",
+        "for multi-turn traces: the judge scores it directly and the claim "
+        "builder receives its canonical rendering. Kept as loose dicts — "
+        "message shapes (tool calls etc.) will churn.",
     )
+
+    @model_validator(mode="after")
+    def validate_one_source_shape(self) -> Self:
+        has_io = self.raw_input is not None and self.raw_output is not None
+        if self.trace is None and not has_io:
+            raise ValueError(
+                "Provide raw_input + raw_output (single-turn) or trace (multi-turn)."
+            )
+        if self.trace is not None and (
+            self.raw_input is not None or self.raw_output is not None
+        ):
+            raise ValueError(
+                "Multi-turn traces send only `trace` — raw_input/raw_output are "
+                "derived server-side so the rendering is canonical."
+            )
+        return self
 
 
 class JudgeConfig(BaseModel):
-    """The candidate judge to run over each trace.
+    """The judge: a plain-text prompt plus the model that runs it.
 
-    PROVISIONAL: the judge is WIP (today a prompt+model; with Eval V2 it becomes
-    a typed EvalConfig, then more eval types). Kept intentionally thin — the
-    orchestrator maps this to whatever the judge execution currently needs, so
-    the UI contract doesn't churn with the server.
+    The ONE judge shape across the builder — the review step runs it
+    transiently and the save path persists it as a V2 EvalConfig, both through
+    the same prompt-template wrap, so the judge the user calibrates is the
+    judge that ships.
     """
 
     prompt: str
@@ -42,14 +80,33 @@ class JudgeConfig(BaseModel):
 
 
 class ReviewTracesRequest(BaseModel):
-    """Batch request: judge + build claims for every trace, streamed back."""
+    """Batch request: judge + build claims for every trace, streamed back.
+
+    The claim builder's eval_rubric is the judge's ACTUAL prompt (from
+    `judge`), not a separate spec text — the builder pressure-tests the rubric
+    the verdict was really produced under.
+    """
 
     traces: list[TraceInput]
-    eval_rubric: str = Field(
-        description="The spec intent / rubric passed to the claim builder "
-        "(distinct from the judge prompt)."
+    spec_name: FilenameStringShort = Field(
+        description="The spec's name. The review judge scores under the same "
+        "output-score identity the saved eval will use, so the prompt the "
+        "user calibrates here is byte-identical to the one that ships."
     )
     judge: JudgeConfig
+
+    @field_validator("spec_name")
+    @classmethod
+    def spec_name_must_have_a_json_key(cls, value: str) -> str:
+        # The score's JSON-schema key is derived from the name; a name with no
+        # [a-z0-9_] characters would produce an empty key and fail every trace
+        # deep inside the judge — reject it up front instead.
+        if not string_to_json_key(value):
+            raise ValueError(
+                "spec_name must contain at least one letter or digit usable "
+                "in a score key."
+            )
+        return value
 
 
 class CitationApi(BaseModel):
@@ -76,7 +133,7 @@ class ClaimApi(BaseModel):
     """
 
     claim: str
-    expected_result: Literal["pass", "fail"]
+    expected_result: JudgeScoreLiteral
     evidence: str
     citations: list[CitationApi]
 
@@ -89,7 +146,7 @@ class FinalJudgementApi(BaseModel):
     """
 
     claim: str
-    expected_result: Literal["pass", "fail"]
+    expected_result: JudgeScoreLiteral
     evidence: str
     citations: list[CitationApi]
 
@@ -105,7 +162,7 @@ class BuildClaimsApiInput(BaseModel):
     raw_output: str
     eval_rubric: str
     judge_reasoning: str
-    judge_score: str
+    judge_score: JudgeScoreLiteral
 
 
 class BuildClaimsApiOutput(BaseModel):
@@ -121,11 +178,18 @@ class BuildClaimsApiOutput(BaseModel):
 
 
 class TraceReviewedEvent(BaseModel):
-    """Emitted once per trace as its judge+claims complete."""
+    """Emitted once per trace as its judge+claims complete.
+
+    raw_input/raw_output echo the exact text the claim builder saw (for
+    multi-turn, the canonical transcript rendered server-side) — the UI
+    displays and resolves citations against these, never its own rendering.
+    """
 
     type: Literal["trace_reviewed"] = "trace_reviewed"
     trace_index: int
-    judge_score: str
+    raw_input: str
+    raw_output: str
+    judge_score: JudgeScoreLiteral
     judge_reasoning: str
     claims: list[ClaimApi]
     final_judgement: FinalJudgementApi

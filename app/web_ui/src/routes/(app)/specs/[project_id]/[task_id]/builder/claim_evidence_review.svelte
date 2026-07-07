@@ -87,7 +87,10 @@
     <div class="flex items-center justify-between mb-4">
       <div class="text-sm text-gray-500">
         Judge verdict:
-        <span class="font-medium text-base-content">{current.judge_score}</span>
+        <!-- The wire verdict is the lowercase enum; uppercasing is display-only. -->
+        <span class="font-medium text-base-content"
+          >{current.judge_score.toUpperCase()}</span
+        >
       </div>
       <button
         class="btn btn-xs btn-ghost"

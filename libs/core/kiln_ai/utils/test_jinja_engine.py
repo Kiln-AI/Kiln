@@ -318,3 +318,61 @@ class TestCanonicalExpressions:
             {"final_message": '{"items": ["a", "b", "c", "d"]}'},
         )
         assert result == 4
+
+
+class TestFormatTraceFilter:
+    """{{ trace | format_trace }} renders the canonical role-labelled
+    transcript (EvalTraceFormatter's format) inside templates, so every LLM
+    that sees a conversation sees the same rendering."""
+
+    def test_renders_role_labelled_turns(self):
+        trace = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ]
+        result = render_input_transform(
+            JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+            {"trace": trace},
+        )
+        assert result == (
+            "user:\n<user_message>\nhello\n</user_message>\n\n"
+            "assistant:\n<assistant_message>\nworld\n</assistant_message>"
+        )
+
+    def test_matches_eval_trace_formatter(self):
+        # The filter IS the formatter — a drift between the two would split
+        # the canonical rendering back into per-consumer variants.
+        from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import (
+            EvalTraceFormatter,
+        )
+
+        trace = [
+            {"role": "system", "content": "be brief"},
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "add", "arguments": '{"a":1,"b":2}'},
+                        "type": "function",
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "done"},
+        ]
+        rendered = render_input_transform(
+            JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+            {"trace": trace},
+        )
+        assert rendered == EvalTraceFormatter.trace_to_formatted_conversation_history(
+            trace
+        )
+
+    def test_non_list_raises_extraction_error(self):
+        with pytest.raises(JinjaExtractionError, match="expected a list"):
+            render_input_transform(
+                JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+                {"trace": "not a list"},
+            )

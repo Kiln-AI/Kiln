@@ -37,8 +37,8 @@ class ClaimReview(KilnParentedModel):
     present.
     """
 
-    judge_score: str = Field(
-        description="The judge's verdict on this run, e.g. PASS/FAIL."
+    judge_score: Literal["pass", "fail"] = Field(
+        description="The judge's binary verdict on this run."
     )
     judge_reasoning: str = Field(description="The judge's explanation for its verdict.")
     claims: list[GradedClaim] = Field(

@@ -55,7 +55,7 @@ export type BuildClaimEvidenceInput = {
   raw_output: string
   eval_rubric: string
   judge_reasoning: string
-  judge_score: string
+  judge_score: ExpectedResult
 }
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
@@ -70,7 +70,7 @@ export type TraceClaims = {
   leaf_run_id: string | null
   raw_input: string
   raw_output: string
-  judge_score: string
+  judge_score: ExpectedResult
   judge_reasoning: string
   claims: Claim[]
   final_judgement: FinalJudgement

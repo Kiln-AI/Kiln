@@ -26,6 +26,7 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_claims_for_trace,
     run_judge_for_trace,
+    transcript_io_for_trace,
 )
 from fastapi import FastAPI, Path
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
@@ -52,27 +53,44 @@ async def review_one_trace(
     task_id: str,
     index: int,
     trace: TraceInput,
-    eval_rubric: str,
     judge: JudgeConfig,
+    spec_name: str,
 ) -> TraceReviewedEvent:
-    """One unit of work: judge the trace (local), then build claims (remote)."""
+    """One unit of work: judge the trace (local), then build claims (remote).
+
+    Multi-turn (raw_input, raw_output) are derived here from the structured
+    trace — the canonical transcript rendering — and echoed back on the event
+    so the UI cites exactly what the claim builder saw. The claim builder's
+    eval_rubric is the judge's actual prompt: it pressure-tests the rubric the
+    verdict was produced under, not a paraphrase of it.
+    """
+    if trace.trace is not None:
+        raw_input, raw_output = transcript_io_for_trace(trace.trace)
+    else:
+        # The TraceInput validator guarantees the single-turn I/O pair here.
+        assert trace.raw_input is not None and trace.raw_output is not None
+        raw_input, raw_output = trace.raw_input, trace.raw_output
+
     verdict = await run_judge_for_trace(
         project_id,
         task_id,
-        trace.raw_input,
-        trace.raw_output,
+        raw_input,
+        raw_output,
         judge,
+        spec_name=spec_name,
         trace=trace.trace,
     )
     claims_output = await build_claims_for_trace(
-        raw_input=trace.raw_input,
-        raw_output=trace.raw_output,
-        eval_rubric=eval_rubric,
+        raw_input=raw_input,
+        raw_output=raw_output,
+        eval_rubric=judge.prompt,
         judge_score=verdict.judge_score,
         judge_reasoning=verdict.judge_reasoning,
     )
     return TraceReviewedEvent(
         trace_index=index,
+        raw_input=raw_input,
+        raw_output=raw_output,
         judge_score=verdict.judge_score,
         judge_reasoning=verdict.judge_reasoning,
         claims=claims_output.claims,
@@ -99,8 +117,9 @@ def connect_eval_builder_api(app: FastAPI):
         """Per-trace `judge → claim builder`, fanned out (local) and streamed.
 
         Emits one SSE event per trace as it completes:
-          - `trace_reviewed` { trace_index, judge_score, judge_reasoning,
-                               claims, final_judgement }
+          - `trace_reviewed` { trace_index, raw_input, raw_output,
+                               judge_score, judge_reasoning, claims,
+                               final_judgement }
           - `trace_error`    { trace_index, error }   (batch continues)
         Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
         """
@@ -116,8 +135,8 @@ def connect_eval_builder_api(app: FastAPI):
                             task_id,
                             index,
                             trace,
-                            request.eval_rubric,
                             request.judge,
+                            request.spec_name,
                         )
                         return _sse(event)
                     except Exception as e:  # noqa: BLE001 — surface per-trace, keep batch alive

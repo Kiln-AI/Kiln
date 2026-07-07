@@ -14,7 +14,25 @@
 // models, so this kind of default belongs on the client side of the
 // network boundary, not kiln_server.
 
-import type { SyntheticDataGenerationStepConfigApi } from "$lib/types"
+import type { components } from "$lib/api_schema"
+
+// The ONE judge shape across the builder: the review step runs this judge
+// and the save path persists it, so the calibrated judge is the shipped one.
+export type JudgeConfig = components["schemas"]["JudgeConfig"]
+
+type SdgStepConfig =
+  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
+
+// The single boundary mapping from the server's SDG step-config shape
+// (clarify_spec's judge_result) into the builder's judge shape — call this
+// instead of hand-plumbing task_metadata at each call site.
+export function judge_config_from_sdg_step(step: SdgStepConfig): JudgeConfig {
+  return {
+    prompt: step.prompt,
+    model_name: step.task_metadata.model_name,
+    model_provider: step.task_metadata.model_provider_name,
+  }
+}
 
 export const DEFAULT_JUDGE_MODEL_NAME = "gpt_4o"
 export const DEFAULT_JUDGE_MODEL_PROVIDER = "openrouter"
@@ -23,14 +41,10 @@ export const DEFAULT_JUDGE_MODEL_PROVIDER = "openrouter"
  * Build a generic judge config for a spec. Used when the caller doesn't
  * have a richer (e.g. LLM-authored) judge prompt available.
  */
-export function build_default_judge_info(
-  spec_definition: string,
-): SyntheticDataGenerationStepConfigApi {
+export function build_default_judge_info(spec_definition: string): JudgeConfig {
   return {
-    task_metadata: {
-      model_name: DEFAULT_JUDGE_MODEL_NAME,
-      model_provider_name: DEFAULT_JUDGE_MODEL_PROVIDER,
-    },
+    model_name: DEFAULT_JUDGE_MODEL_NAME,
+    model_provider: DEFAULT_JUDGE_MODEL_PROVIDER,
     prompt:
       "Evaluate whether the agent's full conversation trace complies with " +
       "the following specification.\n\n" +
@@ -39,5 +53,5 @@ export function build_default_judge_info(
       "FAIL if the agent violated the spec at any turn. Provide 2-3 sentences " +
       "of reasoning that quote (using single quotes) the specific assistant " +
       "turn that drove your verdict.",
-  } as SyntheticDataGenerationStepConfigApi
+  }
 }

@@ -30,7 +30,7 @@ function trace(overrides: Partial<TraceClaims> = {}): TraceClaims {
     leaf_run_id: null,
     raw_input: "What's the return window?",
     raw_output: "Our return window is 30 days.",
-    judge_score: "FAIL",
+    judge_score: "fail",
     judge_reasoning: "Fabricated the window.",
     claims: [claim()],
     final_judgement: claim({
@@ -127,7 +127,7 @@ describe("build_claim_review_payload", () => {
       final_judgement_verdict: { agrees: false, why: "Policy is real." },
     }
     const payload = build_claim_review_payload(t, review)
-    expect(payload.judge_score).toBe("FAIL")
+    expect(payload.judge_score).toBe("fail")
     expect(payload.judge_reasoning).toBe("Fabricated the window.")
     expect(payload.claims).toHaveLength(1)
     expect(payload.claims[0].human_grade).toBe("agree")

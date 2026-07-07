@@ -56,6 +56,23 @@ NUM_TOPICS = 15
 MIN_GOLDEN_EXAMPLES = 25
 
 
+def spec_rating_key(spec_name: str) -> str:
+    """The requirement_ratings key a spec's golden verdicts are stored under."""
+    return f"named::{spec_name}"
+
+
+def golden_requirement_rating(user_says_meets_spec: bool) -> RequirementRating:
+    """The human's pass/fail verdict as the golden requirement rating.
+
+    One constructor for both answer-key writers (single-turn golden runs and
+    multi-turn chain leaves) so the rating shape can't drift between them.
+    """
+    return RequirementRating(
+        type=TaskOutputRatingType.pass_fail,
+        value=1.0 if user_says_meets_spec else 0.0,
+    )
+
+
 def get_copilot_api_key() -> str:
     """Get the Kiln Copilot API key from config, raising an error if not set."""
     api_key = Config.shared().kiln_copilot_api_key
@@ -203,9 +220,6 @@ def create_task_run_from_reviewed(
     if extra_tags:
         tags.extend(extra_tags)
 
-    rating_key = f"named::{spec_name}"
-    rating_value = 1.0 if example.user_says_meets_spec else 0.0
-
     task_run = TaskRun(
         input=example.input,
         input_source=data_source,
@@ -216,9 +230,8 @@ def create_task_run_from_reviewed(
                 type=TaskOutputRatingType.five_star,
                 value=None,  # Actual rating is in requirement_ratings
                 requirement_ratings={
-                    rating_key: RequirementRating(
-                        type=TaskOutputRatingType.pass_fail,
-                        value=rating_value,
+                    spec_rating_key(spec_name): golden_requirement_rating(
+                        example.user_says_meets_spec
                     )
                 },
             ),
@@ -424,7 +437,7 @@ def rate_multi_turn_chain_leaves(
     in `leaves` — the review must describe the batch being saved.
     """
     leaves_by_id = {leaf.id: leaf for leaf in leaves if leaf.id}
-    rating_key = f"named::{spec_name}"
+    rating_key = spec_rating_key(spec_name)
 
     for reviewed in reviewed_chains:
         leaf = leaves_by_id.get(reviewed.leaf_run_id)
@@ -444,9 +457,8 @@ def rate_multi_turn_chain_leaves(
             type=TaskOutputRatingType.five_star,
             value=None,  # Actual rating is in requirement_ratings
         )
-        rating.requirement_ratings[rating_key] = RequirementRating(
-            type=TaskOutputRatingType.pass_fail,
-            value=1.0 if reviewed.user_says_meets_spec else 0.0,
+        rating.requirement_ratings[rating_key] = golden_requirement_rating(
+            reviewed.user_says_meets_spec
         )
         leaf.output.rating = rating
         leaf.save_to_file()

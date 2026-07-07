@@ -65,7 +65,6 @@ from app.desktop.studio_server.api_models.copilot_models import (
     ReviewedExample,
     SpecQuestionerApiInput,
     SyntheticDataGenerationSessionConfigApi,
-    SyntheticDataGenerationStepConfigApi,
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
@@ -78,6 +77,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     unrate_multi_turn_chain_leaves,
     untag_multi_turn_chains_for_eval,
 )
+from app.desktop.studio_server.api_models.eval_builder_models import JudgeConfig
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_judge_prompt_template,
 )
@@ -205,15 +205,13 @@ class CreateSpecWithCopilotRequest(BaseModel):
     )
     evaluate_full_trace: bool = False
     reviewed_examples: list[ReviewedExample] = Field(default_factory=list)
-    judge_info: SyntheticDataGenerationStepConfigApi
+    judge_info: JudgeConfig = Field(
+        description="The judge to persist as the eval's V2 config — the same "
+        "shape (and, from the builder, the same values) the review step ran, "
+        "so the calibrated judge is the one that ships."
+    )
     sdg_session_config: SyntheticDataGenerationSessionConfigApi | None = None
     multi_turn: MultiTurnSaveInfo | None = None
-    task_description: str = Field(
-        default="",
-        description="Unused since the judge config moved to the V2 shape "
-        "(the legacy config's properties carried it); kept so existing "
-        "clients' request bodies stay valid.",
-    )
     task_prompt_with_example: str = ""
     task_sample: TaskSample | None = None
 
@@ -822,6 +820,21 @@ def connect_copilot_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
 
+        # Idempotency guard against re-submits after a completed save (the
+        # save is slow, so users retry). Case-insensitive because the eval
+        # tags and rating keys are derived from the lowercased name — two
+        # specs differing only by case would share a tag namespace. Two
+        # requests in flight at once can still race past this check —
+        # acceptable for a single-user studio.
+        if any(
+            spec.name.lower() == request.name.lower()
+            for spec in task.specs(readonly=True)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f"A spec named '{request.name}' already exists for this task.",
+            )
+
         # Generate tags and filter IDs
         eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
         eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
@@ -910,8 +923,8 @@ def connect_copilot_api(app: FastAPI):
             name=generate_memorable_name(),
             config_type=EvalConfigType.v2,
             properties=LlmJudgeProperties(
-                model_name=request.judge_info.task_metadata.model_name,
-                model_provider=request.judge_info.task_metadata.model_provider_name,
+                model_name=request.judge_info.model_name,
+                model_provider=request.judge_info.model_provider,
                 prompt_template=build_judge_prompt_template(
                     request.judge_info.prompt,
                     multi_turn=request.evaluate_full_trace,

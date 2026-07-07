@@ -412,13 +412,16 @@ class TestCreateSpecWithCopilot:
                 "core_requirement": "Be polite",
                 "tone_description": "Professional and friendly",
             },
-            "judge_info": step_config,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
             "sdg_session_config": {
                 "topic_generation_config": step_config,
                 "input_generation_config": step_config,
                 "output_generation_config": step_config,
             },
-            "task_description": "Test task",
             "task_prompt_with_example": "Test prompt",
         }
 
@@ -553,13 +556,6 @@ class TestCreateSpecWithCopilotMultiTurn:
 
     @pytest.fixture
     def multi_turn_request_data(self):
-        step_config = {
-            "task_metadata": {
-                "model_name": "gpt-4",
-                "model_provider_name": "openai",
-            },
-            "prompt": "Test prompt",
-        }
         return {
             "name": "Multi Turn Spec",
             "definition": "The agent should not fabricate policies",
@@ -568,9 +564,12 @@ class TestCreateSpecWithCopilotMultiTurn:
                 "issue_description": "Don't make stuff up",
             },
             "evaluate_full_trace": True,
-            "judge_info": step_config,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
             "multi_turn": {"batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG},
-            "task_description": "Test task",
             "task_prompt_with_example": "Test prompt",
         }
 
@@ -581,7 +580,7 @@ class TestCreateSpecWithCopilotMultiTurn:
             "user_says_meets_spec": meets_spec,
             "feedback": "" if meets_spec else "Fabricated a return window.",
             "claim_review": {
-                "judge_score": "PASS" if meets_spec else "FAIL",
+                "judge_score": "pass" if meets_spec else "fail",
                 "judge_reasoning": "Judge reasoning here.",
                 "claims": [
                     {
@@ -658,7 +657,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert len(configs) == 1
         assert configs[0].config_type == EvalConfigType.v2
         assert isinstance(configs[0].properties, LlmJudgeProperties)
-        assert "{{ trace | tojson }}" in configs[0].properties.prompt_template
+        assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
 
         # Leaves got the eval + golden tags applied on top of their existing
         # synthetic_user_* tags. No train tag (multi-turn has no train set).
@@ -684,7 +683,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert len(failed.feedback()) == 1
         assert failed.feedback()[0].feedback == "Fabricated a return window."
         assert len(failed.claim_reviews()) == 1
-        assert failed.claim_reviews()[0].judge_score == "FAIL"
+        assert failed.claim_reviews()[0].judge_score == "fail"
         assert failed.claim_reviews()[0].final_judgement.expected_result == "fail"
 
         passed = runs_by_id[synthetic_chain_leaves[1].id]
@@ -807,6 +806,41 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert leaf.claim_reviews() == []
             assert "eval_multi_turn_spec" not in leaf.tags
             assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_duplicate_spec_name_is_409(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """A re-submitted save under an existing spec name (any casing) is
+        rejected before any generation or model creation."""
+        from kiln_ai.datamodel.spec import Spec, SpecStatus
+
+        project, task = project_and_task
+        existing = Spec(
+            parent=task,
+            name="MULTI TURN SPEC",
+            definition="already here",
+            properties={
+                "spec_type": SpecType.issue.value,
+                "issue_description": "existing",
+            },
+            status=SpecStatus.active,
+            tags=[],
+            eval_id="unused_eval_id",
+        )
+        existing.save_to_file()
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 409
+        assert "already exists" in response.json()["message"]
+        assert len(task.evals()) == 0
 
     def test_multi_turn_save_404_when_batch_tag_matches_nothing(
         self, client, project_and_task, multi_turn_request_data
