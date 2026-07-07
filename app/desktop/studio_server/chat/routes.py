@@ -32,7 +32,8 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from kiln_ai.utils import spend_ledger
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 
@@ -141,6 +142,10 @@ class ChatSessionSnapshot(BaseModel):
     id: str
     task_run: TaskRunSnapshot
     context_usage: ContextUsage | None = None
+    # Stable conversation identity persisted upstream; lets a client that lost
+    # local state (new tab, history restore) re-learn it and re-bind the
+    # conversation's spend budget.
+    conversation_id: str | None = None
 
 
 class ChatRequestMessage(BaseModel):
@@ -155,6 +160,10 @@ class ChatRequest(BaseModel):
 
     messages: list[ChatRequestMessage]
     trace_id: str | None = None
+    # Client-minted stable conversation identity (uuid4). Forwarded upstream
+    # (the copilot backend persists it on snapshots) and used locally to key
+    # the conversation's spend budget.
+    conversation_id: str | None = None
 
 
 class ExecuteToolsRequest(BaseModel):
@@ -163,6 +172,38 @@ class ExecuteToolsRequest(BaseModel):
     trace_id: str
     tool_calls: list[ToolCallInfo]
     decisions: dict[str, bool]
+    conversation_id: str | None = None
+
+
+class BudgetStatusResponse(BaseModel):
+    """A conversation's spend-budget state, from the local spend ledger."""
+
+    conversation_id: str
+    budget_usd: float | None = None
+    spent_usd: float = 0.0
+    remaining_usd: float | None = None
+    exhausted: bool = False
+    # Model calls LiteLLM couldn't price (local/custom models); they debit
+    # nothing, so when > 0 the budget is only partially tracked.
+    unpriced_runs: int = 0
+    unpriced_tokens: int = 0
+
+    @classmethod
+    def from_status(cls, status: spend_ledger.BudgetStatus) -> "BudgetStatusResponse":
+        return cls(
+            conversation_id=status.conversation_id,
+            budget_usd=status.budget_usd,
+            spent_usd=status.spent_usd,
+            remaining_usd=status.remaining_usd,
+            exhausted=status.exhausted,
+            unpriced_runs=status.unpriced_runs,
+            unpriced_tokens=status.unpriced_tokens,
+        )
+
+
+class SetBudgetRequest(BaseModel):
+    # None clears the budget (spend tracking continues).
+    budget_usd: float | None = None
 
 
 def connect_chat_api(app: FastAPI) -> None:
@@ -181,7 +222,9 @@ def connect_chat_api(app: FastAPI) -> None:
         the toolcalls and continue the chat stream.
         """
         api_key = get_copilot_api_key()
-        tool_results = await execute_tool_batch(body.tool_calls, body.decisions)
+        tool_results = await execute_tool_batch(
+            body.tool_calls, body.decisions, conversation_id=body.conversation_id
+        )
         continuation_body: dict[str, Any] = {
             "trace_id": body.trace_id,
             "messages": [
@@ -193,6 +236,8 @@ def connect_chat_api(app: FastAPI) -> None:
                 for tc_id, output in tool_results.items()
             ],
         }
+        if body.conversation_id is not None:
+            continuation_body["conversation_id"] = body.conversation_id
         session = ChatStreamSession(
             upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(api_key),
@@ -334,6 +379,48 @@ def connect_chat_api(app: FastAPI) -> None:
         )
         if detailed.status_code != HTTPStatus.NO_CONTENT:
             _raise_upstream_error(detailed)
+
+    @app.get(
+        "/api/chat/budget/{conversation_id}",
+        summary="Get conversation spend budget",
+        tags=["Copilot"],
+        # Readable by the assistant so the model can check its remaining budget.
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_chat_budget(
+        conversation_id: Annotated[
+            str, Path(description="Stable conversation id (uuid4).")
+        ],
+    ) -> BudgetStatusResponse | None:
+        """The conversation's spend-budget status; null when nothing recorded."""
+        if not spend_ledger.is_valid_conversation_id(conversation_id):
+            raise HTTPException(status_code=400, detail="Invalid conversation id")
+        status = spend_ledger.get_status(conversation_id)
+        if status is None:
+            return None
+        return BudgetStatusResponse.from_status(status)
+
+    @app.post(
+        "/api/chat/budget/{conversation_id}",
+        summary="Set conversation spend budget",
+        tags=["Copilot"],
+        # The assistant must never raise its own budget — user-only endpoint.
+        openapi_extra=DENY_AGENT,
+    )
+    async def set_chat_budget(
+        conversation_id: Annotated[
+            str, Path(description="Stable conversation id (uuid4).")
+        ],
+        body: SetBudgetRequest,
+    ) -> BudgetStatusResponse:
+        """Set or extend (absolute value) the conversation's USD spend budget."""
+        if not spend_ledger.is_valid_conversation_id(conversation_id):
+            raise HTTPException(status_code=400, detail="Invalid conversation id")
+        try:
+            status = spend_ledger.set_budget(conversation_id, body.budget_usd)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return BudgetStatusResponse.from_status(status)
 
     @app.post(
         "/api/chat",

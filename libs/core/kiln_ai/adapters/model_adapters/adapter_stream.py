@@ -20,6 +20,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import MessageUsage, Usage
+from kiln_ai.utils import spend_ledger
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -180,6 +181,13 @@ class AdapterStream:
             usage.total_llm_latency_ms = (
                 usage.total_llm_latency_ms or 0
             ) + call_latency_ms
+
+            # Same per-conversation spend credit as the non-streaming turn in
+            # LiteLlmAdapter._run_model_turn: once per LLM call, no-op unless
+            # an assistant-triggered request set the conversation contextvar.
+            spend_ledger.record_spend_for_current_conversation(
+                call_usage.cost, call_usage.total_tokens
+            )
 
             content = response_choice.message.content
             tool_calls = response_choice.message.tool_calls

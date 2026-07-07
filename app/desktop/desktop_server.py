@@ -23,6 +23,7 @@ from app.desktop.git_sync.background_sync import BackgroundSync
 from app.desktop.git_sync.config import get_git_sync_config
 from app.desktop.git_sync.git_sync_api import connect_git_sync_api
 from app.desktop.git_sync.middleware import GitSyncMiddleware
+from app.desktop.studio_server.budget_middleware import BudgetContextMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.agent_api import connect_agent_api
@@ -139,7 +140,12 @@ def make_app(tk_root: tk.Tk | None = None):
     # CORSMiddleware and receive CORS headers. Adding it here with
     # app.add_middleware() would make it outermost, bypassing CORS and causing
     # the browser to block git-sync error responses ("origin not allowed").
-    app = kiln_server.make_app(lifespan=lifespan, extra_middleware=[GitSyncMiddleware])
+    # BudgetContextMiddleware attributes assistant-triggered requests (via the
+    # X-Kiln-Conversation-Id header) to a conversation's spend ledger.
+    app = kiln_server.make_app(
+        lifespan=lifespan,
+        extra_middleware=[GitSyncMiddleware, BudgetContextMiddleware],
+    )
     connect_provider_api(app)
     connect_prompt_api(app)
     connect_repair_api(app)

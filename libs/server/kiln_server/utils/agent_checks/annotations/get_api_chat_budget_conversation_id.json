@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/chat/budget/{conversation_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

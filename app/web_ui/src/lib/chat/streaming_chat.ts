@@ -43,6 +43,12 @@ export interface BackendChatRequest {
     parts?: Array<Record<string, unknown>>
   }>
   trace_id?: string
+  /**
+   * Client-minted stable conversation identity (uuid4). Persisted by the
+   * copilot backend on every snapshot and used locally to key the
+   * conversation's spend budget.
+   */
+  conversation_id?: string
 }
 
 function toBackendMessage(m: ChatMessage): BackendChatRequest["messages"][0] {
@@ -149,6 +155,8 @@ export interface StreamEvent {
   status_code?: number
   /** Approximate context usage carried on the ``kiln_chat_trace`` snapshot event */
   context_usage?: RawContextUsage
+  /** Stable conversation identity echoed on the ``kiln_chat_trace`` event */
+  conversation_id?: string
   /** ``kiln_compaction_status`` carries the lifecycle state ("started" / "finished") */
   state?: string
   /** Preferred client version from a ``kiln_client_upgrade_nudge`` event */
@@ -185,9 +193,17 @@ export interface StreamChatOptions {
   messages: ChatMessage[]
   /** Prior-turn id from kiln_chat_trace; send with the new user message only */
   traceId?: string
+  /** Stable conversation identity (uuid4); sent on every request for spend budgeting */
+  conversationId?: string
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   /** Fired when upstream sends ``kiln_chat_trace`` (typically end of a turn) */
   onChatTrace?: (traceId: string) => void
+  /**
+   * Fired when the ``kiln_chat_trace`` event echoes the conversation's stable
+   * ``conversation_id`` — lets the client (re-)learn it (lazy adoption on
+   * pre-feature conversations, restore after lost local state).
+   */
+  onConversationId?: (conversationId: string) => void
   /**
    * Fired when the ``kiln_chat_trace`` snapshot event carries ``context_usage``;
    * drives the context gauge. Shared by ``StreamChatOptions`` (interactive
@@ -266,6 +282,7 @@ type PartSlot = { kind: "text"; id: string } | { kind: "tool"; id: string }
 export interface StreamEventProcessorOptions {
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace?: (traceId: string) => void
+  onConversationId?: (conversationId: string) => void
   onContextUsage?: (usage: ContextUsage) => void
   onCompactionStatus?: (compacting: boolean) => void
   onInlineError?: (message: string, traceId?: string, code?: string) => void
@@ -301,6 +318,7 @@ export class StreamEventProcessor {
 
   private onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   private onChatTrace?: (traceId: string) => void
+  private onConversationId?: (conversationId: string) => void
   private onContextUsage?: (usage: ContextUsage) => void
   private onCompactionStatus?: (compacting: boolean) => void
   private onInlineError?: (
@@ -323,6 +341,7 @@ export class StreamEventProcessor {
   constructor(opts: StreamEventProcessorOptions) {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
+    this.onConversationId = opts.onConversationId
     this.onContextUsage = opts.onContextUsage
     this.onCompactionStatus = opts.onCompactionStatus
     this.onInlineError = opts.onInlineError
@@ -552,6 +571,10 @@ export class StreamEventProcessor {
     if (typeof tid === "string" && tid) {
       this.onChatTrace?.(tid)
     }
+    const cid = event.conversation_id
+    if (typeof cid === "string" && cid) {
+      this.onConversationId?.(cid)
+    }
     const usage = normalizeContextUsage(event.context_usage)
     if (usage) {
       this.onContextUsage?.(usage)
@@ -665,8 +688,10 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     apiUrl,
     messages,
     traceId,
+    conversationId,
     onAssistantMessage,
     onChatTrace,
+    onConversationId,
     onContextUsage,
     onCompactionStatus,
     onInlineError,
@@ -688,6 +713,9 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   }
   if (traceId) {
     body.trace_id = traceId
+  }
+  if (conversationId) {
+    body.conversation_id = conversationId
   }
 
   let response: Response
@@ -750,6 +778,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       currentTraceId = tid
       onChatTrace?.(tid)
     },
+    onConversationId,
     onContextUsage,
     onCompactionStatus,
     onInlineError,
@@ -842,6 +871,9 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
                     trace_id: currentTraceId,
                     tool_calls: toolCallsPayload,
                     decisions: decisionsPayload,
+                    ...(conversationId
+                      ? { conversation_id: conversationId }
+                      : {}),
                   }),
                   signal,
                 })
@@ -896,6 +928,8 @@ export interface ResumePendingToolCallsOptions {
   apiUrl: string
   /** Trace id of the conversation the surfaced tool calls belong to. */
   traceId: string
+  /** Stable conversation identity (uuid4); sent for spend budgeting. */
+  conversationId?: string
   /** The tool calls surfaced for approval (from a ``tool-calls-pending`` event). */
   items: ToolCallsPendingItem[]
   /** Reuses the normal approval gate: toolCallId → allowed. */
@@ -935,6 +969,7 @@ export async function resumePendingToolCalls(
   const {
     apiUrl,
     traceId,
+    conversationId,
     items,
     onToolCallsPending,
     onAssistantMessage,
@@ -1005,6 +1040,7 @@ export async function resumePendingToolCalls(
           trace_id: currentTraceId,
           tool_calls: toolCallsPayload,
           decisions: decisionsPayload,
+          ...(conversationId ? { conversation_id: conversationId } : {}),
         }),
       })
     } catch (err) {

@@ -93,6 +93,9 @@ class AutoChatSeed(BaseModel):
     pending_tool_calls: list[ToolCallInfo] = Field(default_factory=list)
     # Extra messages to prepend (e.g. a new user message on the manual idle path).
     extra_messages: list[dict[str, Any]] = Field(default_factory=list)
+    # Stable conversation identity (uuid4) for spend budgeting; forwarded on
+    # every upstream request the runner makes and threaded into tool execution.
+    conversation_id: str | None = None
 
 
 class AutoRunRecord(BaseModel):

@@ -276,7 +276,9 @@ class AutoChatRunner:
                 ]
 
                 self._emit(format_tool_exec_start(len(client_events)))
-                results = await execute_tool_batch(tool_calls, {})
+                results = await execute_tool_batch(
+                    tool_calls, {}, conversation_id=self._seed.conversation_id
+                )
                 for e in enable_events:
                     results[e.toolCallId] = ENABLE_AUTO_MODE_RESULT
                 for tc_id, output in results.items():
@@ -395,6 +397,7 @@ class AutoChatRunner:
                     for e in siblings
                 ],
                 {},
+                conversation_id=self._seed.conversation_id,
             )
             if siblings
             else {}
@@ -495,7 +498,9 @@ class AutoChatRunner:
                 )
                 for tc in self._seed.pending_tool_calls
             ]
-            results = await execute_tool_batch(siblings, {})
+            results = await execute_tool_batch(
+                siblings, {}, conversation_id=self._seed.conversation_id
+            )
             for tc_id, output in results.items():
                 messages.append(
                     {
@@ -508,11 +513,12 @@ class AutoChatRunner:
         # auto_mode rides every continuation: each builder below does {**body, ...},
         # so seeding it once here propagates it through the whole burst. The
         # upstream orchestrator reads it to phrase the auto-round-cap reminder for
-        # an absent user (act or report stuck, don't ask a question).
-        if self._seed.trace_id is None:
-            return {"messages": messages, "auto_mode": True}
-        return {
-            "trace_id": self._seed.trace_id,
-            "messages": messages,
-            "auto_mode": True,
-        }
+        # an absent user (act or report stuck, don't ask a question). The same
+        # propagation carries conversation_id so the backend persists it on
+        # every snapshot in the burst.
+        body: dict[str, Any] = {"messages": messages, "auto_mode": True}
+        if self._seed.trace_id is not None:
+            body["trace_id"] = self._seed.trace_id
+        if self._seed.conversation_id is not None:
+            body["conversation_id"] = self._seed.conversation_id
+        return body

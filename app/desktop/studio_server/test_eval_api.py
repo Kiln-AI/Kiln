@@ -3369,3 +3369,59 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
 
     assert response.status_code == 200
     assert runs_call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_eval_config_stops_when_budget_exhausted(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """When the conversation budget runs out mid-eval, the SSE stops scheduling
+    new jobs after the current progress tick and reports budget_exhausted."""
+    mock_task_from_id.return_value = mock_task
+
+    progress_updates = [
+        Mock(complete=1, total=3, errors=0),
+        Mock(complete=2, total=3, errors=0),
+        Mock(complete=3, total=3, errors=0),
+    ]
+
+    closed = {"value": False}
+
+    async def mock_run():
+        try:
+            for progress in progress_updates:
+                yield progress
+        finally:
+            closed["value"] = True
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_run_config_from_id,
+        patch("app.desktop.studio_server.eval_api.EvalRunner") as MockEvalRunner,
+        patch(
+            "app.desktop.studio_server.eval_api.spend_ledger.is_exhausted",
+            side_effect=[False, True],
+        ),
+    ):
+        mock_run_config_from_id.return_value = mock_run_config
+        mock_eval_runner = Mock()
+        mock_eval_runner.run.return_value = mock_run()
+        MockEvalRunner.return_value = mock_eval_runner
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
+            params={"run_config_ids": ["run_config1", "run_config2"]},
+        )
+
+        assert response.status_code == 200
+        messages = [msg for msg in response.iter_lines() if msg]
+
+    # 2 progress ticks, then the budget stop marker, then complete.
+    assert len(messages) == 4
+    assert json.loads(messages[0].split("data: ")[1])["progress"] == 1
+    assert json.loads(messages[1].split("data: ")[1])["progress"] == 2
+    assert json.loads(messages[2].split("data: ")[1]) == {"budget_exhausted": True}
+    assert messages[-1] == "data: complete"
+    # The runner generator was closed early (cancels its workers).
+    assert closed["value"] is True

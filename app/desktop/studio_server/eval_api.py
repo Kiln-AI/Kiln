@@ -31,6 +31,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
+from kiln_ai.utils import spend_ledger
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
@@ -155,16 +156,31 @@ def task_run_config_from_id(
 
 
 async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingResponse:
+    # Captured in the endpoint's request context. The SSE body may be iterated
+    # from a different task/context than the endpoint function, so re-assert it
+    # inside the generator rather than trusting contextvar propagation.
+    conversation_id = spend_ledger.current_conversation_id.get()
+
     # Yields async messages designed to be used with server sent events (SSE)
     # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
     async def event_generator():
-        async for progress in eval_runner.run():
+        spend_ledger.current_conversation_id.set(conversation_id)
+        runner_iter = eval_runner.run()
+        async for progress in runner_iter:
             data = {
                 "progress": progress.complete,
                 "total": progress.total,
                 "errors": progress.errors,
             }
             yield f"data: {json.dumps(data)}\n\n"
+            # Between-jobs budget stop for assistant-triggered runs: once the
+            # conversation budget is spent, stop scheduling new jobs (closing
+            # the runner generator cancels its workers). Overshoot is bounded
+            # to jobs already in flight. Completed rows are already saved.
+            if spend_ledger.is_exhausted(conversation_id):
+                await runner_iter.aclose()
+                yield f"data: {json.dumps({'budget_exhausted': True})}\n\n"
+                break
 
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"

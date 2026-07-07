@@ -781,3 +781,41 @@ class TestSSEReadTimeout:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"]["event_count"] == 8
+
+
+class TestConversationIdHeader:
+    """The tool stamps X-Kiln-Conversation-Id from the spend-ledger contextvar
+    so assistant-triggered requests can be attributed to a conversation."""
+
+    CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+    @pytest.mark.asyncio
+    async def test_header_present_when_contextvar_set(self, tool):
+        from kiln_ai.utils import spend_ledger
+
+        with respx.mock:
+            route = respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            token = spend_ledger.current_conversation_id.set(self.CONVERSATION_ID)
+            try:
+                await tool.run(method="GET", url_path="/test")
+            finally:
+                spend_ledger.current_conversation_id.reset(token)
+            request = route.calls.last.request
+            assert (
+                request.headers[spend_ledger.CONVERSATION_ID_HEADER]
+                == self.CONVERSATION_ID
+            )
+
+    @pytest.mark.asyncio
+    async def test_header_absent_when_contextvar_unset(self, tool):
+        from kiln_ai.utils import spend_ledger
+
+        with respx.mock:
+            route = respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            await tool.run(method="GET", url_path="/test")
+            request = route.calls.last.request
+            assert spend_ledger.CONVERSATION_ID_HEADER not in request.headers

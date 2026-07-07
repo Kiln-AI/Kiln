@@ -3239,6 +3239,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/budget/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get conversation spend budget
+         * @description The conversation's spend-budget status; null when nothing recorded.
+         */
+        get: operations["get_chat_budget_api_chat_budget__conversation_id__get"];
+        put?: never;
+        /**
+         * Set conversation spend budget
+         * @description Set or extend (absolute value) the conversation's USD spend budget.
+         */
+        post: operations["set_chat_budget_api_chat_budget__conversation_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat": {
         parameters: {
             query?: never;
@@ -4234,6 +4258,38 @@ export interface components {
             remove_tags?: string[] | null;
         };
         /**
+         * BudgetStatusResponse
+         * @description A conversation's spend-budget state, from the local spend ledger.
+         */
+        BudgetStatusResponse: {
+            /** Conversation Id */
+            conversation_id: string;
+            /** Budget Usd */
+            budget_usd?: number | null;
+            /**
+             * Spent Usd
+             * @default 0
+             */
+            spent_usd: number;
+            /** Remaining Usd */
+            remaining_usd?: number | null;
+            /**
+             * Exhausted
+             * @default false
+             */
+            exhausted: boolean;
+            /**
+             * Unpriced Runs
+             * @default 0
+             */
+            unpriced_runs: number;
+            /**
+             * Unpriced Tokens
+             * @default 0
+             */
+            unpriced_tokens: number;
+        };
+        /**
          * BuildPromptRequest
          * @description Request to build a prompt from examples.
          */
@@ -4471,6 +4527,8 @@ export interface components {
             messages: components["schemas"]["ChatRequestMessage"][];
             /** Trace Id */
             trace_id?: string | null;
+            /** Conversation Id */
+            conversation_id?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -4507,6 +4565,8 @@ export interface components {
             id: string;
             task_run: components["schemas"]["TaskRunSnapshot"];
             context_usage?: components["schemas"]["ContextUsage"] | null;
+            /** Conversation Id */
+            conversation_id?: string | null;
         };
         /**
          * ChatStrategy
@@ -5835,6 +5895,8 @@ export interface components {
             extra_messages?: {
                 [key: string]: unknown;
             }[];
+            /** Conversation Id */
+            conversation_id?: string | null;
             /** Reason */
             reason?: string | null;
         };
@@ -6475,6 +6537,8 @@ export interface components {
             decisions: {
                 [key: string]: boolean;
             };
+            /** Conversation Id */
+            conversation_id?: string | null;
         };
         /**
          * ExternalToolApiDescription
@@ -10042,6 +10106,11 @@ export interface components {
             content: string;
             /** Trace Id */
             trace_id?: string | null;
+        };
+        /** SetBudgetRequest */
+        SetBudgetRequest: {
+            /** Budget Usd */
+            budget_usd?: number | null;
         };
         /**
          * SkillContentResponse
@@ -19073,6 +19142,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_budget_api_chat_budget__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stable conversation id (uuid4). */
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetStatusResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_chat_budget_api_chat_budget__conversation_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stable conversation id (uuid4). */
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetBudgetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetStatusResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

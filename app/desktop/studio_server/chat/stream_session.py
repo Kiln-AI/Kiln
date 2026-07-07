@@ -8,6 +8,8 @@ from typing import Any, AsyncIterator, Callable, Literal
 
 import httpx
 from app.desktop.studio_server.chat.constants import (
+    BUDGET_EXCEEDED_TOOL_OUTPUT,
+    CALL_KILN_API_TOOL_NAME,
     CHAT_TIMEOUT,
     DENIED_TOOL_OUTPUT,
     FUNCTION_NAME_TO_TOOL_ID,
@@ -32,6 +34,7 @@ from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
     ENABLE_AUTO_MODE_TOOL_NAME,
 )
 from kiln_ai.tools.tool_registry import tool_from_id
+from kiln_ai.utils import spend_ledger
 from pydantic import BaseModel, ConfigDict, Field
 
 # The tool result the app server resolves an intercepted disable_auto_mode call
@@ -449,6 +452,7 @@ async def iter_round_with_retries(
 async def execute_tool_batch(
     tool_calls: list[ToolCallInfo],
     decisions: dict[str, bool],
+    conversation_id: str | None = None,
 ) -> dict[str, str]:
     results: dict[str, str] = {}
     for tc in tool_calls:
@@ -457,7 +461,20 @@ async def execute_tool_batch(
             if approved is not True:
                 results[tc.tool_call_id] = DENIED_TOOL_OUTPUT
                 continue
-        tool_result = await execute_tool(tc.tool_name, tc.input)
+        # Budget gate: block operation-triggering tool calls once the
+        # conversation's spend budget is exhausted. Checked per call (not once
+        # per batch) so an earlier call in the batch exhausting the budget
+        # blocks the later ones. Applies to interactive and auto mode alike.
+        if (
+            tc.tool_name == CALL_KILN_API_TOOL_NAME
+            and conversation_id is not None
+            and spend_ledger.is_exhausted(conversation_id)
+        ):
+            results[tc.tool_call_id] = BUDGET_EXCEEDED_TOOL_OUTPUT
+            continue
+        tool_result = await execute_tool(
+            tc.tool_name, tc.input, conversation_id=conversation_id
+        )
         results[tc.tool_call_id] = tool_result
     return results
 
@@ -475,6 +492,9 @@ class ChatStreamSession:
         self._headers = headers
         self._body = initial_body
         self._initial_trace_id: str | None = initial_body.get("trace_id")
+        # Stable conversation identity for spend tracking; rides the request
+        # body (and is persisted by the copilot backend). Survives all rounds.
+        self._conversation_id: str | None = initial_body.get("conversation_id")
 
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
@@ -580,6 +600,7 @@ class ChatStreamSession:
                                 for e in non_disable
                             ],
                             {},
+                            conversation_id=self._conversation_id,
                         )
                         tool_results = {
                             disable_evt.toolCallId: DISABLE_AUTO_MODE_RESULT,
@@ -655,7 +676,11 @@ class ChatStreamSession:
                     requiresApproval=tool_requires_user_approval(event),
                 )
             )
-        return await execute_tool_batch(tool_calls, approval_decisions or {})
+        return await execute_tool_batch(
+            tool_calls,
+            approval_decisions or {},
+            conversation_id=self._conversation_id,
+        )
 
     @staticmethod
     async def _clear_auto_mode_flag(trace_id: str | None) -> None:
@@ -683,7 +708,9 @@ class ChatStreamSession:
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
-async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
+async def execute_tool(
+    tool_name: str, args: dict[str, Any], conversation_id: str | None = None
+) -> str:
     """Run a Kiln built-in tool by OpenAI function name; return its output string."""
     logger.info("Executing server tool %s", tool_name)
     args_str = json.dumps(args, default=str, ensure_ascii=False)
@@ -693,6 +720,10 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
         return json.dumps(
             {"error": f"Unknown tool name: {tool_name}"}, ensure_ascii=False
         )
+    # Attribute the tool's work to the assistant conversation for spend
+    # tracking: KilnApiCallTool reads this contextvar to stamp the
+    # X-Kiln-Conversation-Id header on the local API request it makes.
+    token = spend_ledger.current_conversation_id.set(conversation_id)
     try:
         tool = tool_from_id(tool_id)
         result = await tool.run(**args)
@@ -700,6 +731,8 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
     except Exception as e:
         logger.exception("Built-in tool %s failed", tool_name)
         return json.dumps({"error": str(e)}, ensure_ascii=False)
+    finally:
+        spend_ledger.current_conversation_id.reset(token)
 
 
 def _build_openai_tool_continuation(

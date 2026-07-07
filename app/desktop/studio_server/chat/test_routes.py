@@ -584,7 +584,7 @@ class TestRemoteToolRoundTrip:
         with patch(PATCH_ASYNC_CLIENT, mock_class):
             with patch(
                 PATCH_EXECUTE_TOOL,
-                AsyncMock(side_effect=lambda *_: next(execute_results)),
+                AsyncMock(side_effect=lambda *_, **__: next(execute_results)),
             ):
                 response = client.post(
                     "/api/chat",
@@ -1088,7 +1088,7 @@ class TestMockedFlows:
             "kiln_tool::multiply_numbers": "12",
         }
 
-        async def mock_execute(tool_name, args):
+        async def mock_execute(tool_name, args, conversation_id=None):
             execute_calls.append((tool_name, args))
             return original_results.get(tool_name, "unknown")
 
@@ -1329,3 +1329,124 @@ def test_version_policy_degrades_on_transport_error(client, mock_api_key):
         r = client.get("/api/chat/version_policy")
     assert r.status_code == 200
     assert r.json() == {"required": False, "upgrade_nudge_version": None}
+
+
+CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+
+class TestConversationIdThreading:
+    def test_chat_forwards_conversation_id_upstream(self, client, mock_api_key):
+        mock_class, mock_client, _ = make_httpx_mock()
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "conversation_id": CONVERSATION_ID,
+                },
+            )
+            _ = response.content
+
+        call_kwargs = mock_client.stream.call_args
+        body = call_kwargs.kwargs.get("json") or json.loads(
+            call_kwargs.kwargs.get("content", "{}")
+        )
+        assert body["conversation_id"] == CONVERSATION_ID
+
+    def test_execute_tools_passes_conversation_id_to_batch(self, client, mock_api_key):
+        mock_class, mock_client, _ = make_httpx_mock()
+        batch_mock = AsyncMock(return_value={"tc1": "ok"})
+
+        with (
+            patch(PATCH_ASYNC_CLIENT, mock_class),
+            patch(
+                "app.desktop.studio_server.chat.routes.execute_tool_batch",
+                batch_mock,
+            ),
+        ):
+            response = client.post(
+                "/api/chat/execute-tools",
+                json={
+                    "trace_id": "trace-1",
+                    "tool_calls": [
+                        {
+                            "toolCallId": "tc1",
+                            "toolName": "call_kiln_api",
+                            "input": {},
+                            "requiresApproval": True,
+                        }
+                    ],
+                    "decisions": {"tc1": True},
+                    "conversation_id": CONVERSATION_ID,
+                },
+            )
+            _ = response.content
+
+        assert batch_mock.call_args.kwargs["conversation_id"] == CONVERSATION_ID
+        # The continuation body keeps the conversation id so the backend
+        # persists it on the next snapshot too.
+        call_kwargs = mock_client.stream.call_args
+        body = call_kwargs.kwargs.get("json") or json.loads(
+            call_kwargs.kwargs.get("content", "{}")
+        )
+        assert body["conversation_id"] == CONVERSATION_ID
+
+
+class TestBudgetEndpoints:
+    def test_get_budget_invalid_id_returns_400(self, client):
+        response = client.get("/api/chat/budget/not-a-uuid")
+        assert response.status_code == 400
+
+    def test_get_budget_unknown_returns_null(self, client):
+        with patch(
+            "app.desktop.studio_server.chat.routes.spend_ledger.get_status",
+            return_value=None,
+        ):
+            response = client.get(f"/api/chat/budget/{CONVERSATION_ID}")
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_set_and_get_budget_roundtrip(self, client, tmp_path):
+        from kiln_ai.utils import spend_ledger as ledger
+
+        with patch.object(
+            ledger.Config,
+            "settings_dir",
+            classmethod(lambda cls, create=True: str(tmp_path)),
+        ):
+            response = client.post(
+                f"/api/chat/budget/{CONVERSATION_ID}", json={"budget_usd": 2.5}
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["budget_usd"] == 2.5
+            assert body["spent_usd"] == 0.0
+            assert body["remaining_usd"] == 2.5
+            assert body["exhausted"] is False
+
+            ledger.record_spend(CONVERSATION_ID, 2.5, 100)
+            response = client.get(f"/api/chat/budget/{CONVERSATION_ID}")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["exhausted"] is True
+            assert body["remaining_usd"] == 0.0
+
+    def test_set_budget_invalid_amount_returns_400(self, client):
+        response = client.post(
+            f"/api/chat/budget/{CONVERSATION_ID}", json={"budget_usd": -1}
+        )
+        assert response.status_code == 400
+
+    def test_set_budget_denied_for_agent(self, client):
+        """The assistant must never raise its own budget: POST is DENY_AGENT,
+        GET is allowed (the model may check remaining budget)."""
+        from app.desktop.studio_server.chat.routes import connect_chat_api
+        from fastapi import FastAPI
+
+        app = FastAPI()
+        connect_chat_api(app)
+        openapi = app.openapi()
+        budget_path = openapi["paths"]["/api/chat/budget/{conversation_id}"]
+        assert budget_path["post"]["x-agent-policy"]["permission"] == "deny"
+        assert budget_path["get"]["x-agent-policy"]["permission"] == "allow"

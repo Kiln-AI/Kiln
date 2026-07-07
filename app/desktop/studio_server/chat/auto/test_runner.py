@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -835,3 +836,56 @@ async def test_graceful_stop_drops_queued_inbound_on_plain_text():
     assert runner.status == AutoRunStatus.USER_STOPPED
     # No second round despite the queued message.
     assert len(client.bodies) == 1
+
+
+CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+
+class TestSeedConversationId:
+    @pytest.mark.asyncio
+    async def test_seed_body_carries_conversation_id(self):
+        seed = AutoChatSeed(
+            trace_id="tr-0",
+            enable_tool_call_id="enable-1",
+            conversation_id=CONVERSATION_ID,
+        )
+        runner, _, _ = _runner(FakeUpstreamClient([]), seed)
+        body = await runner._build_seed_body()
+        assert body["conversation_id"] == CONVERSATION_ID
+
+    @pytest.mark.asyncio
+    async def test_seed_body_omits_conversation_id_when_absent(self):
+        seed = AutoChatSeed(trace_id="tr-0", enable_tool_call_id="enable-1")
+        runner, _, _ = _runner(FakeUpstreamClient([]), seed)
+        body = await runner._build_seed_body()
+        assert "conversation_id" not in body
+
+    @pytest.mark.asyncio
+    async def test_auto_executed_tools_receive_conversation_id(self):
+        seed = AutoChatSeed(trace_id="tr-0", conversation_id=CONVERSATION_ID)
+        round1 = [
+            tool_input_available("tc-1", "multiply", {"a": 2, "b": 3}),
+            trace("tr-1"),
+            finish_tool_calls(),
+        ]
+        round2 = [text_delta("done"), trace("tr-2"), finish("stop")]
+        client = FakeUpstreamClient(
+            [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
+        )
+        runner, _, _ = _runner(client, seed)
+        # Patch via the runner class's own module object: under pytest-xdist the
+        # package can be imported under an aliased name, so a string target can
+        # hit a different module object than the one the runner actually uses.
+        runner_module = sys.modules[AutoChatRunner.__module__]
+        with (
+            patch.object(httpx, "AsyncClient", return_value=client),
+            patch.object(
+                runner_module,
+                "execute_tool_batch",
+                new=AsyncMock(return_value={"tc-1": "6"}),
+            ) as batch_mock,
+        ):
+            await runner.run()
+        assert batch_mock.call_args.kwargs["conversation_id"] == CONVERSATION_ID
+        # The continuation body keeps carrying it upstream.
+        assert client.bodies[1]["conversation_id"] == CONVERSATION_ID

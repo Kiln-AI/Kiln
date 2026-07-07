@@ -81,6 +81,7 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   messages: ChatMessage[]
   continuationTraceId: string
   contextUsage: ContextUsage | null
+  conversationId: string | null
 } {
   const trace = snapshot.task_run.trace ?? []
   const messages: ChatMessage[] = []
@@ -140,5 +141,6 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
     messages,
     continuationTraceId: snapshot.id,
     contextUsage: normalizeContextUsage(snapshot.context_usage),
+    conversationId: snapshot.conversation_id ?? null,
   }
 }

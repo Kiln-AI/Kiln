@@ -28,8 +28,21 @@ SSE_TYPE_AUTO_MODE_STATE = "auto-mode-state"
 DENIED_TOOL_OUTPUT = json.dumps(
     {"error": "The user did not accept the toolcall"}, ensure_ascii=False
 )
+# Returned instead of dispatching call_kiln_api when the conversation's spend
+# budget is exhausted. Reads as a normal tool error so the model relays it and
+# stops triggering operations; only the user can extend the budget (the
+# budget-set endpoint is DENY_AGENT).
+BUDGET_EXCEEDED_TOOL_OUTPUT = json.dumps(
+    {
+        "error": "The conversation's spend budget is exhausted. This operation was "
+        "not run. Do not retry. Tell the user they can extend the budget from the "
+        "budget control in the chat UI if they want you to continue."
+    },
+    ensure_ascii=False,
+)
+CALL_KILN_API_TOOL_NAME = "call_kiln_api"
 FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
-    "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API,
+    CALL_KILN_API_TOOL_NAME: KilnBuiltInToolId.CALL_KILN_API,
     "add": KilnBuiltInToolId.ADD_NUMBERS,
     "subtract": KilnBuiltInToolId.SUBTRACT_NUMBERS,
     "multiply": KilnBuiltInToolId.MULTIPLY_NUMBERS,

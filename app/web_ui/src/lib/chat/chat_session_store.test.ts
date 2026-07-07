@@ -2089,3 +2089,88 @@ describe("compacting (Phase 5)", () => {
     expect(persisted).not.toContain("compacting")
   })
 })
+
+describe("conversation id", () => {
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+  it("mints a uuid4 on the first send and sends it to streamChat", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+
+    const cid = get(store).conversationId
+    expect(cid).toMatch(UUID_RE)
+    expect(capture.options!.conversationId).toBe(cid)
+  })
+
+  it("reuses the same conversation id across sends", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("first")
+    const first = get(store).conversationId
+    // End the turn so the second send dispatches instead of queueing.
+    capture.options!.onFinish?.()
+    await store.sendMessage("second")
+
+    expect(get(store).conversationId).toBe(first)
+    expect(capture.options!.conversationId).toBe(first)
+  })
+
+  it("adopts the server-echoed conversation id", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    const capture: { options: StreamChatOptions | null } = { options: null }
+    streamChatMock.mockImplementation(capturingStreamChat(capture))
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    const echoed = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+    capture.options!.onConversationId?.(echoed)
+
+    expect(get(store).conversationId).toBe(echoed)
+  })
+
+  it("clears the conversation id on reset", async () => {
+    const { createChatSessionStore, streamChatMock } =
+      await importFreshWithMock()
+    streamChatMock.mockImplementation(noopStreamChat)
+    const store = createChatSessionStore()
+
+    await store.sendMessage("hi")
+    expect(get(store).conversationId).toMatch(UUID_RE)
+    store.reset()
+    expect(get(store).conversationId).toBeNull()
+  })
+
+  it("restores the conversation id from a persisted session", async () => {
+    const KEY = "kiln_chat_session_cid"
+    const cid = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+    storage.store[KEY] = JSON.stringify({
+      messages: [],
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+      contextUsage: null,
+      conversationId: cid,
+    })
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore(KEY)
+    expect(get(store).conversationId).toBe(cid)
+  })
+
+  it("loadSession sets the conversation id from a restored snapshot", async () => {
+    const { createChatSessionStore } = await importFreshWithMock()
+    const store = createChatSessionStore()
+    const cid = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+    store.loadSession([], "0000000001_" + "a".repeat(8), null, cid)
+    expect(get(store).conversationId).toBe(cid)
+  })
+})

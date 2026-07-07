@@ -73,6 +73,7 @@ function baseState(
     collapsedPartKeys: {},
     lastSentAppState: null,
     contextUsage: null as ContextUsage | null,
+    conversationId: null as string | null,
     status: "submitted",
     abortController: null,
     toolApprovalWaiter: null,

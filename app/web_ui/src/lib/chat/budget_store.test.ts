@@ -1,0 +1,108 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import { get } from "svelte/store"
+
+const mockGet = vi.fn()
+const mockPost = vi.fn()
+vi.mock("$lib/api_client", () => ({
+  client: {
+    GET: (...args: unknown[]) => mockGet(...args),
+    POST: (...args: unknown[]) => mockPost(...args),
+  },
+}))
+
+import { createBudgetStore } from "./budget_store"
+
+const CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+function status(overrides: Record<string, unknown> = {}) {
+  return {
+    conversation_id: CONVERSATION_ID,
+    budget_usd: 5,
+    spent_usd: 1,
+    remaining_usd: 4,
+    exhausted: false,
+    unpriced_runs: 0,
+    unpriced_tokens: 0,
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  mockGet.mockReset()
+  mockPost.mockReset()
+})
+
+describe("createBudgetStore", () => {
+  it("starts null and stays null with no conversation", async () => {
+    const store = createBudgetStore()
+    expect(get(store)).toBeNull()
+    await store.refresh()
+    expect(mockGet).not.toHaveBeenCalled()
+  })
+
+  it("fetches status when a conversation is set", async () => {
+    mockGet.mockResolvedValue({ data: status(), error: undefined })
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID)
+    // setConversation fires a background refresh; await an explicit one to
+    // deterministically observe the resolved status.
+    await store.refresh()
+    expect(mockGet).toHaveBeenCalledWith("/api/chat/budget/{conversation_id}", {
+      params: { path: { conversation_id: CONVERSATION_ID } },
+    })
+    expect(get(store)?.budget_usd).toBe(5)
+  })
+
+  it("clears status and does not refetch for the same conversation", async () => {
+    mockGet.mockResolvedValue({ data: status(), error: undefined })
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID)
+    await Promise.resolve()
+    mockGet.mockClear()
+    store.setConversation(CONVERSATION_ID)
+    expect(mockGet).not.toHaveBeenCalled()
+  })
+
+  it("resets to null when the conversation is cleared", async () => {
+    mockGet.mockResolvedValue({ data: status(), error: undefined })
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID)
+    await Promise.resolve()
+    store.setConversation(null)
+    expect(get(store)).toBeNull()
+  })
+
+  it("setBudget POSTs and updates the store", async () => {
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID)
+    mockPost.mockResolvedValue({
+      data: status({ budget_usd: 10, remaining_usd: 9 }),
+      error: undefined,
+    })
+    const result = await store.setBudget(10)
+    expect(result.ok).toBe(true)
+    expect(mockPost).toHaveBeenCalledWith(
+      "/api/chat/budget/{conversation_id}",
+      {
+        params: { path: { conversation_id: CONVERSATION_ID } },
+        body: { budget_usd: 10 },
+      },
+    )
+    expect(get(store)?.budget_usd).toBe(10)
+  })
+
+  it("setBudget fails cleanly with no conversation", async () => {
+    const store = createBudgetStore()
+    const result = await store.setBudget(10)
+    expect(result.ok).toBe(false)
+    expect(mockPost).not.toHaveBeenCalled()
+  })
+
+  it("setBudget surfaces an API error", async () => {
+    const store = createBudgetStore()
+    store.setConversation(CONVERSATION_ID)
+    mockPost.mockResolvedValue({ data: undefined, error: { detail: "bad" } })
+    const result = await store.setBudget(-1)
+    expect(result.ok).toBe(false)
+  })
+})

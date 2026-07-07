@@ -471,3 +471,141 @@ class TestExecuteToolBatch:
             out = await execute_tool_batch(calls, {})
         assert "error" in json.loads(out["b"])
         m.assert_not_called()
+
+
+CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+
+class TestBudgetGate:
+    """execute_tool_batch blocks call_kiln_api once the conversation's spend
+    budget is exhausted; other tools and untracked conversations pass through."""
+
+    def _call_kiln_api_tc(self, tc_id: str = "c1") -> ToolCallInfo:
+        return ToolCallInfo(
+            toolCallId=tc_id,
+            toolName="call_kiln_api",
+            input={"method": "GET", "url_path": "/api/projects"},
+            requiresApproval=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_blocks_call_kiln_api_when_exhausted(self):
+        from app.desktop.studio_server.chat.constants import (
+            BUDGET_EXCEEDED_TOOL_OUTPUT,
+        )
+
+        with (
+            patch(
+                "app.desktop.studio_server.chat.stream_session.spend_ledger.is_exhausted",
+                return_value=True,
+            ),
+            patch(
+                "app.desktop.studio_server.chat.stream_session.execute_tool",
+                new=AsyncMock(return_value="should-not-run"),
+            ) as mock_execute,
+        ):
+            out = await execute_tool_batch(
+                [self._call_kiln_api_tc()], {}, conversation_id=CONVERSATION_ID
+            )
+        assert out == {"c1": BUDGET_EXCEEDED_TOOL_OUTPUT}
+        mock_execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_math_tools_not_gated_when_exhausted(self):
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.spend_ledger.is_exhausted",
+            return_value=True,
+        ):
+            out = await execute_tool_batch(
+                [
+                    ToolCallInfo(
+                        toolCallId="m1",
+                        toolName="multiply",
+                        input={"a": 3, "b": 4},
+                        requiresApproval=False,
+                    )
+                ],
+                {},
+                conversation_id=CONVERSATION_ID,
+            )
+        assert out == {"m1": "12"}
+
+    @pytest.mark.asyncio
+    async def test_not_gated_without_conversation_id(self):
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.spend_ledger.is_exhausted",
+            return_value=True,
+        ) as mock_exhausted:
+            with patch(
+                "app.desktop.studio_server.chat.stream_session.execute_tool",
+                new=AsyncMock(return_value="ran"),
+            ):
+                out = await execute_tool_batch([self._call_kiln_api_tc()], {})
+        assert out == {"c1": "ran"}
+        mock_exhausted.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_not_gated_when_budget_remaining(self):
+        with (
+            patch(
+                "app.desktop.studio_server.chat.stream_session.spend_ledger.is_exhausted",
+                return_value=False,
+            ),
+            patch(
+                "app.desktop.studio_server.chat.stream_session.execute_tool",
+                new=AsyncMock(return_value="ran"),
+            ) as mock_execute,
+        ):
+            out = await execute_tool_batch(
+                [self._call_kiln_api_tc()], {}, conversation_id=CONVERSATION_ID
+            )
+        assert out == {"c1": "ran"}
+        mock_execute.assert_called_once_with(
+            "call_kiln_api",
+            {"method": "GET", "url_path": "/api/projects"},
+            conversation_id=CONVERSATION_ID,
+        )
+
+    @pytest.mark.asyncio
+    async def test_approval_denial_takes_precedence_over_budget(self):
+        from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+
+        tc = ToolCallInfo(
+            toolCallId="c1",
+            toolName="call_kiln_api",
+            input={},
+            requiresApproval=True,
+        )
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.spend_ledger.is_exhausted",
+            return_value=True,
+        ):
+            out = await execute_tool_batch([tc], {}, conversation_id=CONVERSATION_ID)
+        assert out == {"c1": DENIED_TOOL_OUTPUT}
+
+
+class TestExecuteToolConversationContext:
+    @pytest.mark.asyncio
+    async def test_contextvar_set_during_tool_run(self):
+        from kiln_ai.utils import spend_ledger
+
+        seen: dict[str, str | None] = {}
+
+        class _ProbeTool:
+            async def run(self, **kwargs):
+                seen["cid"] = spend_ledger.current_conversation_id.get()
+
+                class R:
+                    output = "ok"
+
+                return R()
+
+        with patch(
+            "app.desktop.studio_server.chat.stream_session.tool_from_id",
+            return_value=_ProbeTool(),
+        ):
+            out = await execute_tool("multiply", {}, conversation_id=CONVERSATION_ID)
+        assert out == "ok"
+        assert seen["cid"] == CONVERSATION_ID
+        # Reset after the call.
+        assert spend_ledger.current_conversation_id.get() is None

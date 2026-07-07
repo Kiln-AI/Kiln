@@ -4,4 +4,5 @@ export type LoadedChatSessionDetail = {
   messages: ChatMessage[]
   continuationTraceId: string
   contextUsage: ContextUsage | null
+  conversationId: string | null
 }

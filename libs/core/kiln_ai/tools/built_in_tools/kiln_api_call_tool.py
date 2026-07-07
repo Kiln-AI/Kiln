@@ -8,6 +8,7 @@ import jq
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
+from kiln_ai.utils import spend_ledger
 
 # httpx read timeout is per-read (idle), not a wall-clock cap: it resets every
 # time a chunk arrives. So this bounds the gap *between* reads, not total
@@ -122,6 +123,13 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
         # timeout applies to SSE and non-SSE responses: read is per-read (idle),
         # so it bounds silence on the channel rather than total duration.
         headers = {"Content-Type": "application/json"}
+        # Attribute this request (and any model runs it spawns) to the current
+        # assistant conversation so the budget middleware can credit the spend
+        # ledger. Set by the desktop server around assistant tool execution;
+        # absent for any other use of this tool.
+        conversation_id = spend_ledger.current_conversation_id.get()
+        if conversation_id is not None:
+            headers[spend_ledger.CONVERSATION_ID_HEADER] = conversation_id
         # Per-request client: tool instances are short-lived (created per call
         # via tool_from_id), so a shared client wouldn't persist across calls anyway.
         timeout = httpx.Timeout(

@@ -28,10 +28,13 @@
   import BrailleSpinner from "./braille_spinner.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
   import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
+  import { budget_store } from "$lib/chat/budget_store"
+  import ChatBudgetControl from "./chat_budget_control.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
   let costDisclaimer: ChatCostDisclaimer
+  let budgetControl: ChatBudgetControl
   $: store.onConsentNeeded = () => costDisclaimer.prompt()
   let consentDialog: AutoModeConsentDialog
   let stopDialog: AutoModeStopDialog
@@ -149,6 +152,27 @@
   // Retry affordance from either source (auto burst or interactive stream).
   $: activeRetry = $autoRetry ?? $store.retry
   $: contextUsage = $store.contextUsage
+  // Point the budget store at the active conversation; it clears + refetches
+  // when the id changes (new chat, history restore, lazy adoption).
+  $: budget_store.setConversation($store.conversationId ?? null)
+  $: budgetStatus = $budget_store
+  // A live spend meter needs polling during long assistant-triggered operations
+  // (a single eval can run for minutes): usage is recorded server-side as the
+  // operation progresses, but nothing pushes it to the client. Poll while a tool
+  // round or auto burst is active; a final refresh lands when it settles.
+  $: budgetPollActive =
+    !!$store.conversationId && ($store.toolExecuting || autoWorking)
+  let budgetPollTimer: ReturnType<typeof setInterval> | null = null
+  $: {
+    if (budgetPollActive && !budgetPollTimer) {
+      budgetPollTimer = setInterval(() => void budget_store.refresh(), 5000)
+    } else if (!budgetPollActive && budgetPollTimer) {
+      clearInterval(budgetPollTimer)
+      budgetPollTimer = null
+      // One last refresh so the settled total is exact.
+      if ($store.conversationId) void budget_store.refresh()
+    }
+  }
   $: upgradeNudgeVersion = $store.upgradeNudgeVersion
   $: versionRequired = $store.versionRequired
   // A message typed while a turn was in flight, held client-side and surfaced
@@ -406,6 +430,10 @@
     messagesContainer?.removeEventListener("touchmove", handleTouchMove)
     scrollObserver?.disconnect()
     scrollObserver = null
+    if (budgetPollTimer) {
+      clearInterval(budgetPollTimer)
+      budgetPollTimer = null
+    }
   })
 
   function handleTextareaKeydown(e: KeyboardEvent): void {
@@ -470,6 +498,7 @@
       e.detail.messages,
       e.detail.continuationTraceId,
       e.detail.contextUsage,
+      e.detail.conversationId,
     )
     userNearBottom = true
     tick().then(() => {
@@ -881,6 +910,28 @@
       </div>
     {/if}
 
+    {#if budgetStatus?.exhausted}
+      <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
+        <div
+          class="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2"
+        >
+          <div class="flex-1 min-w-0 text-xs text-base-content/80">
+            This conversation's spend budget (${budgetStatus.budget_usd?.toFixed(
+              2,
+            )}) is used up. The assistant can't run more operations until you
+            extend it.
+          </div>
+          <button
+            type="button"
+            class="shrink-0 btn btn-xs btn-warning"
+            on:click={() => budgetControl?.openExtend()}
+          >
+            Extend budget
+          </button>
+        </div>
+      </div>
+    {/if}
+
     {#if queuedMessage}
       <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
         <div
@@ -1001,17 +1052,23 @@
           Auto mode
         </button>
       {/if}
-      {#if contextUsage}
-        <div class="ml-auto">
+      <div class="ml-auto flex items-center gap-x-3">
+        <ChatBudgetControl
+          bind:this={budgetControl}
+          status={budgetStatus}
+          disabled={!$store.conversationId}
+          on:setbudget={(e) => budget_store.setBudget(e.detail.budgetUsd)}
+        />
+        {#if contextUsage}
           <ContextUsageGauge usage={contextUsage} />
-        </div>
-      {/if}
+        {/if}
+      </div>
     </div>
   </div>
 </div>
 
 <ChatCostDisclaimer bind:this={costDisclaimer} />
-<AutoModeConsentDialog bind:this={consentDialog} />
+<AutoModeConsentDialog bind:this={consentDialog} {budgetStatus} />
 <AutoModeStopDialog bind:this={stopDialog} />
 
 <style>

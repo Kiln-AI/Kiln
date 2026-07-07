@@ -2,6 +2,11 @@
   import posthog from "posthog-js"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { AutoModeConsentRequiredPayload } from "$lib/chat/streaming_chat"
+  import type { BudgetStatus } from "$lib/chat/budget_store"
+
+  // Current conversation budget, surfaced so the user sees what auto mode may
+  // spend before turning it on. Null when no budget is set.
+  export let budgetStatus: BudgetStatus | null = null
 
   let dialog: Dialog
 
@@ -96,6 +101,18 @@
             example, reflective optimization runs) that
             <span class="font-semibold">use tokens and can incur real cost</span
             >.
+            {#if budgetStatus?.budget_usd != null}
+              This conversation has a spend budget of
+              <span class="font-semibold"
+                >${budgetStatus.budget_usd.toFixed(2)}</span
+              >
+              ({@const remaining = budgetStatus.remaining_usd ?? 0}<span
+                class="font-semibold">${remaining.toFixed(2)}</span
+              > remaining), after which it stops.
+            {:else}
+              No spend budget is set for this conversation — consider setting
+              one from the budget control below the chat.
+            {/if}
           </span>
         </li>
         <li class="flex items-start gap-2">

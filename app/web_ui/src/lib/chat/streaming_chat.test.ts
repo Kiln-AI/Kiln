@@ -550,3 +550,128 @@ describe("StreamEventProcessor kiln-chat-retry", () => {
     expect(clears).toBe(0)
   })
 })
+
+describe("streamChat conversation_id", () => {
+  const CONVERSATION_ID = "1f2e3d4c-5b6a-4789-8abc-def012345678"
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("includes conversation_id in the POST body when set", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () =>
+          ({
+            read: () => Promise.resolve({ done: true, value: undefined }),
+          }) as ReadableStreamDefaultReader<Uint8Array>,
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      conversationId: CONVERSATION_ID,
+      onAssistantMessage: () => {},
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(init.body as string)).toEqual({
+      messages: [{ role: "user", content: "hi" }],
+      conversation_id: CONVERSATION_ID,
+    })
+  })
+
+  it("omits conversation_id when not set", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () =>
+          ({
+            read: () => Promise.resolve({ done: true, value: undefined }),
+          }) as ReadableStreamDefaultReader<Uint8Array>,
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(init.body as string)).not.toHaveProperty(
+      "conversation_id",
+    )
+  })
+
+  it("forwards conversation_id on the execute-tools POST and reports the echo", async () => {
+    const lines = [
+      'data: {"type":"kiln_chat_trace","trace_id":"trace-1","conversation_id":"' +
+        CONVERSATION_ID +
+        '"}\n\n',
+      'data: {"type":"tool-calls-pending","items":[{"toolCallId":"tc1","toolName":"t","input":{},"requiresApproval":true}]}\n\n',
+    ]
+    let i = 0
+    let executeToolsBody: Record<string, unknown> | null = null
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (url.endsWith("/execute-tools")) {
+          executeToolsBody = JSON.parse(init?.body as string) as Record<
+            string,
+            unknown
+          >
+          return Promise.resolve({
+            ok: true,
+            body: {
+              getReader: () => ({
+                read: () => Promise.resolve({ done: true, value: undefined }),
+              }),
+            },
+          })
+        }
+        return Promise.resolve({
+          ok: true,
+          body: {
+            getReader: () => ({
+              read: () => {
+                if (i >= lines.length) {
+                  return Promise.resolve({ done: true, value: undefined })
+                }
+                const enc = new TextEncoder()
+                const line = lines[i]
+                i += 1
+                return Promise.resolve({ done: false, value: enc.encode(line) })
+              },
+            }),
+          },
+        })
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const seenConversationIds: string[] = []
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      conversationId: CONVERSATION_ID,
+      onConversationId: (cid) => seenConversationIds.push(cid),
+      onAssistantMessage: () => {},
+      onToolCallsPending: async () => ({ tc1: true }),
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    const body = executeToolsBody as Record<string, unknown> | null
+    expect(body).not.toBeNull()
+    expect(body?.conversation_id).toBe(CONVERSATION_ID)
+    expect(seenConversationIds).toContain(CONVERSATION_ID)
+  })
+})

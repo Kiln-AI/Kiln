@@ -51,6 +51,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallDefinition,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
+from kiln_ai.utils import spend_ledger
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.open_ai_types import (
@@ -159,6 +160,15 @@ class LiteLlmAdapter(BaseAdapter):
             usage.total_llm_latency_ms = (
                 usage.total_llm_latency_ms or 0
             ) + call_latency_ms
+
+            # Credit the per-conversation spend ledger when this call happens
+            # inside an assistant-triggered request (contextvar set by the
+            # budget middleware / tool execution). Once per LLM call, so every
+            # in-process spend source (task runs, judges, data gen) is counted
+            # exactly once. No-op otherwise.
+            spend_ledger.record_spend_for_current_conversation(
+                call_usage.cost, call_usage.total_tokens
+            )
 
             # Extract content and tool calls
             if not hasattr(response_choice, "message"):

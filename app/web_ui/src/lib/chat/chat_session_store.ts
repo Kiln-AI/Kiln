@@ -40,6 +40,13 @@ export interface PersistedChatSession {
    * sessionStorage reload keeps the gauge. ``null`` before the first turn.
    */
   contextUsage: ContextUsage | null
+  /**
+   * Stable, client-minted conversation identity (plain lowercase uuid4 —
+   * unlike message ids). Minted on the first send, persisted upstream on every
+   * snapshot, and re-learned from the session snapshot / kiln_chat_trace echo
+   * on restore. Keys the conversation's spend budget.
+   */
+  conversationId: string | null
 }
 
 export interface ToolApprovalWaiter {
@@ -120,6 +127,7 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
     messages: ChatMessage[],
     continuationTraceId: string,
     contextUsage?: ContextUsage | null,
+    conversationId?: string | null,
   ): void
   /**
    * Resync the restored-from-sessionStorage conversation back to its true
@@ -147,6 +155,7 @@ const EMPTY_PERSISTED: PersistedChatSession = {
   collapsedPartKeys: {},
   lastSentAppState: null,
   contextUsage: null,
+  conversationId: null,
 }
 
 export function createChatSessionStore(
@@ -174,6 +183,8 @@ export function createChatSessionStore(
 
   const combined = writable<ChatSessionState>({
     ...get(persisted),
+    // Pre-feature sessionStorage payloads lack the key; normalize to null.
+    conversationId: get(persisted).conversationId ?? null,
     status,
     abortController,
     toolApprovalWaiter: null,
@@ -198,6 +209,7 @@ export function createChatSessionStore(
       collapsedPartKeys: $persisted.collapsedPartKeys,
       lastSentAppState: $persisted.lastSentAppState,
       contextUsage: $persisted.contextUsage,
+      conversationId: $persisted.conversationId ?? null,
     }))
   })
 
@@ -277,6 +289,29 @@ export function createChatSessionStore(
     persisted.update((p) => ({ ...p, contextUsage: usage }))
   }
 
+  // Adopt/refresh the stable conversation id (snapshot hydration or the
+  // kiln_chat_trace echo). The server carries the prior snapshot's id forward,
+  // so an echoed value is authoritative.
+  function setConversationId(conversationId: string | null) {
+    persisted.update((p) =>
+      p.conversationId === conversationId
+        ? p
+        : { ...p, conversationId: conversationId },
+    )
+  }
+
+  // The conversation id sent with every request. Minted lazily on the first
+  // send (plain lowercase uuid4 — the copilot backend validates the format).
+  // Also covers lazy adoption: a pre-feature conversation gets an id on its
+  // next send, which the backend adopts onto the chain.
+  function ensureConversationId(): string {
+    const existing = get(persisted).conversationId
+    if (existing) return existing
+    const minted = crypto.randomUUID()
+    setConversationId(minted)
+    return minted
+  }
+
   // Runtime-only (not persisted): drives the "Summarizing earlier messages…"
   // indicator while the server compacts the conversation for this turn.
   function setCompacting(compacting: boolean) {
@@ -325,6 +360,7 @@ export function createChatSessionStore(
     beginAssistantTurn,
     onAssistantMessage: updateLastAssistant,
     onChatTrace: setLastAssistantTraceId,
+    onConversationId: setConversationId,
     onContextUsage: setContextUsage,
     onCompactionStatus: setCompacting,
     onInlineError: (message, traceId, code) =>
@@ -396,6 +432,7 @@ export function createChatSessionStore(
     void resumePendingToolCalls({
       apiUrl: CHAT_API_URL,
       traceId,
+      conversationId: get(persisted).conversationId ?? undefined,
       items,
       onToolCallsPending: (payload) => {
         if (isStale()) return Promise.resolve({})
@@ -514,6 +551,11 @@ export function createChatSessionStore(
       apiUrl: CHAT_API_URL,
       messages: [apiMessage],
       traceId,
+      conversationId: ensureConversationId(),
+      onConversationId: (cid) => {
+        if (isStale()) return
+        setConversationId(cid)
+      },
       onToolCallsPending: (payload) => {
         if (isStale()) return Promise.resolve({})
         return handleToolCallsPending(payload)
@@ -678,6 +720,7 @@ export function createChatSessionStore(
         enable_tool_call_id: payload.enableToolCallId,
         pending_tool_calls: siblings,
         reason: payload.reason,
+        conversation_id: ensureConversationId(),
       }
       // Surface enable failures (e.g. 429 "Too many auto runs") instead of
       // silently dropping them — the dialog has already closed, so the inline
@@ -895,6 +938,7 @@ export function createChatSessionStore(
     const apiContent = header ? header + "\n" + text : text
     const seed: EnableAutoRequest = {
       extra_messages: [{ role: "user", content: apiContent }],
+      conversation_id: ensureConversationId(),
     }
     const result = await autoRunStore.requestEnable(seed)
     if (!result.ok) {
@@ -947,6 +991,7 @@ export function createChatSessionStore(
       collapsedPartKeys: {},
       lastSentAppState: null,
       contextUsage: null,
+      conversationId: null,
     })
     combined.update((s) => ({
       ...s,
@@ -962,6 +1007,7 @@ export function createChatSessionStore(
     messages: ChatMessage[],
     traceId: string,
     contextUsage: ContextUsage | null = null,
+    conversationId: string | null = null,
   ): void {
     if (abortController) {
       abortController.abort()
@@ -977,6 +1023,7 @@ export function createChatSessionStore(
       collapsedPartKeys: {},
       lastSentAppState: null,
       contextUsage,
+      conversationId,
     })
     combined.update((s) => ({
       ...s,
@@ -1050,10 +1097,11 @@ export function createChatSessionStore(
           messages,
           continuationTraceId: traceId,
           contextUsage,
+          conversationId,
         } = hydrateSessionFromSnapshot(snapshot)
         // loadSession detaches any prior observer, sets the messages + trace
         // id, and resets runtime state — identical to the history-restore path.
-        loadSession(messages, traceId, contextUsage)
+        loadSession(messages, traceId, contextUsage, conversationId)
       }
     } catch {
       // Hydration failed (network/parse). Fall back: still attach so the user at

@@ -3237,3 +3237,49 @@ class TestUsageTracking:
         assert new_usage.input_tokens == 3
         assert new_usage.output_tokens == 4
         assert new_usage.cost == 0.05
+
+
+@pytest.mark.asyncio
+async def test_run_model_turn_credits_spend_ledger(tmp_path, config):
+    """Each LLM call credits the per-conversation spend ledger (when the
+    conversation contextvar is set — set by the desktop budget middleware)."""
+    from kiln_ai.utils import spend_ledger
+
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+    task = Task(name="Spend Task", instruction="Do the thing", parent=project)
+    task.save_to_file()
+
+    config.run_config_properties.model_name = "gpt-4o-mini"
+    config.run_config_properties.model_provider_name = ModelProviderName.openai
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{"message": {"content": "done"}}],
+    )
+    mock_config_obj = Mock()
+    mock_config_obj.open_ai_api_key = "mock_api_key"
+    mock_config_obj.user_id = "test_user"
+
+    call_usage = MessageUsage(
+        input_tokens=10, output_tokens=5, total_tokens=15, cost=0.5
+    )
+
+    with (
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
+        patch.object(LiteLlmAdapter, "usage_from_response", return_value=call_usage),
+        patch.object(
+            spend_ledger, "record_spend_for_current_conversation"
+        ) as mock_record,
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
+    ):
+        await adapter.invoke("hello")
+
+    mock_record.assert_called_once_with(0.5, 15)

@@ -44,6 +44,8 @@ export interface AutoRunChatSink {
   beginAssistantTurn: () => void
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace: (traceId: string) => void
+  /** Fired when a snapshot event echoes the stable ``conversation_id``. */
+  onConversationId?: (conversationId: string) => void
   /** Fired when an auto-burst snapshot event carries ``context_usage``. */
   onContextUsage: (usage: ContextUsage) => void
   /**
@@ -227,6 +229,7 @@ export function createAutoRunStore(): AutoRunStore {
         sink?.onAssistantMessage(update)
       },
       onChatTrace: (tid) => sink?.onChatTrace(tid),
+      onConversationId: (cid) => sink?.onConversationId?.(cid),
       onContextUsage: (usage) => sink?.onContextUsage(usage),
       onCompactionStatus: (compacting) => sink?.onCompactionStatus(compacting),
       onInlineError: (message, traceId, code) =>
