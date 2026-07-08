@@ -624,8 +624,8 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         # Derive the default eagerly so the POST response matches subsequent GETs
         # (the load-time migration would otherwise fill it on the next read)
-        train_set_filter_id = request.train_set_filter_id or default_train_set_filter_id(
-            request.name
+        train_set_filter_id = (
+            request.train_set_filter_id or default_train_set_filter_id(request.name)
         )
         eval = Eval(
             name=request.name,
