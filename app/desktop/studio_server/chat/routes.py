@@ -27,6 +27,10 @@ from app.desktop.studio_server.chat.stream_session import (
     ToolCallInfo,
     execute_tool_batch,
 )
+from app.desktop.studio_server.chat.subagents.orchestration import (
+    OrchestrationContext,
+)
+from app.desktop.studio_server.chat.subagents.registry import subagent_registry
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
@@ -75,6 +79,15 @@ class ChatSessionListItem(BaseModel):
     updated_at: datetime | None = None
     auto_active: bool = False
     auto_run_id: str | None = None
+    # Sub-agent lineage. agent_type/root_id/parent_root_id come from the
+    # upstream session meta (durable, survives app restarts); subagent_id/
+    # subagent_status are joined from the in-memory registry (live runs only).
+    agent_type: str | None = None
+    root_id: str | None = None
+    parent_root_id: str | None = None
+    is_subagent: bool = False
+    subagent_id: str | None = None
+    subagent_status: str | None = None
 
 
 class ClientVersionPolicy(BaseModel):
@@ -181,7 +194,15 @@ def connect_chat_api(app: FastAPI) -> None:
         the toolcalls and continue the chat stream.
         """
         api_key = get_copilot_api_key()
-        tool_results = await execute_tool_batch(body.tool_calls, body.decisions)
+        # Approval-gated tool calls (including spawn_subagent) resolve through
+        # this endpoint, so it must carry the conversation's orchestration
+        # identity. Consent memory is updated inside the spawn executor itself
+        # (registry-authoritative), not from the POSTed approval flags.
+        tool_results = await execute_tool_batch(
+            body.tool_calls,
+            body.decisions,
+            orchestration_ctx=OrchestrationContext(parent_trace_id=body.trace_id),
+        )
         continuation_body: dict[str, Any] = {
             "trace_id": body.trace_id,
             "messages": [
@@ -275,6 +296,12 @@ def connect_chat_api(app: FastAPI) -> None:
                 auto_active, auto_run_id = auto_chat_registry.is_active_for_trace(
                     item.id
                 )
+                # Durable lineage from the upstream session meta rides in the
+                # generated SDK's additional_properties (the SDK model predates
+                # these fields; regeneration isn't needed to read them).
+                extra = item.additional_properties
+                # Live-run join against the in-memory sub-agent registry.
+                subagent_record = subagent_registry.subagent_for_trace(item.id)
                 items.append(
                     ChatSessionListItem.model_validate(
                         {
@@ -283,6 +310,20 @@ def connect_chat_api(app: FastAPI) -> None:
                             "updated_at": item.updated_at,
                             "auto_active": auto_active,
                             "auto_run_id": auto_run_id,
+                            "agent_type": extra.get("agent_type"),
+                            "root_id": extra.get("root_id"),
+                            "parent_root_id": extra.get("parent_root_id"),
+                            "is_subagent": bool(extra.get("is_subagent")),
+                            "subagent_id": (
+                                subagent_record.subagent_id
+                                if subagent_record
+                                else None
+                            ),
+                            "subagent_status": (
+                                subagent_record.status.value
+                                if subagent_record
+                                else None
+                            ),
                         }
                     )
                 )
@@ -334,6 +375,9 @@ def connect_chat_api(app: FastAPI) -> None:
         )
         if detailed.status_code != HTTPStatus.NO_CONTENT:
             _raise_upstream_error(detailed)
+        # Cascade: stop children spawned by this session (and drop their pending
+        # reports), or stop the sub-agent itself if a child session was deleted.
+        await subagent_registry.handle_session_deleted(session_id)
 
     @app.post(
         "/api/chat",
@@ -346,10 +390,23 @@ def connect_chat_api(app: FastAPI) -> None:
         """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
         api_key = get_copilot_api_key()
 
+        initial_body = body.model_dump(exclude_none=True)
+        # Completion injection, idle-parent path: sub-agent reports that landed
+        # while this conversation had no turn in flight are appended server-side
+        # to the next turn (the browser never holds the report text).
+        if body.trace_id:
+            reports = subagent_registry.pending_reports_for_trace(body.trace_id)
+            if reports:
+                messages = list(initial_body.get("messages", []))
+                messages.extend(
+                    {"role": "user", "content": report} for report in reports
+                )
+                initial_body["messages"] = messages
+
         session = ChatStreamSession(
             upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(api_key),
-            initial_body=body.model_dump(exclude_none=True),
+            initial_body=initial_body,
         )
         return CancellableStreamingResponse(
             content=session.stream(),

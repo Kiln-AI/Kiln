@@ -161,6 +161,12 @@ def test_list_chat_sessions_forwards_to_kiln(
             "updated_at": "2025-06-15T12:30:00Z",
             "auto_active": False,
             "auto_run_id": None,
+            "agent_type": None,
+            "root_id": None,
+            "parent_root_id": None,
+            "is_subagent": False,
+            "subagent_id": None,
+            "subagent_status": None,
         }
     ]
     mock_asyncio_detailed.assert_called_once()

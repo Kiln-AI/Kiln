@@ -4,7 +4,12 @@ import logging
 import random
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Literal
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
+
+if TYPE_CHECKING:
+    from app.desktop.studio_server.chat.subagents.orchestration import (
+        OrchestrationContext,
+    )
 
 import httpx
 from app.desktop.studio_server.chat.constants import (
@@ -449,7 +454,24 @@ async def iter_round_with_retries(
 async def execute_tool_batch(
     tool_calls: list[ToolCallInfo],
     decisions: dict[str, bool],
+    orchestration_ctx: "OrchestrationContext | None" = None,
 ) -> dict[str, str]:
+    """Execute a batch of client tool calls, honoring approval decisions.
+
+    Sub-agent orchestration tools (spawn/status/wait/stop) are not kiln_ai
+    registry tools — they need the parent conversation's identity and the local
+    sub-agent registry, carried by ``orchestration_ctx``. Callers that own a
+    conversation (interactive stream, auto runner, execute-tools continuation)
+    thread their ctx through; a ``None`` ctx resolves those calls to an error
+    result instead of executing.
+    """
+    # Lazy import: the subagents package depends on this module's round
+    # mechanics (same pattern as _clear_auto_mode_flag).
+    from app.desktop.studio_server.chat.subagents.orchestration import (
+        ORCHESTRATION_TOOL_NAMES,
+        execute_orchestration_tool,
+    )
+
     results: dict[str, str] = {}
     for tc in tool_calls:
         if tc.requires_approval:
@@ -457,6 +479,20 @@ async def execute_tool_batch(
             if approved is not True:
                 results[tc.tool_call_id] = DENIED_TOOL_OUTPUT
                 continue
+        if tc.tool_name in ORCHESTRATION_TOOL_NAMES:
+            if orchestration_ctx is None:
+                results[tc.tool_call_id] = json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Sub-agent orchestration is unavailable in this context.",
+                    },
+                    ensure_ascii=False,
+                )
+            else:
+                results[tc.tool_call_id] = await execute_orchestration_tool(
+                    tc.tool_name, tc.input, orchestration_ctx
+                )
+            continue
         tool_result = await execute_tool(tc.tool_name, tc.input)
         results[tc.tool_call_id] = tool_result
     return results
@@ -475,6 +511,20 @@ class ChatStreamSession:
         self._headers = headers
         self._body = initial_body
         self._initial_trace_id: str | None = initial_body.get("trace_id")
+        self._orchestration_ctx: "OrchestrationContext | None" = None
+
+    def _get_orchestration_ctx(self) -> "OrchestrationContext":
+        """The conversation identity for sub-agent orchestration calls. Built
+        lazily (the subagents package imports this module's round mechanics)."""
+        if self._orchestration_ctx is None:
+            from app.desktop.studio_server.chat.subagents.orchestration import (
+                OrchestrationContext,
+            )
+
+            self._orchestration_ctx = OrchestrationContext(
+                parent_trace_id=self._initial_trace_id
+            )
+        return self._orchestration_ctx
 
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
@@ -506,6 +556,22 @@ class ChatStreamSession:
                     return
 
                 if round_state.trace_id:
+                    ctx = self._get_orchestration_ctx()
+                    if (
+                        ctx.parent_trace_id
+                        and ctx.parent_trace_id != round_state.trace_id
+                    ):
+                        # Chain the rotating leaf to the conversation's stable
+                        # parent key so consent memory / pending sub-agent
+                        # reports survive across turns.
+                        from app.desktop.studio_server.chat.subagents.registry import (
+                            subagent_registry,
+                        )
+
+                        subagent_registry.note_parent_trace(
+                            ctx.parent_trace_id, round_state.trace_id
+                        )
+                    ctx.parent_trace_id = round_state.trace_id
                     self._body = {
                         **self._body,
                         "trace_id": round_state.trace_id,
@@ -575,11 +641,14 @@ class ChatStreamSession:
                                     toolCallId=e.toolCallId,
                                     toolName=e.toolName,
                                     input=e.input,
-                                    requiresApproval=tool_requires_user_approval(e),
+                                    requiresApproval=self._effective_requires_approval(
+                                        e
+                                    ),
                                 )
                                 for e in non_disable
                             ],
                             {},
+                            orchestration_ctx=self._get_orchestration_ctx(),
                         )
                         tool_results = {
                             disable_evt.toolCallId: DISABLE_AUTO_MODE_RESULT,
@@ -598,7 +667,9 @@ class ChatStreamSession:
                         continue
 
                     needs_approval = [
-                        e for e in client_events if tool_requires_user_approval(e)
+                        e
+                        for e in client_events
+                        if self._effective_requires_approval(e)
                     ]
                     if needs_approval:
                         yield _format_tool_calls_pending_sse(client_events)
@@ -620,6 +691,10 @@ class ChatStreamSession:
                         round_state.tool_input_events,
                         tool_results,
                     )
+                    # Sub-agent reports that landed while this turn was running
+                    # ride the continuation as user messages (completion
+                    # injection, mid-stream path).
+                    self._body = self._append_pending_subagent_reports(self._body)
                     continue
 
                 return
@@ -632,6 +707,23 @@ class ChatStreamSession:
         if trace_id_for_error:
             error_payload["trace_id"] = trace_id_for_error
         yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
+
+    def _effective_requires_approval(self, event: ToolInputAvailableEvent) -> bool:
+        """Per-tool approval verdict, with the spawn-consent downgrade: once a
+        conversation has approved its first spawn_subagent, later spawns run
+        without asking again (the sub-agent registry is the consent authority)."""
+        if not tool_requires_user_approval(event):
+            return False
+        from app.desktop.studio_server.chat.subagents.orchestration import (
+            SPAWN_SUBAGENT_TOOL_NAME,
+            is_spawn_consented,
+        )
+
+        if event.toolName == SPAWN_SUBAGENT_TOOL_NAME and is_spawn_consented(
+            self._get_orchestration_ctx()
+        ):
+            return False
+        return True
 
     async def _execute_client_tools(
         self,
@@ -652,10 +744,33 @@ class ChatStreamSession:
                     toolCallId=event.toolCallId,
                     toolName=event.toolName,
                     input=event.input,
-                    requiresApproval=tool_requires_user_approval(event),
+                    requiresApproval=self._effective_requires_approval(event),
                 )
             )
-        return await execute_tool_batch(tool_calls, approval_decisions or {})
+        return await execute_tool_batch(
+            tool_calls,
+            approval_decisions or {},
+            orchestration_ctx=self._get_orchestration_ctx(),
+        )
+
+    def _append_pending_subagent_reports(
+        self, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Drain any completed-but-undelivered sub-agent reports for this
+        conversation and append them as user messages to the continuation."""
+        ctx = self._get_orchestration_ctx()
+        if not ctx.parent_trace_id:
+            return body
+        from app.desktop.studio_server.chat.subagents.registry import (
+            subagent_registry,
+        )
+
+        reports = subagent_registry.pending_reports_for_trace(ctx.parent_trace_id)
+        if not reports:
+            return body
+        messages = list(body.get("messages", []))
+        messages.extend({"role": "user", "content": report} for report in reports)
+        return {**body, "messages": messages}
 
     @staticmethod
     async def _clear_auto_mode_flag(trace_id: str | None) -> None:

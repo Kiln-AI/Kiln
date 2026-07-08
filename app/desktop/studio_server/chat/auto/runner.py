@@ -127,6 +127,9 @@ class AutoChatRunner:
         self._emit = emit
         self._on_trace = on_trace
         self._drain_inbound = drain_inbound
+        # Conversation identity for sub-agent orchestration tool calls (built
+        # lazily — the subagents package imports this package's models).
+        self._orchestration_ctx = None
         self.status: AutoRunStatus = AutoRunStatus.RUNNING
         # Revision R1: the burst-end reason carried on the auto-mode-idle event
         # the supervisor publishes. "asked_user" when the burst ended on a
@@ -155,6 +158,18 @@ class AutoChatRunner:
         at the next boundary (no cancel, no cut-off)."""
         self.stop_requested = True
 
+    def _ctx(self):
+        if self._orchestration_ctx is None:
+            from app.desktop.studio_server.chat.subagents.orchestration import (
+                OrchestrationContext,
+            )
+
+            self._orchestration_ctx = OrchestrationContext(
+                parent_auto_run_id=self.run_id,
+                parent_trace_id=self._seed.trace_id,
+            )
+        return self._orchestration_ctx
+
     async def run(self) -> None:
         self._emit(format_auto_mode_on(self.run_id))
         body = await self._build_seed_body()
@@ -175,6 +190,7 @@ class AutoChatRunner:
                     await self._on_trace(round_state.trace_id)
 
                 if round_state.trace_id:
+                    self._ctx().parent_trace_id = round_state.trace_id
                     body = {
                         **body,
                         "trace_id": round_state.trace_id,
@@ -276,7 +292,9 @@ class AutoChatRunner:
                 ]
 
                 self._emit(format_tool_exec_start(len(client_events)))
-                results = await execute_tool_batch(tool_calls, {})
+                results = await execute_tool_batch(
+                    tool_calls, {}, orchestration_ctx=self._ctx()
+                )
                 for e in enable_events:
                     results[e.toolCallId] = ENABLE_AUTO_MODE_RESULT
                 for tc_id, output in results.items():
@@ -395,6 +413,7 @@ class AutoChatRunner:
                     for e in siblings
                 ],
                 {},
+                orchestration_ctx=self._ctx(),
             )
             if siblings
             else {}
@@ -495,7 +514,9 @@ class AutoChatRunner:
                 )
                 for tc in self._seed.pending_tool_calls
             ]
-            results = await execute_tool_batch(siblings, {})
+            results = await execute_tool_batch(
+                siblings, {}, orchestration_ctx=self._ctx()
+            )
             for tc_id, output in results.items():
                 messages.append(
                     {

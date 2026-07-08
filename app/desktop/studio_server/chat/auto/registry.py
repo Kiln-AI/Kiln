@@ -404,6 +404,7 @@ class AutoChatRegistry:
                 logger.debug(
                     "Auto run %s raised during disable await", run_id, exc_info=True
                 )
+            await self._stop_subagent_children(run_id)
             return True
 
         # No live burst (idle). Clear the flag directly.
@@ -411,6 +412,7 @@ class AutoChatRegistry:
         self._publish_off(run)
         self._touch(run)
         self._schedule_gc(run_id)
+        await self._stop_subagent_children(run_id)
         return True
 
     async def disable_for_trace(self, trace_id: str) -> bool:
@@ -534,6 +536,7 @@ class AutoChatRegistry:
                 logger.debug(
                     "Auto run %s raised during stop await", run_id, exc_info=True
                 )
+            await self._stop_subagent_children(run_id)
             return
 
         # No live burst (idle). Clear the flag directly.
@@ -541,6 +544,20 @@ class AutoChatRegistry:
         self._publish_off(run)
         self._touch(run)
         self._schedule_gc(run_id)
+        await self._stop_subagent_children(run_id)
+
+    @staticmethod
+    async def _stop_subagent_children(run_id: str) -> None:
+        """Cascade-stop sub-agents spawned by this auto run: their reports have
+        nothing left to consume them once the parent's flag is off. Lazy import
+        (the subagents package depends on this module)."""
+        from app.desktop.studio_server.chat.subagents.registry import (
+            subagent_registry,
+        )
+
+        await subagent_registry.stop_children(
+            subagent_registry.parent_key_for_auto_run(run_id)
+        )
 
     # -- terminal GC ---------------------------------------------------------
 
