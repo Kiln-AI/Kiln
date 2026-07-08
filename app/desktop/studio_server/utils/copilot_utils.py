@@ -7,6 +7,7 @@ spec creation workflow.
 
 import logging
 import random
+from typing import TypeVar
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
@@ -51,9 +52,24 @@ _TAG_SU_CASE = "synthetic_user_case"
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
 KILN_COPILOT_MODEL_PROVIDER = "kiln"
 KILN_ADAPTER_NAME = "kiln-adapter"
+
+# Single-turn synthetic generation sizes: how many examples the copilot API is
+# asked to produce for the review + eval datasets. Owned here; the review UI
+# advertises the resulting dataset size to the user off these.
 NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
-MIN_GOLDEN_EXAMPLES = 25
+
+# Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
+# human-rated answer key: it holds up to GOLDEN_TARGET_FRACTION of the set,
+# filled from RATED items only (never padded with unrated ones). Any rated
+# items beyond that cap, plus all unrated items, fall into the remaining pool,
+# which splits train:eval at 2:1 (the 50:25). If fewer than the target fraction
+# are rated the answer key is simply smaller (warned). One owner so the ratio
+# can't drift between the single-turn and multi-turn splitters.
+TRAIN_SPLIT_WEIGHT = 2
+EVAL_SPLIT_WEIGHT = 1
+GOLDEN_SPLIT_WEIGHT = 1
+GOLDEN_TARGET_FRACTION = 0.25
 
 
 def spec_rating_key(spec_name: str) -> str:
@@ -145,24 +161,46 @@ async def generate_copilot_examples(
     return examples
 
 
-def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
-    """Randomly sample and remove n items from a list.
+T = TypeVar("T")
 
-    Mutates the input list by removing the sampled elements.
-    Uses swap-and-pop for O(1) removal.
+
+def split_pool_train_eval(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
+    """Divide the non-golden pool into (train, eval) at 2:1 — the 50:25 of the
+    split (golden is the other 25%, carved off before this call).
+
+    eval takes the smaller floor share so train is never starved on small
+    pools. The pool is shuffled through the injected rng, so the assignment is
+    random in production and deterministic under a seeded rng in tests. The
+    input list is not mutated.
     """
-    sampled: list[SampleApi] = []
-    count = min(n, len(examples))
+    shuffled = list(pool)
+    rng.shuffle(shuffled)
+    eval_count = (
+        len(shuffled) * EVAL_SPLIT_WEIGHT // (TRAIN_SPLIT_WEIGHT + EVAL_SPLIT_WEIGHT)
+    )
+    return shuffled[eval_count:], shuffled[:eval_count]
 
-    for _ in range(count):
-        if not examples:
-            break
-        random_index = random.randint(0, len(examples) - 1)
-        # Swap with last element and pop
-        examples[random_index], examples[-1] = examples[-1], examples[random_index]
-        sampled.append(examples.pop())
 
-    return sampled
+def warn_if_golden_below_target(golden_count: int, total_count: int) -> None:
+    """Warn when the human-rated golden set is under the 25% target.
+
+    Golden is never padded to hit the target (an unrated golden calibrates
+    nothing), so a small rated set just yields a smaller answer key — worth a
+    warning because the 50/25/25 split can't hold once golden is short.
+    """
+    if total_count <= 0:
+        return
+    fraction = golden_count / total_count
+    if fraction < GOLDEN_TARGET_FRACTION:
+        logger.warning(
+            "Golden (human-rated) set is %d of %d examples (%.0f%%), below the "
+            "%.0f%% target — the answer key is smaller than the 50/25/25 split "
+            "intends; it is not padded with unrated examples.",
+            golden_count,
+            total_count,
+            fraction * 100,
+            GOLDEN_TARGET_FRACTION * 100,
+        )
 
 
 def create_task_run_from_sample(
@@ -301,54 +339,63 @@ def create_dataset_task_runs(
     train_tag: str,
     golden_tag: str,
     spec_name: str,
+    rng: random.Random | None = None,
 ) -> DatasetTaskRuns:
-    """Create TaskRuns for eval, train, and golden datasets.
+    """Create TaskRuns for the golden, eval, and train datasets (disjoint).
 
-    Samples from all_examples (mutating it) and creates TaskRuns for:
-    - Eval dataset
-    - Train dataset
-    - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
+    - Golden: the human-rated reviewed examples ONLY (the answer key). Never
+      padded with unrated machine examples — an unrated golden calibrates
+      nothing.
+    - Eval + train: the unrated machine pool, split 2:1 (the 50:25 of the split).
 
-    Returns DatasetTaskRuns without parent set - caller must set parent and call
-    save_pending_children after saving each run.
+    The three tag sets never overlap. `rng` is injected for deterministic
+    tests; None uses a fresh system-seeded Random. `all_examples` is not
+    mutated. Returns DatasetTaskRuns without parent set — the caller sets
+    parent and calls save_pending_children after saving each run.
     """
+    rng = rng or random.Random()
     result = DatasetTaskRuns()
 
-    # Generate a session tag for all task runs in this batch
-    session_id = random.randint(0, 999999999999)
-    session_tag = f"synthetic_session_{session_id}"
+    # One session tag stamps every run in this batch.
+    session_tag = f"synthetic_session_{rng.randint(0, 999999999999)}"
     extra_tags = [session_tag]
 
-    # Create TaskRuns for reviewed examples with ratings
+    # Golden = human-rated only.
     for reviewed in reviewed_examples:
         task_run, feedback_text = create_task_run_from_reviewed(
             reviewed, golden_tag, spec_name, extra_tags
         )
         result.add_run(task_run, feedback_text, reviewed.claim_review)
 
-    # Create more unrated golden examples from remaining pool if needed
-    unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
-    if unrated_golden_count > 0:
-        unrated_golden_examples = sample_and_remove(all_examples, unrated_golden_count)
-        for example in unrated_golden_examples:
-            result.add_run(create_task_run_from_sample(example, golden_tag, extra_tags))
-
-    # Sample half the remaining examples for eval vs train datasets
-    example_count = len(all_examples)
-    eval_count = example_count // 2
-    train_count = example_count - eval_count
-    eval_examples = sample_and_remove(all_examples, eval_count)
-    train_examples = sample_and_remove(all_examples, train_count)
-
-    # Create TaskRuns for eval examples
-    for example in eval_examples:
-        result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
-
-    # Create TaskRuns for train examples
+    # The unrated machine pool fills eval + train (disjoint from golden). The
+    # single-turn golden set is the reviewed examples only (a small human-rated
+    # pool from a separate source), so it is structurally well under the 25%
+    # cap — no cap needed here, unlike the multi-turn all-rated case.
+    train_examples, eval_examples = split_pool_train_eval(all_examples, rng)
+    write_eval_slice(result, eval_examples, eval_tag, extra_tags)
     for example in train_examples:
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 
+    warn_if_golden_below_target(
+        len(reviewed_examples), len(reviewed_examples) + len(all_examples)
+    )
     return result
+
+
+def write_eval_slice(
+    result: DatasetTaskRuns,
+    eval_examples: list[SampleApi],
+    eval_tag: str,
+    extra_tags: list[str],
+) -> None:
+    """Materialize the single-turn eval slice as eval-tagged TaskRuns.
+
+    Isolated from the split logic on purpose: when the eval dataset moves to
+    persisted EvalInput items, only this writer changes — the partitioning
+    stays put.
+    """
+    for example in eval_examples:
+        result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
 
 
 def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
@@ -418,41 +465,100 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
     return deleted
 
 
-def tag_multi_turn_chains_for_eval(
+def split_and_tag_multi_turn_chains(
     leaves: list[TaskRun],
+    reviewed_leaf_ids: set[str],
     eval_tag: str,
+    train_tag: str,
     golden_tag: str,
+    rng: random.Random | None = None,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Add eval and golden filter tags to existing chain leaves.
+    """Assign each chain leaf to exactly ONE split (golden XOR eval XOR train).
 
-    Every leaf gets BOTH eval and golden tags so the chain is part of the
-    eval dataset AND the golden ratings set — no train tag is applied
-    (multi-turn evals don't have a train set in MVP — see
-    specs/projects/eval_builder_v2/design.md).
+    Golden = the human-rated leaves (the answer key). The remaining unrated
+    leaves split train:eval at 2:1 (the 50:25 of the split). The slices are
+    disjoint so the judge is never validated on the very set it scores.
 
-    If `tagged_out` is provided, each leaf actually mutated is appended as
-    `(leaf, set_of_tags_added_by_this_call)`. The caller can reverse the
-    mutation on failure via `untag_multi_turn_chains_for_eval` without
-    removing tags that already existed on the leaf.
-
+    `rng` is injected for deterministic tests. If `tagged_out` is provided,
+    each leaf actually mutated is appended as `(leaf, {tag_added})` so the
+    caller can reverse the mutation on failure via
+    `untag_multi_turn_chains_for_eval` without disturbing pre-existing tags.
     Mutates each leaf in place and persists via save_to_file.
     """
+    rng = rng or random.Random()
+    golden, pool = select_golden_leaves(leaves, reviewed_leaf_ids, rng)
+    train_leaves, eval_leaves = split_pool_train_eval(pool, rng)
+
+    tag_chain_leaves(golden, golden_tag, tagged_out)
+    tag_chain_leaves(train_leaves, train_tag, tagged_out)
+    write_eval_slice_multi_turn(eval_leaves, eval_tag, tagged_out)
+
+    warn_if_golden_below_target(len(golden), len(leaves))
+
+
+def select_golden_leaves(
+    leaves: list[TaskRun],
+    reviewed_leaf_ids: set[str],
+    rng: random.Random,
+) -> tuple[list[TaskRun], list[TaskRun]]:
+    """Carve the golden answer-key slice off the chain leaves.
+
+    Golden is up to GOLDEN_TARGET_FRACTION of the leaves, drawn from RATED
+    leaves only (the answer key is human-rated by definition). Because the UI
+    requires every chain reviewed before save, in practice all leaves are rated
+    and golden is a random 25%. Returns (golden, remaining): remaining holds the
+    rated leaves beyond the cap plus any unrated leaves, and feeds the
+    train/eval split. Every remaining leaf keeps whatever rating it has — only
+    the golden slice is the answer key the judge is calibrated against.
+    """
+    golden_target = (
+        len(leaves)
+        * GOLDEN_SPLIT_WEIGHT
+        // (TRAIN_SPLIT_WEIGHT + EVAL_SPLIT_WEIGHT + GOLDEN_SPLIT_WEIGHT)
+    )
+    rated = [leaf for leaf in leaves if leaf.id in reviewed_leaf_ids]
+    unrated = [leaf for leaf in leaves if leaf.id not in reviewed_leaf_ids]
+    rng.shuffle(rated)
+    golden = rated[:golden_target]
+    remaining = rated[golden_target:] + unrated
+    return golden, remaining
+
+
+def tag_chain_leaves(
+    leaves: list[TaskRun],
+    tag: str,
+    tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
+) -> None:
+    """Add one split tag to each leaf, recording the addition for rollback."""
     for leaf in leaves:
         current = set(leaf.tags or [])
-        added = {eval_tag, golden_tag} - current
-        if not added:
+        if tag in current:
             continue
-        leaf.tags = sorted(current | added)
+        leaf.tags = sorted(current | {tag})
         leaf.save_to_file()
         if tagged_out is not None:
-            tagged_out.append((leaf, added))
+            tagged_out.append((leaf, {tag}))
+
+
+def write_eval_slice_multi_turn(
+    leaves: list[TaskRun],
+    eval_tag: str,
+    tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
+) -> None:
+    """Materialize the multi-turn eval slice by tagging its leaves.
+
+    Isolated from the split logic (mirrors write_eval_slice single-turn): when
+    the eval dataset moves to persisted EvalInput items minted from the driven
+    cases, only this writer changes.
+    """
+    tag_chain_leaves(leaves, eval_tag, tagged_out)
 
 
 def untag_multi_turn_chains_for_eval(
     tagged_leaves: list[tuple[TaskRun, set[str]]],
 ) -> None:
-    """Reverse the tagging done by tag_multi_turn_chains_for_eval.
+    """Reverse the tagging done by split_and_tag_multi_turn_chains.
 
     Removes only the tags that THIS run added (passed in via `tagged_out`),
     so pre-existing tags on the leaf are preserved. Best-effort: a per-leaf

@@ -2,8 +2,10 @@
 
 This test IS the pipeline, readable top to bottom: it makes the exact call
 sequence the builder UI wizard makes (multi-turn path), against a REAL
-kiln_server and REAL models, with tiny constants (2 cases x 2 turns). Reading
-this file should be enough to understand how the builder works end to end.
+kiln_server and REAL models, with tiny constants (4 cases x 2 turns — four
+cases so the 50/25/25 split has room to produce a non-empty golden slice).
+Reading this file should be enough to understand how the builder works end to
+end.
 
 The wizard (app/web_ui/.../builder/+page.svelte) has six steps; the first
 three are spec authoring (describe / clarify / refine) with no pipeline
@@ -27,12 +29,14 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        claim/evidence pairs. Cases flow through
                        independently; a failed case never discards the
                        others. The human then agrees/disagrees per claim on
-                       each case_reviewed event — headless we agree with
-                       every final judgement.)
+                       each case_reviewed event — headless we agree with every
+                       final judgement. (The UI blocks save until every chain
+                       is reviewed, so all chains are rated at save time.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
-                       judge config, and the answer key: golden ratings +
-                       ClaimReview children on the chain-leaf TaskRuns.)
+                       judge config, and the answer key. All chains are rated,
+                       so the 50/25/25 split caps golden at 25% and holds the
+                       rest out as disjoint eval/train slices.)
 
 The generation knobs (num_cases, turns) are request parameters, so the small
 constants need no code patching; only task-id resolution is patched to a
@@ -53,8 +57,8 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
   - OPENROUTER_API_KEY in the environment (or .env) — target model, SU
     driver, and judge all run locally on your keys.
 
-Cost per run: ~15 small model calls (one plan, one SU batch call, 2x2 drive
-turns + SU turns, 2 judge calls, 2 claim-builder calls) — cents.
+Cost per run: ~25 small model calls (one plan, one SU batch call, 4x2 drive
+turns + SU turns, 4 judge calls, 4 claim-builder calls) — cents.
 """
 
 import json
@@ -76,10 +80,12 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_server.custom_errors import connect_custom_errors
+from kiln_server.utils.spec_utils import generate_spec_eval_tags
 
 # The UI runs 10 cases x 5 turns; both are request parameters, so the
-# harness shrinks them without touching any code.
-NUM_CASES = 2
+# harness shrinks them without touching any code. Four cases keeps the run
+# cheap while giving the 50/25/25 split a non-empty golden slice (4 // 4 = 1).
+NUM_CASES = 4
 TURNS_PER_CASE = 2
 SPEC_NAME = "E2E Harness Spec"
 
@@ -407,8 +413,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # so user_says_meets_spec == the judge's verdict (the UI's
     # user_says_meets_spec/build_claim_review_payload helpers do the same
     # mapping for real reviews).
+    #
+    # Review EVERY driven case — the UI blocks save until all chains are
+    # reviewed, so all chains are rated at save time. The 50/25/25 split then
+    # caps golden at 25% of the chains and holds the rest out as eval/train.
+    review_indices = sorted(reviewed)
     reviewed_chains = []
-    for index in sorted(reviewed):
+    for index in review_indices:
         event = reviewed[index]
         reviewed_chains.append(
             {
@@ -446,8 +457,10 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     # ── Persisted answer key — what the wizard leaves behind ────────────
     # One Spec + one Eval + one V2 judge config (rendering the canonical
-    # transcript), and every chain leaf carries its golden rating + the
-    # per-claim grades (ClaimReview) that judge refinement will consume.
+    # transcript). Every chain was reviewed, so every leaf is rated and carries
+    # its per-claim ClaimReview. The 50/25/25 split then partitions the chains
+    # into DISJOINT slices: golden caps at 25% (the answer key the judge is
+    # calibrated against), the rest held out as eval/train (2:1).
     specs = temp_task.specs()
     _require(len(specs) == 1, f"expected 1 saved spec, found {len(specs)}")
     evals = temp_task.evals()
@@ -459,13 +472,27 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         "saved judge config does not render the canonical transcript",
     )
 
+    eval_tag, train_tag, golden_tag = generate_spec_eval_tags(SPEC_NAME)
+    rated_leaf_ids = {reviewed[i]["leaf_run_id"] for i in review_indices}
+
     leaves = find_multi_turn_chain_leaves(temp_task, batch_tag)
     _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
+    golden_leaf_ids: set[str] = set()
+    eval_count = 0
+    train_count = 0
     for leaf in leaves:
+        tags = set(leaf.tags or [])
+        split = {eval_tag, train_tag, golden_tag} & tags
+        _require(
+            len(split) == 1,
+            f"leaf {leaf.id} is not in exactly one split slice: {split}",
+        )
+        # Every reviewed chain is rated + carries its ClaimReview, regardless of
+        # which slice it landed in (all chains were reviewed).
         rating = leaf.output.rating
         _require(
             rating is not None and f"named::{SPEC_NAME}" in rating.requirement_ratings,
-            f"leaf {leaf.id} is missing its golden rating",
+            f"leaf {leaf.id} is missing its rating",
         )
         reviews = leaf.claim_reviews()
         _require(len(reviews) == 1, f"leaf {leaf.id} is missing its ClaimReview")
@@ -473,3 +500,23 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             reviews[0].judge_score in ("pass", "fail"),
             f"leaf {leaf.id}: persisted judge_score is not the enum",
         )
+        if golden_tag in tags:
+            golden_leaf_ids.add(leaf.id)
+        eval_count += 1 if eval_tag in tags else 0
+        train_count += 1 if train_tag in tags else 0
+
+    # Golden is drawn only from rated chains and capped at 25%; here every chain
+    # is rated, so golden is a subset sized by the cap.
+    _require(
+        golden_leaf_ids <= rated_leaf_ids,
+        f"golden slice {golden_leaf_ids} is not a subset of rated {rated_leaf_ids}",
+    )
+    golden_target = num_driven // 4
+    pool = num_driven - golden_target
+    _require(
+        len(golden_leaf_ids) == golden_target
+        and eval_count == pool // 3
+        and train_count == pool - pool // 3,
+        f"split not 50/25/25 (golden={len(golden_leaf_ids)}, eval={eval_count}, "
+        f"train={train_count}, n={num_driven})",
+    )

@@ -1,7 +1,9 @@
+import asyncio
 import csv
 import io
 import json
 import logging
+import random
 from typing import Annotated
 
 import jsonschema
@@ -68,12 +70,13 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
+    DatasetTaskRuns,
     create_dataset_task_runs,
     find_multi_turn_chain_leaves,
     generate_copilot_examples,
     get_copilot_api_key,
     rate_multi_turn_chain_leaves,
-    tag_multi_turn_chains_for_eval,
+    split_and_tag_multi_turn_chains,
     unrate_multi_turn_chain_leaves,
     untag_multi_turn_chains_for_eval,
 )
@@ -465,6 +468,96 @@ def _validate_structured_examples(input_json_schema: str, examples: list[str]) -
         raise HTTPException(status_code=422, detail=" ".join(errors))
 
 
+def persist_spec_save(
+    *,
+    eval: Eval,
+    eval_config: EvalConfig,
+    task_runs: list[TaskRun],
+    dataset_runs: DatasetTaskRuns | None,
+    spec: Spec,
+    multi_turn: MultiTurnSaveInfo | None,
+    multi_turn_leaves: list[TaskRun],
+    reviewed_leaf_ids: set[str],
+    eval_tag: str,
+    train_tag: str,
+    golden_tag: str,
+    spec_name: str,
+    rng: random.Random,
+) -> None:
+    """Persist all spec models as one unit of work, rolling back every mutation
+    on failure.
+
+    Owns three rollback ledgers: created models (Eval / EvalConfig / TaskRun /
+    Spec), tagged chain leaves, and rated chain leaves. On any failure it
+    reverses the leaf mutations (ratings first — applied last — then tags) and
+    deletes the created models in reverse order, then re-raises so the caller
+    sees the original error.
+
+    Synchronous and file-I/O heavy; call via asyncio.to_thread so the event
+    loop is not blocked.
+    """
+    saved_models: list[Eval | EvalConfig | TaskRun | Spec] = []
+    tagged_leaves: list[tuple[TaskRun, set[str]]] = []
+    rated_leaves: list[
+        tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
+    ] = []
+    try:
+        eval.save_to_file()
+        saved_models.append(eval)
+
+        eval_config.save_to_file()
+        saved_models.append(eval_config)
+
+        for run in task_runs:
+            run.save_to_file()
+            saved_models.append(run)
+            if dataset_runs is not None:
+                dataset_runs.save_pending_children(run)
+
+        spec.save_to_file()
+        saved_models.append(spec)
+
+        # Multi-turn: split the chain leaves into disjoint golden/eval/train
+        # slices AFTER spec has saved, so a failure here triggers the rollback
+        # below. tagged_leaves captures only the tags this call added, so
+        # untagging on rollback preserves any tags the leaf already had.
+        if multi_turn is not None:
+            split_and_tag_multi_turn_chains(
+                multi_turn_leaves,
+                reviewed_leaf_ids,
+                eval_tag,
+                train_tag,
+                golden_tag,
+                rng=rng,
+                tagged_out=tagged_leaves,
+            )
+            # Then write the human's verdicts: golden ratings (+ feedback and
+            # per-claim grades) on the reviewed (golden) chain leaves.
+            rate_multi_turn_chain_leaves(
+                multi_turn_leaves,
+                multi_turn.reviewed_chains,
+                spec_name=spec_name,
+                rated_out=rated_leaves,
+            )
+    except Exception:
+        # Reverse leaf mutations before deleting saved models, so a failed
+        # multi-turn save doesn't leave orphan ratings or tags pointing at a
+        # now-deleted eval.
+        if rated_leaves:
+            unrate_multi_turn_chain_leaves(rated_leaves)
+        if tagged_leaves:
+            untag_multi_turn_chains_for_eval(tagged_leaves)
+        for model in reversed(saved_models):
+            try:
+                model.delete()
+            except Exception:
+                # Log cleanup error but continue; the original error matters more.
+                logger.exception(
+                    f"Failed to delete {type(model).__name__} during cleanup"
+                )
+        raise
+
+
 def connect_copilot_api(app: FastAPI):
     @app.post(
         "/api/copilot/classify_spec_description",
@@ -852,8 +945,10 @@ def connect_copilot_api(app: FastAPI):
         )
 
         # Multi-turn path: find existing chain leaves up front so we 404 before
-        # creating any models if the batch_tag matches nothing.
+        # creating any models if the batch_tag matches nothing. The reviewed
+        # leaf ids drive the split — a rated leaf goes to golden.
         multi_turn_leaves: list[TaskRun] = []
+        reviewed_leaf_ids: set[str] = set()
         if request.multi_turn is not None:
             multi_turn_leaves = find_multi_turn_chain_leaves(
                 task, request.multi_turn.batch_tag
@@ -872,6 +967,7 @@ def connect_copilot_api(app: FastAPI):
             # re-checks membership as a backstop).
             leaf_ids = {leaf.id for leaf in multi_turn_leaves if leaf.id}
             reviewed_ids = [rc.leaf_run_id for rc in request.multi_turn.reviewed_chains]
+            reviewed_leaf_ids = set(reviewed_ids)
             missing = [rid for rid in reviewed_ids if rid not in leaf_ids]
             if missing:
                 raise HTTPException(
@@ -893,11 +989,11 @@ def connect_copilot_api(app: FastAPI):
                     ),
                 )
 
-        # Build models but don't save yet, collect all models first
-        models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
+        # Build and validate all models before saving any; persist_spec_save
+        # commits them as one unit of work below.
 
-        # 1. Create the Eval. Multi-turn has no train set in MVP
-        # (see specs/projects/eval_builder_v2/design.md).
+        # 1. Create the Eval. Both paths split their dataset 50/25/25
+        # (train/eval/golden), so both reference a train set.
         eval = Eval(
             parent=task,
             name=request.name,
@@ -905,14 +1001,11 @@ def connect_copilot_api(app: FastAPI):
             template=template,
             output_scores=output_scores,
             eval_set_filter_id=eval_set_filter_id,
-            train_set_filter_id=(
-                None if request.multi_turn is not None else train_set_filter_id
-            ),
+            train_set_filter_id=train_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
         )
-        models_to_save.append(eval)
 
         # 2. Create the judge eval config — V2 shape, the same judge the review
         # step ran transiently (one judge, persisted vs transient). V2 rails
@@ -931,10 +1024,13 @@ def connect_copilot_api(app: FastAPI):
                 ),
             ),
         )
-        models_to_save.append(eval_config)
 
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id
+
+        # One RNG seam for both dataset splits (single-turn examples and
+        # multi-turn chains) — injectable so tests are deterministic.
+        rng = random.Random()
 
         # 3. Single-turn: synthesise examples + create TaskRuns.
         #    Multi-turn: skipped — chains already exist on disk.
@@ -968,11 +1064,11 @@ def connect_copilot_api(app: FastAPI):
                 train_tag=train_tag,
                 golden_tag=golden_tag,
                 spec_name=request.name,
+                rng=rng,
             )
             task_runs = dataset_runs.task_runs
             for run in task_runs:
                 run.parent = task
-            models_to_save.extend(task_runs)
 
             # Snapshot the generation config on the Spec (single-turn only).
             topic_cfg = request.sdg_session_config.topic_generation_config
@@ -1010,68 +1106,26 @@ def connect_copilot_api(app: FastAPI):
             task_sample=request.task_sample,
             synthetic_data_generation_session_config=sdg_session_config_for_spec,
         )
-        models_to_save.append(spec)
 
-        # All models are now created and validated via Pydantic.
-        # Save everything, with cleanup on failure.
-        saved_models: list[Eval | EvalConfig | TaskRun | Spec] = []
-        tagged_leaves: list[tuple[TaskRun, set[str]]] = []
-        rated_leaves: list[
-            tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
-        ] = []
-        try:
-            eval.save_to_file()
-            saved_models.append(eval)
-
-            eval_config.save_to_file()
-            saved_models.append(eval_config)
-
-            for run in task_runs:
-                run.save_to_file()
-                saved_models.append(run)
-                if dataset_runs is not None:
-                    dataset_runs.save_pending_children(run)
-
-            spec.save_to_file()
-            saved_models.append(spec)
-
-            # Multi-turn: tag existing chain leaves with eval/golden filter
-            # tags AFTER spec has saved, so a failure here triggers the
-            # rollback path below. tagged_leaves captures only the tags
-            # this call added (not pre-existing ones), so untagging on
-            # rollback preserves any tags the leaf had before.
-            if request.multi_turn is not None:
-                tag_multi_turn_chains_for_eval(
-                    multi_turn_leaves,
-                    eval_tag,
-                    golden_tag,
-                    tagged_out=tagged_leaves,
-                )
-                # Then write the human's verdicts: golden ratings (+ feedback
-                # and per-claim grades) on the reviewed chain leaves.
-                rate_multi_turn_chain_leaves(
-                    multi_turn_leaves,
-                    request.multi_turn.reviewed_chains,
-                    spec_name=request.name,
-                    rated_out=rated_leaves,
-                )
-        except Exception:
-            # Reverse any leaf mutations we made in this run (ratings first —
-            # they were applied last) before deleting the saved models, so a
-            # failed multi-turn save doesn't leave orphan ratings or tags
-            # pointing at a now-deleted eval.
-            if rated_leaves:
-                unrate_multi_turn_chain_leaves(rated_leaves)
-            if tagged_leaves:
-                untag_multi_turn_chains_for_eval(tagged_leaves)
-            for model in reversed(saved_models):
-                try:
-                    model.delete()
-                except Exception:
-                    # Log cleanup error but continue, the original error is more important
-                    logger.exception(
-                        f"Failed to delete {type(model).__name__} during cleanup"
-                    )
-            raise
+        # All models are now created and validated via Pydantic. Persist them
+        # as one unit of work (all-or-nothing) off the event loop — the save is
+        # dozens-to-hundreds of serial file writes plus the multi-turn leaf
+        # mutations, all synchronous.
+        await asyncio.to_thread(
+            persist_spec_save,
+            eval=eval,
+            eval_config=eval_config,
+            task_runs=task_runs,
+            dataset_runs=dataset_runs,
+            spec=spec,
+            multi_turn=request.multi_turn,
+            multi_turn_leaves=multi_turn_leaves,
+            reviewed_leaf_ids=reviewed_leaf_ids,
+            eval_tag=eval_tag,
+            train_tag=train_tag,
+            golden_tag=golden_tag,
+            spec_name=request.name,
+            rng=rng,
+        )
 
         return spec

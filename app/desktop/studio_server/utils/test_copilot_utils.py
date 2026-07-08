@@ -1,5 +1,6 @@
 """Tests for app/desktop/studio_server/utils/copilot_utils.py."""
 
+import random
 from unittest.mock import patch
 
 import pytest
@@ -10,20 +11,21 @@ from app.desktop.studio_server.api_models.copilot_models import (
     SampleApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
+    GOLDEN_TARGET_FRACTION,
     KILN_ADAPTER_NAME,
     KILN_COPILOT_MODEL_NAME,
     KILN_COPILOT_MODEL_PROVIDER,
-    MIN_GOLDEN_EXAMPLES,
-    NUM_SAMPLES_PER_TOPIC,
-    NUM_TOPICS,
     create_dataset_task_runs,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
     delete_multi_turn_batch_chains,
     get_copilot_api_key,
     rate_multi_turn_chain_leaves,
-    sample_and_remove,
+    select_golden_leaves,
+    split_and_tag_multi_turn_chains,
+    split_pool_train_eval,
     unrate_multi_turn_chain_leaves,
+    warn_if_golden_below_target,
 )
 from fastapi import HTTPException
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
@@ -69,44 +71,95 @@ class TestGetCopilotApiKey:
             assert exc_info.value.status_code == 401
 
 
-class TestSampleAndRemove:
-    def test_samples_correct_number_of_items(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(10)
-        ]
-        sampled = sample_and_remove(examples, 3)
-        assert len(sampled) == 3
-        assert len(examples) == 7
+class TestSplitPoolTrainEval:
+    @pytest.mark.parametrize(
+        "n,expected_train,expected_eval",
+        [
+            (0, 0, 0),  # empty pool
+            (1, 1, 0),  # 1//3 == 0 → all to train
+            (2, 2, 0),  # 2//3 == 0 → all to train
+            (3, 2, 1),  # exact 2:1
+            (4, 3, 1),
+            (6, 4, 2),
+            (9, 6, 3),  # exact 2:1
+        ],
+    )
+    def test_splits_two_to_one(self, n, expected_train, expected_eval):
+        pool = list(range(n))
+        train, eval_items = split_pool_train_eval(pool, random.Random(0))
+        assert len(train) == expected_train
+        assert len(eval_items) == expected_eval
+        # Partition: disjoint and complete.
+        assert sorted(train + eval_items) == pool
 
-    def test_samples_all_when_n_greater_than_length(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(5)
-        ]
-        sampled = sample_and_remove(examples, 10)
-        assert len(sampled) == 5
-        assert len(examples) == 0
+    def test_does_not_mutate_input(self):
+        pool = list(range(9))
+        original = list(pool)
+        split_pool_train_eval(pool, random.Random(1))
+        assert pool == original
 
-    def test_returns_empty_list_when_empty_input(self):
-        examples: list[SampleApi] = []
-        sampled = sample_and_remove(examples, 5)
-        assert len(sampled) == 0
-        assert len(examples) == 0
+    def test_deterministic_under_seed(self):
+        pool = list(range(9))
+        a = split_pool_train_eval(pool, random.Random(42))
+        b = split_pool_train_eval(pool, random.Random(42))
+        assert a == b
 
-    def test_mutates_original_list(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(10)
-        ]
-        original_length = len(examples)
-        sample_and_remove(examples, 4)
-        assert len(examples) == original_length - 4
 
-    def test_samples_zero_items(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(5)
-        ]
-        sampled = sample_and_remove(examples, 0)
-        assert len(sampled) == 0
-        assert len(examples) == 5
+class TestSelectGoldenLeaves:
+    """select_golden_leaves carves golden (rated-only, capped at 25%) off the
+    leaves; the remainder feeds the train/eval split."""
+
+    def test_all_rated_golden_capped_at_quarter(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 8)
+        rated = {leaf.id for leaf in leaves}
+        golden, remaining = select_golden_leaves(leaves, rated, random.Random(0))
+        assert len(golden) == 2  # 8 // 4
+        assert len(remaining) == 6
+        # Golden is drawn from rated; disjoint from remaining; covers all.
+        assert all(leaf.id in rated for leaf in golden)
+        assert {leaf.id for leaf in golden}.isdisjoint({leaf.id for leaf in remaining})
+        assert len(golden) + len(remaining) == 8
+
+    def test_rated_below_cap_golden_is_all_rated(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 8)
+        rated = {leaves[0].id}  # 1 rated, cap is 2
+        golden, remaining = select_golden_leaves(leaves, rated, random.Random(0))
+        assert {leaf.id for leaf in golden} == {leaves[0].id}
+        assert len(remaining) == 7
+
+    def test_unrated_never_enters_golden(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 8)
+        golden, remaining = select_golden_leaves(leaves, set(), random.Random(0))
+        assert golden == []
+        assert len(remaining) == 8
+
+    def test_excess_rated_falls_into_remaining(self, multiturn_task):
+        # All 8 rated, cap 2 → 6 rated leaves land in remaining (still held out).
+        leaves = _make_su_leaves(multiturn_task, 8)
+        rated = {leaf.id for leaf in leaves}
+        golden, remaining = select_golden_leaves(leaves, rated, random.Random(1))
+        assert len(golden) == 2
+        assert all(leaf.id in rated for leaf in remaining)
+
+
+class TestWarnIfGoldenBelowTarget:
+    def test_warns_when_below_target(self, caplog):
+        # 1 of 10 rated == 10%, below the 25% floor.
+        with caplog.at_level("WARNING"):
+            warn_if_golden_below_target(1, 10)
+        assert any("below the" in r.message for r in caplog.records)
+
+    def test_silent_at_or_above_target(self, caplog):
+        # 25% is the target — not below it.
+        target_count = int(GOLDEN_TARGET_FRACTION * 100)
+        with caplog.at_level("WARNING"):
+            warn_if_golden_below_target(target_count, 100)
+        assert caplog.records == []
+
+    def test_silent_when_total_zero(self, caplog):
+        with caplog.at_level("WARNING"):
+            warn_if_golden_below_target(0, 0)
+        assert caplog.records == []
 
 
 class TestCreateTaskRunFromSample:
@@ -267,167 +320,131 @@ class TestCreateTaskRunFromReviewed:
         assert feedback_text is None
 
 
-class TestCreateDatasetTaskRuns:
-    def test_creates_correct_number_of_task_runs(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
+def _samples(n: int) -> list[SampleApi]:
+    return [SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(n)]
 
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
 
-        # Should have NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        expected_count = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        assert len(task_runs) == expected_count
-
-    def test_includes_reviewed_examples_in_golden_set(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples = [
-            ReviewedExample(
-                input="reviewed_input",
-                output="reviewed_output",
-                model_says_meets_spec=True,
-                user_says_meets_spec=True,
-                feedback="Great",
-            )
-        ]
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        # Find the reviewed example in task runs
-        reviewed_run = next(
-            (tr for tr in task_runs if tr.input == "reviewed_input"), None
+def _reviewed(n: int) -> list[ReviewedExample]:
+    return [
+        ReviewedExample(
+            input=f"reviewed_input_{i}",
+            output=f"reviewed_output_{i}",
+            model_says_meets_spec=True,
+            user_says_meets_spec=True,
+            feedback="",
         )
-        assert reviewed_run is not None
-        assert "golden_tag" in reviewed_run.tags
+        for i in range(n)
+    ]
 
-    def test_all_task_runs_have_session_tag(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
 
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
+def _make_dataset(
+    all_examples: list[SampleApi],
+    reviewed_examples: list[ReviewedExample],
+    seed: int = 0,
+):
+    return create_dataset_task_runs(
+        all_examples,
+        reviewed_examples,
+        "eval_tag",
+        "train_tag",
+        "golden_tag",
+        "Test Spec",
+        rng=random.Random(seed),
+    ).task_runs
 
-        # All task runs should have a session tag
-        for task_run in task_runs:
-            session_tags = [
-                tag for tag in task_run.tags if tag.startswith("synthetic_session_")
-            ]
-            assert len(session_tags) == 1
 
-    def test_same_session_tag_for_all_runs(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
+def _by_split(task_runs):
+    """Bucket runs by their single split tag."""
+    return {
+        "eval": [tr for tr in task_runs if "eval_tag" in tr.tags],
+        "train": [tr for tr in task_runs if "train_tag" in tr.tags],
+        "golden": [tr for tr in task_runs if "golden_tag" in tr.tags],
+    }
 
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
 
-        # All task runs should have the same session tag
-        session_tags = set()
-        for task_run in task_runs:
-            for tag in task_run.tags:
-                if tag.startswith("synthetic_session_"):
-                    session_tags.add(tag)
+class TestCreateDatasetTaskRuns:
+    def test_total_runs_is_pool_plus_rated(self):
+        # Golden holds the rated examples; the unrated pool fills eval + train.
+        task_runs = _make_dataset(_samples(300), _reviewed(4))
+        assert len(task_runs) == 304
 
-        assert len(session_tags) == 1
+    def test_reviewed_examples_are_golden_and_rated(self):
+        task_runs = _make_dataset(_samples(60), _reviewed(1))
+        golden = _by_split(task_runs)["golden"]
+        # Golden == exactly the rated set, no unrated padding.
+        assert len(golden) == 1
+        assert golden[0].input == "reviewed_input_0"
+        assert golden[0].output.rating is not None
 
-    def test_eval_examples_have_eval_tag(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
+    def test_golden_is_rated_only_no_unrated_padding(self):
+        # Golden holds exactly the rated count — never topped up with unrated
+        # machine examples, even when that leaves it small.
+        task_runs = _make_dataset(_samples(60), _reviewed(2))
+        golden = _by_split(task_runs)["golden"]
+        assert len(golden) == 2
+        assert all(tr.output.rating is not None for tr in golden)
 
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
+    def test_zero_rated_yields_no_golden(self):
+        task_runs = _make_dataset(_samples(30), _reviewed(0))
+        assert _by_split(task_runs)["golden"] == []
 
-        eval_runs = [tr for tr in task_runs if "eval_tag" in tr.tags]
-        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        assert len(eval_runs) == num_eval_runs
+    def test_splits_are_disjoint_and_complete(self):
+        task_runs = _make_dataset(_samples(60), _reviewed(4))
+        for tr in task_runs:
+            split_tags = {"eval_tag", "train_tag", "golden_tag"} & set(tr.tags)
+            assert len(split_tags) == 1, f"run {tr.input} has splits {split_tags}"
+        buckets = _by_split(task_runs)
+        assert len(buckets["eval"]) + len(buckets["train"]) + len(
+            buckets["golden"]
+        ) == len(task_runs)
 
-    def test_train_examples_have_train_tag(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
+    def test_unrated_pool_splits_two_to_one(self):
+        task_runs = _make_dataset(_samples(60), _reviewed(0))
+        buckets = _by_split(task_runs)
+        assert len(buckets["eval"]) == 20  # 60 // 3
+        assert len(buckets["train"]) == 40
 
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
+    def test_one_rated_small_pool(self):
+        # golden=1 (rated); the 3 unrated split 2:1 → train 2, eval 1.
+        task_runs = _make_dataset(_samples(3), _reviewed(1))
+        buckets = _by_split(task_runs)
+        assert len(buckets["golden"]) == 1
+        assert len(buckets["train"]) == 2
+        assert len(buckets["eval"]) == 1
 
-        train_runs = [tr for tr in task_runs if "train_tag" in tr.tags]
-        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        num_train_runs = (num_runs - MIN_GOLDEN_EXAMPLES) - num_eval_runs
-        assert len(train_runs) == num_train_runs
+    def test_tiny_pool_all_train_no_eval(self):
+        # 2 unrated → 2//3 == 0 eval, both to train (documented small-N edge).
+        task_runs = _make_dataset(_samples(2), _reviewed(0))
+        buckets = _by_split(task_runs)
+        assert len(buckets["train"]) == 2
+        assert len(buckets["eval"]) == 0
 
     def test_handles_insufficient_examples(self):
-        # Fewer examples than needed
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(5)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "eval_tag",
-            "train_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        # Should use all available examples
+        task_runs = _make_dataset(_samples(5), _reviewed(0))
         assert len(task_runs) == 5
+
+    def test_does_not_mutate_all_examples(self):
+        all_examples = _samples(30)
+        original = list(all_examples)
+        _make_dataset(all_examples, _reviewed(2))
+        assert all_examples == original
+
+    def test_all_task_runs_have_one_shared_session_tag(self):
+        task_runs = _make_dataset(_samples(60), _reviewed(2))
+        session_tags = {
+            tag
+            for tr in task_runs
+            for tag in tr.tags
+            if tag.startswith("synthetic_session_")
+        }
+        assert len(session_tags) == 1
+        for tr in task_runs:
+            assert sum(t.startswith("synthetic_session_") for t in tr.tags) == 1
+
+    def test_warns_when_golden_below_target(self, caplog):
+        with caplog.at_level("WARNING"):
+            _make_dataset(_samples(99), _reviewed(1))  # golden 1% << 25%
+        assert any("below the" in r.message for r in caplog.records)
 
 
 def _claim_review_api(judge_score: str = "fail") -> ClaimReviewApi:
@@ -644,6 +661,138 @@ class TestSavePendingChildren:
         assert reviews[0].judge_score == "fail"
         assert len(reviews[0].claims) == 1
         assert reviews[0].claims[0].human_grade == "agree"
+
+
+def _make_su_leaves(task: Task, n: int) -> list[TaskRun]:
+    """Persist n synthetic-user chain leaves under a task, tagged like the runner."""
+    source = DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "haiku",
+            "model_provider": "openrouter",
+            "adapter_name": "kiln_synthetic_user_runner",
+        },
+    )
+    leaves = []
+    for i in range(n):
+        run = TaskRun(
+            parent=task,
+            input=f"input {i}",
+            input_source=source,
+            output=TaskOutput(output=f"output {i}", source=source),
+            tags=["synthetic_user_case", "synthetic_user_batch:b1"],
+        )
+        run.save_to_file()
+        leaves.append(run)
+    return leaves
+
+
+def _leaf_split(leaves: list[TaskRun]) -> dict[str, list[TaskRun]]:
+    return {
+        "eval": [x for x in leaves if "eval_tag" in (x.tags or [])],
+        "train": [x for x in leaves if "train_tag" in (x.tags or [])],
+        "golden": [x for x in leaves if "golden_tag" in (x.tags or [])],
+    }
+
+
+class TestSplitAndTagMultiTurnChains:
+    def test_all_reviewed_splits_quarter_quarter_half(self, multiturn_task):
+        # Mirrors the real UI: every chain reviewed before save. golden caps at
+        # 25%, the rest split train:eval 2:1 → 2 golden / 2 eval / 4 train.
+        leaves = _make_su_leaves(multiturn_task, 8)
+        reviewed_ids = {leaf.id for leaf in leaves}
+
+        split_and_tag_multi_turn_chains(
+            leaves,
+            reviewed_ids,
+            "eval_tag",
+            "train_tag",
+            "golden_tag",
+            rng=random.Random(0),
+        )
+
+        buckets = _leaf_split(leaves)
+        assert len(buckets["golden"]) == 2
+        assert len(buckets["eval"]) == 2
+        assert len(buckets["train"]) == 4
+        # Golden is a subset of the reviewed leaves (rated-only answer key).
+        assert {x.id for x in buckets["golden"]} <= reviewed_ids
+
+    def test_each_leaf_gets_exactly_one_split_tag(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 5)
+        split_and_tag_multi_turn_chains(
+            leaves,
+            {leaves[0].id},
+            "eval_tag",
+            "train_tag",
+            "golden_tag",
+            rng=random.Random(1),
+        )
+        for leaf in leaves:
+            split_tags = {"eval_tag", "train_tag", "golden_tag"} & set(leaf.tags)
+            assert len(split_tags) == 1
+
+    def test_golden_capped_even_when_all_reviewed(self, multiturn_task):
+        # 4 leaves all reviewed → golden caps at 1 (not 4); the eval/train
+        # sets are never starved to empty (the bug the cap fixes).
+        leaves = _make_su_leaves(multiturn_task, 4)
+        split_and_tag_multi_turn_chains(
+            leaves,
+            {leaf.id for leaf in leaves},
+            "eval_tag",
+            "train_tag",
+            "golden_tag",
+            rng=random.Random(7),
+        )
+        buckets = _leaf_split(leaves)
+        assert len(buckets["golden"]) == 1
+        assert len(buckets["eval"]) == 1
+        assert len(buckets["train"]) == 2
+
+    def test_zero_rated_no_golden(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 3)
+        split_and_tag_multi_turn_chains(
+            leaves,
+            set(),
+            "eval_tag",
+            "train_tag",
+            "golden_tag",
+            rng=random.Random(2),
+        )
+        buckets = _leaf_split(leaves)
+        assert buckets["golden"] == []
+        assert len(buckets["train"]) == 2
+        assert len(buckets["eval"]) == 1
+
+    def test_preserves_existing_runner_tags(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 4)
+        split_and_tag_multi_turn_chains(
+            leaves,
+            {leaf.id for leaf in leaves},
+            "eval_tag",
+            "train_tag",
+            "golden_tag",
+            rng=random.Random(3),
+        )
+        for leaf in leaves:
+            assert "synthetic_user_case" in leaf.tags
+            assert "synthetic_user_batch:b1" in leaf.tags
+
+    def test_tagged_out_captures_additions_for_rollback(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 4)
+        tagged_out: list = []
+        split_and_tag_multi_turn_chains(
+            leaves,
+            {leaf.id for leaf in leaves},
+            "eval_tag",
+            "train_tag",
+            "golden_tag",
+            rng=random.Random(4),
+            tagged_out=tagged_out,
+        )
+        # Every leaf was mutated exactly once (one split tag added each).
+        assert len(tagged_out) == 4
+        assert all(len(added) == 1 for _, added in tagged_out)
 
 
 # ───────────────── delete_multi_turn_batch_chains ─────────────────

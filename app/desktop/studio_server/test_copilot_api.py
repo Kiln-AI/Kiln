@@ -525,9 +525,11 @@ class TestCreateSpecWithCopilotMultiTurn:
 
     @pytest.fixture
     def synthetic_chain_leaves(self, project_and_task):
-        """Persist three single-run "chains" tagged like the multi-turn runner
+        """Persist eight single-run "chains" tagged like the multi-turn runner
         leaves them. Single TaskRuns (no actual multi-turn parents) are
-        sufficient: the endpoint only cares about the leaf tag.
+        sufficient: the endpoint only cares about the leaf tag. Eight leaves
+        give the 50/25/25 split room to produce non-empty golden/eval/train
+        slices (golden caps at 25% = 2).
         """
         _, task = project_and_task
         source = DataSource(
@@ -539,7 +541,7 @@ class TestCreateSpecWithCopilotMultiTurn:
             },
         )
         leaves = []
-        for i in range(3):
+        for i in range(8):
             run = TaskRun(
                 parent=task,
                 input=f"input {i}",
@@ -638,18 +640,14 @@ class TestCreateSpecWithCopilotMultiTurn:
         # the operational state lives on the Eval.
         assert res["synthetic_data_generation_session_config"] is None
 
-        # Eval: full_trace data type + judge config attached.
-        # Note: train_set_filter_id is saved as None on disk but a
-        # backward-compat migration in Eval (libs/core/.../eval.py
-        # migrate_train_set_filter_id) auto-populates it to
-        # tag::train_<name> on read for legacy evals. The functional
-        # invariant for multi-turn is "no runs tagged with train_*",
-        # checked below — the field value itself is incidental.
+        # Eval: full_trace data type + judge config attached. Multi-turn now
+        # splits chains 50/25/25, so it references a train set too.
         evals = task.evals()
         assert len(evals) == 1
         eval_obj = evals[0]
         assert eval_obj.evaluation_data_type == EvalDataType.full_trace
         assert eval_obj.eval_set_filter_id == "tag::eval_multi_turn_spec"
+        assert eval_obj.train_set_filter_id == "tag::train_multi_turn_spec"
         assert eval_obj.current_config_id is not None
 
         # The saved judge is a V2 config with a multi-turn (trace) template.
@@ -659,20 +657,30 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert isinstance(configs[0].properties, LlmJudgeProperties)
         assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
 
-        # Leaves got the eval + golden tags applied on top of their existing
-        # synthetic_user_* tags. No train tag (multi-turn has no train set).
-        expected_eval_tag = "eval_multi_turn_spec"
-        expected_golden_tag = "eval_golden_multi_turn_spec"
-        train_tag = "train_multi_turn_spec"
+        # Chains split into DISJOINT slices: each leaf carries exactly one of
+        # eval/train/golden (on top of its synthetic_user_* tags). Golden caps
+        # at 25% of 8 = 2, which here equals the two rated leaves — so both
+        # become golden (the answer key). The six unreviewed leaves are held
+        # out in eval/train, never golden.
+        split_tags = {
+            "eval_multi_turn_spec",
+            "train_multi_turn_spec",
+            "eval_golden_multi_turn_spec",
+        }
+        runs_by_id = {run.id: run for run in task.runs()}
         for leaf in task.runs():
-            assert expected_eval_tag in leaf.tags
-            assert expected_golden_tag in leaf.tags
-            assert train_tag not in leaf.tags
+            assert len(split_tags & set(leaf.tags)) == 1
             assert "synthetic_user_case" in leaf.tags
+        # Golden == exactly the two reviewed leaves (rated count == the 25% cap).
+        for reviewed_leaf in (synthetic_chain_leaves[0], synthetic_chain_leaves[1]):
+            assert "eval_golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
+        # An unreviewed leaf is held out (train or eval), never golden.
+        unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
+        assert "eval_golden_multi_turn_spec" not in unreviewed_tags
+        assert unreviewed_tags & {"eval_multi_turn_spec", "train_multi_turn_spec"}
 
         # Reviewed leaves carry golden ratings matching the review clicks,
         # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
-        runs_by_id = {run.id: run for run in task.runs()}
         rating_key = "named::Multi Turn Spec"
         failed = runs_by_id[synthetic_chain_leaves[0].id]
         assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
