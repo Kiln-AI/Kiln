@@ -38,6 +38,7 @@ MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
+CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
 
 
 def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
@@ -124,6 +125,15 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Code tools must have format: kiln_tool::code::<code_tool_id>
+    if id.startswith(CODE_TOOL_ID_PREFIX):
+        ct_id = code_tool_id_from_tool_id(id)
+        if not ct_id:
+            raise ValueError(
+                f"Invalid code tool ID: {id}. Expected format: 'kiln_tool::code::<code_tool_id>'."
+            )
+        return id
+
     # SDK / AdapterConfig.unmanaged_tools — not resolved by tool_from_id
     if id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
         kiln_unmanaged_tool_slug_from_id(id)
@@ -190,6 +200,21 @@ def skill_id_from_tool_id(id: str) -> str:
 def build_skill_tool_id(skill_id: str) -> str:
     """Construct the tool ID for a skill."""
     return f"{SKILL_TOOL_ID_PREFIX}{skill_id}"
+
+
+def build_code_tool_id(code_tool_id: ID_TYPE) -> str:
+    """Construct the tool ID for a code tool."""
+    return f"{CODE_TOOL_ID_PREFIX}{code_tool_id}"
+
+
+def code_tool_id_from_tool_id(tool_id: str) -> str:
+    """Extract the code tool ID from a code tool tool ID."""
+    parts = tool_id.split("::")
+    if not tool_id.startswith(CODE_TOOL_ID_PREFIX) or len(parts) != 3 or not parts[2]:
+        raise ValueError(
+            f"Invalid code tool ID: {tool_id}. Expected format: 'kiln_tool::code::<code_tool_id>'."
+        )
+    return parts[2]
 
 
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:

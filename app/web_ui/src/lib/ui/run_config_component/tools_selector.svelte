@@ -155,6 +155,7 @@
 
   const tool_set_order: ToolSetType[] = [
     "builtin",
+    "code",
     "search",
     "kiln_task",
     "mcp",
