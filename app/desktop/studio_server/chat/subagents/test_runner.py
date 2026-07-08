@@ -71,9 +71,18 @@ async def test_seed_body_carries_agent_block_and_kickoff():
     client = FakeUpstreamClient(
         [FakeUpstreamResponse([text_delta("done"), trace("tr-1"), finish()])]
     )
-    runner, _, traces = _runner(client)
+    runner, emitted, traces = _runner(client)
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
+
+    # The kickoff (name + full briefing) is echoed onto the run stream with a
+    # stable id, so observers attaching before the first snapshot persists
+    # still see the sub-agent's instructions.
+    first_event = json.loads(emitted[0].decode().removeprefix("data: ").strip())
+    assert first_event["type"] == "user-message"
+    assert first_event["id"] == "kickoff-sa_test"
+    assert "eval-helper" in first_event["content"]
+    assert "Briefing: do the thing." in first_event["content"]
 
     body = client.bodies[0]
     assert body["agent"] == {
@@ -208,5 +217,8 @@ async def test_upstream_failure_marks_failed():
         await runner.run()
 
     assert runner.status == SubAgentStatus.FAILED
-    decoded = b"".join(emitted).decode()
-    assert json.loads(decoded.split("data: ")[1].strip())["type"] == "error"
+    events = [
+        json.loads(chunk.decode().removeprefix("data: ").strip())
+        for chunk in emitted
+    ]
+    assert any(e["type"] == "error" for e in events)

@@ -29,6 +29,7 @@ from .sse import (
     format_tool_exec_end,
     format_tool_exec_start,
     format_tool_output,
+    format_user_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,18 @@ class SubAgentRunner:
 
     async def run(self) -> None:
         body = self._build_seed_body()
+        # Echo the kickoff message onto the run's stream: the observer SSE only
+        # carries response events (the kickoff rides the request body), so
+        # without this an observer attaching before the first snapshot persists
+        # would never see the sub-agent's instructions. The stable id lets a
+        # client dedupe the echo against a transcript it already shows (buffer
+        # replay on re-attach, or hydration once a snapshot exists).
+        self._emit(
+            format_user_message(
+                _kickoff_message(self._seed.name, self._seed.prompt),
+                f"kickoff-{self.subagent_id}",
+            )
+        )
         trace_id_for_error: str | None = None
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(self._max_rounds):
