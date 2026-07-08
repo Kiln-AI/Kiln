@@ -3416,6 +3416,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sub-agent runs */
+        get: operations["list_subagents_api_chat_subagents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/subagents/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream sub-agent status events
+         * @description Registry-level firehose of kiln-subagent-status events (snapshot then
+         *     live). Lets the UI learn a child finished even when the parent
+         *     conversation has no stream in flight.
+         */
+        get: operations["stream_subagent_status_events_api_chat_subagents_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/subagents/{subagent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a sub-agent run */
+        get: operations["get_subagent_api_chat_subagents__subagent_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/subagents/{subagent_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a sub-agent's chat events
+         * @description Pure-observer SSE of the child's chat stream (buffer replay + live);
+         *     404 if unknown or GC'd.
+         */
+        get: operations["stream_subagent_events_api_chat_subagents__subagent_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/subagents/{subagent_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a sub-agent run
+         * @description Hard-stop the run. Idempotent — stopping an unknown or terminal run
+         *     is a no-op (its report, if any, is still delivered to the parent).
+         */
+        post: operations["stop_subagent_api_chat_subagents__subagent_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/subagents/{subagent_id}/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a user message into a running sub-agent
+         * @description Inject a steer message from the overseeing user; drained by the child
+         *     at its next round boundary. 404 for unknown runs, 409 for terminal ones.
+         */
+        post: operations["send_subagent_message_api_chat_subagents__subagent_id__message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/events": {
         parameters: {
             query?: never;
@@ -4500,6 +4619,21 @@ export interface components {
             auto_active: boolean;
             /** Auto Run Id */
             auto_run_id?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Root Id */
+            root_id?: string | null;
+            /** Parent Root Id */
+            parent_root_id?: string | null;
+            /**
+             * Is Subagent
+             * @default false
+             */
+            is_subagent: boolean;
+            /** Subagent Id */
+            subagent_id?: string | null;
+            /** Subagent Status */
+            subagent_status?: string | null;
         };
         /** ChatSessionSnapshot */
         ChatSessionSnapshot: {
@@ -10043,6 +10177,11 @@ export interface components {
             /** Trace Id */
             trace_id?: string | null;
         };
+        /** SendSubAgentMessageRequest */
+        SendSubAgentMessageRequest: {
+            /** Content */
+            content: string;
+        };
         /**
          * SkillContentResponse
          * @description The full content of a skill including its markdown body.
@@ -10390,6 +10529,48 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /**
+         * SubAgentItem
+         * @description UI-facing view of a sub-agent run.
+         */
+        SubAgentItem: {
+            /** Subagent Id */
+            subagent_id: string;
+            /** Name */
+            name: string;
+            /** Agent Type */
+            agent_type: string;
+            status: components["schemas"]["SubAgentStatus"];
+            /** Current Trace Id */
+            current_trace_id?: string | null;
+            /** Parent Trace Id At Spawn */
+            parent_trace_id_at_spawn?: string | null;
+            /**
+             * Rounds Used
+             * @default 0
+             */
+            rounds_used: number;
+            /**
+             * Report Available
+             * @default false
+             */
+            report_available: boolean;
+            /**
+             * Report Delivered
+             * @default false
+             */
+            report_delivered: boolean;
+            /** Final Report */
+            final_report?: string | null;
+        };
+        /**
+         * SubAgentStatus
+         * @description One-shot lifecycle — unlike auto mode there is no IDLE re-arm: a
+         *     sub-agent runs to a terminal state exactly once, and COMPLETED is the
+         *     success case.
+         * @enum {string}
+         */
+        SubAgentStatus: "running" | "completed" | "failed" | "stopped" | "timeout";
         /**
          * SubmitAnswersRequest
          * @description Request to submit answers to a question set.
@@ -19332,6 +19513,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoSessionItem"][];
+                };
+            };
+        };
+    };
+    list_subagents_api_chat_subagents_get: {
+        parameters: {
+            query?: {
+                /** @description Filter to children of the conversation owning this (possibly stale) leaf trace id. Omit for all runs. */
+                parent_trace_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubAgentItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_subagent_status_events_api_chat_subagents_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_subagent_api_chat_subagents__subagent_id__get: {
+        parameters: {
+            query?: {
+                /** @description Include the final report for terminal runs. */
+                include_report?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The sub-agent id. */
+                subagent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubAgentItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_subagent_events_api_chat_subagents__subagent_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The sub-agent id to observe. */
+                subagent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_subagent_api_chat_subagents__subagent_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The sub-agent id to stop. */
+                subagent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_subagent_message_api_chat_subagents__subagent_id__message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The sub-agent id to message. */
+                subagent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendSubAgentMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
