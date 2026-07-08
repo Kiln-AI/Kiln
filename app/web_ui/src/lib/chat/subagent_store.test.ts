@@ -4,6 +4,9 @@ import { get } from "svelte/store"
 import {
   createSubagentStore,
   isTerminalSubagentStatus,
+  shouldCollapseSubagentTabs,
+  visibleSubagentTabs,
+  SUBAGENT_TAB_OVERFLOW_LIMIT,
   type SubAgentItem,
   type SubagentStore,
 } from "./subagent_store"
@@ -584,5 +587,58 @@ describe("isTerminalSubagentStatus", () => {
     for (const status of ["completed", "failed", "stopped", "timeout"]) {
       expect(isTerminalSubagentStatus(status)).toBe(true)
     }
+  })
+})
+
+describe("visibleSubagentTabs", () => {
+  it("shows running children and hides terminal ones", () => {
+    const list = [
+      child("sa_run"),
+      child("sa_done", { status: "completed" }),
+      child("sa_fail", { status: "failed" }),
+      child("sa_stop", { status: "stopped" }),
+      child("sa_time", { status: "timeout" }),
+    ]
+    expect(visibleSubagentTabs(list, null).map((c) => c.subagent_id)).toEqual([
+      "sa_run",
+    ])
+  })
+
+  it("keeps the selected child visible even when terminal", () => {
+    const list = [child("sa_run"), child("sa_done", { status: "completed" })]
+    expect(
+      visibleSubagentTabs(list, "sa_done").map((c) => c.subagent_id),
+    ).toEqual(["sa_run", "sa_done"])
+    // Selecting away drops the terminal tab (pure derivation, no tombstoning).
+    expect(visibleSubagentTabs(list, null).map((c) => c.subagent_id)).toEqual([
+      "sa_run",
+    ])
+  })
+
+  it("a revived child's tab reappears automatically", () => {
+    const terminal = [child("sa_1", { status: "failed" })]
+    expect(visibleSubagentTabs(terminal, null)).toEqual([])
+    const revived = [child("sa_1", { status: "running" })]
+    expect(
+      visibleSubagentTabs(revived, null).map((c) => c.subagent_id),
+    ).toEqual(["sa_1"])
+  })
+
+  it("returns empty when everything is terminal and nothing is selected", () => {
+    const list = [
+      child("sa_a", { status: "completed" }),
+      child("sa_b", { status: "stopped" }),
+    ]
+    expect(visibleSubagentTabs(list, null)).toEqual([])
+  })
+})
+
+describe("shouldCollapseSubagentTabs", () => {
+  it("collapses only above the overflow limit", () => {
+    expect(SUBAGENT_TAB_OVERFLOW_LIMIT).toBe(3)
+    const atLimit = [child("sa_1"), child("sa_2"), child("sa_3")]
+    expect(shouldCollapseSubagentTabs(atLimit)).toBe(false)
+    const overLimit = [...atLimit, child("sa_4")]
+    expect(shouldCollapseSubagentTabs(overLimit)).toBe(true)
   })
 })

@@ -247,6 +247,60 @@ describe("createChatSessionStore", () => {
       expect(get(store).abortController).toBeNull()
     })
 
+    it("renders a user-message echo (sub-agent report) as a chip before a fresh assistant turn", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      // The user's send appends [user typed, assistant placeholder]; the report
+      // echo arrives at the start of the next-turn stream.
+      await store.sendMessage("run the sweep")
+      capture.options!.onUserMessage?.(
+        '<subagent_report id="sa_1" agent_type="general" status="completed" title="Sweep">\nfindings body\n</subagent_report>',
+      )
+      // The streamed assistant content lands in the fresh turn after the report.
+      capture.options!.onAssistantMessage((draft: ChatMessage) => {
+        draft.parts = [{ type: "text", text: "continuing" }]
+      })
+
+      const msgs = get(store).messages
+      expect(msgs.map((m) => m.role)).toEqual([
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+      ])
+      expect(msgs[0].content).toBe("run the sweep")
+      // The original placeholder stays empty (hidden by the transcript).
+      expect(msgs[1].parts).toEqual([])
+      // The echo renders as a report chip: frame parsed, content = body.
+      expect(msgs[2].subagentReport).toMatchObject({
+        id: "sa_1",
+        status: "completed",
+        title: "Sweep",
+      })
+      expect(msgs[2].content).toBe("findings body")
+      expect(msgs[3].parts).toEqual([{ type: "text", text: "continuing" }])
+    })
+
+    it("dedupes user-message echoes by echo id", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onUserMessage?.("injected once", "echo-1")
+      capture.options!.onUserMessage?.("injected once", "echo-1")
+
+      const echoes = get(store).messages.filter((m) => m.echoId === "echo-1")
+      expect(echoes).toHaveLength(1)
+      expect(echoes[0].content).toBe("injected once")
+    })
+
     it("resets activity indicator and toolExecuting on finish", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()

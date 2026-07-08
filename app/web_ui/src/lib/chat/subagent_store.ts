@@ -74,6 +74,35 @@ export function isTerminalSubagentStatus(status: string): boolean {
   return TERMINAL_STATUSES.has(status)
 }
 
+/** Max individual child tabs before the strip collapses into a count chip. */
+export const SUBAGENT_TAB_OVERFLOW_LIMIT = 3
+
+/**
+ * Children whose tab is visible in the strip: running ones, plus the currently
+ * selected child even when terminal (so the view isn't yanked while the user
+ * is reading it — selecting away drops the terminal tab). Purely derived from
+ * status + selection (no tombstoning), so a child whose status ever returns to
+ * running reappears automatically.
+ */
+export function visibleSubagentTabs(
+  children: SubAgentItem[],
+  selectedId: string | null,
+): SubAgentItem[] {
+  return children.filter(
+    (c) => c.status === "running" || c.subagent_id === selectedId,
+  )
+}
+
+/**
+ * Whether the strip should collapse individual child tabs into a single
+ * "N agents running" chip (the selected child keeps its own tab beside it).
+ */
+export function shouldCollapseSubagentTabs(
+  visibleChildren: SubAgentItem[],
+): boolean {
+  return visibleChildren.length > SUBAGENT_TAB_OVERFLOW_LIMIT
+}
+
 export interface SubagentStore {
   /** Children of the current conversation (server order). */
   children: Readable<SubAgentItem[]>

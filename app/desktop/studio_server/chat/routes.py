@@ -31,6 +31,7 @@ from app.desktop.studio_server.chat.subagents.orchestration import (
     OrchestrationContext,
 )
 from app.desktop.studio_server.chat.subagents.registry import subagent_registry
+from app.desktop.studio_server.chat.subagents.sse import format_user_message
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
@@ -391,7 +392,9 @@ def connect_chat_api(app: FastAPI) -> None:
         initial_body = body.model_dump(exclude_none=True)
         # Completion injection, idle-parent path: sub-agent reports that landed
         # while this conversation had no turn in flight are appended server-side
-        # to the next turn (the browser never holds the report text).
+        # to the next turn (the browser never holds the report text) and echoed
+        # to the live stream so the transcript shows them immediately.
+        report_echoes: list[bytes] = []
         if body.trace_id:
             reports = subagent_registry.pending_reports_for_trace(body.trace_id)
             if reports:
@@ -400,13 +403,21 @@ def connect_chat_api(app: FastAPI) -> None:
                     {"role": "user", "content": report} for report in reports
                 )
                 initial_body["messages"] = messages
+                report_echoes = [format_user_message(report) for report in reports]
 
         session = ChatStreamSession(
             upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(api_key),
             initial_body=initial_body,
         )
+
+        async def generate():
+            for payload in report_echoes:
+                yield payload
+            async for chunk in session.stream():
+                yield chunk
+
         return CancellableStreamingResponse(
-            content=session.stream(),
+            content=generate(),
             media_type="text/event-stream",
         )

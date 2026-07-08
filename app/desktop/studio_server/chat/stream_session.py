@@ -691,8 +691,13 @@ class ChatStreamSession:
                     )
                     # Sub-agent reports that landed while this turn was running
                     # ride the continuation as user messages (completion
-                    # injection, mid-stream path).
-                    self._body = self._append_pending_subagent_reports(self._body)
+                    # injection, mid-stream path) and are echoed to the live
+                    # transcript.
+                    self._body, report_echoes = self._append_pending_subagent_reports(
+                        self._body
+                    )
+                    for payload in report_echoes:
+                        yield payload
                     continue
 
                 return
@@ -751,22 +756,31 @@ class ChatStreamSession:
             orchestration_ctx=self._get_orchestration_ctx(),
         )
 
-    def _append_pending_subagent_reports(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _append_pending_subagent_reports(
+        self, body: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[bytes]]:
         """Drain any completed-but-undelivered sub-agent reports for this
-        conversation and append them as user messages to the continuation."""
+        conversation and append them as user messages to the continuation.
+
+        Also returns ``user-message`` echo SSE payloads so the caller can
+        surface the injected reports to the live transcript immediately (the
+        same echo shape auto-mode observers get), instead of the user only
+        seeing them after a rehydrate."""
         ctx = self._get_orchestration_ctx()
         if not ctx.parent_trace_id:
-            return body
+            return body, []
         from app.desktop.studio_server.chat.subagents.registry import (
             subagent_registry,
         )
+        from app.desktop.studio_server.chat.subagents.sse import format_user_message
 
         reports = subagent_registry.pending_reports_for_trace(ctx.parent_trace_id)
         if not reports:
-            return body
+            return body, []
         messages = list(body.get("messages", []))
         messages.extend({"role": "user", "content": report} for report in reports)
-        return {**body, "messages": messages}
+        echoes = [format_user_message(report) for report in reports]
+        return {**body, "messages": messages}, echoes
 
     @staticmethod
     async def _clear_auto_mode_flag(trace_id: str | None) -> None:

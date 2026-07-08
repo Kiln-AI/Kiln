@@ -238,6 +238,64 @@ describe("streamChat", () => {
     expect(versionNudgeSpy).toHaveBeenCalledWith("1.2.3")
     expect(errorSpy).not.toHaveBeenCalled()
   })
+
+  it("intercepts user-message echoes: fires onUserMessage and resets the processor", async () => {
+    const lines = [
+      'data: {"type":"text-start","id":"t1"}\n\n',
+      'data: {"type":"text-delta","delta":"before"}\n\n',
+      'data: {"type":"user-message","content":"<subagent_report id=\\"sa_1\\" agent_type=\\"g\\" status=\\"completed\\" title=\\"T\\">\\nbody\\n</subagent_report>","id":"echo-1"}\n\n',
+      'data: {"type":"text-start","id":"t2"}\n\n',
+      'data: {"type":"text-delta","delta":"after"}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (i >= lines.length) {
+              return Promise.resolve({ done: true, value: undefined })
+            }
+            const value = new TextEncoder().encode(lines[i])
+            i += 1
+            return Promise.resolve({ done: false, value })
+          },
+        }),
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const userMessageSpy = vi.fn()
+    const flushes: Array<Array<{ type: string; text?: string }>> = []
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: (update) => {
+        const draft: ChatMessage = { id: "a", role: "assistant", parts: [] }
+        update(draft)
+        flushes.push(
+          (draft.parts ?? []).map((p) => ({
+            type: p.type,
+            text: "text" in p ? p.text : undefined,
+          })),
+        )
+      },
+      onUserMessage: userMessageSpy,
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    expect(userMessageSpy).toHaveBeenCalledOnce()
+    expect(userMessageSpy).toHaveBeenCalledWith(
+      expect.stringContaining("<subagent_report"),
+      "echo-1",
+    )
+    // The processor was reset at the echo: the post-echo flush carries ONLY the
+    // new turn's text — "before" is not re-flushed into the fresh turn.
+    const lastFlush = flushes[flushes.length - 1]
+    expect(lastFlush).toEqual([{ type: "text", text: "after" }])
+  })
 })
 
 describe("resumePendingToolCalls (graceful-stop handoff)", () => {

@@ -252,6 +252,14 @@ export interface StreamChatOptions {
   onAutoModeConsentRequired?: (
     payload: AutoModeConsentRequiredPayload,
   ) => void | Promise<void>
+  /**
+   * The server echoed an injected user message on the interactive stream — a
+   * sub-agent completion report riding the next turn (start-of-stream) or a
+   * mid-stream continuation boundary. Render it as a user turn followed by a
+   * fresh assistant turn; the stream's processor is reset so the prior turn's
+   * accumulated parts aren't re-flushed into the new turn.
+   */
+  onUserMessage?: (content: string, echoId?: string) => void
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -700,6 +708,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onRetry,
     onRetryClear,
     onAutoModeConsentRequired,
+    onUserMessage,
     onFinish,
     onError,
     signal,
@@ -811,6 +820,20 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
               }
               onFinish()
               return
+            }
+            if (event.type === "user-message") {
+              // Server-injected user message echoed on the interactive stream
+              // (a sub-agent report at the start of a next-turn stream, or at a
+              // mid-stream continuation boundary). The handler renders it and
+              // opens a fresh assistant turn; reset the processor so the prior
+              // turn's accumulated parts aren't re-flushed into the new turn.
+              // Only reset when a handler opened that fresh turn — otherwise a
+              // reset would wipe the current bubble's rendered parts.
+              if (onUserMessage) {
+                onUserMessage(event.content ?? "", event.id)
+                processor.reset()
+              }
+              continue
             }
             if (event.type === "tool-calls-pending") {
               const items = event.items
@@ -932,6 +955,9 @@ export interface ResumePendingToolCallsOptions {
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
   onShowActivityIndicator?: (show: boolean) => void
+  /** Same contract as ``StreamChatOptions.onUserMessage`` (a sub-agent report
+   * echoed at a continuation boundary). */
+  onUserMessage?: (content: string, echoId?: string) => void
   onFinish: () => void
   onError: (error: Error) => void
 }
@@ -967,6 +993,7 @@ export async function resumePendingToolCalls(
     onToolExecutionStart,
     onToolExecutionEnd,
     onShowActivityIndicator,
+    onUserMessage,
     onFinish,
     onError,
   } = options
@@ -1059,6 +1086,15 @@ export async function resumePendingToolCalls(
       await consumeSseStream(reader, processor, (event) => {
         if (event.type === "tool-calls-pending") {
           nextItems = Array.isArray(event.items) ? event.items : []
+          return true
+        }
+        if (event.type === "user-message") {
+          // A sub-agent report echoed at a continuation boundary; same handling
+          // as streamChat (render + fresh assistant turn + processor reset).
+          if (onUserMessage) {
+            onUserMessage(event.content ?? "", event.id)
+            processor.reset()
+          }
           return true
         }
         return false

@@ -439,6 +439,12 @@ export function createChatSessionStore(
         if (isStale()) return
         combined.update((s) => ({ ...s, showActivityIndicator: show }))
       },
+      onUserMessage: (content, echoId) => {
+        if (isStale()) return
+        // A sub-agent report echoed at a continuation boundary; render it as a
+        // report chip and continue into the fresh assistant turn it opens.
+        appendEchoedUserMessage(content, echoId)
+      },
       onFinish: () => {
         if (isStale()) return
         combined.update((s) => ({
@@ -575,6 +581,16 @@ export function createChatSessionStore(
       onAutoModeConsentRequired: async (payload) => {
         if (isStale()) return
         await handleAutoModeConsent(payload)
+      },
+      onUserMessage: (content, echoId) => {
+        if (isStale()) return
+        // A sub-agent report echoed on the interactive stream — at the start of
+        // this next-turn stream (the persisted order is: the user's typed
+        // message, then reports) or at a mid-stream continuation boundary.
+        // appendEchoedUserMessage renders it (report frames become chips via
+        // userChatMessageFromContent) and opens a fresh assistant turn for the
+        // rest of the stream; the prior empty placeholder stays hidden.
+        appendEchoedUserMessage(content, echoId)
       },
       onVersionNudge: (preferredVersion) => {
         if (isStale()) return

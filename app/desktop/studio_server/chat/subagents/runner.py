@@ -42,14 +42,15 @@ MAX_ROUNDS_MESSAGE = (
 )
 
 
-# The canned first user message of a child session. The real job lives in the
-# seed prompt (appended to the agent task's instruction backend-side); this just
-# opens the turn — the backend rejects empty message lists. The name rides along
-# because the session-list title derives from the first user message.
-def _kickoff_message(name: str) -> str:
+# The first user message of a child session. It carries the full briefing —
+# even though the briefing is ALSO seeded into the system prompt backend-side —
+# so the user sees the sub-agent's instructions when they open its tab (the
+# system prompt is never rendered). The name leads because the session-list
+# title derives from the first user message.
+def _kickoff_message(name: str, prompt: str) -> str:
     return (
-        f"Begin work on: {name}. Follow the operator briefing in your "
-        "instructions and end with your final report."
+        f"{name} — your assignment:\n\n{prompt}\n\n"
+        "Begin now, work autonomously, and end with your final report."
     )
 
 
@@ -311,7 +312,10 @@ class SubAgentRunner:
             agent["parent_trace_id"] = self._seed.parent_trace_id
         return {
             "messages": [
-                {"role": "user", "content": _kickoff_message(self._seed.name)}
+                {
+                    "role": "user",
+                    "content": _kickoff_message(self._seed.name, self._seed.prompt),
+                }
             ],
             "agent": agent,
             "auto_mode": True,
