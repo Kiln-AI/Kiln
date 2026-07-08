@@ -359,6 +359,83 @@ describe("subagent_store", () => {
       expect(transcript[0].content).toBe("focus on evals")
     })
 
+    it("appends the kickoff echo as the briefing bubble when hydration is empty", async () => {
+      routeFetch({
+        "http://localhost:8757/api/chat/subagents?": () =>
+          jsonResponse([child("sa_1")]),
+        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
+          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
+        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
+          sseResponse([
+            {
+              type: "user-message",
+              content: "Agent sa_1 — your assignment:\n\nDo the thing.",
+              id: "kickoff-sa_1",
+            },
+            { type: "text-delta", delta: "on it" },
+          ]),
+      })
+      await store.syncForConversation("trace-leaf")
+
+      store.select("sa_1")
+      await flush()
+
+      const transcript = get(store.transcripts).get("sa_1") ?? []
+      expect(transcript.map((m) => m.role)).toEqual(["user", "assistant"])
+      expect(transcript[0].content).toBe(
+        "Agent sa_1 — your assignment:\n\nDo the thing.",
+      )
+      expect(transcript[0].echoId).toBe("kickoff-sa_1")
+      expect(transcript[1].parts).toEqual([{ type: "text", text: "on it" }])
+    })
+
+    it("skips a replayed kickoff echo when hydration already seeded the briefing", async () => {
+      routeFetch({
+        "http://localhost:8757/api/chat/subagents?": () =>
+          jsonResponse([child("sa_1")]),
+        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
+          jsonResponse({
+            id: "trace-sa_1",
+            task_run: {
+              trace: [
+                {
+                  role: "user",
+                  content: "Agent sa_1 — your assignment:\n\nDo the thing.",
+                },
+                { role: "assistant", content: "first round" },
+              ],
+            },
+          }),
+        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
+          sseResponse([
+            {
+              type: "user-message",
+              content: "Agent sa_1 — your assignment:\n\nDo the thing.",
+              id: "kickoff-sa_1",
+            },
+            { type: "text-delta", delta: "second round" },
+          ]),
+      })
+      await store.syncForConversation("trace-leaf")
+
+      store.select("sa_1")
+      await flush()
+
+      const transcript = get(store.transcripts).get("sa_1") ?? []
+      // Exactly ONE briefing bubble (the hydrated one, no echoId), then the
+      // hydrated round and the replayed live round in a fresh message.
+      expect(transcript.map((m) => m.role)).toEqual([
+        "user",
+        "assistant",
+        "assistant",
+      ])
+      expect(transcript.filter((m) => m.role === "user")).toHaveLength(1)
+      expect(transcript[0].echoId).toBeUndefined()
+      expect(transcript[2].parts).toEqual([
+        { type: "text", text: "second round" },
+      ])
+    })
+
     it("mirrors activity/retry runtime state live, cleared when the stream ends", async () => {
       // A pushable SSE body so runtime state can be asserted mid-stream.
       const encoder = new TextEncoder()

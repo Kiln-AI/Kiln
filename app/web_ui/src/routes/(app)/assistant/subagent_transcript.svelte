@@ -25,6 +25,26 @@
     stopped: "Stopped",
     timeout: "Timed out",
   }
+
+  $: running = child.status === "running"
+  $: lastMessage = messages[messages.length - 1]
+  // The activity indicator drives the shared transcript's thinking dots between
+  // rounds. The per-child runtime is processor-driven, so it doesn't exist
+  // until the first live event arrives — default it ON while the child is
+  // running (the backend IS working), and let the processor state take over
+  // once events flow.
+  $: effectiveActivityIndicator = runtime
+    ? runtime.showActivityIndicator
+    : running
+  // No in-progress assistant output at the tail of the transcript: empty, or a
+  // user message (kickoff briefing / steer) is last. The shared transcript only
+  // hosts its thinking indicator inside the LAST ASSISTANT message, so a
+  // running child with a user tail needs this standalone one — otherwise a
+  // just-started child shows the kickoff bubble and looks stuck. Suppressed
+  // while retrying: chat_transcript's fallback indicator covers that case
+  // (exactly one busy indicator shows).
+  $: awaitingAssistant =
+    running && lastMessage?.role !== "assistant" && !runtime?.retry
 </script>
 
 <div class="flex flex-col gap-4 w-full min-h-full md:max-w-3xl mx-auto px-1">
@@ -54,36 +74,34 @@
       {/if}
     </span>
   </div>
-  {#if messages.length === 0 && child.status === "running"}
-    <!-- Running but nothing rendered yet (empty hydration, first generation
-       still pending): show the same thinking indicator the transcript uses
-       instead of a blank panel. -->
+  <ChatTranscript
+    {messages}
+    loading={running}
+    showActivityIndicator={effectiveActivityIndicator}
+    retrying={runtime?.retry ?? null}
+    readOnly
+  />
+  {#if awaitingAssistant}
+    <!-- Running with no assistant output at the tail (empty transcript, or the
+       kickoff/steer bubble is last while the first response is still being
+       generated): show the same thinking indicator the transcript uses so the
+       child never looks stuck. -->
     <div class="flex items-start gap-3" role="status">
-      {#if !runtime?.retry}
-        <img
-          src="/images/chat_icon_animated.svg"
-          alt=""
-          class="w-9 h-9 shrink-0 -mt-1.5"
-        />
-      {/if}
+      <img
+        src="/images/chat_icon_animated.svg"
+        alt=""
+        class="w-9 h-9 shrink-0 -mt-1.5"
+      />
       <div class="flex flex-col">
         <ChatStatusSteps
           parts={[]}
           isLoading={true}
           isLastMessage={true}
-          showActivityIndicator={runtime?.showActivityIndicator ?? false}
-          retrying={runtime?.retry ?? null}
+          showActivityIndicator={true}
+          retrying={null}
         />
       </div>
     </div>
-  {:else}
-    <ChatTranscript
-      {messages}
-      loading={child.status === "running"}
-      showActivityIndicator={runtime?.showActivityIndicator ?? false}
-      retrying={runtime?.retry ?? null}
-      readOnly
-    />
   {/if}
   <div class="shrink-0 min-h-[24px]" aria-hidden="true" />
 </div>

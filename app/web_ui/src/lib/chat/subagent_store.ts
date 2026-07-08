@@ -460,11 +460,19 @@ export function createSubagentStore(): SubagentStore {
       return true
     }
     if (event.type === "user-message") {
-      // The run echoed an injected user message (a steer from the overseeing
-      // user). Dedupe by echo id — a buffer replay on re-attach re-emits the
-      // echo for a message the transcript already shows.
+      // The run echoed an injected user message (the kickoff briefing at run
+      // start, or a steer from the overseeing user). Dedupe by echo id — a
+      // buffer replay on re-attach re-emits the echo for a message the
+      // transcript already shows.
       const echoId = event.id
       if (echoId && transcriptFor(id).some((m) => m.echoId === echoId)) {
+        return true
+      }
+      // Kickoff echo ("kickoff-<id>") replayed after hydration already seeded
+      // the briefing: the hydrated message carries no echoId, so dedupe
+      // structurally — a kickoff can only ever be the first message, so skip it
+      // whenever a user message already opens the transcript.
+      if (echoId === `kickoff-${id}` && transcriptFor(id)[0]?.role === "user") {
         return true
       }
       // A buffer-replayed echo may carry the steer framing (<system-reminder>)
