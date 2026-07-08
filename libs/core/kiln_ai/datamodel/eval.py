@@ -55,6 +55,42 @@ class EvalConfigType(str, Enum):
     llm_as_judge = "llm_as_judge"
 
 
+def default_train_set_filter_id(eval_name: str) -> str:
+    """The default train set filter id for an eval: tag::train_{name_slug}."""
+    return f"tag::train_{eval_name.lower().replace(' ', '_')}"
+
+
+TRAIN_SET_FILTER_ID_DESCRIPTION = (
+    "The id of the dataset filter which defines which dataset items are included in the "
+    "training set for fine-tuning and prompt optimization. Set once at creation and "
+    "immutable afterwards. If omitted at creation, defaults to tag::train_{name_slug} "
+    "derived from the eval name (lowercased, spaces replaced with underscores). Should "
+    "be mutually exclusive with eval_set_filter_id."
+)
+
+TEMPLATE_PROPERTIES_DESCRIPTION = (
+    "Template-specific properties as a flat map of string/number/boolean values. "
+    "Required and optional keys depend on the eval's template: 'kiln_issue' requires "
+    "issue_prompt (string describing the issue the judge should detect), with optional "
+    "failure_example and pass_example (strings); 'tool_call' requires tool (Kiln tool "
+    "ID), tool_function_name and appropriate_tool_use_guidelines (strings), plus "
+    "evaluation_data_type set to full_trace, with optional "
+    "inappropriate_tool_use_guidelines (string). All other templates, and evals without "
+    "a template, require no properties — pass null."
+)
+
+EVAL_CONFIG_PROPERTIES_DESCRIPTION = (
+    "Properties used to execute the eval config, specific to config_type. Must "
+    "serialize to a JSON dict. For 'g_eval' and 'llm_as_judge': eval_steps (required, "
+    "list of strings) contains the evaluation instructions for the judge model — they "
+    "are concatenated into the judge's chain-of-thought instructions, as a numbered "
+    "list when the list has multiple items or as a single instruction block when it "
+    "has exactly one (to provide one free-form judge instruction, pass a single-item "
+    "list); task_description (optional, string) is a short description of the task "
+    "being evaluated, included as context in the judge's instructions."
+)
+
+
 class EvalOutputScore(BaseModel):
     """
     A definition of a score that an evaluator will produce.
@@ -276,7 +312,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
     )
     properties: dict[str, Any] = Field(
         default={},
-        description="Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.",
+        description=EVAL_CONFIG_PROPERTIES_DESCRIPTION,
     )
 
     def parent_eval(self) -> Union["Eval", None]:
@@ -289,6 +325,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
+        # Keep EVAL_CONFIG_PROPERTIES_DESCRIPTION in sync with this validator
         if (
             self.config_type == EvalConfigType.g_eval
             or self.config_type == EvalConfigType.llm_as_judge
@@ -345,11 +382,11 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.",
+        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id. Required for all templates except 'rag', including evals with no template.",
     )
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.",
+        description=TRAIN_SET_FILTER_ID_DESCRIPTION,
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -360,7 +397,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     template_properties: dict[str, str | int | bool | float] | None = Field(
         default=None,
-        description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
+        description=TEMPLATE_PROPERTIES_DESCRIPTION,
     )
     evaluation_data_type: EvalDataType = Field(
         default=EvalDataType.final_answer,
@@ -454,8 +491,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if self.train_set_filter_id is not None:
             return self
 
-        tag_suffix = self.name.lower().replace(" ", "_")
-        self.train_set_filter_id = f"tag::train_{tag_suffix}"
+        self.train_set_filter_id = default_train_set_filter_id(self.name)
         return self
 
     @model_validator(mode="after")
@@ -475,6 +511,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     @model_validator(mode="after")
     def validate_template_properties(self) -> Self:
+        # Keep TEMPLATE_PROPERTIES_DESCRIPTION in sync with this validator
         # eval_configs_filter_id is required for all templates except "rag"
         if (
             self.template is not EvalTemplateId.rag

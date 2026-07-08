@@ -10,6 +10,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    default_train_set_filter_id,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
@@ -207,6 +208,20 @@ def test_migrate_train_set_filter_id_not_on_new_eval():
         ],
     )
     assert eval.train_set_filter_id is None
+
+
+@pytest.mark.parametrize(
+    "eval_name,expected_tag",
+    [
+        ("Simple", "tag::train_simple"),
+        ("Two Words", "tag::train_two_words"),
+        ("UPPER CASE", "tag::train_upper_case"),
+        ("mixed Case Name", "tag::train_mixed_case_name"),
+        ("already_underscored", "tag::train_already_underscored"),
+    ],
+)
+def test_default_train_set_filter_id(eval_name, expected_tag):
+    assert default_train_set_filter_id(eval_name) == expected_tag
 
 
 @pytest.mark.parametrize(

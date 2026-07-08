@@ -4473,7 +4473,7 @@ export interface components {
             type: components["schemas"]["EvalConfigType"];
             /**
              * Properties
-             * @description Properties for the eval config, specific to the type.
+             * @description Properties used to execute the eval config, specific to config_type. Must serialize to a JSON dict. For 'g_eval' and 'llm_as_judge': eval_steps (required, list of strings) contains the evaluation instructions for the judge model — they are concatenated into the judge's chain-of-thought instructions, as a numbered list when the list has multiple items or as a single instruction block when it has exactly one (to provide one free-form judge instruction, pass a single-item list); task_description (optional, string) is a short description of the task being evaluated, included as context in the judge's instructions.
              */
             properties: {
                 [key: string]: unknown;
@@ -4515,18 +4515,23 @@ export interface components {
             eval_set_filter_id: string;
             /**
              * Eval Configs Filter Id
-             * @description The dataset filter for comparing eval configs.
+             * @description The dataset filter for comparing eval configs (the 'golden' set with human ratings). Required for all templates except 'rag', including evals with no template.
              */
             eval_configs_filter_id?: string | null;
             /**
              * Template Properties
-             * @description Template-specific properties.
+             * @description Template-specific properties as a flat map of string/number/boolean values. Required and optional keys depend on the eval's template: 'kiln_issue' requires issue_prompt (string describing the issue the judge should detect), with optional failure_example and pass_example (strings); 'tool_call' requires tool (Kiln tool ID), tool_function_name and appropriate_tool_use_guidelines (strings), plus evaluation_data_type set to full_trace, with optional inappropriate_tool_use_guidelines (string). All other templates, and evals without a template, require no properties — pass null.
              */
             template_properties?: {
                 [key: string]: string | number | boolean;
             } | null;
             /** @description The type of task output to evaluate. */
             evaluation_data_type: components["schemas"]["EvalDataType"];
+            /**
+             * Train Set Filter Id
+             * @description The dataset filter for the eval's training set (used by fine-tuning and prompt optimization), e.g. 'tag::train_my_eval'. Optional: if omitted, defaults to tag::train_{name_slug} derived from the eval name. Immutable after creation, so set it here if you need a non-default value.
+             */
+            train_set_filter_id?: string | null;
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -5547,12 +5552,12 @@ export interface components {
             eval_set_filter_id: string;
             /**
              * Eval Configs Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id. Required for all templates except 'rag', including evals with no template.
              */
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning and prompt optimization. Set once at creation and immutable afterwards. If omitted at creation, defaults to tag::train_{name_slug} derived from the eval name (lowercased, spaces replaced with underscores). Should be mutually exclusive with eval_set_filter_id.
              */
             train_set_filter_id?: string | null;
             /**
@@ -5568,7 +5573,7 @@ export interface components {
             favourite: boolean;
             /**
              * Template Properties
-             * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
+             * @description Template-specific properties as a flat map of string/number/boolean values. Required and optional keys depend on the eval's template: 'kiln_issue' requires issue_prompt (string describing the issue the judge should detect), with optional failure_example and pass_example (strings); 'tool_call' requires tool (Kiln tool ID), tool_function_name and appropriate_tool_use_guidelines (strings), plus evaluation_data_type set to full_trace, with optional inappropriate_tool_use_guidelines (string). All other templates, and evals without a template, require no properties — pass null.
              */
             template_properties?: {
                 [key: string]: string | number | boolean;
@@ -5637,7 +5642,7 @@ export interface components {
             config_type: components["schemas"]["EvalConfigType"];
             /**
              * Properties
-             * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
+             * @description Properties used to execute the eval config, specific to config_type. Must serialize to a JSON dict. For 'g_eval' and 'llm_as_judge': eval_steps (required, list of strings) contains the evaluation instructions for the judge model — they are concatenated into the judge's chain-of-thought instructions, as a numbered list when the list has multiple items or as a single instruction block when it has exactly one (to provide one free-form judge instruction, pass a single-item list); task_description (optional, string) is a short description of the task being evaluated, included as context in the judge's instructions.
              * @default {}
              */
             properties: {
@@ -10689,7 +10694,7 @@ export interface components {
             description?: string | null;
             /**
              * Train Set Filter Id
-             * @description The updated train set filter ID.
+             * @description The train set filter ID. Only accepted when the eval has no value yet; the value is immutable once set and a change returns 400. Evals always have a value after creation (an omitted value defaults to tag::train_{name_slug}), so in practice this cannot be changed via PATCH — set it via create_evaluator instead. Re-sending the current value is accepted as a no-op.
              */
             train_set_filter_id?: string | null;
         };

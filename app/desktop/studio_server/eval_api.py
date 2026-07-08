@@ -16,6 +16,8 @@ from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
+    EVAL_CONFIG_PROPERTIES_DESCRIPTION,
+    TEMPLATE_PROPERTIES_DESCRIPTION,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -23,6 +25,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    default_train_set_filter_id,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
@@ -192,13 +195,18 @@ class CreateEvaluatorRequest(BaseModel):
         description="The dataset filter for the eval set."
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
-        default=None, description="The dataset filter for comparing eval configs."
+        default=None,
+        description="The dataset filter for comparing eval configs (the 'golden' set with human ratings). Required for all templates except 'rag', including evals with no template.",
     )
     template_properties: dict[str, str | float | int | bool] | None = Field(
-        default=None, description="Template-specific properties."
+        default=None, description=TEMPLATE_PROPERTIES_DESCRIPTION
     )
     evaluation_data_type: EvalDataType = Field(
         description="The type of task output to evaluate."
+    )
+    train_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The dataset filter for the eval's training set (used by fine-tuning and prompt optimization), e.g. 'tag::train_my_eval'. Optional: if omitted, defaults to tag::train_{name_slug} derived from the eval name. Immutable after creation, so set it here if you need a non-default value.",
     )
 
 
@@ -207,9 +215,7 @@ class CreateEvalConfigRequest(BaseModel):
 
     name: str | None = Field(default=None, description="The name of the eval config.")
     type: EvalConfigType = Field(description="The type of eval config.")
-    properties: dict[str, Any] = Field(
-        description="Properties for the eval config, specific to the type."
-    )
+    properties: dict[str, Any] = Field(description=EVAL_CONFIG_PROPERTIES_DESCRIPTION)
     model_name: str = Field(description="The model to use for evaluation.")
     provider: ModelProviderName = Field(
         description="The provider of the evaluation model."
@@ -295,8 +301,9 @@ class UpdateEvalRequest(BaseModel):
     description: str | None = Field(
         default=None, description="The updated description."
     )
-    train_set_filter_id: str | None = Field(
-        default=None, description="The updated train set filter ID."
+    train_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The train set filter ID. Only accepted when the eval has no value yet; the value is immutable once set and a change returns 400. Evals always have a value after creation (an omitted value defaults to tag::train_{name_slug}), so in practice this cannot be changed via PATCH — set it via create_evaluator instead. Re-sending the current value is accepted as a no-op.",
     )
 
 
@@ -615,6 +622,11 @@ def connect_evals_api(app: FastAPI):
         request: CreateEvaluatorRequest,
     ) -> Eval:
         task = task_from_id(project_id, task_id)
+        # Derive the default eagerly so the POST response matches subsequent GETs
+        # (the load-time migration would otherwise fill it on the next read)
+        train_set_filter_id = request.train_set_filter_id or default_train_set_filter_id(
+            request.name
+        )
         eval = Eval(
             name=request.name,
             description=request.description,
@@ -622,6 +634,7 @@ def connect_evals_api(app: FastAPI):
             output_scores=request.output_scores,
             eval_set_filter_id=request.eval_set_filter_id,
             eval_configs_filter_id=request.eval_configs_filter_id,
+            train_set_filter_id=train_set_filter_id,
             template_properties=request.template_properties,
             evaluation_data_type=request.evaluation_data_type,
             parent=task,
@@ -709,17 +722,17 @@ def connect_evals_api(app: FastAPI):
         if request.description is not None:
             eval.description = request.description
 
-        # legacy evals (not created with Specs) do not have a train set filter, but we need one
-        # for some features such as prompt optimization
+        # train_set_filter_id is set-once: creation (or the load-time migration for old
+        # files) always fills it, and changing it would make results before and after
+        # the change incomparable
         if request.train_set_filter_id is not None:
-            # if the eval already has a train set filter, we do not allow changing it because it
-            # would make comparing results before and after the change very confusing
-            if eval.train_set_filter_id is not None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Train set filter is already set and cannot be changed. Please create a new eval if you need a different train set.",
-                )
-            eval.train_set_filter_id = request.train_set_filter_id
+            if request.train_set_filter_id != eval.train_set_filter_id:
+                if eval.train_set_filter_id is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"train_set_filter_id is already set to '{eval.train_set_filter_id}' and cannot be changed, because changing it would make existing results incomparable. It is set at creation (pass train_set_filter_id to create_evaluator, or omit it to accept the default tag::train_{{name_slug}}). Create a new eval if you need a different train set.",
+                    )
+                eval.train_set_filter_id = request.train_set_filter_id
 
         eval.save_to_file()
         return eval

@@ -255,6 +255,46 @@ async def test_create_evaluator(
     assert saved_eval.template_properties["test_property"] == "test_value"
     assert saved_eval.template_properties["numeric_property"] == 42
 
+    # train_set_filter_id was omitted, so it's derived from the name at creation
+    assert result["train_set_filter_id"] == "tag::train_test_evaluator"
+    assert saved_eval.train_set_filter_id == "tag::train_test_evaluator"
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_with_explicit_train_set_filter_id(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    request_json = valid_evaluator_request.model_dump()
+    request_json["train_set_filter_id"] = "tag::train_custom"
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=request_json,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["train_set_filter_id"] == "tag::train_custom"
+    assert mock_task.evals()[0].train_set_filter_id == "tag::train_custom"
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_with_invalid_train_set_filter_id(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    request_json = valid_evaluator_request.model_dump()
+    request_json["train_set_filter_id"] = "not_a_filter"
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=request_json,
+    )
+
+    assert response.status_code == 422
+
 
 @pytest.mark.asyncio
 async def test_create_task_run_config_with_freezing(
@@ -1608,9 +1648,31 @@ def test_update_eval_train_set_filter_id_when_already_set(
 
     assert response.status_code == 400
     assert (
-        "Train set filter is already set and cannot be changed"
+        "train_set_filter_id is already set to 'tag::existing_train_set' and cannot be changed"
         in response.json()["message"]
     )
+
+
+def test_update_eval_train_set_filter_id_same_value_noop(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that re-sending the current train_set_filter_id is accepted as a no-op."""
+    mock_eval.train_set_filter_id = "tag::existing_train_set"
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::existing_train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["train_set_filter_id"] == "tag::existing_train_set"
 
 
 def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_task):
