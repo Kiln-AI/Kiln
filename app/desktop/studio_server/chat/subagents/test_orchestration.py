@@ -156,3 +156,18 @@ def test_tool_name_set_matches_backend_contract():
         "wait_for_subagents",
         "stop_subagent",
     }
+
+
+async def test_auto_parent_children_resolvable_by_trace(registry):
+    # Children of an AUTO parent are keyed auto:<run_id>; spawning must alias
+    # the conversation's leaf trace id to that key so UI lookups by trace id
+    # (children list, report injection) resolve.
+    ctx = OrchestrationContext(parent_auto_run_id="ar_9", parent_trace_id="leaf-1")
+    spawned = await _call("spawn_subagent", _spawn_args(), ctx)
+    sid = spawned["subagent_id"]
+
+    assert [r.subagent_id for r in registry.list_for_parent_trace("leaf-1")] == [sid]
+    # Later leaf rotations chain to the same key (what the auto runner does).
+    registry.note_parent_trace("leaf-1", "leaf-2")
+    assert [r.subagent_id for r in registry.list_for_parent_trace("leaf-2")] == [sid]
+    await registry.stop(sid)

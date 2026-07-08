@@ -190,7 +190,23 @@ class AutoChatRunner:
                     await self._on_trace(round_state.trace_id)
 
                 if round_state.trace_id:
-                    self._ctx().parent_trace_id = round_state.trace_id
+                    ctx = self._ctx()
+                    if (
+                        ctx.parent_trace_id
+                        and ctx.parent_trace_id != round_state.trace_id
+                    ):
+                        # Chain the rotating leaf to this conversation's stable
+                        # parent key so trace-id lookups (UI children list,
+                        # report injection) keep resolving. No-op until a spawn
+                        # registers the first alias.
+                        from app.desktop.studio_server.chat.subagents.registry import (
+                            subagent_registry,
+                        )
+
+                        subagent_registry.note_parent_trace(
+                            ctx.parent_trace_id, round_state.trace_id
+                        )
+                    ctx.parent_trace_id = round_state.trace_id
                     body = {
                         **body,
                         "trace_id": round_state.trace_id,

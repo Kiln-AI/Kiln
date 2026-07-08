@@ -152,6 +152,14 @@ class SubAgentRegistry:
             self._parent_alias[trace_id] = key
         return key
 
+    def register_parent_alias(self, trace_id: str, parent_key: str) -> None:
+        """Map a parent conversation's leaf trace id to its stable key.
+
+        Needed for auto-run parents: their children are keyed ``auto:<run_id>``,
+        but UI lookups (session-list filter, next-turn report injection) arrive
+        by leaf trace id — without the alias those lookups resolve to nothing."""
+        self._parent_alias[trace_id] = parent_key
+
     def note_parent_trace(self, old_leaf: str | None, new_leaf: str | None) -> None:
         """Chain an interactive parent's rotating leaf ids to its stable key."""
         if not old_leaf or not new_leaf or old_leaf == new_leaf:

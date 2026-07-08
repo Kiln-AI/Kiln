@@ -51,7 +51,13 @@ class OrchestrationContext:
 
     def parent_key(self) -> str | None:
         if self.parent_auto_run_id is not None:
-            return subagent_registry.parent_key_for_auto_run(self.parent_auto_run_id)
+            key = subagent_registry.parent_key_for_auto_run(self.parent_auto_run_id)
+            # Alias the conversation's leaf to the auto key so trace-id lookups
+            # (UI children list, next-turn report injection) resolve; the
+            # runners chain later leaf rotations via note_parent_trace.
+            if self.parent_trace_id is not None:
+                subagent_registry.register_parent_alias(self.parent_trace_id, key)
+            return key
         if self.parent_trace_id is not None:
             return subagent_registry.parent_key_for_trace(self.parent_trace_id)
         return None
