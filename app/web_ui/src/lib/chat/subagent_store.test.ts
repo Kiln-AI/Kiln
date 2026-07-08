@@ -331,6 +331,95 @@ describe("subagent_store", () => {
       expect(transcript[2].parts).toEqual([{ type: "text", text: "live tail" }])
     })
 
+    it("strips steer framing from replayed user-message echoes", async () => {
+      routeFetch({
+        "http://localhost:8757/api/chat/subagents?": () =>
+          jsonResponse([child("sa_1")]),
+        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
+          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
+        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
+          sseResponse([
+            {
+              type: "user-message",
+              content:
+                "<system-reminder>steer framing</system-reminder>\n\nfocus on evals",
+              id: "echo-1",
+            },
+          ]),
+      })
+      await store.syncForConversation("trace-leaf")
+
+      store.select("sa_1")
+      await flush()
+
+      const transcript = get(store.transcripts).get("sa_1") ?? []
+      expect(transcript[0].content).toBe("focus on evals")
+    })
+
+    it("mirrors activity/retry runtime state live, cleared when the stream ends", async () => {
+      // A pushable SSE body so runtime state can be asserted mid-stream.
+      const encoder = new TextEncoder()
+      type Chunk = { done: boolean; value?: Uint8Array }
+      const queue: Chunk[] = []
+      let resolveNext: ((chunk: Chunk) => void) | null = null
+      const deliver = (chunk: Chunk) => {
+        if (resolveNext) {
+          const r = resolveNext
+          resolveNext = null
+          r(chunk)
+        } else {
+          queue.push(chunk)
+        }
+      }
+      const push = (event: unknown) =>
+        deliver({
+          done: false,
+          value: encoder.encode(`data: ${JSON.stringify(event)}\n`),
+        })
+      const end = () => deliver({ done: true })
+      const reader = {
+        read: () =>
+          new Promise<Chunk>((resolve) => {
+            if (queue.length > 0) {
+              resolve(queue.shift() as Chunk)
+            } else {
+              resolveNext = resolve
+            }
+          }),
+      } as unknown as ReadableStreamDefaultReader<Uint8Array>
+
+      routeFetch({
+        "http://localhost:8757/api/chat/subagents?": () =>
+          jsonResponse([child("sa_1")]),
+        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
+          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
+        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
+          ({
+            ok: true,
+            status: 200,
+            body: { getReader: () => reader },
+          }) as unknown as Response,
+      })
+      await store.syncForConversation("trace-leaf")
+
+      store.select("sa_1")
+      await flush()
+
+      push({ type: "kiln-tool-execution-start", tool_count: 1 })
+      push({ type: "kiln-chat-retry", attempt: 1, max_attempts: 3 })
+      await flush()
+
+      const state = get(store.runtime).get("sa_1")
+      expect(state?.showActivityIndicator).toBe(true)
+      expect(state?.retry).toEqual({ attempt: 1, max: 3 })
+
+      end()
+      await flush()
+
+      // The live-only affordances die with the stream.
+      expect(get(store.runtime).has("sa_1")).toBe(false)
+    })
+
     it("appends user-message echoes and dedupes them by echo id", async () => {
       routeFetch({
         "http://localhost:8757/api/chat/subagents?": () =>

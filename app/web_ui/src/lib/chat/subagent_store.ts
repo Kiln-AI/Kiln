@@ -24,11 +24,23 @@ import {
 } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
+  stripInternalFraming,
   type ChatSessionSnapshot,
 } from "./session_messages"
 
 export type SubAgentItem = components["schemas"]["SubAgentItem"]
 export type SubAgentStatus = components["schemas"]["SubAgentStatus"]
+
+/**
+ * Per-child runtime affordances mirrored from the child's live stream so its
+ * transcript renders with the SAME fidelity as the main one (thinking dots via
+ * the activity indicator, "retrying N/M…" via the retry state). Runtime-only —
+ * cleared when the observation ends.
+ */
+export interface SubagentRuntimeState {
+  showActivityIndicator: boolean
+  retry: { attempt: number; max: number } | null
+}
 
 const SUBAGENTS_BASE_URL = `${base_url}/api/chat/subagents`
 const RECONNECT_DELAY_MS = 2000
@@ -69,6 +81,8 @@ export interface SubagentStore {
   selectedId: Readable<string | null>
   /** Per-child read-only transcripts, keyed by subagent_id. */
   transcripts: Readable<Map<string, ChatMessage[]>>
+  /** Per-child live rendering affordances (activity indicator, retry). */
+  runtime: Readable<Map<string, SubagentRuntimeState>>
   connection: Readable<SubagentConnection>
   /** Open the registry-level status firehose (assistant page active). */
   connect(): void
@@ -111,6 +125,7 @@ export function createSubagentStore(): SubagentStore {
   const children = writable<SubAgentItem[]>([])
   const selectedId = writable<string | null>(null)
   const transcripts = writable<Map<string, ChatMessage[]>>(new Map())
+  const runtime = writable<Map<string, SubagentRuntimeState>>(new Map())
   const connection = writable<SubagentConnection>("idle")
 
   // The trace id the current children list was fetched for (undefined = never
@@ -160,6 +175,30 @@ export function createSubagentStore(): SubagentStore {
     appendMessage(id, { id: chatGenerateId(), role: "error", content: message })
   }
 
+  function updateRuntime(
+    id: string,
+    patch: Partial<SubagentRuntimeState>,
+  ): void {
+    runtime.update((map) => {
+      const next = new Map(map)
+      const prev = next.get(id) ?? {
+        showActivityIndicator: false,
+        retry: null,
+      }
+      next.set(id, { ...prev, ...patch })
+      return next
+    })
+  }
+
+  function clearRuntime(id: string): void {
+    runtime.update((map) => {
+      if (!map.has(id)) return map
+      const next = new Map(map)
+      next.delete(id)
+      return next
+    })
+  }
+
   // --- Children list ----------------------------------------------------------
 
   function updateChildFromStatusEvent(event: SubagentStatusEvent): void {
@@ -191,6 +230,17 @@ export function createSubagentStore(): SubagentStore {
       }
     }
     transcripts.update((map) => {
+      let changed = false
+      const next = new Map(map)
+      for (const id of next.keys()) {
+        if (!ids.has(id)) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : map
+    })
+    runtime.update((map) => {
       let changed = false
       const next = new Map(map)
       for (const id of next.keys()) {
@@ -357,6 +407,13 @@ export function createSubagentStore(): SubagentStore {
         updateLastAssistant(id, update)
       },
       onInlineError: (message) => appendErrorMessage(id, message),
+      // Mirror the live rendering affordances the main transcript gets from the
+      // session store, so the child transcript shows the same thinking-dots and
+      // "retrying N/M…" states.
+      onShowActivityIndicator: (show) =>
+        updateRuntime(id, { showActivityIndicator: show }),
+      onRetry: (attempt, max) => updateRuntime(id, { retry: { attempt, max } }),
+      onRetryClear: () => updateRuntime(id, { retry: null }),
     })
   }
 
@@ -381,10 +438,13 @@ export function createSubagentStore(): SubagentStore {
       if (echoId && transcriptFor(id).some((m) => m.echoId === echoId)) {
         return true
       }
+      // A buffer-replayed echo may carry the steer framing (<system-reminder>)
+      // the runner adds before sending upstream; strip it for display the same
+      // way hydration does, so the bubble shows what the user actually typed.
       appendMessage(id, {
         id: chatGenerateId(),
         role: "user",
-        content: event.content ?? "",
+        content: stripInternalFraming(event.content ?? ""),
         echoId,
       })
       // The next assistant content belongs to a fresh turn; reset the processor
@@ -449,9 +509,11 @@ export function createSubagentStore(): SubagentStore {
       /* aborted or dropped — the transcript keeps what it has */
     } finally {
       // Allow a later select to re-observe (re-hydrate + re-attach) after the
-      // stream ended — terminal run, network drop, or abort.
+      // stream ended — terminal run, network drop, or abort. The live-only
+      // affordances (activity indicator, retry) die with the stream.
       if (observations.get(subagentId) === obs) {
         observations.delete(subagentId)
+        clearRuntime(subagentId)
       }
     }
   }
@@ -530,12 +592,14 @@ export function createSubagentStore(): SubagentStore {
     children.set([])
     selectedId.set(null)
     transcripts.set(new Map())
+    runtime.set(new Map())
   }
 
   return {
     children: { subscribe: children.subscribe },
     selectedId: { subscribe: selectedId.subscribe },
     transcripts: { subscribe: transcripts.subscribe },
+    runtime: { subscribe: runtime.subscribe },
     connection: { subscribe: connection.subscribe },
     connect,
     disconnect,
