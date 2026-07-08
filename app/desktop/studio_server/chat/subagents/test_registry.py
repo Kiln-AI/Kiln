@@ -83,8 +83,9 @@ async def test_wait_returns_on_terminal_and_timeout(hang_runner):
     )
     assert {r.subagent_id for r in records} == {done.subagent_id, slow.subagent_id}
     assert timed_out == [slow.subagent_id]
-    # Terminal record's report counts as delivered via the wait result.
-    assert registry.get(done.subagent_id).record.report_delivered is True
+    # Wait never consumes reports — delivery stays on the injection channel so
+    # the report is persisted in the parent trace and rendered as a panel.
+    assert registry.get(done.subagent_id).record.report_delivered is False
     await registry.stop(slow.subagent_id)
 
 

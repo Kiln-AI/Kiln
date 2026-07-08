@@ -182,7 +182,17 @@ def _owned_record(subagent_id: str, parent_key: str) -> SubAgentRecord | None:
     return run.record
 
 
+# Appended to wait/status results so the model knows where reports arrive.
+_REPORTS_AS_MESSAGES_NOTE = (
+    "Final reports are delivered into this conversation as <subagent_report> "
+    "user messages when each sub-agent finishes."
+)
+
+
 def _status(args: dict[str, Any], parent_key: str) -> str:
+    # ``include_report`` returns the content inline as a convenience, but never
+    # consumes the report: delivery stays on the injection channel so the
+    # report is always persisted in the parent trace and rendered as a panel.
     include_report = bool(args.get("include_report"))
     subagent_id = args.get("subagent_id")
     if subagent_id:
@@ -190,17 +200,17 @@ def _status(args: dict[str, Any], parent_key: str) -> str:
         if record is None:
             return _error(f"Unknown sub-agent id: {subagent_id}")
         payload = _record_payload(record, include_report)
-        if include_report and record.status.is_terminal:
-            subagent_registry.mark_report_delivered(record.subagent_id)
-        return json.dumps({"subagents": [payload]}, ensure_ascii=False)
+        return json.dumps(
+            {"subagents": [payload], "note": _REPORTS_AS_MESSAGES_NOTE},
+            ensure_ascii=False,
+        )
 
     records = subagent_registry.list_for_parent(parent_key)
     payloads = [_record_payload(r, include_report) for r in records]
-    if include_report:
-        for r in records:
-            if r.status.is_terminal:
-                subagent_registry.mark_report_delivered(r.subagent_id)
-    return json.dumps({"subagents": payloads}, ensure_ascii=False)
+    return json.dumps(
+        {"subagents": payloads, "note": _REPORTS_AS_MESSAGES_NOTE},
+        ensure_ascii=False,
+    )
 
 
 async def _wait(args: dict[str, Any], parent_key: str) -> str:
@@ -224,9 +234,13 @@ async def _wait(args: dict[str, Any], parent_key: str) -> str:
     records, timed_out = await subagent_registry.wait(ids, timeout_seconds)
     return json.dumps(
         {
-            # Terminal records include their report inline — this IS delivery.
-            "subagents": [_record_payload(r, include_report=True) for r in records],
+            # Statuses only: reports arrive as <subagent_report> user messages
+            # (injected right after this batch), so they are persisted in the
+            # trace and rendered as report panels — not buried in this tool
+            # result.
+            "subagents": [_record_payload(r, include_report=False) for r in records],
             "timed_out": timed_out,
+            "note": _REPORTS_AS_MESSAGES_NOTE,
         },
         ensure_ascii=False,
     )

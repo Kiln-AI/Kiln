@@ -354,8 +354,10 @@ class SubAgentRegistry:
 
         Returns ``(records, timed_out_ids)`` where ``records`` covers every known
         id (terminal or not) and ``timed_out_ids`` lists those still running.
-        Reports on returned terminal records are considered delivered (the
-        caller feeds them straight to the model)."""
+        Deliberately does NOT consume reports: they flow exclusively through the
+        injection channel (``<subagent_report>`` user messages) so the report is
+        always persisted in the parent's trace and rendered as a report panel —
+        a wait result is a tool output buried in a step group."""
 
         known = [sid for sid in subagent_ids if sid in self._runs]
 
@@ -384,9 +386,7 @@ class SubAgentRegistry:
         for sid in known:
             run = self._runs[sid]
             records.append(run.record)
-            if run.record.status.is_terminal:
-                self._mark_report_delivered(run)
-            else:
+            if not run.record.status.is_terminal:
                 timed_out.append(sid)
         return records, timed_out
 

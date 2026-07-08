@@ -125,8 +125,13 @@ async def test_wait_returns_reports_and_timeouts(registry):
     )
     by_id = {s["subagent_id"]: s for s in result["subagents"]}
     assert by_id[a]["state"] == "stopped"
-    assert "report" in by_id[a]
+    # Statuses only — reports flow through the injection channel so they are
+    # persisted in the parent trace and rendered as report panels.
+    assert "report" not in by_id[a]
+    assert "note" in result
     assert result["timed_out"] == [b]
+    # The terminal child's report stays queued for injection.
+    assert registry.has_pending_reports(ctx.parent_key())
 
     unknown = await _call("wait_for_subagents", {"subagent_ids": ["sa_nope"]}, ctx)
     assert unknown["status"] == "error"

@@ -81,8 +81,14 @@ def _side_note_message(msg: InboundMessage) -> dict[str, Any]:
     ``_SIDE_NOTE_REMINDER``) so the model answers inline and keeps working."""
     base = msg.as_chat_message()
     # `or ""` (not a default arg) so an explicit None content can't become "None".
-    content = base.get("content") or ""
-    return {**base, "content": _wrap_side_note(str(content))}
+    content = str(base.get("content") or "")
+    # Sub-agent completion reports ride the same inbound channel but are NOT
+    # user asides: the side-note frame would misdescribe them to the model AND
+    # break the client's report-panel detection (which keys on the persisted
+    # message starting with the report frame). Deliver them unwrapped.
+    if content.startswith("<subagent_report"):
+        return {**base, "content": content}
+    return {**base, "content": _wrap_side_note(content)}
 
 
 # Callback the runner invokes to push one SSE byte payload to the run's buffer +
