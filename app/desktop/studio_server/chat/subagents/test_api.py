@@ -80,9 +80,7 @@ async def test_list_and_get(registry, hang_runner, client):
     assert r.status_code == 200
     assert [item["subagent_id"] for item in r.json()] == [record.subagent_id]
 
-    r = await client.get(
-        "/api/chat/subagents", params={"parent_trace_id": "leaf-1"}
-    )
+    r = await client.get("/api/chat/subagents", params={"parent_trace_id": "leaf-1"})
     assert [item["subagent_id"] for item in r.json()] == [record.subagent_id]
 
     r = await client.get(

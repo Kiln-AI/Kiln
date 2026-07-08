@@ -667,9 +667,7 @@ class ChatStreamSession:
                         continue
 
                     needs_approval = [
-                        e
-                        for e in client_events
-                        if self._effective_requires_approval(e)
+                        e for e in client_events if self._effective_requires_approval(e)
                     ]
                     if needs_approval:
                         yield _format_tool_calls_pending_sse(client_events)
@@ -753,9 +751,7 @@ class ChatStreamSession:
             orchestration_ctx=self._get_orchestration_ctx(),
         )
 
-    def _append_pending_subagent_reports(
-        self, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _append_pending_subagent_reports(self, body: dict[str, Any]) -> dict[str, Any]:
         """Drain any completed-but-undelivered sub-agent reports for this
         conversation and append them as user messages to the continuation."""
         ctx = self._get_orchestration_ctx()

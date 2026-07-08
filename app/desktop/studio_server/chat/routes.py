@@ -315,9 +315,7 @@ def connect_chat_api(app: FastAPI) -> None:
                             "parent_root_id": extra.get("parent_root_id"),
                             "is_subagent": bool(extra.get("is_subagent")),
                             "subagent_id": (
-                                subagent_record.subagent_id
-                                if subagent_record
-                                else None
+                                subagent_record.subagent_id if subagent_record else None
                             ),
                             "subagent_status": (
                                 subagent_record.status.value

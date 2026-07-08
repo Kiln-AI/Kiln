@@ -5,7 +5,8 @@
   import { hydrateSessionFromSnapshot } from "$lib/chat/session_messages"
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import {
-    splitSessionRows,
+    nestSessionRows,
+    splitSessionNodes,
     type SessionListItem,
   } from "$lib/chat/session_grouping"
   import { auto_run_store } from "$lib/chat/auto_run_store"
@@ -26,8 +27,11 @@
   let sessionDetailLoading: string | null = null
   let deletingSessionId: string | null = null
 
-  $: ({ active: activeRows, recent: recentRows } =
-    splitSessionRows(sessionRows))
+  // Sub-agent sessions nest under their parent conversation's row; a child
+  // whose parent isn't visible renders as a normal top-level row.
+  $: ({ active: activeNodes, recent: recentNodes } = splitSessionNodes(
+    nestSessionRows(sessionRows),
+  ))
 
   async function loadSessionList() {
     sessionsLoading = true
@@ -176,25 +180,37 @@
     {:else}
       {@const busy =
         sessionDetailLoading !== null || deletingSessionId !== null}
-      {#if activeRows.length > 0}
+      {#if activeNodes.length > 0}
         <div
           class="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-wide text-primary/90"
         >
           Working now
         </div>
         <div class="flex flex-col gap-0.5">
-          {#each activeRows as row (row.id)}
+          {#each activeNodes as node (node.row.id)}
             <ChatHistoryRow
-              {row}
-              loading={sessionDetailLoading === row.id}
-              deleting={deletingSessionId === row.id}
+              row={node.row}
+              loading={sessionDetailLoading === node.row.id}
+              deleting={deletingSessionId === node.row.id}
               {busy}
               onSelect={selectSession}
               onDelete={deleteSession}
             />
+            {#each node.children as child (child.id)}
+              <div class="pl-5">
+                <ChatHistoryRow
+                  row={child}
+                  loading={sessionDetailLoading === child.id}
+                  deleting={deletingSessionId === child.id}
+                  {busy}
+                  onSelect={selectSession}
+                  onDelete={deleteSession}
+                />
+              </div>
+            {/each}
           {/each}
         </div>
-        {#if recentRows.length > 0}
+        {#if recentNodes.length > 0}
           <div class="divider my-1.5"></div>
           <div
             class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-base-content/40"
@@ -204,15 +220,27 @@
         {/if}
       {/if}
       <div class="flex flex-col gap-0.5">
-        {#each recentRows as row (row.id)}
+        {#each recentNodes as node (node.row.id)}
           <ChatHistoryRow
-            {row}
-            loading={sessionDetailLoading === row.id}
-            deleting={deletingSessionId === row.id}
+            row={node.row}
+            loading={sessionDetailLoading === node.row.id}
+            deleting={deletingSessionId === node.row.id}
             {busy}
             onSelect={selectSession}
             onDelete={deleteSession}
           />
+          {#each node.children as child (child.id)}
+            <div class="pl-5">
+              <ChatHistoryRow
+                row={child}
+                loading={sessionDetailLoading === child.id}
+                deleting={deletingSessionId === child.id}
+                {busy}
+                onSelect={selectSession}
+                onDelete={deleteSession}
+              />
+            </div>
+          {/each}
         {/each}
       </div>
     {/if}

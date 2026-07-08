@@ -22,7 +22,10 @@ vi.mock("$lib/api_client", () => ({
 }))
 
 const mockHydrate = vi.fn()
-vi.mock("./session_messages", () => ({
+vi.mock("./session_messages", async (importOriginal) => ({
+  // Keep the real userChatMessageFromContent (echo → report chip detection);
+  // only hydration is stubbed.
+  ...(await importOriginal<typeof import("./session_messages")>()),
   hydrateSessionFromSnapshot: (...args: unknown[]) => mockHydrate(...args),
 }))
 

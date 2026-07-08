@@ -18,6 +18,18 @@ export type ChatMessagePart =
       output?: unknown
     }
 
+/**
+ * Parsed attributes of a ``<subagent_report …>`` frame — the user-role message
+ * the server injects into a parent conversation when a sub-agent finishes. The
+ * transcript renders these as a collapsed report chip instead of a user bubble.
+ */
+export interface SubagentReportInfo {
+  id: string
+  agentType: string
+  status: string
+  title: string
+}
+
 export interface ChatMessage {
   id: string
   role: "user" | "assistant" | "system" | "error"
@@ -25,6 +37,13 @@ export interface ChatMessage {
   parts?: ChatMessagePart[]
   /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
   traceId?: string
+  /**
+   * Set when this user-role message is a sub-agent completion report frame
+   * (``<subagent_report …>``). ``content`` then holds the report BODY (the
+   * frame is stripped on hydration / echo detection, like other internal
+   * framings) and the transcript renders a report chip instead of a bubble.
+   */
+  subagentReport?: SubagentReportInfo
   /**
    * Stable id from the ``user-message`` echo for an auto-mode injected message.
    * Lets the client render the echo idempotently — a buffer replay on re-attach

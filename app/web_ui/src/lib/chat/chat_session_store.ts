@@ -18,7 +18,10 @@ import {
 } from "./auto_run_store"
 import type { AutoModeConsentRequiredPayload } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
-import { hydrateSessionFromSnapshot } from "./session_messages"
+import {
+  hydrateSessionFromSnapshot,
+  userChatMessageFromContent,
+} from "./session_messages"
 import { base_url, client } from "$lib/api_client"
 import {
   getCurrentAppState,
@@ -311,9 +314,12 @@ export function createChatSessionStore(
       return
     }
     removeErrors()
+    // A sub-agent report injected mid-run is echoed as a user message wrapped in
+    // a <subagent_report> frame; detect it here (same rule as hydration) so the
+    // live transcript renders the report chip instead of a raw framed bubble.
     updateMessages((msgs) => [
       ...msgs,
-      { id: chatGenerateId(), role: "user", content, echoId },
+      userChatMessageFromContent(content, echoId),
     ])
     beginAssistantTurn()
   }

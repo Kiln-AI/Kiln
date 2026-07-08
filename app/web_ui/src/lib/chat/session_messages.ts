@@ -5,6 +5,7 @@ import {
   type ChatMessage,
   type ChatMessagePart,
   type ContextUsage,
+  type SubagentReportInfo,
 } from "./streaming_chat"
 
 type TraceMessage = components["schemas"]["TraceMessage"]
@@ -41,6 +42,72 @@ export function stripAppUiContext(text: string): string {
 // hydrated transcript shows what the user actually typed.
 export function stripInternalFraming(text: string): string {
   return text.replace(APP_UI_CONTEXT_RE, "").replace(SYSTEM_REMINDER_RE, "")
+}
+
+// A sub-agent completion report the server injected into the parent
+// conversation as a user-role message (format_subagent_report server-side).
+// The whole message is the frame: attributes then the report body. The open
+// tag is matched attribute-by-attribute (not ``[^>]*``) because attribute
+// values may contain a literal ``>`` — the server escapes ``"`` but not ``>``.
+const SUBAGENT_REPORT_RE =
+  /^\s*<subagent_report((?:\s+\w+="[^"]*")*)\s*>\n?([\s\S]*?)\n?<\/subagent_report>\s*$/
+
+// Reverse of the server's _escape_attr (&amp; last so escaped entities in the
+// original text don't double-unescape).
+function unescapeReportAttr(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&")
+}
+
+/**
+ * Parse a ``<subagent_report …>`` frame. Returns the parsed attributes plus the
+ * inner report body, or ``null`` when the text is not a report frame (a normal
+ * user message). The transcript renders matches as a collapsed report chip.
+ */
+export function parseSubagentReport(
+  text: string,
+): { info: SubagentReportInfo; body: string } | null {
+  const match = SUBAGENT_REPORT_RE.exec(text)
+  if (!match) return null
+  const attrs: Record<string, string> = {}
+  const attrRe = /(\w+)="([^"]*)"/g
+  let attrMatch: RegExpExecArray | null
+  while ((attrMatch = attrRe.exec(match[1])) !== null) {
+    attrs[attrMatch[1]] = unescapeReportAttr(attrMatch[2])
+  }
+  return {
+    info: {
+      id: attrs.id ?? "",
+      agentType: attrs.agent_type ?? "",
+      status: attrs.status ?? "",
+      title: attrs.title ?? "",
+    },
+    body: match[2],
+  }
+}
+
+/**
+ * Build the UI message for a user-role trace entry: a report chip message when
+ * the content is a sub-agent report frame, otherwise a plain user message.
+ * Shared by hydration (below) and the live ``user-message`` echo path.
+ */
+export function userChatMessageFromContent(
+  content: string,
+  echoId?: string,
+): ChatMessage {
+  const report = parseSubagentReport(content)
+  if (report) {
+    return {
+      id: chatGenerateId(),
+      role: "user",
+      content: report.body,
+      subagentReport: report.info,
+      echoId,
+    }
+  }
+  return { id: chatGenerateId(), role: "user", content, echoId }
 }
 
 function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
@@ -88,11 +155,11 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   for (const msg of trace) {
     switch (msg.role) {
       case "user": {
-        messages.push({
-          id: chatGenerateId(),
-          role: "user",
-          content: stripInternalFraming(extractTextContent(msg.content)),
-        })
+        messages.push(
+          userChatMessageFromContent(
+            stripInternalFraming(extractTextContent(msg.content)),
+          ),
+        )
         break
       }
       case "assistant": {

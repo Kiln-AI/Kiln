@@ -106,6 +106,13 @@
             >, until it finishes, needs your input, or you stop it.
           </span>
         </li>
+        <li class="flex items-start gap-2">
+          <span class="text-base-content/40 shrink-0 mt-0.5">•</span>
+          <span>
+            It may <span class="font-semibold">spawn helper sub-agents</span> that
+            also work autonomously in the background.
+          </span>
+        </li>
       </ul>
     </div>
 

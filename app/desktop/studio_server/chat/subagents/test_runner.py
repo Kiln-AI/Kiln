@@ -6,7 +6,6 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import pytest
 
 from app.desktop.studio_server.chat.auto.models import InboundMessage
 from app.desktop.studio_server.chat.auto.test_fakes import (
@@ -100,9 +99,7 @@ async def test_agent_block_dropped_after_first_trace():
                     finish_tool_calls(),
                 ]
             ),
-            FakeUpstreamResponse(
-                [text_delta("final report"), trace("tr-2"), finish()]
-            ),
+            FakeUpstreamResponse([text_delta("final report"), trace("tr-2"), finish()]),
         ]
     )
     runner, _, _ = _runner(client)

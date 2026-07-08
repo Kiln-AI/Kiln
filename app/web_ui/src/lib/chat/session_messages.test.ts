@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest"
 import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
+  parseSubagentReport,
   stripAppUiContext,
   stripInternalFraming,
+  userChatMessageFromContent,
   type ChatSessionSnapshot,
 } from "./session_messages"
 
@@ -273,6 +275,111 @@ describe("hydrateSessionFromSnapshot strips injected-message framing", () => {
     const { messages } = hydrateSessionFromSnapshot(snapshot)
     expect(messages[0].role).toBe("user")
     expect(messages[0].content).toBe("my name is bobby whats yours?")
+  })
+})
+
+describe("parseSubagentReport", () => {
+  const frame = (attrs: string, body: string) =>
+    `<subagent_report ${attrs}>\n${body}\n</subagent_report>`
+
+  it("parses a well-formed report frame", () => {
+    const parsed = parseSubagentReport(
+      frame(
+        'id="sa_abc123" agent_type="general" status="completed" title="Eval sweep"',
+        "## Findings\n\nAll good.",
+      ),
+    )
+    expect(parsed).not.toBeNull()
+    expect(parsed?.info).toEqual({
+      id: "sa_abc123",
+      agentType: "general",
+      status: "completed",
+      title: "Eval sweep",
+    })
+    expect(parsed?.body).toBe("## Findings\n\nAll good.")
+  })
+
+  it("unescapes quotes (and other escaped entities) in the title", () => {
+    // The server escapes the name with & → &amp;, " → &quot;, < → &lt;.
+    const parsed = parseSubagentReport(
+      frame(
+        'id="sa_x" agent_type="general" status="failed" title="Check &quot;prod&quot; &amp; &lt;staging>"',
+        "body",
+      ),
+    )
+    expect(parsed?.info.title).toBe('Check "prod" & <staging>')
+    expect(parsed?.info.status).toBe("failed")
+  })
+
+  it("returns null for a non-report user message", () => {
+    expect(parseSubagentReport("just a normal message")).toBeNull()
+    expect(
+      parseSubagentReport("mentions <subagent_report but is not a frame"),
+    ).toBeNull()
+    // A frame with trailing content after the close tag is not a pure report
+    // message and stays a normal user bubble.
+    expect(
+      parseSubagentReport(
+        `${frame('id="sa_x" agent_type="g" status="completed" title="t"', "body")}\nand my own words`,
+      ),
+    ).toBeNull()
+  })
+
+  it("tolerates surrounding whitespace", () => {
+    const parsed = parseSubagentReport(
+      `\n  ${frame('id="sa_x" agent_type="g" status="completed" title="t"', "body")}\n`,
+    )
+    expect(parsed?.body).toBe("body")
+  })
+})
+
+describe("userChatMessageFromContent", () => {
+  it("marks report frames and sets content to the body", () => {
+    const msg = userChatMessageFromContent(
+      '<subagent_report id="sa_1" agent_type="general" status="completed" title="T">\nreport body\n</subagent_report>',
+      "echo-1",
+    )
+    expect(msg.role).toBe("user")
+    expect(msg.content).toBe("report body")
+    expect(msg.subagentReport).toEqual({
+      id: "sa_1",
+      agentType: "general",
+      status: "completed",
+      title: "T",
+    })
+    expect(msg.echoId).toBe("echo-1")
+  })
+
+  it("leaves plain user content untouched", () => {
+    const msg = userChatMessageFromContent("hello there")
+    expect(msg.content).toBe("hello there")
+    expect(msg.subagentReport).toBeUndefined()
+  })
+})
+
+describe("hydrateSessionFromSnapshot sub-agent reports", () => {
+  it("marks a report-framed user message and strips the frame", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("t-report", [
+        { role: "user", content: "run the sweep" },
+        { role: "assistant", content: "Spawning…" },
+        {
+          role: "user",
+          content:
+            '<subagent_report id="sa_9" agent_type="general" status="timeout" title="Sweep">\npartial results\n</subagent_report>',
+        },
+      ]),
+    )
+    expect(messages).toHaveLength(3)
+    expect(messages[2].role).toBe("user")
+    expect(messages[2].content).toBe("partial results")
+    expect(messages[2].subagentReport).toMatchObject({
+      id: "sa_9",
+      status: "timeout",
+      title: "Sweep",
+    })
+    // The normal user message is untouched.
+    expect(messages[0].subagentReport).toBeUndefined()
   })
 })
 

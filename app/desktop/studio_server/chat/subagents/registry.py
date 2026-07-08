@@ -509,9 +509,7 @@ class SubAgentRegistry:
                 return
             # Auto parent gone (stopped/GC'd): fall through to the queue so a
             # resumed interactive turn on the same trace can still pick it up.
-        self._pending_reports.setdefault(parent_key, []).append(
-            run.record.subagent_id
-        )
+        self._pending_reports.setdefault(parent_key, []).append(run.record.subagent_id)
 
     def _publish_status(self, run: SubAgentRun) -> None:
         payload = format_subagent_status(run.record)

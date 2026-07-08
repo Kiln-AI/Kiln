@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from . import orchestration as orchestration_module
-from .models import SubAgentSeed, SubAgentStatus
+from .models import SubAgentStatus
 from .orchestration import (
     ORCHESTRATION_TOOL_NAMES,
     OrchestrationContext,
@@ -59,9 +59,7 @@ async def _call(name: str, args: dict, ctx: OrchestrationContext) -> dict:
 
 
 async def test_depth_guard_rejects(registry):
-    result = await _call(
-        "spawn_subagent", _spawn_args(), OrchestrationContext(depth=1)
-    )
+    result = await _call("spawn_subagent", _spawn_args(), OrchestrationContext(depth=1))
     assert result["status"] == "error"
     assert "cannot spawn" in result["message"]
 
@@ -130,9 +128,7 @@ async def test_wait_returns_reports_and_timeouts(registry):
     assert "report" in by_id[a]
     assert result["timed_out"] == [b]
 
-    unknown = await _call(
-        "wait_for_subagents", {"subagent_ids": ["sa_nope"]}, ctx
-    )
+    unknown = await _call("wait_for_subagents", {"subagent_ids": ["sa_nope"]}, ctx)
     assert unknown["status"] == "error"
 
 

@@ -18,12 +18,17 @@
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
   import { auto_run_store } from "$lib/chat/auto_run_store"
+  import { subagent_store } from "$lib/chat/subagent_store"
   import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
   import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
   import AutoModeStopDialog from "./auto_mode_stop_dialog.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
+  import SubagentConsentBox from "./subagent_consent_box.svelte"
+  import SubagentReportChip from "./subagent_report_chip.svelte"
+  import SubagentTabs from "./subagent_tabs.svelte"
+  import SubagentTranscript from "./subagent_transcript.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
@@ -53,6 +58,21 @@
   // surfaces it via auto_run_store; interactive chat via the session store. Only
   // one can be active at a time, so prefer whichever is set.
   const autoRetry = auto_run_store.retry
+
+  // Sub-agents (background child runs) of the current conversation. The tab
+  // strip selects between the main transcript and a child's read-only one; the
+  // composer routes to a running child when its tab is selected.
+  const subagentChildren = subagent_store.children
+  const subagentSelectedId = subagent_store.selectedId
+  const subagentTranscripts = subagent_store.transcripts
+  $: selectedChild = $subagentSelectedId
+    ? $subagentChildren.find((c) => c.subagent_id === $subagentSelectedId) ??
+      null
+    : null
+  $: selectedChildRunning = selectedChild?.status === "running"
+  $: selectedChildMessages = selectedChild
+    ? $subagentTranscripts.get(selectedChild.subagent_id) ?? []
+    : []
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
   // branch), and is ALWAYS clickable (Revision R2) — including on a brand-new
@@ -160,6 +180,13 @@
   $: hasMessages = messages.length > 0
   $: status = $store.status
 
+  // Keep the sub-agent list in sync with the conversation the transcript shows.
+  // The leaf trace id advances every turn; syncForConversation dedupes by value,
+  // so this is cheap to run reactively (session load / resync / new chat all
+  // funnel through a messages change).
+  $: currentLeafTraceId = traceIdForNextChatRequest(messages) ?? null
+  $: void subagent_store.syncForConversation(currentLeafTraceId)
+
   let expandedStepGroups: Record<string, boolean> = {}
   const MAX_VISIBLE_STEPS = 5
 
@@ -184,9 +211,16 @@
   $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
   // The composer stays usable while a turn is in flight so a message typed mid-
   // turn is queued (held above the input, auto-sent when the turn yields) rather
-  // than blocked. Only a too-old client disables it entirely — sending would
-  // just 426 again and the message would go nowhere.
-  $: inputDisabled = versionRequired
+  // than blocked. Disabled only for a too-old client (sending would just 426
+  // again) or when a finished sub-agent's tab is selected (it can't receive
+  // messages; return to Main to continue).
+  $: inputDisabled =
+    versionRequired || (selectedChild !== null && !selectedChildRunning)
+  $: composerPlaceholder = selectedChild
+    ? selectedChildRunning
+      ? "Message this sub-agent…"
+      : "This sub-agent has finished — select Main to continue the conversation."
+    : "Type a message…"
 
   let prevIsLoading = false
   $: {
@@ -355,6 +389,10 @@
     // Surface the upgrade banners up front, before any message is sent.
     void store.checkVersionPolicy()
 
+    // Watch the sub-agent status firehose while the assistant page is active so
+    // tabs reflect spawns/finishes even with no chat stream in flight.
+    subagent_store.connect()
+
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
@@ -400,6 +438,7 @@
   })
 
   onDestroy(() => {
+    subagent_store.disconnect()
     messagesContainer?.removeEventListener("scroll", handleScroll)
     messagesContainer?.removeEventListener("wheel", handleWheel)
     messagesContainer?.removeEventListener("touchstart", handleTouchStart)
@@ -471,6 +510,9 @@
       e.detail.continuationTraceId,
       e.detail.contextUsage,
     )
+    // Back to the main transcript; the loaded conversation's children sync
+    // reactively from its trace id.
+    subagent_store.select(null)
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -483,6 +525,8 @@
       had_messages: get(store).messages.length > 0,
     })
     store.reset()
+    // A new conversation has no children yet; drop tabs/observers/selection.
+    subagent_store.reset()
   }
 
   export function openHistory() {
@@ -494,6 +538,20 @@
     const text = input.trim()
     // No isLoading guard: the store queues when a turn is in flight.
     if (!text) return
+    // A sub-agent tab is selected: route the message to that child instead of
+    // the main conversation. Terminal children can't receive messages (the
+    // composer is disabled with a hint to return to Main).
+    if (selectedChild) {
+      if (!selectedChildRunning) return
+      const result = await subagent_store.sendMessage(
+        selectedChild.subagent_id,
+        text,
+      )
+      if (!result.ok) return
+      input = ""
+      setTimeout(() => adjustTextareaHeight(), 0)
+      return
+    }
     const sent = await store.sendMessage(text)
     if (!sent) return
     input = ""
@@ -514,8 +572,18 @@
       role="log"
       aria-live="polite"
     >
+      {#if selectedChild}
+        <!-- A sub-agent tab is selected: show its read-only transcript instead
+           of the main one (which stays mounted, just hidden, so streaming
+           state / observers are untouched while peeking at a child). -->
+        <SubagentTranscript
+          child={selectedChild}
+          messages={selectedChildMessages}
+        />
+      {/if}
       <div
         class="flex flex-col gap-4 w-full min-h-full md:max-w-3xl mx-auto px-1"
+        class:hidden={selectedChild !== null}
       >
         {#if messages.length === 0 && !isLoading}
           <div class="flex-1 shrink-0"></div>
@@ -530,7 +598,9 @@
               in:fly={{ y: 8, duration: 200 }}
               out:fly={{ y: -4, duration: 150 }}
               class={message.role === "user"
-                ? "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
+                ? message.subagentReport
+                  ? ""
+                  : "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
                 : message.role === "error"
                   ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
                   : "flex flex-col gap-3"}
@@ -662,20 +732,43 @@
                                   hasOutput || !isActiveMessage}
                                 {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
                                   <div class="mt-2 text-sm">
-                                    <ToolApprovalBox
-                                      description={approvalItem?.approvalDescription ??
-                                        ""}
-                                      method={getToolInputString(
-                                        approvalItem?.input,
-                                        "method",
-                                      )}
-                                      url={getToolInputString(
-                                        approvalItem?.input,
-                                        "url_path",
-                                      )}
-                                      onRun={() => applyToolApprovalRun(tcId)}
-                                      onSkip={() => applyToolApprovalSkip(tcId)}
-                                    />
+                                    {#if approvalItem?.toolName === "spawn_subagent"}
+                                      <!-- First spawn in a conversation: richer
+                                         consent copy (later spawns auto-run). -->
+                                      <SubagentConsentBox
+                                        name={getToolInputString(
+                                          approvalItem?.input,
+                                          "name",
+                                        )}
+                                        agentType={getToolInputString(
+                                          approvalItem?.input,
+                                          "agent_type",
+                                        )}
+                                        prompt={getToolInputString(
+                                          approvalItem?.input,
+                                          "prompt",
+                                        )}
+                                        onRun={() => applyToolApprovalRun(tcId)}
+                                        onSkip={() =>
+                                          applyToolApprovalSkip(tcId)}
+                                      />
+                                    {:else}
+                                      <ToolApprovalBox
+                                        description={approvalItem?.approvalDescription ??
+                                          ""}
+                                        method={getToolInputString(
+                                          approvalItem?.input,
+                                          "method",
+                                        )}
+                                        url={getToolInputString(
+                                          approvalItem?.input,
+                                          "url_path",
+                                        )}
+                                        onRun={() => applyToolApprovalRun(tcId)}
+                                        onSkip={() =>
+                                          applyToolApprovalSkip(tcId)}
+                                      />
+                                    {/if}
                                   </div>
                                 {:else}
                                   <ToolStatusLine
@@ -789,6 +882,13 @@
                         />
                       </div>
                     </div>
+                  {:else if message.subagentReport}
+                    <!-- Sub-agent completion report injected as a user-role
+                       message: render a collapsed chip instead of a bubble. -->
+                    <SubagentReportChip
+                      report={message.subagentReport}
+                      body={message.content ?? ""}
+                    />
                   {:else if message.content}
                     <div class="whitespace-pre-wrap">{message.content}</div>
                   {/if}
@@ -930,6 +1030,9 @@
       </div>
     {/if}
 
+    <!-- Sub-agent tab strip (renders nothing when there are no children). -->
+    <SubagentTabs />
+
     <form
       class="flex-none relative w-full md:max-w-3xl md:mx-auto px-1 pt-2"
       on:submit|preventDefault={handleSubmit}
@@ -938,14 +1041,16 @@
         bind:this={textareaRef}
         class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12 text-sm"
         aria-label="Chat message"
-        placeholder="Type a message…"
+        placeholder={composerPlaceholder}
         bind:value={input}
         disabled={inputDisabled}
         rows={3}
         on:input={() => adjustTextareaHeight()}
         on:keydown={handleTextareaKeydown}
       />
-      {#if isLoading && !input.trim()}
+      {#if isLoading && !input.trim() && !selectedChild}
+        <!-- Main-agent stop; hidden while a sub-agent tab is selected (the
+           composer then addresses the child, not the main stream). -->
         <button
           type="button"
           class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-neutral"

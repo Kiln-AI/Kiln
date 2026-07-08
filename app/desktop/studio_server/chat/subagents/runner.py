@@ -41,6 +41,7 @@ MAX_ROUNDS_MESSAGE = (
     "Its last output is reported as-is."
 )
 
+
 # The canned first user message of a child session. The real job lives in the
 # seed prompt (appended to the agent task's instruction backend-side); this just
 # opens the turn — the backend rejects empty message lists. The name rides along
