@@ -218,7 +218,6 @@ async def test_upstream_failure_marks_failed():
 
     assert runner.status == SubAgentStatus.FAILED
     events = [
-        json.loads(chunk.decode().removeprefix("data: ").strip())
-        for chunk in emitted
+        json.loads(chunk.decode().removeprefix("data: ").strip()) for chunk in emitted
     ]
     assert any(e["type"] == "error" for e in events)

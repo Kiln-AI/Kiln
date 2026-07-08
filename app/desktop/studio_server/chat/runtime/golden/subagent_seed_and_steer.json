@@ -1,0 +1,29 @@
+{
+  "scenario": "subagent_seed_and_steer",
+  "bodies": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "eval-helper — your assignment:\n\nBriefing: do the thing.\n\nBegin now, work autonomously, and end with your final report."
+        }
+      ],
+      "agent": {
+        "agent_type": "general",
+        "seed_prompt": "Briefing: do the thing.",
+        "parent_trace_id": "parent-leaf-1"
+      },
+      "auto_mode": true
+    },
+    {
+      "trace_id": "tr-1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "<system-reminder>This message was sent by the user overseeing your background run. Incorporate the guidance and continue working in the same turn — do not end your turn just to reply. End only when your job (as adjusted) is done, with your final report.</system-reminder>\n\nalso check model B"
+        }
+      ],
+      "auto_mode": true
+    }
+  ]
+}
