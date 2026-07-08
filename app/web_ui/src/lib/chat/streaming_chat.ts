@@ -597,8 +597,11 @@ export class StreamEventProcessor {
   }
 
   private handleError(event: StreamEvent): void {
+    // Desktop-shaped errors carry `message`; backend/provider errors forwarded
+    // through the stream carry `errorText`. Surface whichever exists instead of
+    // swallowing the reason behind a generic fallback.
     this.onInlineError?.(
-      event.message ?? "An error occurred.",
+      event.message ?? event.errorText ?? "An error occurred.",
       event.trace_id,
       event.code,
     )
