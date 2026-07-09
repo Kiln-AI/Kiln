@@ -20,6 +20,11 @@ os.environ["KILN_DEV_MODE"] = "true"
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+    multiprocessing.set_start_method("spawn", force=True)
+
     setup_resource_limits()
 
     # KILN_PORT env var overrides the default port from config.

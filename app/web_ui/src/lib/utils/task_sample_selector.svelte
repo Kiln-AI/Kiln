@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte"
-  import type { TaskRun } from "$lib/types"
+  import type { TaskRun, TaskRunOutput } from "$lib/types"
   import {
     type TaskSampleExample,
     type AutoSelectType,
@@ -32,7 +32,7 @@
   let user_verification_desired: boolean = false // tracks if user should verify the selection before continuing (open collapse for them)
 
   // Handle run selection
-  function select_run(run: TaskRun) {
+  function select_run(run: TaskRun | TaskRunOutput) {
     selected_example = task_run_to_example(run)
     auto_select_type = null
     show_manual_entry = false

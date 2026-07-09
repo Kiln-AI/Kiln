@@ -409,6 +409,10 @@ Remember: the skill never made any edits. If the report recommends pin bumps or 
 
 ---
 
+## Additional release checklists
+
+- **Code Tools / Code Evals cross-OS spawn sanity**: see `specs/projects/code_tools/cross_os_spawn_checklist.md` for platform-specific verification steps (macOS/Windows/Linux + PyInstaller frozen builds). Must be completed before any release that includes code tools or code evals.
+
 ## Checklist
 
 - [ ] `.prerelease/<timestamp>/` directory created (the only place anything was written)

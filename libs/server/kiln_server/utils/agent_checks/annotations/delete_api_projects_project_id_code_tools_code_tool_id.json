@@ -1,0 +1,8 @@
+{
+  "method": "delete",
+  "path": "/api/projects/{project_id}/code_tools/{code_tool_id}",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}
