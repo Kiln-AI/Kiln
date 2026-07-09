@@ -135,6 +135,11 @@ describe("generate_default_code", () => {
     expect(code).not.toContain("kiln:")
   })
 
+  it("includes the optional-params docstring note in the default template", () => {
+    const code = generate_default_code(undefined)
+    expect(code).toContain("Parameters are optional and order-independent")
+  })
+
   describe("custom score type", () => {
     it("treats custom like pass_fail (custom is rejected by the backend for evals but handled gracefully)", () => {
       const scores = [make_score("Custom Score", "custom")]

@@ -114,7 +114,7 @@ PARSE_JSON_CODE = """\
 import json
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output):
     \"\"\"Check if the output is valid JSON with required fields.\"\"\"
     try:
         data = json.loads(output)
@@ -134,7 +134,7 @@ def score(output, trace, reference_data, task_input):
 CHECK_TOOL_USAGE_CODE = """\
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(trace):
     \"\"\"Verify the model used the expected tools.\"\"\"
     tool_calls = KilnEvalHelpers.get_tool_calls(trace)
     used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
@@ -150,7 +150,7 @@ def score(output, trace, reference_data, task_input):
 DOMAIN_GRADING_CODE = """\
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output, reference_data):
     \"\"\"Grade output against domain-specific criteria.\"\"\"
     expected = (reference_data or {}).get("expected_answer", "")
 
@@ -177,7 +177,7 @@ PARSE_JSON_CODE_SINGLE = """\
 import json
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output):
     \"\"\"Check if the output is valid JSON with required fields.\"\"\"
     try:
         data = json.loads(output)
@@ -193,7 +193,7 @@ def score(output, trace, reference_data, task_input):
 CHECK_TOOL_USAGE_CODE_SINGLE = """\
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(trace):
     \"\"\"Verify the model used the expected tools.\"\"\"
     tool_calls = KilnEvalHelpers.get_tool_calls(trace)
     used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
@@ -205,7 +205,7 @@ def score(output, trace, reference_data, task_input):
 DOMAIN_GRADING_CODE_SINGLE = """\
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output, reference_data):
     \"\"\"Grade output against domain-specific criteria.\"\"\"
     expected = (reference_data or {}).get("expected_answer", "")
 
@@ -228,6 +228,8 @@ def _default_code_single(key: str, returns_line: str, passing: str, low: str) ->
     return (
         "def score(output, trace, reference_data, task_input):\n"
         '    """Score the model output.\n'
+        "\n"
+        "    Parameters are optional and order-independent — declare only the ones you need.\n"
         "\n"
         "    Args:\n"
         "        output: The model's final output string.\n"
@@ -266,6 +268,8 @@ DEFAULT_PASS_FAIL_CRITICAL_CODE = _default_code_single(
 DEFAULT_MULTI_CODE = """\
 def score(output, trace, reference_data, task_input):
     \"\"\"Score the model output.
+
+    Parameters are optional and order-independent — declare only the ones you need.
 
     Args:
         output: The model's final output string.

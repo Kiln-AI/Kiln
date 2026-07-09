@@ -335,9 +335,11 @@
       }
     }
 
+    const controller = new AbortController()
+    test_abort_controller = controller
+
     try {
       test_loading = true
-      test_abort_controller = new AbortController()
 
       let result: TestV2EvalResponse
 
@@ -356,7 +358,7 @@
             system_prompt: llm_system_prompt ?? null,
           },
           eval_input,
-          test_abort_controller.signal,
+          controller.signal,
         )
       } else {
         const properties = v2FormComponent!.getProperties()
@@ -368,7 +370,7 @@
             properties,
             eval_input,
           },
-          test_abort_controller.signal,
+          controller.signal,
         )
       }
 
@@ -412,8 +414,10 @@
         test_error = createKilnError(e)
       }
     } finally {
-      test_loading = false
-      test_abort_controller = null
+      if (test_abort_controller === controller) {
+        test_loading = false
+        test_abort_controller = null
+      }
     }
   }
 

@@ -1194,7 +1194,7 @@ def connect_evals_api(app: FastAPI):
                 score_range_errors=score_range_errors,
                 intermediate_outputs=result.intermediate_outputs,
             )
-        except (ValueError, NotImplementedError) as e:
+        except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better

@@ -300,8 +300,10 @@ def connect_code_tool_api(app: FastAPI):
             )
             return _outcome_to_test_response(outcome, tool_call_log)
         finally:
-            await MCPSessionManager.shared().cleanup_session(run_id)
-            clear_agent_run_id()
+            try:
+                await MCPSessionManager.shared().cleanup_session(run_id)
+            finally:
+                clear_agent_run_id()
 
     @app.get(
         "/api/projects/{project_id}/code_tools",
