@@ -3268,6 +3268,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refine Judge
+         * @description Propose a judge-prompt revision from the human's per-claim grades.
+         *
+         *     The refined prompt is a PROPOSAL — the UI validates it and shows the
+         *     changes for approval; it is never auto-applied.
+         */
+        post: operations["refine_judge_api_projects__project_id__tasks__task_id__eval_builder_refine_judge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases": {
         parameters: {
             query?: never;
@@ -7912,6 +7935,32 @@ export interface components {
              */
             human_feedback?: string | null;
         };
+        /**
+         * GradedTraceApi
+         * @description One human-reviewed trace's grades, shaped to feed judge refinement.
+         *
+         *     Mirrors the persisted ClaimReview (judge verdict + per-claim
+         *     agree/disagree with optional whys) plus a `trace_label` the refine model
+         *     cites in its change rationales. Only the claims the reviewer actually
+         *     graded appear — an absent claim is "not reviewed", never agreement.
+         */
+        GradedTraceApi: {
+            /**
+             * Trace Label
+             * @description A label for the trace the refine model cites in its rationales; derived UI-side from the run id (often opaque).
+             */
+            trace_label: string;
+            /**
+             * Judge Score
+             * @enum {string}
+             */
+            judge_score: "pass" | "fail";
+            /** Judge Reasoning */
+            judge_reasoning: string;
+            /** Claims */
+            claims: components["schemas"]["GradedClaim"][];
+            final_judgement: components["schemas"]["GradedClaim"];
+        };
         /** GuidePreviewInput */
         GuidePreviewInput: {
             /**
@@ -9782,6 +9831,45 @@ export interface components {
             accurate_examples: string;
             /** Inaccurate Examples */
             inaccurate_examples: string;
+        };
+        /**
+         * RefineJudgeApiInput
+         * @description The current judge prompt plus the human's grades on reviewed traces.
+         *
+         *     `judge_prompt` is the plain-text rubric being refined (the same text the
+         *     review judge ran with). The refined result is a PROPOSAL — the studio
+         *     never auto-applies it.
+         */
+        RefineJudgeApiInput: {
+            /** Judge Prompt */
+            judge_prompt: string;
+            /** Graded Traces */
+            graded_traces: components["schemas"]["GradedTraceApi"][];
+        };
+        /**
+         * RefineJudgeApiOutput
+         * @description The proposed judge-prompt revision + a per-edit rationale.
+         *
+         *     A PROPOSAL: the UI shows the changes for approval and validates the
+         *     prompt before any write; it is never auto-applied.
+         */
+        RefineJudgeApiOutput: {
+            /** Refined Judge Prompt */
+            refined_judge_prompt: string;
+            /** Changes */
+            changes: components["schemas"]["RefineJudgeChangeApi"][];
+            /** Not Incorporated Feedback */
+            not_incorporated_feedback: string | null;
+        };
+        /**
+         * RefineJudgeChangeApi
+         * @description One edit the refine model made to the judge prompt, with its rationale.
+         */
+        RefineJudgeChangeApi: {
+            /** Change */
+            change: string;
+            /** Rationale */
+            rationale: string;
         };
         /**
          * RefineSpecApiInput
@@ -19864,6 +19952,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuildClaimsApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_judge_api_projects__project_id__tasks__task_id__eval_builder_refine_judge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefineJudgeApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineJudgeApiOutput"];
                 };
             };
             /** @description Validation Error */
