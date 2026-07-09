@@ -22,6 +22,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -1414,12 +1415,27 @@ class TestRunV2Job:
 
     @pytest.mark.asyncio
     async def test_multi_turn_task_run_skipped(
-        self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs, data_source
+        self,
+        mock_v2_runner,
+        mock_v2_eval_config,
+        mock_eval_inputs,
+        data_source,
+        tmp_path,
     ):
+        # A TaskRun with a parent_task_run_id is only valid on a multi-turn task,
+        # so build the run on a multi-turn task to satisfy that invariant.
+        multiturn_task = Task(
+            name="multiturn",
+            description="test",
+            instruction="do the thing",
+            turn_mode=TurnMode.multiturn,
+            path=tmp_path / "multiturn_task.kiln",
+        )
+        multiturn_task.save_to_file()
         task_run = TaskRun(
             input="turn 1",
             output=TaskOutput(output="reply", source=data_source),
-            parent=mock_v2_runner.task,
+            parent=multiturn_task,
             parent_task_run_id="some_parent_id",
         )
         task_run.save_to_file()
