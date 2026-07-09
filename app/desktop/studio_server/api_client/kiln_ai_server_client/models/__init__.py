@@ -30,6 +30,7 @@ from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
 from .client_chat_message_role import ClientChatMessageRole
+from .client_version_policy import ClientVersionPolicy
 from .create_api_key_response import CreateApiKeyResponse
 from .data_guide_job_output import DataGuideJobOutput
 from .data_guide_job_result_response import DataGuideJobResultResponse
@@ -156,6 +157,7 @@ __all__ = (
     "ClarifySpecOutput",
     "ClientChatMessage",
     "ClientChatMessageRole",
+    "ClientVersionPolicy",
     "CreateApiKeyResponse",
     "DataGuideJobOutput",
     "DataGuideJobResultResponse",
