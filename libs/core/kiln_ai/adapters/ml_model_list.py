@@ -246,6 +246,7 @@ class ModelName(str, Enum):
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
     glm_5_2 = "glm_5_2"
+    glm_5_2_fast = "glm_5_2_fast"
     glm_5_1 = "glm_5_1"
     glm_5_turbo = "glm_5_turbo"
     glm_5v_turbo = "glm_5v_turbo"
@@ -261,6 +262,7 @@ class ModelName(str, Enum):
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
+    hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m3 = "minimax_m3"
@@ -7199,6 +7201,26 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+        ],
+    ),
+    # GLM 5.2 Fast — Fireworks speed-optimized serving of GLM 5.2 (routers/ slug, ~2x throughput)
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_2_fast,
+        friendly_name="GLM 5.2 Fast",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/routers/glm-5p2-fast",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # GLM 5.1
@@ -7885,6 +7907,20 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Hunyuan Hy3 — Tencent's 295B MoE (21B active), 256K context, text-only reasoning + tool-calling model.
+    # reasoning_capable left False: Hy3 has adaptive/hybrid thinking (a no_think toggle) and can return no reasoning.
+    KilnModel(
+        family=ModelFamily.hunyuan,
+        name=ModelName.hunyuan_hy3,
+        friendly_name="Hunyuan Hy3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="tencent/hy3",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
