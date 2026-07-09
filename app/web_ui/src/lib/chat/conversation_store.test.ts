@@ -309,6 +309,72 @@ describe("conversation_store", () => {
         vi.useRealTimers()
       }
     })
+
+    it("reconciles children on a timer so a missed running child appears", async () => {
+      // The safety net for a missed single-shot running-child event: while the
+      // firehose is connected and a parent is set, a periodic reconcile
+      // re-fetches the list, so a child whose "running" event never arrived
+      // converges within seconds instead of only on a manual refresh.
+      vi.useFakeTimers()
+      try {
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce(jsonResponse([])) // initial sync: empty
+          .mockResolvedValue(jsonResponse([child("cv_late")])) // reconcile ticks
+        vi.stubGlobal("fetch", fetchMock)
+
+        await store.syncForConversation("trace-leaf")
+        store.connect()
+        expect(get(store.children)).toEqual([])
+
+        await vi.advanceTimersByTimeAsync(3500)
+
+        expect(get(store.children).map((c) => c.session_id)).toEqual([
+          "cv_late",
+        ])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("stops reconciling after disconnect", async () => {
+      vi.useFakeTimers()
+      try {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]))
+        vi.stubGlobal("fetch", fetchMock)
+
+        await store.syncForConversation("trace-leaf")
+        store.connect()
+        await vi.advanceTimersByTimeAsync(3500) // one reconcile fetch
+        const callsAfterOneTick = fetchMock.mock.calls.length
+        expect(callsAfterOneTick).toBeGreaterThan(1)
+
+        store.disconnect()
+        await vi.advanceTimersByTimeAsync(14000) // several intervals
+
+        // No further reconcile fetches once the firehose is disconnected.
+        expect(fetchMock.mock.calls.length).toBe(callsAfterOneTick)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("does not reconcile when no parent is set", async () => {
+      // Connected but with no conversation attached: nothing to reconcile, so
+      // the timer must never fire a fetch (no thrashing on a blank page).
+      vi.useFakeTimers()
+      try {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]))
+        vi.stubGlobal("fetch", fetchMock)
+
+        store.connect()
+        await vi.advanceTimersByTimeAsync(14000)
+
+        expect(fetchMock).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   describe("select / observe", () => {

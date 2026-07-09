@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncGenerator, Callable
+from typing import AsyncGenerator, Callable, Iterable
 
 from app.desktop.studio_server.chat.constants import KILN_SSE_CHAT_TRACE
 
@@ -125,10 +125,63 @@ class BroadcastBus:
         for subscriber in self._subscribers:
             subscriber.queue.put_nowait(payload)
 
-    async def subscribe(self) -> AsyncGenerator[bytes, None]:
+    async def subscribe(
+        self,
+        *,
+        snapshot: Callable[[], Iterable[bytes]] | None = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """Fan-out subscription, optionally opened with a caller-built snapshot.
+
+        WHY the ``snapshot`` hook exists (the missed-running-child fix): the
+        registry firehose must emit an INITIAL per-conversation snapshot and
+        then go live with NO gap. The obvious spelling — build the snapshot,
+        THEN ``async for`` over a bare ``subscribe()`` — registers the
+        subscriber only AFTER the snapshot is done, so a ``conversation-state``
+        published in that window (a sub-agent spawned the instant the firehose
+        (re)connects) reaches no subscriber and is silently dropped. A RUNNING
+        child whose single spawn-time "running" event lands in that gap is then
+        absent from the UI until it settles or the user refreshes.
+
+        Passing the snapshot builder HERE closes the gap: we register the
+        subscriber FIRST (synchronously, below — no ``await`` separates it from
+        the snapshot call), then run the snapshot. Any publish racing snapshot
+        construction is queued on our subscriber, not lost, and drained right
+        after the snapshot. The bus still owns no buffer — the snapshot is
+        caller-provided state, so this stays a pure fan-out.
+        """
         subscriber = _ByteSubscriber()
+        # Register BEFORE building the snapshot so a concurrent publish() queues
+        # instead of falling in the old subscribe-after-snapshot gap.
+        # Registration is synchronous; nothing awaits between here and the
+        # snapshot call below, so no event can slip in unobserved.
         self._subscribers.add(subscriber)
         try:
+            if snapshot is not None:
+                # Emit the snapshot, remembering the exact bytes so we can drop
+                # a redundant re-publish that queued DURING snapshot
+                # construction (byte-identical payload ⇒ same conversation, same
+                # state ⇒ nothing new for the idempotent client). A payload
+                # embeds its session id, so identical bytes can only be the same
+                # conversation.
+                emitted: set[bytes] = set()
+                for payload in snapshot():
+                    emitted.add(payload)
+                    yield payload
+                # Drain the construction-window backlog, deduping byte-identical
+                # states UNTIL the first genuinely-new event. After that first
+                # real event we pass everything through, so a legitimate
+                # transition — even one that flaps back to a snapshot state —
+                # is never suppressed; dedup only ever hides an exact,
+                # redundant duplicate published while we built the snapshot.
+                deduping = True
+                while not subscriber.queue.empty():
+                    item = subscriber.queue.get_nowait()
+                    if isinstance(item, _CloseSentinel):
+                        return
+                    if deduping and item in emitted:
+                        continue
+                    deduping = False
+                    yield item
             while True:
                 item = await subscriber.queue.get()
                 if isinstance(item, _CloseSentinel):

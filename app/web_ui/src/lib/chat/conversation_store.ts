@@ -58,6 +58,19 @@ export interface ConversationRuntimeState {
 
 const CONVERSATIONS_BASE_URL = `${base_url}/api/conversations`
 const RECONNECT_DELAY_MS = 2000
+// Low-frequency safety-net re-fetch of the children list while the firehose is
+// connected and a parent is set (see `updateReconcileTimer`). WHY: the children
+// strip is populated only when a child's firehose `conversation-state` event
+// triggers a fetch, and a running child publishes that event exactly ONCE (at
+// spawn) — nothing more until it settles. If that single event is missed (a
+// firehose micro-drop, a server snapshot/subscribe race on (re)connect, or a
+// fetch-race edge), a RUNNING child is absent from the strip with no further
+// trigger until it COMPLETES (whose terminal tab is dropped by design) or the
+// user refreshes. This periodic reconcile re-fetches the authoritative list
+// (`children_of` always returns the complete current set) so any missed child
+// converges within a few seconds instead of never. Cheap: localhost, and the
+// server fix closes the snapshot gap so this rarely has anything to correct.
+const RECONCILE_INTERVAL_MS = 3500
 
 // Lifecycle of the state-firehose EventSource, surfaced for tests / debugging.
 // A pure observer: this only reports the connection, it never mutates a run.
@@ -190,6 +203,9 @@ export function createConversationStore(): ConversationStore {
 
   let eventSource: EventSource | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Periodic children reconcile (see RECONCILE_INTERVAL_MS): runs only while
+  // the firehose is active AND a parent is set; null when stopped.
+  let reconcileTimer: ReturnType<typeof setInterval> | null = null
   // True between connect() and disconnect(): gates the reconnect loop.
   let firehoseActive = false
 
@@ -336,6 +352,10 @@ export function createConversationStore(): ConversationStore {
   async function syncForConversation(parentId: string | null): Promise<void> {
     if (parentId === syncedParentId) return
     syncedParentId = parentId
+    // The parent changed: (re)evaluate whether the reconcile timer should run
+    // (it only runs with a non-null parent). Do this before the fetch so a
+    // switch to null stops reconciling immediately.
+    updateReconcileTimer()
     if (!parentId) {
       syncGeneration++
       children.set([])
@@ -369,6 +389,30 @@ export function createConversationStore(): ConversationStore {
     if (reconnectTimer !== null) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
+    }
+  }
+
+  // Start/stop the periodic children reconcile to match the current lifecycle:
+  // it runs iff the firehose is active AND a parent is set (a missed running
+  // child can only exist under those two conditions). Idempotent, so it is
+  // safe to call from every place those inputs change (connect / disconnect /
+  // syncForConversation / reset). Each tick re-fetches the authoritative list;
+  // fetchChildren's generation guard drops a tick that races a real
+  // conversation switch, and same-parent ticks all hit the identical
+  // children_of endpoint so the last one applied is always correct.
+  function updateReconcileTimer(): void {
+    const shouldRun = firehoseActive && !!syncedParentId
+    if (shouldRun && reconcileTimer === null) {
+      reconcileTimer = setInterval(() => {
+        // Re-check inside the tick: firehoseActive/syncedParentId may have
+        // flipped between scheduling and firing.
+        if (firehoseActive && syncedParentId) {
+          void fetchChildren(syncedParentId)
+        }
+      }, RECONCILE_INTERVAL_MS)
+    } else if (!shouldRun && reconcileTimer !== null) {
+      clearInterval(reconcileTimer)
+      reconcileTimer = null
     }
   }
 
@@ -429,12 +473,16 @@ export function createConversationStore(): ConversationStore {
     if (firehoseActive) return
     firehoseActive = true
     connectFirehose()
+    // A parent may already be set (syncForConversation runs before connect on
+    // the assistant page); start reconciling if so.
+    updateReconcileTimer()
   }
 
   function disconnect(): void {
     firehoseActive = false
     closeSource()
     clearReconnect()
+    updateReconcileTimer()
     connection.set("idle")
   }
 
@@ -657,6 +705,10 @@ export function createConversationStore(): ConversationStore {
     observations.clear()
     syncGeneration++
     syncedParentId = undefined
+    // No parent anymore: stop the reconcile timer (the firehose connection
+    // itself is intentionally kept — reset() is a new-chat clear, not a
+    // navigation-away).
+    updateReconcileTimer()
     children.set([])
     selectedId.set(null)
     transcripts.set(new Map())

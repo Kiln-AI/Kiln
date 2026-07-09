@@ -8,7 +8,7 @@ import asyncio
 import pytest
 from app.desktop.studio_server.chat.test_fakes import text_delta, trace
 
-from .bus import ByteEventBus, extract_trace_id
+from .bus import BroadcastBus, ByteEventBus, extract_trace_id
 
 MARKER = b'data: {"type": "conversation-state"}\n\n'
 
@@ -184,6 +184,85 @@ class TestSubscribe:
         bus.close()
         # No stale replay, no marker — just EOF (the conversation is gone).
         assert [payload async for payload in bus.subscribe()] == []
+
+
+class TestBroadcastBusSnapshot:
+    """The registry firehose's subscribe(snapshot=...) must register the
+    subscriber BEFORE building the snapshot, so a conversation-state published
+    while the snapshot is being built (a sub-agent spawned at that instant) is
+    delivered rather than dropped — the missed-running-child bug."""
+
+    async def test_event_published_during_snapshot_is_delivered(self):
+        # THE gap test: the snapshot builder publishes an event as a side
+        # effect (modelling a spawn that races snapshot construction — i.e. a
+        # conversation created after list_records() would have been read but
+        # before the live drain). Because the subscriber is already registered
+        # when the builder runs, that event must reach us.
+        bus = BroadcastBus()
+        live = b"data: live-during-snapshot\n\n"
+        snap = b"data: snap-a\n\n"
+
+        def _snapshot():
+            bus.publish(live)  # racing publish; subscriber already registered
+            return [snap]
+
+        gen = bus.subscribe(snapshot=_snapshot)
+        got = [await asyncio.wait_for(gen.__anext__(), timeout=1.0)]
+        # The event published DURING snapshot construction is drained right
+        # after the snapshot rather than lost.
+        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
+        await gen.aclose()
+        assert got == [snap, live]
+
+    async def test_redundant_backlog_duplicate_is_deduped(self):
+        # A byte-identical re-publish of a state already in the snapshot (same
+        # session + state) is dropped: nothing new for the idempotent client.
+        bus = BroadcastBus()
+        snap = b"data: snap-a\n\n"
+        follow = b"data: live-b\n\n"
+
+        def _snapshot():
+            bus.publish(snap)  # redundant duplicate of the snapshot payload
+            return [snap]
+
+        gen = bus.subscribe(snapshot=_snapshot)
+        got = [await asyncio.wait_for(gen.__anext__(), timeout=1.0)]
+        # The duplicate was dropped; a later genuinely-new event still flows.
+        bus.publish(follow)
+        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
+        await gen.aclose()
+        assert got == [snap, follow]
+
+    async def test_transition_after_snapshot_is_never_suppressed(self):
+        # Dedup must NOT hide a real transition — even one that flaps back to a
+        # snapshot state. Backlog: a differing event (turns dedup off), then a
+        # payload equal to the snapshot; both must be delivered.
+        bus = BroadcastBus()
+        running = b"data: X-running\n\n"
+        idle = b"data: X-idle\n\n"
+
+        def _snapshot():
+            bus.publish(idle)  # a real change (X went idle) — must pass
+            bus.publish(running)  # flap back to the snapshot state — must pass
+            return [running]
+
+        gen = bus.subscribe(snapshot=_snapshot)
+        got = [await asyncio.wait_for(gen.__anext__(), timeout=1.0)]  # snapshot
+        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
+        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
+        await gen.aclose()
+        assert got == [running, idle, running]
+
+    async def test_bare_subscribe_still_works(self):
+        # Backward compatibility: subscribe() with no snapshot is the plain
+        # fan-out other callers (the test drain in test_supervisor) still use.
+        bus = BroadcastBus()
+        gen = bus.subscribe()
+        first = asyncio.ensure_future(gen.__anext__())
+        await asyncio.sleep(0.01)
+        bus.publish(b"data: only\n\n")
+        assert await asyncio.wait_for(first, timeout=1.0) == b"data: only\n\n"
+        await gen.aclose()
 
 
 @pytest.mark.asyncio

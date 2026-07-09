@@ -295,6 +295,32 @@ async def test_state_firehose_snapshot_then_live(supervisor, hang_engine):
         await stream.aclose()
 
 
+async def test_state_firehose_delivers_child_spawned_after_connect(
+    supervisor, hang_engine
+):
+    # Regression for the missed-running-child bug: a sub-agent spawned AFTER a
+    # firehose observer connected (its single spawn-time "running" publish is
+    # the only event it emits until it settles) must reach that observer. The
+    # server fix registers the firehose subscriber before building the snapshot
+    # so a spawn racing (re)connect can't fall in a gap; end-to-end this proves
+    # a fresh running child's event flows through the live tail.
+    first = _spawn(supervisor)
+    stream = conversations_api_module._state_firehose_stream()
+    try:
+        snapshot = await asyncio.wait_for(stream.__anext__(), timeout=2.0)
+        assert first.session_id.encode() in snapshot
+
+        # Spawn a second child now that the observer is live; its running-state
+        # publish must arrive on the tail.
+        second = _spawn(supervisor, parent_key="trace:leaf-2")
+        seen = b""
+        while second.session_id.encode() not in seen:
+            seen += await asyncio.wait_for(stream.__anext__(), timeout=2.0)
+        assert b'"running"' in seen
+    finally:
+        await stream.aclose()
+
+
 # ── Auto-mode surface (port of the old chat/auto/test_api.py endpoint suite) ──
 
 

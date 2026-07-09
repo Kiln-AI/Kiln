@@ -290,10 +290,23 @@ async def _state_firehose_stream() -> AsyncGenerator[bytes, None]:
     shape as the old sub-agent status firehose, so an interactive, idle
     parent still learns a child finished with no per-run stream open."""
 
+    def _snapshot() -> list[bytes]:
+        # Built INSIDE subscribe(), AFTER the firehose subscriber is already
+        # registered on the status bus (see BroadcastBus.subscribe): a
+        # conversation spawned while we read/format list_records() has its
+        # live conversation-state event QUEUED for this subscriber rather than
+        # lost in the old read-snapshot-then-subscribe gap (the missed
+        # running-child bug). Materialize eagerly so the whole read is one
+        # synchronous step with no await for an event to slip through.
+        return [
+            format_conversation_state(record)
+            for record in conversation_supervisor.list_records()
+        ]
+
     async def _with_snapshot() -> AsyncGenerator[bytes, None]:
-        for record in conversation_supervisor.list_records():
-            yield format_conversation_state(record)
-        async for payload in conversation_supervisor.status_bus.subscribe():
+        async for payload in conversation_supervisor.status_bus.subscribe(
+            snapshot=_snapshot
+        ):
             yield payload
 
     async for item in iter_with_keepalive(_with_snapshot(), KEEPALIVE_SECONDS):
