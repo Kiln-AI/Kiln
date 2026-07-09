@@ -1,6 +1,6 @@
 # Note: the disable_auto_mode interception on the interactive ChatStreamSession
-# path is covered end-to-end in auto/test_api.py (via /api/chat), including the
-# sibling approval-gate behaviour.
+# path is covered end-to-end in test_routes.py (via /api/chat), including the
+# sibling approval-gate behaviour and the supervisor disable cascade.
 import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -11,7 +11,7 @@ from app.desktop.studio_server.chat import execute_tool
 from app.desktop.studio_server.chat.stream_session import (
     _build_openai_tool_continuation,
 )
-from app.desktop.studio_server.chat.auto.test_fakes import (
+from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
     finish,

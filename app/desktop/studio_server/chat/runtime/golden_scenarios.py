@@ -1,10 +1,11 @@
 """Golden-protocol scenarios: the behavior contract of the unified runtime.
 
-Each scenario scripts a fake upstream (``chat/auto/test_fakes.py``) and
+Each scenario scripts a fake upstream (``chat/test_fakes.py``) and
 captures the exact sequence of upstream REQUEST BODIES produced by:
 
-- the OLD loop that owns that behavior today (``ChatStreamSession``,
-  ``AutoChatRunner``, or ``SubAgentRunner``), and
+- the OLD loop that owns that behavior today (only ``ChatStreamSession``
+  remains — the auto and sub-agent loops were deleted in phases 2–3; their
+  fixtures remain the durable contract), and
 - the NEW ``ConversationEngine`` under the equivalent policy.
 
 The captured sequences are pinned as checked-in JSON fixtures under
@@ -39,7 +40,7 @@ from typing import Any, Awaitable, Callable
 from unittest.mock import patch
 
 import httpx
-from app.desktop.studio_server.chat.auto.test_fakes import (
+from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
     finish,
@@ -56,6 +57,7 @@ from .models import (
     PendingApprovalBatch,
     SubAgentSeed,
     auto_policy,
+    build_auto_seed_body,
     interactive_policy,
     subagent_policy,
 )
@@ -343,21 +345,17 @@ async def _engine_interactive_report_injection() -> list[dict[str, Any]]:
 # ── Scenario 4: auto seed + tool round + mid-burst side-note injection ────────
 #
 # The auto seed body (enable_auto_mode resolution + the auto_mode flag) is
-# hand-built on the engine side: constructing it is the enable endpoint's job
-# (ported in phase 3). The equality assertion against the old runner's
-# _build_seed_body output is exactly what keeps the hand-built shape honest.
+# built by the ported builder the enable flow uses in production
+# (models.build_auto_seed_body ← supervisor.enable_auto), so the checked-in
+# fixture — originally captured from the OLD AutoChatRunner._build_seed_body —
+# is exactly what keeps the ported builder's shape honest.
 
-_AUTO_SEED_BODY = {
-    "trace_id": "tr-0",
-    "messages": [
-        {
-            "role": "tool",
-            "tool_call_id": "enable-1",
-            "content": json.dumps({"status": "enabled"}, ensure_ascii=False),
-        }
-    ],
-    "auto_mode": True,
-}
+_AUTO_SEED_BODY = build_auto_seed_body(
+    trace_id="tr-0",
+    enable_tool_call_id="enable-1",
+    extra_messages=[],
+    sibling_results={},
+)
 _SIDE_NOTE_TEXT = "also do X"
 
 
@@ -374,38 +372,14 @@ def _auto_tool_round_responses() -> list[FakeUpstreamResponse]:
     ]
 
 
-def _old_auto_runner(client: FakeUpstreamClient, inbound_texts: list[str]):
-    """An AutoChatRunner wired like AutoChatRun wires it (drain-once queue),
-    without the registry (matching auto/test_runner.py's harness)."""
-    from app.desktop.studio_server.chat.auto.models import (
-        AutoChatSeed,
-        InboundMessage as OldInboundMessage,
-    )
-    from app.desktop.studio_server.chat.auto.runner import AutoChatRunner
-
-    queue = [OldInboundMessage(content=t) for t in inbound_texts]
-
-    def drain_inbound():
-        taken = list(queue)
-        queue.clear()
-        return taken
-
-    return AutoChatRunner(
-        run_id="ar_golden",
-        seed=AutoChatSeed(trace_id="tr-0", enable_tool_call_id="enable-1"),
-        upstream_url=UPSTREAM_URL,
-        headers={},
-        emit=lambda payload: None,
-        drain_inbound=drain_inbound,
-    )
-
-
-async def _old_auto_seed_and_tool_round() -> list[dict[str, Any]]:
-    client = FakeUpstreamClient(_auto_tool_round_responses())
-    runner = _old_auto_runner(client, [_SIDE_NOTE_TEXT])
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await runner.run()
-    return _bodies(client)
+# NOTE (phase 3): the OLD side of the auto scenarios is gone — AutoChatRunner
+# was deleted when auto mode moved onto the unified runtime. Their checked-in
+# fixtures (captured from the old runner while it existed) REMAIN the durable
+# protocol contract: test_engine_matches_fixture still asserts the engine's
+# byte-equivalence against them, exactly as the fixture-lifecycle plan in the
+# module docstring prescribes. run_old=None makes test_old_loop_matches_fixture
+# skip for these scenarios (same treatment as subagent_seed_and_steer in
+# phase 2).
 
 
 async def _engine_auto_seed_and_tool_round() -> list[dict[str, Any]]:
@@ -435,14 +409,6 @@ def _auto_disable_responses() -> list[FakeUpstreamResponse]:
             chunks=[text_delta("okay, auto mode off"), trace("tr-2"), finish("stop")]
         ),
     ]
-
-
-async def _old_auto_disable_resolve() -> list[dict[str, Any]]:
-    client = FakeUpstreamClient(_auto_disable_responses())
-    runner = _old_auto_runner(client, [])
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await runner.run()
-    return _bodies(client)
 
 
 async def _engine_auto_disable_resolve() -> list[dict[str, Any]]:
@@ -521,14 +487,6 @@ def _auto_report_inbox_responses() -> list[FakeUpstreamResponse]:
     ]
 
 
-async def _old_auto_report_inbox_unwrapped() -> list[dict[str, Any]]:
-    client = FakeUpstreamClient(_auto_report_inbox_responses())
-    runner = _old_auto_runner(client, [REPORT_FRAME])
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await runner.run()
-    return _bodies(client)
-
-
 async def _engine_auto_report_inbox_unwrapped() -> list[dict[str, Any]]:
     return await _run_engine(
         policy=auto_policy(),
@@ -547,7 +505,8 @@ class GoldenScenario:
     name: str
     # Captures the upstream request bodies from the OLD loop. Deleted along
     # with its loop in phases 2–4 (None once the loop is gone — the sub-agent
-    # loop went in phase 2); the JSON fixture then remains the contract.
+    # loop went in phase 2, the auto loop in phase 3); the JSON fixture then
+    # remains the contract.
     run_old: Callable[[], Awaitable[list[dict[str, Any]]]] | None
     # Captures the same from the new ConversationEngine.
     run_engine: Callable[[], Awaitable[list[dict[str, Any]]]]
@@ -571,12 +530,12 @@ SCENARIOS: tuple[GoldenScenario, ...] = (
     ),
     GoldenScenario(
         "auto_seed_and_tool_round",
-        _old_auto_seed_and_tool_round,
+        None,  # AutoChatRunner deleted in phase 3; the fixture is the contract.
         _engine_auto_seed_and_tool_round,
     ),
     GoldenScenario(
         "auto_disable_resolve",
-        _old_auto_disable_resolve,
+        None,  # AutoChatRunner deleted in phase 3; the fixture is the contract.
         _engine_auto_disable_resolve,
     ),
     GoldenScenario(
@@ -586,7 +545,7 @@ SCENARIOS: tuple[GoldenScenario, ...] = (
     ),
     GoldenScenario(
         "auto_report_inbox_unwrapped",
-        _old_auto_report_inbox_unwrapped,
+        None,  # AutoChatRunner deleted in phase 3; the fixture is the contract.
         _engine_auto_report_inbox_unwrapped,
     ),
 )

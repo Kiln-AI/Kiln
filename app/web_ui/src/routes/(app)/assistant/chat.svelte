@@ -15,8 +15,10 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
-  import { auto_run_store } from "$lib/chat/auto_run_store"
-  import { conversation_store } from "$lib/chat/conversation_store"
+  import {
+    auto_conversation_store,
+    conversation_store,
+  } from "$lib/chat/conversation_store"
   import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
@@ -38,20 +40,20 @@
   // accept/decline via the dialog. The store handles enable/decline + handoff.
   $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
 
-  const autoModeOn = auto_run_store.autoModeOn
+  const autoModeOn = auto_conversation_store.autoModeOn
   // Client-armed flag (Revision R2): auto mode turned on for a brand-new
   // conversation that has no trace_id yet. The indicator shows on ("waiting for
   // you") with no server run; the first message creates the run.
-  const autoArmed = auto_run_store.armed
-  const autoModeWorking = auto_run_store.working
+  const autoArmed = auto_conversation_store.armed
+  const autoModeWorking = auto_conversation_store.working
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
   // History restore) resolves → hydrates → attaches the live observer (Phase 9).
-  const autoReconnecting = auto_run_store.reconnecting
+  const autoReconnecting = auto_conversation_store.reconnecting
   // Transient "retrying N/M…" affordance while a transient upstream failure
   // (rate limit / 5xx / connection blip) is retried with backoff. Auto mode
-  // surfaces it via auto_run_store; interactive chat via the session store. Only
+  // surfaces it via the auto conversation store; interactive chat via the session store. Only
   // one can be active at a time, so prefer whichever is set.
-  const autoRetry = auto_run_store.retry
+  const autoRetry = auto_conversation_store.retry
 
   // Sub-agents (background child runs) of the current conversation, served by
   // the unified conversation store (children are keyed by session id and speak
@@ -96,13 +98,15 @@
         // Brand-new conversation (Revision R2): no trace to key a server run, so
         // arm client-side. The indicator turns on ("waiting for you"); the first
         // message creates the run (enable seeded with that message, no trace_id).
-        auto_run_store.arm()
+        auto_conversation_store.arm()
         return
       }
       // Existing conversation: enable arms a server-owned run keyed by the trace
       // id (functional spec §4.1(2)). Surface enable failures (e.g. 429) instead
       // of silently swallowing them — the dialog has already closed.
-      const result = await auto_run_store.requestEnable({ trace_id: traceId })
+      const result = await auto_conversation_store.requestEnable({
+        trace_id: traceId,
+      })
       if (!result.ok) {
         store.pushInlineError(
           `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
@@ -117,7 +121,7 @@
     // Brand-new armed conversation: no server run exists yet, so nothing could
     // have been kicked off — just disarm without the explainer dialog.
     if (!get(autoModeOn)) {
-      auto_run_store.disarm()
+      auto_conversation_store.disarm()
       store.clearQueued()
       return
     }
@@ -137,15 +141,15 @@
     // further — including any client tool calls the server might hand back — gets
     // dispatched from the browser.
     //
-    // Order matters: auto_run_store.stop() reads the run id synchronously (before
+    // Order matters: auto_conversation_store.stop() reads the session id synchronously (before
     // its first await), so calling it before detach() — which clears that id —
     // guarantees the server actually receives the stop. A client-armed (no-run)
     // conversation has no server run; disarm()/detach() just clear the local
     // armed flag so the toggle returns to off (functional spec §4.1(2)).
     store.stop()
-    const stopping = auto_run_store.stop()
-    auto_run_store.disarm()
-    auto_run_store.detach()
+    const stopping = auto_conversation_store.stop()
+    auto_conversation_store.disarm()
+    auto_conversation_store.detach()
     await stopping
   }
 

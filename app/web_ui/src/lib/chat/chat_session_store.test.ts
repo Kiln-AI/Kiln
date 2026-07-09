@@ -97,7 +97,7 @@ function makeFakeAutoRun(
     armed: writable(overrides.armed ?? false),
     working: writable(false),
     reconnecting: writable(false),
-    runId: writable(overrides.autoModeOn ? "ar_test" : null),
+    sessionId: writable(overrides.autoModeOn ? "cv_test" : null),
     offReason: writable(null),
     connection: writable("idle"),
     bind: vi.fn(),
@@ -648,11 +648,13 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       // Capture the sink the store registers via bind() so we can simulate the
       // auto runner's control events (the same path that fires during bursts).
-      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      let boundSink:
+        | import("./conversation_store").AutoConversationSink
+        | null = null
       const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
       ;(
         fakeAutoRun as unknown as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+          bind: (s: import("./conversation_store").AutoConversationSink) => void
         }
       ).bind = (s) => {
         boundSink = s
@@ -680,11 +682,13 @@ describe("createChatSessionStore", () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       streamChatMock.mockImplementation(noopStreamChat)
-      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      let boundSink:
+        | import("./conversation_store").AutoConversationSink
+        | null = null
       const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
       ;(
         fakeAutoRun as unknown as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+          bind: (s: import("./conversation_store").AutoConversationSink) => void
         }
       ).bind = (s) => {
         boundSink = s
@@ -703,11 +707,13 @@ describe("createChatSessionStore", () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       streamChatMock.mockImplementation(noopStreamChat)
-      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
+      let boundSink:
+        | import("./conversation_store").AutoConversationSink
+        | null = null
       const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
       ;(
         fakeAutoRun as unknown as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+          bind: (s: import("./conversation_store").AutoConversationSink) => void
         }
       ).bind = (s) => {
         boundSink = s
@@ -750,12 +756,13 @@ describe("createChatSessionStore", () => {
     // Capture the sink the store binds into the auto-run store so tests can
     // drive the runner's control/round events (onToolExecutionEnd, idle, off).
     function bindSink(fake: unknown): {
-      get: () => import("./auto_run_store").AutoRunChatSink | null
+      get: () => import("./conversation_store").AutoConversationSink | null
     } {
-      let sink: import("./auto_run_store").AutoRunChatSink | null = null
+      let sink: import("./conversation_store").AutoConversationSink | null =
+        null
       ;(
         fake as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
+          bind: (s: import("./conversation_store").AutoConversationSink) => void
         }
       ).bind = (s) => {
         sink = s
@@ -1826,9 +1833,9 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     // The server resolves it to the active run whose current leaf is t_now and
     // whose burst is RUNNING (Phase 9).
     const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
+      session_id: "cv_live",
       current_trace_id: "t_now",
-      status: "running",
+      state: "running",
     })
     const attach = vi.fn()
     const beginReconnect = vi.fn()
@@ -1862,7 +1869,7 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     // arg opens a fresh assistant turn for the replayed in-flight round so it
     // doesn't overwrite the last hydrated bubble.
     expect(beginReconnect).toHaveBeenCalled()
-    expect(attach).toHaveBeenCalledWith("ar_live", true, true)
+    expect(attach).toHaveBeenCalledWith("cv_live", true, true)
     // The caught-up messages replaced the stale restored view.
     expect(get(store).messages).toEqual(hydratedMessages)
   })
@@ -1879,9 +1886,9 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
 
     const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
+      session_id: "cv_live",
       current_trace_id: "t_now",
-      status: "idle",
+      state: "idle",
     })
     const attach = vi.fn()
     const auto = makeFakeAutoRun({ resolve, attach })
@@ -1900,7 +1907,7 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
     expect(mockHydrate).not.toHaveBeenCalled()
     // ...but we STILL attach so the conversation isn't left looking dead (IDLE
     // status → not working), opening a fresh in-flight turn.
-    expect(attach).toHaveBeenCalledWith("ar_live", false, true)
+    expect(attach).toHaveBeenCalledWith("cv_live", false, true)
   })
 
   it("bails without hydrating/attaching if the user switches conversations mid-resync", async () => {
@@ -1920,9 +1927,9 @@ describe("resyncOnLoad (hard-refresh resync)", () => {
       .mockReturnValue("t_switched")
 
     const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
+      session_id: "cv_live",
       current_trace_id: "t_now",
-      status: "running",
+      state: "running",
     })
     const attach = vi.fn()
     const auto = makeFakeAutoRun({ resolve, attach })

@@ -1,4 +1,3 @@
-from app.desktop.studio_server.chat.auto.api import connect_chat_auto_api
 from app.desktop.studio_server.chat.routes import ExecuteToolsRequest, connect_chat_api
 from app.desktop.studio_server.chat.runtime.api import connect_conversations_api
 from app.desktop.studio_server.chat.sse_parser import EventParser
@@ -25,7 +24,6 @@ __all__ = [
     "tool_input_executor_is_server",
     "tool_requires_user_approval",
     "connect_chat_api",
-    "connect_chat_auto_api",
     "connect_conversations_api",
     "execute_tool",
     "execute_tool_batch",

@@ -155,14 +155,23 @@ export interface StreamEvent {
   enable_tool_call_id?: string
   reason?: string | null
   sibling_tool_calls?: ToolCallsPendingItem[]
-  /** ``auto-mode-on`` / ``auto-mode-off`` / ``auto-mode-idle`` carry the run id (and reason) */
+  /** ``kiln-chat-retry`` on a desktop-owned run carries the session id under
+   * the legacy ``run_id`` key */
   run_id?: string
   /** ``user-message`` echo carries the injected user message content */
   content?: string
-  /** ``auto-mode-state`` (Phase 9) on-subscribe liveness snapshot */
-  flag_on?: boolean
-  working?: boolean
-  /** ``auto-mode-retry`` carries the current/limit attempt + the upstream status */
+  /** ``conversation-state`` (the unified lifecycle event that replaced
+   * auto-mode-on/off/idle/state and kiln-subagent-status): session_id is the
+   * conversation handle; ``state`` reuses the field the compaction event
+   * declares above; auto_flag/idle_reason carry the auto-mode axis (reasons:
+   * armed/asked_user/done/error/max_rounds while on, user_stopped/
+   * user_disabled when the flag just cleared); ``kind`` is
+   * interactive|auto|subagent. */
+  session_id?: string
+  kind?: string
+  auto_flag?: boolean
+  idle_reason?: string
+  /** ``kiln-chat-retry`` carries the current/limit attempt + the upstream status */
   attempt?: number
   max_attempts?: number
   status_code?: number

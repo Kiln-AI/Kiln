@@ -54,8 +54,9 @@ from .models import ConversationPolicy, ConversationRecord
 # can still call it redundantly. Resolve it as a no-op "already enabled"
 # instead of letting it fall through to execute_tool (which would return an
 # "Unknown tool name" error), and continue the burst.
-# Canonical copy of chat/auto/runner.py's ENABLE_AUTO_MODE_RESULT (deleted in
-# phase 3); byte-identical because it is persisted in traces.
+# Canonical (and only) home since phase 3 deleted chat/auto/runner.py's
+# ENABLE_AUTO_MODE_RESULT; byte-pinned in test_interceptors.py because it is
+# persisted in traces.
 ENABLE_AUTO_MODE_RESULT = json.dumps(
     {"status": "enabled", "detail": "Auto mode is already enabled."},
     ensure_ascii=False,
@@ -200,16 +201,17 @@ def intercept_disable_auto_mode_interactive(
     not this path's). Old ChatStreamSession.stream() disable branch."""
     if event.toolName != DISABLE_AUTO_MODE_TOOL_NAME:
         return None
-    # TODO(phase-3): wire the disable CASCADE for this path. The old
-    # interactive interception called auto_chat_registry.disable_for_trace(),
-    # which — beyond clearing the flag — cancelled any live auto burst,
-    # published auto-mode-off, and cascade-stopped the conversation's
-    # sub-agent children (_stop_subagent_children). Here we only clear the
-    # record's flag (CR n1); note also that _finish_run's flag-off GC branch
-    # keys on record.kind == "auto", so an interactive-kind record disabled
-    # via this path is NOT off-auto-GC'd. When phase 3 ports auto mode onto
-    # the supervisor, the auto-disable endpoint/flow must own: cancel burst if
-    # RUNNING, publish the flag-off state, and stop_children(session_id).
+    # Cascade status: the LIVE interactive path (the old loop, until phase 4)
+    # now gets the full disable cascade — phase 3 retargeted
+    # ChatStreamSession._clear_auto_mode_flag onto
+    # conversation_supervisor.disable_auto_for_trace (cancel live burst,
+    # publish off state, TTL GC, stop_children) — which resolved the phase-1
+    # TODO(phase-3) that lived here. THIS interceptor only runs once
+    # interactive conversations execute on the engine (phase 4) and still
+    # only clears the record's flag. TODO(phase-4): route this path through
+    # the same supervisor cascade — on an engine-interactive disable the
+    # supervisor's settle/flow must own stop_children(session_id) and the
+    # flag-off state publish (the settle publish already covers the latter).
     return InterceptResult(
         kind="resolve_immediate",
         result_json=DISABLE_AUTO_MODE_RESULT,

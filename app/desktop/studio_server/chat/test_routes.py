@@ -175,6 +175,61 @@ def test_list_chat_sessions_forwards_to_kiln(
 
 
 @patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_list_chat_sessions_auto_join_reads_supervisor(
+    mock_asyncio_detailed, client, mock_api_key, monkeypatch
+):
+    # Phase 3: the auto_active/auto_run_id join reads the conversation
+    # supervisor (the old AutoChatRegistry is gone). auto_run_id carries the
+    # auto conversation's SESSION id, and the join keys on flag-on records —
+    # the green dot persists while IDLE, disappears once stopped/disabled
+    # (old AutoRunStatus.flag_on semantics).
+    from app.desktop.studio_server.chat import routes as routes_module
+    from app.desktop.studio_server.chat.runtime.supervisor import (
+        ConversationSupervisor,
+    )
+
+    sup = ConversationSupervisor()
+    monkeypatch.setattr(routes_module, "conversation_supervisor", sup)
+    record = sup.create_conversation(
+        "auto", upstream_url="https://example.test", headers={}
+    )
+    # Adopt the row's leaf like enable_auto does (whole-chain index).
+    record.current_leaf_trace_id = "t1"
+    record.seen_trace_ids.append("t1")
+    sup._trace_index["t1"] = record.session_id
+
+    parsed_item = SdkChatSessionListItem.from_dict(
+        {
+            "id": "t1",
+            "title": "Active one",
+            "updated_at": "2025-06-15T12:30:00+00:00",
+            "task_run": _make_task_run_dict(),
+        }
+    )
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"[]",
+        headers={"content-type": "application/json"},
+        parsed=[parsed_item],
+    )
+
+    r = client.get("/api/chat/sessions")
+    assert r.status_code == 200
+    body = r.json()
+    assert body[0]["auto_active"] is True
+    assert body[0]["auto_run_id"] == record.session_id
+
+    # Flag off → the join drops it (no green dot after stop/disable).
+    record.auto_flag = False
+    r = client.get("/api/chat/sessions")
+    assert r.json()[0]["auto_active"] is False
+    assert r.json()[0]["auto_run_id"] is None
+
+
+@patch(
     "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
     new_callable=AsyncMock,
 )
@@ -1335,3 +1390,184 @@ def test_version_policy_degrades_on_transport_error(client, mock_api_key):
         r = client.get("/api/chat/version_policy")
     assert r.status_code == 200
     assert r.json() == {"required": False, "upgrade_nudge_version": None}
+
+
+# ── Auto-mode interception on the interactive stream (port of the old
+#    chat/auto/test_api.py /api/chat coverage; the interactive loop still
+#    hosts these interceptions until phase 4). ─────────────────────────────────
+
+
+def test_enable_auto_mode_emits_consent_required(client, mock_api_key):
+    chunks = [
+        b'data: {"type":"kiln_chat_trace","trace_id":"t1"}\n\n',
+        sse_text_delta("I can run this for you"),
+        b'data: {"type":"tool-input-available","toolCallId":"tc_enable","toolName":"enable_auto_mode","input":{"reason":"run the full eval"}}\n\n',
+        b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+    ]
+    mock_client, get_call_count = make_n_round_mock_client(chunks, [])
+    execute_tool_mock = AsyncMock()
+
+    with patch(PATCH_ASYNC_CLIENT, MagicMock(return_value=mock_client)):
+        with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
+            r = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "run my eval"}]},
+            )
+
+    assert r.status_code == 200
+    consent = [
+        e
+        for e in _parse_sse_events(r.content)
+        if e.get("type") == "auto-mode-consent-required"
+    ]
+    assert len(consent) == 1
+    assert consent[0]["enable_tool_call_id"] == "tc_enable"
+    assert consent[0]["trace_id"] == "t1"
+    assert consent[0]["reason"] == "run the full eval"
+    assert consent[0]["sibling_tool_calls"] == []
+    # enable_auto_mode is never executed and the loop returns (single round).
+    execute_tool_mock.assert_not_called()
+    assert get_call_count() == 1
+
+
+def test_enable_auto_mode_carries_sibling_tool_calls(client, mock_api_key):
+    chunks = [
+        sse_text_delta("here we go"),
+        b'data: {"type":"tool-input-available","toolCallId":"tc_enable","toolName":"enable_auto_mode","input":{}}\n\n',
+        b'data: {"type":"tool-input-available","toolCallId":"tc_sib","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
+        b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+    ]
+    mock_client, _ = make_n_round_mock_client(chunks, [])
+    with patch(PATCH_ASYNC_CLIENT, MagicMock(return_value=mock_client)):
+        r = client.post(
+            "/api/chat", json={"messages": [{"role": "user", "content": "go"}]}
+        )
+
+    assert r.status_code == 200
+    consent = [
+        e
+        for e in _parse_sse_events(r.content)
+        if e.get("type") == "auto-mode-consent-required"
+    ]
+    assert len(consent) == 1
+    assert consent[0]["reason"] is None
+    assert {s["toolCallId"] for s in consent[0]["sibling_tool_calls"]} == {"tc_sib"}
+
+
+def _seed_live_auto_conversation(monkeypatch, trace_id: str = "t1"):
+    """A fresh supervisor holding a flag-on IDLE auto conversation indexed
+    under ``trace_id``, patched over the singleton the interception path
+    (stream_session._clear_auto_mode_flag) resolves lazily."""
+    from app.desktop.studio_server.chat.runtime import supervisor as supervisor_module
+    from app.desktop.studio_server.chat.runtime.supervisor import (
+        ConversationSupervisor,
+    )
+
+    sup = ConversationSupervisor(terminal_ttl_seconds=60.0)
+    monkeypatch.setattr(supervisor_module, "conversation_supervisor", sup)
+    record = sup.create_conversation(
+        "auto", upstream_url="https://example.test", headers={}
+    )
+    record.current_leaf_trace_id = trace_id
+    record.seen_trace_ids.append(trace_id)
+    sup._trace_index[trace_id] = record.session_id
+    return sup, record
+
+
+def test_disable_auto_mode_intercepted_and_continues_interactively(
+    client, mock_api_key, monkeypatch
+):
+    # The model calls disable_auto_mode on the interactive stream → it is
+    # intercepted (never executed), the SUPERVISOR conversation's flag clears
+    # with reason user_disabled (phase 3 retargeted the cascade from the old
+    # auto registry), the call resolves {"status":"disabled"}, and the stream
+    # continues interactively (a second upstream round runs).
+    sup, record = _seed_live_auto_conversation(monkeypatch)
+    round1 = [
+        b'data: {"type":"kiln_chat_trace","trace_id":"t1"}\n\n',
+        sse_text_delta("turning auto mode off"),
+        b'data: {"type":"tool-input-available","toolCallId":"tc_disable","toolName":"disable_auto_mode","input":{}}\n\n',
+        b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+    ]
+    round2 = [
+        sse_text_delta("back to interactive"),
+        b'data: {"type":"finish","messageMetadata":{"finishReason":"stop"}}\n\n',
+    ]
+    mock_client, get_call_count = make_n_round_mock_client(round1, round2)
+    execute_tool_mock = AsyncMock()
+
+    with patch(PATCH_ASYNC_CLIENT, MagicMock(return_value=mock_client)):
+        with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
+            r = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "stop auto mode"}]},
+            )
+
+    assert r.status_code == 200
+    events = _parse_sse_events(r.content)
+    # disable_auto_mode is never executed.
+    execute_tool_mock.assert_not_called()
+    # The flag cleared on the live supervisor record with the disable reason.
+    assert record.auto_flag is False
+    assert record.idle_reason == "user_disabled"
+    # The interactive stream resolved the call as disabled…
+    disabled_outputs = [
+        json.loads(e["output"])
+        for e in events
+        if e.get("type") == "tool-output-available"
+        and e.get("toolCallId") == "tc_disable"
+    ]
+    assert disabled_outputs == [{"status": "disabled"}]
+    # …and continued interactively (two upstream rounds).
+    assert any(
+        e.get("type") == "text-delta" and e.get("delta") == "back to interactive"
+        for e in events
+    )
+    assert get_call_count() == 2
+
+
+def test_disable_auto_mode_interactive_sibling_requiring_approval_is_denied(
+    client, mock_api_key, monkeypatch
+):
+    # On the INTERACTIVE disable path, a sibling bundled in the same turn as
+    # disable_auto_mode goes through the normal approval gate, NOT
+    # auto-approval: with no decision available on this path it is denied
+    # (DENIED_TOOL_OUTPUT) rather than run without consent.
+    _seed_live_auto_conversation(monkeypatch)
+    round1 = [
+        b'data: {"type":"kiln_chat_trace","trace_id":"t1"}\n\n',
+        b'data: {"type":"tool-input-available","toolCallId":"tc_disable","toolName":"disable_auto_mode","input":{}}\n\n',
+        b'data: {"type":"tool-input-available","toolCallId":"tc_sibling","toolName":"call_kiln_api","input":{"x":1},"kiln_metadata":{"requires_approval":true}}\n\n',
+        b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+    ]
+    round2 = [
+        sse_text_delta("back to interactive"),
+        b'data: {"type":"finish","messageMetadata":{"finishReason":"stop"}}\n\n',
+    ]
+    mock_client, _ = make_n_round_mock_client(round1, round2)
+    execute_tool_mock = AsyncMock()
+
+    with patch(PATCH_ASYNC_CLIENT, MagicMock(return_value=mock_client)):
+        with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
+            r = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "stop auto mode"}]},
+            )
+
+    assert r.status_code == 200
+    events = _parse_sse_events(r.content)
+    execute_tool_mock.assert_not_called()
+    sibling_outputs = [
+        e["output"]
+        for e in events
+        if e.get("type") == "tool-output-available"
+        and e.get("toolCallId") == "tc_sibling"
+    ]
+    assert sibling_outputs == [DENIED_TOOL_OUTPUT]
+    disabled_outputs = [
+        json.loads(e["output"])
+        for e in events
+        if e.get("type") == "tool-output-available"
+        and e.get("toolCallId") == "tc_disable"
+    ]
+    assert disabled_outputs == [{"status": "disabled"}]

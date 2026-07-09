@@ -11,11 +11,11 @@ import {
   type ToolCallsPendingPayload,
 } from "./streaming_chat"
 import {
-  auto_run_store,
-  type AutoRunStore,
-  type EnableAutoRequest,
-  type DeclineAutoRequest,
-} from "./auto_run_store"
+  auto_conversation_store,
+  type AutoConversationStore,
+  type CreateAutoConversationRequest,
+  type DeclineAutoModeRequest,
+} from "./conversation_store"
 import type { AutoModeConsentRequiredPayload } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
 import {
@@ -73,7 +73,7 @@ export interface ChatSessionState extends PersistedChatSession {
    * A transient upstream failure is being retried with backoff during the
    * interactive stream (``kiln-chat-retry``): ``{ attempt, max }`` while retrying,
    * else null. Drives the "retrying N/M…" affordance for non-auto chat. (Auto
-   * mode surfaces the same affordance via ``auto_run_store.retry``.) Runtime-only.
+   * mode surfaces the same affordance via the auto conversation store.) Runtime-only.
    */
   retry: { attempt: number; max: number } | null
   /**
@@ -154,7 +154,9 @@ const EMPTY_PERSISTED: PersistedChatSession = {
 
 export function createChatSessionStore(
   sessionStorageKey?: string,
-  autoRunStore: AutoRunStore = auto_run_store,
+  // The auto conversation store (folded into conversation_store.ts in
+  // phase 3); injectable for tests exactly like the old auto_run_store.
+  autoRunStore: AutoConversationStore = auto_conversation_store,
 ): ChatSessionStore {
   const persisted = sessionStorageKey
     ? sessionStorageStore<PersistedChatSession>(sessionStorageKey, {
@@ -695,7 +697,7 @@ export function createChatSessionStore(
       requiresApproval: Boolean(s.requiresApproval),
     }))
     if (accepted) {
-      const seed: EnableAutoRequest = {
+      const seed: CreateAutoConversationRequest = {
         trace_id: traceId,
         enable_tool_call_id: payload.enableToolCallId,
         pending_tool_calls: siblings,
@@ -711,7 +713,7 @@ export function createChatSessionStore(
         )
       }
     } else {
-      const req: DeclineAutoRequest = {
+      const req: DeclineAutoModeRequest = {
         trace_id: traceId,
         enable_tool_call_id: payload.enableToolCallId,
         siblings,
@@ -870,8 +872,10 @@ export function createChatSessionStore(
     // consent. The runner echoes the message + streams the burst on the observer
     // stream (ui_design §2; architecture §13.2/§13.4).
     if (autoOn) {
-      const traceId = traceIdForNextChatRequest(get(persisted).messages)
-      const result = await autoRunStore.sendMessage(trimmed, traceId)
+      // No trace id rides the inject anymore: the desktop supervisor's own
+      // current leaf is authoritative for the idle re-arm (the old endpoint
+      // took the browser's possibly-staler leaf as a fallback input).
+      const result = await autoRunStore.sendMessage(trimmed)
       if (!result.ok) {
         pushInlineError(
           `Couldn't send the message: ${result.error ?? "unknown error"}`,
@@ -915,7 +919,7 @@ export function createChatSessionStore(
     updateMessages((msgs) => [...msgs, userMessage])
     persisted.update((p) => ({ ...p, lastSentAppState: currentAppState }))
     const apiContent = header ? header + "\n" + text : text
-    const seed: EnableAutoRequest = {
+    const seed: CreateAutoConversationRequest = {
       extra_messages: [{ role: "user", content: apiContent }],
     }
     const result = await autoRunStore.requestEnable(seed)
@@ -1029,7 +1033,7 @@ export function createChatSessionStore(
     // continuationTraceId, so if the active trace no longer matches the one we
     // started resyncing, this resync is for a conversation that's no longer
     // showing. Bail with a plain return — never detach()/loadSession(), since
-    // the shared auto_run_store may already be owned by the newly-selected
+    // the shared auto conversation store may already be owned by the newly-selected
     // session and we must not clobber its observer or its messages.
     const isStillCurrent = () =>
       (traceIdForNextChatRequest(get(persisted).messages) ??
@@ -1090,7 +1094,9 @@ export function createChatSessionStore(
     // wait for the first event); openInflightTurn=true renders the replayed
     // in-flight round into its own assistant turn so it doesn't overwrite the
     // last hydrated bubble (the buffer replay carries only the current round).
-    autoRunStore.attach(resolved.run_id, resolved.status === "running", true)
+    // resolved.session_id is the conversation handle (the old run id) and
+    // resolved.state the unified RunState (the old status).
+    autoRunStore.attach(resolved.session_id, resolved.state === "running", true)
   }
 
   function handleToolCallsPending(

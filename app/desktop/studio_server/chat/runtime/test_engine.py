@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from app.desktop.studio_server.chat.auto.test_fakes import (
+from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
     finish,

@@ -792,13 +792,22 @@ class ChatStreamSession:
     @staticmethod
     async def _clear_auto_mode_flag(trace_id: str | None) -> None:
         """Clear the conversation's auto-mode flag for an intercepted
-        disable_auto_mode call. Imported lazily to avoid a circular import
-        (the auto registry depends on this module's round mechanics)."""
+        disable_auto_mode call — the full disable CASCADE, not just a flag
+        write: ``disable_auto_for_trace`` cancels any live burst, publishes
+        the off state (reason user_disabled), TTL-schedules the record, and
+        cascade-stops the conversation's sub-agent children. Phase 3
+        retargeted this from ``auto_chat_registry.disable_for_trace`` to the
+        conversation supervisor (same semantics; this was the phase-1
+        TODO(phase-3) at the runtime interceptor site). Imported lazily to
+        avoid a circular import (the supervisor's engine depends on this
+        module's round mechanics)."""
         if not trace_id:
             return
-        from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
+        from app.desktop.studio_server.chat.runtime.supervisor import (
+            conversation_supervisor,
+        )
 
-        await auto_chat_registry.disable_for_trace(trace_id)
+        await conversation_supervisor.disable_auto_for_trace(trace_id)
 
     @staticmethod
     def _format_tool_output(tc_id: str, output: str) -> bytes:

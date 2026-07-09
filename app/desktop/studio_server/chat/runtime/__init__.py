@@ -1,4 +1,4 @@
-"""Unified conversation runtime (assistant_unified_runtime, phases 1-2).
+"""Unified conversation runtime (assistant_unified_runtime, phases 1-3).
 
 This package is the single home for every desktop-owned chat conversation —
 interactive, auto mode, and sub-agents — replacing the three parallel loops
@@ -19,17 +19,24 @@ their two registries with:
 Wiring status by phase:
 
 - Phase 1 built everything below fully tested but UNWIRED.
-- Phase 2 (current): SUB-AGENTS run here for real — spawned by
+- Phase 2: SUB-AGENTS run here for real — spawned by
   ``chat/orchestration.py`` (the relocated tool executor) onto the
   ``supervisor.conversation_supervisor`` singleton, observed via
-  ``/api/conversations``. ``chat/subagents/`` was deleted. Interactive and
-  auto conversations still run on the OLD loops (``chat/routes.py``,
-  ``chat/auto/``) until phases 3-4; the bridge seams for their parent
-  identity live in ``chat/orchestration.py``, not here.
+  ``/api/conversations``. ``chat/subagents/`` was deleted.
+- Phase 3 (current): AUTO conversations run here too — consent accept /
+  manual enable creates (or flips) a ``kind="auto"`` record
+  (``supervisor.enable_auto``) whose bursts run on the engine under
+  ``auto_policy()``; the browser surface re-homed under
+  ``/api/conversations`` (create / {sid}/auto / auto/decline / resolve /
+  stop / messages / events). ``chat/auto/`` was deleted. INTERACTIVE
+  conversations still run on the OLD loop (``chat/routes.py`` +
+  ``ChatStreamSession``) until phase 4; their parent-identity bridge
+  (``trace:<leaf>`` keys) lives in ``chat/orchestration.py``, not here.
 
-This package must never import from ``chat/auto/`` (deleted in phase 3); the
-few helpers it needed from the doomed packages exist here as canonical
-copies, each annotated with the old location it preserves.
+The helpers this package needed from the doomed old packages exist here as
+canonical copies, each annotated with the old location it preserves (and
+byte-pinned in ``test_interceptors.py`` where the strings are persisted in
+traces).
 
 What IS shared with the old world — deliberately, so the upstream protocol
 cannot drift — are the round primitives in ``chat/stream_session.py``

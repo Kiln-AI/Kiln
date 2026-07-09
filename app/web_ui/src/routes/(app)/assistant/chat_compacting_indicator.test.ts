@@ -26,30 +26,39 @@ vi.mock("$lib/api_client", () => ({
   client: { GET: vi.fn(), POST: vi.fn() },
 }))
 
-// chat.svelte reads several readable stores off the auto_run_store singleton at
-// component init; provide inert ones so the component mounts in isolation.
-vi.mock("$lib/chat/auto_run_store", () => ({
-  auto_run_store: {
-    autoModeOn: writable(false),
-    armed: writable(false),
-    working: writable(false),
-    reconnecting: writable(false),
-    runId: writable(null),
-    offReason: writable(null),
-    connection: writable("idle"),
-    bind: vi.fn(),
-    detach: vi.fn(),
-    requestEnable: vi.fn().mockResolvedValue({ ok: true }),
-    decline: vi.fn().mockResolvedValue(undefined),
-    sendMessage: vi.fn().mockResolvedValue({ ok: true }),
-    stop: vi.fn().mockResolvedValue(undefined),
-    resolve: vi.fn().mockResolvedValue(null),
-    beginReconnect: vi.fn(),
-    attach: vi.fn(),
-    arm: vi.fn(),
-    disarm: vi.fn(),
-  },
-}))
+// chat.svelte reads several readable stores off the auto conversation store
+// singleton at component init (folded into conversation_store.ts in phase 3);
+// provide inert ones so the component mounts in isolation, keeping the rest
+// of the module (conversation_store, tab helpers) real.
+vi.mock("$lib/chat/conversation_store", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("$lib/chat/conversation_store")>()
+  return {
+    ...actual,
+    auto_conversation_store: {
+      autoModeOn: writable(false),
+      armed: writable(false),
+      working: writable(false),
+      reconnecting: writable(false),
+      retry: writable(null),
+      sessionId: writable(null),
+      offReason: writable(null),
+      connection: writable("idle"),
+      bind: vi.fn(),
+      detach: vi.fn(),
+      requestEnable: vi.fn().mockResolvedValue({ ok: true }),
+      decline: vi.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+      stop: vi.fn().mockResolvedValue(undefined),
+      resolve: vi.fn().mockResolvedValue(null),
+      beginReconnect: vi.fn(),
+      attach: vi.fn(),
+      arm: vi.fn(),
+      disarm: vi.fn(),
+      _close: vi.fn(),
+    },
+  }
+})
 
 vi.mock("$lib/stores", () => ({
   chat_cost_disclaimer_acknowledged: writable(true),

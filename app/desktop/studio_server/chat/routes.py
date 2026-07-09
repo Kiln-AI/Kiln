@@ -22,7 +22,6 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.chat import orchestration
-from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
 from app.desktop.studio_server.chat.orchestration import OrchestrationContext
 from app.desktop.studio_server.chat.runtime.sse import format_user_message
 from app.desktop.studio_server.chat.runtime.supervisor import conversation_supervisor
@@ -77,6 +76,13 @@ class ChatSessionListItem(BaseModel):
     id: str
     title: str | None = None
     updated_at: datetime | None = None
+    # Live auto-mode join from the in-memory conversation supervisor (phase 3
+    # moved it off the deleted AutoChatRegistry). Wire names unchanged so the
+    # history UI ports mechanically, but auto_run_id now carries the auto
+    # CONVERSATION's session id (cv_…, addressable via /api/conversations) —
+    # the same rename-by-value the phase-2 subagent_id join did. auto_active
+    # stays flag-on semantics (RUNNING or IDLE — the green dot persists while
+    # the run idles between bursts; old AutoRunStatus.flag_on).
     auto_active: bool = False
     auto_run_id: str | None = None
     # Sub-agent lineage. agent_type/root_id/parent_root_id come from the
@@ -295,13 +301,18 @@ def connect_chat_api(app: FastAPI) -> None:
             for item in detailed.parsed:
                 if not isinstance(item, ApiSessionListItem):
                     continue
-                # Server-side join against the in-memory auto-run registry so the
-                # UI gets a single, point-in-time view of which sessions are
-                # actively running in auto mode (no two-list correlation client
-                # side). A sub-ms race here is self-healing on the next refresh.
-                auto_active, auto_run_id = auto_chat_registry.is_active_for_trace(
-                    item.id
-                )
+                # Server-side join against the in-memory conversation
+                # supervisor so the UI gets a single, point-in-time view of
+                # which sessions are actively running in auto mode (no
+                # two-list correlation client side; old
+                # auto_chat_registry.is_active_for_trace). auto_record_for_
+                # trace resolves any leaf the conversation ever had and
+                # filters to flag-ON auto records — the green dot persists
+                # while idle between bursts, disappears once stopped/disabled.
+                # A sub-ms race here is self-healing on the next refresh.
+                auto_record = conversation_supervisor.auto_record_for_trace(item.id)
+                auto_active = auto_record is not None
+                auto_run_id = auto_record.session_id if auto_record else None
                 # Durable lineage from the upstream session meta rides in the
                 # generated SDK's additional_properties (the SDK model predates
                 # these fields; regeneration isn't needed to read them).

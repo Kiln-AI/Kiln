@@ -3,14 +3,13 @@
 The runtime deliberately keeps canonical COPIES of constants whose old homes
 are deleted phase by phase, and the guard style below tracks that lifecycle:
 
-- ``chat/subagents/`` was deleted in phase 2, so its guards are now BYTE-PINS
-  of the exact strings (the runtime is their only home; the pinned bytes are
-  persisted in traces, so silently changing one corrupts the protocol).
-- ``chat/auto/`` is still live until phase 3, so its guards remain equality
-  checks against the old module while both copies exist.
+- ``chat/subagents/`` was deleted in phase 2 and ``chat/auto/`` in phase 3,
+  so ALL the guards are now BYTE-PINS of the exact strings — the runtime is
+  their only home, and the pinned bytes are persisted in traces, so silently
+  changing one corrupts the protocol.
 
-Either way, an intentional change must update both sides (and the golden
-fixtures, since these strings are persisted in traces)."""
+An intentional change must update the pin here AND the golden fixtures
+(these strings ride the captured upstream request bodies)."""
 
 from __future__ import annotations
 
@@ -60,13 +59,12 @@ def _ctx(policy, kind="interactive", events=None, trace_id="tr-1"):
 # ── Drift guards ───────────────────────────────────────────────────────────────
 #
 # Phase-1 note: these started as equality checks against the OLD modules
-# (chat/subagents/*, chat/auto/runner.py). Phase 2 deleted the sub-agent side,
-# making the runtime the CANONICAL (and only) home of those strings — the
-# sub-agent assertions below therefore pin the exact bytes instead, because
-# every one of them is persisted in traces (tool results, message framings,
-# kickoff text, report frames) and silently changing one would corrupt the
-# protocol contract the golden fixtures also pin. The auto assertions still
-# compare against the live old module until phase 3 deletes it.
+# (chat/subagents/*, chat/auto/runner.py). Phases 2–3 deleted both old homes,
+# making the runtime the CANONICAL (and only) home of these strings — every
+# assertion below therefore pins the exact bytes, because each string is
+# persisted in traces (tool results, message framings, kickoff text, report
+# frames) and silently changing one would corrupt the protocol contract the
+# golden fixtures also pin.
 
 
 class TestDriftGuards:
@@ -87,12 +85,12 @@ class TestDriftGuards:
         assert orchestration.SPAWN_SUBAGENT_TOOL_NAME == SPAWN_SUBAGENT_TOOL_NAME
 
     def test_result_constants_pinned(self):
-        # Persisted-in-trace strings. ENABLE still tracks the live old auto
-        # runner (deleted in phase 3); the sub-agent constants are pinned as
-        # bytes since phase 2 made this module their only home.
-        from app.desktop.studio_server.chat.auto import runner as auto_runner
-
-        assert ENABLE_AUTO_MODE_RESULT == auto_runner.ENABLE_AUTO_MODE_RESULT
+        # Persisted-in-trace strings, pinned as exact bytes: the sub-agent
+        # constants since phase 2, ENABLE since phase 3 deleted its old home
+        # (chat/auto/runner.py).
+        assert ENABLE_AUTO_MODE_RESULT == (
+            '{"status": "enabled", "detail": "Auto mode is already enabled."}'
+        )
         assert (
             DEPTH_LIMIT_RESULT
             == '{"error": "Sub-agents cannot spawn or manage sub-agents."}'
@@ -103,13 +101,19 @@ class TestDriftGuards:
         )
 
     def test_framing_reminders_pinned(self):
-        from app.desktop.studio_server.chat.auto import runner as auto_runner
-
         from .engine import SIDE_NOTE_REMINDER, STEER_REMINDER
 
-        assert SIDE_NOTE_REMINDER == auto_runner._SIDE_NOTE_REMINDER
-        # Old home (chat/subagents/runner.py) deleted in phase 2 — pin the
-        # exact persisted bytes.
+        # Old homes (chat/auto/runner.py, chat/subagents/runner.py) deleted
+        # in phases 3 and 2 respectively — pin the exact persisted bytes.
+        assert SIDE_NOTE_REMINDER == (
+            "<system-reminder>"
+            "This message arrived from the user while you are working autonomously "
+            "in auto mode. Treat it as a side note: weave any acknowledgment or "
+            "answer into your ongoing work and keep going in the same turn — do not "
+            "end your turn just to reply. Stop only if the message explicitly asks "
+            "you to, or your task is already complete."
+            "</system-reminder>"
+        )
         assert STEER_REMINDER == (
             "<system-reminder>"
             "This message was sent by the user overseeing your background run. "

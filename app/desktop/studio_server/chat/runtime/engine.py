@@ -91,8 +91,9 @@ logger = logging.getLogger(__name__)
 # turn that still carries tool calls, so it answers AND keeps working. It does
 # NOT apply to seed messages (the task itself) or to a message that wakes an
 # idle run (those ride unframed — see the supervisor's idle re-arm).
-# Canonical copy of chat/auto/runner.py's _SIDE_NOTE_REMINDER (deleted in
-# phase 3); byte-identical because it is persisted in traces.
+# Canonical (and only) home since phase 3 deleted chat/auto/runner.py's
+# _SIDE_NOTE_REMINDER; byte-pinned in test_interceptors.py because it is
+# persisted in traces.
 SIDE_NOTE_REMINDER = (
     "<system-reminder>"
     "This message arrived from the user while you are working autonomously in auto "

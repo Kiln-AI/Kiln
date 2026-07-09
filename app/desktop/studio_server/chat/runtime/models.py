@@ -33,6 +33,7 @@ explicit policy field here — never a subclass (architecture §11).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 from dataclasses import dataclass
@@ -266,6 +267,66 @@ def build_subagent_seed_body(seed: SubAgentSeed) -> dict[str, Any]:
             }
         ],
         "agent": agent,
+        "auto_mode": True,
+    }
+
+
+def build_auto_seed_body(
+    *,
+    trace_id: str | None,
+    enable_tool_call_id: str | None,
+    extra_messages: list[dict[str, Any]],
+    sibling_results: dict[str, str],
+) -> dict[str, Any]:
+    """The first upstream continuation body of an auto burst — byte-identical
+    port of ``AutoChatRunner._build_seed_body`` (``chat/auto/runner.py``,
+    deleted in phase 3), pinned end-to-end by the ``auto_seed_and_tool_round``
+    golden fixture.
+
+    Message order preserved from the old builder: any ``extra_messages``
+    first (the manual/armed-first-send path carries the user's message), then
+    the accepted ``enable_auto_mode`` call resolved as ``{"status":"enabled"}``,
+    then one ``role:tool`` result per auto-executed sibling pending call. The
+    caller (``ConversationSupervisor.enable_auto``) executes the siblings —
+    the old runner awaited ``execute_tool_batch`` inline; splitting execution
+    out keeps this builder pure/testable while the wire shape stays identical.
+
+    ``auto_mode`` rides every continuation: the engine's ``{**body, ...}``
+    rebuilds propagate it through the whole burst, so seeding it once here is
+    enough. The upstream orchestrator reads it to phrase the auto-round-cap
+    reminder for an absent user (act or report stuck, don't ask a question).
+
+    Revision R2 preserved: when ``trace_id`` is absent (a brand-new
+    conversation) the body omits it entirely so the backend starts a fresh
+    conversation and mints the first trace on the opening turn; the seed then
+    carries the first user message in ``extra_messages`` so the opening turn
+    is never empty.
+    """
+    messages: list[dict[str, Any]] = list(extra_messages)
+
+    if enable_tool_call_id:
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": enable_tool_call_id,
+                "content": json.dumps({"status": "enabled"}, ensure_ascii=False),
+            }
+        )
+
+    for tc_id, output in sibling_results.items():
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": output,
+            }
+        )
+
+    if trace_id is None:
+        return {"messages": messages, "auto_mode": True}
+    return {
+        "trace_id": trace_id,
+        "messages": messages,
         "auto_mode": True,
     }
 
