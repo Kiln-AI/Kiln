@@ -216,7 +216,6 @@
     bind:this={run_options_tiles}
     bind:selected_model_name_display={generation_model_name}
     bind:selected_provider_display={generation_provider}
-    mode="link"
     {project_id}
   />
   {#if !has_examples}
