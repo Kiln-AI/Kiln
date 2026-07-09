@@ -601,6 +601,18 @@ export function createChatSessionStore(
       setStatus("ready")
       maybeFlush()
     },
+    // BUG 2 fix: the on-subscribe idle MARKER of a genuinely-idle, flag-off
+    // conversation whose LIVE idle event was missed (observer detached at the
+    // settle instant). Deliberately flush-ONLY — no status/turn reset here
+    // (onWorkingChange(false), which runs on the same marker, already reset
+    // the composer to ready; a marker is not a settle, so we must not re-run
+    // the full onInteractiveIdle semantics the refresh-brick fix suppresses).
+    // maybeFlush is a safe no-op when nothing is queued or a turn is active,
+    // and dispatchQueued clears the queue before sending, so this can never
+    // double-send alongside a real onInteractiveIdle.
+    onIdleMarker: () => {
+      maybeFlush()
+    },
     onAwaitingApproval: () => {
       // The run parked. The old stream ended here (status went ready with the
       // box open); the observer stays attached.

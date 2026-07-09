@@ -1753,3 +1753,92 @@ async def test_interactive_lru_spares_pending_reports_and_live_children(hang_eng
     assert sup.get(plain.session_id) is None
     for record in sup.children_of(with_child.session_id):
         await sup.stop(record.session_id)
+
+
+# ── BUG 1: inbox-drain-on-settle (server-side stranding race) ──────────────────
+
+
+async def test_finish_run_restarts_stranded_inbox_message():
+    # The drain-settle race: a send_message POST lands in the window between
+    # the engine's LAST drain_inbox() (empty → the engine settles) and the
+    # state flipping to IDLE. The message is appended to the inbox with the
+    # state still RUNNING, the engine settles, and WITHOUT the fix nothing
+    # consumes it — the browser rendered its echo ("looks sent") but no turn
+    # ever answers it. The fix restarts a fresh turn from the stranded inbox.
+    sup = _sup()
+    record = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    record.current_leaf_trace_id = "tr-0"
+    sid = record.session_id
+
+    first_running = asyncio.Event()
+    release_first = asyncio.Event()
+    restart_bodies: list[dict] = []
+
+    async def _run(self, record, policy, io, initial_body=None):
+        if not first_running.is_set():
+            # FIRST turn: pause so the test can POST a message while RUNNING…
+            first_running.set()
+            await release_first.wait()
+            # …then settle idle WITHOUT draining it (its send landed after the
+            # engine's last drain — the stranding window).
+            record.state = RunState.IDLE
+            record.idle_reason = "done"
+            return
+        # SECOND turn = the settle-triggered restart. Capture its seed body.
+        restart_bodies.append(initial_body)
+        record.state = RunState.IDLE
+        record.idle_reason = "done"
+
+    with patch.object(ConversationEngine, "run", _run):
+        sup.start_run(sid, {"messages": [{"role": "user", "content": "go"}]})
+        await first_running.wait()
+        # A user message POSTs while the turn is RUNNING: appended to the inbox
+        # and echoed onto the bus (echo-once — send_message echoes at enqueue).
+        assert sup.send_message(sid, "did it work?") is not None
+        conv = sup._conversations[sid]
+        assert [m.content for m in conv.inbox] == ["did it work?"]
+        release_first.set()
+        await _wait_for(lambda: len(restart_bodies) == 1)
+
+    # The stranded message rode a fresh turn (no stranding) with the EXACT
+    # idle re-arm shape: unframed message + current leaf, no auto_mode (the
+    # record is interactive) — indistinguishable from a live send_message
+    # idle-start.
+    assert restart_bodies[0] == {
+        "messages": [{"role": "user", "content": "did it work?"}],
+        "trace_id": "tr-0",
+    }
+    # The restart drained the inbox — nothing left stranded.
+    assert conv.inbox == []
+    assert record.state == RunState.IDLE
+    # Echo-once: the message was echoed exactly once (at send_message enqueue),
+    # NOT re-echoed by the restart.
+    buffered = b"".join(conv.bus.buffer).decode()
+    assert buffered.count("did it work?") == 1
+
+
+async def test_stop_does_not_restart_stranded_inbox(hang_engine):
+    # The inbox-drain-on-settle restart is scoped to a NATURAL settle: an
+    # explicit stop must NOT resurrect a run. stop() awaits the cancelled task
+    # (whose _finish_run runs with restart_stranded_inbox=False) then calls
+    # _finish_run AGAIN as a backstop, relying on run-once — a restart on the
+    # cancel path would double-settle. (The client-side flush owns re-sending a
+    # stopped conversation's queue.)
+    sup = _sup()
+    record = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    record.current_leaf_trace_id = "tr-0"
+    sid = record.session_id
+    sup.start_run(sid, {"messages": [{"role": "user", "content": "go"}]})
+    await asyncio.sleep(0.02)
+    conv = sup._conversations[sid]
+    # A message queues into the inbox while the turn is RUNNING.
+    assert sup.send_message(sid, "queued") is not None
+    assert [m.content for m in conv.inbox] == ["queued"]
+
+    await sup.stop(sid)
+
+    # Idle after the stop, and the stranded message was NOT auto-restarted:
+    # conv.task stays None (no new turn) and the inbox is untouched.
+    assert record.state == RunState.IDLE
+    assert conv.task is None
+    assert [m.content for m in conv.inbox] == ["queued"]

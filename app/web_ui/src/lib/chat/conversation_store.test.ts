@@ -836,6 +836,7 @@ interface SinkCalls {
   idleReasons: (string | null)[]
   offReasons: (string | null)[]
   interactiveIdles: number
+  idleMarkers: number
   awaitingApprovals: number
   pendingToolCalls: ToolCallsPendingItem[][]
   consentPayloads: AutoModeConsentRequiredPayload[]
@@ -858,6 +859,7 @@ function makeMainSink(): { sink: MainConversationSink; calls: SinkCalls } {
     idleReasons: [],
     offReasons: [],
     interactiveIdles: 0,
+    idleMarkers: 0,
     awaitingApprovals: 0,
     pendingToolCalls: [],
     consentPayloads: [],
@@ -889,6 +891,9 @@ function makeMainSink(): { sink: MainConversationSink; calls: SinkCalls } {
     onAutoModeOff: (r) => calls.offReasons.push(r),
     onInteractiveIdle: () => {
       calls.interactiveIdles += 1
+    },
+    onIdleMarker: () => {
+      calls.idleMarkers += 1
     },
     onAwaitingApproval: () => {
       calls.awaitingApprovals += 1
@@ -1247,6 +1252,42 @@ describe("main_conversation_store", () => {
     expect(calls.interactiveIdles).toBe(1)
     expect(calls.idleReasons).toEqual([])
     expect(calls.offReasons).toEqual([])
+  })
+
+  it("an idle interactive ATTACH MARKER fires onIdleMarker, not the settle hook (BUG 2)", () => {
+    // The LIVE idle event can be missed when the observer is detached at the
+    // settle instant; on (re)subscribe only the on-subscribe idle marker
+    // arrives. The settle hook stays silent (a marker is not a settle) but the
+    // dedicated flush-only onIdleMarker fires so a client-held queued message
+    // can still be flushed instead of stranding forever.
+    store.attach("cv_marker")
+    const source = FakeEventSource.latest()
+    source.message(stateInteractiveIdle("cv_marker"))
+    expect(calls.interactiveIdles).toBe(0)
+    expect(calls.idleMarkers).toBe(1)
+    expect(get(store.working)).toBe(false)
+  })
+
+  it("a LIVE interactive idle fires the settle hook, never the marker hook (BUG 2)", () => {
+    store.attach("cv_live")
+    const source = FakeEventSource.latest()
+    // The first event consumes the attach-marker slot; the idle that follows
+    // is a genuine live settle.
+    source.message(stateRunning("cv_live", "interactive"))
+    source.message(stateInteractiveIdle("cv_live"))
+    expect(calls.interactiveIdles).toBe(1)
+    expect(calls.idleMarkers).toBe(0)
+  })
+
+  it("an auto (flag-on) idle marker does NOT fire onIdleMarker (BUG 2 scope)", () => {
+    // The flush-only marker hook is scoped to flag-off (interactive) idle
+    // markers; auto idle markers keep their existing settle-silent behavior
+    // (auto queue flushing rides round boundaries / onAutoModeIdle).
+    store.attach("cv_auto_marker", undefined, false, true)
+    const source = FakeEventSource.latest()
+    source.message(stateIdle("cv_auto_marker", "asked_user"))
+    expect(calls.idleMarkers).toBe(0)
+    expect(calls.interactiveIdles).toBe(0)
   })
 
   it("awaiting_approval signals the approvals hook on marker AND transition", () => {

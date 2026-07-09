@@ -1158,6 +1158,17 @@ class ConversationSupervisor:
         record = conv.record
         engine = ConversationEngine(conv.upstream_url, conv.headers)
         io = self._engine_io(conv)
+        # BUG 1 (inbox stranding) guard: only a NATURAL settle (the engine's
+        # run() returned without raising) may consume a stranded inbox by
+        # restarting a fresh turn. A cancel (stop/disable) or an unexpected
+        # exception must NOT resurrect a run — stop()/disable_auto() call
+        # _finish_run again as a backstop and rely on it being run-once, so a
+        # restart there would double-settle the freshly started turn (and a
+        # user who explicitly stopped does not want their queued message to
+        # silently relaunch — the client-side flush owns re-sending in that
+        # case). Set False in both handlers below; stays True only on the
+        # clean return path, which is exactly the drain-settle race window.
+        ended_naturally = True
         try:
             try:
                 # The kwarg is only passed on the resume path so test doubles
@@ -1198,6 +1209,7 @@ class ConversationSupervisor:
                 # reason publishes (old CR Moderate 2: don't clobber a
                 # pre-set USER_DISABLED/USER_STOPPED). Only fill in defaults
                 # when nothing was pre-marked.
+                ended_naturally = False
                 if not record.state.is_terminal:
                     if conv.policy.one_shot:
                         record.state = RunState.STOPPED
@@ -1211,6 +1223,10 @@ class ConversationSupervisor:
                 # An unrecoverable engine error: one-shot runs FAIL; for
                 # interactive/auto the burst ends but the flag stays on so
                 # the user can retry or stop (old registry exception paths).
+                # Conservatively NOT a natural settle: a persistent upstream
+                # error would otherwise re-launch the stranded message into
+                # the same failure on every settle.
+                ended_naturally = False
                 logger.exception("Conversation %s run failed", record.session_id)
                 if conv.policy.one_shot:
                     record.state = RunState.FAILED
@@ -1218,9 +1234,11 @@ class ConversationSupervisor:
                     record.state = RunState.IDLE
                     record.idle_reason = "error"
         finally:
-            self._finish_run(conv)
+            self._finish_run(conv, restart_stranded_inbox=ended_naturally)
 
-    def _finish_run(self, conv: _Conversation) -> None:
+    def _finish_run(
+        self, conv: _Conversation, *, restart_stranded_inbox: bool = False
+    ) -> None:
         """THE settle path — every run ends here exactly once (architecture
         §9: all settle/publish/deliver logic in one place).
 
@@ -1230,6 +1248,15 @@ class ConversationSupervisor:
         ``_supervise``). The ``run_finished`` guard makes the double call a
         no-op — the run-once ``_settle`` pattern from the old sub-agent
         registry, generalized to every kind.
+
+        ``restart_stranded_inbox`` (BUG 1 fix): when True (a NATURAL settle —
+        see ``_supervise``), a non-empty inbox at settle is consumed by
+        starting a fresh turn instead of being left stranded. The default
+        (False) is the safe choice for the ``stop()`` / ``disable_auto()``
+        backstops, which must never resurrect a run: they call this AGAIN
+        after awaiting the cancelled task, relying on the run-once guard, so a
+        restart here would double-settle. Only the clean-return path — exactly
+        the engine's drain-settle race window — passes True.
         """
         if conv.run_finished:
             return
@@ -1295,6 +1322,70 @@ class ConversationSupervisor:
             record.state.value,
             record.auto_flag,
             record.idle_reason,
+        )
+        # BUG 1 fix — inbox-drain-on-settle. Logged the settle FIRST (above)
+        # so the "run ended" line reflects the settled IDLE, then the restart
+        # (which logs + publishes RUNNING for its own new turn) follows. The
+        # off-auto branch already cleared the inbox, so this only fires for an
+        # interactive turn / flag-on auto burst that settled with a message
+        # POSTed into the inbox during the drain-settle race window.
+        if restart_stranded_inbox and conv.inbox:
+            self._restart_from_inbox(conv)
+
+    def _restart_from_inbox(self, conv: _Conversation) -> None:
+        """Consume a stranded inbox at settle by starting a fresh turn — the
+        server-side complement to the client's queued-message flush (BUG 1).
+
+        The stranding race (SERVER-SIDE): ``send_message`` appends to
+        ``conv.inbox`` whenever the state is RUNNING/AWAITING_APPROVAL. There
+        is a tiny window between the engine's LAST ``drain_inbox()`` (which
+        returned empty, so the engine settles) and the state actually flipping
+        to IDLE in ``_finish_run``. A POST landing in that window appends to
+        the inbox, the engine settles IDLE, and NOTHING consumes the message —
+        it strands until the user's next action. The browser rendered its echo
+        (so it "looks sent") but the turn that would answer it never runs.
+
+        This mirrors ``send_message``'s IDLE re-arm EXACTLY so the restarted
+        turn's persisted trace is indistinguishable from a live idle-start:
+        the same UNFRAMED user message(s) (framing is for MID-run drains only;
+        the idle re-arm sends raw — see ``send_message``), the same next-turn
+        sub-agent report injection for parent kinds, and the same
+        ``continuation_key_fields`` + ``auto_mode`` propagation.
+
+        Echo-once (old CR Moderate 1): the inbox messages were ALREADY echoed
+        onto the bus by ``send_message`` at enqueue, so they are NOT re-echoed
+        here. Only freshly drained reports (never echoed yet) are echoed, once,
+        exactly as ``send_message``'s idle branch does.
+
+        Re-entrancy: this runs from ``_finish_run`` where ``run_finished`` is
+        already True and ``conv.task`` is None; ``start_run`` resets
+        ``run_finished`` and creates a NEW task (it never awaits), so there is
+        no double-run — and it is reached only on a natural settle, never the
+        stop/disable backstop (see ``_finish_run``'s docstring).
+        """
+        record = conv.record
+        drained = conv.drain_inbox()
+        if not drained:
+            return
+        messages: list[dict[str, Any]] = [m.as_chat_message() for m in drained]
+        # Next-turn report injection (parent kinds only — a child never owns a
+        # report queue), matching send_message's idle branch; reports were not
+        # echoed at enqueue, so echo them here (once).
+        if record.kind != "subagent":
+            for report in self.drain_reports(record.session_id):
+                messages.append({"role": "user", "content": report})
+                conv.bus.emit(format_user_message(report))
+        body: dict[str, Any] = {
+            "messages": messages,
+            **continuation_key_fields(record),
+        }
+        if record.auto_flag:
+            body["auto_mode"] = True
+        self.start_run(record.session_id, body)
+        logger.info(
+            "Restarted conversation %s from stranded inbox (%d message(s))",
+            record.session_id,
+            len(drained),
         )
 
     def _orchestration_ctx(self, conv: _Conversation) -> "OrchestrationContext | None":

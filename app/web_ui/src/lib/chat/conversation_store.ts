@@ -778,6 +778,21 @@ export interface MainConversationSink {
    */
   onInteractiveIdle: () => void
   /**
+   * BUG 2 fix — the idle ATTACH MARKER of a genuinely-idle, flag-off
+   * conversation. Distinct from ``onInteractiveIdle`` (a real settle): the
+   * refresh-brick fix deliberately keeps markers settle-SILENT (a marker is
+   * not a settle), but the LIVE idle ``conversation-state`` event that would
+   * fire ``onInteractiveIdle`` is published live-only and can be MISSED when
+   * the observer is momentarily detached/reconnecting at the instant the turn
+   * settles. On (re)subscribe the bus delivers an idle marker instead — and a
+   * CLIENT-HELD queued message would then wait forever for a settle hook that
+   * never comes. So this hook does a queued-message FLUSH ONLY (no other
+   * settle semantics): the session store wires it to ``maybeFlush``, which is
+   * a safe no-op without a queue or while a turn is active. Optional so other
+   * sink consumers need not implement it.
+   */
+  onIdleMarker?: () => void
+  /**
    * The run parked on a pending approval batch (state awaiting_approval —
    * marker or live). The session store fetches the batch and opens the SAME
    * approval box the old stream-ending tool-calls-pending event drove.
@@ -1117,6 +1132,20 @@ export function createMainConversationStore(): MainConversationStore {
             // idle_reason deliberately not forwarded (rendering rule).
             sink?.onInteractiveIdle()
           }
+        } else if (isAttachMarker && !offTransition && !flagOn) {
+          // BUG 2 fix: a genuinely-idle, flag-off conversation whose LIVE
+          // idle event was missed (the observer was detached/reconnecting at
+          // the settle instant) now arrives only as this on-subscribe marker.
+          // The refresh-brick fix keeps the marker settle-silent above, so a
+          // CLIENT-HELD queued message would strand. Fire the flush-only hook
+          // to unstick it — WITHOUT the full settle semantics the brick fix
+          // suppresses. Safe: onIdleMarker → maybeFlush no-ops without a queue
+          // (e.g. the brick's echo-then-idle-marker sequence carries none) and
+          // dispatchQueued clears before sending, so a real live idle racing
+          // this marker can never double-send. Excludes flag-on (auto idle
+          // markers) and off transitions (onAutoModeOff already cleared the
+          // queue there).
+          sink?.onIdleMarker?.()
         }
       }
       return true

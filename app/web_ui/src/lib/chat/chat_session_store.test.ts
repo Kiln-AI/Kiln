@@ -984,6 +984,69 @@ describe("createChatSessionStore", () => {
     })
   })
 
+  describe("queued-message flush on idle marker (BUG 2)", () => {
+    it("(a) flushes a client-held queue on an idle marker when the live idle event was missed", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first") // turn in flight → "submitted"
+      await store.sendMessage("queued") // held client-side
+      expect(get(store).queuedMessage).toBe("queued")
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+      // The LIVE idle event was missed (the observer was detached at the
+      // settle instant); only the on-subscribe idle MARKER arrives. On that
+      // marker the conversation store fires onWorkingChange(false) (resets the
+      // composer) THEN the dedicated onIdleMarker hook — which flushes the
+      // client-held queue that would otherwise strand forever.
+      sink().onWorkingChange(false)
+      sink().onIdleMarker!()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("(b) an idle marker after a replayed echo + error converges to ready and does NOT spuriously dispatch", async () => {
+      // The refresh-brick sequence, now WITH the marker-idle hook wired: a
+      // replayed echo marks the turn working, the buffered error renders, and
+      // the idle marker fires onWorkingChange(false) + onIdleMarker. With no
+      // queued message, maybeFlush is a correct no-op — no brick, no phantom
+      // send.
+      const { store, sink, fake } = await makeStore()
+      sink().onWorkingChange(true)
+      sink().onUserMessage("please add", "cm_replayed")
+      sink().onInlineError("Something went wrong.")
+      expect(get(store).status).toBe("submitted")
+      sink().onWorkingChange(false)
+      sink().onIdleMarker!()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).status).toBe("ready")
+      expect(get(store).queuedMessage).toBeNull()
+      expect(fake.sendMessage).not.toHaveBeenCalled()
+    })
+
+    it("(c) does not double-send when both a live idle AND an idle marker occur", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+      // The live idle settles and flushes the queue (dispatchQueued clears it
+      // before sending).
+      sink().onInteractiveIdle()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+      const callsAfterFlush = (fake.sendMessage as ReturnType<typeof vi.fn>)
+        .mock.calls.length
+      // A late idle marker for the SAME settle must not re-send: the queue was
+      // already cleared by the flush.
+      sink().onWorkingChange(false)
+      sink().onIdleMarker!()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(
+        (fake.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length,
+      ).toBe(callsAfterFlush)
+    })
+  })
+
   describe("stop / retry", () => {
     it("stop posts the server-side cancel", async () => {
       const { store, fake } = await makeStore()
