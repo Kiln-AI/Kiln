@@ -1,8 +1,7 @@
-from app.desktop.studio_server.chat.routes import ExecuteToolsRequest, connect_chat_api
+from app.desktop.studio_server.chat.routes import connect_chat_api
 from app.desktop.studio_server.chat.runtime.api import connect_conversations_api
 from app.desktop.studio_server.chat.sse_parser import EventParser
 from app.desktop.studio_server.chat.stream_session import (
-    ChatStreamSession,
     RoundState,
     ToolCallInfo,
     execute_tool,
@@ -15,9 +14,7 @@ from app.desktop.studio_server.chat.tool_metadata import (
 )
 
 __all__ = [
-    "ChatStreamSession",
     "EventParser",
-    "ExecuteToolsRequest",
     "KilnToolInputMetadata",
     "RoundState",
     "ToolCallInfo",

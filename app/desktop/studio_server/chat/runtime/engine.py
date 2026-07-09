@@ -193,6 +193,17 @@ class EngineIO:
     # polled self.stop_requested. (The old interactive loop had no stop
     # polling; its io returns False forever, so behavior is unchanged there.)
     stop_requested: Callable[[], bool] = field(default=lambda: False)
+    # Fired when the interactive disable_auto_mode interception actually
+    # cleared a set flag (phase 4). The supervisor wires it to the full old
+    # disable cascade — publish the flag-off state NOW and stop the
+    # conversation's sub-agent children — which the old world reached via
+    # ChatStreamSession._clear_auto_mode_flag →
+    # auto_chat_registry.disable_for_trace (later
+    # supervisor.disable_auto_for_trace). Out-of-band by design: the old
+    # cascade published before the interactive turn settled, so waiting for
+    # this run's settle would delay the off indicator and leave children
+    # running mid-turn. None (tests / already-off flags) is a no-op.
+    on_auto_flag_cleared: Callable[[], Awaitable[None]] | None = None
     # Opaque conversation identity for sub-agent orchestration tool calls,
     # passed straight through to execute_tool_batch (which dispatches
     # spawn/status/wait/stop). None resolves those calls to an "unavailable"
@@ -221,12 +232,26 @@ class ConversationEngine:
         policy: ConversationPolicy,
         io: EngineIO,
         initial_body: dict[str, Any] | None = None,
+        resume_batch: PendingApprovalBatch | None = None,
     ) -> None:
         """Run one turn/burst/run to its natural end, recording the outcome on
         ``record``. Raises only on unexpected internal errors (the supervisor
         classifies those per architecture §9); upstream errors are handled
-        in-band exactly like the old loops."""
-        if initial_body is not None:
+        in-band exactly like the old loops.
+
+        ``resume_batch`` (phase 4) resumes a conversation whose pending
+        approval batch had NO parked run task — the restart/refresh recovery
+        contract (architecture §2: the batch is reconstructible from the
+        persisted trace tail) and the graceful-stop leftover-calls shape.
+        Instead of opening with an upstream round, the run starts by
+        executing the already-decided batch and continuing from its stored
+        round context — the exact flow the OLD ``POST /api/chat/execute-tools``
+        endpoint drove (execute with decisions → continuation body of
+        role:tool results → fresh ChatStreamSession), now in-process.
+        """
+        if resume_batch is not None:
+            body = await self._execute_resumed_batch(record, policy, io, resume_batch)
+        elif initial_body is not None:
             body = dict(initial_body)
         else:
             # Child creation (policy.seed): the engine owns the first POST —
@@ -424,11 +449,22 @@ class ConversationEngine:
                         # quirk of NOT draining reports/inbox on this
                         # continuation (`continue` skipped the report append).
                         if res.clear_auto_flag:
-                            # Flag lives on the record now; the supervisor
-                            # publishes the state change at the next settle
-                            # (old path called auto_registry.disable_for_trace
-                            # which published auto-mode-off out-of-band).
+                            flag_was_on = record.auto_flag
                             record.auto_flag = False
+                            if flag_was_on and io.on_auto_flag_cleared is not None:
+                                # The full old disable CASCADE (phase-4 wiring
+                                # of the interceptors TODO): the supervisor
+                                # publishes the flag-off state NOW and
+                                # cascade-stops the conversation's sub-agent
+                                # children — exactly what the old loop reached
+                                # via _clear_auto_mode_flag →
+                                # disable_auto_for_trace. Skipped when the
+                                # flag was already off (the common case: the
+                                # model calls disable_auto_mode in a plain
+                                # interactive conversation), where the old
+                                # path was a no-op too (disable_for_trace
+                                # found no flag-on record).
+                                await io.on_auto_flag_cleared()
                         body = await self._resolve_immediate(
                             record, io, body, round_state, event, res, client_events
                         )
@@ -622,6 +658,83 @@ class ConversationEngine:
             record.state = RunState.TIMEOUT
             return
         self._finish_idle(record, "max_rounds")
+
+    async def _execute_resumed_batch(
+        self,
+        record: ConversationRecord,
+        policy: ConversationPolicy,
+        io: EngineIO,
+        batch: PendingApprovalBatch,
+    ) -> dict[str, Any]:
+        """Execute an already-decided RUNLESS batch and return the
+        continuation body for the round loop (phase 4 recovery entry).
+
+        Mirrors the engine's normal parked execution (steps 6–7) driven from
+        the batch's stored round context instead of live round state, and —
+        through ``_build_openai_tool_continuation`` over the batch's
+        ``{trace_id, messages: []}`` base — produces exactly the continuation
+        body the OLD ``routes.post_execute_tools`` built (`role:tool` results
+        only), so the persisted trace is indistinguishable.
+
+        ``requiresApproval`` per call comes from the batch ITEMS (for a live
+        batch these are the metadata verdicts the pending event surfaced —
+        the same flags the old browser echoed back to /execute-tools; for a
+        trace-tail-rehydrated batch every item is conservatively True, see
+        the supervisor's rehydration). A denied call resolves to
+        DENIED_TOOL_OUTPUT exactly like the parked path.
+        """
+        decisions = dict(batch.decisions or {})
+        item_flags = {
+            str(item.get("toolCallId")): bool(item.get("requiresApproval"))
+            for item in batch.items
+        }
+        # Execute only the calls the batch surfaced (its items are the round's
+        # CLIENT events — server-executor calls never enter a batch); the full
+        # tool_input_events list is kept for the continuation builder, which
+        # needs every event to reconstruct the assistant message.
+        client_events = [
+            e for e in batch.tool_input_events if e.toolCallId in item_flags
+        ]
+        tool_calls = [
+            ToolCallInfo(
+                toolCallId=e.toolCallId,
+                toolName=e.toolName,
+                input=e.input,
+                requiresApproval=item_flags.get(e.toolCallId, True),
+            )
+            for e in client_events
+        ]
+        # Same exec framing the normal parked path emits (start = batch size,
+        # end = result count) so observers render one tool round.
+        io.emit(format_tool_exec_start(len(client_events)))
+        results = await execute_tool_batch(
+            tool_calls, decisions, orchestration_ctx=io.orchestration_ctx
+        )
+        # Pre-answered calls (rehydrated signal siblings resolved as declined
+        # — see PendingApprovalBatch.preresolved_results) merge in exactly
+        # like the main loop's `intercepted` resolves: never executed, but
+        # answered on the continuation so the trace has no dangling call,
+        # and surfaced to observers alongside the executed outputs.
+        results.update(batch.preresolved_results)
+        for tc_id, output in results.items():
+            io.emit(format_tool_output(tc_id, output))
+        io.emit(format_tool_exec_end(len(results)))
+
+        # Spawn-consent memory: same rule as the main loop — an executed
+        # (non-denied) spawn means the user approved it.
+        for tc in tool_calls:
+            if (
+                tc.tool_name == SPAWN_SUBAGENT_TOOL_NAME
+                and results.get(tc.tool_call_id) != DENIED_TOOL_OUTPUT
+            ):
+                record.spawn_consent_granted = True
+
+        return _build_openai_tool_continuation(
+            batch.body,
+            batch.assistant_text,
+            batch.tool_input_events,
+            results,
+        )
 
     # ── Outcome helpers (the engine-side halves of the old runner statuses;
     # the supervisor's settle path publishes them). ──────────────────────────

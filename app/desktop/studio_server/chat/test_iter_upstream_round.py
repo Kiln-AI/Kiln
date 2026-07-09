@@ -1,10 +1,12 @@
-"""Golden regression: prove the refactor to iter_upstream_round leaves the
-interactive ChatStreamSession.stream() output byte-for-byte unchanged.
+"""Golden regression: prove the iter_upstream_round round mechanics leave the
+interactive stream output byte-for-byte unchanged.
 
-The pre-refactor stream() inlined the per-round upstream mechanics. This file
-feeds synthetic upstream SSE fixtures through the refactored stack and asserts
-the exact bytes the client sees, covering: plain text, a server-tool round, a
-client-tool round (executed + continuation), an upstream non-200, and a
+Originally written against ChatStreamSession.stream() (which inlined the
+per-round upstream mechanics before the iter_upstream_round refactor); the
+class died in phase 4, so the same fixtures now drive the ConversationEngine
+under interactive_policy() — the SAME round primitives, and io.emit is the
+old loop's `yield`, so the byte assertions are unchanged. Covers: plain text,
+a client-tool round (executed + continuation), an upstream non-200, and a
 RemoteProtocolError mid-stream.
 """
 
@@ -18,7 +20,11 @@ from app.desktop.studio_server.chat.constants import (
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,
 )
-from app.desktop.studio_server.chat.stream_session import ChatStreamSession
+from app.desktop.studio_server.chat.runtime.engine import ConversationEngine, EngineIO
+from app.desktop.studio_server.chat.runtime.models import (
+    ConversationRecord,
+    interactive_policy,
+)
 
 from .test_fakes import (
     FakeUpstreamClient,
@@ -32,26 +38,33 @@ from .test_fakes import (
 )
 
 
-def _make_session(initial_body: dict | None = None) -> ChatStreamSession:
-    return ChatStreamSession(
-        upstream_url="https://example.test/v1/chat",
-        headers={},
-        initial_body=initial_body or {"messages": [{"role": "user", "content": "hi"}]},
-    )
+async def _run_turn(client, initial_body: dict | None = None) -> list[bytes]:
+    """Drive one interactive turn on the engine, returning the emitted SSE
+    payloads — the exact bytes ChatStreamSession.stream() used to yield."""
+    emitted: list[bytes] = []
+    engine = ConversationEngine("https://example.test/v1/chat", {})
+    record = ConversationRecord(kind="interactive")
 
+    async def _decide(batch):  # pragma: no cover — these turns never park
+        return {}
 
-async def _collect(session: ChatStreamSession) -> list[bytes]:
-    return [chunk async for chunk in session.stream()]
+    io = EngineIO(emit=emitted.append, await_decisions=_decide)
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await engine.run(
+            record,
+            interactive_policy(),
+            io,
+            initial_body or {"messages": [{"role": "user", "content": "hi"}]},
+        )
+    return emitted
 
 
 @pytest.mark.asyncio
 async def test_golden_plain_text_stream_unchanged():
     chunks = [text_delta("Hello "), text_delta("world"), trace("tr-1"), finish("stop")]
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        out = await _collect(session)
+    out = await _run_turn(client)
 
     # Every upstream forward-byte is passed through verbatim. Each `data: ...\n\n`
     # chunk round-trips through the line parser to exactly itself, so the client
@@ -78,10 +91,8 @@ async def test_golden_client_tool_round_executes_and_continues():
             FakeUpstreamResponse(chunks=round2),
         ]
     )
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        out = await _collect(session)
+    out = await _run_turn(client)
 
     decoded = b"".join(out).decode()
     # Upstream tool-input bytes forwarded verbatim.
@@ -108,10 +119,7 @@ async def test_golden_non_200_emits_error_and_stops():
             )
         ]
     )
-    session = _make_session({"trace_id": "tr-known", "messages": []})
-
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        out = await _collect(session)
+    out = await _run_turn(client, {"trace_id": "tr-known", "messages": []})
 
     assert len(out) == 1
     decoded = out[0].decode()
@@ -130,10 +138,8 @@ async def test_golden_remote_protocol_error_emits_generic_error():
             )
         ]
     )
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        out = await _collect(session)
+    out = await _run_turn(client)
 
     decoded = b"".join(out).decode()
     assert "partial" in decoded
@@ -155,10 +161,8 @@ async def test_golden_upstream_error_event_forwarded_once_then_stream_ends():
         finish("stop"),
     ]
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        out = await _collect(session)
+    out = await _run_turn(client)
 
     joined = b"".join(out)
     # The upstream error event is forwarded byte-for-byte (it lives in the
@@ -190,10 +194,8 @@ async def test_golden_remote_protocol_error_after_tool_boundary_is_silent():
             FakeUpstreamResponse(chunks=round2),
         ]
     )
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        out = await _collect(session)
+    out = await _run_turn(client)
 
     decoded = b"".join(out).decode()
     assert "Something went wrong." not in decoded

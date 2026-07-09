@@ -23,22 +23,27 @@ Wiring status by phase:
   ``chat/orchestration.py`` (the relocated tool executor) onto the
   ``supervisor.conversation_supervisor`` singleton, observed via
   ``/api/conversations``. ``chat/subagents/`` was deleted.
-- Phase 3 (current): AUTO conversations run here too — consent accept /
-  manual enable creates (or flips) a ``kind="auto"`` record
-  (``supervisor.enable_auto``) whose bursts run on the engine under
-  ``auto_policy()``; the browser surface re-homed under
-  ``/api/conversations`` (create / {sid}/auto / auto/decline / resolve /
-  stop / messages / events). ``chat/auto/`` was deleted. INTERACTIVE
-  conversations still run on the OLD loop (``chat/routes.py`` +
-  ``ChatStreamSession``) until phase 4; their parent-identity bridge
-  (``trace:<leaf>`` keys) lives in ``chat/orchestration.py``, not here.
+- Phase 3: AUTO conversations run here too — consent accept / manual enable
+  creates (or flips) a ``kind="auto"`` record (``supervisor.enable_auto``)
+  whose bursts run on the engine under ``auto_policy()``; the browser
+  surface re-homed under ``/api/conversations``. ``chat/auto/`` was deleted.
+- Phase 4 (current): INTERACTIVE conversations run here — created/adopted
+  via ``POST /api/conversations`` (kind="interactive"), each turn a
+  supervised task started by ``/{sid}/messages``, approvals PARKED as
+  batches (``/{sid}/approvals`` + ``.../decisions``) instead of ending the
+  stream, consent decline folded into ``/{sid}/auto``, and pending
+  approvals recoverable from the persisted trace tail after a desktop
+  restart. The old interactive surface (``POST /api/chat``,
+  ``/api/chat/execute-tools``, ``ChatStreamSession``) and the last
+  parent-identity bridge (``ParentConversationIndex``) were deleted; the
+  auto flip now swaps policy + kind on the SAME record in both directions.
 
 The helpers this package needed from the doomed old packages exist here as
 canonical copies, each annotated with the old location it preserves (and
 byte-pinned in ``test_interceptors.py`` where the strings are persisted in
 traces).
 
-What IS shared with the old world — deliberately, so the upstream protocol
+What IS shared across every phase — deliberately, so the upstream protocol
 cannot drift — are the round primitives in ``chat/stream_session.py``
 (``iter_upstream_round``, ``iter_round_with_retries``, ``execute_tool_batch``,
 ``_build_openai_tool_continuation`` and the pending/consent/retry SSE

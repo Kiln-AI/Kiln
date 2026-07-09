@@ -22,19 +22,9 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.chat import orchestration
-from app.desktop.studio_server.chat.orchestration import OrchestrationContext
-from app.desktop.studio_server.chat.runtime.sse import format_user_message
 from app.desktop.studio_server.chat.runtime.supervisor import conversation_supervisor
-from app.desktop.studio_server.chat.stream_session import (
-    ChatStreamSession,
-    ToolCallInfo,
-    execute_tool_batch,
-)
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, HTTPException, Path, Query
-from fastapi.responses import StreamingResponse
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -168,82 +158,19 @@ class ChatSessionSnapshot(BaseModel):
     context_usage: ContextUsage | None = None
 
 
-class ChatRequestMessage(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    role: str
-    content: str | list[dict[str, Any]] | None = None
-
-
-class ChatRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    messages: list[ChatRequestMessage]
-    trace_id: str | None = None
-
-
-class ExecuteToolsRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    trace_id: str
-    tool_calls: list[ToolCallInfo]
-    decisions: dict[str, bool]
-
-
 def connect_chat_api(app: FastAPI) -> None:
-    @app.post(
-        "/api/chat/execute-tools",
-        summary="Execute approved client tools and continue chat stream",
-        tags=["Copilot"],
-        openapi_extra=DENY_AGENT,
-    )
-    @no_write_lock
-    async def post_execute_tools(body: ExecuteToolsRequest) -> StreamingResponse:
-        """
-        Tool calls that require user approval are streamed to the client for approval, along with the
-        other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
-        toolcalls in the UI, then send back the decisions through this endpoint, which will execute
-        the toolcalls and continue the chat stream.
-        """
-        api_key = get_copilot_api_key()
-        # Approval-gated tool calls (including spawn_subagent) resolve through
-        # this endpoint, so it must carry the conversation's orchestration
-        # identity. Consent memory is updated inside the spawn executor itself
-        # (registry-authoritative), not from the POSTed approval flags.
-        tool_results = await execute_tool_batch(
-            body.tool_calls,
-            body.decisions,
-            orchestration_ctx=OrchestrationContext(parent_trace_id=body.trace_id),
-        )
-        continuation_body: dict[str, Any] = {
-            "trace_id": body.trace_id,
-            "messages": [
-                {
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": output,
-                }
-                for tc_id, output in tool_results.items()
-            ],
-        }
-        session = ChatStreamSession(
-            upstream_url=_upstream_chat_url(),
-            headers=_build_upstream_headers(api_key),
-            initial_body=continuation_body,
-        )
+    """Register the surviving ``/api/chat/*`` routes.
 
-        async def generate():
-            yield ChatStreamSession._format_tool_exec_start(len(tool_results))
-            for tc_id, output in tool_results.items():
-                yield ChatStreamSession._format_tool_output(tc_id, output)
-            yield ChatStreamSession._format_tool_exec_end(len(tool_results))
-            async for chunk in session.stream():
-                yield chunk
-
-        return CancellableStreamingResponse(
-            content=generate(),
-            media_type="text/event-stream",
-        )
+    Phase 4 shrank this surface to exactly what the architecture (§1) says
+    ``routes.py`` keeps: the HISTORY PROXIES (``/api/chat/sessions*`` —
+    upstream session list/get/delete, joined with live supervisor state) and
+    the VERSION POLICY proxy. The old interactive endpoints —
+    ``POST /api/chat`` (the request-scoped chat loop) and
+    ``POST /api/chat/execute-tools`` (the approval continuation) — are gone:
+    interactive conversations run on the unified runtime behind
+    ``/api/conversations`` (create/adopt + messages + approvals; see
+    ``chat/runtime/api.py`` for the full old→new mapping).
+    """
 
     @app.get(
         "/api/chat/version_policy",
@@ -401,47 +328,3 @@ def connect_chat_api(app: FastAPI) -> None:
         # Cascade: stop children spawned by this session (and drop their pending
         # reports), or stop the sub-agent itself if a child session was deleted.
         await orchestration.handle_session_deleted(session_id)
-
-    @app.post(
-        "/api/chat",
-        summary="Stream Chat",
-        tags=["Copilot"],
-        openapi_extra=DENY_AGENT,
-    )
-    @no_write_lock
-    async def chat(body: ChatRequest) -> StreamingResponse:
-        """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
-        api_key = get_copilot_api_key()
-
-        initial_body = body.model_dump(exclude_none=True)
-        # Completion injection, idle-parent path: sub-agent reports that landed
-        # while this conversation had no turn in flight are appended server-side
-        # to the next turn (the browser never holds the report text) and echoed
-        # to the live stream so the transcript shows them immediately.
-        report_echoes: list[bytes] = []
-        if body.trace_id:
-            reports = orchestration.pending_reports_for_trace(body.trace_id)
-            if reports:
-                messages = list(initial_body.get("messages", []))
-                messages.extend(
-                    {"role": "user", "content": report} for report in reports
-                )
-                initial_body["messages"] = messages
-                report_echoes = [format_user_message(report) for report in reports]
-
-        session = ChatStreamSession(
-            upstream_url=_upstream_chat_url(),
-            headers=_build_upstream_headers(api_key),
-            initial_body=initial_body,
-        )
-
-        async def generate():
-            for payload in report_echoes:
-                yield payload
-            async for chunk in session.stream():
-                yield chunk
-
-        return CancellableStreamingResponse(
-            content=generate(),
-            media_type="text/event-stream",
-        )

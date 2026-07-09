@@ -268,7 +268,7 @@ async def test_engine_timeout_error_on_non_one_shot_idles_with_error():
         await asyncio.Event().wait()
 
     with patch.object(ConversationEngine, "run", _hang):
-        assert sup.send_message(auto.session_id, "try again") is True
+        assert sup.send_message(auto.session_id, "try again") is not None
         await sup.stop(auto.session_id)
 
 
@@ -340,7 +340,9 @@ async def test_send_message_while_running_enqueues_and_echoes(hang_engine):
         _seed(), parent_session_id="cv_parent", upstream_url=URL, headers={}
     )
     await asyncio.sleep(0.02)
-    assert sup.send_message(record.session_id, "steer this") is True
+    message_id = sup.send_message(record.session_id, "steer this")
+    # Phase 4: the accepted message's stable id is returned (own-echo dedupe).
+    assert message_id is not None and message_id.startswith("cm_")
     conv = sup._conversations[record.session_id]
     assert [m.content for m in conv.inbox] == ["steer this"]
     # Echoed onto the bus + replay buffer at enqueue time (echo-once).
@@ -360,7 +362,7 @@ async def test_send_message_while_idle_starts_turn_with_preserved_body_shape():
     # Simulate a conversation that already has a leaf (idle between bursts).
     record.current_leaf_trace_id = "tr-0"
     with patch.object(httpx, "AsyncClient", return_value=client):
-        assert sup.send_message(record.session_id, "resume please") is True
+        assert sup.send_message(record.session_id, "resume please") is not None
         assert record.state == RunState.RUNNING
         await _wait_for(lambda: record.state == RunState.IDLE)
 
@@ -375,16 +377,16 @@ async def test_send_message_while_idle_starts_turn_with_preserved_body_shape():
     ]
 
 
-async def test_send_message_unknown_or_terminal_returns_false():
+async def test_send_message_unknown_or_terminal_returns_none():
     sup = _sup()
-    assert sup.send_message("cv_nope", "x") is False
+    assert sup.send_message("cv_nope", "x") is None
     client = FakeUpstreamClient(_text_run_responses())
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = sup.spawn_subagent(
             _seed(), parent_session_id="cv_parent", upstream_url=URL, headers={}
         )
         await _wait_for(lambda: record.state.is_terminal)
-    assert sup.send_message(record.session_id, "too late") is False
+    assert sup.send_message(record.session_id, "too late") is None
 
 
 # ── Approvals (decide) ────────────────────────────────────────────────────────
@@ -562,7 +564,7 @@ async def test_state_publishes_mirror_to_status_bus():
     assert all(e["session_id"] == child.session_id for e in events)
 
 
-async def test_stop_parent_cascades_to_children_and_drops_reports(hang_engine):
+async def test_interactive_stop_leaves_children_while_delete_cascades(hang_engine):
     sup = _sup()
     parent = sup.create_conversation("interactive", upstream_url=URL, headers={})
     a = sup.spawn_subagent(
@@ -584,7 +586,16 @@ async def test_stop_parent_cascades_to_children_and_drops_reports(hang_engine):
         b.session_id,
     ]
 
+    # Phase 4: a plain interactive stop() cancels the turn only — the old
+    # interactive Stop was a stream abort that never touched running
+    # sub-agents (functional spec §2 "interactive: cancel in-flight turn").
     await sup.stop(parent.session_id)
+    assert a.state == RunState.RUNNING
+    assert b.state == RunState.RUNNING
+
+    # Session DELETION still cascades: orchestration.handle_session_deleted
+    # calls stop_children explicitly.
+    await sup.stop_children(parent.session_id)
     assert a.state == RunState.STOPPED
     assert b.state == RunState.STOPPED
     assert c.state == RunState.RUNNING  # other parent's child unaffected
@@ -835,11 +846,14 @@ async def test_disable_auto_cancels_running_burst_and_cascades(hang_engine):
     # The disable cascade stopped the conversation's children (old
     # disable → _stop_subagent_children).
     assert child.state == RunState.STOPPED
-    # Off semantics: the record is TTL-GC-scheduled.
-    assert record.session_id in sup._gc_tasks
+    # Phase 4 off semantics: no TTL GC — the record swapped back to its
+    # interactive life (kind + policy) and joins the idle-interactive pool.
+    assert record.session_id not in sup._gc_tasks
+    assert record.kind == "interactive"
+    assert sup._conversations[record.session_id].policy.approvals == "gated"
 
 
-async def test_disable_auto_idle_branch_publishes_off_and_gcs():
+async def test_disable_auto_idle_branch_publishes_off_and_swaps_interactive():
     sup = _sup(terminal_ttl_seconds=60.0)
     record = sup.create_conversation("auto", upstream_url=URL, headers={})
     received: list[bytes] = []
@@ -863,42 +877,19 @@ async def test_disable_auto_idle_branch_publishes_off_and_gcs():
     assert record.auto_flag is False
     assert record.idle_reason == "user_disabled"
     states = _state_events(received)
+    # The published off event keeps the phase-3 shape (kind=auto, flag off,
+    # reason) — the interactive swap happens after the publish.
     assert states[-1]["auto_flag"] is False
     assert states[-1]["idle_reason"] == "user_disabled"
-    assert record.session_id in sup._gc_tasks
+    assert states[-1]["kind"] == "auto"
+    # Phase 4: no TTL GC — an off-auto conversation IS an idle interactive
+    # conversation (policy + kind swapped on the SAME record).
+    assert record.session_id not in sup._gc_tasks
+    assert record.kind == "interactive"
+    assert sup._conversations[record.session_id].policy.approvals == "gated"
     # Idempotent re-disable; unknown ids report False (route maps semantics).
     assert await sup.disable_auto(record.session_id) is True
     assert await sup.disable_auto("cv_missing") is False
-
-
-async def test_disable_auto_for_trace_resolves_chain_and_guards_kind(hang_engine):
-    # The interactive-loop disable interception entry point (the phase-1
-    # TODO(phase-3) cascade): stale leaves resolve through the whole-chain
-    # index; sub-agent leaves — also indexed here, unlike the old auto-only
-    # index — must never be disabled by it.
-    sup = _sup(terminal_ttl_seconds=60.0)
-    client = FakeUpstreamClient([])
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        record = await sup.enable_auto(
-            trace_id="t1",
-            enable_tool_call_id=None,
-            pending_tool_calls=[],
-            extra_messages=[],
-            upstream_url=URL,
-            headers={},
-        )
-    child = sup.spawn_subagent(
-        _seed(), parent_session_id="trace:leaf-x", upstream_url=URL, headers={}
-    )
-    sup._trace_index["child-leaf"] = child.session_id
-
-    assert await sup.disable_auto_for_trace("child-leaf") is False
-    assert child.state == RunState.RUNNING
-    assert await sup.disable_auto_for_trace("never-seen") is False
-    assert await sup.disable_auto_for_trace("t1") is True
-    assert record.auto_flag is False
-    assert record.idle_reason == "user_disabled"
-    await sup.stop(child.session_id)
 
 
 async def test_set_auto_flag_outcomes():
@@ -912,15 +903,19 @@ async def test_set_auto_flag_outcomes():
         seed=_seed(),
     )
     assert await sup.set_auto_flag("cv_missing", True) == "not_found"
-    # Phase 3: only auto records are flippable (interactive conversations
-    # aren't supervisor records yet; sub-agents never are).
+    # Sub-agent records are never user-flippable; interactive and auto
+    # records both are (phase 4 — the true policy flip on the SAME record).
     assert await sup.set_auto_flag(child.session_id, True) == "invalid"
-    # enabled=false → today's disable semantics.
+    # enabled=false → today's disable semantics + the interactive swap.
     assert await sup.set_auto_flag(record.session_id, False) == "ok"
     assert record.auto_flag is False and record.idle_reason == "user_disabled"
-    # enabled=true → re-arm (cap re-checked; the only slot is free again).
+    assert record.kind == "interactive"
+    # enabled=true on the (now interactive) record → the flip: policy + kind
+    # swap to auto, ARMED shape, cap re-checked (the only slot is free again).
     assert await sup.set_auto_flag(record.session_id, True) == "ok"
     assert record.auto_flag is True and record.idle_reason == "armed"
+    assert record.kind == "auto"
+    assert sup._conversations[record.session_id].policy.approvals == "auto"
 
 
 # ── Resync resolve (old GET /api/chat/auto/resolve) ───────────────────────────
@@ -959,9 +954,11 @@ async def test_resolve_auto_for_trace_matches_stale_leaf_and_filters():
 
 async def test_auto_conversation_gets_orchestration_ctx_with_fresh_leaf():
     # Parent kinds carry a real OrchestrationContext (their session id as the
-    # stable parent identity — no auto:<run_id> alias chaining) whose
-    # parent_trace_id is kept fresh by on_trace (spawn lineage: the agent
-    # block's parent_trace_id, resolved by the backend into durable lineage).
+    # stable parent identity — no alias chaining). The spawn lineage leaf is
+    # no longer a ctx copy (phase 4 shrank the ctx to {parent_session_id,
+    # depth}): the spawn executor reads record.current_leaf_trace_id, which
+    # the engine advances per round — assert the record carries the fresh
+    # leaf a spawn would forward as the agent block's parent_trace_id.
     sup = _sup()
     client = FakeUpstreamClient(
         [FakeUpstreamResponse([text_delta("hi"), trace("t2"), finish("stop")])]
@@ -981,8 +978,9 @@ async def test_auto_conversation_gets_orchestration_ctx_with_fresh_leaf():
     ctx = conv.orchestration_ctx
     assert ctx is not None
     assert ctx.parent_session_id == record.session_id
-    assert ctx.parent_trace_id == "t2"  # advanced with the burst's trace
     assert ctx.parent_key() == record.session_id
+    # The spawn-lineage leaf lives on the record (single source of truth).
+    assert record.current_leaf_trace_id == "t2"  # advanced with the burst
     # Children never get a ctx (depth guard + execute_tool_batch backstop).
     child = sup.create_conversation(
         "subagent",
@@ -1077,12 +1075,18 @@ async def test_queued_reports_pin_off_auto_parent_past_terminal_ttl():
     assert sup.get(parent.session_id) is None
 
 
-async def test_off_auto_record_gcs_after_ttl():
+async def test_off_auto_record_survives_as_idle_interactive():
+    # Phase 4 replaced the OFF-auto TTL GC: stopping an auto conversation
+    # swaps it back to an idle INTERACTIVE record (LRU-bounded), so the
+    # conversation can simply continue interactively.
     sup = _sup(terminal_ttl_seconds=0.05)
     record = sup.create_conversation("auto", upstream_url=URL, headers={})
-    await sup.stop(record.session_id)  # flag off, schedules GC
+    await sup.stop(record.session_id)  # flag off → interactive swap
+    assert record.session_id not in sup._gc_tasks
     await asyncio.sleep(0.15)
-    assert sup.get(record.session_id) is None
+    assert sup.get(record.session_id) is record
+    assert record.kind == "interactive"
+    assert record.auto_flag is False
 
 
 async def test_idle_interactive_records_evict_lru_beyond_cap():
@@ -1163,43 +1167,55 @@ class _GatedResponse:
         pass
 
 
-async def test_send_to_off_auto_record_is_refused_until_reenabled():
-    # Phase 3: a flag-off auto record REFUSES messages — the old registry's
-    # "not found or no longer active" 404 (AutoChatRegistry.send_message
-    # required flag_on), and a safety property: a run started here would
-    # execute under the AUTO policy (auto-approving every tool) without an
-    # active consent. Re-enabling via set_auto_flag cancels the pending GC
-    # and re-arms; the next send then starts a burst WITH auto_mode riding.
-    # TODO(phase-4): an off-auto record becomes an idle INTERACTIVE
-    # conversation (policy swap) and the refusal is lifted.
+async def test_send_to_off_auto_record_runs_interactive_then_reenables():
+    # Phase 4 lifted the phase-3 flag-off refusal BY CONSTRUCTION: stopping
+    # an auto conversation swaps it back to the INTERACTIVE policy, so the
+    # next send starts a normal gated turn — never an auto-approving burst
+    # without an active consent (the old safety property, now structural).
+    from .models import auto_policy
+
     sup = _sup(terminal_ttl_seconds=0.2)
     record = sup.create_conversation("auto", upstream_url=URL, headers={})
     record.current_leaf_trace_id = "tr-0"
-    await sup.stop(record.session_id)  # flag off, schedules the off-auto GC
+    await sup.stop(record.session_id)  # flag off → interactive swap
     assert record.auto_flag is False
-    assert sup.send_message(record.session_id, "hello again") is False
+    assert record.kind == "interactive"
 
-    # Flip back on: GC cancelled, ARMED shape, slot re-taken.
+    # The refusal survives only for the narrow window where a record still
+    # carries the AUTO policy with the flag off (disable pre-marks the flag
+    # before the settle swaps the policy).
+    conv = sup._conversations[record.session_id]
+    conv.policy = auto_policy()
+    assert sup.send_message(record.session_id, "mid-window") is None
+    sup._swap_to_interactive(conv)
+
+    # An interactive send now runs a plain gated turn — no auto_mode riding,
+    # continuing from the conversation's leaf.
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("sure"), trace("tr-1"), finish("stop")])]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        assert sup.send_message(record.session_id, "hello again") is not None
+        await _wait_for(lambda: record.state == RunState.IDLE)
+    assert client.bodies[0]["trace_id"] == "tr-0"
+    assert "auto_mode" not in client.bodies[0]
+
+    # Flip back on (the true policy flip): ARMED shape, slot re-taken; the
+    # next send starts a burst WITH auto_mode riding from the fresh leaf —
+    # the idle re-arm body shape.
     assert await sup.set_auto_flag(record.session_id, True) == "ok"
-    assert record.auto_flag is True
+    assert record.auto_flag is True and record.kind == "auto"
     assert record.idle_reason == "armed"
 
     release = asyncio.Event()
-    client = _GatedClient(release)
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        assert sup.send_message(record.session_id, "hello again") is True
+    gated = _GatedClient(release)
+    with patch.object(httpx, "AsyncClient", return_value=gated):
+        assert sup.send_message(record.session_id, "go autonomous") is not None
         assert record.state == RunState.RUNNING
-        # Ride out the ORIGINAL TTL while the burst runs: had the re-enable
-        # not cancelled the GC, the record would be evicted mid-run.
-        await asyncio.sleep(0.3)
-        assert sup.get(record.session_id) is not None
         release.set()
         await _wait_for(lambda: record.state == RunState.IDLE)
-
-    # auto_mode rides the re-armed burst (the flag is on again), continuing
-    # from the conversation's leaf — the idle re-arm body shape.
-    assert client.bodies[0]["auto_mode"] is True
-    assert client.bodies[0]["trace_id"] == "tr-0"
+    assert gated.bodies[0]["auto_mode"] is True
+    assert gated.bodies[0]["trace_id"] == "tr-1"
 
 
 # ── Records / policy wiring sanity ───────────────────────────────────────────
@@ -1225,3 +1241,396 @@ async def test_start_run_rejects_double_start(hang_engine):
     await sup.stop(record.session_id)
     with pytest.raises(RuntimeError, match="already ended"):
         sup.start_run(record.session_id)
+
+
+# ── Phase 4: interactive create/adopt + approval recovery ─────────────────────
+
+
+async def test_adopt_interactive_creates_and_is_idempotent():
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=None
+    ):
+        record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+        assert record.kind == "interactive"
+        assert record.state == RunState.IDLE
+        assert record.current_leaf_trace_id == "leaf-1"
+        assert sup.session_for_trace("leaf-1") == record.session_id
+
+        # Idempotent: the same trace (or ANY leaf the conversation ever had)
+        # returns the SAME record instead of minting a duplicate.
+        again = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+        assert again is record
+
+        # A trace resolving to a live AUTO record adopts THAT record — one
+        # record per conversation is the whole point of the flip model.
+        auto = await sup.enable_auto(
+            trace_id="t-auto",
+            enable_tool_call_id=None,
+            pending_tool_calls=[],
+            extra_messages=[],
+            upstream_url=URL,
+            headers={},
+        )
+        adopted = await sup.adopt_interactive("t-auto", upstream_url=URL, headers={})
+        assert adopted is auto
+
+        # No trace at all (brand-new conversation): a fresh empty record.
+        fresh = await sup.adopt_interactive(None, upstream_url=URL, headers={})
+        assert fresh.kind == "interactive"
+        assert fresh.current_leaf_trace_id is None
+
+
+async def test_adopt_interactive_does_not_steal_terminal_records_index_entry():
+    # Re-opening a FINISHED sub-agent's session from history continues its
+    # TRACE on a fresh interactive record, but the terminal child's index
+    # entry survives so the sessions-list "finished" chip keeps resolving.
+    sup = _sup()
+    client = FakeUpstreamClient(_text_run_responses())
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        child = sup.spawn_subagent(
+            _seed(), parent_session_id="cv_parent", upstream_url=URL, headers={}
+        )
+        await _wait_for(lambda: child.state.is_terminal)
+    assert sup.session_for_trace("tr-1") == child.session_id
+
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=None
+    ):
+        adopted = await sup.adopt_interactive("tr-1", upstream_url=URL, headers={})
+    assert adopted.session_id != child.session_id
+    assert adopted.kind == "interactive"
+    assert adopted.current_leaf_trace_id == "tr-1"
+    # The child still owns the leaf in the index.
+    assert sup.session_for_trace("tr-1") == child.session_id
+
+
+def _tail_trace_with_pending_calls() -> list[dict]:
+    """A persisted trace tail: last assistant turn carries three tool calls —
+    one answered, one a signal (skipped), one genuinely unanswered."""
+    return [
+        {"role": "user", "content": "please add"},
+        {
+            "role": "assistant",
+            "content": "on it",
+            "tool_calls": [
+                {
+                    "id": "tc_done",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 1, "b": 1}'},
+                },
+                {
+                    "id": "tc_enable",
+                    "type": "function",
+                    "function": {"name": "enable_auto_mode", "arguments": "{}"},
+                },
+                {
+                    "id": "tc_open",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2, "b": 3}'},
+                },
+            ],
+        },
+        {"role": "tool", "tool_call_id": "tc_done", "content": "2"},
+    ]
+
+
+async def test_rehydrate_pending_approvals_from_trace_tail():
+    # Functional spec §5 / architecture §2: after a desktop restart the parked
+    # batch is reconstructible from the persisted trace tail — unanswered
+    # calls only, signal tools skipped, every rebuilt call conservatively
+    # gated (stream metadata is not persisted).
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor,
+        "_fetch_persisted_trace",
+        return_value=_tail_trace_with_pending_calls(),
+    ):
+        record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+
+    assert record.state == RunState.AWAITING_APPROVAL
+    batch = sup.pending_approval(record.session_id)
+    assert batch is not None
+    assert [item["toolCallId"] for item in batch.items] == ["tc_open"]
+    assert batch.items[0]["requiresApproval"] is True
+    assert batch.body == {"trace_id": "leaf-1", "messages": []}
+    assert batch.assistant_text == "on it"
+    # The unanswered SIGNAL sibling never enters the items (nothing to
+    # approve) but rides the batch pre-resolved as declined so the resume
+    # continuation answers it (no dangling tool call upstream).
+    assert json.loads(batch.preresolved_results["tc_enable"]) == {"status": "declined"}
+    assert {e.toolCallId for e in batch.tool_input_events} == {
+        "tc_open",
+        "tc_enable",
+    }
+    # The pending event was re-emitted onto the bus BUFFER so observers
+    # (attaching or live) re-surface the approval box.
+    conv = sup._conversations[record.session_id]
+    buffered = b"".join(conv.bus.buffer).decode()
+    assert '"type": "tool-calls-pending"' in buffered
+    assert "tc_open" in buffered
+
+    # Rehydration is idempotent while the batch is undecided.
+    again = await sup.rehydrate_pending_approvals(record.session_id)
+    assert again is batch
+
+
+async def test_rehydrate_skips_answered_and_signal_only_tails():
+    sup = _sup()
+    answered_tail = [
+        {
+            "role": "assistant",
+            "content": "done",
+            "tool_calls": [
+                {
+                    "id": "tc1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "tc1", "content": "ok"},
+    ]
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=answered_tail
+    ):
+        record = await sup.adopt_interactive("leaf-a", upstream_url=URL, headers={})
+    assert record.state == RunState.IDLE
+    assert sup.pending_approval(record.session_id) is None
+
+    # An unanswered enable_auto_mode alone is a lost consent dialog, not an
+    # approval batch (the old world lost it across restarts too).
+    signal_tail = [
+        {
+            "role": "assistant",
+            "content": "want auto?",
+            "tool_calls": [
+                {
+                    "id": "tc_e",
+                    "type": "function",
+                    "function": {"name": "enable_auto_mode", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=signal_tail
+    ):
+        record2 = await sup.adopt_interactive("leaf-b", upstream_url=URL, headers={})
+    assert record2.state == RunState.IDLE
+    assert sup.pending_approval(record2.session_id) is None
+
+
+async def test_decide_runless_batch_starts_resume_run():
+    # Deciding a rehydrated (runless) batch starts the RESUME RUN: execute
+    # with decisions, continue from the batch's trace-only base — the exact
+    # continuation body the old POST /api/chat/execute-tools produced.
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor,
+        "_fetch_persisted_trace",
+        return_value=_tail_trace_with_pending_calls(),
+    ):
+        record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+    batch = sup.pending_approval(record.session_id)
+    assert batch is not None
+
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("sum is 5"), trace("tr-2"), finish("stop")])]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        assert sup.decide(record.session_id, batch.batch_id, {"tc_open": True}) == "ok"
+        assert record.state == RunState.RUNNING
+        # A racing second decide still conflicts while the resume run lives.
+        assert (
+            sup.decide(record.session_id, batch.batch_id, {"tc_open": False})
+            == "conflict"
+        )
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    # Old execute-tools continuation shape: trace-only base → role:tool rows.
+    # The signal sibling (tc_enable) is answered as declined right alongside
+    # the executed call — the decline-flow payload, so the persisted trace
+    # has no dangling tool call (LOW-2 recovery contract).
+    (body,) = client.bodies
+    assert body["trace_id"] == "leaf-1"
+    rows = {m["tool_call_id"]: m for m in body["messages"]}
+    assert all(m["role"] == "tool" for m in body["messages"])
+    assert rows["tc_open"]["content"] == "5"
+    assert json.loads(rows["tc_enable"]["content"]) == {"status": "declined"}
+    assert record.current_leaf_trace_id == "tr-2"
+
+
+async def test_decline_auto_starts_interactive_declined_continuation():
+    # The folded-in decline (old POST /api/chat/auto/decline): the pending
+    # enable call resolves as declined + denied siblings via an interactive
+    # turn whose seed body is byte-identical to the old endpoint's.
+    from app.desktop.studio_server.chat.stream_session import ToolCallInfo
+
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=None
+    ):
+        record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(
+                [text_delta("ok, staying manual"), trace("tr-2"), finish("stop")]
+            )
+        ]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        outcome = sup.decline_auto(
+            record.session_id,
+            enable_tool_call_id="tc_enable",
+            siblings=[
+                ToolCallInfo(
+                    toolCallId="tc_sib",
+                    toolName="add",
+                    input={},
+                    requiresApproval=False,
+                )
+            ],
+        )
+        assert outcome == "ok"
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    (body,) = client.bodies
+    assert body["trace_id"] == "leaf-1"
+    assert body["messages"][0] == {
+        "role": "tool",
+        "tool_call_id": "tc_enable",
+        "content": '{"status": "declined"}',
+    }
+    from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+
+    assert body["messages"][1] == {
+        "role": "tool",
+        "tool_call_id": "tc_sib",
+        "content": DENIED_TOOL_OUTPUT,
+    }
+    # Declining never flips anything on.
+    assert record.auto_flag is False and record.kind == "interactive"
+    assert sup.decline_auto("cv_missing", enable_tool_call_id="x", siblings=[]) == (
+        "not_found"
+    )
+
+
+async def test_decline_auto_refuses_busy_and_subagent(hang_engine):
+    sup = _sup()
+    record = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    sup.start_run(record.session_id, {"messages": [{"role": "user", "content": "x"}]})
+    assert (
+        sup.decline_auto(record.session_id, enable_tool_call_id="tc", siblings=[])
+        == "busy"
+    )
+    await sup.stop(record.session_id)
+    child = sup.spawn_subagent(
+        _seed(), parent_session_id=record.session_id, upstream_url=URL, headers={}
+    )
+    assert (
+        sup.decline_auto(child.session_id, enable_tool_call_id="tc", siblings=[])
+        == "invalid"
+    )
+    await sup.stop(child.session_id)
+
+
+async def test_enable_auto_flips_interactive_record_policy_and_kind():
+    # The true "same run, new policy" flip (architecture §2): consent accept
+    # on an interactive conversation flips ITS record instead of minting a
+    # parallel auto record.
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=None
+    ):
+        record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+    client = FakeUpstreamClient(_text_run_responses("working"))
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        flipped = await sup.enable_auto(
+            trace_id="leaf-1",
+            enable_tool_call_id="tc_enable",
+            pending_tool_calls=[],
+            extra_messages=[],
+            upstream_url=URL,
+            headers={},
+        )
+        assert flipped is record  # SAME record, not a duplicate
+        assert record.kind == "auto"
+        assert record.auto_flag is True
+        assert sup._conversations[record.session_id].policy.approvals == "auto"
+        await _wait_for(lambda: record.state == RunState.IDLE)
+    # The seed continued from the interactive conversation's leaf.
+    assert client.bodies[0]["trace_id"] == "leaf-1"
+    assert client.bodies[0]["auto_mode"] is True
+
+
+async def test_message_idle_start_drains_queued_reports_into_seed():
+    # Old routes.post_chat next-turn injection, re-homed: reports queued while
+    # the interactive conversation idled ride the fresh turn AFTER the user's
+    # message and are echoed to observers.
+    sup = _sup()
+    parent = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    child_client = FakeUpstreamClient(_text_run_responses("child done"))
+    with patch.object(httpx, "AsyncClient", return_value=child_client):
+        child = sup.spawn_subagent(
+            _seed(), parent_session_id=parent.session_id, upstream_url=URL, headers={}
+        )
+        await _wait_for(lambda: child.state.is_terminal)
+    assert sup.has_pending_reports(parent.session_id)
+
+    turn_client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("noted"), trace("tr-p"), finish("stop")])]
+    )
+    received: list[bytes] = []
+    sub = sup.subscribe(parent.session_id)
+
+    async def _drain():
+        async for payload in sub:
+            received.append(payload)
+
+    drain_task = asyncio.create_task(_drain())
+    await asyncio.sleep(0.02)
+    with patch.object(httpx, "AsyncClient", return_value=turn_client):
+        assert sup.send_message(parent.session_id, "how did it go?") is not None
+        await _wait_for(lambda: parent.state == RunState.IDLE)
+    await asyncio.sleep(0.02)
+    drain_task.cancel()
+    try:
+        await drain_task
+    except asyncio.CancelledError:
+        pass
+    await sub.aclose()
+
+    (body,) = turn_client.bodies
+    assert body["messages"][0] == {"role": "user", "content": "how did it go?"}
+    assert body["messages"][1]["role"] == "user"
+    assert body["messages"][1]["content"].startswith("<subagent_report")
+    assert child.report_delivered is True
+    # Echoed (user message at enqueue + report at drain) so the live
+    # transcript shows both immediately.
+    streamed = b"".join(received).decode()
+    assert "how did it go?" in streamed
+    assert "subagent_report" in streamed
+
+
+async def test_interactive_lru_spares_pending_reports_and_live_children(hang_engine):
+    # Phase-4 pinning re-homed to the LRU filter (OFF-auto records live in
+    # this pool now): records holding undelivered child reports — or live
+    # children — must not be evicted, however stale.
+    sup = _sup(max_idle_interactive_records=1)
+    pinned = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    sup._pending_reports[pinned.session_id] = ["cv_child_x"]
+    with_child = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    sup.spawn_subagent(
+        _seed(), parent_session_id=with_child.session_id, upstream_url=URL, headers={}
+    )
+    # Overflow the pool: only the plain idle record is evictable.
+    plain = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    sup._touch(sup._conversations[plain.session_id])
+    newest = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    assert sup.get(pinned.session_id) is not None
+    assert sup.get(with_child.session_id) is not None
+    assert sup.get(newest.session_id) is not None
+    assert sup.get(plain.session_id) is None
+    for record in sup.children_of(with_child.session_id):
+        await sup.stop(record.session_id)

@@ -201,17 +201,14 @@ def intercept_disable_auto_mode_interactive(
     not this path's). Old ChatStreamSession.stream() disable branch."""
     if event.toolName != DISABLE_AUTO_MODE_TOOL_NAME:
         return None
-    # Cascade status: the LIVE interactive path (the old loop, until phase 4)
-    # now gets the full disable cascade — phase 3 retargeted
-    # ChatStreamSession._clear_auto_mode_flag onto
-    # conversation_supervisor.disable_auto_for_trace (cancel live burst,
-    # publish off state, TTL GC, stop_children) — which resolved the phase-1
-    # TODO(phase-3) that lived here. THIS interceptor only runs once
-    # interactive conversations execute on the engine (phase 4) and still
-    # only clears the record's flag. TODO(phase-4): route this path through
-    # the same supervisor cascade — on an engine-interactive disable the
-    # supervisor's settle/flow must own stop_children(session_id) and the
-    # flag-off state publish (the settle publish already covers the latter).
+    # Cascade status (phase 4, resolving the phase-1/3 TODOs that lived
+    # here): the interceptor itself stays a pure decision — the ENGINE clears
+    # the record's flag and, iff the flag was actually on, awaits
+    # ``io.on_auto_flag_cleared``, which the supervisor wires to the full old
+    # disable cascade (publish the flag-off state immediately, swap the
+    # record back to its interactive life, stop_children) — the same
+    # semantics the old world reached via
+    # ChatStreamSession._clear_auto_mode_flag → disable_auto_for_trace.
     return InterceptResult(
         kind="resolve_immediate",
         result_json=DISABLE_AUTO_MODE_RESULT,

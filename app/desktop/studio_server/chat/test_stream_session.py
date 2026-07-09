@@ -1,6 +1,10 @@
-# Note: the disable_auto_mode interception on the interactive ChatStreamSession
-# path is covered end-to-end in test_routes.py (via /api/chat), including the
-# sibling approval-gate behaviour and the supervisor disable cascade.
+# Round-primitive tests for chat/stream_session.py. Phase 4 deleted the
+# ChatStreamSession loop class; the interactive stream behaviors these tests
+# used to drive through session.stream() are now driven through the
+# ConversationEngine under interactive_policy() — the same round primitives,
+# the same emitted bytes (the engine's io.emit is the old loop's `yield`).
+# The disable_auto_mode / consent interceptions are covered in
+# runtime/test_engine.py; the /api/conversations surface in runtime/test_api.py.
 import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -19,9 +23,13 @@ from app.desktop.studio_server.chat.test_fakes import (
     trace,
 )
 from app.desktop.studio_server.chat.constants import SSE_TYPE_TOOL_CALLS_PENDING
+from app.desktop.studio_server.chat.runtime.engine import ConversationEngine, EngineIO
+from app.desktop.studio_server.chat.runtime.models import (
+    ConversationRecord,
+    interactive_policy,
+)
 from app.desktop.studio_server.chat.stream_session import (
     MAX_CHAT_RETRIES,
-    ChatStreamSession,
     ToolCallInfo,
     _format_tool_calls_pending_sse,
     _RETRY_BACKOFF_SCHEDULE,
@@ -30,6 +38,23 @@ from app.desktop.studio_server.chat.stream_session import (
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
+
+
+async def _run_interactive_turn(fake_client) -> list[bytes]:
+    """Drive ONE interactive turn on the engine over a fake upstream and
+    return the emitted SSE payloads — the phase-4 equivalent of consuming
+    ChatStreamSession.stream() (io.emit is the old loop's `yield`)."""
+    emitted: list[bytes] = []
+    engine = ConversationEngine("https://example.test/v1/chat", {})
+    record = ConversationRecord(kind="interactive")
+
+    async def _decide(batch):  # pragma: no cover — these turns never park
+        return {}
+
+    io = EngineIO(emit=emitted.append, await_decisions=_decide)
+    with patch.object(httpx, "AsyncClient", return_value=fake_client):
+        await engine.run(record, interactive_policy(), io, {"messages": []})
+    return emitted
 
 
 class TestExecuteTool:
@@ -47,14 +72,6 @@ class TestExecuteTool:
         data = json.loads(out)
         assert "error" in data
         assert "nonexistent_tool_xyz" in data["error"]
-
-
-def _make_session():
-    return ChatStreamSession(
-        upstream_url="https://example.test/v1/chat",
-        headers={},
-        initial_body={"messages": []},
-    )
 
 
 class _FakeResponse:
@@ -113,12 +130,8 @@ class _FakeOkStreamThenDisconnect:
 async def test_stream_remote_protocol_error_yields_generic_message():
     fake_resp = _FakeOkStreamThenDisconnect()
     fake_client = _FakeClient(fake_resp)
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
@@ -134,12 +147,8 @@ async def test_stream_remote_protocol_error_suppressed_when_upstream_error_alrea
     upstream_error = b'data: {"type":"error","errorText":"An internal error occurred.","kiln_metadata":{}}\n\n'
     fake_resp = _FakeOkStreamThenDisconnect(prefix_chunks=[upstream_error])
     fake_client = _FakeClient(fake_resp)
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     raw = chunks[0].decode()
@@ -155,12 +164,7 @@ async def test_stream_error_includes_code_field():
     fake_resp = _FakeResponse(400, error_body)
     fake_client = _FakeClient(fake_resp)
 
-    session = _make_session()
-
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
@@ -177,12 +181,7 @@ async def test_stream_error_without_code_omits_code_field():
     fake_resp = _FakeResponse(404, error_body)
     fake_client = _FakeClient(fake_resp)
 
-    session = _make_session()
-
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
@@ -204,16 +203,11 @@ async def test_stream_retries_transient_error_then_succeeds():
             FakeUpstreamResponse(chunks=ok_round),
         ]
     )
-    session = _make_session()
-
-    with (
-        patch.object(httpx, "AsyncClient", return_value=client),
-        patch(
-            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
-            new_callable=AsyncMock,
-        ) as sleep_mock,
-    ):
-        raw = "".join([c.decode() async for c in session.stream()])
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+        new_callable=AsyncMock,
+    ) as sleep_mock:
+        raw = "".join(c.decode() for c in await _run_interactive_turn(client))
 
     assert raw.count('"type": "kiln-chat-retry"') == 2
     assert '"status_code": 503' in raw
@@ -233,16 +227,11 @@ async def test_stream_retries_exhausted_then_surfaces_error():
             for _ in range(MAX_CHAT_RETRIES + 1)
         ]
     )
-    session = _make_session()
-
-    with (
-        patch.object(httpx, "AsyncClient", return_value=client),
-        patch(
-            "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
-            new_callable=AsyncMock,
-        ),
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+        new_callable=AsyncMock,
     ):
-        raw = "".join([c.decode() async for c in session.stream()])
+        raw = "".join(c.decode() for c in await _run_interactive_turn(client))
 
     assert raw.count('"type": "kiln-chat-retry"') == MAX_CHAT_RETRIES
     assert "boom" in raw  # the held-back error is surfaced on give-up

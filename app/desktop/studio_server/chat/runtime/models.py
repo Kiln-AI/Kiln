@@ -484,6 +484,15 @@ class PendingApprovalBatch(BaseModel):
     body: dict[str, Any]
     assistant_text: str
     tool_input_events: list[ToolInputAvailableEvent]
+    # Pre-answered calls riding the batch WITHOUT being user decisions
+    # (tool_call_id → result JSON). Phase-4 recovery: a rehydrated trace tail
+    # can carry unanswered SIGNAL calls (enable/disable_auto_mode) next to
+    # real client calls — signals are never executed as tools, and their
+    # consent dialog died with the restart, so the resume run resolves them
+    # as {"status": "declined"} (mirroring the decline flow) purely so the
+    # persisted trace has no dangling tool call. Empty for live batches (the
+    # interceptor chain answers signals before a park can ever include one).
+    preresolved_results: dict[str, str] = Field(default_factory=dict)
     # Set by the supervisor's decide() exactly once; the engine wakes, reads
     # `decisions`, and resumes. Partial decision sets are rejected upstream of
     # this model (one batch, one decision set — matches today's UI).

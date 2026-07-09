@@ -1,12 +1,12 @@
 """Golden-protocol scenarios: the behavior contract of the unified runtime.
 
 Each scenario scripts a fake upstream (``chat/test_fakes.py``) and
-captures the exact sequence of upstream REQUEST BODIES produced by:
-
-- the OLD loop that owns that behavior today (only ``ChatStreamSession``
-  remains — the auto and sub-agent loops were deleted in phases 2–3; their
-  fixtures remain the durable contract), and
-- the NEW ``ConversationEngine`` under the equivalent policy.
+captures the exact sequence of upstream REQUEST BODIES produced by the
+``ConversationEngine`` under each policy. Phase 4 deleted the LAST old loop
+(``ChatStreamSession``), so every scenario's ``run_old`` is now None: the
+checked-in fixtures — each originally captured from the old loop that owned
+its behavior — REMAIN the durable protocol contract the engine must keep
+matching byte-for-byte.
 
 The captured sequences are pinned as checked-in JSON fixtures under
 ``golden/`` and compared as parsed JSON (dict equality — key order is
@@ -158,20 +158,6 @@ def _interactive_tool_round_responses() -> list[FakeUpstreamResponse]:
     ]
 
 
-async def _old_interactive_tool_round() -> list[dict[str, Any]]:
-    from app.desktop.studio_server.chat.stream_session import ChatStreamSession
-
-    client = FakeUpstreamClient(_interactive_tool_round_responses())
-    session = ChatStreamSession(
-        upstream_url=UPSTREAM_URL,
-        headers={},
-        initial_body=dict(_INTERACTIVE_INITIAL_BODY),
-    )
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await _consume(session.stream())
-    return _bodies(client)
-
-
 async def _engine_interactive_tool_round() -> list[dict[str, Any]]:
     return await _run_engine(
         policy=interactive_policy(),
@@ -190,7 +176,10 @@ async def _engine_interactive_tool_round() -> list[dict[str, Any]]:
 # be identical across the two shapes.
 
 _APPROVAL_INITIAL_BODY = {"messages": [{"role": "user", "content": "please add"}]}
-_APPROVAL_DECISIONS = {"tc1": True}
+# Mixed decision set: one approved, one DENIED — the denial continuation
+# (DENIED_TOOL_OUTPUT riding a role:tool row) is part of the persisted-trace
+# protocol and is pinned here at the fixture level, not just in unit tests.
+_APPROVAL_DECISIONS = {"tc1": True, "tc2": False}
 
 
 def _approval_responses() -> list[FakeUpstreamResponse]:
@@ -208,6 +197,16 @@ def _approval_responses() -> list[FakeUpstreamResponse]:
                         "approval_description": "Add numbers",
                     },
                 ),
+                tool_input_available(
+                    "tc2",
+                    "multiply",
+                    {"a": 3, "b": 4},
+                    kiln_metadata={
+                        "requires_approval": True,
+                        "permission": "math",
+                        "approval_description": "Multiply numbers",
+                    },
+                ),
                 trace("tr-1"),
                 finish_tool_calls(),
             ]
@@ -216,54 +215,6 @@ def _approval_responses() -> list[FakeUpstreamResponse]:
             chunks=[text_delta("Sum is 3"), trace("tr-2"), finish("stop")]
         ),
     ]
-
-
-async def _old_interactive_approval_flow() -> list[dict[str, Any]]:
-    from app.desktop.studio_server.chat.stream_session import (
-        ChatStreamSession,
-        ToolCallInfo,
-        execute_tool_batch,
-    )
-
-    # ONE fake client shared by both requests so the captured body sequence
-    # spans the whole flow (the fixture is the flow's protocol, not one HTTP
-    # request's).
-    client = FakeUpstreamClient(_approval_responses())
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        session = ChatStreamSession(
-            upstream_url=UPSTREAM_URL,
-            headers={},
-            initial_body=dict(_APPROVAL_INITIAL_BODY),
-        )
-        emitted = await _consume(session.stream())
-        # The stream ended at tool-calls-pending. Recover the pending items
-        # exactly as the browser would (the event payload).
-        pending = None
-        for chunk in emitted:
-            for line in chunk.decode().split("\n"):
-                if line.startswith("data: "):
-                    payload = json.loads(line[6:])
-                    if payload.get("type") == "tool-calls-pending":
-                        pending = payload
-        assert pending is not None, "old flow did not surface a pending batch"
-        # Mirror routes.post_execute_tools: execute with the POSTed decisions,
-        # then continue from the trace with only role:tool messages.
-        tool_calls = [ToolCallInfo.model_validate(item) for item in pending["items"]]
-        tool_results = await execute_tool_batch(tool_calls, dict(_APPROVAL_DECISIONS))
-        continuation_body: dict[str, Any] = {
-            "trace_id": "tr-1",
-            "messages": [
-                {"role": "tool", "tool_call_id": tc_id, "content": output}
-                for tc_id, output in tool_results.items()
-            ],
-        }
-        continuation = ChatStreamSession(
-            upstream_url=UPSTREAM_URL,
-            headers={},
-            initial_body=continuation_body,
-        )
-        await _consume(continuation.stream())
-    return _bodies(client)
 
 
 async def _engine_interactive_approval_flow() -> list[dict[str, Any]]:
@@ -294,42 +245,6 @@ def _report_injection_responses() -> list[FakeUpstreamResponse]:
             chunks=[text_delta("noted the report"), trace("tr-2"), finish("stop")]
         ),
     ]
-
-
-async def _old_interactive_report_injection() -> list[dict[str, Any]]:
-    from app.desktop.studio_server.chat import orchestration
-    from app.desktop.studio_server.chat.stream_session import ChatStreamSession
-
-    client = FakeUpstreamClient(_report_injection_responses())
-    session = ChatStreamSession(
-        upstream_url=UPSTREAM_URL,
-        headers={},
-        initial_body=dict(_REPORT_INITIAL_BODY),
-    )
-    # Drain-once semantics, like the real supervisor queue. Patching the drain
-    # (rather than staging real supervisor state) keeps the fixture free of
-    # random session ids; the queue mechanics have their own unit tests — this
-    # scenario pins how a drained report rides the continuation body. (Phase 2
-    # moved the drain from the deleted sub-agent registry to
-    # chat/orchestration.pending_reports_for_trace; the old interactive loop
-    # calls it as a module attribute precisely so this patch lands.)
-    queue = [REPORT_FRAME]
-
-    def fake_pending_reports_for_trace(trace_id: str) -> list[str]:
-        taken = list(queue)
-        queue.clear()
-        return taken
-
-    with (
-        patch.object(httpx, "AsyncClient", return_value=client),
-        patch.object(
-            orchestration,
-            "pending_reports_for_trace",
-            side_effect=fake_pending_reports_for_trace,
-        ),
-    ):
-        await _consume(session.stream())
-    return _bodies(client)
 
 
 async def _engine_interactive_report_injection() -> list[dict[str, Any]]:
@@ -515,17 +430,17 @@ class GoldenScenario:
 SCENARIOS: tuple[GoldenScenario, ...] = (
     GoldenScenario(
         "interactive_tool_round",
-        _old_interactive_tool_round,
+        None,  # ChatStreamSession deleted in phase 4; the fixture is the contract.
         _engine_interactive_tool_round,
     ),
     GoldenScenario(
         "interactive_approval_flow",
-        _old_interactive_approval_flow,
+        None,  # ChatStreamSession deleted in phase 4; the fixture is the contract.
         _engine_interactive_approval_flow,
     ),
     GoldenScenario(
         "interactive_report_injection",
-        _old_interactive_report_injection,
+        None,  # ChatStreamSession deleted in phase 4; the fixture is the contract.
         _engine_interactive_report_injection,
     ),
     GoldenScenario(

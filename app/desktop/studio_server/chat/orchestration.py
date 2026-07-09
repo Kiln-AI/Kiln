@@ -13,29 +13,21 @@ Semantics are preserved exactly:
   in the parent's trace and rendered as report panels;
 - ownership scoping: a conversation can only see/manage its own children;
 - an executed spawn marks the conversation spawn-consented (the one-time
-  approval downgrade);
+  approval downgrade — written by the engine onto
+  ``ConversationRecord.spawn_consent_granted``);
 - depth ≥ 1 calls are rejected before dispatch (sub-agents cannot manage
   sub-agents).
 
-PHASE-3 BRIDGE STATE (deleted as the last parent kind migrates onto the
-supervisor): INTERACTIVE parents still run on the OLD loop
-(``ChatStreamSession``), so an interactive parent has no supervisor
-record/session id yet. The old ``parent_key`` model therefore survives here
-for them — ``ParentConversationIndex`` keeps the ``trace:<leaf>`` alias
-chain and the spawn-consent set the old registry kept — and their children
-store the parent_key string AS their ``parent_session_id``. AUTO parents
-became supervisor records in phase 3: their ``OrchestrationContext`` carries
-a real ``parent_session_id`` (stable — no alias chaining, no ``auto:*``
-keys) and their reports route natively through the supervisor's inbox
-delivery (the phase-2 ``legacy_report_deliverer`` bridge is gone). Removal
-map:
-
-- phase 4 (interactive port): ``ParentConversationIndex`` dies entirely —
-  parent identity becomes the parent conversation's real session id (no
-  alias chaining needed; stable by construction), consent moves to
-  ``ConversationRecord.spawn_consent_granted`` (already written by the
-  engine's spawn bookkeeping), and ``OrchestrationContext`` shrinks to
-  ``{parent_session_id, depth}``.
+Phase 4 removed the last old-world identity bridge: EVERY parent is a
+supervisor record now, so ``OrchestrationContext`` shrank to
+``{parent_session_id, depth}`` and the phase-2/3 ``ParentConversationIndex``
+(the ``trace:<leaf>`` alias chain + consent set that stood in for old-loop
+interactive parents) is gone — session ids are stable, so no alias chaining
+is ever needed, and consent lives on the record. The spawn seed's
+``parent_trace_id`` (durable lineage the BACKEND resolves) now reads the
+parent record's ``current_leaf_trace_id`` directly — the same value the old
+per-round ``ctx.parent_trace_id`` refresh maintained, now with the record as
+the single source of truth (single-writer: the run loop's ``on_trace``).
 """
 
 from __future__ import annotations
@@ -63,131 +55,37 @@ from app.desktop.studio_server.chat.runtime.supervisor import (
 
 logger = logging.getLogger(__name__)
 
-# Matches the backend tool schema; the desktop clamp is authoritative (the
-# interactive POST /api/chat stream has no keepalive, so waits stay bounded).
+# Matches the backend tool schema; the desktop clamp is authoritative (waits
+# must stay bounded so a parent's turn task can always settle).
 WAIT_DEFAULT_TIMEOUT_SECONDS = 120.0
 WAIT_MAX_TIMEOUT_SECONDS = 300.0
-
-
-class ParentConversationIndex:
-    """PHASE-3-ONLY identity bridge for INTERACTIVE parents still on the OLD
-    loop (auto parents moved onto the supervisor in phase 3 and carry a real
-    session id — their old ``auto:<run_id>`` keys and the
-    ``register_parent_alias``/``parent_key_for_auto_run`` plumbing died with
-    ``chat/auto/``).
-
-    Verbatim port of the parent-key half of the old ``SubAgentRegistry``:
-
-    - ``_alias`` maps ANY leaf trace id an old-world parent has ever had to
-      its stable parent key (``trace:<first-leaf>``). Interactive parents
-      rotate their leaf every turn; ``note_parent_trace`` chains new leaves
-      to the same key so consent memory / pending reports / the children
-      listing survive across turns.
-    - ``_consented`` is the spawn-consent memory keyed by parent key (an
-      old-world parent has no ``ConversationRecord`` to carry
-      ``spawn_consent_granted``).
-
-    Both die in phase 4 when interactive parents get supervisor records:
-    session ids are stable, so no alias chain is needed, and consent lives on
-    the record.
-    """
-
-    def __init__(self) -> None:
-        self._alias: dict[str, str] = {}
-        self._consented: set[str] = set()
-
-    # -- parent keys ----------------------------------------------------------
-
-    def parent_key_for_trace(self, trace_id: str) -> str:
-        """Resolve (or mint) the stable parent key for an interactive parent's
-        leaf trace id, registering the alias."""
-        key = self._alias.get(trace_id)
-        if key is None:
-            key = f"trace:{trace_id}"
-            self._alias[trace_id] = key
-        return key
-
-    def alias_for_trace(self, trace_id: str) -> str | None:
-        """Peek the alias WITHOUT minting one — for read paths (children
-        listing, report drains, delete cascades) where an unknown trace simply
-        means "no children/reports", never a new identity."""
-        return self._alias.get(trace_id)
-
-    def note_parent_trace(self, old_leaf: str | None, new_leaf: str | None) -> None:
-        """Chain an interactive parent's rotating leaf ids to its stable key."""
-        if not old_leaf or not new_leaf or old_leaf == new_leaf:
-            return
-        key = self._alias.get(old_leaf)
-        if key is not None:
-            self._alias[new_leaf] = key
-
-    # -- consent ----------------------------------------------------------------
-
-    def mark_consented(self, parent_key: str) -> None:
-        self._consented.add(parent_key)
-
-    def is_consented(self, parent_key: str) -> bool:
-        return parent_key in self._consented
-
-
-# Module singleton, patched by tests exactly like the old subagent_registry.
-parent_index = ParentConversationIndex()
 
 
 @dataclass
 class OrchestrationContext:
     """Identity of the conversation a batch of tool calls belongs to.
 
-    Exactly one of the parent handles is set: ``parent_session_id`` for
-    conversations that live on the supervisor (auto since phase 3;
-    interactive joins in phase 4 — then this shrinks to
-    ``{parent_session_id, depth}``), ``parent_trace_id`` alone for the
-    old-loop interactive stream. ``parent_trace_id`` ALSO rides alongside a
-    session id: the spawn seed forwards it as the ``agent`` block's
-    ``parent_trace_id``, which the BACKEND resolves into durable lineage —
-    the supervisor keeps it fresh per round exactly like the old runners
-    updated ``ctx.parent_trace_id`` after every trace advance. ``depth`` > 0
+    ``parent_session_id`` is the owning conversation's supervisor session id
+    (every parent kind lives on the supervisor since phase 4). ``depth`` > 0
     marks a sub-agent's own loop, whose orchestration calls are rejected
-    before dispatch.
+    before dispatch. The old ``parent_trace_id`` field is gone: the spawn
+    lineage leaf is read from the parent record at spawn time (see the
+    module docstring).
     """
 
-    parent_trace_id: str | None = None
     parent_session_id: str | None = None
     depth: int = 0
 
     def parent_key(self) -> str | None:
-        # A supervisor-resident parent's session id IS the parent key: it is
-        # stable for the conversation's lifetime, so no trace-alias chaining
-        # is needed (this replaced the old auto:<run_id> key + alias
-        # registration when auto parents moved onto the supervisor).
-        if self.parent_session_id is not None:
-            return self.parent_session_id
-        if self.parent_trace_id is not None:
-            return parent_index.parent_key_for_trace(self.parent_trace_id)
-        return None
+        # The session id IS the parent key: stable for the conversation's
+        # lifetime, so no trace-alias chaining is needed (this replaced the
+        # old ``auto:<run_id>`` / ``trace:<leaf>`` keys as each parent kind
+        # moved onto the supervisor in phases 3–4).
+        return self.parent_session_id
 
 
 def _error(message: str) -> str:
     return json.dumps({"status": "error", "message": message}, ensure_ascii=False)
-
-
-def is_spawn_consented(ctx: OrchestrationContext) -> bool:
-    """Whether this conversation already granted spawn consent (used to
-    downgrade spawn_subagent's requires_approval after the first approval).
-
-    Only consulted by the OLD interactive loop's approval verdict
-    (``ChatStreamSession._effective_requires_approval``) — supervisor-run
-    parents never reach it (the auto policy has no approval gate, and the
-    engine's gated verdict reads ``record.spawn_consent_granted`` directly).
-    A supervisor-resident parent (session id set) is treated as consented,
-    preserving the old "auto-run parents are implicitly consented" rule: in
-    phase 3 every supervisor parent IS an auto conversation, whose consent
-    dialog covers autonomous work. Dies in phase 4 with the parent index.
-    """
-    if ctx.parent_session_id is not None:
-        return True
-    key = ctx.parent_key()
-    return key is not None and parent_index.is_consented(key)
 
 
 def _record_payload(record: ConversationRecord, include_report: bool) -> dict[str, Any]:
@@ -230,7 +128,7 @@ async def execute_orchestration_tool(
 
     try:
         if tool_name == SPAWN_SUBAGENT_TOOL_NAME:
-            return await _spawn(args, ctx, parent_key)
+            return await _spawn(args, parent_key)
         if tool_name == GET_SUBAGENT_STATUS_TOOL_NAME:
             return _status(args, parent_key)
         if tool_name == WAIT_FOR_SUBAGENTS_TOOL_NAME:
@@ -243,9 +141,7 @@ async def execute_orchestration_tool(
     return _error(f"Unknown orchestration tool: {tool_name}")
 
 
-async def _spawn(
-    args: dict[str, Any], ctx: OrchestrationContext, parent_key: str
-) -> str:
+async def _spawn(args: dict[str, Any], parent_key: str) -> str:
     agent_type = args.get("agent_type")
     name = args.get("name")
     prompt = args.get("prompt")
@@ -259,17 +155,6 @@ async def _spawn(
     ):
         return _error("spawn_subagent requires agent_type, name and prompt strings.")
 
-    # Reaching execution means the spawn was approved (or previously consented);
-    # remember it so later spawns in this conversation skip the approval gate.
-    # (Marked BEFORE the cap check, like the old executor: the user consented
-    # to spawning even if this particular spawn bounces off a cap.) Only
-    # old-loop interactive parents key consent in the parent index; a
-    # supervisor-resident parent's consent lives on its ConversationRecord
-    # (spawn_consent_granted, written by the engine's spawn bookkeeping) and
-    # auto parents are implicitly consented anyway.
-    if ctx.parent_session_id is None:
-        parent_index.mark_consented(parent_key)
-
     # Lazy import: routes imports stream_session which lazily imports this
     # module; by execution time routes is fully loaded.
     from app.desktop.studio_server.chat.routes import (
@@ -278,19 +163,22 @@ async def _spawn(
     )
     from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
+    # Durable lineage: the ``agent`` block's ``parent_trace_id`` (which the
+    # BACKEND resolves onto the child session's meta) is the parent's CURRENT
+    # persisted leaf. The record is the single source — the old runners
+    # refreshed a ctx copy per round for exactly this value.
+    parent_record = conversation_supervisor.get(parent_key)
     seed = SubAgentSeed(
         agent_type=agent_type,
         name=name.strip()[:80],
         prompt=prompt,
-        parent_trace_id=ctx.parent_trace_id,
+        parent_trace_id=(
+            parent_record.current_leaf_trace_id if parent_record else None
+        ),
     )
     try:
         record = conversation_supervisor.spawn_subagent(
             seed,
-            # Phase-2 bridge: the parent_key string doubles as the child's
-            # parent_session_id until parents have real session ids (see the
-            # module docstring). Everything downstream (children index,
-            # report queue, cascades) just matches this string.
             parent_session_id=parent_key,
             upstream_url=_upstream_chat_url(),
             headers=_build_upstream_headers(get_copilot_api_key()),
@@ -305,9 +193,9 @@ async def _spawn(
 
 def _owned_record(subagent_id: str, parent_key: str) -> ConversationRecord | None:
     """A record visible to this parent — cross-conversation ids are unknown.
-    The kind guard is defense in depth: the supervisor will also hold
-    interactive/auto records in later phases, and those must never be
-    addressable as sub-agents."""
+    The kind guard is defense in depth: the supervisor also holds
+    interactive/auto records, and those must never be addressable as
+    sub-agents."""
     record = conversation_supervisor.get(subagent_id)
     if (
         record is None
@@ -399,64 +287,20 @@ async def _stop(args: dict[str, Any], parent_key: str) -> str:
     return json.dumps({"status": "stopped"}, ensure_ascii=False)
 
 
-# ── Report drains + cascades for OLD-loop parents (the callers that used to
-#    hit the sub-agent registry directly: stream_session's mid-stream drain,
-#    routes' next-turn injection + delete cascade). ───────────────────────────
-
-
-def pending_reports_for_trace(trace_id: str) -> list[str]:
-    """Drain (and mark delivered) the framed reports awaiting delivery to the
-    parent conversation whose (possibly rotated) leaf trace id this is.
-
-    Called by the OLD interactive loop's injection points (routes.py's
-    next-turn injection, stream_session's mid-stream drain), which only ever
-    hold trace ids. Resolution mirrors ``runtime/api._resolve_parent_key``:
-
-    1. the old-loop interactive alias chain (``trace:*`` parent keys — the
-       old ``SubAgentRegistry.pending_reports_for_trace``: peek, never mint,
-       so an unknown trace means "no reports", never a new identity);
-    2. the supervisor's whole-chain trace index, for parents that ARE
-       supervisor records (auto since phase 3). This is how reports stranded
-       by an IN-BURST ``disable_auto_mode`` reach the user: the tool
-       interception ends the burst with the flag off but deliberately does
-       NOT cascade-stop the children (old ``_supervise`` behavior), so a
-       surviving child's report lands in the queue keyed by the AUTO
-       parent's SESSION id — and the conversation continues on the OLD
-       interactive loop, whose drains arrive here by trace id. Guarded to
-       non-subagent kinds: a child's own leaves are indexed too, and a child
-       never has a report queue of its own.
-
-    Each queue is drained exactly once (drain_reports marks delivery)."""
-    key = parent_index.alias_for_trace(trace_id)
-    if key is not None:
-        return conversation_supervisor.drain_reports(key)
-    session_id = conversation_supervisor.session_for_trace(trace_id)
-    if session_id is not None:
-        record = conversation_supervisor.get(session_id)
-        if record is not None and record.kind != "subagent":
-            return conversation_supervisor.drain_reports(session_id)
-    return []
-
-
 async def handle_session_deleted(trace_id: str) -> None:
     """Cascade for a deleted chat session (functional spec §5 "deleting a
     session stops its run and cascades to children"; old
-    ``SubAgentRegistry.handle_session_deleted``): if it was an old-loop
-    interactive sub-agent parent, stop its children and drop their pending
-    reports; if the id belongs to a live supervisor conversation, stop it —
-    a deleted CHILD session stops that child (old behavior), and a deleted
-    AUTO conversation stops its run + cascades to its children via
-    ``supervisor.stop`` (the old world reached the children through the
-    ``auto:<run_id>`` alias; the parent's own session id does that now)."""
-    parent_key = parent_index.alias_for_trace(trace_id)
-    if parent_key is not None:
-        await conversation_supervisor.stop_children(parent_key)
+    ``SubAgentRegistry.handle_session_deleted``): resolve the deleted leaf
+    through the supervisor's whole-chain index and, if it belongs to a live
+    conversation, stop its children (explicitly — a plain interactive
+    ``stop()`` deliberately does NOT cascade since phase 4, but a DELETED
+    parent's children have nothing left to consume their reports) and stop
+    the conversation itself — a deleted CHILD session stops that child (old
+    behavior), and a deleted parent's in-flight run is cancelled."""
     session_id = conversation_supervisor.session_for_trace(trace_id)
-    if session_id is not None:
-        record = conversation_supervisor.get(session_id)
-        if record is not None and not record.state.is_terminal:
-            # supervisor.stop is kind-aware: sub-agents hard-stop; auto
-            # conversations clear their flag (off state published) and
-            # cascade-stop their own children. Interactive records (phase 4)
-            # will idle their in-flight turn here.
-            await conversation_supervisor.stop(session_id)
+    if session_id is None:
+        return
+    await conversation_supervisor.stop_children(session_id)
+    record = conversation_supervisor.get(session_id)
+    if record is not None and not record.state.is_terminal:
+        await conversation_supervisor.stop(session_id)

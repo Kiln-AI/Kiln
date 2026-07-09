@@ -9,7 +9,7 @@
     splitSessionNodes,
     type SessionListItem,
   } from "$lib/chat/session_grouping"
-  import { auto_conversation_store } from "$lib/chat/conversation_store"
+  import { main_conversation_store } from "$lib/chat/conversation_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -83,27 +83,26 @@
       }
       const { messages, continuationTraceId, contextUsage } =
         hydrateSessionFromSnapshot(snapshot)
-      dispatch("apply", { messages, continuationTraceId, contextUsage })
+      dispatch("apply", {
+        messages,
+        continuationTraceId,
+        contextUsage,
+        autoActive: !!row.auto_active,
+      })
       posthog.capture("chat_history_session_loaded", {
         message_count: messages.length,
         auto_active: !!row.auto_active,
       })
-      // Re-attach the live auto conversation after hydrating completed
-      // history. row.auto_run_id carries the conversation's SESSION id since
-      // phase 3 (the sessions-list join reads the supervisor; the wire name
-      // is unchanged). The run replays the in-progress turn so there is no
-      // visible gap; if it has finished or is gone, the events stream lands
-      // cleanly in the "off" state (ui_design §5). Show a transient
-      // "reconnecting…" affordance during the connecting window; attach
-      // clears it once established, and the on-subscribe conversation-state
-      // marker reflects working-vs-idle immediately.
-      if (row.auto_active && row.auto_run_id) {
-        auto_conversation_store.beginReconnect()
-        // openInflightTurn: render the replayed in-flight round into its own
-        // assistant turn so it doesn't overwrite the last hydrated bubble. No
-        // initialWorking here (History has no status); attach presumes a live
-        // burst and the on-subscribe marker corrects it.
-        auto_conversation_store.attach(row.auto_run_id, undefined, true)
+      // The apply handler (chat.svelte → chatSessionStore.loadSession)
+      // re-attaches the conversation's observer for EVERY kind since phase 4
+      // (create-or-adopt by trace + attach: the replayed in-flight turn and
+      // any parked approval converge on their own). For a live AUTO
+      // conversation, additionally show the transient "reconnecting…"
+      // affordance during the hydrate→attach window (old behavior — attach
+      // clears it once the stream is established, and the on-subscribe
+      // conversation-state marker restores the working/on indicators).
+      if (row.auto_active) {
+        main_conversation_store.beginReconnect()
       }
       close()
     } catch (e) {

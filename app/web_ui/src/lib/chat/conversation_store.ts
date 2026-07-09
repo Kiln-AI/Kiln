@@ -25,8 +25,10 @@ import { base_url } from "$lib/api_client"
 import type { components } from "$lib/api_schema"
 import {
   StreamEventProcessor,
+  autoModeConsentPayloadFromEvent,
   chatGenerateId,
   consumeSseStream,
+  type AutoModeConsentRequiredPayload,
   type ChatMessage,
   type ContextUsage,
   type StreamEvent,
@@ -42,10 +44,6 @@ export type ConversationItem = components["schemas"]["ConversationItem"]
 export type RunState = components["schemas"]["RunState"]
 export type CreateAutoConversationRequest =
   components["schemas"]["CreateConversationRequest"]
-export type DeclineAutoModeRequest =
-  components["schemas"]["DeclineAutoModeRequest"]
-export type ResolveConversationResponse =
-  components["schemas"]["ResolveConversationResponse"]
 
 /**
  * Per-conversation runtime affordances mirrored from the live stream so its
@@ -714,58 +712,74 @@ export function createConversationStore(): ConversationStore {
 export const conversation_store: ConversationStore = createConversationStore()
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Auto conversation store — the fold-in of the deleted `auto_run_store.ts`
-// (phase 3). Owns the auto-mode lifecycle of the ACTIVE (main) conversation:
-// enable / decline / stop / inject / resolve against `/api/conversations`,
-// plus a pure-observer attachment to the conversation's events stream whose
-// bytes feed the EXISTING `StreamEventProcessor` so an auto burst renders
-// exactly like an interactive turn. Connection handling mirrors
-// `jobs_store.ts`: opening or closing the stream never mutates the run; the
-// authoritative on/off state comes from the unified `conversation-state`
-// events, mapped below onto the exact states the old
-// `auto-mode-on/off/idle/state` vocabulary drove — so it is correct on first
-// paint after a re-attach (not just after a local toggle).
+// Main conversation store — the phase-4 generalization of the phase-3 auto
+// conversation store (itself the fold-in of the deleted `auto_run_store.ts`).
+// The MAIN conversation is now "just another observed conversation"
+// (architecture §7): ONE pure-observer attachment to the conversation's
+// events stream feeds the EXISTING `StreamEventProcessor`, for BOTH kinds —
+// a plain interactive conversation and an auto conversation are the same
+// record whose policy/kind flip on enable/disable. This store owns:
+//
+// - create-or-adopt (`ensure`, replacing the old per-request POST /api/chat
+//   conversation model) + attach/detach of the observer,
+// - the auto-mode lifecycle (enable / decline / stop / arm) with the exact
+//   UX states the old `auto-mode-on/off/idle/state` events drove (green dot,
+//   "waiting for you", consent + stop dialogs) — zero visual change,
+// - sends (`POST /{sid}/messages`, returning the echo-dedupe message id),
+// - approvals (`fetchApprovals` + `decide` — the old two-request
+//   stream-ends-at-pending + /execute-tools flow became a parked batch).
+//
+// Connection handling mirrors `jobs_store.ts`: opening or closing the stream
+// never mutates the run; the authoritative lifecycle state comes from the
+// unified `conversation-state` events, mapped below so it is correct on
+// first paint after a re-attach (not just after a local action).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Lifecycle of the per-conversation events EventSource, surfaced for tests /
 // debugging. A pure observer: this only reports the connection, it never
 // mutates the run.
-export type AutoConnection = "idle" | "connecting" | "open" | "closed"
+export type MainConnection = "idle" | "connecting" | "open" | "closed"
+
+/** The parked approval batch as the browser consumes it (GET /approvals). */
+export interface PendingApprovalsView {
+  batchId: string
+  items: ToolCallsPendingItem[]
+}
+
+export interface DeclineAutoModeContext {
+  enable_tool_call_id: string
+  siblings: ToolCallsPendingItem[]
+}
 
 /**
- * Callbacks the chat session store registers so the desktop-owned auto run
- * can drive the same conversation the interactive stream drives. Mirrors the
- * hooks `streamChat` already calls, plus turn lifecycle and an off-signal.
- * (The old `AutoRunChatSink`, unchanged — the sink contract is what
- * guarantees zero visual change across the event-vocabulary swap.)
+ * Callbacks the chat session store registers so the desktop-owned
+ * conversation drives the transcript. Mirrors the hooks the old streamChat
+ * called, plus turn lifecycle and the auto on/off signals — the sink
+ * contract is what guarantees zero visual change across the transport swap.
  */
-export interface AutoConversationSink {
+export interface MainConversationSink {
   /** Begin a fresh assistant turn (append an empty assistant message). */
   beginAssistantTurn: () => void
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   onChatTrace: (traceId: string) => void
-  /** Fired when an auto-burst snapshot event carries ``context_usage``. */
+  /** Fired when a snapshot event carries ``context_usage`` (the gauge). */
   onContextUsage: (usage: ContextUsage) => void
-  /**
-   * Fired when an auto-burst emits ``kiln_compaction_status``:
-   * ``true`` to show the "summarizing…" indicator, ``false`` to clear it.
-   */
+  /** ``kiln_compaction_status``: true shows the "summarizing…" indicator. */
   onCompactionStatus: (compacting: boolean) => void
   onInlineError: (message: string, traceId?: string, code?: string) => void
   onToolExecutionStart: (toolCount: number) => void
   onToolExecutionEnd: (toolCount: number) => void
   onShowActivityIndicator: (show: boolean) => void
   /**
-   * A burst started / is live (RUNNING). Lets the chat view drive the SAME
-   * loading affordances (thinking dots, animated icon) as interactive
-   * streaming while the run works between events. ``false`` on burst end.
+   * A turn/burst is live (RUNNING) — drives the SAME loading affordances
+   * (thinking dots, animated icon) for interactive turns and auto bursts.
+   * ``false`` on settle.
    */
   onWorkingChange: (working: boolean) => void
   /**
-   * The run echoed an injected user message; render it as a new user turn.
-   * ``echoId`` is the message's stable id, so the sink can render it
-   * idempotently (a buffer replay on re-attach re-emits the echo for a
-   * message already shown).
+   * The run echoed a user message (an own send, a second tab's send, or an
+   * injected sub-agent report); ``echoId`` lets the sink dedupe its own
+   * just-sent message and buffer replays.
    */
   onUserMessage: (content: string, echoId?: string) => void
   /**
@@ -773,121 +787,145 @@ export interface AutoConversationSink {
    * max_rounds / armed). The indicator persists; only working clears.
    */
   onAutoModeIdle: (reason: string | null) => void
-  /** Auto mode turned off (user_stopped / user_disabled). */
+  /** Auto mode turned OFF — fired on a true on→off TRANSITION only. */
   onAutoModeOff: (reason: string | null) => void
   /**
-   * Graceful stop (functional spec §3): the run finished the in-flight turn
-   * and surfaced its client tool calls for approval instead of
-   * auto-executing them. Hand off to the EXISTING normal approval +
-   * /api/chat/execute-tools flow (the conversation is now in normal mode).
-   * The flag-off state publishes alongside, so the indicator clears on its
-   * own.
+   * An INTERACTIVE turn settled (idle transition with the flag off). Fires
+   * where the old streamChat called onFinish: status → ready, flush queued.
+   * Deliberately carries NO reason: the engine records the auto idle
+   * vocabulary on interactive records too, and the phase-1 rendering rule
+   * says interactive conversations must never render `idle_reason` (see
+   * ConversationEngine._finish_idle).
+   */
+  onInteractiveIdle: () => void
+  /**
+   * The run parked on a pending approval batch (state awaiting_approval —
+   * marker or live). The session store fetches the batch and opens the SAME
+   * approval box the old stream-ending tool-calls-pending event drove.
+   */
+  onAwaitingApproval: () => void
+  /**
+   * ``tool-calls-pending`` on the observer stream — the pending batch's wire
+   * payload (also replayed to re-attaching tabs while parked). Same entry as
+   * onAwaitingApproval (both funnel into the idempotent approvals fetch).
    */
   onToolCallsPending: (items: ToolCallsPendingItem[]) => void
+  /**
+   * ``auto-mode-consent-required`` on the observer stream (the engine ends
+   * the turn after emitting it): drive the consent dialog exactly as the old
+   * stream-ending event did.
+   */
+  onConsentRequired: (payload: AutoModeConsentRequiredPayload) => void
+  /** ``kiln_client_upgrade_nudge`` — the non-blocking upgrade banner. */
+  onVersionNudge: (preferredVersion: string) => void
 }
 
-export interface AutoConversationStore {
+export interface MainConversationStore {
   /** Conversation auto-mode flag: ON across RUNNING and IDLE bursts. */
   autoModeOn: Readable<boolean>
   /**
-   * Client-only "armed" flag (Revision R2): the user turned auto mode on for
-   * a brand-new conversation that has no ``trace_id`` yet, so there is no
-   * desktop-owned conversation to key. The indicator shows on ("waiting for
-   * you") with NO server call. The FIRST ``sendMessage`` creates the
-   * conversation (enable with the first message + no trace_id) and clears
-   * this. Distinct from ``autoModeOn`` (which tracks a real desktop-owned
-   * conversation): the footer treats ``autoModeOn || armed`` as "on".
-   * Disable/decline before the first send clears it.
+   * Client-only "armed" flag (Revision R2): auto mode turned on for a
+   * brand-new conversation with no trace yet — indicator on, NO server call;
+   * the first send creates the conversation in auto mode.
    */
   armed: Readable<boolean>
-  /** Burst sub-state: a burst is actively running (vs idle, flag still on). */
+  /** A turn/burst is actively running (either kind). */
   working: Readable<boolean>
-  /**
-   * A transient "reconnecting…" window while a re-attach (hard-refresh resync
-   * or History restore) resolves → hydrates → attaches the live observer.
-   * Cleared once the events stream is established (or on error / off /
-   * idle). Always false in the normal (non-reattach) enable flow.
-   */
+  /** Transient "reconnecting…" window during a re-attach. */
   reconnecting: Readable<boolean>
-  /**
-   * Transient retry affordance: ``{ attempt, max }`` while a transient
-   * upstream failure is being retried with backoff, else ``null``.
-   */
+  /** Transient "retrying N/M…" affordance. */
   retry: Readable<{ attempt: number; max: number } | null>
-  /** The auto conversation's session id (was the old run id). */
+  /** The main conversation's session id (null before ensure/attach). */
   sessionId: Readable<string | null>
   offReason: Readable<string | null>
-  connection: Readable<AutoConnection>
-  bind(sink: AutoConversationSink): void
+  connection: Readable<MainConnection>
+  bind(sink: MainConversationSink): void
+  /**
+   * Create-or-adopt the interactive conversation for the given (possibly
+   * stale) leaf trace id — or a brand-new conversation when null — and
+   * attach the observer. Idempotent while attached. Replaces the old
+   * conversation-per-request POST /api/chat model.
+   */
+  ensure(
+    traceId: string | null,
+    opts?: {
+      openInflightTurn?: boolean
+      initialWorking?: boolean
+      /** Reflect the auto indicator immediately (history auto-row restore —
+       * the marker would set it anyway, but the old attach was instant). */
+      assumeAutoOn?: boolean
+    },
+  ): Promise<{ ok: boolean; sessionId?: string; error?: string }>
   requestEnable(
     seed: CreateAutoConversationRequest,
   ): Promise<{ ok: boolean; error?: string }>
-  decline(req: DeclineAutoModeRequest): Promise<void>
   /**
-   * Inject a user message into the live conversation WITHOUT disabling auto
-   * mode. Routes to ``POST /api/conversations/{sid}/messages``; the run
-   * echoes the message + streams the resulting burst on the observer stream.
-   * Never stops the run. (The old endpoint also took a trace_id for the idle
-   * re-arm; the supervisor's own leaf is authoritative now, so it is gone.)
+   * Decline a pending enable_auto_mode consent request
+   * (POST /{sid}/auto {enabled:false, decline}): the declined continuation
+   * streams on the observer into a fresh assistant turn.
    */
-  sendMessage(text: string): Promise<{ ok: boolean; error?: string }>
+  decline(ctx: DeclineAutoModeContext): Promise<void>
+  /**
+   * Send a user message (POST /{sid}/messages): IDLE starts the turn/burst,
+   * RUNNING queues into the server inbox, AWAITING_APPROVAL queues until
+   * decisions resolve. Returns the server-minted message id so the sender
+   * can dedupe its own echo.
+   */
+  sendMessage(
+    text: string,
+  ): Promise<{ ok: boolean; error?: string; messageId?: string }>
   stop(): Promise<void>
+  /** Fetch the parked approval batch (404 → null). */
+  fetchApprovals(): Promise<PendingApprovalsView | null>
   /**
-   * Resolve a (possibly stale) trace id to the conversation's live auto
-   * record. Used to resync after a hard refresh: returns the session id plus
-   * the conversation's CURRENT leaf trace id so the caller can hydrate the
-   * rounds completed while the tab was gone, then ``attach``. ``null`` when
-   * no live flag-on auto conversation owns the trace (404) or the request
-   * fails — the caller leaves the restored state.
+   * Resolve the parked batch. ``conflict`` = another tab decided first
+   * (409) — the box should clear and the stream carries the resolution.
    */
-  resolve(traceId: string): Promise<ResolveConversationResponse | null>
-  /**
-   * Mark the start of a re-attach (after we know it's an active run) so the
-   * transcript shows a transient "reconnecting…" affordance during the
-   * resolve→hydrate→attach window. ``attach`` keeps it on through the
-   * connecting phase and clears it once the stream is established. Safe
-   * no-op clear paths (error / off / idle) guarantee it can't get stuck on.
-   */
+  decide(
+    batchId: string,
+    decisions: Record<string, boolean>,
+  ): Promise<{ ok: boolean; conflict?: boolean; error?: string }>
+  /** Mark the start of a re-attach so the transcript shows "reconnecting…". */
   beginReconnect(): void
   /**
-   * Open the conversation's events SSE and re-attach. ``initialWorking``
-   * (from the resolve response state) drives the thinking indicator
-   * immediately on attach; omit it when the liveness isn't known up front
-   * (History restore). ``openInflightTurn`` opens a fresh assistant turn for
-   * the replayed in-flight round so it doesn't overwrite the last hydrated
-   * bubble — set on re-attach (resync / History restore), left false on the
-   * initial burst attach.
+   * Open the conversation's events SSE. ``initialWorking`` drives the
+   * thinking indicator immediately; ``openInflightTurn`` renders a replayed
+   * in-flight round into a fresh assistant turn; ``assumeAutoOn`` turns the
+   * auto indicator on optimistically (enable / auto-row restore) instead of
+   * waiting for the marker.
    */
   attach(
     sessionId: string,
     initialWorking?: boolean,
     openInflightTurn?: boolean,
+    assumeAutoOn?: boolean,
   ): void
-  /** Stop observing + clear the indicator without ending the run (navigation). */
+  /** Stop observing + clear the indicator without ending the run. */
   detach(): void
   /**
-   * Client-arm auto mode on a brand-new conversation (Revision R2). No
-   * server call — the indicator turns on ("waiting for you") and the first
-   * ``sendMessage`` creates the conversation. Idempotent.
+   * Open a fresh assistant turn AND reset the stream processor so the prior
+   * turn's parts aren't re-flushed into it. Used before dispatching an
+   * action whose reply streams on the already-open observer (send / enable
+   * burst / decline).
    */
+  beginTurn(): void
+  /** Client-arm auto mode on a brand-new conversation (Revision R2). */
   arm(): void
-  /** Clear the client-armed flag (disable/decline before the first send). */
   disarm(): void
   /** Exposed for tests / explicit teardown; not part of normal usage. */
   _close(): void
 }
 
-export function createAutoConversationStore(): AutoConversationStore {
+export function createMainConversationStore(): MainConversationStore {
   const autoModeOn = writable<boolean>(false)
   const armed = writable<boolean>(false)
   const working = writable<boolean>(false)
   const reconnecting = writable<boolean>(false)
   const sessionId = writable<string | null>(null)
   const offReason = writable<string | null>(null)
-  const connection = writable<AutoConnection>("idle")
+  const connection = writable<MainConnection>("idle")
   // Transient "retrying N/M…" affordance: set on each kiln-chat-retry event,
-  // cleared by the next event of any other kind (the recovered round's first
-  // event, or a state marker). Null when no retry is in flight.
+  // cleared by the next event of any other kind.
   const retry = writable<{ attempt: number; max: number } | null>(null)
 
   function setWorking(next: boolean): void {
@@ -895,29 +933,34 @@ export function createAutoConversationStore(): AutoConversationStore {
     sink?.onWorkingChange(next)
   }
 
-  let sink: AutoConversationSink | null = null
+  let sink: MainConversationSink | null = null
   let eventSource: EventSource | null = null
+  // The live stream's processor, held store-level so beginTurn() can reset
+  // it (a fresh assistant turn must not have the prior turn's accumulated
+  // parts re-flushed into it — the same rule the user-message echo path
+  // applies).
+  let processor: StreamEventProcessor | null = null
   // True from attach() until the FIRST conversation-state event arrives on
-  // the new stream: that event is the bus's ON-SUBSCRIBE marker (it follows
-  // the buffer replay), a snapshot of where the run already is — not a
-  // transition. The old vocabulary made this distinction structurally
-  // (attaching to a RUNNING run got `auto-mode-state`, which never signalled
-  // the idle sink); the unified event doesn't, so the store must: the marker
-  // updates the flag/working affordances but must NOT fire
-  // sink.onAutoModeIdle — that hook is the chat session store's
-  // burst-settled signal (it flushes queued messages), and a mere re-attach
-  // to an idle conversation is not a settle.
+  // the new stream: that event is the bus's ON-SUBSCRIBE marker (a snapshot
+  // of where the run already is, following the buffer replay) — NOT a
+  // transition. The marker updates affordances (flag, working, approval box)
+  // but must never fire the SETTLE hooks (onAutoModeIdle /
+  // onInteractiveIdle, which flush queued messages) — a re-attach to an idle
+  // conversation is not a settle (the old auto-mode-state marker's silence).
   let attachMarkerPending = false
-  // On a re-attach (resync / History restore) the buffer replay carries ONLY
-  // the current in-flight round (the run buffer clears on every snapshot),
-  // but the restored/hydrated transcript's last assistant bubble holds
-  // earlier rounds. Without opening a fresh turn first, the in-flight round's
-  // first flush would overwrite that bubble (``draft.parts = next``) and
-  // destroy those rounds. So on re-attach we open a fresh assistant turn
-  // lazily — on the first assistant content of the in-flight round (or it's
-  // consumed by an injected-message echo, which opens its own turn). Lazy so
-  // an idle re-attach leaves no empty bubble.
+  // On a re-attach the buffer replay carries ONLY the current in-flight
+  // round; without opening a fresh turn its first flush would overwrite the
+  // last hydrated bubble. Lazy so an idle re-attach leaves no empty bubble.
   let pendingInflightTurn = false
+  // Whether the flag has been observed ON on this attachment — an off state
+  // event is only a TRANSITION (→ onAutoModeOff) when it was.
+  let flagSeenOn = false
+  // Serializes ensure() so two racing callers can't both create.
+  let ensureInFlight: Promise<{
+    ok: boolean
+    sessionId?: string
+    error?: string
+  }> | null = null
 
   function consumeInflightTurn(): void {
     if (pendingInflightTurn) {
@@ -926,7 +969,7 @@ export function createAutoConversationStore(): AutoConversationStore {
     }
   }
 
-  function bind(newSink: AutoConversationSink): void {
+  function bind(newSink: MainConversationSink): void {
     sink = newSink
   }
 
@@ -934,8 +977,7 @@ export function createAutoConversationStore(): AutoConversationStore {
     return new StreamEventProcessor({
       onAssistantMessage: (update) => {
         // First assistant content of a re-attached in-flight round: open a
-        // fresh turn so it renders into its own bubble instead of
-        // overwriting the last.
+        // fresh turn so it renders into its own bubble.
         consumeInflightTurn()
         sink?.onAssistantMessage(update)
       },
@@ -944,10 +986,18 @@ export function createAutoConversationStore(): AutoConversationStore {
       onCompactionStatus: (compacting) => sink?.onCompactionStatus(compacting),
       onInlineError: (message, traceId, code) =>
         sink?.onInlineError(message, traceId, code),
+      onVersionNudge: (preferred) => sink?.onVersionNudge(preferred),
       onToolExecutionStart: (count) => sink?.onToolExecutionStart(count),
       onToolExecutionEnd: (count) => sink?.onToolExecutionEnd(count),
       onShowActivityIndicator: (show) => sink?.onShowActivityIndicator(show),
     })
+  }
+
+  function beginTurn(): void {
+    sink?.beginAssistantTurn()
+    processor?.reset()
+    // The fresh turn supersedes any pending inflight-turn bookkeeping.
+    pendingInflightTurn = false
   }
 
   function closeSource(): void {
@@ -955,23 +1005,26 @@ export function createAutoConversationStore(): AutoConversationStore {
       eventSource.close()
       eventSource = null
     }
-    // A pending fresh-turn belongs to the stream we're tearing down; drop it
-    // so a later attach can't open a stray empty bubble. Ditto the pending
-    // attach marker — it describes a stream that no longer exists.
+    processor = null
+    // A pending fresh-turn / attach marker belongs to the stream being torn
+    // down.
     pendingInflightTurn = false
     attachMarkerPending = false
   }
 
-  function clearToOff(reason: string | null): void {
-    closeSource()
+  // The on→off TRANSITION (stop / disable / model-called disable): clear the
+  // auto affordances and signal the sink ONCE. Unlike the old auto store's
+  // clearToOff this NEVER closes the stream or clears the session id — an
+  // off-auto conversation IS the same live interactive conversation
+  // (phase 4's policy flip), and the observer keeps carrying its turns.
+  function applyOffTransition(reason: string | null): void {
+    flagSeenOn = false
     autoModeOn.set(false)
     armed.set(false)
     setWorking(false)
     reconnecting.set(false)
     retry.set(null)
-    sessionId.set(null)
     offReason.set(reason)
-    connection.set("closed")
     sink?.onAutoModeOff(reason)
   }
 
@@ -985,12 +1038,12 @@ export function createAutoConversationStore(): AutoConversationStore {
     armed.set(false)
   }
 
-  // Stop observing the current conversation and clear the indicator WITHOUT
-  // signalling the sink (the run keeps going server-side; the user just
-  // navigated away — e.g. New Chat / load another conversation). Re-attach is
-  // available from history.
+  // Stop observing the current conversation and clear all affordances
+  // WITHOUT signalling the sink (the run keeps going server-side; the user
+  // navigated away — New Chat / load another conversation).
   function detach(): void {
     closeSource()
+    flagSeenOn = false
     autoModeOn.set(false)
     armed.set(false)
     setWorking(false)
@@ -1001,10 +1054,6 @@ export function createAutoConversationStore(): AutoConversationStore {
     connection.set("idle")
   }
 
-  // Mark the start of a re-attach (resolve→hydrate→attach). attach() keeps
-  // this on through the connecting phase and clears it once the stream is
-  // established; all off/idle/error paths also clear it so it can never get
-  // stuck on.
   function beginReconnect(): void {
     reconnecting.set(true)
   }
@@ -1012,68 +1061,82 @@ export function createAutoConversationStore(): AutoConversationStore {
   // --- Control-event handling on the observer stream --------------------------
   // Returns true when it claims the event (so it isn't forwarded to the
   // processor). The lifecycle vocabulary is the ONE `conversation-state`
-  // event, mapped back onto the exact states the old per-kind events drove:
+  // event; the old per-kind mapping is preserved exactly:
   //
   //   old auto-mode-on            → state=running, auto_flag=true
   //   old auto-mode-idle{reason}  → state=idle,    auto_flag=true, idle_reason
-  //   old auto-mode-off{reason}   → auto_flag=false (idle_reason carries
-  //                                 user_stopped/user_disabled)
+  //   old auto-mode-off{reason}   → auto_flag false TRANSITION (idle_reason
+  //                                 carries user_stopped/user_disabled)
   //   old auto-mode-state{working}→ the on-subscribe marker: working ⇔ running
-  //
-  // `user-message` / `kiln-chat-retry` / `tool-calls-pending` are unchanged;
-  // every other event is normal chat SSE and flows to the processor.
+  //   old interactive stream end  → state=idle, auto_flag=false (transition)
+  //                                 → onInteractiveIdle (status ready + flush)
+  //   old stream-ends-at-pending  → state=awaiting_approval + the replayed
+  //                                 tool-calls-pending event → approvals fetch
+  //   old stream-ends-at-consent  → auto-mode-consent-required on the stream
   function handleControlEvent(event: StreamEvent): boolean {
     if (event.type === "conversation-state") {
-      // Only this conversation's auto lifecycle is ours to reflect. (The
-      // per-conversation stream carries no other session's events, but guard
-      // by kind anyway — defense in depth against future multiplexing.)
-      if (event.kind && event.kind !== "auto") return true
-      // The first state event after attach is the on-subscribe MARKER (a
-      // snapshot, not a transition) — consume the flag; everything after it
-      // is a live transition. See the attachMarkerPending declaration.
+      // Ignore other kinds defensively (the per-conversation stream carries
+      // only this conversation's events; sub-agent records are never the
+      // main conversation).
+      if (event.kind && event.kind !== "auto" && event.kind !== "interactive")
+        return true
       const isAttachMarker = attachMarkerPending
       attachMarkerPending = false
-      // Any state event means the attach is established — clear the
-      // transient reconnecting affordance (old on/idle/state handling).
+      // Any state event means the attach is established.
       reconnecting.set(false)
       if (event.session_id) sessionId.set(event.session_id)
-      if (event.auto_flag === false) {
-        // Old auto-mode-off: published on explicit stop/disable only; the
-        // reason (user_stopped/user_disabled) rides idle_reason. A late
-        // attach to an OFF record gets this as its marker too — the old
-        // terminal off marker likewise drove the off handler on subscribe.
-        clearToOff(event.idle_reason ?? null)
-        return true
-      }
-      autoModeOn.set(true)
-      offReason.set(null)
-      if (event.state === "idle") {
-        // Old auto-mode-idle: a burst ended (or the on-subscribe marker of
-        // an idle conversation, incl. "armed") but the flag STAYS on. Keep
-        // the indicator; only clear the working sub-state.
-        setWorking(false)
-        // No in-flight round produced content — drop the pending fresh-turn
-        // so we don't open an empty bubble.
-        pendingInflightTurn = false
-        // Only a real burst-settled TRANSITION signals the idle sink (which
-        // flushes queued messages in the session store); the attach-time
-        // marker merely reports where the run already is — the old
-        // auto-mode-state marker never fired this hook.
-        if (!isAttachMarker) {
-          sink?.onAutoModeIdle(event.idle_reason ?? null)
-        }
+
+      const flagOn = event.auto_flag === true
+      // A true on→off TRANSITION (old auto-mode-off) — including one arriving
+      // as the marker of a freshly re-attached OFF record (the old terminal
+      // off marker likewise drove the off handler).
+      const offTransition = !flagOn && flagSeenOn
+      if (offTransition) {
+        applyOffTransition(event.idle_reason ?? null)
+      } else if (!flagOn) {
+        autoModeOn.set(false)
       } else {
-        // running (old auto-mode-on / state{working:true}). AWAITING_
-        // APPROVAL is unreachable for the auto policy but would also mean
-        // "a turn is in flight" — same affordance.
+        flagSeenOn = true
+        autoModeOn.set(true)
+        offReason.set(null)
+      }
+
+      if (event.state === "running") {
+        // old auto-mode-on / state{working:true}; for interactive kind this
+        // is a turn in flight (the old client stream being live).
         setWorking(true)
+      } else if (event.state === "awaiting_approval") {
+        // The run parked on approvals. The thinking affordance stops (the
+        // old stream ENDED here); the approval box re-surfaces via the
+        // sink's idempotent approvals fetch — marker included, so a
+        // refreshed tab recovers the box (functional spec §5).
+        setWorking(false)
+        pendingInflightTurn = false
+        sink?.onAwaitingApproval()
+      } else {
+        // idle
+        setWorking(false)
+        pendingInflightTurn = false
+        // Exactly ONE settle signal per settle: an off transition already
+        // signalled onAutoModeOff above (the old auto-mode-off event carried
+        // both facts in one payload), markers signal nothing.
+        if (!isAttachMarker && !offTransition) {
+          if (flagOn) {
+            // Burst settled, flag stays on (old auto-mode-idle) — flushes
+            // queued messages in the session store.
+            sink?.onAutoModeIdle(event.idle_reason ?? null)
+          } else {
+            // Interactive turn settled (the old streamChat onFinish moment).
+            // idle_reason deliberately not forwarded (rendering rule).
+            sink?.onInteractiveIdle()
+          }
+        }
       }
       return true
     }
     if (event.type === "kiln-chat-retry") {
-      // A transient upstream failure is being retried with backoff. The
-      // burst is still working — keep the indicator on and surface
-      // "retrying N/M…" so the user sees progress rather than a hard error.
+      // A transient upstream failure is being retried with backoff — the
+      // turn/burst is still working; surface "retrying N/M…".
       setWorking(true)
       retry.set({
         attempt: event.attempt ?? 0,
@@ -1082,27 +1145,28 @@ export function createAutoConversationStore(): AutoConversationStore {
       return true
     }
     if (event.type === "user-message") {
-      // The run echoed an injected user message. Render it as a fresh user
-      // turn (then a new assistant turn for the burst it triggers) so every
-      // observer — including the sender — sees it, consistent with replay.
-      // The echo id lets the sink dedupe a replayed echo (re-attach) against
-      // a message it already shows.
+      // The run echoed a user message (enqueue-time echo). Render as a fresh
+      // user turn followed by a new assistant turn — every observer
+      // (including the sender, deduped by echo id) sees it, consistent with
+      // replay.
       setWorking(true)
-      // The echo opens (or dedupes into) its own assistant turn, so the
-      // in-flight round renders there — consume any pending fresh-turn to
-      // avoid a second.
       pendingInflightTurn = false
       sink?.onUserMessage(event.content ?? "", event.id)
       return true
     }
     if (event.type === "tool-calls-pending") {
-      // Graceful stop (functional spec §3): the run surfaced the final
-      // turn's client tool calls for approval instead of auto-executing
-      // them. Hand off to the EXISTING normal approval + execute-tools flow.
-      // The accompanying flag-off state clears the indicator; here we only
-      // stop the working sub-state and delegate the pending calls.
+      // The run parked (or re-surfaced, via replay/rehydration) a pending
+      // approval batch. The old stream ENDED here; now the box opens off the
+      // fetched batch while the run stays parked.
       setWorking(false)
       sink?.onToolCallsPending(Array.isArray(event.items) ? event.items : [])
+      return true
+    }
+    if (event.type === "auto-mode-consent-required") {
+      // The model asked to enable auto mode; the engine emitted the consent
+      // control event and ended the turn (an idle state event follows).
+      setWorking(false)
+      sink?.onConsentRequired(autoModeConsentPayloadFromEvent(event))
       return true
     }
     return false
@@ -1112,37 +1176,35 @@ export function createAutoConversationStore(): AutoConversationStore {
     newSessionId: string,
     initialWorking?: boolean,
     openInflightTurn = false,
+    assumeAutoOn = false,
   ): void {
     const EventSourceCtor = globalThis.EventSource
     if (!EventSourceCtor) {
-      // No SSE support: don't leave a "reconnecting…" affordance stuck on.
       reconnecting.set(false)
       return
     }
     closeSource()
 
-    // Re-attach (resync / History restore): render the replayed in-flight
-    // round into a fresh assistant turn rather than overwriting the last
-    // hydrated one. (closeSource above cleared any stale value.) Not set on
-    // the initial burst attach, which already opened its turn via
-    // requestEnable.
     pendingInflightTurn = openInflightTurn
-    // The next conversation-state event on this stream is the on-subscribe
-    // marker (snapshot, not transition) — see handleControlEvent.
     attachMarkerPending = true
+    flagSeenOn = assumeAutoOn
 
     sessionId.set(newSessionId)
-    autoModeOn.set(true)
-    // Drive the working sub-state from the surfaced liveness when known (the
-    // resolve response carries the conversation's state). When unknown
-    // (History restore, which has no state), presume a live burst — the
-    // buffer replay + on-subscribe state marker correct it with no visible
-    // gap.
-    setWorking(initialWorking ?? true)
-    offReason.set(null)
+    if (assumeAutoOn) {
+      // Enable / auto-row restore: reflect the on-state immediately (the old
+      // attach semantics); the marker corrects it if stale. Plain
+      // interactive attaches wait for the marker instead.
+      autoModeOn.set(true)
+      offReason.set(null)
+    }
+    // Working: explicit when the caller knows (resync state); presumed live
+    // only on the optimistic auto attach (History restore had no status —
+    // the marker corrects it with no visible gap).
+    setWorking(initialWorking ?? assumeAutoOn)
     connection.set("connecting")
 
-    const processor = buildProcessor()
+    processor = buildProcessor()
+    const activeProcessor = processor
     const source = new EventSourceCtor(
       `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(newSessionId)}/events`,
     )
@@ -1151,16 +1213,12 @@ export function createAutoConversationStore(): AutoConversationStore {
     source.onopen = () => {
       if (eventSource !== source) return
       connection.set("open")
-      // Attach is established (resolve→hydrate→attach complete). Clear the
-      // transient reconnecting affordance; the run's liveness now arrives
-      // via the buffer replay + on-subscribe state marker.
       reconnecting.set(false)
     }
 
     source.onmessage = (e: MessageEvent) => {
       if (eventSource !== source) return
-      // First byte over the stream also means we're established — clear the
-      // reconnecting affordance even if onopen didn't fire (test envs).
+      // First byte over the stream also means we're established.
       reconnecting.set(false)
       const data = typeof e.data === "string" ? e.data.trim() : ""
       if (!data || data === "[DONE]") return
@@ -1170,30 +1228,108 @@ export function createAutoConversationStore(): AutoConversationStore {
       } catch {
         return
       }
-      // Any event other than another retry means the retry window is over
-      // (the round recovered, or the burst settled) — clear the affordance.
+      // Any event other than another retry means the retry window is over.
       if (event.type !== "kiln-chat-retry") retry.set(null)
       if (handleControlEvent(event)) {
-        // A ``user-message`` echo opens a fresh assistant turn (the sink
-        // calls beginAssistantTurn). Reset the processor so the prior turn's
-        // accumulated parts aren't re-flushed into the new turn (which would
-        // duplicate the previous round's text + tools into it).
-        if (event.type === "user-message") processor.reset()
+        // A ``user-message`` echo opened a fresh assistant turn (the sink
+        // calls beginAssistantTurn); reset the processor so the prior turn's
+        // accumulated parts aren't re-flushed into it.
+        if (event.type === "user-message") activeProcessor.reset()
         return
       }
-      processor.handleEvent(event)
+      activeProcessor.handleEvent(event)
     }
 
     source.onerror = () => {
-      // Only act on the active source (avoid racing a teardown / re-attach).
       if (eventSource !== source) return
-      // No reconnect loop. Whether the conversation was never reachable
-      // (GC'd / unknown → events 404, never opened) or it opened then
-      // dropped without an explicit off, the conversation is persisted
-      // server-side: degrade cleanly to the hydrated-history "off" state —
-      // never a hard error. A run that finished normally already cleared us
-      // via the flag-off state event.
-      clearToOff(null)
+      // No reconnect loop. The conversation is persisted server-side, so
+      // degrade cleanly: an auto conversation falls to the hydrated-history
+      // "off" look (the old behavior); an interactive one just marks the
+      // connection closed — the session id survives, and the next
+      // send/ensure re-attaches.
+      const droppedMidTurn = get(working)
+      closeSource()
+      if (get(autoModeOn)) {
+        applyOffTransition(null)
+      } else {
+        // setWorking(false) doubles as the session store's status reset (it
+        // clears a stuck "submitted"/"streaming" without flushing the
+        // queue), mirroring the old streamChat fetch-error path's return to
+        // ready.
+        setWorking(false)
+        reconnecting.set(false)
+        if (droppedMidTurn) {
+          // A turn was visibly in flight when the observer died — surface
+          // it like the old streamChat onError surfaced a dropped fetch
+          // (an idle-observer drop stays silent, as no request was in
+          // flight in the old world either).
+          sink?.onInlineError(
+            "Lost the connection to the assistant. Please try again.",
+          )
+        }
+      }
+      connection.set("closed")
+    }
+  }
+
+  async function ensure(
+    traceId: string | null,
+    opts?: {
+      openInflightTurn?: boolean
+      initialWorking?: boolean
+      assumeAutoOn?: boolean
+    },
+  ): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
+    // Already attached: the conversation exists and is observed.
+    const current = get(sessionId)
+    if (current && eventSource) return { ok: true, sessionId: current }
+    if (ensureInFlight) return ensureInFlight
+
+    const doEnsure = async () => {
+      let response: Response
+      try {
+        response = await fetch(CONVERSATIONS_BASE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "interactive",
+            ...(traceId ? { trace_id: traceId } : {}),
+          }),
+        })
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      }
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: `Could not open the conversation (${response.status}).`,
+        }
+      }
+      let data: { session_id?: string }
+      try {
+        data = (await response.json()) as { session_id?: string }
+      } catch {
+        return { ok: false, error: "Malformed response opening conversation." }
+      }
+      if (!data.session_id) {
+        return { ok: false, error: "No conversation id returned." }
+      }
+      attach(
+        data.session_id,
+        opts?.initialWorking,
+        opts?.openInflightTurn ?? false,
+        opts?.assumeAutoOn ?? false,
+      )
+      return { ok: true, sessionId: data.session_id }
+    }
+    ensureInFlight = doEnsure()
+    try {
+      return await ensureInFlight
+    } finally {
+      ensureInFlight = null
     }
   }
 
@@ -1201,7 +1337,23 @@ export function createAutoConversationStore(): AutoConversationStore {
     seed: CreateAutoConversationRequest,
   ): Promise<{ ok: boolean; error?: string }> {
     // POST /api/conversations — the re-homed enable (old /api/chat/auto/
-    // enable): creates or flips the auto conversation on the supervisor.
+    // enable): flips the SAME conversation record to the auto policy (or
+    // creates one for the armed-first-send / legacy paths).
+    // A burst starts immediately when the seed carries content to run: the
+    // consent path (enable_tool_call_id) or the armed-first-send first
+    // message (extra_messages).
+    const startsBurst =
+      !!seed.enable_tool_call_id ||
+      (!!seed.pending_tool_calls && seed.pending_tool_calls.length > 0) ||
+      (!!seed.extra_messages && seed.extra_messages.length > 0)
+    const alreadyAttached = eventSource !== null && get(sessionId) !== null
+    if (startsBurst && alreadyAttached) {
+      // The burst will stream on the ALREADY-OPEN observer — open the fresh
+      // assistant turn before the enable POST so no burst byte can race into
+      // the previous bubble. (A failed enable leaves an empty, invisible
+      // assistant message; the inline error follows it.)
+      beginTurn()
+    }
     let response: Response
     try {
       response = await fetch(CONVERSATIONS_BASE_URL, {
@@ -1237,42 +1389,48 @@ export function createAutoConversationStore(): AutoConversationStore {
         error: "Enable auto mode did not return a conversation id.",
       }
     }
-    // Manual enable only ARMS the conversation: the server creates the
-    // record IDLE without starting an empty upstream burst, so there's no
-    // immediate assistant turn — the indicator just turns on ("waiting for
-    // you") and the next user message starts the first burst via the
-    // /messages inject path. A burst starts immediately when the seed
-    // carries content to run: the consent path (an ``enable_tool_call_id``)
-    // OR a brand-new conversation seeded with the first user message
-    // (``extra_messages``, Revision R2). In those cases open a fresh
-    // assistant turn to render the first burst.
-    const startsBurst =
-      !!seed.enable_tool_call_id ||
-      (!!seed.pending_tool_calls && seed.pending_tool_calls.length > 0) ||
-      (!!seed.extra_messages && seed.extra_messages.length > 0)
+    // A real desktop-owned conversation now owns the on-state; clear any
+    // client-armed flag (Revision R2).
+    armed.set(false)
+    if (alreadyAttached && get(sessionId) === data.session_id) {
+      // The flip happened on the conversation we already observe — reflect
+      // the on-state without re-attaching (a re-attach would replay the
+      // buffer into a transcript that already shows it).
+      flagSeenOn = true
+      autoModeOn.set(true)
+      offReason.set(null)
+      if (startsBurst) setWorking(true)
+      return { ok: true }
+    }
     if (startsBurst) {
+      // Fresh attachment: the new stream renders the burst into a fresh
+      // assistant turn.
       sink?.beginAssistantTurn()
     }
-    // A real desktop-owned conversation now owns the on-state; clear any
-    // client-armed flag (Revision R2: the first send on a brand-new
-    // conversation reaches here).
-    armed.set(false)
-    attach(data.session_id)
+    attach(data.session_id, startsBurst, false, true)
     return { ok: true }
   }
 
-  async function decline(req: DeclineAutoModeRequest): Promise<void> {
-    // Decline resolves enable→declined server-side and resumes the normal
-    // interactive stream; consume it into the same sink as a fresh turn.
-    // (POST /api/conversations/auto/decline — the re-homed
-    // /api/chat/auto/decline, same body and stream semantics.)
+  async function decline(ctx: DeclineAutoModeContext): Promise<void> {
+    // Decline resolves enable→declined server-side (old
+    // /api/chat/auto/decline, folded into POST /{sid}/auto) and streams the
+    // interactive continuation on the observer — open a fresh turn for it.
+    const id = get(sessionId)
+    if (!id) {
+      sink?.onInlineError("No conversation to decline auto mode for.")
+      return
+    }
+    beginTurn()
     let response: Response
     try {
-      response = await fetch(`${CONVERSATIONS_BASE_URL}/auto/decline`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req),
-      })
+      response = await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/auto`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: false, decline: ctx }),
+        },
+      )
     } catch (err) {
       sink?.onInlineError(err instanceof Error ? err.message : String(err))
       return
@@ -1286,31 +1444,23 @@ export function createAutoConversationStore(): AutoConversationStore {
       )
       return
     }
-    const reader = response.body?.getReader()
-    if (!reader) {
-      sink?.onInlineError("No response body when resuming chat.")
-      return
-    }
-    sink?.beginAssistantTurn()
-    try {
-      await consumeSseStream(reader, buildProcessor())
-    } catch (err) {
-      sink?.onInlineError(err instanceof Error ? err.message : String(err))
-    }
+    // The declined continuation is a normal turn; reflect the in-flight
+    // affordance until its idle event lands.
+    setWorking(true)
   }
 
   async function sendMessage(
     text: string,
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
     const id = get(sessionId)
     if (!id) {
       return {
         ok: false,
-        error: "No active auto conversation to send the message to.",
+        error: "No active conversation to send the message to.",
       }
     }
-    // Optimistically reflect that a burst is (re)starting so the indicator
-    // shows immediately; the echoed user-message + burst events confirm it.
+    // Optimistically reflect that a turn/burst is (re)starting; the echoed
+    // user-message + events confirm it (and a failed send clears it below).
     setWorking(true)
     let response: Response
     try {
@@ -1323,9 +1473,6 @@ export function createAutoConversationStore(): AutoConversationStore {
         },
       )
     } catch (err) {
-      // The optimistic working flag must be cleared on failure: no burst
-      // started, so no state event will arrive to clear it and the thinking
-      // indicator would stay stuck on.
       setWorking(false)
       return {
         ok: false,
@@ -1343,41 +1490,86 @@ export function createAutoConversationStore(): AutoConversationStore {
       }
       return { ok: false, error: message }
     }
-    return { ok: true }
+    let messageId: string | undefined
+    try {
+      const parsed = (await response.json()) as { message_id?: string }
+      if (typeof parsed?.message_id === "string") messageId = parsed.message_id
+    } catch {
+      /* the send succeeded; dedupe falls back to content matching */
+    }
+    return { ok: true, messageId }
   }
 
-  async function resolve(
-    traceId: string,
-  ): Promise<ResolveConversationResponse | null> {
-    // GET /api/conversations/resolve — the re-homed /api/chat/auto/resolve,
-    // keyed on session ids (the browser holds possibly-stale leaf trace ids
-    // until phase 5).
+  async function fetchApprovals(): Promise<PendingApprovalsView | null> {
+    const id = get(sessionId)
+    if (!id) return null
     let response: Response
     try {
       response = await fetch(
-        `${CONVERSATIONS_BASE_URL}/resolve?trace_id=${encodeURIComponent(traceId)}`,
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/approvals`,
       )
     } catch {
-      // Network error — treat as "no active run"; the restored state stands.
       return null
     }
-    // 404 (no live auto conversation) or any non-OK: leave restored state.
     if (!response.ok) return null
     try {
-      const data = (await response.json()) as ResolveConversationResponse
-      if (!data?.session_id || !data?.current_trace_id) return null
-      return data
+      const data = (await response.json()) as {
+        batch_id?: string
+        items?: ToolCallsPendingItem[]
+      }
+      if (!data?.batch_id || !Array.isArray(data.items)) return null
+      return { batchId: data.batch_id, items: data.items }
     } catch {
       return null
     }
+  }
+
+  async function decide(
+    batchId: string,
+    decisions: Record<string, boolean>,
+  ): Promise<{ ok: boolean; conflict?: boolean; error?: string }> {
+    const id = get(sessionId)
+    if (!id) return { ok: false, error: "No active conversation." }
+    // The resumed execution streams on the observer into a fresh turn (the
+    // old execute-tools continuation opened one implicitly by streaming into
+    // the same assistant message the pending round left behind — the exec
+    // framing + outputs land in the CURRENT turn, so no beginTurn here).
+    let response: Response
+    try {
+      response = await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/approvals/decisions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batch_id: batchId, decisions }),
+        },
+      )
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+    if (response.status === 409) {
+      // Two tabs: the other one decided first; the stream carries the
+      // resolution either way (functional spec §5).
+      return { ok: false, conflict: true }
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: `Could not submit approvals (${response.status}).`,
+      }
+    }
+    setWorking(true)
+    return { ok: true }
   }
 
   async function stop(): Promise<void> {
     const id = get(sessionId)
     if (!id) return
-    // Optimistic only: the authoritative clear arrives as the flag-off
-    // conversation-state event. We do not flip state here so a failed stop
-    // doesn't lie about being off.
+    // Optimistic only: the authoritative state change arrives as a
+    // conversation-state event (idle for interactive, flag-off for auto).
     try {
       await fetch(`${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop`, {
         method: "POST",
@@ -1397,19 +1589,22 @@ export function createAutoConversationStore(): AutoConversationStore {
     offReason: { subscribe: offReason.subscribe },
     connection: { subscribe: connection.subscribe },
     bind,
+    ensure,
     requestEnable,
     decline,
     sendMessage,
     stop,
-    resolve,
+    fetchApprovals,
+    decide,
     beginReconnect,
     attach,
     detach,
+    beginTurn,
     arm,
     disarm,
     _close: closeSource,
   }
 }
 
-export const auto_conversation_store: AutoConversationStore =
-  createAutoConversationStore()
+export const main_conversation_store: MainConversationStore =
+  createMainConversationStore()

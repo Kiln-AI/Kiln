@@ -862,3 +862,156 @@ async def test_gated_policy_requires_await_decisions():
     with patch.object(httpx, "AsyncClient", return_value=client):
         with pytest.raises(RuntimeError, match="await_decisions"):
             await h.engine.run(h.record, interactive_policy(), h.io, dict(_USER_TURN))
+
+
+# ── Phase 4: resume runs (runless-batch recovery) + interactive disable
+#    cascade hook ──────────────────────────────────────────────────────────────
+
+
+def _staged_batch(trace_id: str = "tr-1") -> PendingApprovalBatch:
+    """A batch in the shape rehydration builds (or a live park stores): the
+    trace-only continuation base + the round's client events."""
+    from kiln_ai.adapters.model_adapters.stream_events import (
+        ToolInputAvailableEvent,
+    )
+
+    from app.desktop.studio_server.chat.stream_session import (
+        _pending_item_from_event,
+    )
+
+    events = [
+        ToolInputAvailableEvent(
+            toolCallId="tc_ok",
+            toolName="add",
+            input={"a": 2, "b": 3},
+            kiln_metadata=APPROVAL_META,
+        ),
+        ToolInputAvailableEvent(
+            toolCallId="tc_no",
+            toolName="add",
+            input={"a": 9, "b": 9},
+            kiln_metadata=APPROVAL_META,
+        ),
+    ]
+    return PendingApprovalBatch(
+        items=[_pending_item_from_event(e) for e in events],
+        body={"trace_id": trace_id, "messages": []},
+        assistant_text="",
+        tool_input_events=events,
+    )
+
+
+async def test_resume_batch_executes_decisions_and_continues():
+    # The recovery entry (architecture §2 / functional spec §5): a decided
+    # RUNLESS batch resumes by executing with the decisions and continuing
+    # from the batch's stored round context. Denied → DENIED_TOOL_OUTPUT,
+    # exactly like the parked path; the continuation body is the old
+    # POST /api/chat/execute-tools shape (trace-only base → role:tool rows).
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("resumed"), trace("tr-2"), finish("stop")])]
+    )
+    h = _harness()
+    batch = _staged_batch()
+    batch.decisions = {"tc_ok": True, "tc_no": False}
+    batch.decided.set()
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await h.engine.run(
+            h.record, interactive_policy(), h.io, None, resume_batch=batch
+        )
+
+    outputs = _outputs(h.emitted)
+    assert outputs["tc_ok"] == "5"
+    assert outputs["tc_no"] == DENIED_TOOL_OUTPUT
+    # Exec framing brackets the batch (start = batch size, end = results).
+    types = [e["type"] for e in _events(h.emitted)]
+    assert types[0] == "kiln-tool-execution-start"
+    assert "kiln-tool-execution-end" in types
+    # Continuation: trace-only base → role:tool rows only (the persisted
+    # trace is indistinguishable from the old execute-tools flow).
+    (body,) = client.bodies
+    assert body["trace_id"] == "tr-1"
+    assert [m["role"] for m in body["messages"]] == ["tool", "tool"]
+    assert {m["tool_call_id"] for m in body["messages"]} == {"tc_ok", "tc_no"}
+    # The loop then ran the continuation round to a natural idle end.
+    assert h.record.state == RunState.IDLE
+    assert h.record.current_leaf_trace_id == "tr-2"
+
+
+async def test_resume_batch_marks_spawn_consent_on_executed_spawn():
+    from kiln_ai.adapters.model_adapters.stream_events import (
+        ToolInputAvailableEvent,
+    )
+
+    from app.desktop.studio_server.chat.stream_session import (
+        _pending_item_from_event,
+    )
+
+    events = [
+        ToolInputAvailableEvent(
+            toolCallId="tc_spawn",
+            toolName="spawn_subagent",
+            input={"agent_type": "general", "name": "h", "prompt": "p"},
+            kiln_metadata=APPROVAL_META,
+        )
+    ]
+    batch = PendingApprovalBatch(
+        items=[_pending_item_from_event(e) for e in events],
+        body={"trace_id": "tr-1", "messages": []},
+        assistant_text="",
+        tool_input_events=events,
+    )
+    batch.decisions = {"tc_spawn": True}
+    batch.decided.set()
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("ok"), trace("tr-2"), finish("stop")])]
+    )
+    h = _harness()
+    # No orchestration ctx wired → the spawn resolves to the structured
+    # "unavailable" error, which is NOT a denial — consent was still granted
+    # by the user's approval (mirrors the main loop's rule).
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await h.engine.run(
+            h.record, interactive_policy(), h.io, None, resume_batch=batch
+        )
+    assert h.record.spawn_consent_granted is True
+
+
+async def test_interactive_disable_fires_cascade_hook_only_when_flag_was_on():
+    # Phase-4 wiring of the interceptors TODO: the engine calls
+    # io.on_auto_flag_cleared exactly when the interactive disable
+    # interception cleared a SET flag (the supervisor wires the old
+    # disable_for_trace cascade there); a flag already off — the common
+    # plain-interactive case — stays a no-op, like the old
+    # disable_for_trace miss.
+    def _rounds():
+        return [
+            FakeUpstreamResponse(
+                [
+                    tool_input_available("tc_disable", "disable_auto_mode", {}),
+                    trace("tr-1"),
+                    finish_tool_calls(),
+                ]
+            ),
+            FakeUpstreamResponse([text_delta("ok"), trace("tr-2"), finish("stop")]),
+        ]
+
+    cascades: list[bool] = []
+
+    async def on_cleared() -> None:
+        cascades.append(True)
+
+    # Flag ON (a mid-flip race): the hook fires once.
+    h = _harness(record=ConversationRecord(kind="interactive", auto_flag=True))
+    h.io.on_auto_flag_cleared = on_cleared
+    await _run(h, FakeUpstreamClient(_rounds()), interactive_policy(), dict(_USER_TURN))
+    assert cascades == [True]
+    assert h.record.auto_flag is False
+
+    # Flag OFF (plain interactive conversation): no cascade.
+    cascades.clear()
+    h2 = _harness()
+    h2.io.on_auto_flag_cleared = on_cleared
+    await _run(
+        h2, FakeUpstreamClient(_rounds()), interactive_policy(), dict(_USER_TURN)
+    )
+    assert cascades == []

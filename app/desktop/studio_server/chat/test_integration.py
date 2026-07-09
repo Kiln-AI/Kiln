@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -7,7 +8,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import httpx
 import pytest
 import yaml
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.health import (
@@ -21,7 +21,6 @@ from app.desktop.studio_server.chat.constants import (
     KILN_SSE_CHAT_TRACE,
     SSE_TYPE_TOOL_CALLS_PENDING,
 )
-from fastapi.testclient import TestClient
 from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
@@ -95,56 +94,142 @@ def _accumulate_stream_result(
     return out
 
 
-def _stream_chat(
-    app: Any,
-    body: dict[str, Any],
-    api_key: str,
+async def _observe_and_run(
+    sup,
+    session_id: str,
+    *,
+    start,
+    settle_timeout: float = 120.0,
 ) -> StreamResult:
-    client = TestClient(app)
-    collected = bytearray()
-    with patch.dict(os.environ, {"KILN_COPILOT_API_KEY": api_key}, clear=False):
-        with client.stream(
-            "POST",
-            "/api/chat",
-            json=body,
-            timeout=httpx.Timeout(120.0, connect=30.0),
-        ) as response:
-            assert response.status_code == 200
-            ctype = response.headers.get("content-type", "")
-            assert ctype.startswith("text/event-stream")
-            for line in response.iter_lines():
-                text = line or ""
-                collected.extend(text.encode("utf-8"))
-                collected.extend(b"\n")
+    """Subscribe to the conversation's bus, run `start()` (send / decide),
+    wait until the run settles (leaves RUNNING/AWAITING_APPROVAL), and return
+    the accumulated stream — the phase-4 equivalent of consuming the old
+    POST /api/chat response stream (observers see the same bytes)."""
+    from app.desktop.studio_server.chat.runtime.models import RunState
+
+    received: list[bytes] = []
+    sub = sup.subscribe(session_id)
+
+    async def _drain():
+        async for payload in sub:
+            received.append(payload)
+
+    drain_task = asyncio.create_task(_drain())
+    await asyncio.sleep(0.05)
+    start()
+
+    async def _poll():
+        while True:
+            record = sup.get(session_id)
+            if record is not None and record.state not in (
+                RunState.RUNNING,
+                RunState.AWAITING_APPROVAL,
+            ):
+                return
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(_poll(), timeout=settle_timeout)
+    await asyncio.sleep(0.1)  # let trailing bytes land on the queue
+    drain_task.cancel()
+    try:
+        await drain_task
+    except asyncio.CancelledError:
+        pass
+    await sub.aclose()
+    collected = b"".join(received)
     r = _accumulate_stream_result(collected.decode("utf-8").splitlines())
-    r.raw_bytes = bytes(collected)
+    r.raw_bytes = collected
     return r
 
 
-def _stream_execute_tools(
-    app: Any,
-    body: dict[str, Any],
-    api_key: str,
-) -> StreamResult:
-    client = TestClient(app)
-    collected = bytearray()
+def _make_supervisor(api_key: str):
+    """A fresh supervisor + the real upstream target (the same URL/header
+    builders the routes use)."""
+    from app.desktop.studio_server.chat.routes import (
+        _build_upstream_headers,
+        _upstream_chat_url,
+    )
+    from app.desktop.studio_server.chat.runtime.supervisor import (
+        ConversationSupervisor,
+    )
+
     with patch.dict(os.environ, {"KILN_COPILOT_API_KEY": api_key}, clear=False):
-        with client.stream(
-            "POST",
-            "/api/chat/execute-tools",
-            json=body,
-            timeout=httpx.Timeout(120.0, connect=30.0),
-        ) as response:
-            assert response.status_code == 200
-            ctype = response.headers.get("content-type", "")
-            assert ctype.startswith("text/event-stream")
-            for line in response.iter_lines():
-                text = line or ""
-                collected.extend(text.encode("utf-8"))
-                collected.extend(b"\n")
-    r = _accumulate_stream_result(collected.decode("utf-8").splitlines())
-    r.raw_bytes = bytes(collected)
-    return r
+        return (
+            ConversationSupervisor(),
+            _upstream_chat_url(),
+            _build_upstream_headers(api_key),
+        )
+
+
+def _chat_turn(
+    sup, upstream_url: str, headers: dict[str, str], content: str, session_id=None
+) -> tuple[StreamResult, str]:
+    """Run one interactive turn (create the conversation on first use) and
+    return (stream, session_id) — replaces the old _stream_chat driver."""
+
+    async def _run() -> tuple[StreamResult, str]:
+        sid = session_id
+        if sid is None:
+            record = await sup.adopt_interactive(
+                None, upstream_url=upstream_url, headers=headers
+            )
+            sid = record.session_id
+        result = await _observe_and_run(
+            sup, sid, start=lambda: sup.send_message(sid, content)
+        )
+        return result, sid
+
+    return asyncio.run(_run())
+
+
+def _decide_staged_batch(
+    sup,
+    session_id: str,
+    tool_calls: list[dict[str, Any]],
+    decisions: dict[str, bool],
+) -> StreamResult:
+    """Stage a runless approval batch on the conversation and decide it —
+    replaces the old _stream_execute_tools driver (same continuation body on
+    the wire; the results stream on the observer channel)."""
+    from kiln_ai.adapters.model_adapters.stream_events import (
+        ToolInputAvailableEvent,
+    )
+
+    from app.desktop.studio_server.chat.runtime.models import (
+        PendingApprovalBatch,
+        RunState,
+    )
+    from app.desktop.studio_server.chat.stream_session import (
+        _pending_item_from_event,
+    )
+
+    async def _run() -> StreamResult:
+        conv = sup._conversations[session_id]
+        events = [
+            ToolInputAvailableEvent(
+                toolCallId=tc["toolCallId"],
+                toolName=tc["toolName"],
+                input=tc["input"],
+                kiln_metadata={"requires_approval": bool(tc["requiresApproval"])},
+            )
+            for tc in tool_calls
+        ]
+        batch = PendingApprovalBatch(
+            items=[_pending_item_from_event(e) for e in events],
+            body={"trace_id": conv.record.current_leaf_trace_id, "messages": []},
+            assistant_text="",
+            tool_input_events=events,
+        )
+        conv.pending_batch = batch
+        conv.record.state = RunState.AWAITING_APPROVAL
+        result = await _observe_and_run(
+            sup,
+            session_id,
+            start=lambda: sup.decide(session_id, batch.batch_id, decisions),
+        )
+        return result
+
+    return asyncio.run(_run())
 
 
 def _require_copilot_api_key() -> str:
@@ -331,92 +416,36 @@ def test_api_integration():
 
 
 @pytest.mark.paid
-def test_chat_api_integration(app):
+def test_chat_api_integration():
+    # Old shape: the browser drove POST /api/chat rounds manually. New shape:
+    # one send on an interactive conversation — the engine drives the rounds
+    # (tool execution + continuation) server-side and observers see the same
+    # event stream the old response carried.
     api_key = _require_copilot_api_key()
-    client = TestClient(app)
-    collected = bytearray()
-    messages: list[dict[str, Any]] = [
-        {
-            "role": "user",
-            "content": (
-                "hi - my name is bob. Can you compute 2 * 8 for me? "
-                "Use the multiply tool if available."
-            ),
-        }
-    ]
-
-    with patch.dict(os.environ, {"KILN_COPILOT_API_KEY": api_key}, clear=False):
-        for _round_i in range(_MAX_TOOL_ROUNDS_INTEGRATION):
-            pending_tool_inputs: list[dict[str, Any]] = []
-            assistant_chunks: list[str] = []
-            stop_with_tool_calls = False
-
-            with client.stream(
-                "POST",
-                "/api/chat",
-                json={"messages": messages},
-                timeout=httpx.Timeout(120.0, connect=30.0),
-            ) as response:
-                assert response.status_code == 200
-                ctype = response.headers.get("content-type", "")
-                assert ctype.startswith("text/event-stream")
-                for line in response.iter_lines():
-                    text = line or ""
-                    logger.info(text)
-                    collected.extend(text.encode("utf-8"))
-                    collected.extend(b"\n")
-
-                    ev = _sse_json_from_line(text)
-                    if not ev:
-                        continue
-                    et = ev.get("type")
-                    if et == "text-delta":
-                        delta = ev.get("delta")
-                        if isinstance(delta, str):
-                            assistant_chunks.append(delta)
-                    elif et == "tool-input-available":
-                        pending_tool_inputs.append(ev)
-                    elif et == "finish" and _finish_reason_is_tool_calls(ev):
-                        stop_with_tool_calls = True
-
-            if not stop_with_tool_calls:
-                break
-
-            assert pending_tool_inputs, (
-                "finishReason tool-calls but no tool-input-available events"
-            )
-            continuation = _openai_assistant_and_tool_messages(
-                "".join(assistant_chunks), pending_tool_inputs
-            )
-            messages = messages + continuation
-        else:
-            pytest.fail(
-                f"Exceeded {_MAX_TOOL_ROUNDS_INTEGRATION} tool rounds without finishing"
-            )
-
-    content = bytes(collected)
+    sup, url, headers = _make_supervisor(api_key)
+    r, _sid = _chat_turn(
+        sup,
+        url,
+        headers,
+        "hi - my name is bob. Can you compute 2 * 8 for me? "
+        "Use the multiply tool if available.",
+    )
+    content = r.raw_bytes
     assert len(content) > 0
     assert b"data:" in content
     assert b"16" in content or b'"16"' in content
 
 
 @pytest.mark.paid
-def test_simple_text_chat_no_tools(app):
+def test_simple_text_chat_no_tools():
     api_key = _require_copilot_api_key()
-    r = _stream_chat(
-        app,
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Answer in one short sentence only: what is the capital of France? "
-                        "Do not call any tools."
-                    ),
-                }
-            ]
-        },
-        api_key,
+    sup, url, headers = _make_supervisor(api_key)
+    r, _sid = _chat_turn(
+        sup,
+        url,
+        headers,
+        "Answer in one short sentence only: what is the capital of France? "
+        "Do not call any tools.",
     )
     assert len(r.raw_bytes) > 0
     assert b"data:" in r.raw_bytes
@@ -432,22 +461,15 @@ def test_simple_text_chat_no_tools(app):
 
 
 @pytest.mark.paid
-def test_proxy_auto_executes_math_tools(app):
+def test_proxy_auto_executes_math_tools():
     api_key = _require_copilot_api_key()
-    r = _stream_chat(
-        app,
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "hi - my name is bob. Can you compute 2 * 8 for me? "
-                        "Use the multiply tool if available."
-                    ),
-                }
-            ]
-        },
-        api_key,
+    sup, url, headers = _make_supervisor(api_key)
+    r, _sid = _chat_turn(
+        sup,
+        url,
+        headers,
+        "hi - my name is bob. Can you compute 2 * 8 for me? "
+        "Use the multiply tool if available.",
     )
     assert len(r.raw_bytes) > 0
     assert "16" in r.text or b"16" in r.raw_bytes
@@ -461,41 +483,28 @@ def test_proxy_auto_executes_math_tools(app):
 
 
 @pytest.mark.paid
-def test_multi_turn_trace_continuation(app):
+def test_multi_turn_trace_continuation():
+    # Continuation is the conversation record's own leaf now (the browser no
+    # longer round-trips trace ids): two sends on the SAME session id must
+    # continue the same upstream conversation.
     api_key = _require_copilot_api_key()
-    first = _stream_chat(
-        app,
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Remember this for our conversation: my display name is Bob. "
-                        "Reply with one short acknowledgment sentence."
-                    ),
-                }
-            ]
-        },
-        api_key,
+    sup, url, headers = _make_supervisor(api_key)
+    first, sid = _chat_turn(
+        sup,
+        url,
+        headers,
+        "Remember this for our conversation: my display name is Bob. "
+        "Reply with one short acknowledgment sentence.",
     )
-    tid = first.trace_id
-    assert tid, "first turn should include kiln_chat_trace trace_id"
+    assert first.trace_id, "first turn should include kiln_chat_trace trace_id"
 
-    second = _stream_chat(
-        app,
-        {
-            "trace_id": tid,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "What display name did I ask you to remember? "
-                        "Answer with the name only, one word if possible."
-                    ),
-                }
-            ],
-        },
-        api_key,
+    second, _ = _chat_turn(
+        sup,
+        url,
+        headers,
+        "What display name did I ask you to remember? "
+        "Answer with the name only, one word if possible.",
+        session_id=sid,
     )
     assert second.trace_id
     combined = (
@@ -505,104 +514,83 @@ def test_multi_turn_trace_continuation(app):
 
 
 @pytest.mark.paid
-def test_execute_tools_with_approved_tool(app):
+def test_approval_decisions_with_approved_tool():
+    # Old test_execute_tools_with_approved_tool: the decisions flow now runs
+    # through the parked-batch resume (same continuation body on the wire).
     api_key = _require_copilot_api_key()
-    warm = _stream_chat(
-        app,
-        {"messages": [{"role": "user", "content": "Say hi in one word."}]},
-        api_key,
-    )
-    trace_id = warm.trace_id
-    assert trace_id
+    sup, url, headers = _make_supervisor(api_key)
+    _warm, sid = _chat_turn(sup, url, headers, "Say hi in one word.")
+    assert sup.get(sid).current_leaf_trace_id
     tc_id = f"integ-approved-{uuid.uuid4().hex[:12]}"
-    exec_r = _stream_execute_tools(
-        app,
-        {
-            "trace_id": trace_id,
-            "tool_calls": [
-                {
-                    "toolCallId": tc_id,
-                    "toolName": "kiln_tool::add_numbers",
-                    "input": {"a": 1, "b": 2},
-                    "requiresApproval": True,
-                }
-            ],
-            "decisions": {tc_id: True},
-        },
-        api_key,
+    exec_r = _decide_staged_batch(
+        sup,
+        sid,
+        [
+            {
+                "toolCallId": tc_id,
+                "toolName": "kiln_tool::add_numbers",
+                "input": {"a": 1, "b": 2},
+                "requiresApproval": True,
+            }
+        ],
+        {tc_id: True},
     )
     _assert_event_ordering(exec_r.events)
     by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
     assert by_call.get(tc_id) == "3"
     assert any(ev.get("type") == "finish" for ev in exec_r.events), (
-        "execute-tools stream should continue with upstream finish"
+        "the resume run should continue with upstream finish"
     )
 
 
 @pytest.mark.paid
-def test_execute_tools_with_denied_tool(app):
+def test_approval_decisions_with_denied_tool():
     api_key = _require_copilot_api_key()
-    warm = _stream_chat(
-        app,
-        {"messages": [{"role": "user", "content": "Say hello in one word."}]},
-        api_key,
-    )
-    trace_id = warm.trace_id
-    assert trace_id
+    sup, url, headers = _make_supervisor(api_key)
+    _warm, sid = _chat_turn(sup, url, headers, "Say hello in one word.")
     tc_id = f"integ-denied-{uuid.uuid4().hex[:12]}"
-    exec_r = _stream_execute_tools(
-        app,
-        {
-            "trace_id": trace_id,
-            "tool_calls": [
-                {
-                    "toolCallId": tc_id,
-                    "toolName": "kiln_tool::add_numbers",
-                    "input": {"a": 10, "b": 20},
-                    "requiresApproval": True,
-                }
-            ],
-            "decisions": {tc_id: False},
-        },
-        api_key,
+    exec_r = _decide_staged_batch(
+        sup,
+        sid,
+        [
+            {
+                "toolCallId": tc_id,
+                "toolName": "kiln_tool::add_numbers",
+                "input": {"a": 10, "b": 20},
+                "requiresApproval": True,
+            }
+        ],
+        {tc_id: False},
     )
     by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
     assert by_call.get(tc_id) == DENIED_TOOL_OUTPUT
 
 
 @pytest.mark.paid
-def test_execute_tools_mixed_approved_and_denied(app):
+def test_approval_decisions_mixed_approved_and_denied():
     api_key = _require_copilot_api_key()
-    warm = _stream_chat(
-        app,
-        {"messages": [{"role": "user", "content": "Acknowledge in one word."}]},
-        api_key,
-    )
-    trace_id = warm.trace_id
-    assert trace_id
+    sup, url, headers = _make_supervisor(api_key)
+    _warm, sid = _chat_turn(sup, url, headers, "Acknowledge in one word.")
     tc_add = f"integ-mix-add-{uuid.uuid4().hex[:10]}"
     tc_mul = f"integ-mix-mul-{uuid.uuid4().hex[:10]}"
-    exec_r = _stream_execute_tools(
-        app,
-        {
-            "trace_id": trace_id,
-            "tool_calls": [
-                {
-                    "toolCallId": tc_add,
-                    "toolName": "kiln_tool::add_numbers",
-                    "input": {"a": 1, "b": 2},
-                    "requiresApproval": True,
-                },
-                {
-                    "toolCallId": tc_mul,
-                    "toolName": "kiln_tool::multiply_numbers",
-                    "input": {"a": 3, "b": 4},
-                    "requiresApproval": True,
-                },
-            ],
-            "decisions": {tc_add: True, tc_mul: False},
-        },
-        api_key,
+    exec_r = _decide_staged_batch(
+        sup,
+        sid,
+        [
+            {
+                "toolCallId": tc_add,
+                "toolName": "kiln_tool::add_numbers",
+                "input": {"a": 1, "b": 2},
+                "requiresApproval": True,
+            },
+            {
+                "toolCallId": tc_mul,
+                "toolName": "kiln_tool::multiply_numbers",
+                "input": {"a": 3, "b": 4},
+                "requiresApproval": True,
+            },
+        ],
+        {tc_add: True, tc_mul: False},
     )
     by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
     assert by_call.get(tc_add) == "3"
@@ -610,32 +598,24 @@ def test_execute_tools_mixed_approved_and_denied(app):
 
 
 @pytest.mark.paid
-def test_sse_events_match_frontend_expected_shapes(app):
+def test_sse_events_match_frontend_expected_shapes():
     api_key = _require_copilot_api_key()
-    warm = _stream_chat(
-        app,
-        {"messages": [{"role": "user", "content": "Say hi in one word."}]},
-        api_key,
-    )
+    sup, url, headers = _make_supervisor(api_key)
+    warm, sid = _chat_turn(sup, url, headers, "Say hi in one word.")
     _assert_sse_events_match_frontend_expected_shapes(warm.events)
-    trace_id = warm.trace_id
-    assert trace_id
     tc_id = f"integ-sse-shapes-{uuid.uuid4().hex[:12]}"
-    exec_r = _stream_execute_tools(
-        app,
-        {
-            "trace_id": trace_id,
-            "tool_calls": [
-                {
-                    "toolCallId": tc_id,
-                    "toolName": "kiln_tool::multiply_numbers",
-                    "input": {"a": 3, "b": 4},
-                    "requiresApproval": True,
-                }
-            ],
-            "decisions": {tc_id: True},
-        },
-        api_key,
+    exec_r = _decide_staged_batch(
+        sup,
+        sid,
+        [
+            {
+                "toolCallId": tc_id,
+                "toolName": "kiln_tool::multiply_numbers",
+                "input": {"a": 3, "b": 4},
+                "requiresApproval": True,
+            }
+        ],
+        {tc_id: True},
     )
     _assert_sse_events_match_frontend_expected_shapes(exec_r.events)
     _assert_event_ordering(exec_r.events)

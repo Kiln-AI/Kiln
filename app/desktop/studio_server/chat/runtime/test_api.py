@@ -21,13 +21,12 @@ from kiln_server.custom_errors import connect_custom_errors
 
 # Absolute imports so the patched module attributes are the same instances the
 # app wiring resolves (see the note in chat/test_orchestration.py).
-from app.desktop.studio_server.chat import orchestration as orchestration_module
-from app.desktop.studio_server.chat.orchestration import ParentConversationIndex
 from app.desktop.studio_server.chat.runtime import api as conversations_api_module
 from app.desktop.studio_server.chat.runtime.api import connect_conversations_api
 from app.desktop.studio_server.chat.runtime.engine import ConversationEngine
 from app.desktop.studio_server.chat.runtime.models import RunState, SubAgentSeed
 from app.desktop.studio_server.chat.runtime.supervisor import ConversationSupervisor
+from app.desktop.studio_server.chat.stream_session import _pending_item_from_event
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -40,11 +39,22 @@ from app.desktop.studio_server.chat.test_fakes import (
 @pytest.fixture
 def supervisor(monkeypatch):
     sup = ConversationSupervisor()
-    # The API module and the parent resolver both read module-level
-    # singletons; point them at the fresh instances.
+    # The API module reads a module-level singleton; point it at the fresh
+    # instance (the phase-2/3 parent_index singleton died with the old loop).
     monkeypatch.setattr(conversations_api_module, "conversation_supervisor", sup)
-    monkeypatch.setattr(orchestration_module, "parent_index", ParentConversationIndex())
     return sup
+
+
+@pytest.fixture(autouse=True)
+def no_rehydrate_network():
+    # adopt_interactive's approval rehydration fetches the persisted snapshot
+    # upstream; the API tests stage rehydration state explicitly instead, so
+    # the default is "nothing persisted" (tests for the rehydration flow
+    # patch this themselves with a scripted tail).
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=None
+    ):
+        yield
 
 
 @pytest.fixture
@@ -113,21 +123,28 @@ def _spawn(supervisor: ConversationSupervisor, parent_key: str = "trace:leaf-1")
 
 
 async def test_list_and_get(supervisor, hang_engine, client):
-    record = _spawn(supervisor)
-    # Register the alias so the parent filter resolves a leaf trace id to the
-    # children's parent key (the phase-2 bridge the browser relies on).
-    orchestration_module.parent_index.parent_key_for_trace("leaf-1")
+    # The parent is a real interactive supervisor record since phase 4; its
+    # leaf resolves through the whole-chain trace index (the old
+    # ParentConversationIndex alias chain died with the old loop).
+    parent = await supervisor.adopt_interactive(
+        "leaf-1", upstream_url="https://example.test", headers={}
+    )
+    record = _spawn(supervisor, parent_key=parent.session_id)
 
     r = await client.get("/api/conversations")
     assert r.status_code == 200
-    assert [item["session_id"] for item in r.json()] == [record.session_id]
-    assert r.json()[0]["kind"] == "subagent"
+    assert {item["session_id"] for item in r.json()} == {
+        parent.session_id,
+        record.session_id,
+    }
 
+    # The browser's parent handle is the (possibly stale) leaf trace id until
+    # phase 5 — it resolves to the parent's children.
     r = await client.get("/api/conversations", params={"parent": "leaf-1"})
     assert [item["session_id"] for item in r.json()] == [record.session_id]
 
-    # A parent key / session id works directly too (the phase-4/5 shape).
-    r = await client.get("/api/conversations", params={"parent": "trace:leaf-1"})
+    # The parent session id works directly too (the phase-5 shape).
+    r = await client.get("/api/conversations", params={"parent": parent.session_id})
     assert [item["session_id"] for item in r.json()] == [record.session_id]
 
     r = await client.get("/api/conversations", params={"parent": "other-leaf"})
@@ -137,6 +154,7 @@ async def test_list_and_get(supervisor, hang_engine, client):
     assert r.status_code == 200
     assert r.json()["state"] == "running"
     assert r.json()["name"] == "helper"
+    assert r.json()["kind"] == "subagent"
 
     r = await client.get("/api/conversations/cv_missing")
     assert r.status_code == 404
@@ -179,8 +197,11 @@ async def test_messages_endpoint(supervisor, hang_engine, client):
         json={"content": "also check model B"},
     )
     assert r.status_code == 202
+    # Phase 4: the accepted message's stable id rides the 202 body so the
+    # sending tab can dedupe its own echo.
     conv = supervisor._conversations[record.session_id]
     assert [m.content for m in conv.inbox] == ["also check model B"]
+    assert r.json()["message_id"] == conv.inbox[0].id
 
     await supervisor.stop(record.session_id)
     r = await client.post(
@@ -367,35 +388,41 @@ async def test_create_auto_armed_only_never_posts_upstream(
     assert fake.bodies == []
 
 
-async def test_decline_resumes_interactive_stream(supervisor, client, mock_api_key):
-    # Byte-for-byte the old /api/chat/auto/decline: resolve the enable call as
-    # declined + deny siblings, then stream the interactive continuation.
-    from app.desktop.studio_server.chat.helpers import sse_text_delta
-
-    continuation = [sse_text_delta("continuing interactively"), finish("stop")]
+async def test_decline_via_sid_auto_streams_on_observer(
+    supervisor, client, mock_api_key
+):
+    # The old /api/chat/auto/decline, folded into POST /{sid}/auto
+    # (enabled=false + decline ctx): the enable call resolves as declined +
+    # denied siblings via an interactive turn on the SAME conversation, whose
+    # reply streams on the observer channel instead of the request response.
+    record = await supervisor.adopt_interactive(
+        "t1", upstream_url="https://example.test", headers={}
+    )
+    continuation = [text_delta("continuing interactively"), trace("t2"), finish("stop")]
     fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
 
     with patch.object(httpx, "AsyncClient", return_value=fake):
         r = await client.post(
-            "/api/conversations/auto/decline",
+            f"/api/conversations/{record.session_id}/auto",
             json={
-                "trace_id": "t1",
-                "enable_tool_call_id": "tc_enable",
-                "siblings": [
-                    {
-                        "toolCallId": "tc_sib",
-                        "toolName": "kiln_tool::add_numbers",
-                        "input": {"a": 1, "b": 2},
-                        "requiresApproval": True,
-                    }
-                ],
+                "enabled": False,
+                "decline": {
+                    "enable_tool_call_id": "tc_enable",
+                    "siblings": [
+                        {
+                            "toolCallId": "tc_sib",
+                            "toolName": "kiln_tool::add_numbers",
+                            "input": {"a": 1, "b": 2},
+                            "requiresApproval": True,
+                        }
+                    ],
+                },
             },
         )
+        assert r.status_code == 202
+        await _wait_idle(supervisor, record.session_id)
 
-    assert r.status_code == 200
-    assert r.headers["content-type"].startswith("text/event-stream")
-    assert b"continuing interactively" in r.content
-
+    # Byte-for-byte the old decline continuation body.
     sent_body = fake.bodies[0]
     assert sent_body["trace_id"] == "t1"
     messages = {m["tool_call_id"]: m["content"] for m in sent_body["messages"]}
@@ -403,6 +430,15 @@ async def test_decline_resumes_interactive_stream(supervisor, client, mock_api_k
     assert json.loads(messages["tc_sib"]) == {
         "error": "The user did not accept the toolcall"
     }
+    # Declining never enables anything; the conversation stays interactive.
+    assert record.auto_flag is False and record.kind == "interactive"
+
+    # Unknown conversation → 404.
+    r = await client.post(
+        "/api/conversations/cv_missing/auto",
+        json={"enabled": False, "decline": {"enable_tool_call_id": "tc"}},
+    )
+    assert r.status_code == 404
 
 
 async def test_set_auto_flag_endpoint(supervisor, hang_engine, client, mock_api_key):
@@ -411,21 +447,25 @@ async def test_set_auto_flag_endpoint(supervisor, hang_engine, client, mock_api_
     )
     child = _spawn(supervisor)
 
-    # Disable: today's semantics (flag off, reason user_disabled).
+    # Disable: today's semantics (flag off, reason user_disabled) + the
+    # phase-4 swap back to the interactive life.
     r = await client.post(
         f"/api/conversations/{auto.session_id}/auto", json={"enabled": False}
     )
     assert r.status_code == 202
     assert auto.auto_flag is False and auto.idle_reason == "user_disabled"
+    assert auto.kind == "interactive"
 
-    # Re-enable: ARMED-only re-arm.
+    # Re-enable: the true policy flip (interactive records ARE flippable in
+    # phase 4) — ARMED-only re-arm.
     r = await client.post(
         f"/api/conversations/{auto.session_id}/auto", json={"enabled": True}
     )
     assert r.status_code == 202
     assert auto.auto_flag is True and auto.idle_reason == "armed"
+    assert auto.kind == "auto"
 
-    # Unknown → 404; non-auto records aren't flippable in phase 3 → 409.
+    # Unknown → 404; sub-agent records are never flippable → 409.
     r = await client.post("/api/conversations/cv_missing/auto", json={"enabled": True})
     assert r.status_code == 404
     r = await client.post(
@@ -466,13 +506,18 @@ async def test_resolve_matches_stale_leaf(supervisor, client, mock_api_key):
     assert r.status_code == 404
 
 
-async def test_message_idle_auto_starts_burst_and_off_auto_409(
+async def test_message_idle_auto_starts_burst_then_interactive_after_stop(
     supervisor, client, mock_api_key
 ):
     burst1 = [text_delta("first"), trace("t1"), finish("stop")]
     burst2 = [text_delta("second"), trace("t2"), finish("stop")]
+    turn3 = [text_delta("manual again"), trace("t3"), finish("stop")]
     fake = FakeUpstreamClient(
-        [FakeUpstreamResponse(chunks=burst1), FakeUpstreamResponse(chunks=burst2)]
+        [
+            FakeUpstreamResponse(chunks=burst1),
+            FakeUpstreamResponse(chunks=burst2),
+            FakeUpstreamResponse(chunks=turn3),
+        ]
     )
     with patch.object(httpx, "AsyncClient", return_value=fake):
         session_id = (
@@ -491,17 +536,27 @@ async def test_message_idle_auto_starts_burst_and_off_auto_409(
         assert r.status_code == 202
         await _wait_idle(supervisor, session_id)
 
-    assert fake.bodies[1]["messages"] == [{"role": "user", "content": "do more"}]
-    assert fake.bodies[1]["auto_mode"] is True
+        assert fake.bodies[1]["messages"] == [{"role": "user", "content": "do more"}]
+        assert fake.bodies[1]["auto_mode"] is True
 
-    # Stop clears the flag; a further send is refused — the old auto message
-    # endpoint's "no longer active" semantics (409 here: the record exists).
-    await supervisor.stop(session_id)
-    r = await client.post(
-        f"/api/conversations/{session_id}/messages", json={"content": "too late"}
-    )
-    assert r.status_code == 409
-    assert "no longer active" in r.json()["message"].lower()
+        # Stop clears the flag AND swaps the record back to its interactive
+        # life (phase 4 — the old "no longer active" 409 refusal is lifted by
+        # construction): the next send runs a plain gated turn, no auto_mode.
+        await supervisor.stop(session_id)
+        record = supervisor.get(session_id)
+        assert record.kind == "interactive" and record.auto_flag is False
+        r = await client.post(
+            f"/api/conversations/{session_id}/messages",
+            json={"content": "keep going manually"},
+        )
+        assert r.status_code == 202
+        await _wait_idle(supervisor, session_id)
+
+    assert fake.bodies[2]["messages"] == [
+        {"role": "user", "content": "keep going manually"}
+    ]
+    assert "auto_mode" not in fake.bodies[2]
+    assert fake.bodies[2]["trace_id"] == "t2"
 
 
 async def test_stop_auto_conversation_clears_flag(supervisor, client, mock_api_key):
@@ -522,10 +577,10 @@ async def test_stop_auto_conversation_clears_flag(supervisor, client, mock_api_k
     "path,method",
     [
         ("/api/conversations", "POST"),
-        ("/api/conversations/auto/decline", "POST"),
         ("/api/conversations/{session_id}/auto", "POST"),
         ("/api/conversations/{session_id}/stop", "POST"),
         ("/api/conversations/{session_id}/messages", "POST"),
+        ("/api/conversations/{session_id}/approvals/decisions", "POST"),
     ],
 )
 def test_mutating_conversation_endpoints_have_no_write_lock(app, path, method):
@@ -541,3 +596,143 @@ def test_mutating_conversation_endpoints_have_no_write_lock(app, path, method):
             )
             return
     raise AssertionError(f"{method} {path} route not found")
+
+
+# ── Phase 4: interactive create/adopt + approvals endpoints ───────────────────
+
+
+async def test_create_interactive_creates_and_adopts(supervisor, client, mock_api_key):
+    # kind="interactive" replaces the old POST /api/chat conversation model:
+    # create-or-adopt keyed by trace id, idempotent.
+    r = await client.post("/api/conversations", json={"kind": "interactive"})
+    assert r.status_code == 200
+    fresh_sid = r.json()["session_id"]
+    assert supervisor.get(fresh_sid).kind == "interactive"
+    assert supervisor.get(fresh_sid).state == RunState.IDLE
+
+    r = await client.post(
+        "/api/conversations", json={"kind": "interactive", "trace_id": "leaf-9"}
+    )
+    adopted_sid = r.json()["session_id"]
+    assert supervisor.get(adopted_sid).current_leaf_trace_id == "leaf-9"
+    # Idempotent: the same trace returns the SAME conversation.
+    r = await client.post(
+        "/api/conversations", json={"kind": "interactive", "trace_id": "leaf-9"}
+    )
+    assert r.json()["session_id"] == adopted_sid
+
+
+def _stage_runless_batch(supervisor, session_id: str):
+    """Stage a rehydrated-shape (runless) batch on an idle conversation."""
+    from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+
+    from app.desktop.studio_server.chat.runtime.models import PendingApprovalBatch
+
+    conv = supervisor._conversations[session_id]
+    events = [
+        ToolInputAvailableEvent(
+            toolCallId="tc_open",
+            toolName="add",
+            input={"a": 2, "b": 3},
+            kiln_metadata={"requires_approval": True},
+        )
+    ]
+    batch = PendingApprovalBatch(
+        items=[_pending_item_from_event(e) for e in events],
+        body={"trace_id": "leaf-1", "messages": []},
+        assistant_text="",
+        tool_input_events=events,
+    )
+    conv.pending_batch = batch
+    conv.record.state = RunState.AWAITING_APPROVAL
+    return batch
+
+
+async def test_approvals_get_and_decide_flow(supervisor, client, mock_api_key):
+    record = await supervisor.adopt_interactive(
+        "leaf-1", upstream_url="https://example.test", headers={}
+    )
+    # Nothing pending (and nothing rehydratable — the autouse fixture returns
+    # no persisted tail) → 404.
+    r = await client.get(f"/api/conversations/{record.session_id}/approvals")
+    assert r.status_code == 404
+    r = await client.get("/api/conversations/cv_missing/approvals")
+    assert r.status_code == 404
+
+    batch = _stage_runless_batch(supervisor, record.session_id)
+    r = await client.get(f"/api/conversations/{record.session_id}/approvals")
+    assert r.status_code == 200
+    assert r.json()["batch_id"] == batch.batch_id
+    # Items keep the exact tool-calls-pending wire shape.
+    assert r.json()["items"] == [
+        {
+            "toolCallId": "tc_open",
+            "toolName": "add",
+            "input": {"a": 2, "b": 3},
+            "requiresApproval": True,
+        }
+    ]
+
+    # Wrong batch id → 404 (validated), before any decision lands.
+    r = await client.post(
+        f"/api/conversations/{record.session_id}/approvals/decisions",
+        json={"batch_id": "ab_wrong", "decisions": {"tc_open": True}},
+    )
+    assert r.status_code == 404
+
+    continuation = [text_delta("sum is 5"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            f"/api/conversations/{record.session_id}/approvals/decisions",
+            json={"batch_id": batch.batch_id, "decisions": {"tc_open": True}},
+        )
+        assert r.status_code == 202
+        # Two tabs deciding the same batch: first wins, second gets 409
+        # (functional spec §5).
+        r = await client.post(
+            f"/api/conversations/{record.session_id}/approvals/decisions",
+            json={"batch_id": batch.batch_id, "decisions": {"tc_open": False}},
+        )
+        assert r.status_code == 409
+        await _wait_idle(supervisor, record.session_id)
+
+    # The resume run POSTed the old execute-tools continuation shape.
+    (body,) = fake.bodies
+    assert body["trace_id"] == "leaf-1"
+    assert body["messages"][0]["role"] == "tool"
+    assert body["messages"][0]["tool_call_id"] == "tc_open"
+
+
+async def test_approvals_get_rehydrates_from_trace_tail(
+    supervisor, client, mock_api_key
+):
+    # GET /approvals attempts trace-tail rehydration when nothing is in
+    # memory — the graceful-stop / desktop-restart recovery entry (functional
+    # spec §5).
+    record = await supervisor.adopt_interactive(
+        "leaf-1", upstream_url="https://example.test", headers={}
+    )
+    tail = [
+        {"role": "user", "content": "please add"},
+        {
+            "role": "assistant",
+            "content": "need approval",
+            "tool_calls": [
+                {
+                    "id": "tc_open",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2, "b": 3}'},
+                }
+            ],
+        },
+    ]
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=tail
+    ):
+        r = await client.get(f"/api/conversations/{record.session_id}/approvals")
+    assert r.status_code == 200
+    assert r.json()["items"][0]["toolCallId"] == "tc_open"
+    # Rebuilt calls are conservatively gated (metadata not persisted).
+    assert r.json()["items"][0]["requiresApproval"] is True
+    assert record.state == RunState.AWAITING_APPROVAL

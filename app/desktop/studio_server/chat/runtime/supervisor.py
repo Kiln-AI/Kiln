@@ -25,38 +25,49 @@ started (a cancelled-before-first-run task never enters ``_supervise``, so
 its ``finally`` never fires — the old ``SubAgentRegistry.stop()`` backstop,
 now generalized to every kind).
 
-Phase 3: the supervisor owns every SUB-AGENT conversation (phase 2) AND
-every AUTO conversation — consent accept / manual enable creates (or flips)
-a ``kind="auto"`` record here (``enable_auto``, replacing
-``AutoChatRegistry.start``) and bursts run on the ``ConversationEngine``
-under ``auto_policy()``. The old ``chat/auto/`` package is deleted.
-INTERACTIVE conversations still run on the OLD loop (``ChatStreamSession``
-behind ``POST /api/chat``) until phase 4 — a conversation is wholly
-old-world or wholly new-world, so the supervisor and the old loop never
-share one. The remaining phase-3 seam (dies in phase 4):
+Phase 4: the supervisor owns EVERY conversation kind. Interactive
+conversations (the most-used path, formerly ``ChatStreamSession`` behind
+``POST /api/chat``) run here as a TURN TASK per turn (IDLE → RUNNING → IDLE),
+created/adopted via ``adopt_interactive`` and driven by ``send_message``'s
+idle re-arm. The auto flip is now the true "same run, new policy" flip
+(architecture §2): ``enable_auto`` swaps an interactive record's policy AND
+kind to auto on the SAME record, and every flag-off settle swaps it back —
+an off-auto conversation IS an idle interactive conversation, so it joins
+the idle-interactive LRU pool instead of the old OFF-auto TTL GC. The last
+old-world identity bridge (``ParentConversationIndex``'s ``trace:<leaf>``
+parent keys) died with the old loop: every child now carries a real parent
+session id.
 
-- children of old-loop INTERACTIVE parents store the old ``parent_key``
-  string (``trace:<leaf>``) as their ``parent_session_id`` — see
-  ``chat/orchestration.py``'s ``ParentConversationIndex``. Auto parents are
-  supervisor records now, so their children carry a real session id and
-  their reports route natively through ``_deliver_report``'s inbox branch
-  (the phase-2 ``legacy_report_deliverer`` bridge is gone).
-
-Restart recovery (architecture §5): the supervisor cold-starts empty; later
-phases create records from history session ids on first observe/send and
-rehydrate pending approvals from the persisted trace tail.
+Restart recovery (architecture §5, wired this phase): the supervisor
+cold-starts empty; opening a conversation from history creates a record from
+its leaf trace id (``adopt_interactive``) and pending approvals are
+rehydrated from the persisted trace tail
+(``rehydrate_pending_approvals``) — deciding a rehydrated (runless) batch
+starts a RESUME RUN that executes the batch and continues the loop, exactly
+the flow the old ``POST /api/chat/execute-tools`` endpoint drove.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Literal
 
+import httpx
+from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
 from app.desktop.studio_server.chat.stream_session import (
     ToolCallInfo,
+    _pending_item_from_event,
     execute_tool_batch,
+)
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
+    DISABLE_AUTO_MODE_TOOL_NAME,
+)
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
+    ENABLE_AUTO_MODE_TOOL_NAME,
 )
 
 from .bus import BroadcastBus, ByteEventBus
@@ -76,7 +87,11 @@ from .models import (
     interactive_policy,
     subagent_policy,
 )
-from .sse import format_conversation_state, format_user_message
+from .sse import (
+    format_conversation_state,
+    format_tool_calls_pending,
+    format_user_message,
+)
 
 if TYPE_CHECKING:
     # Import-cycle avoidance only: chat/orchestration.py imports this module
@@ -97,8 +112,10 @@ SUBAGENT_MAX_CONCURRENT_ENV_VAR = "KILN_CHAT_SUBAGENT_MAX_CONCURRENT"
 DEFAULT_SUBAGENT_MAX_PER_PARENT = 3
 SUBAGENT_MAX_PER_PARENT_ENV_VAR = "KILN_CHAT_SUBAGENT_MAX_PER_PARENT"
 
-# How long a terminal one-shot record (or an OFF-auto record) lingers so a
-# late re-attach still gets the terminal/off state marker.
+# How long a terminal one-shot record lingers so a late re-attach still gets
+# the terminal state marker. (Phase 4 note: OFF-auto records no longer TTL-GC
+# — a flag-off settle swaps them back to interactive records, which are
+# LRU-bounded instead.)
 TERMINAL_TTL_SECONDS = 300.0
 # An UNDELIVERED sub-agent report pins the record longer so an idle
 # interactive parent doesn't lose it to GC (old sub-agent registry pinning).
@@ -126,6 +143,102 @@ def _resolve_int_env(env_var: str, default: int) -> int:
         except ValueError:
             pass
     return default
+
+
+# Timeout for the one-off upstream snapshot GET the approval-rehydration path
+# makes (architecture §2 recovery contract). Short and best-effort: a failed
+# fetch just means "no pending approvals rehydrated", never an error surface.
+REHYDRATE_FETCH_TIMEOUT_SECONDS = 15.0
+
+
+def _trace_text_content(content: Any) -> str:
+    """Text of a persisted trace message's ``content`` (string or the list
+    form some providers persist). Mirrors the web UI's ``extractTextContent``
+    so both ends read the same tail."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict) and "text" in part:
+                parts.append(str(part["text"]))
+        return "".join(parts)
+    return ""
+
+
+def _pending_events_from_trace_tail(
+    trace: list[dict[str, Any]],
+) -> tuple[list[ToolInputAvailableEvent], list[ToolInputAvailableEvent], str]:
+    """Rebuild the UNANSWERED tool calls of a persisted trace's tail as
+    tool-input events, split into ``(client_events, signal_events)``, plus
+    the tail assistant text (architecture §2: "the batch is reconstructible
+    from the persisted trace tail — an assistant message with unanswered
+    tool calls").
+
+    Reconstruction notes (documented behavior deltas, all conservative):
+
+    - The stream-time ``kiln_metadata`` (executor / requires_approval /
+      permission / approval_description) is NOT persisted in traces, so every
+      rebuilt call carries ``{"requires_approval": True}`` — the user is asked
+      about everything in a rehydrated batch, worst case including a call the
+      live metadata would have run without asking. Denying still yields
+      DENIED_TOOL_OUTPUT, so nothing can run un-consented.
+    - The auto-mode SIGNAL tools come back in the SEPARATE ``signal_events``
+      list: they are never executed as tools (interceptors answer them) and
+      never enter the approval batch's items, but a signal riding NEXT TO a
+      real client call must still be answered on the resume continuation
+      (as declined — its consent dialog died with the restart) or the trace
+      keeps a dangling tool call the provider rejects on the next turn.
+    - Server-executed tool calls are answered inside the same persisted
+      snapshot by the upstream orchestrator, so an unanswered call in the
+      tail is a client call by construction.
+    """
+    last_assistant: dict[str, Any] | None = None
+    last_assistant_idx = -1
+    for idx in range(len(trace) - 1, -1, -1):
+        if trace[idx].get("role") == "assistant":
+            last_assistant = trace[idx]
+            last_assistant_idx = idx
+            break
+    if last_assistant is None:
+        return [], [], ""
+    assistant_text = _trace_text_content(last_assistant.get("content"))
+    tool_calls = last_assistant.get("tool_calls") or []
+    if not isinstance(tool_calls, list) or not tool_calls:
+        return [], [], assistant_text
+    answered = {
+        msg.get("tool_call_id")
+        for msg in trace[last_assistant_idx + 1 :]
+        if msg.get("role") == "tool"
+    }
+    events: list[ToolInputAvailableEvent] = []
+    signal_events: list[ToolInputAvailableEvent] = []
+    for tc in tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        tc_id = tc.get("id")
+        function = tc.get("function") or {}
+        name = function.get("name") if isinstance(function, dict) else None
+        if not isinstance(tc_id, str) or not isinstance(name, str) or not name:
+            continue
+        if tc_id in answered:
+            continue
+        raw_args = function.get("arguments") if isinstance(function, dict) else None
+        try:
+            parsed = json.loads(raw_args) if isinstance(raw_args, str) else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        event = ToolInputAvailableEvent(
+            toolCallId=tc_id,
+            toolName=name,
+            input=parsed if isinstance(parsed, dict) else {},
+            kiln_metadata={"requires_approval": True},
+        )
+        if name in (ENABLE_AUTO_MODE_TOOL_NAME, DISABLE_AUTO_MODE_TOOL_NAME):
+            signal_events.append(event)
+        else:
+            events.append(event)
+    return events, signal_events, assistant_text
 
 
 class _Conversation:
@@ -403,6 +516,212 @@ class ConversationSupervisor:
                 "Stop a running auto run and try again."
             )
 
+    # ── The policy flip (phase 4, architecture §2). ────────────────────────────
+    #
+    # Interactive and auto are POLICIES on the same record, flipped only at
+    # run boundaries: a live run holds the policy object it was started with
+    # (the engine captures it as a run() argument), so a mid-run flip takes
+    # effect at the next turn/burst. `kind` flips WITH the policy so every
+    # existing kind-keyed guard (the frontend store, the sessions-list
+    # `auto_record_for_trace` join, `/resolve`'s flag-on-auto filter, the
+    # children `kind != "subagent"` guards) keeps meaning "how this
+    # conversation currently behaves".
+
+    def _flip_to_auto(self, conv: _Conversation) -> None:
+        """Enable: the same record starts running auto bursts (caller
+        cap-checks first — a flag-off record gave up its auto slot)."""
+        conv.policy = auto_policy()
+        conv.record.kind = "auto"
+        conv.record.auto_flag = True
+
+    def _swap_to_interactive(self, conv: _Conversation) -> None:
+        """Flag-off settle: an OFF-auto conversation IS an idle interactive
+        conversation (the phase-3 TODO). Replaces the old OFF-auto TTL GC —
+        the record simply joins the idle-interactive LRU pool and the next
+        send runs a normal gated interactive turn (which is also what lifts
+        the phase-3 ``send_message`` flag-off refusal: post-swap the policy
+        no longer auto-approves anything)."""
+        conv.policy = interactive_policy()
+        conv.record.kind = "interactive"
+
+    # ── Interactive create/adopt + approval rehydration (phase 4). ─────────────
+
+    async def adopt_interactive(
+        self,
+        trace_id: str | None,
+        *,
+        upstream_url: str,
+        headers: dict[str, str],
+    ) -> ConversationRecord:
+        """Create — or ADOPT — the interactive conversation for a trace id
+        (POST /api/conversations kind="interactive").
+
+        The browser identifies a conversation by its (possibly stale) leaf
+        trace id until phase 5; the whole-chain index resolves any leaf the
+        conversation ever had, making this idempotent: opening a history row
+        twice (or racing tabs) returns the SAME record instead of minting
+        duplicates. A resolving record of ANY kind is returned as-is — if the
+        conversation is currently an auto conversation, that record IS the
+        conversation (one record per conversation is the whole point of the
+        flip model).
+
+        A fresh create with a trace id is the history-open / desktop-restart
+        path: adopt the leaf, then rehydrate pending approvals from the
+        persisted trace tail (functional spec §5 — a parked approval survives
+        a desktop restart via the persisted trace).
+        """
+        if trace_id is not None:
+            session_id = self._trace_index.get(trace_id)
+            if session_id is not None:
+                existing = self._conversations.get(session_id)
+                if existing is not None and not existing.record.state.is_terminal:
+                    return existing.record
+
+        record = self.create_conversation(
+            "interactive", upstream_url=upstream_url, headers=headers
+        )
+        if trace_id is not None:
+            record.current_leaf_trace_id = trace_id
+            record.seen_trace_ids.append(trace_id)
+            # Don't steal another record's index entry: a TERMINAL record can
+            # still own this leaf (e.g. re-opening a finished sub-agent's
+            # session from history continues its TRACE on a fresh interactive
+            # record, but the child's sessions-list "finished" chip must keep
+            # resolving until its record GCs). The new conversation's own
+            # leaves index normally via on_trace from its first turn.
+            if trace_id not in self._trace_index:
+                self._trace_index[trace_id] = record.session_id
+            await self.rehydrate_pending_approvals(record.session_id)
+        logger.info(
+            "Adopted interactive conversation %s (trace_id=%s)",
+            record.session_id,
+            trace_id,
+        )
+        return record
+
+    async def rehydrate_pending_approvals(
+        self, session_id: str
+    ) -> PendingApprovalBatch | None:
+        """Rebuild a pending approval batch from the persisted trace tail
+        (architecture §2 recovery contract; functional spec §5).
+
+        Covers both recovery shapes with one mechanism:
+
+        - desktop restart: the parked run died with the process, but the
+          upstream snapshot persisted the assistant turn with its unanswered
+          tool calls — reopening the conversation rehydrates the batch;
+        - graceful-stop leftovers: an auto burst that surfaced its final
+          round's client calls instead of executing them (functional spec §3)
+          left the same unanswered-calls tail.
+
+        The rebuilt batch is RUNLESS: no task is parked on it. ``decide``
+        detects that and starts a resume run (`start_run(resume_batch=...)`)
+        that executes the batch and continues the loop — the same flow the
+        old ``POST /api/chat/execute-tools`` drove. Best-effort: any fetch or
+        parse failure returns None (no batch), never an error surface —
+        exactly as recoverable as the old world (which lost the approval box
+        entirely on restart).
+
+        ACCEPTED RISK (re-execute on re-decide): if a resume run executes
+        the batch but its continuation POST fails terminally, the settle
+        clears the batch while the persisted tail still shows the calls
+        unanswered — a later GET /approvals rehydrates a fresh batch and
+        deciding it executes the tools AGAIN. This is the exact blast radius
+        the old world had (a browser retry of a failed
+        ``/api/chat/execute-tools`` re-executed the same batch), and the
+        trace tail carries no marker to distinguish "executed but not
+        persisted" from "never executed", so we keep the old behavior rather
+        than invent one.
+
+        Also re-emits the ``tool-calls-pending`` event onto the bus BUFFER so
+        observers (attaching or live) re-surface the approval box; the
+        buffer only resets on ``kiln_chat_trace``, so the event replays to
+        every later subscriber while the batch is parked.
+        """
+        conv = self._conversations.get(session_id)
+        if conv is None or conv.record.state.is_terminal:
+            return None
+        if conv.pending_batch is not None and not conv.pending_batch.decided.is_set():
+            # A live (or already-rehydrated) undecided batch is authoritative.
+            return conv.pending_batch
+        if conv.task is not None and not conv.task.done():
+            # A live run owns its own round context — never second-guess it.
+            return None
+        leaf = conv.record.current_leaf_trace_id
+        if leaf is None:
+            return None
+
+        trace = await self._fetch_persisted_trace(conv, leaf)
+        if not trace:
+            return None
+        events, signal_events, assistant_text = _pending_events_from_trace_tail(trace)
+        if not events:
+            # Nothing approvable. A SIGNAL-ONLY tail (an unanswered
+            # enable_auto_mode with no siblings) is a lost consent dialog —
+            # which the old world also lost across restarts — not an
+            # approval batch; it stays unanswered exactly like before.
+            return None
+
+        batch = PendingApprovalBatch(
+            items=[_pending_item_from_event(e) for e in events],
+            # The continuation base is the trace-only shape — identical to
+            # what the old /execute-tools continuation POSTed, and what the
+            # engine's parked path holds for a batch parked at this boundary.
+            body={"trace_id": leaf, "messages": []},
+            assistant_text=assistant_text,
+            # Signal calls ride the event list so their resolutions land on
+            # the continuation, but never the ITEMS (nothing to approve)…
+            tool_input_events=[*events, *signal_events],
+            # …resolved as declined, mirroring the decline flow: the consent
+            # dialog died with the restart, and an unanswered call would
+            # leave the trace dangling (see _pending_events_from_trace_tail).
+            preresolved_results={
+                e.toolCallId: json.dumps({"status": "declined"}, ensure_ascii=False)
+                for e in signal_events
+            },
+        )
+        conv.pending_batch = batch
+        conv.record.state = RunState.AWAITING_APPROVAL
+        conv.bus.emit(format_tool_calls_pending(events))
+        self._touch(conv)
+        self._publish_state(conv)
+        logger.info(
+            "Rehydrated pending approval batch for %s (%d calls, leaf=%s)",
+            session_id,
+            len(events),
+            leaf,
+        )
+        return batch
+
+    async def _fetch_persisted_trace(
+        self, conv: _Conversation, leaf_trace_id: str
+    ) -> list[dict[str, Any]] | None:
+        """Fetch the persisted snapshot's trace for a leaf (best-effort).
+
+        The conversation's ``upstream_url`` is the chat POST URL
+        (``…/v1/chat/``); the session snapshot lives beside it at
+        ``…/v1/chat/sessions/{leaf}`` — same target the desktop's history
+        proxy reads, fetched directly here because rehydration is a
+        supervisor concern, not a browser round-trip.
+        """
+        url = f"{conv.upstream_url}sessions/{leaf_trace_id}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=REHYDRATE_FETCH_TIMEOUT_SECONDS
+            ) as client:
+                response = await client.get(url, headers=conv.headers)
+            if response.status_code != 200:
+                return None
+            data = response.json()
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError):
+            logger.debug("Approval rehydration fetch failed for %s", leaf_trace_id)
+            return None
+        task_run = data.get("task_run") if isinstance(data, dict) else None
+        trace = task_run.get("trace") if isinstance(task_run, dict) else None
+        if not isinstance(trace, list):
+            return None
+        return [msg for msg in trace if isinstance(msg, dict)]
+
     # ── Auto mode enable / disable (old chat/auto/ registry + api flows). ──────
 
     async def enable_auto(
@@ -457,14 +776,14 @@ class ConversationSupervisor:
             session_id = self._trace_index.get(trace_id)
             if session_id is not None:
                 existing = self._conversations.get(session_id)
-                # Only auto-kind records are flippable in phase 3. A sub-agent
-                # record matching the trace is a CHILD session — enabling auto
-                # on it makes no sense and must not hijack its record.
-                # TODO(phase-4): interactive records become flippable here
-                # (the true "same run, new policy" flip).
+                # Phase 4: interactive records are flippable too — this is the
+                # true "same run, new policy" flip (architecture §2: "consent
+                # flow flips the policy on the SAME run"). A sub-agent record
+                # matching the trace is a CHILD session — enabling auto on it
+                # makes no sense and must not hijack its record.
                 if (
                     existing is not None
-                    and existing.record.kind == "auto"
+                    and existing.record.kind in ("auto", "interactive")
                     and not existing.record.state.is_terminal
                 ):
                     conv = existing
@@ -485,9 +804,10 @@ class ConversationSupervisor:
         else:
             record = conv.record
             if not record.auto_flag:
-                # Flipping the flag back on takes an auto slot again.
+                # Flipping the flag on takes an auto slot again (a flag-off
+                # record does not hold one).
                 self._check_auto_cap()
-                record.auto_flag = True
+                self._flip_to_auto(conv)
             # Defensive parity with the old idle re-arm: a fresh enable on an
             # OFF record races its terminal TTL — cancel any pending GC.
             self._cancel_gc(record.session_id)
@@ -557,8 +877,11 @@ class ConversationSupervisor:
         (flag off + reason) THEN cancelled, so the cancel handler and the
         settle path publish the true reason instead of clobbering it with
         ``user_stopped`` (old CR Moderate 2). With no live burst the flag
-        clears directly (old idle branch): queued inbox dies with the flag,
-        the off state publishes, and the record is TTL-GC'd. Both paths
+        clears directly (old idle branch): queued inbox dies with the flag
+        and the off state publishes. Phase 4: instead of the old OFF-auto TTL
+        GC, both paths swap the record back to its interactive life
+        (``_swap_to_interactive`` — directly here for the idle branch, via
+        ``_finish_run``'s off branch for the cancelled-burst one). Both paths
         cascade-stop the conversation's sub-agent children — their reports
         have nothing left to consume them (old ``disable`` →
         ``_stop_subagent_children``). Returns False for unknown records;
@@ -595,38 +918,24 @@ class ConversationSupervisor:
             # Backstop: a task cancelled before it ever ran never entered
             # _supervise, so its finally/_finish_run never fired (run-once —
             # the double call is a no-op). _finish_run publishes the off
-            # state and schedules the TTL GC via the flag-off branch.
+            # state and, via the flag-off branch, swaps the record back to
+            # its interactive life (phase 4 — no TTL GC anymore).
             self._finish_run(conv)
             await self.stop_children(session_id)
             return True
 
         # No live burst (idle). Clear directly — old disable() idle branch.
+        # Publish carries the phase-3 event shape (kind=auto, flag off,
+        # reason), THEN the record swaps to its interactive life (the swap is
+        # not an event of its own — the next state event simply reports kind
+        # interactive).
         conv.inbox.clear()
         self._touch(conv)
         self._publish_state(conv)
-        self._schedule_gc(session_id)
+        if conv.policy.approvals == "auto" and not conv.policy.one_shot:
+            self._swap_to_interactive(conv)
         await self.stop_children(session_id)
         return True
-
-    async def disable_auto_for_trace(self, trace_id: str) -> bool:
-        """Interactive-loop bridge for the intercepted ``disable_auto_mode``
-        tool (old ``AutoChatRegistry.disable_for_trace``, called from
-        ``ChatStreamSession._clear_auto_mode_flag``): resolve the (possibly
-        stale) leaf through the whole-chain index and disable the auto
-        conversation — cancel a live burst, publish the off state, and
-        cascade-stop its sub-agent children. This is the phase-1
-        TODO(phase-3) cascade, wired. The kind guard keeps a sub-agent leaf
-        (also indexed here, unlike the old auto-only index) from ever being
-        disabled by an interactive interception. TODO(phase-4): the
-        engine-side interactive interceptor replaces this trace-keyed entry
-        point once interactive conversations own supervisor records."""
-        session_id = self._trace_index.get(trace_id)
-        if session_id is None:
-            return False
-        conv = self._conversations.get(session_id)
-        if conv is None or conv.record.kind != "auto":
-            return False
-        return await self.disable_auto(session_id)
 
     async def set_auto_flag(
         self, session_id: str, enabled: bool
@@ -635,26 +944,27 @@ class ConversationSupervisor:
         (POST /api/conversations/{sid}/auto, functional spec §2).
 
         ``enabled=False`` delegates to :meth:`disable_auto` (today's disable
-        semantics). ``enabled=True`` re-arms: the flag flips back on
-        (cap-checked — a flag-off record gave up its slot; raises
+        semantics; a no-op on an already-interactive record).
+        ``enabled=True`` re-arms: the record flips to the auto policy
+        (cap-checked — a flag-off record holds no slot; raises
         ``ConversationCapError`` for the route's 429) with NO upstream POST —
-        the ARMED-only shape, so the next message starts the burst. Phase 3:
-        only auto-kind records are flippable ("invalid" otherwise);
-        TODO(phase-4) makes interactive records flippable, which is the true
-        policy flip on the SAME record (architecture §2).
+        the ARMED-only shape, so the next message starts the burst. Phase 4:
+        interactive records are flippable too (the true policy flip on the
+        SAME record, architecture §2); only sub-agent records stay "invalid"
+        — a child's autonomy is not a user-facing toggle.
         """
         conv = self._conversations.get(session_id)
         if conv is None:
             return "not_found"
         record = conv.record
-        if record.kind != "auto" or record.state.is_terminal:
+        if record.kind not in ("auto", "interactive") or record.state.is_terminal:
             return "invalid"
         if not enabled:
             await self.disable_auto(session_id)
             return "ok"
         if not record.auto_flag:
             self._check_auto_cap()
-            record.auto_flag = True
+            self._flip_to_auto(conv)
         # A re-enable races the OFF record's terminal TTL — cancel pending GC.
         self._cancel_gc(session_id)
         if conv.task is None or conv.task.done():
@@ -664,6 +974,69 @@ class ConversationSupervisor:
             record.idle_reason = "armed"
         self._touch(conv)
         self._publish_state(conv)
+        return "ok"
+
+    def decline_auto(
+        self,
+        session_id: str,
+        *,
+        enable_tool_call_id: str,
+        siblings: list[ToolCallInfo],
+    ) -> Literal["ok", "not_found", "invalid", "busy"]:
+        """Decline a pending ``enable_auto_mode`` consent request
+        (POST /api/conversations/{sid}/auto with a decline context — the
+        phase-3 ``/api/conversations/auto/decline`` bridge, folded in now
+        that interactive conversations own supervisor records).
+
+        The engine's consent interception ended the turn WITHOUT answering
+        the enable call, so the persisted trace has a dangling tool call the
+        provider requires answered. Declining starts a normal interactive
+        TURN whose seed resolves it as ``{"status": "declined"}`` and every
+        sibling as denied — byte-identical to the old
+        ``/api/chat/auto/decline`` continuation body (which streamed the same
+        messages through a fresh ChatStreamSession); the reply now streams on
+        the observer channel like any other turn. Declining never flips any
+        policy: the record already runs (or swaps back to) the interactive
+        policy.
+
+        "busy" → a run is already in flight (a consent decline races a fresh
+        send); the route maps it to 409 rather than corrupting the turn.
+        """
+        conv = self._conversations.get(session_id)
+        if conv is None:
+            return "not_found"
+        record = conv.record
+        if record.kind == "subagent" or record.state.is_terminal:
+            return "invalid"
+        if conv.task is not None and not conv.task.done():
+            return "busy"
+
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "tool",
+                "tool_call_id": enable_tool_call_id,
+                # Exact old decline payload (routes-level json.dumps shape) —
+                # persisted in the trace, so the bytes are part of the
+                # protocol contract.
+                "content": json.dumps({"status": "declined"}, ensure_ascii=False),
+            }
+        ]
+        for sibling in siblings:
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": sibling.tool_call_id,
+                    "content": DENIED_TOOL_OUTPUT,
+                }
+            )
+        body: dict[str, Any] = {"messages": messages}
+        if record.current_leaf_trace_id is not None:
+            # The dangling enable call lives in the conversation's tail
+            # snapshot — the record's own leaf is authoritative (the old
+            # endpoint took the browser's copy of the same id).
+            body["trace_id"] = record.current_leaf_trace_id
+        self.start_run(session_id, body)
+        logger.info("Declined auto mode for conversation %s", session_id)
         return "ok"
 
     def spawn_subagent(
@@ -700,13 +1073,19 @@ class ConversationSupervisor:
     # ── Run lifecycle. ────────────────────────────────────────────────────────
 
     def start_run(
-        self, session_id: str, initial_body: dict[str, Any] | None = None
+        self,
+        session_id: str,
+        initial_body: dict[str, Any] | None = None,
+        resume_batch: PendingApprovalBatch | None = None,
     ) -> None:
         """Start a turn/burst/run task for the conversation.
 
         ``initial_body`` is the upstream request body for the first round
         (interactive turn / auto burst seed); None lets the engine build the
-        one-shot seed body from policy.seed (child runs).
+        one-shot seed body from policy.seed (child runs). ``resume_batch``
+        starts the phase-4 RESUME RUN instead: execute the (already-decided)
+        runless batch, then continue the loop from its continuation — see
+        ``ConversationEngine.run``.
         """
         conv = self._conversations[session_id]
         if conv.record.state.is_terminal:
@@ -722,7 +1101,9 @@ class ConversationSupervisor:
         conv.stop_requested = False
         conv.record.state = RunState.RUNNING
         self._touch(conv)
-        conv.task = asyncio.create_task(self._supervise(conv, initial_body))
+        conv.task = asyncio.create_task(
+            self._supervise(conv, initial_body, resume_batch)
+        )
         # Live observers learn the run started; attaching observers get the
         # same truth from the on-subscribe marker. (The firehose copy is what
         # tells the UI a NEW child appeared — the old registry published a
@@ -730,7 +1111,10 @@ class ConversationSupervisor:
         self._publish_state(conv)
 
     async def _supervise(
-        self, conv: _Conversation, initial_body: dict[str, Any] | None
+        self,
+        conv: _Conversation,
+        initial_body: dict[str, Any] | None,
+        resume_batch: PendingApprovalBatch | None = None,
     ) -> None:
         """Own one run's lifetime, decoupled from any HTTP request.
 
@@ -746,7 +1130,18 @@ class ConversationSupervisor:
         io = self._engine_io(conv)
         try:
             try:
-                coro = engine.run(record, conv.policy, io, initial_body)
+                # The kwarg is only passed on the resume path so test doubles
+                # that fake the common run() signature keep working unchanged.
+                if resume_batch is not None:
+                    coro = engine.run(
+                        record,
+                        conv.policy,
+                        io,
+                        initial_body,
+                        resume_batch=resume_batch,
+                    )
+                else:
+                    coro = engine.run(record, conv.policy, io, initial_body)
                 if conv.policy.one_shot and conv.policy.wall_clock_seconds:
                     # Wall-clock budget applies to one-shot kinds only (old
                     # SubAgentRegistry._supervise wait_for). The TIMEOUT
@@ -852,18 +1247,18 @@ class ConversationSupervisor:
         ):
             # The auto-mode flag is off after a run under the AUTO policy
             # (stop/disable landed before or during this burst): old "off"
-            # semantics — queued inbox dies with the flag, and the record is
-            # GC'd after the terminal TTL (a late re-attach still gets the
-            # off marker until then). Keyed on the settled run's POLICY, not
-            # record.kind: the policy is what made this an auto burst, and an
-            # interactive-kind record that merely had its flag toggled must
-            # never be TTL-GC'd out from under its live interactive life.
-            # TODO(phase-4): once interactive conversations live here, a
-            # flag-off settle instead swaps the record's policy back to
-            # interactive_policy() and the record joins the idle-interactive
-            # LRU pool (an off-auto conversation IS an interactive one).
+            # semantics for the burst itself — the queued inbox dies with the
+            # flag (a message queued for an auto burst must never silently
+            # start a gated turn). Keyed on the settled run's POLICY, not
+            # record.kind: the policy is what made this an auto burst.
+            # Phase 4 replaces the old OFF-auto TTL GC with the flip model:
+            # the record swaps back to its interactive life (an off-auto
+            # conversation IS an idle interactive conversation) and joins the
+            # LRU-bounded idle-interactive pool — the off state was already
+            # published above with the preserved reason vocabulary.
             conv.inbox.clear()
-            self._schedule_gc(record.session_id)
+            self._swap_to_interactive(conv)
+            self._evict_idle_interactive_lru()
         logger.info(
             "Conversation %s run ended (state=%s, auto_flag=%s, reason=%s)",
             record.session_id,
@@ -878,12 +1273,13 @@ class ConversationSupervisor:
 
         Parent kinds (interactive/auto records on this supervisor) get a real
         ctx carrying their SESSION id — stable, so no trace-alias chaining is
-        ever needed for their children (the phase-2 ``auto:<run_id>`` bridge
-        keys are gone). ``parent_trace_id`` still rides along and is kept
-        fresh by ``on_trace``: the spawn seed forwards it as the ``agent``
-        block's ``parent_trace_id``, which the BACKEND resolves into durable
-        lineage (old runners updated ``ctx.parent_trace_id`` each round for
-        the same reason). Children get None — see the field comment on
+        ever needed for their children (the phase-2/3 alias bridges are
+        gone). The spawn seed's ``parent_trace_id`` lineage no longer rides
+        the ctx (phase 4 shrank it to ``{parent_session_id, depth}``): the
+        spawn executor reads the parent record's ``current_leaf_trace_id``
+        directly, which ``on_trace`` keeps fresh — same value the old
+        per-round ``ctx.parent_trace_id`` refresh maintained, single-sourced.
+        Children get None — see the field comment on
         ``_Conversation.orchestration_ctx``.
         """
         if conv.policy.orchestration_depth > 0:
@@ -897,7 +1293,6 @@ class ConversationSupervisor:
 
             conv.orchestration_ctx = OrchestrationContext(
                 parent_session_id=conv.record.session_id,
-                parent_trace_id=conv.record.current_leaf_trace_id,
             )
         return conv.orchestration_ctx
 
@@ -907,13 +1302,13 @@ class ConversationSupervisor:
         orchestration_ctx = self._orchestration_ctx(conv)
 
         async def on_trace(trace_id: str) -> None:
-            # The engine already updated the record (single-writer rule);
-            # the supervisor only maintains its cross-conversation index.
+            # The engine already updated the record (single-writer rule) —
+            # including record.current_leaf_trace_id, which the spawn
+            # executor reads for the agent block's parent_trace_id lineage
+            # (old runners refreshed a ctx copy per round for the same
+            # value); the supervisor only maintains its cross-conversation
+            # index here.
             self._trace_index[trace_id] = record.session_id
-            if orchestration_ctx is not None:
-                # Keep the spawn-lineage leaf fresh (old runners did
-                # ctx.parent_trace_id = round_state.trace_id per round).
-                orchestration_ctx.parent_trace_id = trace_id
             self._touch(conv)
 
         async def await_decisions(batch: PendingApprovalBatch) -> dict[str, bool]:
@@ -928,6 +1323,24 @@ class ConversationSupervisor:
             # answered with a conflict rather than a 404 (functional spec §5:
             # two tabs — first decision set wins, the second gets 409).
             return dict(batch.decisions or {})
+
+        async def on_auto_flag_cleared() -> None:
+            # The engine's INTERACTIVE disable_auto_mode interception just
+            # cleared a set flag mid-turn. Reproduce the full old cascade
+            # (ChatStreamSession._clear_auto_mode_flag →
+            # disable_auto_for_trace): publish the off state NOW with the
+            # preserved reason — the old cascade published out-of-band,
+            # before the turn settled — and cascade-stop the sub-agent
+            # children (their reports have nothing left to consume them).
+            # If the record had been flipped to the auto policy while this
+            # interactive turn was still in flight (a manual-enable race),
+            # swap it back — the model just disabled auto mode.
+            record.idle_reason = "user_disabled"
+            self._touch(conv)
+            self._publish_state(conv)
+            if conv.policy.approvals == "auto" and not conv.policy.one_shot:
+                self._swap_to_interactive(conv)
+            await self.stop_children(record.session_id)
 
         return EngineIO(
             emit=conv.bus.emit,
@@ -944,11 +1357,12 @@ class ConversationSupervisor:
             # somehow slipped past the guard resolves to a structured
             # "unavailable" error instead of executing.
             orchestration_ctx=orchestration_ctx,
+            on_auto_flag_cleared=on_auto_flag_cleared,
         )
 
     # ── Messages. ─────────────────────────────────────────────────────────────
 
-    def send_message(self, session_id: str, content: str) -> bool:
+    def send_message(self, session_id: str, content: str) -> str | None:
         """Queue a user message into the conversation (POST /messages).
 
         Behavior by state (functional spec §2): RUNNING/AWAITING_APPROVAL →
@@ -958,46 +1372,62 @@ class ConversationSupervisor:
         (including the sender) renders it immediately — and so the engine's
         drain must never re-echo (echo-once, old CR Moderate 1).
 
-        Returns False for unknown/terminal conversations (routes map to
-        404/409) AND for flag-off auto conversations — the old registry's
-        "not found or no longer active" 404 (``AutoChatRegistry.send_message``
-        required ``status.flag_on``). The refusal is also a phase-3 safety
-        property: a run started here would execute under the record's AUTO
-        policy (auto-approving every tool) even though the user's consent is
-        no longer active. TODO(phase-4): an OFF-auto conversation IS an idle
-        interactive conversation in the unified model — the flag-off settle
-        then swaps the policy back to interactive and this guard is lifted.
+        Returns the accepted message's stable id (phase 4: the sending tab
+        renders its typed text locally and uses the id to dedupe its own
+        echo — the echoed content carries the app-context header the browser
+        prepends, which only OTHER observers should render, stripped).
+
+        Returns None for unknown/terminal conversations (routes map to
+        404/409) AND for flag-off records still carrying the AUTO policy —
+        the old registry's "no longer active" refusal, now only a narrow
+        transient window (disable pre-marks the flag before the burst's
+        settle swaps the policy back to interactive): a run started here
+        would auto-approve every tool without an active consent. Post-swap
+        the record is interactive and sends run normal gated turns.
         """
         conv = self._conversations.get(session_id)
         if conv is None or conv.record.state.is_terminal:
-            return False
+            return None
         if (
             conv.policy.approvals == "auto"
             and not conv.policy.one_shot
             and not conv.record.auto_flag
         ):
-            return False
+            return None
         message = InboundMessage(content=content)
         conv.bus.emit(format_user_message(message.content, message.id))
         self._touch(conv)
 
         if conv.record.state in (RunState.RUNNING, RunState.AWAITING_APPROVAL):
             conv.inbox.append(message)
-            return True
+            return message.id
 
         # IDLE → start a fresh turn/burst seeded with the message. Body shape
         # preserved from the old idle re-arm (AutoChatRegistry.send_message →
         # AutoChatSeed(extra_messages=[...])._build_seed_body): continue from
         # the current leaf, message unframed (framing is for MID-run drains
-        # only), auto_mode riding iff the flag is on.
-        body: dict[str, Any] = {"messages": [message.as_chat_message()]}
+        # only), auto_mode riding iff the flag is on. This is ALSO the old
+        # interactive ``POST /api/chat`` request shape ({trace_id?, messages:
+        # [the user message]}), so an interactive turn started here persists
+        # an indistinguishable trace.
+        messages: list[dict[str, Any]] = [message.as_chat_message()]
+        # Next-turn report injection (old routes.post_chat): sub-agent
+        # reports queued while the conversation idled ride this fresh turn
+        # AFTER the user's message (the old endpoint appended them the same
+        # way) and are echoed so the live transcript shows them immediately.
+        # Parent kinds only — a child never owns a report queue.
+        if conv.record.kind != "subagent":
+            for report in self.drain_reports(session_id):
+                messages.append({"role": "user", "content": report})
+                conv.bus.emit(format_user_message(report))
+        body: dict[str, Any] = {"messages": messages}
         if conv.record.current_leaf_trace_id is not None:
             body["trace_id"] = conv.record.current_leaf_trace_id
         if conv.record.auto_flag:
             body["auto_mode"] = True
         self.start_run(session_id, body)
         logger.info("Resumed conversation %s from idle via message", session_id)
-        return True
+        return message.id
 
     # ── Approvals. ────────────────────────────────────────────────────────────
 
@@ -1006,9 +1436,19 @@ class ConversationSupervisor:
     ) -> Literal["ok", "not_found", "conflict"]:
         """Resolve a parked approval batch (POST approvals/decisions).
 
-        "not_found" → no such conversation / no such batch (route: 404);
-        "conflict" → the batch was already decided — first decision set wins,
-        the second tab gets 409 (functional spec §5).
+        "not_found" → no such conversation / no such batch / wrong batch id
+        (route: 404); "conflict" → the batch was already decided — first
+        decision set wins, the second tab gets 409 (functional spec §5).
+
+        Two batch shapes resolve here (phase 4):
+
+        - a LIVE batch: the engine's run task is parked on ``decided`` —
+          setting it wakes the engine, which executes and continues in-place;
+        - a RUNLESS batch (rehydrated from the persisted trace tail after a
+          desktop restart, or the graceful-stop leftovers): nothing is
+          awaiting the event, so deciding starts the RESUME RUN that executes
+          the batch and continues the loop — the old
+          ``POST /api/chat/execute-tools`` flow, in-process.
         """
         conv = self._conversations.get(session_id)
         if conv is None or conv.pending_batch is None:
@@ -1021,6 +1461,11 @@ class ConversationSupervisor:
         batch.decisions = dict(decisions)
         batch.decided.set()
         self._touch(conv)
+        if conv.task is None or conv.task.done():
+            # Runless batch — start the resume run. The batch stays on the
+            # conversation (decided) until this run settles, so a racing
+            # second decide still gets "conflict", same as the parked case.
+            self.start_run(session_id, resume_batch=batch)
         return "ok"
 
     # ── Stop / cascades. ──────────────────────────────────────────────────────
@@ -1039,13 +1484,22 @@ class ConversationSupervisor:
         Always runs the cancel-before-first-run backstop (a task cancelled
         before it ever ran never entered _supervise, so its finally/_finish_run
         never fired — settle here; _finish_run is run-once so the double call
-        is a no-op). Cascades to children in every case: their reports have
-        nothing left to consume them (old cascade).
+        is a no-op). Cascades to children for auto/sub-agent records (the old
+        cascade — their reports have nothing left to consume them) but NOT
+        for a plain interactive turn cancel: the old interactive Stop was a
+        stream abort that never touched running sub-agents, and functional
+        spec §2 keeps it "cancel in-flight turn" only. Session DELETION still
+        cascades regardless (``orchestration.handle_session_deleted`` calls
+        ``stop_children`` explicitly).
         """
         conv = self._conversations.get(session_id)
         if conv is None or conv.record.state.is_terminal:
             return
         record = conv.record
+        # Evaluated up front: the settle below can swap an auto record back
+        # to kind "interactive", and the cascade decision belongs to what the
+        # conversation WAS when the user stopped it.
+        cascade_children = record.kind != "interactive"
 
         task = conv.task
         if task is not None and not task.done():
@@ -1071,21 +1525,26 @@ class ConversationSupervisor:
                 )
             # Backstop (see docstring).
             self._finish_run(conv)
-            await self.stop_children(session_id)
+            if cascade_children:
+                await self.stop_children(session_id)
             return
 
         # No live run. One-shot records without a task are either terminal
         # (guarded above) or not yet started (spawn always starts, so this is
         # unreachable in practice) — nothing to do beyond the flag clear for
-        # idle auto conversations (old AutoChatRegistry.stop idle branch).
+        # idle auto conversations (old AutoChatRegistry.stop idle branch;
+        # phase 4 swaps the record to its interactive life instead of the old
+        # OFF-auto TTL GC, publishing the off state first).
         if record.auto_flag:
             record.auto_flag = False
             record.idle_reason = "user_stopped"
             conv.inbox.clear()
             self._touch(conv)
             self._publish_state(conv)
-            self._schedule_gc(session_id)
-        await self.stop_children(session_id)
+            if conv.policy.approvals == "auto" and not conv.policy.one_shot:
+                self._swap_to_interactive(conv)
+        if cascade_children:
+            await self.stop_children(session_id)
 
     async def stop_children(self, parent_session_id: str) -> int:
         """Cascade-stop every running child of a parent (parent
@@ -1172,12 +1631,14 @@ class ConversationSupervisor:
         per report — the routing here is what lets the engine call
         drain_reports unconditionally.
 
-        Phase-3 seam: INTERACTIVE parents still run on the OLD loop, so their
-        children's ``parent_session_id`` is an old ``trace:<leaf>`` parent
-        key with no supervisor record — those reports land in the queue,
-        drained by the old loop's injection points (exactly like the old
-        ``SubAgentRegistry._deliver_report`` fallback). Dies in phase 4 when
-        interactive parents get supervisor records.
+        Phase 4 closed the last seam: every parent is a supervisor record and
+        ``parent_session_id`` is always a real session id (the old
+        ``trace:<leaf>`` keys died with ``ParentConversationIndex``). A queue
+        entry now has exactly two consumers — the engine's mid-run
+        ``drain_reports`` and ``send_message``'s idle-start drain (the old
+        next-turn injection) — plus the queue fallback below for a parent
+        whose flag flipped off mid-delivery (old
+        ``SubAgentRegistry._deliver_report`` fallback, unchanged).
         """
         record = conv.record
         if record.report_delivered or record.parent_session_id is None:
@@ -1272,20 +1733,13 @@ class ConversationSupervisor:
             await asyncio.sleep(self._terminal_ttl_seconds)
             conv = self._conversations.get(session_id)
             # An undelivered report pins the record (up to the longer cap) —
-            # old sub-agent registry pinning, covering BOTH ends of the
-            # delivery channel:
-            # - a settled CHILD whose report was never consumed (one-shot,
-            #   not report_delivered), so an idle interactive parent doesn't
-            #   lose it to GC;
-            # - an OFF-auto PARENT whose queue still holds children's
-            #   reports (e.g. children surviving an in-burst
-            #   disable_auto_mode, which deliberately does not cascade).
-            #   Evicting the parent would drop its queue AND its trace-index
-            #   entries, making the reports undrainable by the resumed
-            #   interactive turn — the old world kept the auto alias +
-            #   registry queue alive past the auto run's eviction (only the
-            #   child pin bounded drainability), so the parent record must
-            #   live as long as the pinned children whose reports it holds.
+            # old sub-agent registry pinning: a settled CHILD whose report
+            # was never consumed (one-shot, not report_delivered) must not be
+            # lost to GC while an idle interactive parent could still drain
+            # it. (Phase 4: the parent-side pin moved to the interactive LRU
+            # filter — OFF-auto parents no longer TTL-GC at all; the
+            # has_pending_reports clause here is a defensive leftover for any
+            # record that somehow scheduled a TTL while holding a queue.)
             if conv is not None and (
                 (conv.policy.one_shot and not conv.record.report_delivered)
                 or self.has_pending_reports(session_id)
@@ -1341,6 +1795,17 @@ class ConversationSupervisor:
             and conv.record.state == RunState.IDLE
             and conv.task is None
             and conv.pending_batch is None
+            # Phase-4 pinning (OFF-auto records live in this pool now, so
+            # the old undelivered-report pinning re-homes here): never evict
+            # a record whose report queue still holds children's reports —
+            # eviction drops the queue AND the trace-index entries the
+            # next-turn drain resolves through — nor one with live children
+            # (their settle needs the parent record for report routing).
+            and not self.has_pending_reports(conv.record.session_id)
+            and not any(
+                not child.state.is_terminal
+                for child in self.children_of(conv.record.session_id)
+            )
         ]
         overflow = len(idle) - self._max_idle_interactive_records
         if overflow <= 0:

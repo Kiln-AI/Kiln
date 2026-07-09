@@ -2,9 +2,12 @@
 
 Phase 2 shipped the CHILDREN SUBSET of the surface specified in the
 functional spec §2 (list?parent= / get / events observer SSE / stop /
-messages); phase 3 folds the AUTO-MODE surface in, replacing
-``/api/chat/auto/*`` one-for-one. Phase 4 adds the interactive endpoints
-(approvals / interactive create).
+messages); phase 3 folded the AUTO-MODE surface in, replacing
+``/api/chat/auto/*`` one-for-one; phase 4 folds INTERACTIVE chat in —
+create/adopt (``kind="interactive"``), the approvals endpoints, and the
+consent-decline fold into ``/{sid}/auto`` — and DELETES the old interactive
+surface (``POST /api/chat``, ``POST /api/chat/execute-tools``,
+``ChatStreamSession``).
 
 Old → new mapping (behavior preserved, vocabulary unified):
 
@@ -15,11 +18,21 @@ Old → new mapping (behavior preserved, vocabulary unified):
 - ``POST /api/chat/subagents/{id}/stop``        → ``POST /api/conversations/{sid}/stop``
 - ``POST /api/chat/subagents/{id}/message``     → ``POST /api/conversations/{sid}/messages``
 - ``POST /api/chat/auto/enable``                → ``POST /api/conversations`` (create/flip)
-- ``POST /api/chat/auto/decline``               → ``POST /api/conversations/auto/decline``
+- ``POST /api/chat/auto/decline``               → ``POST /api/conversations/{sid}/auto``
+                                                  (enabled=false + decline ctx)
 - ``POST /api/chat/auto/{run}/stop``            → ``POST /api/conversations/{sid}/stop``
 - ``POST /api/chat/auto/{run}/message``         → ``POST /api/conversations/{sid}/messages``
 - ``GET  /api/chat/auto/{run}/events``          → ``GET /api/conversations/{sid}/events``
 - ``GET  /api/chat/auto/resolve``               → ``GET /api/conversations/resolve``
+- ``POST /api/chat``                            → ``POST /api/conversations``
+                                                  (kind=interactive create/adopt)
+                                                  + ``POST /{sid}/messages``
+                                                  (idle send starts the turn)
+- ``POST /api/chat/execute-tools``              → ``GET /{sid}/approvals`` +
+                                                  ``POST /{sid}/approvals/decisions``
+                                                  (the run parks instead of the
+                                                  stream ending — same wire
+                                                  bodies upstream)
 - (new, functional spec §2) ``POST /api/conversations/{sid}/auto`` — flag
   flips on an EXISTING conversation.
 
@@ -36,17 +49,12 @@ so the old surfaces are deleted in the same phase that ports each kind.
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Annotated, Any, AsyncGenerator
+from typing import Annotated, Any, AsyncGenerator, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
 
-from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
-from app.desktop.studio_server.chat.stream_session import (
-    ChatStreamSession,
-    ToolCallInfo,
-)
+from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 # Keepalive stays the shared jobs helper, exactly as the old auto/sub-agent
@@ -144,26 +152,46 @@ class SendConversationMessageRequest(BaseModel):
     content: str
 
 
-class CreateConversationRequest(BaseModel):
-    """``POST /api/conversations`` body — phase 3 scope: AUTO conversations
-    (the old ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field
-    semantics preserved verbatim). TODO(phase-4): grows a ``kind`` selector
-    when interactive conversations are created here too (functional spec §2
-    "create (optionally with first message)")."""
+class ConversationMessageAccepted(BaseModel):
+    """202 body for ``POST /{sid}/messages`` (phase 4): the accepted
+    message's stable server-minted id. The sending tab renders the typed
+    text locally and uses this id to dedupe the run's ``user-message`` echo
+    (whose content carries the app-context header only OTHER observers
+    should render, stripped)."""
 
-    # The conversation's current leaf trace id. Optional (Revision R2): a
-    # brand-new conversation has no trace yet, so the seed carries only the
-    # first user message in ``extra_messages`` and the backend starts a fresh
-    # conversation, minting the first trace on the opening turn.
+    message_id: str
+
+
+class CreateConversationRequest(BaseModel):
+    """``POST /api/conversations`` body.
+
+    ``kind`` selects the flow (phase 4):
+
+    - ``"auto"`` (default — the phase-3 enable flow unchanged): the old
+      ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
+      preserved verbatim. Creates — or flips — the auto conversation.
+    - ``"interactive"``: create-or-adopt the interactive conversation for
+      ``trace_id`` (functional spec §2 "create"; idempotent — a trace that
+      already resolves to a live record returns that record's session id).
+      Only ``trace_id`` applies; the first message goes through
+      ``POST /{sid}/messages`` like every other message.
+    """
+
+    kind: Literal["interactive", "auto"] = "auto"
+    # The conversation's current leaf trace id. Optional (Revision R2 for
+    # auto: a brand-new conversation has no trace yet, so the seed carries
+    # only the first user message in ``extra_messages`` and the backend
+    # starts a fresh conversation; for interactive: a brand-new conversation
+    # simply creates an empty record whose first /messages send opens it).
     trace_id: str | None = None
     # Resolve this enable_auto_mode call as "enabled" before the first round
-    # (the consent-accept flow).
+    # (the consent-accept flow). Auto kind only.
     enable_tool_call_id: str | None = None
     # Sibling client tools to auto-execute first (usually empty — the model
-    # is instructed to call enable_auto_mode alone).
+    # is instructed to call enable_auto_mode alone). Auto kind only.
     pending_tool_calls: list[ToolCallInfo] = Field(default_factory=list)
     # Extra messages to prepend (e.g. the first user message on the
-    # armed-first-send path).
+    # armed-first-send path). Auto kind only.
     extra_messages: list[dict[str, Any]] = Field(default_factory=list)
     # Model-supplied reason from the enable_auto_mode call. The old world
     # stored it on AutoRunRecord.reason purely for the (deleted)
@@ -176,10 +204,12 @@ class ConversationCreatedResponse(BaseModel):
     session_id: str
 
 
-class DeclineAutoModeRequest(BaseModel):
-    """Old ``DeclineAutoRequest`` verbatim (POST /api/chat/auto/decline)."""
+class DeclineAutoModeContext(BaseModel):
+    """Consent-decline context riding ``POST /{sid}/auto`` with
+    ``enabled=false`` (phase 4 — the old ``DeclineAutoRequest`` minus its
+    ``trace_id``: the conversation record's own leaf is authoritative now
+    that the conversation is addressed by session id)."""
 
-    trace_id: str
     enable_tool_call_id: str
     # Other client tool calls from the same turn the backend is awaiting
     # results for. Normally empty (the model is instructed to call
@@ -190,9 +220,36 @@ class DeclineAutoModeRequest(BaseModel):
 
 class SetAutoModeRequest(BaseModel):
     """``POST /api/conversations/{sid}/auto`` — flip the auto-mode flag on an
-    EXISTING conversation (functional spec §2)."""
+    EXISTING conversation (functional spec §2). With ``enabled=false`` and a
+    ``decline`` context this is the consent-decline flow (the old
+    ``/api/chat/auto/decline``, folded in): the pending ``enable_auto_mode``
+    call resolves as declined + denied siblings through an interactive
+    continuation turn streaming on the observer channel."""
 
     enabled: bool
+    decline: DeclineAutoModeContext | None = None
+
+
+class PendingApprovalsResponse(BaseModel):
+    """``GET /{sid}/approvals`` — the parked batch awaiting decisions.
+
+    ``items`` is the exact wire shape of the ``tool-calls-pending`` event
+    items (toolCallId/toolName/input/requiresApproval[/permission/
+    approvalDescription]) so the approval box consumes either source
+    identically; ``batch_id`` is what ``POST decisions`` must echo back
+    (validated — a stale batch id 404s, an already-decided batch 409s)."""
+
+    batch_id: str
+    items: list[dict[str, Any]]
+
+
+class ApprovalDecisionsRequest(BaseModel):
+    """``POST /{sid}/approvals/decisions`` — one decision set for the whole
+    batch (partial decisions are not allowed; matches today's UI, functional
+    spec §2). Keys are tool_call_ids; True = run, False/absent = deny."""
+
+    batch_id: str
+    decisions: dict[str, bool]
 
 
 class ResolveConversationResponse(BaseModel):
@@ -251,29 +308,17 @@ def _resolve_parent_key(parent: str) -> str:
     TRACE id until phase 5 keys everything on session ids, so resolution
     tries, in order:
 
-    1. the old-loop interactive alias chain (``trace:<first-leaf>`` parent
-       keys — any leaf the conversation ever had resolves; dies in phase 4
-       with ``ParentConversationIndex``);
-    2. the supervisor's whole-chain trace index, for parents that ARE
-       supervisor records (auto since phase 3; interactive joins in phase 4):
-       any leaf the conversation ever had resolves to its SESSION id, which
-       is exactly what its children carry as ``parent_session_id``. Without
-       this step an auto parent's children are invisible to the tab strip —
-       the browser only ever holds trace ids, and the auto ``auto:<run_id>``
-       alias chain that used to bridge this died with ``chat/auto/``.
-       Guarded to non-subagent kinds: a CHILD session's own leaves are also
-       indexed, and a child's leaf is never a parent handle (children can't
-       have children — depth guard);
-    3. the value itself, unresolved — which (a) yields the correct empty list
+    1. the supervisor's whole-chain trace index (every parent is a supervisor
+       record since phase 4 — the phase-2/3 ``trace:<leaf>`` alias chain died
+       with ``ParentConversationIndex``): any leaf the conversation ever had
+       resolves to its SESSION id, which is exactly what its children carry
+       as ``parent_session_id``. Guarded to non-subagent kinds: a CHILD
+       session's own leaves are also indexed, and a child's leaf is never a
+       parent handle (children can't have children — depth guard);
+    2. the value itself, unresolved — which (a) yields the correct empty list
        for unknown traces and (b) already works for real parent session ids,
-       so phases 4–5 need no route change to switch the browser to session
-       ids.
+       so phase 5 needs no route change to switch the browser to session ids.
     """
-    from app.desktop.studio_server.chat.orchestration import parent_index
-
-    alias = parent_index.alias_for_trace(parent)
-    if alias is not None:
-        return alias
     session_id = conversation_supervisor.session_for_trace(parent)
     if session_id is not None:
         record = conversation_supervisor.get(session_id)
@@ -313,7 +358,7 @@ def connect_conversations_api(app: FastAPI) -> None:
 
     @app.post(
         "/api/conversations",
-        summary="Create (or flip) an auto conversation",
+        summary="Create (or adopt/flip) a conversation",
         tags=["Copilot"],
         openapi_extra=DENY_AGENT,
     )
@@ -321,14 +366,31 @@ def connect_conversations_api(app: FastAPI) -> None:
     async def create_conversation(
         body: CreateConversationRequest,
     ) -> ConversationCreatedResponse:
-        """Enable auto mode: create — or flip, if the trace already resolves
-        to a live auto record — the conversation on the supervisor and start
-        the first burst if the seed carries anything to run (old
-        ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for the
-        preserved entry shapes, including the ARMED-only manual enable that
-        never POSTs an empty turn upstream). The run is supervised by the
-        conversation supervisor and survives client disconnects."""
+        """Create a conversation, by kind (functional spec §2):
+
+        - ``kind="interactive"`` (phase 4): create-or-adopt the interactive
+          conversation for ``trace_id`` — the replacement for the old
+          ``POST /api/chat`` conversation-per-request model. Idempotent: a
+          trace resolving to a live record (any kind) returns that record's
+          session id. A fresh adopt rehydrates pending approvals from the
+          persisted trace tail (functional spec §5 restart recovery).
+        - ``kind="auto"`` (default): enable auto mode — create, or flip if
+          the trace already resolves to a live record, and start the first
+          burst if the seed carries anything to run (old
+          ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for
+          the preserved entry shapes, including the ARMED-only manual enable
+          that never POSTs an empty turn upstream).
+
+        Runs are supervised by the conversation supervisor and survive client
+        disconnects."""
         upstream_url, headers = _upstream_target()
+        if body.kind == "interactive":
+            record = await conversation_supervisor.adopt_interactive(
+                body.trace_id,
+                upstream_url=upstream_url,
+                headers=headers,
+            )
+            return ConversationCreatedResponse(session_id=record.session_id)
         try:
             record = await conversation_supervisor.enable_auto(
                 trace_id=body.trace_id,
@@ -356,51 +418,6 @@ def connect_conversations_api(app: FastAPI) -> None:
                 body.reason,
             )
         return ConversationCreatedResponse(session_id=record.session_id)
-
-    @app.post(
-        "/api/conversations/auto/decline",
-        summary="Decline auto mode and resume interactive chat",
-        tags=["Copilot"],
-        openapi_extra=DENY_AGENT,
-    )
-    @no_write_lock
-    async def decline_auto_mode(
-        body: DeclineAutoModeRequest,
-    ) -> CancellableStreamingResponse:
-        """Resolve the pending ``enable_auto_mode`` call as declined and
-        resume the normal interactive chat stream; sibling tool calls are
-        resolved as denied. Byte-for-byte the old ``/api/chat/auto/decline``:
-        the interactive conversation still lives on the OLD loop
-        (``ChatStreamSession``), so declining is an interactive continuation,
-        not a supervisor operation. TODO(phase-4): folds into
-        ``POST /{{sid}}/auto`` (enabled=false + consent context) once
-        interactive conversations own supervisor records and the parked
-        enable call resolves through the interactive continuation there."""
-        upstream_url, headers = _upstream_target()
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "tool",
-                "tool_call_id": body.enable_tool_call_id,
-                "content": json.dumps({"status": "declined"}, ensure_ascii=False),
-            }
-        ]
-        for sibling in body.siblings:
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": sibling.tool_call_id,
-                    "content": DENIED_TOOL_OUTPUT,
-                }
-            )
-        session = ChatStreamSession(
-            upstream_url=upstream_url,
-            headers=headers,
-            initial_body={"trace_id": body.trace_id, "messages": messages},
-        )
-        return CancellableStreamingResponse(
-            content=session.stream(),
-            media_type="text/event-stream",
-        )
 
     @app.get(
         "/api/conversations/resolve",
@@ -531,13 +548,37 @@ def connect_conversations_api(app: FastAPI) -> None:
         """Flip the auto-mode flag on an EXISTING conversation (functional
         spec §2). ``enabled=false`` → today's disable semantics (old
         ``AutoChatRegistry.disable``: cancel a live burst, publish the off
-        state with reason ``user_disabled``, TTL GC, cascade-stop sub-agent
-        children); ``enabled=true`` → re-arm (ARMED-only: flag on, no
-        upstream POST — the next message starts the burst). 404 unknown,
-        409 for non-auto records (phase 3: interactive conversations aren't
-        supervisor records yet, so only auto records are flippable —
-        TODO(phase-4) lifts this), 429 when re-enabling would exceed the
-        concurrency cap."""
+        state with reason ``user_disabled``, cascade-stop sub-agent children;
+        phase 4: the record then swaps back to its interactive life instead
+        of TTL GC). ``enabled=false`` + ``decline`` → the consent-decline
+        flow (old ``/api/chat/auto/decline``, folded in): resolve the pending
+        ``enable_auto_mode`` call as declined + denied siblings via an
+        interactive continuation turn that streams on the observer channel.
+        ``enabled=true`` → enable/re-arm: the record flips to the auto policy
+        (ARMED-only: flag on, no upstream POST — the next message starts the
+        burst). 404 unknown, 409 for sub-agent records / a decline racing an
+        in-flight run, 429 when enabling would exceed the concurrency cap."""
+        if not body.enabled and body.decline is not None:
+            outcome = conversation_supervisor.decline_auto(
+                session_id,
+                enable_tool_call_id=body.decline.enable_tool_call_id,
+                siblings=body.decline.siblings,
+            )
+            if outcome == "not_found":
+                raise HTTPException(
+                    status_code=404, detail=f"Conversation not found: {session_id}"
+                )
+            if outcome == "invalid":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Conversation cannot decline auto mode: {session_id}",
+                )
+            if outcome == "busy":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Conversation already has a run in flight: {session_id}",
+                )
+            return Response(status_code=202)
         try:
             outcome = await conversation_supervisor.set_auto_flag(
                 session_id, body.enabled
@@ -555,6 +596,76 @@ def connect_conversations_api(app: FastAPI) -> None:
             )
         return Response(status_code=202)
 
+    @app.get(
+        "/api/conversations/{session_id}/approvals",
+        summary="Get the conversation's pending approval batch",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def get_pending_approvals(
+        session_id: Annotated[str, Path(description="The conversation session id.")],
+    ) -> PendingApprovalsResponse:
+        """The parked approval batch awaiting decisions (functional spec §2).
+
+        Replaces the tail half of the old two-request approval flow (the
+        stream used to END at ``tool-calls-pending`` and the browser POSTed
+        ``/api/chat/execute-tools``): the run now PARKS and the browser
+        fetches the batch here — keyed off the ``tool-calls-pending`` event /
+        the AWAITING_APPROVAL state — then answers via
+        ``POST /{sid}/approvals/decisions``. When no batch is in memory, the
+        supervisor attempts trace-tail rehydration first (functional spec §5:
+        desktop restart / graceful-stop leftovers), so a recoverable batch is
+        indistinguishable from a live one to the browser. 404 when the
+        conversation is unknown or nothing is pending."""
+        if conversation_supervisor.get(session_id) is None:
+            raise HTTPException(
+                status_code=404, detail=f"Conversation not found: {session_id}"
+            )
+        batch = conversation_supervisor.pending_approval(session_id)
+        if batch is None or batch.decided.is_set():
+            batch = await conversation_supervisor.rehydrate_pending_approvals(
+                session_id
+            )
+        if batch is None or batch.decided.is_set():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No pending approvals for conversation: {session_id}",
+            )
+        return PendingApprovalsResponse(batch_id=batch.batch_id, items=batch.items)
+
+    @app.post(
+        "/api/conversations/{session_id}/approvals/decisions",
+        summary="Resolve the conversation's pending approval batch",
+        tags=["Copilot"],
+        status_code=202,
+        openapi_extra=DENY_AGENT,
+    )
+    @no_write_lock
+    async def post_approval_decisions(
+        session_id: Annotated[str, Path(description="The conversation session id.")],
+        body: ApprovalDecisionsRequest,
+    ) -> Response:
+        """Resolve a parked approval batch (functional spec §2/§5): the run
+        resumes (or a resume run starts, for a rehydrated batch) and results
+        stream on the events channel. One decision set per batch — first
+        decision set wins; a second tab deciding the same batch gets 409;
+        an unknown conversation/batch id gets 404."""
+        outcome = conversation_supervisor.decide(
+            session_id, body.batch_id, body.decisions
+        )
+        if outcome == "not_found":
+            raise HTTPException(
+                status_code=404,
+                detail=f"No pending approval batch {body.batch_id} for "
+                f"conversation: {session_id}",
+            )
+        if outcome == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Approval batch already decided: {body.batch_id}",
+            )
+        return Response(status_code=202)
+
     @app.post(
         "/api/conversations/{session_id}/messages",
         summary="Send a user message into a conversation",
@@ -568,25 +679,29 @@ def connect_conversations_api(app: FastAPI) -> None:
             str, Path(description="The conversation session id to message.")
         ],
         body: SendConversationMessageRequest,
-    ) -> Response:
-        """Queue a user message (202). For a RUNNING child this is the steer
-        path; for an auto conversation it is the inject/idle-re-arm path —
-        drained at the next round boundary (or seeding a fresh burst),
-        echoed to observers at enqueue time. 404 for unknown conversations,
-        409 for terminal ones and for flag-OFF auto conversations (the old
-        auto message endpoint's "no longer active" refusal — a send must
-        never start an auto-approving burst without an active consent)."""
+    ) -> ConversationMessageAccepted:
+        """Queue a user message (202, functional spec §2). Behavior by state:
+        IDLE → starts a turn/burst (an interactive send here is the phase-4
+        replacement for the old ``POST /api/chat``, byte-identical upstream);
+        RUNNING → queued into the inbox, drained at the next round boundary
+        (steer/inject); AWAITING_APPROVAL → queued until decisions resolve.
+        The message is echoed to observers at enqueue time; the response
+        carries its stable id so the sending tab can dedupe its own echo.
+        404 for unknown conversations, 409 for terminal ones (and for the
+        narrow flag-off-but-still-auto-policy window during a disable — the
+        old "no longer active" refusal; once the settle swaps the record back
+        to interactive, sends run normal gated turns)."""
         record = conversation_supervisor.get(session_id)
         if record is None:
             raise HTTPException(
                 status_code=404, detail=f"Conversation not found: {session_id}"
             )
-        accepted = conversation_supervisor.send_message(session_id, body.content)
-        if not accepted:
+        message_id = conversation_supervisor.send_message(session_id, body.content)
+        if message_id is None:
             detail = (
                 f"Auto mode is no longer active: {session_id}"
                 if record.kind == "auto" and not record.auto_flag
                 else f"Conversation already finished: {session_id}"
             )
             raise HTTPException(status_code=409, detail=detail)
-        return Response(status_code=202)
+        return ConversationMessageAccepted(message_id=message_id)

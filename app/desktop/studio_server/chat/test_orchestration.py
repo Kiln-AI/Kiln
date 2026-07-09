@@ -1,12 +1,18 @@
 """execute_orchestration_tool dispatch tests against the unified runtime.
 
 Port of the old ``chat/subagents/test_orchestration.py`` (deleted in phase 2)
-plus the registry-level behaviors that moved here with the executor (report
-drains, delete cascade). The assertions are unchanged where the old suite had
-them — they are the behavior contract of functional spec §3 "Sub-agents".
-Phase 3: auto parents are supervisor records, so their ctx carries a real
-``parent_session_id`` (the ``auto:<run_id>`` keys, alias registration, and
-the legacy report bridge are gone)."""
+plus the registry-level behaviors that moved here with the executor (the
+delete cascade). The assertions are unchanged where the old suite had them —
+they are the behavior contract of functional spec §3 "Sub-agents".
+
+Phase 4: EVERY parent is a supervisor record, so the ctx carries only
+``{parent_session_id, depth}`` — the ``ParentConversationIndex`` alias chain,
+its consent set (``is_spawn_consented``), and the trace-keyed report drain
+(``pending_reports_for_trace``) died with the old interactive loop. Consent
+lives on ``ConversationRecord.spawn_consent_granted`` (engine-written, tested
+in runtime/test_engine.py) and report drains are session-keyed
+(supervisor.drain_reports, exercised end-to-end in runtime/test_supervisor.py's
+idle-start drain test)."""
 
 from __future__ import annotations
 
@@ -24,9 +30,7 @@ from app.desktop.studio_server.chat import orchestration as orchestration_module
 from app.desktop.studio_server.chat.orchestration import (
     ORCHESTRATION_TOOL_NAMES,
     OrchestrationContext,
-    ParentConversationIndex,
     execute_orchestration_tool,
-    is_spawn_consented,
 )
 from app.desktop.studio_server.chat.runtime.engine import ConversationEngine
 from app.desktop.studio_server.chat.runtime.models import RunState
@@ -35,21 +39,19 @@ from app.desktop.studio_server.chat.runtime.supervisor import ConversationSuperv
 
 @pytest.fixture
 def supervisor():
-    """A fresh supervisor + parent index patched in as the module singletons,
-    with a hanging engine (no network). Patched via the module OBJECT (not a
-    string path) so it hits the same module instance these relative imports
-    resolved to — the exact pattern the old registry-patching fixture used."""
+    """A fresh supervisor patched in as the module singleton, with a hanging
+    engine (no network). Patched via the module OBJECT (not a string path) so
+    it hits the same module instance these imports resolved to — the exact
+    pattern the old registry-patching fixture used."""
     fresh = ConversationSupervisor(
         subagent_max_concurrent=10, subagent_max_per_parent=3
     )
-    fresh_index = ParentConversationIndex()
 
     async def _hang(self, record, policy, io, initial_body=None) -> None:
         await asyncio.Event().wait()
 
     with (
         patch.object(orchestration_module, "conversation_supervisor", fresh),
-        patch.object(orchestration_module, "parent_index", fresh_index),
         patch.object(ConversationEngine, "run", _hang),
         patch(
             "app.desktop.studio_server.utils.copilot_utils.get_copilot_api_key",
@@ -59,8 +61,21 @@ def supervisor():
         yield fresh
 
 
-def _ctx(trace: str = "leaf-1") -> OrchestrationContext:
-    return OrchestrationContext(parent_trace_id=trace)
+def _parent_ctx(
+    supervisor: ConversationSupervisor,
+    kind: str = "interactive",
+    leaf: str | None = "leaf-1",
+) -> OrchestrationContext:
+    """A real supervisor-resident parent + its ctx (phase 4: parent identity
+    is always a session id; there is no trace-keyed parent anymore)."""
+    record = supervisor.create_conversation(
+        kind, upstream_url="https://example.test", headers={}
+    )
+    if leaf is not None:
+        record.current_leaf_trace_id = leaf
+        record.seen_trace_ids.append(leaf)
+        supervisor._trace_index[leaf] = record.session_id
+    return OrchestrationContext(parent_session_id=record.session_id)
 
 
 def _spawn_args(**overrides):
@@ -88,7 +103,7 @@ async def test_no_context_rejects(supervisor):
 
 
 async def test_spawn_and_status_roundtrip(supervisor):
-    ctx = _ctx()
+    ctx = _parent_ctx(supervisor)
     spawned = await _call("spawn_subagent", _spawn_args(), ctx)
     assert spawned["status"] == "spawned"
     sid = spawned["subagent_id"]
@@ -100,17 +115,31 @@ async def test_spawn_and_status_roundtrip(supervisor):
     assert [s["subagent_id"] for s in status["subagents"]] == [sid]
     assert status["subagents"][0]["state"] == "running"
 
-    # Spawn marks consent for later downgrade.
-    assert is_spawn_consented(ctx) is True
+
+async def test_spawn_seed_lineage_reads_parent_records_leaf(supervisor):
+    # Phase 4: the agent block's parent_trace_id (durable backend lineage)
+    # comes from the parent RECORD's current leaf — the single source the
+    # engine's on_trace keeps fresh (the old per-round ctx refresh is gone).
+    ctx = _parent_ctx(supervisor, leaf="leaf-current")
+    with patch.object(
+        supervisor, "spawn_subagent", wraps=supervisor.spawn_subagent
+    ) as spawn_spy:
+        spawned = await _call("spawn_subagent", _spawn_args(), ctx)
+    assert spawned["status"] == "spawned"
+    seed = spawn_spy.call_args.args[0]
+    assert seed.parent_trace_id == "leaf-current"
+    await supervisor.stop(spawned["subagent_id"])
 
 
 async def test_spawn_validates_args(supervisor):
-    result = await _call("spawn_subagent", _spawn_args(prompt="  "), _ctx())
+    result = await _call(
+        "spawn_subagent", _spawn_args(prompt="  "), _parent_ctx(supervisor)
+    )
     assert result["status"] == "error"
 
 
 async def test_spawn_cap_surfaces_as_tool_error(supervisor):
-    ctx = _ctx()
+    ctx = _parent_ctx(supervisor)
     for i in range(3):
         await _call("spawn_subagent", _spawn_args(name=f"h{i}"), ctx)
     result = await _call("spawn_subagent", _spawn_args(name="h3"), ctx)
@@ -121,8 +150,8 @@ async def test_spawn_cap_surfaces_as_tool_error(supervisor):
 
 
 async def test_ownership_scoping(supervisor):
-    ctx_a = _ctx("leaf-a")
-    ctx_b = _ctx("leaf-b")
+    ctx_a = _parent_ctx(supervisor, leaf="leaf-a")
+    ctx_b = _parent_ctx(supervisor, leaf="leaf-b")
     spawned = await _call("spawn_subagent", _spawn_args(), ctx_a)
     sid = spawned["subagent_id"]
 
@@ -136,7 +165,7 @@ async def test_ownership_scoping(supervisor):
 
 
 async def test_wait_returns_statuses_and_timeouts(supervisor):
-    ctx = _ctx()
+    ctx = _parent_ctx(supervisor)
     a = (await _call("spawn_subagent", _spawn_args(name="a"), ctx))["subagent_id"]
     b = (await _call("spawn_subagent", _spawn_args(name="b"), ctx))["subagent_id"]
     await supervisor.stop(a)
@@ -161,7 +190,7 @@ async def test_wait_returns_statuses_and_timeouts(supervisor):
 
 
 async def test_stop_tool(supervisor):
-    ctx = _ctx()
+    ctx = _parent_ctx(supervisor)
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
     assert (await _call("stop_subagent", {"subagent_id": sid}, ctx))[
         "status"
@@ -174,14 +203,6 @@ async def test_stop_tool(supervisor):
     ] == "already_finished"
 
 
-async def test_supervisor_parent_is_implicitly_consented(supervisor):
-    # Phase 3: every supervisor-resident parent is an AUTO conversation, whose
-    # consent dialog covers autonomous work (the old "auto-run parents are
-    # implicitly consented" rule, keyed by session id now).
-    ctx = OrchestrationContext(parent_session_id="cv_parent1")
-    assert is_spawn_consented(ctx) is True
-
-
 def test_tool_name_set_matches_backend_contract():
     assert ORCHESTRATION_TOOL_NAMES == {
         "spawn_subagent",
@@ -191,58 +212,49 @@ def test_tool_name_set_matches_backend_contract():
     }
 
 
-async def test_supervisor_parent_children_keyed_by_session_id(supervisor):
-    # Children of a supervisor-resident (auto) parent are keyed by the
-    # parent's SESSION id — stable across leaf rotations, so no alias
-    # chaining exists for them anymore (the old auto:<run_id> key +
-    # register_parent_alias plumbing died with chat/auto/). The trace id
-    # still rides the ctx purely as backend spawn lineage.
+async def test_children_keyed_by_parent_session_id(supervisor):
+    # Children are keyed by the parent's SESSION id — stable across leaf
+    # rotations, so no alias chaining exists anywhere anymore (the
+    # trace:<leaf> keys died with ParentConversationIndex in phase 4).
     parent = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}
     )
-    ctx = OrchestrationContext(
-        parent_session_id=parent.session_id, parent_trace_id="leaf-1"
-    )
+    ctx = OrchestrationContext(parent_session_id=parent.session_id)
     assert ctx.parent_key() == parent.session_id
     spawned = await _call("spawn_subagent", _spawn_args(), ctx)
     sid = spawned["subagent_id"]
 
     assert [r.session_id for r in supervisor.children_of(parent.session_id)] == [sid]
-    # No alias was minted for the leaf — session ids need none.
-    assert orchestration_module.parent_index.alias_for_trace("leaf-1") is None
-    # Consent stayed off the parent index too (it lives on the record /
-    # implicit-auto rule, not in the phase-4-doomed index).
-    assert not orchestration_module.parent_index.is_consented(parent.session_id)
     await supervisor.stop(sid)
 
 
-# ── Behaviors that moved here from the old registry (report drains, delete
+# ── Behaviors that moved here from the old registry (report routing, delete
 #    cascade). ──────────────────────────────────────────────────────────────
 
 
 async def test_interactive_parent_report_queued_and_drained_once(supervisor):
-    ctx = _ctx("leaf-1")
+    ctx = _parent_ctx(supervisor)
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
     await supervisor.stop(sid)
 
-    # The parent's leaf rotates; the alias chain keeps the key reachable.
-    orchestration_module.parent_index.note_parent_trace("leaf-1", "leaf-2")
-    reports = orchestration_module.pending_reports_for_trace("leaf-2")
+    # Queued for the parent's next-turn / mid-stream drain — session-keyed
+    # since phase 4 (the trace-keyed pending_reports_for_trace died with the
+    # old loop; the engine drains via io.drain_reports and the idle-start
+    # send drains via supervisor.send_message).
+    assert supervisor.has_pending_reports(ctx.parent_key())
+    reports = supervisor.drain_reports(ctx.parent_key())
     assert len(reports) == 1
     assert f'id="{sid}"' in reports[0]
     assert 'status="stopped"' in reports[0]
-    # Drained exactly once; an unknown trace never mints an identity.
-    assert orchestration_module.pending_reports_for_trace("leaf-2") == []
-    assert orchestration_module.pending_reports_for_trace("never-seen") == []
-    assert orchestration_module.parent_index.alias_for_trace("never-seen") is None
+    # Drained exactly once.
+    assert supervisor.drain_reports(ctx.parent_key()) == []
 
 
 async def test_auto_parent_report_injected_natively_via_supervisor_inbox(supervisor):
-    # Phase 3: a child of a supervisor-resident AUTO parent delivers its
-    # framed report straight through the supervisor's inbox routing — the
-    # phase-2 legacy_report_deliverer bridge (which pushed into the OLD auto
-    # registry) is gone. The injection wakes the idle parent into a burst
-    # (engine hangs here; the state transition is the observable).
+    # A child of an AUTO parent delivers its framed report straight through
+    # the supervisor's inbox routing. The injection wakes the idle parent
+    # into a burst (engine hangs here; the state transition is the
+    # observable).
     parent = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}
     )
@@ -259,28 +271,17 @@ async def test_auto_parent_report_injected_natively_via_supervisor_inbox(supervi
     await supervisor.stop(parent.session_id)
 
 
-async def test_in_burst_disable_reports_drain_on_next_interactive_turn(supervisor):
-    # MODERATE regression guard (full flow): an auto burst spawns a child →
-    # the model calls disable_auto_mode IN-BURST (the engine's
-    # resolve_terminal outcome: flag off + user_disabled, deliberately NO
+async def test_in_burst_disable_reports_queue_for_the_swapped_parent(supervisor):
+    # An auto burst spawns a child → the model calls disable_auto_mode
+    # IN-BURST (resolve_terminal: flag off + user_disabled, deliberately NO
     # child cascade — the old _supervise never cascaded on the tool path) →
     # the child settles AFTER the flag cleared → its report queues under the
-    # auto parent's SESSION id → the user continues on the OLD interactive
-    # loop, whose injection drains (routes.py next-turn, stream_session
-    # mid-stream) only hold the conversation's TRACE id — the supervisor
-    # trace-index fallback in pending_reports_for_trace must resolve it, or
-    # the report is stranded.
+    # parent's SESSION id, where the conversation's next interactive turn
+    # (supervisor.send_message idle-start drain) picks it up.
     parent = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}
     )
-    # Adopt the conversation's leaf exactly like enable_auto does.
-    parent.current_leaf_trace_id = "leaf-auto-1"
-    parent.seen_trace_ids.append("leaf-auto-1")
-    supervisor._trace_index["leaf-auto-1"] = parent.session_id
-
-    ctx = OrchestrationContext(
-        parent_session_id=parent.session_id, parent_trace_id="leaf-auto-1"
-    )
+    ctx = OrchestrationContext(parent_session_id=parent.session_id)
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
 
     # In-burst disable: the engine clears the flag and ends the burst; the
@@ -289,19 +290,14 @@ async def test_in_burst_disable_reports_drain_on_next_interactive_turn(superviso
     parent.idle_reason = "user_disabled"
 
     await supervisor.stop(sid)  # the surviving child settles
-    # Queued (the off parent can't take inbox messages), not lost.
+    # Queued (the off parent can't take inbox messages), not lost — the
+    # session-keyed queue survives the policy swap because the record and
+    # its session id are the SAME object across the flip.
     assert supervisor.has_pending_reports(parent.session_id)
-
-    # The resumed interactive turn drains by trace id.
-    reports = orchestration_module.pending_reports_for_trace("leaf-auto-1")
+    reports = supervisor.drain_reports(parent.session_id)
     assert len(reports) == 1
     assert f'id="{sid}"' in reports[0]
     assert supervisor.get(sid).report_delivered is True
-    # Drained exactly once; a child's own leaf never drains a queue (the
-    # fallback's kind guard).
-    assert orchestration_module.pending_reports_for_trace("leaf-auto-1") == []
-    supervisor._trace_index["child-leaf"] = sid
-    assert orchestration_module.pending_reports_for_trace("child-leaf") == []
 
 
 async def test_auto_parent_flag_off_falls_back_to_queue(supervisor):
@@ -320,27 +316,27 @@ async def test_auto_parent_flag_off_falls_back_to_queue(supervisor):
 
 
 async def test_handle_session_deleted_stops_parent_children_and_child(supervisor):
-    ctx = _ctx("leaf-1")
+    ctx = _parent_ctx(supervisor, leaf="leaf-1")
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
 
-    # Deleting the parent session stops its children (and drops reports).
+    # Deleting the parent session stops its children (and drops reports) —
+    # resolved through the supervisor's whole-chain trace index. The explicit
+    # stop_children matters since phase 4: a plain interactive stop() no
+    # longer cascades, but a DELETED parent's children have nothing left to
+    # consume their reports.
     await orchestration_module.handle_session_deleted("leaf-1")
     assert supervisor.get(sid).state == RunState.STOPPED
     assert not supervisor.has_pending_reports(ctx.parent_key())
+    parent_record = supervisor.get(ctx.parent_key())
+    assert parent_record is not None and parent_record.state == RunState.IDLE
 
     # Deleting a child's own session stops that child. Simulate the child's
     # session trace becoming known via the supervisor's trace index.
-    ctx2 = _ctx("leaf-2")
+    ctx2 = _parent_ctx(supervisor, leaf="leaf-2")
     sid2 = (await _call("spawn_subagent", _spawn_args(name="h2"), ctx2))["subagent_id"]
     supervisor._trace_index["child-leaf"] = sid2
     await orchestration_module.handle_session_deleted("child-leaf")
     assert supervisor.get(sid2).state == RunState.STOPPED
 
-
-async def test_consent_memory_survives_leaf_rotation(supervisor):
-    index = orchestration_module.parent_index
-    key = index.parent_key_for_trace("leaf-1")
-    index.mark_consented(key)
-    index.note_parent_trace("leaf-1", "leaf-2")
-    assert index.parent_key_for_trace("leaf-2") == key
-    assert is_spawn_consented(_ctx("leaf-2")) is True
+    # An unknown trace is a no-op.
+    await orchestration_module.handle_session_deleted("never-seen")

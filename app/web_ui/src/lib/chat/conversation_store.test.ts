@@ -799,24 +799,27 @@ describe("shouldCollapseChildTabs", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Port of auto_run_store.test.ts (deleted in phase 3 with the store it
-// covered, which was folded into conversation_store.ts): the same behavior
-// contracts, asserted against the auto conversation store — new endpoints
-// (/api/conversations) and the unified `conversation-state` vocabulary
-// replacing auto-mode-on/off/idle/state. Event translation used throughout:
+// Main conversation store — the phase-4 generalization of the auto store
+// (itself the phase-3 port of auto_run_store.test.ts). The same behavior
+// contracts hold; new interactive behaviors are covered alongside: ensure
+// (create-or-adopt), the interactive idle transition, approvals fetch/decide,
+// the consent event on the observer, and the off-transition no longer
+// closing the stream (an off-auto conversation IS the same live interactive
+// conversation). Event translation used throughout:
 //
 //   auto-mode-on{run_id}          → conversation-state{state:"running", auto_flag:true}
 //   auto-mode-idle{reason}        → conversation-state{state:"idle", auto_flag:true, idle_reason}
 //   auto-mode-off{reason}         → conversation-state{auto_flag:false, idle_reason}
-//   auto-mode-state{working}      → the same conversation-state marker
+//   old interactive stream end    → conversation-state{state:"idle", auto_flag:false}
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  createAutoConversationStore,
-  type AutoConversationSink,
-  type AutoConversationStore,
+  createMainConversationStore,
+  type MainConversationSink,
+  type MainConversationStore,
 } from "./conversation_store"
 import type {
+  AutoModeConsentRequiredPayload,
   ChatMessage,
   ContextUsage,
   ToolCallsPendingItem,
@@ -834,12 +837,16 @@ interface SinkCalls {
   userMessages: string[]
   idleReasons: (string | null)[]
   offReasons: (string | null)[]
+  interactiveIdles: number
+  awaitingApprovals: number
   pendingToolCalls: ToolCallsPendingItem[][]
+  consentPayloads: AutoModeConsentRequiredPayload[]
+  versionNudges: string[]
   contextUsages: ContextUsage[]
   compactionStatuses: boolean[]
 }
 
-function makeAutoSink(): { sink: AutoConversationSink; calls: SinkCalls } {
+function makeMainSink(): { sink: MainConversationSink; calls: SinkCalls } {
   const calls: SinkCalls = {
     beginAssistantTurn: 0,
     assistantUpdates: [],
@@ -852,11 +859,15 @@ function makeAutoSink(): { sink: AutoConversationSink; calls: SinkCalls } {
     userMessages: [],
     idleReasons: [],
     offReasons: [],
+    interactiveIdles: 0,
+    awaitingApprovals: 0,
     pendingToolCalls: [],
+    consentPayloads: [],
+    versionNudges: [],
     contextUsages: [],
     compactionStatuses: [],
   }
-  const sink: AutoConversationSink = {
+  const sink: MainConversationSink = {
     beginAssistantTurn: () => {
       calls.beginAssistantTurn += 1
     },
@@ -876,38 +887,28 @@ function makeAutoSink(): { sink: AutoConversationSink; calls: SinkCalls } {
     onUserMessage: (c) => calls.userMessages.push(c),
     onAutoModeIdle: (r) => calls.idleReasons.push(r),
     onAutoModeOff: (r) => calls.offReasons.push(r),
+    onInteractiveIdle: () => {
+      calls.interactiveIdles += 1
+    },
+    onAwaitingApproval: () => {
+      calls.awaitingApprovals += 1
+    },
     onToolCallsPending: (items) => calls.pendingToolCalls.push(items),
+    onConsentRequired: (p) => calls.consentPayloads.push(p),
+    onVersionNudge: (v) => calls.versionNudges.push(v),
   }
   return { sink, calls }
 }
 
-function readerFromChunks(
-  chunks: string[],
-): ReadableStreamDefaultReader<Uint8Array> {
-  const encoder = new TextEncoder()
-  let i = 0
-  return {
-    read: () => {
-      if (i < chunks.length) {
-        return Promise.resolve({
-          done: false,
-          value: encoder.encode(chunks[i++]),
-        })
-      }
-      return Promise.resolve({ done: true, value: undefined })
-    },
-  } as unknown as ReadableStreamDefaultReader<Uint8Array>
-}
-
 // State-event builders for the unified vocabulary (see the translation table
 // in the section header).
-function stateRunning(sid: string) {
+function stateRunning(sid: string, kind = "auto") {
   return {
     type: "conversation-state",
     session_id: sid,
-    kind: "auto",
+    kind,
     state: "running",
-    auto_flag: true,
+    auto_flag: kind === "auto",
   }
 }
 
@@ -933,16 +934,30 @@ function stateOff(sid: string, reason: string | null) {
   }
 }
 
-describe("auto_conversation_store", () => {
-  let store: AutoConversationStore
+function stateInteractiveIdle(sid: string, reason?: string) {
+  // An interactive record's settle: kind interactive, flag off. It may carry
+  // an idle_reason (the engine records the auto vocabulary uniformly) which
+  // the store must NOT surface (the phase-1 rendering rule).
+  return {
+    type: "conversation-state",
+    session_id: sid,
+    kind: "interactive",
+    state: "idle",
+    auto_flag: false,
+    ...(reason ? { idle_reason: reason } : {}),
+  }
+}
+
+describe("main_conversation_store", () => {
+  let store: MainConversationStore
   let calls: SinkCalls
 
   beforeEach(() => {
     // @ts-expect-error install fake on global
     globalThis.EventSource = FakeEventSource
     FakeEventSource.reset()
-    store = createAutoConversationStore()
-    const made = makeAutoSink()
+    store = createMainConversationStore()
+    const made = makeMainSink()
     calls = made.calls
     store.bind(made.sink)
   })
@@ -962,6 +977,7 @@ describe("auto_conversation_store", () => {
     // Consent path (an enable_tool_call_id is present): a burst starts
     // immediately, so a fresh assistant turn is opened to render it.
     const result = await store.requestEnable({
+      kind: "auto",
       trace_id: "t1",
       enable_tool_call_id: "call_enable",
     })
@@ -972,6 +988,7 @@ describe("auto_conversation_store", () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("http://localhost:8757/api/conversations")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      kind: "auto",
       trace_id: "t1",
       enable_tool_call_id: "call_enable",
     })
@@ -982,8 +999,10 @@ describe("auto_conversation_store", () => {
     expect(source.url).toBe(
       "http://localhost:8757/api/conversations/cv_1/events",
     )
+    // The enable attach reflects the on-state immediately (assumeAutoOn).
+    expect(get(store.autoModeOn)).toBe(true)
 
-    // The running state confirms the on state from the desktop-owned run.
+    // The running state confirms it from the desktop-owned run.
     source.message(stateRunning("cv_1"))
     expect(get(store.autoModeOn)).toBe(true)
     expect(get(store.sessionId)).toBe("cv_1")
@@ -1003,10 +1022,10 @@ describe("auto_conversation_store", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    // Manual enable only arms the conversation: the server creates the
-    // record IDLE("armed") without an empty upstream burst, so there's no
-    // immediate assistant turn to open — the indicator just turns on.
-    const result = await store.requestEnable({ trace_id: "t1" })
+    // Manual enable only arms the conversation: the server flips the record
+    // IDLE("armed") without an empty upstream burst, so there's no immediate
+    // assistant turn to open — the indicator just turns on.
+    const result = await store.requestEnable({ kind: "auto", trace_id: "t1" })
     expect(result.ok).toBe(true)
     expect(calls.beginAssistantTurn).toBe(0)
 
@@ -1020,6 +1039,34 @@ describe("auto_conversation_store", () => {
     source.message(stateIdle("cv_arm", "armed"))
     expect(get(store.autoModeOn)).toBe(true)
     expect(get(store.working)).toBe(false)
+  })
+
+  it("requestEnable on the already-observed conversation flips in place (no re-attach)", async () => {
+    // Phase 4: consent accept flips the SAME record the main observer is
+    // already attached to — re-attaching would replay the buffer into a
+    // transcript that already shows it.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ session_id: "cv_flip" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    store.attach("cv_flip")
+    expect(FakeEventSource.instances.length).toBe(1)
+    expect(get(store.autoModeOn)).toBe(false)
+
+    const result = await store.requestEnable({
+      kind: "auto",
+      trace_id: "t1",
+      enable_tool_call_id: "call_enable",
+    })
+    expect(result.ok).toBe(true)
+    // The already-open stream carries the burst: a fresh turn was opened
+    // BEFORE the POST (no byte can race into the previous bubble), the
+    // on-state reflected, and NO second EventSource was created.
+    expect(calls.beginAssistantTurn).toBe(1)
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(true)
+    expect(FakeEventSource.instances.length).toBe(1)
   })
 
   it("arm sets the armed flag without any server call; disarm clears it", () => {
@@ -1048,6 +1095,7 @@ describe("auto_conversation_store", () => {
     // The first send creates the conversation via enable with extra_messages
     // + no trace_id.
     const result = await store.requestEnable({
+      kind: "auto",
       extra_messages: [{ role: "user", content: "do the thing" }],
     })
     expect(result.ok).toBe(true)
@@ -1056,6 +1104,7 @@ describe("auto_conversation_store", () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("http://localhost:8757/api/conversations")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      kind: "auto",
       extra_messages: [{ role: "user", content: "do the thing" }],
     })
 
@@ -1073,20 +1122,162 @@ describe("auto_conversation_store", () => {
     expect(get(store.sessionId)).toBe("cv_new")
   })
 
-  it("tool-calls-pending on the observer stream hands off to the approval sink (graceful stop)", async () => {
+  it("ensure creates-or-adopts the interactive conversation and attaches", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ session_id: "cv_stop" }),
+      json: () => Promise.resolve({ session_id: "cv_int" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({
-      trace_id: "t1",
-      enable_tool_call_id: "call_enable",
-    })
-    const source = FakeEventSource.latest()
-    source.message(stateRunning("cv_stop"))
 
-    // Graceful stop: the run surfaces the final turn's client tool calls.
+    const result = await store.ensure("tr-leaf")
+    expect(result).toEqual({ ok: true, sessionId: "cv_int" })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("http://localhost:8757/api/conversations")
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      kind: "interactive",
+      trace_id: "tr-leaf",
+    })
+    // Attached — but the auto indicator stays OFF for an interactive attach
+    // (the marker is the source of truth, not the attach).
+    const source = FakeEventSource.latest()
+    expect(source.url).toBe(
+      "http://localhost:8757/api/conversations/cv_int/events",
+    )
+    expect(get(store.autoModeOn)).toBe(false)
+    expect(get(store.sessionId)).toBe("cv_int")
+
+    // Idempotent while attached: no second create POST.
+    const again = await store.ensure("tr-leaf")
+    expect(again).toEqual({ ok: true, sessionId: "cv_int" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("ensure with assumeAutoOn turns the indicator on immediately (auto-row restore)", async () => {
+    // LOW 1: the history restore of an auto-active row keeps the old
+    // attach's instant indicator instead of waiting for the state marker.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ session_id: "cv_auto_row" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await store.ensure("tr-auto", {
+      openInflightTurn: true,
+      assumeAutoOn: true,
+    })
+    expect(result.ok).toBe(true)
+    expect(get(store.autoModeOn)).toBe(true)
+    // A later off marker still drives the off transition (flagSeenOn was
+    // primed by the optimistic attach, like the old terminal off marker).
+    FakeEventSource.latest().message(stateOff("cv_auto_row", "user_stopped"))
+    expect(get(store.autoModeOn)).toBe(false)
+    expect(calls.offReasons).toEqual(["user_stopped"])
+  })
+
+  it("a replayed echo + error with a silent idle marker leaves working=false and fires no settle hooks (HIGH-1)", async () => {
+    // Re-attach to a conversation whose last turn ended in a terminal
+    // upstream error: the buffer (never reset — no trace persisted) replays
+    // the user-message echo and the error event, then the on-subscribe
+    // marker reports idle. The marker must clear working WITHOUT firing the
+    // settle hooks (which flush queued messages).
+    store.attach("cv_err", undefined, true)
+    const source = FakeEventSource.latest()
+    // Buffer replay: the echo of the failed turn's message…
+    source.message({ type: "user-message", content: "please add", id: "cm_x" })
+    expect(get(store.working)).toBe(true)
+    // …the terminal error the engine emitted…
+    source.message({ type: "error", message: "Something went wrong." })
+    expect(calls.errors).toEqual(["Something went wrong."])
+    // …then the on-subscribe idle marker (interactive kind, flag off).
+    source.message(stateInteractiveIdle("cv_err", "error"))
+    expect(get(store.working)).toBe(false)
+    // Markers fire NO settle hooks — the composer reset is
+    // onWorkingChange(false)'s job in the session store.
+    expect(calls.interactiveIdles).toBe(0)
+    expect(calls.idleReasons).toEqual([])
+    // The working timeline told the session store to reset: … true → false.
+    expect(calls.working[calls.working.length - 1]).toBe(false)
+  })
+
+  it("an observer drop mid-turn surfaces an inline error; an idle drop stays silent (MEDIUM-1)", () => {
+    // Mid-turn drop: like the old streamChat fetch-error path, the user
+    // sees an error and the composer resets (working false).
+    store.attach("cv_drop")
+    let source = FakeEventSource.latest()
+    source.message(stateRunning("cv_drop", "interactive"))
+    expect(get(store.working)).toBe(true)
+    source.fail()
+    expect(get(store.working)).toBe(false)
+    expect(calls.errors).toEqual([
+      "Lost the connection to the assistant. Please try again.",
+    ])
+    // The session id survives so the next send/ensure re-attaches.
+    expect(get(store.sessionId)).toBe("cv_drop")
+    expect(get(store.connection)).toBe("closed")
+
+    // Idle drop: no request was in flight (old world showed nothing).
+    store.attach("cv_drop_idle")
+    source = FakeEventSource.latest()
+    source.message(stateInteractiveIdle("cv_drop_idle"))
+    source.fail()
+    expect(calls.errors).toEqual([
+      "Lost the connection to the assistant. Please try again.",
+    ])
+  })
+
+  it("an interactive turn: running → idle fires onInteractiveIdle with NO reason exposure", async () => {
+    store.attach("cv_turn")
+    const source = FakeEventSource.latest()
+    // Marker (snapshot): idle interactive — silent (not a settle).
+    source.message(stateInteractiveIdle("cv_turn"))
+    expect(calls.interactiveIdles).toBe(0)
+
+    // A turn starts and settles: exactly one settle signal — the
+    // INTERACTIVE hook, never onAutoModeIdle, and the engine's uniformly
+    // recorded idle_reason ("asked_user") is deliberately NOT forwarded
+    // (the phase-1 rendering rule: interactive conversations never render
+    // idle_reason).
+    source.message(stateRunning("cv_turn", "interactive"))
+    expect(get(store.working)).toBe(true)
+    source.message(stateInteractiveIdle("cv_turn", "asked_user"))
+    expect(get(store.working)).toBe(false)
+    expect(calls.interactiveIdles).toBe(1)
+    expect(calls.idleReasons).toEqual([])
+    expect(calls.offReasons).toEqual([])
+  })
+
+  it("awaiting_approval signals the approvals hook on marker AND transition", () => {
+    store.attach("cv_appr")
+    const source = FakeEventSource.latest()
+    // Marker: a refreshed tab re-attaching to a parked run must re-surface
+    // the box (functional spec §5) — unlike the settle hooks, this one DOES
+    // fire on the marker.
+    source.message({
+      type: "conversation-state",
+      session_id: "cv_appr",
+      kind: "interactive",
+      state: "awaiting_approval",
+      auto_flag: false,
+    })
+    expect(calls.awaitingApprovals).toBe(1)
+    expect(get(store.working)).toBe(false)
+
+    // Live transition (a later park on the same stream).
+    source.message(stateRunning("cv_appr", "interactive"))
+    source.message({
+      type: "conversation-state",
+      session_id: "cv_appr",
+      kind: "interactive",
+      state: "awaiting_approval",
+      auto_flag: false,
+    })
+    expect(calls.awaitingApprovals).toBe(2)
+  })
+
+  it("tool-calls-pending on the observer stream hands off to the approval sink", async () => {
+    store.attach("cv_pend")
+    const source = FakeEventSource.latest()
+    source.message(stateRunning("cv_pend", "interactive"))
+
     const items = [
       {
         toolCallId: "tc1",
@@ -1096,35 +1287,61 @@ describe("auto_conversation_store", () => {
       },
     ]
     source.message({ type: "tool-calls-pending", items })
-    // Handed off to the existing approval machinery (not auto-executed).
+    // Handed off to the approval machinery (not forwarded to the processor).
     expect(calls.pendingToolCalls.length).toBe(1)
     expect(calls.pendingToolCalls[0]).toEqual(items)
-    // Working sub-state cleared; the tool-calls-pending event is NOT
-    // forwarded to the processor as a normal chat event.
     expect(get(store.working)).toBe(false)
-
-    // The accompanying flag-off state clears the indicator (normal mode).
-    source.message(stateOff("cv_stop", "user_stopped"))
-    expect(get(store.autoModeOn)).toBe(false)
-    expect(calls.offReasons).toContain("user_stopped")
   })
 
-  it("a flag-off state clears everything and closes the stream", async () => {
+  it("auto-mode-consent-required on the observer hands off the consent payload", () => {
+    store.attach("cv_consent")
+    const source = FakeEventSource.latest()
+    source.message(stateRunning("cv_consent", "interactive"))
+    source.message({
+      type: "auto-mode-consent-required",
+      trace_id: "t1",
+      enable_tool_call_id: "call_enable",
+      reason: "let me work",
+      sibling_tool_calls: [],
+    })
+    expect(calls.consentPayloads).toEqual([
+      {
+        traceId: "t1",
+        enableToolCallId: "call_enable",
+        reason: "let me work",
+        siblingToolCalls: [],
+      },
+    ])
+    // The turn ended with the consent event (the idle state follows).
+    expect(get(store.working)).toBe(false)
+  })
+
+  it("a flag-off TRANSITION clears the auto affordances but keeps the stream open", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ session_id: "cv_2" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ trace_id: "t" })
+    await store.requestEnable({ kind: "auto", trace_id: "t" })
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_2"))
     expect(get(store.autoModeOn)).toBe(true)
 
     source.message(stateOff("cv_2", "user_disabled"))
     expect(get(store.autoModeOn)).toBe(false)
-    expect(get(store.sessionId)).toBeNull()
     expect(get(store.offReason)).toBe("user_disabled")
-    expect(source.closed).toBe(true)
+    expect(calls.offReasons).toEqual(["user_disabled"])
+    // Phase 4: an off-auto conversation IS the same live interactive
+    // conversation — the observer keeps carrying its turns (the old auto
+    // store closed the stream and dropped the session id here).
+    expect(source.closed).toBe(false)
+    expect(get(store.sessionId)).toBe("cv_2")
+
+    // The conversation continues interactively on the SAME stream: a later
+    // idle settle is an interactive one (the off already signalled).
+    source.message(stateRunning("cv_2", "interactive"))
+    source.message(stateInteractiveIdle("cv_2"))
+    expect(calls.interactiveIdles).toBe(1)
     expect(calls.offReasons).toEqual(["user_disabled"])
   })
 
@@ -1134,7 +1351,7 @@ describe("auto_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_3" }),
     })
     vi.stubGlobal("fetch", enableFetch)
-    await store.requestEnable({ trace_id: "t" })
+    await store.requestEnable({ kind: "auto", trace_id: "t" })
     FakeEventSource.latest().message(stateRunning("cv_3"))
 
     const stopFetch = vi.fn().mockResolvedValue({ ok: true })
@@ -1149,46 +1366,163 @@ describe("auto_conversation_store", () => {
     expect(get(store.autoModeOn)).toBe(true)
   })
 
-  it("decline posts the decline body and consumes the interactive stream", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      body: {
-        getReader: () =>
-          readerFromChunks([
-            'data: {"type":"text-start","id":"x"}\n\n',
-            'data: {"type":"text-delta","delta":"resumed"}\n\n',
-          ]),
-      },
-    })
+  it("decline posts the fold-in body to /{sid}/auto and opens a fresh turn", async () => {
+    store.attach("cv_dec")
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202 })
     vi.stubGlobal("fetch", fetchMock)
 
     await store.decline({
-      trace_id: "t9",
       enable_tool_call_id: "call_1",
       siblings: [],
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe("http://localhost:8757/api/conversations/auto/decline")
+    // The old /api/conversations/auto/decline endpoint died in phase 4; the
+    // decline rides POST /{sid}/auto with enabled=false + the consent ctx.
+    expect(url).toBe("http://localhost:8757/api/conversations/cv_dec/auto")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      trace_id: "t9",
-      enable_tool_call_id: "call_1",
-      siblings: [],
+      enabled: false,
+      decline: { enable_tool_call_id: "call_1", siblings: [] },
     })
+    // A fresh assistant turn renders the declined continuation, which
+    // streams on the ALREADY-OPEN observer (the old endpoint streamed the
+    // response body instead).
     expect(calls.beginAssistantTurn).toBe(1)
+    expect(get(store.working)).toBe(true)
+    const source = FakeEventSource.latest()
+    source.message({ type: "text-start", id: "x" })
+    source.message({ type: "text-delta", delta: "resumed" })
     const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
     expect(last.parts?.[0]).toEqual({ type: "text", text: "resumed" })
-    // No EventSource opened for the decline (interactive resume path).
-    expect(FakeEventSource.instances.length).toBe(0)
+  })
+
+  it("sendMessage posts to /messages and returns the echo-dedupe message id", async () => {
+    store.attach("cv_inj", undefined, false, true)
+    FakeEventSource.latest().message(stateRunning("cv_inj"))
+
+    const messageFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ message_id: "cm_42" }),
+    })
+    vi.stubGlobal("fetch", messageFetch)
+    const result = await store.sendMessage("keep going")
+
+    expect(result.ok).toBe(true)
+    expect(result.messageId).toBe("cm_42")
+    expect(messageFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = messageFetch.mock.calls[0]
+    expect(url).toBe("http://localhost:8757/api/conversations/cv_inj/messages")
+    expect((init as RequestInit).method).toBe("POST")
+    // No trace_id rides the send: the desktop supervisor's own leaf is
+    // authoritative.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      content: "keep going",
+    })
+    // Send never stops: no /stop call, flag stays on, working set.
+    expect(
+      messageFetch.mock.calls.some((c) => String(c[0]).endsWith("/stop")),
+    ).toBe(false)
+    expect(get(store.autoModeOn)).toBe(true)
+    expect(get(store.working)).toBe(true)
+  })
+
+  it("sendMessage with no active conversation returns an error and posts nothing", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await store.sendMessage("hi")
+    expect(result.ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("a failed send clears the optimistic working flag", async () => {
+    store.attach("cv_fail")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ detail: "finished" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await store.sendMessage("late")
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe("finished")
+    expect(get(store.working)).toBe(false)
+  })
+
+  it("fetchApprovals returns the parked batch; null on 404", async () => {
+    store.attach("cv_appr2")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          batch_id: "ab_1",
+          items: [
+            {
+              toolCallId: "tc1",
+              toolName: "add",
+              input: {},
+              requiresApproval: true,
+            },
+          ],
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const batch = await store.fetchApprovals()
+    expect(batch).toEqual({
+      batchId: "ab_1",
+      items: [
+        {
+          toolCallId: "tc1",
+          toolName: "add",
+          input: {},
+          requiresApproval: true,
+        },
+      ],
+    })
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8757/api/conversations/cv_appr2/approvals",
+    )
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404 }),
+    )
+    expect(await store.fetchApprovals()).toBeNull()
+  })
+
+  it("decide posts the batch decisions; 409 reports a conflict", async () => {
+    store.attach("cv_dec2")
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202 })
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await store.decide("ab_1", { tc1: true, tc2: false })
+    expect(result.ok).toBe(true)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(
+      "http://localhost:8757/api/conversations/cv_dec2/approvals/decisions",
+    )
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      batch_id: "ab_1",
+      decisions: { tc1: true, tc2: false },
+    })
+    // The resumed execution reads as a working turn.
+    expect(get(store.working)).toBe(true)
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 409 }),
+    )
+    const conflict = await store.decide("ab_1", { tc1: true })
+    expect(conflict).toEqual({ ok: false, conflict: true })
   })
 
   it("re-attach opens the events stream and replays buffered events with no gap", () => {
-    store.attach("cv_re")
+    store.attach("cv_re", undefined, false, true)
     const source = FakeEventSource.latest()
     expect(source.url).toBe(
       "http://localhost:8757/api/conversations/cv_re/events",
     )
+    // assumeAutoOn (the auto-row restore path): the indicator reflects
+    // immediately, before the marker.
     expect(get(store.autoModeOn)).toBe(true)
     expect(get(store.sessionId)).toBe("cv_re")
 
@@ -1203,17 +1537,28 @@ describe("auto_conversation_store", () => {
     expect(last.parts?.[0]).toEqual({ type: "text", text: "buffered + live" })
   })
 
-  it("events 404 / connection failure falls back to off without throwing", () => {
-    store.attach("cv_gone")
+  it("connection failure on an AUTO conversation falls back to off without throwing", () => {
+    store.attach("cv_gone", undefined, false, true)
     const source = FakeEventSource.latest()
     expect(get(store.autoModeOn)).toBe(true)
 
     // EventSource errors before opening (events 404 → unknown/GC'd record).
     expect(() => source.fail()).not.toThrow()
     expect(get(store.autoModeOn)).toBe(false)
-    expect(get(store.sessionId)).toBeNull()
     expect(source.closed).toBe(true)
     expect(calls.offReasons).toEqual([null])
+    expect(get(store.connection)).toBe("closed")
+  })
+
+  it("connection failure on an INTERACTIVE conversation keeps the session id (re-attachable)", () => {
+    store.attach("cv_gone_int")
+    const source = FakeEventSource.latest()
+    source.fail()
+    // No off signal (nothing was on); the id survives so the next
+    // send/ensure can re-attach.
+    expect(calls.offReasons).toEqual([])
+    expect(get(store.sessionId)).toBe("cv_gone_int")
+    expect(get(store.connection)).toBe("closed")
   })
 
   it("enable 429 returns an error and opens no stream", async () => {
@@ -1224,7 +1569,7 @@ describe("auto_conversation_store", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const result = await store.requestEnable({ trace_id: "t" })
+    const result = await store.requestEnable({ kind: "auto", trace_id: "t" })
     expect(result.ok).toBe(false)
     expect(result.error).toBe("Too many auto runs")
     expect(get(store.autoModeOn)).toBe(false)
@@ -1233,11 +1578,10 @@ describe("auto_conversation_store", () => {
   })
 
   it("detach closes the observer and clears the indicator without signalling off", () => {
-    store.attach("cv_nav")
+    store.attach("cv_nav", undefined, false, true)
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_nav"))
     expect(get(store.autoModeOn)).toBe(true)
-
     store.detach()
     expect(get(store.autoModeOn)).toBe(false)
     expect(get(store.sessionId)).toBeNull()
@@ -1252,7 +1596,7 @@ describe("auto_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_idle" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ trace_id: "t" })
+    await store.requestEnable({ kind: "auto", trace_id: "t" })
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_idle"))
     expect(get(store.autoModeOn)).toBe(true)
@@ -1267,8 +1611,9 @@ describe("auto_conversation_store", () => {
     expect(calls.idleReasons).toEqual(["asked_user"])
     // Idle is NOT an off-event: the conversation flag is unchanged.
     expect(calls.offReasons).toEqual([])
-    // working timeline: on (enable attach) → on (running state) → off (idle).
-    expect(calls.working).toEqual([true, true, false])
+    // working timeline: off (armed-only enable attach — no burst to presume)
+    // → on (running state) → off (idle).
+    expect(calls.working).toEqual([false, true, false])
   })
 
   it("kiln-chat-retry surfaces retrying progress and clears on the next event", async () => {
@@ -1277,7 +1622,7 @@ describe("auto_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_retry" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ trace_id: "t" })
+    await store.requestEnable({ kind: "auto", trace_id: "t" })
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_retry"))
 
@@ -1307,67 +1652,8 @@ describe("auto_conversation_store", () => {
     expect(get(store.retry)).toBe(null)
   })
 
-  it("only a flag-off state clears the indicator after an idle burst", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ session_id: "cv_io" }),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ trace_id: "t" })
-    const source = FakeEventSource.latest()
-    source.message(stateRunning("cv_io"))
-    source.message(stateIdle("cv_io", "done"))
-    expect(get(store.autoModeOn)).toBe(true)
-
-    source.message(stateOff("cv_io", "user_stopped"))
-    expect(get(store.autoModeOn)).toBe(false)
-    expect(get(store.working)).toBe(false)
-    expect(get(store.sessionId)).toBeNull()
-    expect(source.closed).toBe(true)
-    expect(calls.offReasons).toEqual(["user_stopped"])
-  })
-
-  it("sendMessage injects via /messages, never posting stop", async () => {
-    const enableFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ session_id: "cv_inj" }),
-    })
-    vi.stubGlobal("fetch", enableFetch)
-    await store.requestEnable({ trace_id: "t" })
-    FakeEventSource.latest().message(stateRunning("cv_inj"))
-
-    const messageFetch = vi.fn().mockResolvedValue({ ok: true })
-    vi.stubGlobal("fetch", messageFetch)
-    const result = await store.sendMessage("keep going")
-
-    expect(result.ok).toBe(true)
-    expect(messageFetch).toHaveBeenCalledTimes(1)
-    const [url, init] = messageFetch.mock.calls[0]
-    expect(url).toBe("http://localhost:8757/api/conversations/cv_inj/messages")
-    expect((init as RequestInit).method).toBe("POST")
-    // No trace_id rides the inject anymore: the desktop supervisor's own
-    // leaf is authoritative for the idle re-arm.
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      content: "keep going",
-    })
-    // Inject never stops: no /stop call, flag stays on, working set.
-    expect(
-      messageFetch.mock.calls.some((c) => String(c[0]).endsWith("/stop")),
-    ).toBe(false)
-    expect(get(store.autoModeOn)).toBe(true)
-    expect(get(store.working)).toBe(true)
-  })
-
-  it("sendMessage with no active conversation returns an error and posts nothing", async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal("fetch", fetchMock)
-    const result = await store.sendMessage("hi")
-    expect(result.ok).toBe(false)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
   it("a user-message echo renders a fresh user turn and marks working", () => {
-    store.attach("cv_echo")
+    store.attach("cv_echo", undefined, false, true)
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_echo"))
     // Simulate going idle then injecting: the echo arrives on the stream.
@@ -1409,6 +1695,25 @@ describe("auto_conversation_store", () => {
     expect(text).not.toContain("Round one")
   })
 
+  it("beginTurn opens a fresh assistant turn AND resets the processor", () => {
+    store.attach("cv_turnreset")
+    const source = FakeEventSource.latest()
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "Old turn." })
+
+    store.beginTurn()
+    expect(calls.beginAssistantTurn).toBe(1)
+
+    source.message({ type: "text-start" })
+    source.message({ type: "text-delta", delta: "New turn." })
+    const last = calls.assistantUpdates[calls.assistantUpdates.length - 1]
+    const text = (last.parts ?? [])
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("")
+    expect(text).toBe("New turn.")
+  })
+
   it("opens a fresh assistant turn for the in-flight round on re-attach (openInflightTurn)", () => {
     // Re-attach with openInflightTurn: the replayed in-flight round must
     // render into its OWN turn instead of overwriting the last hydrated
@@ -1422,19 +1727,20 @@ describe("auto_conversation_store", () => {
     expect(calls.beginAssistantTurn).toBe(1)
   })
 
-  it("the attach-time idle marker updates state without signaling the idle sink", () => {
+  it("the attach-time idle marker updates state without signaling the idle sinks", () => {
     // The first conversation-state event after attach is the bus's
     // on-subscribe MARKER — a snapshot of where the run already is, not a
-    // burst-settled transition. It must reflect flag/working (indicator,
-    // "waiting for you") WITHOUT firing sink.onAutoModeIdle, which is the
-    // session store's settle hook and flushes queued messages — the old
-    // auto-mode-state marker never fired it.
+    // settle transition. It must reflect flag/working WITHOUT firing
+    // sink.onAutoModeIdle / onInteractiveIdle (the session store's settle
+    // hooks, which flush queued messages) — the old auto-mode-state marker
+    // never fired them.
     store.attach("cv_marker", false, true)
     const source = FakeEventSource.latest()
     source.message(stateIdle("cv_marker", "asked_user"))
     expect(get(store.autoModeOn)).toBe(true)
     expect(get(store.working)).toBe(false)
     expect(calls.idleReasons).toEqual([])
+    expect(calls.interactiveIdles).toBe(0)
 
     // A later REAL settle transition on the same stream does signal.
     source.message(stateRunning("cv_marker"))
@@ -1443,9 +1749,6 @@ describe("auto_conversation_store", () => {
   })
 
   it("a running attach marker consumes the marker slot so the next idle signals", () => {
-    // Attaching mid-burst: the marker is state=running (the old
-    // auto-mode-state{working:true}); the burst settling afterwards is a
-    // real transition and must fire the idle sink exactly once.
     store.attach("cv_marker_run")
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_marker_run"))
@@ -1481,48 +1784,6 @@ describe("auto_conversation_store", () => {
     expect(calls.beginAssistantTurn).toBe(0)
   })
 
-  it("resolve returns {session_id, current_trace_id, state} for a live conversation", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          session_id: "cv_r",
-          current_trace_id: "t_now",
-          state: "running",
-          auto_flag: true,
-        }),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-
-    const result = await store.resolve("t_stale")
-    expect(result).toEqual({
-      session_id: "cv_r",
-      current_trace_id: "t_now",
-      state: "running",
-      auto_flag: true,
-    })
-    const [url] = fetchMock.mock.calls[0]
-    expect(url).toBe(
-      "http://localhost:8757/api/conversations/resolve?trace_id=t_stale",
-    )
-  })
-
-  it("resolve returns null on 404 (no live auto conversation)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: () => Promise.resolve({ detail: "no active conversation" }),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-    expect(await store.resolve("t_stale")).toBeNull()
-  })
-
-  it("resolve returns null on network error", async () => {
-    const fetchMock = vi.fn().mockRejectedValue(new Error("boom"))
-    vi.stubGlobal("fetch", fetchMock)
-    expect(await store.resolve("t")).toBeNull()
-  })
-
   // ── Reconnecting affordance + on-attach liveness ────────────────────────────
 
   it("beginReconnect sets the reconnecting affordance; attach clears it on open", () => {
@@ -1551,17 +1812,17 @@ describe("auto_conversation_store", () => {
   })
 
   it("attach with initialWorking drives the thinking indicator immediately", () => {
-    // A RUNNING conversation (from the resolve state) shows working before
+    // A RUNNING conversation (from the resync state) shows working before
     // any event.
     store.beginReconnect()
-    store.attach("cv_work", true)
+    store.attach("cv_work", true, false, true)
     expect(get(store.working)).toBe(true)
     expect(get(store.autoModeOn)).toBe(true)
 
     // An IDLE one (initialWorking=false) shows the idle indicator.
     store.detach()
     store.beginReconnect()
-    store.attach("cv_wait", false)
+    store.attach("cv_wait", false, false, true)
     expect(get(store.working)).toBe(false)
     expect(get(store.autoModeOn)).toBe(true)
   })
@@ -1584,7 +1845,7 @@ describe("auto_conversation_store", () => {
     expect(get(store.autoModeOn)).toBe(true)
   })
 
-  it("reconnecting clears on error (404) so the affordance can't get stuck", () => {
+  it("reconnecting clears on error so the affordance can't get stuck", () => {
     store.beginReconnect()
     store.attach("cv_rc_gone")
     expect(get(store.reconnecting)).toBe(true)
@@ -1592,12 +1853,11 @@ describe("auto_conversation_store", () => {
     const source = FakeEventSource.latest()
     source.fail() // events 404 / connection failure before opening
     expect(get(store.reconnecting)).toBe(false)
-    expect(get(store.autoModeOn)).toBe(false)
   })
 
   it("reconnecting clears on a flag-off state and on detach", () => {
     store.beginReconnect()
-    store.attach("cv_rc_off")
+    store.attach("cv_rc_off", undefined, false, true)
     const source = FakeEventSource.latest()
     source.message(stateOff("cv_rc_off", "user_stopped"))
     expect(get(store.reconnecting)).toBe(false)
@@ -1608,10 +1868,10 @@ describe("auto_conversation_store", () => {
     expect(get(store.reconnecting)).toBe(false)
   })
 
-  it("ignores conversation-state events for other kinds (defense in depth)", () => {
-    // A subagent state event must never flip the auto indicator — the auto
+  it("ignores conversation-state events for sub-agent kinds (defense in depth)", () => {
+    // A subagent state event must never flip the main indicator — the
     // observer stream shouldn't carry one, but guard against multiplexing.
-    store.attach("cv_kind")
+    store.attach("cv_kind", undefined, false, true)
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_kind"))
     expect(get(store.working)).toBe(true)
@@ -1633,7 +1893,7 @@ describe("auto_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_4" }),
     })
     vi.stubGlobal("fetch", enableFetch)
-    await store.requestEnable({ trace_id: "t" })
+    await store.requestEnable({ kind: "auto", trace_id: "t" })
 
     const postSpy = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal("fetch", postSpy)

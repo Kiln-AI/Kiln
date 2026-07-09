@@ -3148,29 +3148,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/execute-tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Execute approved client tools and continue chat stream
-         * @description Tool calls that require user approval are streamed to the client for approval, along with the
-         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
-         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
-         *     the toolcalls and continue the chat stream.
-         */
-        post: operations["post_execute_tools_api_chat_execute_tools_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/version_policy": {
         parameters: {
             query?: never;
@@ -3239,26 +3216,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stream Chat
-         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
-         */
-        post: operations["chat_api_chat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/conversations": {
         parameters: {
             query?: never;
@@ -3270,44 +3227,26 @@ export interface paths {
         get: operations["list_conversations_api_conversations_get"];
         put?: never;
         /**
-         * Create (or flip) an auto conversation
-         * @description Enable auto mode: create — or flip, if the trace already resolves
-         *     to a live auto record — the conversation on the supervisor and start
-         *     the first burst if the seed carries anything to run (old
-         *     ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for the
-         *     preserved entry shapes, including the ARMED-only manual enable that
-         *     never POSTs an empty turn upstream). The run is supervised by the
-         *     conversation supervisor and survives client disconnects.
+         * Create (or adopt/flip) a conversation
+         * @description Create a conversation, by kind (functional spec §2):
+         *
+         *     - ``kind="interactive"`` (phase 4): create-or-adopt the interactive
+         *       conversation for ``trace_id`` — the replacement for the old
+         *       ``POST /api/chat`` conversation-per-request model. Idempotent: a
+         *       trace resolving to a live record (any kind) returns that record's
+         *       session id. A fresh adopt rehydrates pending approvals from the
+         *       persisted trace tail (functional spec §5 restart recovery).
+         *     - ``kind="auto"`` (default): enable auto mode — create, or flip if
+         *       the trace already resolves to a live record, and start the first
+         *       burst if the seed carries anything to run (old
+         *       ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for
+         *       the preserved entry shapes, including the ARMED-only manual enable
+         *       that never POSTs an empty turn upstream).
+         *
+         *     Runs are supervised by the conversation supervisor and survive client
+         *     disconnects.
          */
         post: operations["create_conversation_api_conversations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/conversations/auto/decline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Decline auto mode and resume interactive chat
-         * @description Resolve the pending ``enable_auto_mode`` call as declined and
-         *     resume the normal interactive chat stream; sibling tool calls are
-         *     resolved as denied. Byte-for-byte the old ``/api/chat/auto/decline``:
-         *     the interactive conversation still lives on the OLD loop
-         *     (``ChatStreamSession``), so declining is an interactive continuation,
-         *     not a supervisor operation. TODO(phase-4): folds into
-         *     ``POST /{{sid}}/auto`` (enabled=false + consent context) once
-         *     interactive conversations own supervisor records and the parked
-         *     enable call resolves through the interactive continuation there.
-         */
-        post: operations["decline_auto_mode_api_conversations_auto_decline_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3441,15 +3380,73 @@ export interface paths {
          * @description Flip the auto-mode flag on an EXISTING conversation (functional
          *     spec §2). ``enabled=false`` → today's disable semantics (old
          *     ``AutoChatRegistry.disable``: cancel a live burst, publish the off
-         *     state with reason ``user_disabled``, TTL GC, cascade-stop sub-agent
-         *     children); ``enabled=true`` → re-arm (ARMED-only: flag on, no
-         *     upstream POST — the next message starts the burst). 404 unknown,
-         *     409 for non-auto records (phase 3: interactive conversations aren't
-         *     supervisor records yet, so only auto records are flippable —
-         *     TODO(phase-4) lifts this), 429 when re-enabling would exceed the
-         *     concurrency cap.
+         *     state with reason ``user_disabled``, cascade-stop sub-agent children;
+         *     phase 4: the record then swaps back to its interactive life instead
+         *     of TTL GC). ``enabled=false`` + ``decline`` → the consent-decline
+         *     flow (old ``/api/chat/auto/decline``, folded in): resolve the pending
+         *     ``enable_auto_mode`` call as declined + denied siblings via an
+         *     interactive continuation turn that streams on the observer channel.
+         *     ``enabled=true`` → enable/re-arm: the record flips to the auto policy
+         *     (ARMED-only: flag on, no upstream POST — the next message starts the
+         *     burst). 404 unknown, 409 for sub-agent records / a decline racing an
+         *     in-flight run, 429 when enabling would exceed the concurrency cap.
          */
         post: operations["set_auto_mode_api_conversations__session_id__auto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the conversation's pending approval batch
+         * @description The parked approval batch awaiting decisions (functional spec §2).
+         *
+         *     Replaces the tail half of the old two-request approval flow (the
+         *     stream used to END at ``tool-calls-pending`` and the browser POSTed
+         *     ``/api/chat/execute-tools``): the run now PARKS and the browser
+         *     fetches the batch here — keyed off the ``tool-calls-pending`` event /
+         *     the AWAITING_APPROVAL state — then answers via
+         *     ``POST /{sid}/approvals/decisions``. When no batch is in memory, the
+         *     supervisor attempts trace-tail rehydration first (functional spec §5:
+         *     desktop restart / graceful-stop leftovers), so a recoverable batch is
+         *     indistinguishable from a live one to the browser. 404 when the
+         *     conversation is unknown or nothing is pending.
+         */
+        get: operations["get_pending_approvals_api_conversations__session_id__approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/approvals/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve the conversation's pending approval batch
+         * @description Resolve a parked approval batch (functional spec §2/§5): the run
+         *     resumes (or a resume run starts, for a rehydrated batch) and results
+         *     stream on the events channel. One decision set per batch — first
+         *     decision set wins; a second tab deciding the same batch gets 409;
+         *     an unknown conversation/batch id gets 404.
+         */
+        post: operations["post_approval_decisions_api_conversations__session_id__approvals_decisions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3467,13 +3464,17 @@ export interface paths {
         put?: never;
         /**
          * Send a user message into a conversation
-         * @description Queue a user message (202). For a RUNNING child this is the steer
-         *     path; for an auto conversation it is the inject/idle-re-arm path —
-         *     drained at the next round boundary (or seeding a fresh burst),
-         *     echoed to observers at enqueue time. 404 for unknown conversations,
-         *     409 for terminal ones and for flag-OFF auto conversations (the old
-         *     auto message endpoint's "no longer active" refusal — a send must
-         *     never start an auto-approving burst without an active consent).
+         * @description Queue a user message (202, functional spec §2). Behavior by state:
+         *     IDLE → starts a turn/burst (an interactive send here is the phase-4
+         *     replacement for the old ``POST /api/chat``, byte-identical upstream);
+         *     RUNNING → queued into the inbox, drained at the next round boundary
+         *     (steer/inject); AWAITING_APPROVAL → queued until decisions resolve.
+         *     The message is echoed to observers at enqueue time; the response
+         *     carries its stable id so the sending tab can dedupe its own echo.
+         *     404 for unknown conversations, 409 for terminal ones (and for the
+         *     narrow flag-off-but-still-auto-policy window during a disable — the
+         *     old "no longer active" refusal; once the settle swaps the record back
+         *     to interactive, sends run normal gated turns).
          */
         post: operations["send_conversation_message_api_conversations__session_id__messages_post"];
         delete?: never;
@@ -4127,6 +4128,20 @@ export interface components {
             inappropriate_tool_use_examples: string;
         };
         /**
+         * ApprovalDecisionsRequest
+         * @description ``POST /{sid}/approvals/decisions`` — one decision set for the whole
+         *     batch (partial decisions are not allowed; matches today's UI, functional
+         *     spec §2). Keys are tool_call_ids; True = run, False/absent = deny.
+         */
+        ApprovalDecisionsRequest: {
+            /** Batch Id */
+            batch_id: string;
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
+        };
+        /**
          * Audio
          * @description Data about a previous audio response from the model.
          *     [Learn more](https://platform.openai.com/docs/guides/audio).
@@ -4516,26 +4531,6 @@ export interface components {
             /** Name */
             name?: string;
         };
-        /** ChatRequest */
-        ChatRequest: {
-            /** Messages */
-            messages: components["schemas"]["ChatRequestMessage"][];
-            /** Trace Id */
-            trace_id?: string | null;
-        } & {
-            [key: string]: unknown;
-        };
-        /** ChatRequestMessage */
-        ChatRequestMessage: {
-            /** Role */
-            role: string;
-            /** Content */
-            content?: string | {
-                [key: string]: unknown;
-            }[] | null;
-        } & {
-            [key: string]: unknown;
-        };
         /** ChatSessionListItem */
         ChatSessionListItem: {
             /** Id */
@@ -4859,6 +4854,18 @@ export interface components {
             /** Final Report */
             final_report?: string | null;
         };
+        /**
+         * ConversationMessageAccepted
+         * @description 202 body for ``POST /{sid}/messages`` (phase 4): the accepted
+         *     message's stable server-minted id. The sending tab renders the typed
+         *     text locally and uses this id to dedupe the run's ``user-message`` echo
+         *     (whose content carries the app-context header only OTHER observers
+         *     should render, stripped).
+         */
+        ConversationMessageAccepted: {
+            /** Message Id */
+            message_id: string;
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -4895,13 +4902,26 @@ export interface components {
         };
         /**
          * CreateConversationRequest
-         * @description ``POST /api/conversations`` body — phase 3 scope: AUTO conversations
-         *     (the old ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field
-         *     semantics preserved verbatim). TODO(phase-4): grows a ``kind`` selector
-         *     when interactive conversations are created here too (functional spec §2
-         *     "create (optionally with first message)").
+         * @description ``POST /api/conversations`` body.
+         *
+         *     ``kind`` selects the flow (phase 4):
+         *
+         *     - ``"auto"`` (default — the phase-3 enable flow unchanged): the old
+         *       ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
+         *       preserved verbatim. Creates — or flips — the auto conversation.
+         *     - ``"interactive"``: create-or-adopt the interactive conversation for
+         *       ``trace_id`` (functional spec §2 "create"; idempotent — a trace that
+         *       already resolves to a live record returns that record's session id).
+         *       Only ``trace_id`` applies; the first message goes through
+         *       ``POST /{sid}/messages`` like every other message.
          */
         CreateConversationRequest: {
+            /**
+             * Kind
+             * @default auto
+             * @enum {string}
+             */
+            kind: "interactive" | "auto";
             /** Trace Id */
             trace_id?: string | null;
             /** Enable Tool Call Id */
@@ -5767,12 +5787,13 @@ export interface components {
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
         /**
-         * DeclineAutoModeRequest
-         * @description Old ``DeclineAutoRequest`` verbatim (POST /api/chat/auto/decline).
+         * DeclineAutoModeContext
+         * @description Consent-decline context riding ``POST /{sid}/auto`` with
+         *     ``enabled=false`` (phase 4 — the old ``DeclineAutoRequest`` minus its
+         *     ``trace_id``: the conversation record's own leaf is authoritative now
+         *     that the conversation is addressed by session id).
          */
-        DeclineAutoModeRequest: {
-            /** Trace Id */
-            trace_id: string;
+        DeclineAutoModeContext: {
             /** Enable Tool Call Id */
             enable_tool_call_id: string;
             /** Siblings */
@@ -6598,17 +6619,6 @@ export interface components {
             fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
-        };
-        /** ExecuteToolsRequest */
-        ExecuteToolsRequest: {
-            /** Trace Id */
-            trace_id: string;
-            /** Tool Calls */
-            tool_calls: components["schemas"]["ToolCallInfo"][];
-            /** Decisions */
-            decisions: {
-                [key: string]: boolean;
-            };
         };
         /**
          * ExternalToolApiDescription
@@ -8844,6 +8854,24 @@ export interface components {
             is_archived?: boolean | null;
         };
         /**
+         * PendingApprovalsResponse
+         * @description ``GET /{sid}/approvals`` — the parked batch awaiting decisions.
+         *
+         *     ``items`` is the exact wire shape of the ``tool-calls-pending`` event
+         *     items (toolCallId/toolName/input/requiresApproval[/permission/
+         *     approvalDescription]) so the approval box consumes either source
+         *     identically; ``batch_id`` is what ``POST decisions`` must echo back
+         *     (validated — a stale batch id 404s, an already-decided batch 409s).
+         */
+        PendingApprovalsResponse: {
+            /** Batch Id */
+            batch_id: string;
+            /** Items */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
          * Priority
          * @description Priority levels, where P0 is highest priority.
          * @enum {integer}
@@ -10189,11 +10217,16 @@ export interface components {
         /**
          * SetAutoModeRequest
          * @description ``POST /api/conversations/{sid}/auto`` — flip the auto-mode flag on an
-         *     EXISTING conversation (functional spec §2).
+         *     EXISTING conversation (functional spec §2). With ``enabled=false`` and a
+         *     ``decline`` context this is the consent-decline flow (the old
+         *     ``/api/chat/auto/decline``, folded in): the pending ``enable_auto_mode``
+         *     call resolves as declined + denied siblings through an interactive
+         *     continuation turn streaming on the observer channel.
          */
         SetAutoModeRequest: {
             /** Enabled */
             enabled: boolean;
+            decline?: components["schemas"]["DeclineAutoModeContext"] | null;
         };
         /**
          * SkillContentResponse
@@ -19088,39 +19121,6 @@ export interface operations {
             };
         };
     };
-    post_execute_tools_api_chat_execute_tools_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExecuteToolsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     chat_version_policy_api_chat_version_policy_get: {
         parameters: {
             query?: never;
@@ -19237,39 +19237,6 @@ export interface operations {
             };
         };
     };
-    chat_api_chat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_conversations_api_conversations_get: {
         parameters: {
             query?: {
@@ -19322,39 +19289,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationCreatedResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    decline_auto_mode_api_conversations_auto_decline_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeclineAutoModeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -19555,6 +19489,74 @@ export interface operations {
             };
         };
     };
+    get_pending_approvals_api_conversations__session_id__approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_approval_decisions_api_conversations__session_id__approvals_decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     send_conversation_message_api_conversations__session_id__messages_post: {
         parameters: {
             query?: never;
@@ -19577,7 +19579,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ConversationMessageAccepted"];
                 };
             };
             /** @description Validation Error */
