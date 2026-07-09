@@ -10,6 +10,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
+from kiln_ai.adapters.chat.chat_formatter import get_chat_formatter
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
@@ -1991,3 +1992,43 @@ class TestInputTransformIntegration:
 
         result_dict = adapter._apply_input_transform({"key": "val"})
         assert result_dict == {"key": "val"}
+
+
+@pytest.mark.parametrize("reasoning_capable", [True, False])
+def test_build_chat_formatter_forward_thinking_instructions(
+    base_task, reasoning_capable
+):
+    adapter = MockAdapter(
+        task=base_task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        config=AdapterConfig(forward_thinking_instructions=True),
+    )
+    mock_prompt_builder = MagicMock()
+    mock_prompt_builder.chain_of_thought_prompt.return_value = "think step by step"
+    mock_prompt_builder.build_prompt.return_value = "system message"
+    adapter.prompt_builder = mock_prompt_builder
+
+    mock_provider = MagicMock()
+    mock_provider.tuned_chat_strategy = None
+    mock_provider.reasoning_capable = reasoning_capable
+    adapter.model_provider = MagicMock(return_value=mock_provider)
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.get_chat_formatter",
+        wraps=get_chat_formatter,
+    ) as mock_gcf:
+        formatter = adapter.build_chat_formatter("test input")
+        mock_gcf.assert_called_once()
+        call_kwargs = mock_gcf.call_args
+        assert call_kwargs.kwargs.get("forward_thinking_instructions") is True
+
+    if reasoning_capable:
+        assert formatter.__class__.__name__ == "SingleTurnR1ThinkingFormatter"
+        assert formatter.forward_thinking_instructions is True
+    else:
+        assert formatter.__class__.__name__ == "TwoMessageCotFormatter"

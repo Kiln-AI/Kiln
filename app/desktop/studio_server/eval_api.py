@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
+from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
@@ -15,6 +16,16 @@ from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.adapters.eval.base_eval import (
+    DEFAULT_SYSTEM_PROMPT,
+    build_default_llm_judge_prompt,
+    materialize_llm_judge_properties,
+)
+from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.adapters.eval.v2_eval_code_eval import (
+    grant_code_eval_trust,
+    is_code_eval_trusted,
+)
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -22,7 +33,11 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalOutputScore,
     EvalRun,
+    EvalScores,
+    EvalTaskInput,
     EvalTemplateId,
+    V2EvalConfigProperties,
+    validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
@@ -33,6 +48,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -210,10 +226,77 @@ class CreateEvalConfigRequest(BaseModel):
     properties: dict[str, Any] = Field(
         description="Properties for the eval config, specific to the type."
     )
-    model_name: str = Field(description="The model to use for evaluation.")
-    provider: ModelProviderName = Field(
-        description="The provider of the evaluation model."
+    model_name: str | None = Field(
+        default=None,
+        description="The model to use for evaluation. Required for LLM-based eval types.",
     )
+    provider: ModelProviderName | None = Field(
+        default=None,
+        description="The provider of the evaluation model. Required for LLM-based eval types.",
+    )
+
+
+class LlmJudgeBuilderInput(BaseModel):
+    """Shared fields for llm_judge: model, provider, g_eval."""
+
+    model_name: str = Field(description="The LLM model to use as judge.")
+    provider: ModelProviderName = Field(description="The model provider.")
+    g_eval: bool = Field(description="Whether to use G-Eval logprob scoring.")
+    judge_prompt: str | None = Field(
+        default=None,
+        description="Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.",
+    )
+    system_prompt: str | None = Field(
+        default=None,
+        description="Override the judge system prompt. Defaults to 'You are an evaluator.'",
+    )
+
+
+class DefaultLlmJudgePromptResponse(BaseModel):
+    """Response from the default LLM judge prompt endpoint."""
+
+    judge_prompt: str
+    system_prompt: str
+
+
+class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
+    """Request to create a V2 llm_judge eval config with server-baked template."""
+
+    name: str | None = Field(default=None, description="The name of the eval config.")
+    reference_keys: list[str] = Field(
+        default_factory=list,
+        description="Reference data keys this judge needs (captured from test).",
+    )
+
+
+class TestV2EvalRequest(BaseModel):
+    """Request to test-run a V2 eval config without persisting."""
+
+    properties: V2EvalConfigProperties | None = Field(
+        default=None,
+        description="The V2 eval config properties to test. Required unless llm_judge_builder_input is set.",
+    )
+    eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+    llm_judge_builder_input: LlmJudgeBuilderInput | None = Field(
+        default=None,
+        description="Builder input for llm_judge; when set, the server bakes the full properties from the eval's output_scores.",
+    )
+
+
+class TestV2EvalResponse(BaseModel):
+    """Response from a test-run of a V2 eval."""
+
+    scores: EvalScores = Field(default_factory=dict)
+    skipped_reason: str | None = None
+    skipped_detail: str | None = None
+    score_range_errors: list[str] | None = None
+    intermediate_outputs: dict[str, str] | None = None
+
+
+class CodeEvalTrustResponse(BaseModel):
+    """Response indicating whether code eval is trusted for a project."""
+
+    trusted: bool
 
 
 class CreateTaskRunConfigRequest(BaseModel):
@@ -249,7 +332,15 @@ class RunEvalConfigRequest(BaseModel):
 class ScoreSummary(BaseModel):
     """Summary of scores for an eval run."""
 
-    mean_score: float = Field(description="The mean score across all runs.")
+    mean_score: float | None = Field(
+        description="The mean score across all used runs. None when n_used == 0."
+    )
+    n_used: int = Field(
+        description="Number of EvalRuns with all expected scores and not skipped."
+    )
+    n_excluded: int = Field(
+        description="Number of EvalRuns excluded due to skipped_reason."
+    )
 
 
 class MeanUsage(BaseModel):
@@ -405,6 +496,10 @@ class EvalConfigResult(BaseModel):
         description="Scores keyed by output_score_id. None when no data."
     )
     percent_complete: float = Field(description="Percent of the dataset processed.")
+    n_excluded: int = Field(
+        default=0,
+        description="Number of EvalRuns excluded due to skipped_reason.",
+    )
 
 
 class RunConfigEvalResult(BaseModel):
@@ -545,6 +640,7 @@ def compute_score_summary(
         lambda: defaultdict(float)
     )
     score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    excluded_counts: Dict[ID_TYPE, int] = defaultdict(int)
 
     for eval_run in eval_config.runs(readonly=True):
         if eval_run.task_run_config_id is None:
@@ -557,6 +653,11 @@ def compute_score_summary(
             continue
         else:
             remaining_expected_dataset_ids[run_config_id].remove(eval_run.dataset_id)
+
+        if eval_run.skipped_reason is not None:
+            excluded_counts[run_config_id] += 1
+            _ = total_scores[run_config_id]
+            continue
 
         incomplete = False
         # Ensure this run_config_id has an entry even if no scores match
@@ -572,23 +673,31 @@ def compute_score_summary(
         if incomplete:
             partial_incomplete_counts[run_config_id] += 1
 
+    all_score_keys = [os.json_key() for os in eval.output_scores]
+
     results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = {}
     for run_config_id, output_scores in total_scores.items():
         results[run_config_id] = {}
-        for output_score_id, score in output_scores.items():
-            count = score_counts[run_config_id][output_score_id]
-            if count > 0:
-                results[run_config_id][output_score_id] = ScoreSummary(
-                    mean_score=score / count
+        n_excluded = excluded_counts[run_config_id]
+        for score_key in all_score_keys:
+            count = score_counts[run_config_id][score_key]
+            total = output_scores.get(score_key, 0.0)
+            if count > 0 or n_excluded > 0:
+                results[run_config_id][score_key] = ScoreSummary(
+                    mean_score=total / count if count > 0 else None,
+                    n_used=count,
+                    n_excluded=n_excluded,
                 )
 
     run_config_percent_complete: Dict[ID_TYPE, float] = {}
     for run_config in task_run_configs:
+        n_excluded = excluded_counts[run_config.id]
         incomplete_count = partial_incomplete_counts[run_config.id] + len(
             remaining_expected_dataset_ids[run_config.id]
         )
-        percent_incomplete = incomplete_count / len(expected_dataset_ids)
-        run_config_percent_complete[run_config.id] = 1 - percent_incomplete
+        n_processed = len(expected_dataset_ids) - incomplete_count
+        percent_complete = (n_processed) / len(expected_dataset_ids)
+        run_config_percent_complete[run_config.id] = percent_complete
 
     return EvalResultSummary(
         results=results,
@@ -923,19 +1032,170 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: CreateEvalConfigRequest,
     ) -> EvalConfig:
+        if request.type in (EvalConfigType.g_eval, EvalConfigType.llm_as_judge):
+            if not request.model_name or not request.provider:
+                raise HTTPException(
+                    status_code=400,
+                    detail="model_name and provider are required for LLM-based eval types.",
+                )
+
         eval = eval_from_id(project_id, task_id, eval_id)
         name = request.name or generate_memorable_name()
 
-        eval_config = EvalConfig(
-            name=name,
-            config_type=request.type,
-            properties=request.properties,
-            model_name=request.model_name,
-            model_provider=request.provider,
-            parent=eval,
-        )
+        try:
+            eval_config = EvalConfig(
+                name=name,
+                config_type=request.type,
+                properties=request.properties,
+                model_name=request.model_name,
+                model_provider=request.provider,
+                parent=eval,
+            )
+        except ValidationError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid properties for eval config type '{request.type.value}'.",
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e),
+            )
         eval_config.save_to_file()
         return eval_config
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config",
+        summary="Create LLM Judge Eval Config",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def create_llm_judge_config(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        request: CreateLlmJudgeConfigRequest,
+    ) -> EvalConfig:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        name = request.name or generate_memorable_name()
+
+        try:
+            properties = materialize_llm_judge_properties(
+                eval=eval,
+                model_name=request.model_name,
+                model_provider=request.provider,
+                g_eval=request.g_eval,
+                judge_prompt=request.judge_prompt,
+                system_prompt=request.system_prompt,
+            )
+            properties.reference_keys = list(request.reference_keys)
+            eval_config = EvalConfig(
+                name=name,
+                config_type=EvalConfigType.v2,
+                properties=properties,
+                parent=eval,
+            )
+        except (ValidationError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e),
+            )
+        eval_config.save_to_file()
+        return eval_config
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
+        summary="Get Default LLM Judge Prompt",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_default_llm_judge_prompt(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+    ) -> DefaultLlmJudgePromptResponse:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        return DefaultLlmJudgePromptResponse(
+            judge_prompt=build_default_llm_judge_prompt(eval),
+            system_prompt=DEFAULT_SYSTEM_PROMPT,
+        )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval",
+        summary="Test V2 Eval Config",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def test_v2_eval(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        request: TestV2EvalRequest,
+    ) -> TestV2EvalResponse:
+        try:
+            eval_obj = eval_from_id(project_id, task_id, eval_id)
+
+            if request.llm_judge_builder_input is not None:
+                builder = request.llm_judge_builder_input
+                properties = materialize_llm_judge_properties(
+                    eval=eval_obj,
+                    model_name=builder.model_name,
+                    model_provider=builder.provider,
+                    g_eval=builder.g_eval,
+                    judge_prompt=builder.judge_prompt,
+                    system_prompt=builder.system_prompt,
+                )
+            elif request.properties is not None:
+                properties = request.properties
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either properties or llm_judge_builder_input must be provided.",
+                )
+
+            transient_config = EvalConfig(
+                name="test_run",
+                config_type=EvalConfigType.v2,
+                properties=properties,
+                parent=eval_obj,
+            )
+            adapter = v2_eval_adapter_from_config(transient_config)
+            result = await adapter.evaluate(request.eval_input)
+
+            score_range_errors: list[str] | None = None
+            if result.skipped_reason is None and result.scores:
+                problems = validate_scores_against_output_scores(
+                    result.scores, eval_obj.output_scores
+                )
+                if problems:
+                    score_range_errors = problems
+
+            return TestV2EvalResponse(
+                scores=result.scores,
+                skipped_reason=result.skipped_reason.value
+                if result.skipped_reason
+                else None,
+                skipped_detail=result.skipped_detail,
+                score_range_errors=score_range_errors,
+                intermediate_outputs=result.intermediate_outputs,
+            )
+        except (ValueError, NotImplementedError, ValidationError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
@@ -1131,6 +1391,11 @@ def connect_evals_api(app: FastAPI):
     ) -> EvalProgress:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
+        if eval.eval_set_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint isn't supported for this eval type.",
+            )
         dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
@@ -1197,6 +1462,11 @@ def connect_evals_api(app: FastAPI):
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
 
+        if eval.eval_set_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint isn't supported for this eval type.",
+            )
         expected_dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
@@ -1239,6 +1509,8 @@ def connect_evals_api(app: FastAPI):
 
         for eval in task.evals(readonly=True):
             filter_id = eval.eval_set_filter_id
+            if filter_id is None:
+                continue
             if filter_id not in dataset_ids_cache:
                 dataset_ids_cache[filter_id] = dataset_ids_in_filter(
                     task, filter_id, readonly=True
@@ -1272,7 +1544,11 @@ def connect_evals_api(app: FastAPI):
             )
 
             for rc_id, scores_dict in summary.results.items():
-                mean_scores = {key: s.mean_score for key, s in scores_dict.items()}
+                mean_scores = {
+                    key: s.mean_score
+                    for key, s in scores_dict.items()
+                    if s.mean_score is not None
+                }
                 percent_complete = summary.run_config_percent_complete.get(rc_id, 0.0)
                 cell = EvalResultsSummaryResultCell(
                     mean_scores=mean_scores,
@@ -1492,6 +1768,8 @@ def connect_evals_api(app: FastAPI):
                 continue
 
             # Get the dataset size for this eval
+            if eval.eval_set_filter_id is None:
+                continue
             expected_dataset_ids = dataset_ids_in_filter(
                 task, eval.eval_set_filter_id, readonly=True
             )
@@ -1531,6 +1809,7 @@ def connect_evals_api(app: FastAPI):
             # Track which dataset items we've seen for this eval_config
             remaining_expected_dataset_ids = set(expected_dataset_ids)
             partial_incomplete_count = 0
+            eval_config_n_excluded = 0
 
             # output_score_json_key -> score/total for calculating the mean score
             total_scores: Dict[str, float] = {}
@@ -1546,6 +1825,10 @@ def connect_evals_api(app: FastAPI):
                     continue
                 else:
                     remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+
+                if eval_run.skipped_reason is not None:
+                    eval_config_n_excluded += 1
+                    continue
 
                 total_eval_runs += 1
 
@@ -1585,17 +1868,19 @@ def connect_evals_api(app: FastAPI):
                 if incomplete:
                     partial_incomplete_count += 1
 
-            # Initialize results with all expected score keys as None
             results: Dict[str, ScoreSummary | None] = {}
             for output_score in eval.output_scores:
                 score_key = output_score.json_key()
-                results[score_key] = None
-
-            # Convert to score summaries where we have data
-            for output_score_id, score in total_scores.items():
-                count = score_counts[output_score_id]
-                if count > 0:
-                    results[output_score_id] = ScoreSummary(mean_score=score / count)
+                count = score_counts.get(score_key, 0)
+                total = total_scores.get(score_key, 0.0)
+                if count > 0 or eval_config_n_excluded > 0:
+                    results[score_key] = ScoreSummary(
+                        mean_score=total / count if count > 0 else None,
+                        n_used=count,
+                        n_excluded=eval_config_n_excluded,
+                    )
+                else:
+                    results[score_key] = None
 
             # Calculate the percent of the dataset that has been processed
             incomplete_count = partial_incomplete_count + len(
@@ -1618,6 +1903,7 @@ def connect_evals_api(app: FastAPI):
                         eval_config_id=eval_config.id,
                         results=results,
                         percent_complete=percent_complete,
+                        n_excluded=eval_config_n_excluded,
                     ),
                 )
             )
@@ -1646,3 +1932,32 @@ def connect_evals_api(app: FastAPI):
             eval_results=eval_results,
             mean_usage=mean_usage,
         )
+
+    @app.post(
+        "/api/projects/{project_id}/grant_code_eval_trust",
+        summary="Grant code eval trust for a project",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def grant_code_eval_trust_endpoint(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> CodeEvalTrustResponse:
+        project = project_from_id(project_id)
+        grant_code_eval_trust(str(project.path))
+        return CodeEvalTrustResponse(trusted=True)
+
+    @app.get(
+        "/api/projects/{project_id}/code_eval_trust",
+        summary="Check code eval trust for a project",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def check_code_eval_trust_endpoint(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> CodeEvalTrustResponse:
+        project = project_from_id(project_id)
+        return CodeEvalTrustResponse(trusted=is_code_eval_trusted(str(project.path)))

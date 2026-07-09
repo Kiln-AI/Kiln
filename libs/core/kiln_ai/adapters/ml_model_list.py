@@ -45,6 +45,7 @@ class ModelFamily(str, Enum):
     mimo = "mimo"
     nemotron = "nemotron"
     arcee = "arcee"
+    sakana = "sakana"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -54,6 +55,7 @@ class ModelName(str, Enum):
     Where models have instruct and raw versions, instruct is default and raw is specified.
     """
 
+    fugu_ultra = "fugu_ultra"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
@@ -577,6 +579,13 @@ GROK_4_3_OPENROUTER_THINKING_LEVELS = {
     "High": "high",
 }
 
+# Fugu Ultra: reasoning is mandatory (no "none"); OpenRouter exposes only high/xhigh/max.
+FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 
 built_in_models: List[KilnModel] = [
     # GPT 5.5
@@ -885,7 +894,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -906,7 +914,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -935,7 +942,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -956,7 +962,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -983,7 +988,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.2-chat-latest",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1003,7 +1007,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1247,7 +1250,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -4963,6 +4965,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek/deepseek-v4-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+                suggested_for_evals=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
@@ -4972,6 +4975,7 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/deepseek-v4-pro",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -7480,6 +7484,7 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/kimi-k2p6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+                suggested_for_evals=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 supports_doc_extraction=True,
@@ -7495,6 +7500,7 @@ built_in_models: List[KilnModel] = [
                 model_id="moonshotai/kimi-k2.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+                suggested_for_evals=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_requires_pdf_as_image=True,
@@ -7602,14 +7608,12 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/kimi-k2-instruct",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -7648,14 +7652,12 @@ built_in_models: List[KilnModel] = [
                 model_id="moonshotai/kimi-k2-0905:exacto",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-instruct-0905",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -7843,6 +7845,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
+                suggested_for_evals=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
@@ -7872,6 +7875,7 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/minimax-m3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
@@ -8278,6 +8282,36 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Fugu Ultra
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_ultra,
+        friendly_name="Fugu Ultra",
+        editorial_notes="Sakana's Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-ultra",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
