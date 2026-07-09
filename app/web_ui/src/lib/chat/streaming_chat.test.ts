@@ -1,32 +1,14 @@
 import { describe, expect, it } from "vitest"
 import {
-  traceIdForNextChatRequest,
   normalizeContextUsage,
   StreamEventProcessor,
-  type ChatMessage,
   type ContextUsage,
   type StreamEvent,
 } from "./streaming_chat"
 
-describe("traceIdForNextChatRequest", () => {
-  it("returns the latest assistant traceId", () => {
-    const msgs: ChatMessage[] = [
-      { id: "1", role: "user", content: "hi" },
-      { id: "2", role: "assistant", parts: [], traceId: "a" },
-      { id: "3", role: "user", content: "again" },
-      { id: "4", role: "assistant", parts: [], traceId: "b" },
-    ]
-    expect(traceIdForNextChatRequest(msgs)).toBe("b")
-  })
-
-  it("returns undefined when no assistant has traceId", () => {
-    const msgs: ChatMessage[] = [
-      { id: "1", role: "user", content: "hi" },
-      { id: "2", role: "assistant", parts: [] },
-    ]
-    expect(traceIdForNextChatRequest(msgs)).toBeUndefined()
-  })
-})
+// Phase 5 note: the traceIdForNextChatRequest suite died with the function —
+// the browser keys conversations on session ids and never derives a
+// continuation key from message trace ids (functional spec §4).
 
 describe("normalizeContextUsage", () => {
   it("returns null for absent payload", () => {

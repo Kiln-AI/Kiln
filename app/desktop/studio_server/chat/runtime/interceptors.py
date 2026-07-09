@@ -111,13 +111,14 @@ class InterceptContext:
     interceptions are batch-aware: the consent control event lists sibling
     calls (so accept/decline can resolve every tool_call_id the backend waits
     on), and the terminal/immediate disable paths execute siblings alongside
-    the resolved signal. ``trace_id`` is this round's persisted leaf (rides
-    the consent event for UI correlation).
+    the resolved signal. (The round's ``trace_id`` used to ride here purely
+    so the consent event could carry it to the browser; phase 5 removed it —
+    consent accept/decline is keyed by session id and the record's own leaf
+    is authoritative, functional spec §4.)
     """
 
     record: ConversationRecord
     policy: ConversationPolicy
-    trace_id: str | None
     client_events: list[ToolInputAvailableEvent]
 
 
@@ -181,7 +182,6 @@ def intercept_enable_auto_mode_consent(
     return InterceptResult(
         kind="control",
         control_bytes=_format_consent_required_sse(
-            trace_id=ctx.trace_id,
             enable_tool_call_id=event.toolCallId,
             reason=event.input.get("reason"),
             siblings=siblings,

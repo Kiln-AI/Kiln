@@ -73,7 +73,6 @@ function child(
     name: `Agent ${id}`,
     agent_type: "general",
     parent_session_id: "trace:parent-1",
-    current_trace_id: `trace-${id}`,
     auto_flag: false,
     rounds_used: 0,
     report_available: false,
@@ -337,7 +336,7 @@ describe("conversation_store", () => {
           sseResponse(events),
         "http://localhost:8757/api/conversations/cv_1": () =>
           jsonResponse(child("cv_1", overrides)),
-        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
+        "http://localhost:8757/api/chat/sessions/cv_1": () =>
           jsonResponse({ id: "trace-cv_1", task_run: { trace: [] } }),
       }
     }
@@ -360,7 +359,7 @@ describe("conversation_store", () => {
           ]),
         "http://localhost:8757/api/conversations/cv_1": () =>
           jsonResponse(child("cv_1")),
-        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
+        "http://localhost:8757/api/chat/sessions/cv_1": () =>
           jsonResponse({
             id: "trace-cv_1",
             task_run: {
@@ -390,22 +389,18 @@ describe("conversation_store", () => {
       expect(transcript[2].parts).toEqual([{ type: "text", text: "live tail" }])
     })
 
-    it("hydrates from the RE-FETCHED item's fresh leaf, not the stale list entry", async () => {
-      // conversation-state events carry no trace ids, so the list's
-      // current_trace_id can go stale between syncs; observe() re-fetches the
-      // item and must hydrate from ITS leaf.
-      const hydrated: string[] = []
+    it("hydrates by SESSION id — the desktop resolves the fresh leaf per request", async () => {
+      // Phase 5: current_trace_id (and the pre-hydration item re-fetch that
+      // kept it fresh) are gone — hydration fetches /api/chat/sessions/{sid}
+      // and the DESKTOP resolves the record's current leaf, so a stale list
+      // entry can no longer hydrate a stale snapshot.
       routeFetch({
         "http://localhost:8757/api/conversations?": () =>
-          jsonResponse([child("cv_1", { current_trace_id: "trace-stale" })]),
+          jsonResponse([child("cv_1")]),
         "http://localhost:8757/api/conversations/cv_1/events": () =>
           sseResponse([]),
-        "http://localhost:8757/api/conversations/cv_1": () =>
-          jsonResponse(child("cv_1", { current_trace_id: "trace-fresh" })),
-        "http://localhost:8757/api/chat/sessions/": () => {
-          hydrated.push("hit")
-          return jsonResponse({ id: "trace-fresh", task_run: { trace: [] } })
-        },
+        "http://localhost:8757/api/chat/sessions/cv_1": () =>
+          jsonResponse({ id: "trace-fresh", task_run: { trace: [] } }),
       })
       const fetchMock = vi.mocked(globalThis.fetch)
       await store.syncForConversation("trace-leaf")
@@ -417,10 +412,13 @@ describe("conversation_store", () => {
         .map((c) => String(c[0]))
         .filter((u) => u.includes("/api/chat/sessions/"))
       expect(sessionCalls).toEqual([
-        "http://localhost:8757/api/chat/sessions/trace-fresh",
+        "http://localhost:8757/api/chat/sessions/cv_1",
       ])
-      // The list entry was refreshed from the item fetch.
-      expect(get(store.children)[0].current_trace_id).toBe("trace-fresh")
+      // No item fetch rides observe() anymore (its only job was the leaf).
+      const itemCalls = fetchMock.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.endsWith("/api/conversations/cv_1"))
+      expect(itemCalls).toEqual([])
     })
 
     it("strips steer framing from replayed user-message echoes", async () => {
@@ -483,7 +481,7 @@ describe("conversation_store", () => {
           ]),
         "http://localhost:8757/api/conversations/cv_1": () =>
           jsonResponse(child("cv_1")),
-        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
+        "http://localhost:8757/api/chat/sessions/cv_1": () =>
           jsonResponse({
             id: "trace-cv_1",
             task_run: {
@@ -560,7 +558,7 @@ describe("conversation_store", () => {
           }) as unknown as Response,
         "http://localhost:8757/api/conversations/cv_1": () =>
           jsonResponse(child("cv_1")),
-        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
+        "http://localhost:8757/api/chat/sessions/cv_1": () =>
           jsonResponse({ id: "trace-cv_1", task_run: { trace: [] } }),
       })
       await store.syncForConversation("trace-leaf")
@@ -876,7 +874,9 @@ function makeMainSink(): { sink: MainConversationSink; calls: SinkCalls } {
       update(draft)
       calls.assistantUpdates.push(draft)
     },
-    onChatTrace: (tid) => calls.traces.push(tid),
+    // Phase 5: the sink no longer receives trace ids — only the fact that a
+    // turn persisted (used by the session store's root_id learn).
+    onTurnPersisted: () => calls.traces.push("persisted"),
     onContextUsage: (usage) => calls.contextUsages.push(usage),
     onCompactionStatus: (c) => calls.compactionStatuses.push(c),
     onInlineError: (msg) => calls.errors.push(msg),
@@ -978,18 +978,19 @@ describe("main_conversation_store", () => {
     // immediately, so a fresh assistant turn is opened to render it.
     const result = await store.requestEnable({
       kind: "auto",
-      trace_id: "t1",
+      session_id: "cv_1",
       enable_tool_call_id: "call_enable",
     })
     expect(result.ok).toBe(true)
 
-    // Enable POST went out with the seed body to the create endpoint.
+    // Enable POST went out with the seed body to the create endpoint —
+    // keyed by SESSION id since phase 5 (browsers never hold trace ids).
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("http://localhost:8757/api/conversations")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       kind: "auto",
-      trace_id: "t1",
+      session_id: "cv_1",
       enable_tool_call_id: "call_enable",
     })
 
@@ -1025,7 +1026,10 @@ describe("main_conversation_store", () => {
     // Manual enable only arms the conversation: the server flips the record
     // IDLE("armed") without an empty upstream burst, so there's no immediate
     // assistant turn to open — the indicator just turns on.
-    const result = await store.requestEnable({ kind: "auto", trace_id: "t1" })
+    const result = await store.requestEnable({
+      kind: "auto",
+      session_id: "cv_arm",
+    })
     expect(result.ok).toBe(true)
     expect(calls.beginAssistantTurn).toBe(0)
 
@@ -1056,7 +1060,7 @@ describe("main_conversation_store", () => {
 
     const result = await store.requestEnable({
       kind: "auto",
-      trace_id: "t1",
+      session_id: "cv_flip",
       enable_tool_call_id: "call_enable",
     })
     expect(result.ok).toBe(true)
@@ -1082,25 +1086,25 @@ describe("main_conversation_store", () => {
     expect(get(store.armed)).toBe(false)
   })
 
-  it("no-trace enable (Revision R2) seeds the first message, begins a turn, attaches, clears armed", async () => {
+  it("no-session enable (Revision R2) seeds the first message, begins a turn, attaches, clears armed", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ session_id: "cv_new" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    // The conversation was armed client-side (brand-new chat, no trace_id).
+    // The conversation was armed client-side (brand-new chat, no record).
     store.arm()
     expect(get(store.armed)).toBe(true)
 
     // The first send creates the conversation via enable with extra_messages
-    // + no trace_id.
+    // + no session_id.
     const result = await store.requestEnable({
       kind: "auto",
       extra_messages: [{ role: "user", content: "do the thing" }],
     })
     expect(result.ok).toBe(true)
 
-    // The enable POST carried the first message and NO trace_id.
+    // The enable POST carried the first message and NO session_id.
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("http://localhost:8757/api/conversations")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
@@ -1135,7 +1139,7 @@ describe("main_conversation_store", () => {
     expect(url).toBe("http://localhost:8757/api/conversations")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       kind: "interactive",
-      trace_id: "tr-leaf",
+      session_id: "tr-leaf",
     })
     // Attached — but the auto indicator stays OFF for an interactive attach
     // (the marker is the source of truth, not the attach).
@@ -1299,14 +1303,14 @@ describe("main_conversation_store", () => {
     source.message(stateRunning("cv_consent", "interactive"))
     source.message({
       type: "auto-mode-consent-required",
-      trace_id: "t1",
       enable_tool_call_id: "call_enable",
       reason: "let me work",
       sibling_tool_calls: [],
     })
+    // Phase 5: the payload carries no trace id — accept/decline is keyed by
+    // the observed conversation's session id.
     expect(calls.consentPayloads).toEqual([
       {
-        traceId: "t1",
         enableToolCallId: "call_enable",
         reason: "let me work",
         siblingToolCalls: [],
@@ -1322,7 +1326,7 @@ describe("main_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_2" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ kind: "auto", trace_id: "t" })
+    await store.requestEnable({ kind: "auto", session_id: "cv_seed" })
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_2"))
     expect(get(store.autoModeOn)).toBe(true)
@@ -1351,7 +1355,7 @@ describe("main_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_3" }),
     })
     vi.stubGlobal("fetch", enableFetch)
-    await store.requestEnable({ kind: "auto", trace_id: "t" })
+    await store.requestEnable({ kind: "auto", session_id: "cv_seed" })
     FakeEventSource.latest().message(stateRunning("cv_3"))
 
     const stopFetch = vi.fn().mockResolvedValue({ ok: true })
@@ -1569,7 +1573,10 @@ describe("main_conversation_store", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const result = await store.requestEnable({ kind: "auto", trace_id: "t" })
+    const result = await store.requestEnable({
+      kind: "auto",
+      session_id: "cv_seed",
+    })
     expect(result.ok).toBe(false)
     expect(result.error).toBe("Too many auto runs")
     expect(get(store.autoModeOn)).toBe(false)
@@ -1596,7 +1603,7 @@ describe("main_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_idle" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ kind: "auto", trace_id: "t" })
+    await store.requestEnable({ kind: "auto", session_id: "cv_seed" })
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_idle"))
     expect(get(store.autoModeOn)).toBe(true)
@@ -1622,7 +1629,7 @@ describe("main_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_retry" }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    await store.requestEnable({ kind: "auto", trace_id: "t" })
+    await store.requestEnable({ kind: "auto", session_id: "cv_seed" })
     const source = FakeEventSource.latest()
     source.message(stateRunning("cv_retry"))
 
@@ -1893,7 +1900,7 @@ describe("main_conversation_store", () => {
       json: () => Promise.resolve({ session_id: "cv_4" }),
     })
     vi.stubGlobal("fetch", enableFetch)
-    await store.requestEnable({ kind: "auto", trace_id: "t" })
+    await store.requestEnable({ kind: "auto", session_id: "cv_seed" })
 
     const postSpy = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal("fetch", postSpy)

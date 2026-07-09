@@ -150,22 +150,25 @@ def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> byt
 
 
 def _format_consent_required_sse(
-    trace_id: str | None,
     enable_tool_call_id: str,
     reason: str | None,
     siblings: list[ToolInputAvailableEvent],
 ) -> bytes:
-    """Format the ``auto-mode-consent-required`` SSE the interactive stream emits
-    when the model calls ``enable_auto_mode``.
+    """Format the ``auto-mode-consent-required`` SSE the engine emits when the
+    model calls ``enable_auto_mode`` on an interactive conversation.
 
     ``sibling_tool_calls`` carries any other (non-server) client tool calls from
     the same round so the accept/decline paths can resolve every ``tool_call_id``
     the backend is waiting on. The model is instructed to call ``enable_auto_mode``
     alone, so this is normally empty.
+
+    Phase 5: the payload no longer carries ``trace_id`` — consent accept
+    (``POST /api/conversations`` kind=auto) and decline (``POST /{sid}/auto``)
+    are keyed by the conversation's session id and the record's own leaf is
+    authoritative (functional spec §4: browsers never see trace ids).
     """
     payload = {
         "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
-        "trace_id": trace_id,
         "enable_tool_call_id": enable_tool_call_id,
         "reason": reason,
         "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],

@@ -174,7 +174,55 @@ async def test_interactive_text_only_turn_settles_idle():
     assert h.record.current_leaf_trace_id == "tr-1"
     assert h.record.seen_trace_ids == ["tr-1"]
     assert h.traces == ["tr-1"]
+    # Phase 5: a FRESH record's first persisted snapshot is the session's
+    # durable root (the backend stamps session_meta.root_id = snapshot_id on
+    # the first persist — stream_orchestration.save_chat_snapshot), so the
+    # engine records it for the browser's restart-recovery key.
+    assert h.record.root_id == "tr-1"
     assert "hi" in _decoded(h.emitted)
+
+
+async def test_root_and_leaf_stamped_before_the_trace_byte_is_emitted():
+    # Phase-5 CR LOW 3: the browser's one-shot "learn the root id" item GET is
+    # triggered BY the kiln_chat_trace byte itself, so the record must already
+    # carry root_id/current_leaf when that byte reaches any observer — the
+    # engine stamps them pre-emit (the parser sets round_state.trace_id before
+    # the payload is yielded), not only at the round boundary.
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("hi"), trace("tr-1"), finish("stop")])]
+    )
+    h = _harness()
+    stamped_at_emit: list[tuple[str | None, str | None]] = []
+    plain_emit = h.io.emit
+
+    def emit(payload: bytes) -> None:
+        if b"kiln_chat_trace" in payload:
+            stamped_at_emit.append((h.record.root_id, h.record.current_leaf_trace_id))
+        plain_emit(payload)
+
+    h.io.emit = emit
+    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    assert stamped_at_emit == [("tr-1", "tr-1")]
+
+
+async def test_adopted_record_never_stamps_root_from_a_trace():
+    # A record adopted mid-conversation (history open) joined the chain at an
+    # arbitrary leaf — its seen_trace_ids are seeded at adopt, so the engine
+    # must NOT claim a later leaf as the root (only the conversation's FIRST
+    # persist is the root; adoption learns the true root from the key
+    # resolution or the rehydration fetch instead).
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("hi"), trace("tr-9"), finish("stop")])]
+    )
+    record = ConversationRecord(
+        kind="interactive",
+        current_leaf_trace_id="tr-8",
+        seen_trace_ids=["tr-8"],
+    )
+    h = _harness(record=record)
+    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    assert h.record.current_leaf_trace_id == "tr-9"
+    assert h.record.root_id is None
 
 
 async def test_auto_text_only_round_settles_idle_flag_on():

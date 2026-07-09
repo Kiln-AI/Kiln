@@ -21,6 +21,7 @@ from kiln_server.custom_errors import connect_custom_errors
 
 # Absolute imports so the patched module attributes are the same instances the
 # app wiring resolves (see the note in chat/test_orchestration.py).
+from app.desktop.studio_server.chat import routes as routes_module
 from app.desktop.studio_server.chat.runtime import api as conversations_api_module
 from app.desktop.studio_server.chat.runtime.api import connect_conversations_api
 from app.desktop.studio_server.chat.runtime.engine import ConversationEngine
@@ -41,7 +42,11 @@ def supervisor(monkeypatch):
     sup = ConversationSupervisor()
     # The API module reads a module-level singleton; point it at the fresh
     # instance (the phase-2/3 parent_index singleton died with the old loop).
+    # routes.py holds its own reference, consulted by the phase-5 key
+    # resolution the interactive create delegates to — patch both so the app
+    # under test sees one supervisor, like production's shared singleton.
     monkeypatch.setattr(conversations_api_module, "conversation_supervisor", sup)
+    monkeypatch.setattr(routes_module, "conversation_supervisor", sup)
     return sup
 
 
@@ -54,6 +59,16 @@ def no_rehydrate_network():
     with patch.object(
         ConversationSupervisor, "_fetch_persisted_trace", return_value=None
     ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def no_root_scan_network():
+    # The phase-5 key resolution's root→leaf fallback pages the UPSTREAM
+    # sessions list; the API tests exercise supervisor-resident keys and raw
+    # leaves, so the default is "no cold root matches" (the routes tests own
+    # the scan itself).
+    with patch.object(routes_module, "_leaf_for_root_id", return_value=None):
         yield
 
 
@@ -108,6 +123,20 @@ async def client(app):
         yield http_client
 
 
+def _seeded_interactive(supervisor: ConversationSupervisor, leaf: str):
+    """A live interactive conversation already holding a persisted leaf — the
+    state the browser's ensure() produces before it enables auto mode (phase
+    5 keys the enable on the LIVE session id, so the old enable-by-trace
+    record creation is unreachable from this surface)."""
+    record = supervisor.create_conversation(
+        "interactive", upstream_url="https://example.test", headers={}
+    )
+    record.current_leaf_trace_id = leaf
+    record.seen_trace_ids.append(leaf)
+    supervisor._trace_index[leaf] = record.session_id
+    return record
+
+
 def _spawn(supervisor: ConversationSupervisor, parent_key: str = "trace:leaf-1"):
     return supervisor.spawn_subagent(
         SubAgentSeed(
@@ -138,15 +167,15 @@ async def test_list_and_get(supervisor, hang_engine, client):
         record.session_id,
     }
 
-    # The browser's parent handle is the (possibly stale) leaf trace id until
-    # phase 5 — it resolves to the parent's children.
-    r = await client.get("/api/conversations", params={"parent": "leaf-1"})
-    assert [item["session_id"] for item in r.json()] == [record.session_id]
-
-    # The parent session id works directly too (the phase-5 shape).
+    # Phase 5: the parent handle is the SESSION id — the browser keys the
+    # children sync on main_conversation_store.sessionId, so the trace-index
+    # fallback (_resolve_parent_key) died with the browser's last trace
+    # handle. A leaf is just an unknown value now: correct empty list.
     r = await client.get("/api/conversations", params={"parent": parent.session_id})
     assert [item["session_id"] for item in r.json()] == [record.session_id]
 
+    r = await client.get("/api/conversations", params={"parent": "leaf-1"})
+    assert r.json() == []
     r = await client.get("/api/conversations", params={"parent": "other-leaf"})
     assert r.json() == []
 
@@ -155,6 +184,8 @@ async def test_list_and_get(supervisor, hang_engine, client):
     assert r.json()["state"] == "running"
     assert r.json()["name"] == "helper"
     assert r.json()["kind"] == "subagent"
+    # Trace ids never ride the browser surface (functional spec §4).
+    assert "current_trace_id" not in r.json()
 
     r = await client.get("/api/conversations/cv_missing")
     assert r.status_code == 404
@@ -280,6 +311,10 @@ async def test_state_firehose_snapshot_then_live(supervisor, hang_engine):
 async def test_create_auto_starts_burst_and_returns_session_id(
     supervisor, client, mock_api_key
 ):
+    # Consent accept (phase 5 shape): keyed by the LIVE conversation's
+    # session id — the consent event arrives on the observer of an existing
+    # record, so a sid is always in hand.
+    seeded = _seeded_interactive(supervisor, "t1")
     round1 = [text_delta("on it"), trace("t1"), finish("stop")]
     fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
 
@@ -287,20 +322,20 @@ async def test_create_auto_starts_burst_and_returns_session_id(
         r = await client.post(
             "/api/conversations",
             json={
-                "trace_id": "t1",
+                "session_id": seeded.session_id,
                 "enable_tool_call_id": "tc_enable",
                 "reason": "running the eval",
             },
         )
         assert r.status_code == 200
         session_id = r.json()["session_id"]
-        assert session_id.startswith("cv_")
-        assert supervisor.get(session_id) is not None
+        assert session_id == seeded.session_id
         await _wait_idle(supervisor, session_id)
 
-    # The seed body resolved the enable call as enabled and continued from the
-    # caller's trace with the auto_mode flag (old enable seed contract, also
-    # pinned by the auto_seed_and_tool_round golden fixture).
+    # The seed body resolved the enable call as enabled and continued from
+    # the RECORD's own leaf with the auto_mode flag (old enable seed
+    # contract, also pinned by the auto_seed_and_tool_round golden fixture;
+    # the browser's copy of the trace id died in phase 5).
     seed_body = fake.bodies[0]
     assert seed_body["trace_id"] == "t1"
     assert seed_body["auto_mode"] is True
@@ -310,23 +345,38 @@ async def test_create_auto_starts_burst_and_returns_session_id(
     assert record.kind == "auto" and record.auto_flag is True
 
 
-async def test_list_children_of_auto_parent_by_stale_leaf(
+async def test_create_auto_unknown_session_returns_404(
     supervisor, client, mock_api_key
 ):
-    # CRITICAL regression guard (the pre-refactor "invisible tabs" bug
-    # shape): the browser's REAL parent handle is the main transcript's
-    # (possibly stale) leaf trace id — chat.svelte calls
-    # syncForConversation(currentLeafTraceId). An auto parent's children are
-    # keyed by its SESSION id, so ?parent=<leaf> must resolve through the
-    # supervisor's whole-chain trace index (the old auto:<run_id> alias
-    # chain that bridged this died with chat/auto/).
+    # The named conversation died with a restart/eviction — so did the
+    # consent dialog's context; never silently fork a parallel record.
+    r = await client.post(
+        "/api/conversations",
+        json={"session_id": "cv_missing", "enable_tool_call_id": "tc_enable"},
+    )
+    assert r.status_code == 404
+
+
+async def test_list_children_of_auto_parent_by_session_id(
+    supervisor, client, mock_api_key
+):
+    # Phase 5: the browser's ONLY parent handle is the session id
+    # (chat.svelte keys syncForConversation on
+    # main_conversation_store.sessionId), and children carry
+    # parent_session_id verbatim — the phase-3/4 trace-index fallback that
+    # bridged stale leaf handles (the old "invisible tabs" regression guard)
+    # is gone WITH its caller.
+    seeded = _seeded_interactive(supervisor, "t1")
     round1 = [trace("t2"), text_delta("hi"), finish("stop")]
     fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
     with patch.object(httpx, "AsyncClient", return_value=fake):
         session_id = (
             await client.post(
                 "/api/conversations",
-                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+                json={
+                    "session_id": seeded.session_id,
+                    "enable_tool_call_id": "tc_enable",
+                },
             )
         ).json()["session_id"]
         await _wait_idle(supervisor, session_id)
@@ -344,28 +394,21 @@ async def test_list_children_of_auto_parent_by_stale_leaf(
         ),
     )
 
-    # Every handle the browser can hold resolves to the same children list:
-    # the seed leaf (stale after the burst advanced to t2), the current
-    # leaf, and the session id itself (the phase-4/5 shape).
-    for handle in ("t1", "t2", session_id):
+    r = await client.get("/api/conversations", params={"parent": session_id})
+    assert [i["session_id"] for i in r.json()] == [child.session_id]
+    # Leaf trace ids are no longer parent handles (the browser never holds
+    # them); they yield the correct empty list like any unknown value.
+    for handle in ("t1", "t2", "never-seen"):
         r = await client.get("/api/conversations", params={"parent": handle})
-        assert [i["session_id"] for i in r.json()] == [child.session_id], handle
-
-    # A child's own leaf is never a parent handle (children can't have
-    # children — the resolver's kind guard), and unknown traces yield the
-    # correct empty list.
-    supervisor._trace_index["child-leaf"] = child.session_id
-    r = await client.get("/api/conversations", params={"parent": "child-leaf"})
-    assert r.json() == []
-    r = await client.get("/api/conversations", params={"parent": "never-seen"})
-    assert r.json() == []
+        assert r.json() == [], handle
 
 
 async def test_create_auto_cap_returns_429(supervisor, client, mock_api_key):
+    seeded = _seeded_interactive(supervisor, "t1")
     supervisor._auto_max_concurrent = 0  # cap reached: any enable is rejected
     r = await client.post(
         "/api/conversations",
-        json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+        json={"session_id": seeded.session_id, "enable_tool_call_id": "tc_enable"},
     )
     assert r.status_code == 429
     assert "concurrent" in r.json()["message"].lower()
@@ -374,14 +417,18 @@ async def test_create_auto_cap_returns_429(supervisor, client, mock_api_key):
 async def test_create_auto_armed_only_never_posts_upstream(
     supervisor, client, mock_api_key
 ):
-    # Manual enable (ARMED-only): the record is created IDLE("armed") with NO
+    # Manual enable (ARMED-only): the record flips to IDLE("armed") with NO
     # upstream POST — the old is_armed_only branch (an empty POST would be
     # rejected by the backend).
+    seeded = _seeded_interactive(supervisor, "t1")
     fake = FakeUpstreamClient([])  # any POST would blow up the fake
     with patch.object(httpx, "AsyncClient", return_value=fake):
-        r = await client.post("/api/conversations", json={"trace_id": "t1"})
+        r = await client.post(
+            "/api/conversations", json={"session_id": seeded.session_id}
+        )
     assert r.status_code == 200
     record = supervisor.get(r.json()["session_id"])
+    assert record is seeded
     assert record.state == RunState.IDLE
     assert record.idle_reason == "armed"
     assert record.auto_flag is True
@@ -475,35 +522,15 @@ async def test_set_auto_flag_endpoint(supervisor, hang_engine, client, mock_api_
     await supervisor.stop(child.session_id)
 
 
-async def test_resolve_matches_stale_leaf(supervisor, client, mock_api_key):
-    # The stored leaf is stale after the run advances; resolve matches it via
-    # the whole-chain index and returns the CURRENT leaf + state so the
-    # hard-refresh client hydrates the rounds it missed (old
-    # /api/chat/auto/resolve contract, session-id vocabulary).
-    round1 = [trace("t2"), text_delta("hi"), finish("stop")]
-    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
-    with patch.object(httpx, "AsyncClient", return_value=fake):
-        session_id = (
-            await client.post(
-                "/api/conversations",
-                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
-            )
-        ).json()["session_id"]
-        await _wait_idle(supervisor, session_id)
-
-        r = await client.get("/api/conversations/resolve", params={"trace_id": "t1"})
-        assert r.status_code == 200
-        assert r.json() == {
-            "session_id": session_id,
-            "current_trace_id": "t2",
-            "state": "idle",
-            "auto_flag": True,
-        }
-
-    r = await client.get(
-        "/api/conversations/resolve", params={"trace_id": "never-seen"}
+def test_resolve_endpoint_is_gone(app):
+    # Phase 5 pin: the trace-keyed resync endpoint (phase-3's re-home of
+    # /api/chat/auto/resolve) is DELETED — the browser keys conversations on
+    # session ids and an observed conversation converges via replay + the
+    # state marker, so nothing resolves trace ids anymore.
+    assert not any(
+        getattr(route, "path", None) == "/api/conversations/resolve"
+        for route in app.routes
     )
-    assert r.status_code == 404
 
 
 async def test_message_idle_auto_starts_burst_then_interactive_after_stop(
@@ -519,11 +546,15 @@ async def test_message_idle_auto_starts_burst_then_interactive_after_stop(
             FakeUpstreamResponse(chunks=turn3),
         ]
     )
+    seeded = _seeded_interactive(supervisor, "t1")
     with patch.object(httpx, "AsyncClient", return_value=fake):
         session_id = (
             await client.post(
                 "/api/conversations",
-                json={"trace_id": "t1", "enable_tool_call_id": "tc_enable"},
+                json={
+                    "session_id": seeded.session_id,
+                    "enable_tool_call_id": "tc_enable",
+                },
             )
         ).json()["session_id"]
         await _wait_idle(supervisor, session_id)
@@ -603,23 +634,86 @@ def test_mutating_conversation_endpoints_have_no_write_lock(app, path, method):
 
 async def test_create_interactive_creates_and_adopts(supervisor, client, mock_api_key):
     # kind="interactive" replaces the old POST /api/chat conversation model:
-    # create-or-adopt keyed by trace id, idempotent.
+    # create-or-adopt keyed by the browser's opaque conversation key
+    # (phase 5: session id / root id / legacy leaf — never a trace the
+    # browser tracked itself), idempotent.
     r = await client.post("/api/conversations", json={"kind": "interactive"})
     assert r.status_code == 200
     fresh_sid = r.json()["session_id"]
     assert supervisor.get(fresh_sid).kind == "interactive"
     assert supervisor.get(fresh_sid).state == RunState.IDLE
 
+    # A legacy leaf-shaped key adopts the leaf directly.
     r = await client.post(
-        "/api/conversations", json={"kind": "interactive", "trace_id": "leaf-9"}
+        "/api/conversations", json={"kind": "interactive", "session_id": "leaf-9"}
     )
     adopted_sid = r.json()["session_id"]
     assert supervisor.get(adopted_sid).current_leaf_trace_id == "leaf-9"
-    # Idempotent: the same trace returns the SAME conversation.
+    # Idempotent: the same key returns the SAME conversation — including its
+    # own session id (the live handle the browser normally sends).
     r = await client.post(
-        "/api/conversations", json={"kind": "interactive", "trace_id": "leaf-9"}
+        "/api/conversations", json={"kind": "interactive", "session_id": "leaf-9"}
     )
     assert r.json()["session_id"] == adopted_sid
+    r = await client.post(
+        "/api/conversations", json={"kind": "interactive", "session_id": adopted_sid}
+    )
+    assert r.json()["session_id"] == adopted_sid
+
+
+async def test_create_interactive_by_root_key_and_dead_cv_key(
+    supervisor, client, mock_api_key
+):
+    # A COLD root key (history row after a desktop restart) resolves to the
+    # current leaf via the desktop-side upstream-list scan, and the adopted
+    # record is stamped with its durable root id. Root ids are snapshot-
+    # shaped (10-digit reverse-timestamp prefix) — the scan only runs for
+    # keys that could actually be one.
+    root_key = "1234567890_root-42"
+    with patch.object(routes_module, "_leaf_for_root_id", return_value="leaf-42"):
+        r = await client.post(
+            "/api/conversations",
+            json={"kind": "interactive", "session_id": root_key},
+        )
+    assert r.status_code == 200
+    record = supervisor.get(r.json()["session_id"])
+    assert record.current_leaf_trace_id == "leaf-42"
+    assert record.root_id == root_key
+
+    # A dead cv_ key (the record died with a restart, no durable fallback):
+    # a fresh EMPTY record — exactly the old world's no-stored-trace path
+    # (a cv_ id is desktop-minted and never a valid upstream id, so there is
+    # nothing else it could mean).
+    r = await client.post(
+        "/api/conversations", json={"kind": "interactive", "session_id": "cv_dead"}
+    )
+    assert r.status_code == 200
+    fresh = supervisor.get(r.json()["session_id"])
+    assert fresh.current_leaf_trace_id is None
+    assert fresh.root_id is None
+
+
+async def test_create_interactive_fails_loudly_on_indeterminate_root_scan(
+    supervisor, client, mock_api_key
+):
+    # Phase-5 CR MEDIUM 1: when the desktop cannot COMPLETE the root→leaf
+    # scan (upstream list down / errored / bound exhausted), the create must
+    # 503 and adopt NOTHING — falling through to key-as-leaf would seed the
+    # conversation from its stale ROOT snapshot: a silent fork from turn 1.
+    from app.desktop.studio_server.chat.routes import UpstreamResolutionError
+
+    with patch.object(
+        routes_module,
+        "_leaf_for_root_id",
+        side_effect=UpstreamResolutionError("upstream sessions list unreachable"),
+    ):
+        r = await client.post(
+            "/api/conversations",
+            json={"kind": "interactive", "session_id": "1234567890_root-9"},
+        )
+    assert r.status_code == 503
+    # No record was minted or seeded from the unresolved key.
+    assert supervisor.list_records() == []
 
 
 def _stage_runless_batch(supervisor, session_id: str):

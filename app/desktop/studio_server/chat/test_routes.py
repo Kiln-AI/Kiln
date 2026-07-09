@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ChatSnapshot,
@@ -353,6 +354,376 @@ def test_delete_chat_session_passes_through_error(
 
     assert r.status_code == 404
     assert r.json()["message"] == "session not found"
+
+
+# ── Phase 5: conversation-key resolution on the history surface ───────────────
+#
+# The browser keys everything on session ids (functional spec §4); the
+# upstream stays leaf-keyed until phase 6, so routes.py owns the mapping:
+# rows carry the best key available (live sid → root id → legacy leaf) and
+# GET/DELETE resolve any of those back to the current leaf.
+
+
+def _fresh_supervisor(monkeypatch):
+    from app.desktop.studio_server.chat import routes as routes_module
+    from app.desktop.studio_server.chat.runtime.supervisor import (
+        ConversationSupervisor,
+    )
+
+    sup = ConversationSupervisor()
+    monkeypatch.setattr(routes_module, "conversation_supervisor", sup)
+    return sup
+
+
+def _seed_live_record(sup, leaf: str, kind: str = "interactive"):
+    record = sup.create_conversation(
+        kind, upstream_url="https://example.test", headers={}
+    )
+    record.current_leaf_trace_id = leaf
+    record.seen_trace_ids.append(leaf)
+    sup._trace_index[leaf] = record.session_id
+    return record
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_list_chat_sessions_rows_key_on_session_ids(
+    mock_asyncio_detailed, client, mock_api_key, monkeypatch
+):
+    # Row id precedence: live record's session id (runtime-known, ANY kind —
+    # parents and children) → upstream root_id (cold rows) → the leaf itself
+    # (legacy sessions without session_meta). The browser treats all three as
+    # one opaque conversation key.
+    sup = _fresh_supervisor(monkeypatch)
+    live = _seed_live_record(sup, "1111111111_live-leaf")
+    rows = [
+        {
+            "id": "1111111111_live-leaf",
+            "title": "Live",
+            "updated_at": "2025-06-15T12:30:00+00:00",
+            "task_run": _make_task_run_dict(),
+            "root_id": "1111111112_live-root",
+        },
+        {
+            "id": "1111111113_cold-leaf",
+            "title": "Cold",
+            "updated_at": "2025-06-15T12:00:00+00:00",
+            "task_run": _make_task_run_dict(),
+            "root_id": "1111111114_cold-root",
+        },
+        {
+            "id": "1111111115_legacy-leaf",
+            "title": "Legacy",
+            "updated_at": "2025-06-15T11:00:00+00:00",
+            "task_run": _make_task_run_dict(),
+        },
+    ]
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"[]",
+        headers={"content-type": "application/json"},
+        parsed=[SdkChatSessionListItem.from_dict(row) for row in rows],
+    )
+
+    r = client.get("/api/chat/sessions")
+    assert r.status_code == 200
+    body = r.json()
+    assert [row["id"] for row in body] == [
+        live.session_id,
+        "1111111114_cold-root",
+        "1111111115_legacy-leaf",
+    ]
+    # root_id still rides every row that has one (grouping + the browser's
+    # durable recovery key).
+    assert body[0]["root_id"] == "1111111112_live-root"
+    assert body[1]["root_id"] == "1111111114_cold-root"
+    assert body[2]["root_id"] is None
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_resolves_live_session_key(
+    mock_asyncio_detailed, client, mock_api_key, monkeypatch
+):
+    # A live conversation key resolves to the record's CURRENT leaf — the
+    # replacement for the browser's deleted current_trace_id refresh (a
+    # stale leaf of the same conversation resolves identically through the
+    # whole-chain index).
+    sup = _fresh_supervisor(monkeypatch)
+    record = _seed_live_record(sup, "1111111111_stale-leaf")
+    record.current_leaf_trace_id = "1111111110_current-leaf"
+    record.seen_trace_ids.append("1111111110_current-leaf")
+    sup._trace_index["1111111110_current-leaf"] = record.session_id
+
+    parsed = ChatSnapshot.from_dict(
+        {
+            "id": "1111111110_current-leaf",
+            "task_run": _make_task_run_dict(trace=[{"role": "user", "content": "yo"}]),
+        }
+    )
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    for key in (record.session_id, "1111111111_stale-leaf"):
+        r = client.get(f"/api/chat/sessions/{key}")
+        assert r.status_code == 200, key
+        assert (
+            mock_asyncio_detailed.call_args[1]["session_id"]
+            == "1111111110_current-leaf"
+        )
+
+    # A dead cv_ key (desktop restarted) has nothing to resolve to → 404
+    # (a cv_ id is desktop-minted and never a valid upstream id).
+    r = client.get("/api/chat/sessions/cv_dead")
+    assert r.status_code == 404
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_resolves_cold_root_key_via_list_scan(
+    mock_list, mock_get, client, mock_api_key, monkeypatch
+):
+    # A cold root key (no live record) resolves root→leaf via the upstream
+    # sessions list — fetching the root DIRECTLY would return the stale
+    # FIRST snapshot, so the scan must win. TODO(phase-6): collapses once
+    # the upstream GET accepts either id kind.
+    _fresh_supervisor(monkeypatch)
+    mock_list.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"[]",
+        headers={"content-type": "application/json"},
+        parsed=[
+            SdkChatSessionListItem.from_dict(
+                {
+                    "id": "1111111110_cur-leaf",
+                    "title": "Cold",
+                    "updated_at": "2025-06-15T12:00:00+00:00",
+                    "task_run": _make_task_run_dict(),
+                    "root_id": "1111111119_root",
+                }
+            )
+        ],
+    )
+    mock_get.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=ChatSnapshot.from_dict(
+            {
+                "id": "1111111110_cur-leaf",
+                "task_run": _make_task_run_dict(
+                    trace=[{"role": "user", "content": "yo"}]
+                ),
+            }
+        ),
+    )
+
+    r = client.get("/api/chat/sessions/1111111119_root")
+    assert r.status_code == 200
+    assert mock_get.call_args[1]["session_id"] == "1111111110_cur-leaf"
+
+    # A snapshot-shaped key matching NO root falls through to the legacy
+    # leaf interpretation (sessions without session_meta resolve as today).
+    r = client.get("/api/chat/sessions/1111111110_cur-leaf")
+    assert r.status_code == 200
+    assert mock_get.call_args[1]["session_id"] == "1111111110_cur-leaf"
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+async def test_leaf_for_root_id_pages_and_bounds(mock_list, mock_api_key):
+    # The root→leaf scan pages the upstream list and stops at a short page —
+    # bounded best-effort, mirroring architecture §8's trust model for the
+    # backend's own pointer fallback.
+    from app.desktop.studio_server.chat.routes import _leaf_for_root_id
+
+    def _page(rows):
+        return KilnResponse(
+            status_code=HTTPStatus.OK,
+            content=b"[]",
+            headers={"content-type": "application/json"},
+            parsed=[SdkChatSessionListItem.from_dict(r) for r in rows],
+        )
+
+    full_page = [
+        {
+            "id": f"1111111{i:03d}_leaf",
+            "title": "x",
+            "updated_at": "2025-06-15T12:00:00+00:00",
+            "task_run": _make_task_run_dict(),
+        }
+        for i in range(100)
+    ]
+    match_page = [
+        {
+            "id": "1111111110_found-leaf",
+            "title": "x",
+            "updated_at": "2025-06-15T12:00:00+00:00",
+            "task_run": _make_task_run_dict(),
+            "root_id": "1111111119_root",
+        }
+    ]
+    mock_list.side_effect = [_page(full_page), _page(match_page)]
+    assert await _leaf_for_root_id("1111111119_root") == "1111111110_found-leaf"
+    assert mock_list.call_count == 2
+    assert mock_list.call_args_list[1][1]["offset"] == 100
+
+    # A short page with no match COMPLETES the scan: None is the proven
+    # "not a root id" outcome (the legacy-leaf fall-through, by design).
+    mock_list.side_effect = [_page(match_page)]
+    assert await _leaf_for_root_id("2222222222_other-root") is None
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+async def test_leaf_for_root_id_indeterminate_scan_raises(
+    mock_list, mock_api_key, monkeypatch
+):
+    # Phase-5 CR MEDIUM 1 / LOW 4: transport failure, an upstream error
+    # response, and page-bound exhaustion are all INDETERMINATE — they must
+    # raise (never return the completed-no-match None), or callers would
+    # fall through to the legacy-leaf interpretation and silently fork/stale
+    # a root-keyed conversation.
+    from app.desktop.studio_server.chat import routes as routes_module
+    from app.desktop.studio_server.chat.routes import (
+        UpstreamResolutionError,
+        _leaf_for_root_id,
+    )
+
+    def _page(rows):
+        return KilnResponse(
+            status_code=HTTPStatus.OK,
+            content=b"[]",
+            headers={"content-type": "application/json"},
+            parsed=[SdkChatSessionListItem.from_dict(r) for r in rows],
+        )
+
+    # Transport failure.
+    mock_list.side_effect = httpx.ConnectError("boom")
+    with pytest.raises(UpstreamResolutionError, match="unreachable"):
+        await _leaf_for_root_id("1111111119_root")
+
+    # Upstream error response.
+    mock_list.side_effect = None
+    mock_list.return_value = KilnResponse(
+        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=None,
+    )
+    with pytest.raises(UpstreamResolutionError, match="500"):
+        await _leaf_for_root_id("1111111119_root")
+
+    # Page bound exhausted with (potentially) more pages remaining: a FULL
+    # page at the bound means the scan never proved "no match" (LOW 4 —
+    # failing open here would misread a beyond-bound root as a legacy leaf).
+    monkeypatch.setattr(routes_module, "_ROOT_SCAN_MAX_PAGES", 1)
+    full_page = [
+        {
+            "id": f"1111111{i:03d}_leaf",
+            "title": "x",
+            "updated_at": "2025-06-15T12:00:00+00:00",
+            "task_run": _make_task_run_dict(),
+        }
+        for i in range(100)
+    ]
+    mock_list.return_value = None
+    mock_list.side_effect = [_page(full_page)]
+    with pytest.raises(UpstreamResolutionError, match="bound"):
+        await _leaf_for_root_id("1111111119_root")
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_and_delete_return_503_on_indeterminate_root_scan(
+    mock_list, client, mock_api_key, monkeypatch
+):
+    # CR MEDIUM 1 (history side): a snapshot-shaped key whose root scan can't
+    # complete must fail CLEAN with 503 — treating the key as a leaf could
+    # serve (or delete) the stale FIRST snapshot of a root-keyed session.
+    _fresh_supervisor(monkeypatch)
+    mock_list.side_effect = httpx.ConnectError("boom")
+    r = client.get("/api/chat/sessions/1111111119_root")
+    assert r.status_code == 503
+
+    r = client.delete("/api/chat/sessions/1111111119_root")
+    assert r.status_code == 503
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.delete_session_v1_chat_sessions_session_id_delete.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_delete_chat_session_resolves_key_and_cascades_by_leaf(
+    mock_asyncio_detailed, client, mock_api_key, monkeypatch
+):
+    # DELETE accepts the same conversation keys; the upstream DELETE and the
+    # orchestration cascade both run on the resolved CURRENT leaf (which the
+    # trace index resolves back to the record for the cascade).
+    sup = _fresh_supervisor(monkeypatch)
+    record = _seed_live_record(sup, "1111111111_leaf")
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.NO_CONTENT,
+        content=b"",
+        headers={},
+        parsed=None,
+    )
+    with patch(
+        "app.desktop.studio_server.chat.routes.orchestration.handle_session_deleted",
+        new_callable=AsyncMock,
+    ) as cascade:
+        r = client.delete(f"/api/chat/sessions/{record.session_id}")
+    assert r.status_code == 204
+    assert mock_asyncio_detailed.call_args[1]["session_id"] == "1111111111_leaf"
+    cascade.assert_awaited_once_with("1111111111_leaf")
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_passes_through_root_id(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    # Phase 5: the snapshot's durable root_id rides the desktop proxy so the
+    # browser can persist it as its restart-recovery key (a SESSION id — the
+    # leaf-shaped ``id`` is no longer stored browser-side).
+    snapshot_dict = {
+        "id": "trace-abc",
+        "task_run": _make_task_run_dict(trace=[{"role": "user", "content": "yo"}]),
+        "root_id": "1111111119_root",
+    }
+    parsed = ChatSnapshot.from_dict(snapshot_dict)
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-abc")
+    assert r.status_code == 200
+    assert r.json()["root_id"] == "1111111119_root"
 
 
 @patch(

@@ -47,11 +47,10 @@ def _event(name: str, tc_id: str = "tc1", input: dict | None = None):
     return ToolInputAvailableEvent(toolCallId=tc_id, toolName=name, input=input or {})
 
 
-def _ctx(policy, kind="interactive", events=None, trace_id="tr-1"):
+def _ctx(policy, kind="interactive", events=None):
     return InterceptContext(
         record=ConversationRecord(kind=kind),
         policy=policy,
-        trace_id=trace_id,
         client_events=events or [],
     )
 
@@ -203,7 +202,9 @@ class TestEnableConsent:
         assert payload["type"] == "auto-mode-consent-required"
         assert payload["enable_tool_call_id"] == "tc_e"
         assert payload["reason"] == "lots to do"
-        assert payload["trace_id"] == "tr-1"
+        # Phase 5: the consent event carries NO trace_id — accept/decline is
+        # keyed by session id (functional spec §4).
+        assert "trace_id" not in payload
         assert [s["toolCallId"] for s in payload["sibling_tool_calls"]] == ["tc_s"]
 
     def test_passes_other_tools(self):

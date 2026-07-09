@@ -82,18 +82,20 @@ function makeFakeMain(overrides: Partial<Record<string, unknown>> = {}): {
   autoModeOn: ReturnType<typeof writable<boolean>>
   armed: ReturnType<typeof writable<boolean>>
   working: ReturnType<typeof writable<boolean>>
+  sessionId: ReturnType<typeof writable<string | null>>
 } {
   let sink: MainConversationSink | null = null
   const autoModeOn = writable<boolean>(false)
   const armed = writable<boolean>(false)
   const working = writable<boolean>(false)
+  const sessionId = writable<string | null>(null)
   const fake = {
     autoModeOn: { subscribe: autoModeOn.subscribe },
     armed: { subscribe: armed.subscribe },
     working: { subscribe: working.subscribe },
     reconnecting: writable(false),
     retry: writable(null),
-    sessionId: writable<string | null>(null),
+    sessionId: { subscribe: sessionId.subscribe },
     offReason: writable(null),
     connection: writable("idle"),
     bind: vi.fn((s: MainConversationSink) => {
@@ -126,6 +128,7 @@ function makeFakeMain(overrides: Partial<Record<string, unknown>> = {}): {
     autoModeOn,
     armed,
     working,
+    sessionId,
   }
 }
 
@@ -175,7 +178,7 @@ describe("createChatSessionStore", () => {
     expect(s.messages).toEqual([])
     expect(s.status).toBe("ready")
     expect(s.sessionId).toBeNull()
-    expect(s.traceId).toBeNull()
+    expect(s.rootId).toBeNull()
     expect(s.queuedMessage).toBeNull()
     expect(s.toolApprovalWaiter).toBeNull()
   })
@@ -262,26 +265,79 @@ describe("createChatSessionStore", () => {
       expect(get(store).messages.some((m) => m.role === "error")).toBe(false)
     })
 
-    it("sets traceId on the assistant message and persists it via onChatTrace", async () => {
+    it("learns the durable rootId on the first persisted turn (phase 5)", async () => {
+      // The old world persisted the leaf trace id from onChatTrace here; the
+      // sink now only learns "a turn persisted" and the store fetches the
+      // conversation item ONCE to learn its durable root_id — the
+      // restart-recovery key (a session id, never a trace id).
       const { store, sink } = await makeStore({}, "kiln_chat_test")
       await store.sendMessage("hello")
-      sink().onChatTrace("tr-42")
-      const msgs = get(store).messages
-      expect(msgs[msgs.length - 1].traceId).toBe("tr-42")
-      expect(get(store).traceId).toBe("tr-42")
-      // Persisted (the hydration/recovery handle) — but never the messages.
-      expect(storage.store["kiln_chat_test"]).toContain("tr-42")
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ session_id: "cv_main", root_id: "root-42" }),
+      })
+      sink().onTurnPersisted()
+      await vi.waitFor(() => {
+        expect(get(store).rootId).toBe("root-42")
+      })
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://test:8000/api/conversations/cv_main",
+      )
+      // Persisted (the recovery handle) — but never the messages.
+      expect(storage.store["kiln_chat_test"]).toContain("root-42")
       expect(storage.store["kiln_chat_test"]).not.toContain("hello")
+      // Once known, later persisted turns fetch nothing.
+      sink().onTurnPersisted()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(mockFetch).toHaveBeenCalledTimes(1)
     })
 
-    it("continues the conversation from the last trace id", async () => {
+    it("never stamps a stale rootId onto a conversation switched mid-fetch (CR MEDIUM 2)", async () => {
+      // The root fetch for the OLD conversation resolves AFTER a New Chat /
+      // loadSession replaced the persisted handles — writing the old root
+      // would make the next send/resync silently adopt the old conversation.
+      const { store, sink } = await makeStore({}, "kiln_chat_test")
+      await store.sendMessage("hello")
+      let resolveItem: (v: unknown) => void = () => {}
+      mockFetch.mockReturnValueOnce(new Promise((r) => (resolveItem = r)))
+      sink().onTurnPersisted()
+      // The user opens a DIFFERENT conversation while the fetch hangs.
+      store.loadSession([], "row-new", null)
+      resolveItem({
+        ok: true,
+        json: async () => ({ session_id: "cv_main", root_id: "root-OLD" }),
+      })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).rootId).toBeNull()
+      // (sessionId is the NEW conversation's ensure result — the fake store
+      // resolves every ensure to "cv_main"; only the stale root write is the
+      // bug under test.)
+      expect(get(store).sessionId).toBe("cv_main")
+      expect(storage.store["kiln_chat_test"]).not.toContain("root-OLD")
+
+      // Same guard for a New Chat reset.
+      const secondStore = await makeStore({}, "kiln_chat_test_2")
+      await secondStore.store.sendMessage("hi")
+      let resolveItem2: (v: unknown) => void = () => {}
+      mockFetch.mockReturnValueOnce(new Promise((r) => (resolveItem2 = r)))
+      secondStore.sink().onTurnPersisted()
+      secondStore.store.reset()
+      resolveItem2({
+        ok: true,
+        json: async () => ({ session_id: "cv_main", root_id: "root-OLD" }),
+      })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(secondStore.store).rootId).toBeNull()
+    })
+
+    it("continues the conversation keyed by the persisted session handle", async () => {
       const { store, sink, fake } = await makeStore()
       await store.sendMessage("first")
-      sink().onChatTrace("tr-1")
       sink().onInteractiveIdle()
       await store.sendMessage("second")
-      // ensure is keyed by the (possibly stale) leaf until phase 5.
-      expect(vi.mocked(fake.ensure).mock.calls[1][0]).toBe("tr-1")
+      // Phase 5: ensure is keyed by the persisted SESSION id (the first
+      // send's adopt result), never a trace id scanned off the messages.
+      expect(vi.mocked(fake.ensure).mock.calls[1][0]).toBe("cv_main")
     })
   })
 
@@ -444,6 +500,8 @@ describe("createChatSessionStore", () => {
       expect(ok).toBe(true)
       expect(fake.requestEnable).toHaveBeenCalledWith({
         kind: "auto",
+        // No conversation exists yet — the seed carries no session key.
+        session_id: undefined,
         extra_messages: [
           {
             role: "user",
@@ -476,20 +534,23 @@ describe("createChatSessionStore", () => {
 
   describe("auto-mode consent (on the observer stream)", () => {
     const payload = {
-      traceId: "tr-1",
       enableToolCallId: "tc_enable",
       reason: "run it",
       siblingToolCalls: [],
     }
 
-    it("accept flips the SAME conversation via requestEnable", async () => {
-      const { store, sink, fake } = await makeStore()
+    it("accept flips the SAME conversation via requestEnable, keyed by sid", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      // The consent event arrives on the observer of a live conversation, so
+      // its session id is always in hand (phase 5: the old payload traceId
+      // died with the trace-keyed surface).
+      sessionId.set("cv_live")
       store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
       sink().onConsentRequired(payload)
       await vi.waitFor(() => {
         expect(fake.requestEnable).toHaveBeenCalledWith({
           kind: "auto",
-          trace_id: "tr-1",
+          session_id: "cv_live",
           enable_tool_call_id: "tc_enable",
           pending_tool_calls: [],
           reason: "run it",
@@ -958,33 +1019,36 @@ describe("createChatSessionStore", () => {
 
   describe("reset / loadSession", () => {
     it("reset clears all state and detaches the observer", async () => {
-      const { store, sink, fake } = await makeStore({}, "kiln_chat_test")
+      const { store, fake } = await makeStore({}, "kiln_chat_test")
       await store.sendMessage("hello")
-      sink().onChatTrace("tr-1")
+      expect(get(store).sessionId).toBe("cv_main")
       store.reset()
       const s = get(store)
       expect(s.messages).toEqual([])
       expect(s.status).toBe("ready")
       expect(s.sessionId).toBeNull()
-      expect(s.traceId).toBeNull()
+      expect(s.rootId).toBeNull()
       expect(s.contextUsage).toBeNull()
       expect(fake.detach).toHaveBeenCalled()
       // sessionStorage cleared to the empty handles.
-      expect(storage.store["kiln_chat_test"]).not.toContain("tr-1")
+      expect(storage.store["kiln_chat_test"]).not.toContain("cv_main")
     })
 
-    it("loadSession sets messages + trace id and re-attaches via ensure", async () => {
+    it("loadSession sets messages + the row's session key and re-attaches via ensure", async () => {
       const { store, fake } = await makeStore()
       const messages: ChatMessage[] = [
         { id: "u1", role: "user", content: "hi" },
-        { id: "a1", role: "assistant", parts: [], traceId: "tr-7" },
+        { id: "a1", role: "assistant", parts: [] },
       ]
-      store.loadSession(messages, "tr-7", null)
+      store.loadSession(messages, "row-key-7", null, { rootId: "root-7" })
       expect(get(store).messages).toEqual(messages)
-      expect(get(store).traceId).toBe("tr-7")
+      // The row key persists IMMEDIATELY (addressable before ensure lands);
+      // the durable rootId rides along as the recovery key.
+      expect(get(store).sessionId).toBe("row-key-7")
+      expect(get(store).rootId).toBe("root-7")
       expect(fake.detach).toHaveBeenCalled()
       await vi.waitFor(() => {
-        expect(fake.ensure).toHaveBeenCalledWith("tr-7", {
+        expect(fake.ensure).toHaveBeenCalledWith("row-key-7", {
           openInflightTurn: true,
           assumeAutoOn: false,
         })
@@ -998,36 +1062,32 @@ describe("createChatSessionStore", () => {
       // LOW 1: an auto-active history row restores the old immediate
       // indicator (assumeAutoOn) instead of waiting for the state marker.
       const { store, fake } = await makeStore()
-      store.loadSession([], "tr-8", null, { autoActive: true })
+      store.loadSession([], "row-key-8", null, { autoActive: true })
       await vi.waitFor(() => {
-        expect(fake.ensure).toHaveBeenCalledWith("tr-8", {
+        expect(fake.ensure).toHaveBeenCalledWith("row-key-8", {
           openInflightTurn: true,
           assumeAutoOn: true,
         })
       })
     })
 
-    it("loadSession continues from the loaded trace id on the next send", async () => {
+    it("loadSession continues from the loaded session key on the next send", async () => {
       const { store, fake } = await makeStore()
-      store.loadSession(
-        [{ id: "a1", role: "assistant", parts: [], traceId: "tr-7" }],
-        "tr-7",
-      )
+      store.loadSession([{ id: "a1", role: "assistant", parts: [] }], "row-7")
       await store.sendMessage("continue")
-      expect(vi.mocked(fake.ensure).mock.calls.pop()![0]).toBe("tr-7")
+      expect(vi.mocked(fake.ensure).mock.calls.pop()![0]).toBe("row-7")
     })
   })
 
   describe("persistence (handles only)", () => {
     it("persists only the conversation handles + ui prefs — never messages", async () => {
-      const { store, sink } = await makeStore({}, "kiln_chat_test")
+      const { store } = await makeStore({}, "kiln_chat_test")
       await store.sendMessage("hello world")
-      sink().onChatTrace("tr-1")
       store.togglePartCollapsed("part-1", false)
       const persisted = JSON.parse(storage.store["kiln_chat_test"])
       expect(persisted).toEqual({
         sessionId: "cv_main",
-        traceId: "tr-1",
+        rootId: null,
         collapsedPartKeys: { "part-1": true },
         lastSentAppState: expect.anything(),
       })
@@ -1036,13 +1096,13 @@ describe("createChatSessionStore", () => {
     it("restores the handles from sessionStorage on creation", async () => {
       storage.store["kiln_chat_test"] = JSON.stringify({
         sessionId: "cv_old",
-        traceId: "tr-old",
+        rootId: "root-old",
         collapsedPartKeys: {},
         lastSentAppState: null,
       })
       const { store } = await makeStore({}, "kiln_chat_test")
       expect(get(store).sessionId).toBe("cv_old")
-      expect(get(store).traceId).toBe("tr-old")
+      expect(get(store).rootId).toBe("root-old")
       // Transcripts always rebuild from hydrate+observe.
       expect(get(store).messages).toEqual([])
     })
@@ -1084,10 +1144,10 @@ describe("createChatSessionStore", () => {
   })
 
   describe("resyncOnLoad (hard refresh)", () => {
-    it("hydrates from the record's fresh leaf and re-attaches", async () => {
+    it("hydrates by the live session id and re-attaches", async () => {
       storage.store["kiln_chat_test"] = JSON.stringify({
         sessionId: "cv_live",
-        traceId: "tr-stale",
+        rootId: null,
         collapsedPartKeys: {},
         lastSentAppState: null,
       })
@@ -1095,8 +1155,8 @@ describe("createChatSessionStore", () => {
         ok: true,
         json: async () => ({
           session_id: "cv_live",
-          current_trace_id: "tr-fresh",
           state: "running",
+          root_id: "root-live",
         }),
       })
       mockClientGet.mockResolvedValue({
@@ -1105,28 +1165,32 @@ describe("createChatSessionStore", () => {
       })
       mockHydrate.mockReturnValue({
         messages: [{ id: "m1", role: "user", content: "restored" }],
-        continuationTraceId: "tr-fresh",
+        rootId: "root-live",
         contextUsage: null,
       })
       const { store, fake } = await makeStore({}, "kiln_chat_test")
       await store.resyncOnLoad()
-      // Hydrated from the CURRENT leaf (rounds completed while gone).
+      // Hydration is keyed by the SESSION id — the desktop resolves the
+      // record's current leaf per request (phase 5: the browser's stored
+      // leaf and its refresh via current_trace_id are gone).
       expect(mockClientGet).toHaveBeenCalledWith(
         "/api/chat/sessions/{session_id}",
-        { params: { path: { session_id: "tr-fresh" } } },
+        { params: { path: { session_id: "cv_live" } } },
       )
       expect(get(store).messages[0].content).toBe("restored")
+      // The durable recovery key was learned from the item response.
+      expect(get(store).rootId).toBe("root-live")
       expect(fake.beginReconnect).toHaveBeenCalled()
-      expect(fake.ensure).toHaveBeenCalledWith("tr-fresh", {
+      expect(fake.ensure).toHaveBeenCalledWith("cv_live", {
         openInflightTurn: true,
         initialWorking: true,
       })
     })
 
-    it("recovers via the trace id when the session id is gone (desktop restart)", async () => {
+    it("recovers via the durable root id when the session id is gone (desktop restart)", async () => {
       storage.store["kiln_chat_test"] = JSON.stringify({
         sessionId: "cv_dead",
-        traceId: "tr-durable",
+        rootId: "root-durable",
         collapsedPartKeys: {},
         lastSentAppState: null,
       })
@@ -1137,14 +1201,19 @@ describe("createChatSessionStore", () => {
       })
       mockHydrate.mockReturnValue({
         messages: [],
-        continuationTraceId: "tr-durable",
+        rootId: "root-durable",
         contextUsage: null,
       })
       const { store, fake } = await makeStore({}, "kiln_chat_test")
       await store.resyncOnLoad()
-      // create-or-adopt by trace recreates the record (and rehydrates any
-      // parked approvals from the persisted tail, server-side).
-      expect(fake.ensure).toHaveBeenCalledWith("tr-durable", {
+      // Hydration + create-or-adopt run on the ROOT key (the desktop
+      // resolves root→leaf and rehydrates any parked approvals from the
+      // persisted tail, server-side) — the old flow's stored trace id role.
+      expect(mockClientGet).toHaveBeenCalledWith(
+        "/api/chat/sessions/{session_id}",
+        { params: { path: { session_id: "root-durable" } } },
+      )
+      expect(fake.ensure).toHaveBeenCalledWith("root-durable", {
         openInflightTurn: true,
         initialWorking: undefined,
       })
@@ -1157,10 +1226,41 @@ describe("createChatSessionStore", () => {
       expect(mockClientGet).not.toHaveBeenCalled()
     })
 
+    it("never stamps a stale rootId when New Chat races the resync item fetch (CR residual)", async () => {
+      // The on-mount resync's GET /api/conversations/{storedSid} hangs; the
+      // user clicks New Chat before it resolves. The opportunistic root
+      // upgrade must be generation-guarded like maybeLearnRootId (MEDIUM 2's
+      // failure mode): stamping the OLD conversation's root onto the reset
+      // handles would make the next send silently adopt the old conversation.
+      storage.store["kiln_chat_test"] = JSON.stringify({
+        sessionId: "cv_live",
+        rootId: null,
+        collapsedPartKeys: {},
+        lastSentAppState: null,
+      })
+      let resolveItem: (v: unknown) => void = () => {}
+      mockFetch.mockReturnValueOnce(new Promise((r) => (resolveItem = r)))
+      const { store } = await makeStore({}, "kiln_chat_test")
+      const resync = store.resyncOnLoad()
+      store.reset()
+      resolveItem({
+        ok: true,
+        json: async () => ({
+          session_id: "cv_live",
+          state: "idle",
+          root_id: "root-OLD",
+        }),
+      })
+      await resync
+      expect(get(store).rootId).toBeNull()
+      expect(get(store).sessionId).toBeNull()
+      expect(storage.store["kiln_chat_test"]).not.toContain("root-OLD")
+    })
+
     it("bails if the user switches conversations mid-resync", async () => {
       storage.store["kiln_chat_test"] = JSON.stringify({
         sessionId: null,
-        traceId: "tr-old",
+        rootId: "root-old",
         collapsedPartKeys: {},
         lastSentAppState: null,
       })
@@ -1169,12 +1269,12 @@ describe("createChatSessionStore", () => {
       const { store, fake } = await makeStore({}, "kiln_chat_test")
       const resync = store.resyncOnLoad()
       // The user picks another conversation while the snapshot fetch hangs.
-      store.loadSession([], "tr-new")
+      store.loadSession([], "row-new")
       resolveSnapshot({ data: { id: "tr-old" }, error: undefined })
       await resync
-      // The stale resync never ensured tr-old; only loadSession's tr-new.
-      const ensureTraces = vi.mocked(fake.ensure).mock.calls.map((c) => c[0])
-      expect(ensureTraces).not.toContain("tr-old")
+      // The stale resync never ensured root-old; only loadSession's row-new.
+      const ensureKeys = vi.mocked(fake.ensure).mock.calls.map((c) => c[0])
+      expect(ensureKeys).not.toContain("root-old")
     })
   })
 

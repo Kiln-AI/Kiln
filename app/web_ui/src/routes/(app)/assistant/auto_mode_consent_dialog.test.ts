@@ -36,7 +36,6 @@ function payload(
   overrides: Partial<AutoModeConsentRequiredPayload> = {},
 ): AutoModeConsentRequiredPayload {
   return {
-    traceId: "t1",
     enableToolCallId: "call_1",
     reason: null,
     siblingToolCalls: [],

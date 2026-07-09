@@ -335,9 +335,13 @@ class ConversationSupervisor:
         self._undelivered_report_ttl_seconds = undelivered_report_ttl_seconds
         self._max_idle_interactive_records = max_idle_interactive_records
         self._conversations: dict[str, _Conversation] = {}
-        # Every seen leaf trace id → session id. Still required for the
-        # history join (session rows are keyed by leaf trace id until phase 5
-        # keys them on session ids).
+        # Every seen leaf trace id → session id. INTERNAL since phase 5 (the
+        # browser never sees trace ids): still required because the UPSTREAM
+        # surface stays trace-keyed until phase 6 — the sessions-list join
+        # resolves upstream leaf-keyed rows to live records, and history keys
+        # that are legacy leaves resolve to their conversation here.
+        # TODO(phase-6): shrinks further once the backend accepts session ids
+        # (the desktop drops leaf bookkeeping for resume).
         self._trace_index: dict[str, str] = {}
         # Terminal-but-undelivered child reports queued per PARENT session id
         # (child session ids, drained in completion order).
@@ -402,23 +406,12 @@ class ConversationSupervisor:
             return None
         return record
 
-    def resolve_auto_for_trace(self, trace_id: str) -> ConversationRecord | None:
-        """Resolve a (possibly stale) trace id for the hard-refresh resync
-        (old ``AutoChatRegistry.resolve_trace``).
-
-        A tab that was gone while the desktop-owned run advanced holds a STALE
-        leaf trace id; the whole-chain index matches it anyway so the client
-        can hydrate from the record's CURRENT leaf and re-attach. Returns only
-        flag-on auto records with a known leaf — a record created from a
-        no-trace seed (Revision R2) isn't resolvable until its first
-        ``kiln_chat_trace`` lands, exactly like the old registry guard.
-        Deleted in phase 5, when the browser keys conversations on session
-        ids and never needs a trace-id resync again.
-        """
-        record = self.auto_record_for_trace(trace_id)
-        if record is None or record.current_leaf_trace_id is None:
-            return None
-        return record
+    # Phase 5 note: ``resolve_auto_for_trace`` (the hard-refresh resync
+    # lookup, old ``AutoChatRegistry.resolve_trace``) is DELETED with the
+    # ``GET /api/conversations/resolve`` endpoint: the browser keys
+    # conversations on session ids now, and an observed conversation
+    # converges by design (replay + the on-subscribe state marker), so a
+    # trace-keyed resync has nothing left to resolve.
 
     def pending_approval(self, session_id: str) -> PendingApprovalBatch | None:
         """The parked batch awaiting decisions, if any (GET approvals)."""
@@ -552,18 +545,25 @@ class ConversationSupervisor:
         *,
         upstream_url: str,
         headers: dict[str, str],
+        root_id: str | None = None,
     ) -> ConversationRecord:
-        """Create — or ADOPT — the interactive conversation for a trace id
-        (POST /api/conversations kind="interactive").
+        """Create — or ADOPT — the interactive conversation for a leaf trace
+        id (POST /api/conversations kind="interactive").
 
-        The browser identifies a conversation by its (possibly stale) leaf
-        trace id until phase 5; the whole-chain index resolves any leaf the
-        conversation ever had, making this idempotent: opening a history row
-        twice (or racing tabs) returns the SAME record instead of minting
-        duplicates. A resolving record of ANY kind is returned as-is — if the
-        conversation is currently an auto conversation, that record IS the
-        conversation (one record per conversation is the whole point of the
-        flip model).
+        Phase 5: the BROWSER no longer holds trace ids — the API layer
+        resolves its opaque conversation key (session id / upstream root id /
+        legacy leaf) to a leaf via ``routes.resolve_conversation_key`` and
+        passes the leaf here (the supervisor's internals stay trace-keyed
+        until phase 6 because the upstream API is). ``root_id`` rides along
+        when the key resolution learned it (adopt-by-root / the upstream
+        list row), so the record's durable handle is stamped immediately.
+
+        The whole-chain index resolves any leaf the conversation ever had,
+        making this idempotent: opening a history row twice (or racing tabs)
+        returns the SAME record instead of minting duplicates. A resolving
+        record of ANY kind is returned as-is — if the conversation is
+        currently an auto conversation, that record IS the conversation (one
+        record per conversation is the whole point of the flip model).
 
         A fresh create with a trace id is the history-open / desktop-restart
         path: adopt the leaf, then rehydrate pending approvals from the
@@ -575,11 +575,16 @@ class ConversationSupervisor:
             if session_id is not None:
                 existing = self._conversations.get(session_id)
                 if existing is not None and not existing.record.state.is_terminal:
+                    if existing.record.root_id is None and root_id is not None:
+                        # Backfill the durable handle on an already-live
+                        # record (e.g. adopted earlier from a bare leaf).
+                        existing.record.root_id = root_id
                     return existing.record
 
         record = self.create_conversation(
             "interactive", upstream_url=upstream_url, headers=headers
         )
+        record.root_id = root_id
         if trace_id is not None:
             record.current_leaf_trace_id = trace_id
             record.seen_trace_ids.append(trace_id)
@@ -716,6 +721,14 @@ class ConversationSupervisor:
         except (httpx.HTTPError, json.JSONDecodeError, ValueError):
             logger.debug("Approval rehydration fetch failed for %s", leaf_trace_id)
             return None
+        if isinstance(data, dict) and conv.record.root_id is None:
+            # Opportunistic backfill of the durable session handle (phase 5):
+            # the upstream snapshot response carries ``session_meta.root_id``
+            # at the top level, and a record adopted from a bare legacy leaf
+            # has no other way to learn it.
+            root_id = data.get("root_id")
+            if isinstance(root_id, str) and root_id:
+                conv.record.root_id = root_id
         task_run = data.get("task_run") if isinstance(data, dict) else None
         trace = task_run.get("trace") if isinstance(task_run, dict) else None
         if not isinstance(trace, list):
@@ -727,23 +740,27 @@ class ConversationSupervisor:
     async def enable_auto(
         self,
         *,
-        trace_id: str | None,
+        session_id: str | None,
         enable_tool_call_id: str | None,
         pending_tool_calls: list[ToolCallInfo],
         extra_messages: list[dict[str, Any]],
         upstream_url: str,
         headers: dict[str, str],
     ) -> ConversationRecord:
-        """Enable auto mode: create — or FLIP — the conversation's auto record
-        and start the first burst if the seed carries anything to run.
+        """Enable auto mode: FLIP the named conversation's record — or create
+        one (no ``session_id``) — and start the first burst if the seed
+        carries anything to run.
 
         Replaces ``AutoChatRegistry.start`` + ``AutoChatRunner._build_seed_body``
-        (POST /api/chat/auto/enable). Three preserved entry shapes:
+        (POST /api/chat/auto/enable). Three preserved entry shapes, phase 5
+        keyed by SESSION id (the browser no longer holds trace ids; since
+        phase 4 the consent event always arrives on the observer of a live
+        record, so a live session id is always in hand):
 
-        - consent accept: ``trace_id`` + ``enable_tool_call_id`` (+ rare
+        - consent accept: ``session_id`` + ``enable_tool_call_id`` (+ rare
           pending siblings) → burst resolving the enable call as enabled;
-        - manual enable on an existing conversation: ``trace_id`` only → the
-          record is merely ARMED (flag on, IDLE("armed"), NO run task).
+        - manual enable on an existing conversation: ``session_id`` only →
+          the record is merely ARMED (flag on, IDLE("armed"), NO run task).
           Starting a burst here would POST an empty turn upstream, which the
           backend rejects ("No messages were sent to the server") — the old
           ``is_armed_only`` branch. The first /messages send starts the real
@@ -752,55 +769,44 @@ class ConversationSupervisor:
           on-subscribe ``conversation-state`` marker now carries the same
           truth (idle + flag on + reason "armed") with nothing buffered.
         - armed-first-send on a brand-new conversation (Revision R2): no
-          ``trace_id``, first user message in ``extra_messages`` → burst; the
-          backend mints the first trace on the opening turn.
+          ``session_id``, first user message in ``extra_messages`` → burst;
+          the backend mints the first trace on the opening turn.
 
         Flip semantics (architecture §2: "consent flow flips the policy on
-        the SAME run"): if the trace already resolves to a live auto record —
-        e.g. the user re-enables before the OFF-record's TTL evicts it — that
-        record's flag flips back on (cap re-checked; pending GC cancelled)
-        instead of minting a duplicate record for the same conversation. The
-        old registry always created a fresh run here, which could strand two
-        registry entries per conversation; stable session ids make the
-        single-record semantics both possible and required (the trace index
-        maps each leaf to exactly one session).
+        the SAME run"): the named record's flag flips back on (cap
+        re-checked; pending GC cancelled) instead of minting a duplicate
+        record for the same conversation. The continuation seed uses the
+        RECORD's own ``current_leaf_trace_id`` — the browser's copy of the
+        same value died with phase 5 (the record's leaf is authoritative,
+        exactly like the phase-4 decline fold-in).
 
-        Raises ``ConversationCapError`` (429 at the route) and lets
-        ``start_run``'s "already has a run in flight" RuntimeError propagate
-        (409 at the route — the old world silently spawned a second
-        concurrent run for the conversation, which was a latent bug, not a
-        contract).
+        Raises ``KeyError`` for an unknown ``session_id`` (404 at the route —
+        the record died with a restart/eviction, along with the consent
+        dialog's context; the old create-a-record-for-any-trace branch is
+        unreachable now that the browser can only name live conversations),
+        ``ValueError`` for a sub-agent/terminal record (409 — a child's
+        autonomy is not a user-facing toggle, mirroring ``set_auto_flag``),
+        ``ConversationCapError`` (429), and lets ``start_run``'s "already has
+        a run in flight" RuntimeError propagate (409 — the old world silently
+        spawned a second concurrent run here, a latent bug, not a contract).
         """
         conv: _Conversation | None = None
-        if trace_id is not None:
-            session_id = self._trace_index.get(trace_id)
-            if session_id is not None:
-                existing = self._conversations.get(session_id)
-                # Phase 4: interactive records are flippable too — this is the
-                # true "same run, new policy" flip (architecture §2: "consent
-                # flow flips the policy on the SAME run"). A sub-agent record
-                # matching the trace is a CHILD session — enabling auto on it
-                # makes no sense and must not hijack its record.
-                if (
-                    existing is not None
-                    and existing.record.kind in ("auto", "interactive")
-                    and not existing.record.state.is_terminal
-                ):
-                    conv = existing
+        if session_id is not None:
+            conv = self._conversations.get(session_id)
+            if conv is None:
+                raise KeyError(f"Conversation not found: {session_id}")
+            # Phase 4: interactive records are flippable too — this is the
+            # true "same run, new policy" flip (architecture §2: "consent
+            # flow flips the policy on the SAME run"). A sub-agent record is
+            # a CHILD session — enabling auto on it makes no sense.
+            if conv.record.kind == "subagent" or conv.record.state.is_terminal:
+                raise ValueError(f"Conversation cannot enable auto mode: {session_id}")
 
         if conv is None:
             record = self.create_conversation(
                 "auto", upstream_url=upstream_url, headers=headers
             )
             conv = self._conversations[record.session_id]
-            if trace_id is not None:
-                # Adopt the conversation's current leaf (old AutoRunRecord
-                # seeding: current_trace_id=seed.trace_id, seen=[trace_id],
-                # trace index registration) so the sessions-list join and the
-                # resync index see the record immediately.
-                record.current_leaf_trace_id = trace_id
-                record.seen_trace_ids.append(trace_id)
-                self._trace_index[trace_id] = record.session_id
         else:
             record = conv.record
             if not record.auto_flag:
@@ -824,11 +830,7 @@ class ConversationSupervisor:
                 record.idle_reason = "armed"
             self._touch(conv)
             self._publish_state(conv)
-            logger.info(
-                "Armed auto conversation %s (trace_id=%s)",
-                record.session_id,
-                trace_id,
-            )
+            logger.info("Armed auto conversation %s", record.session_id)
             return record
 
         # Auto-approve sibling pending calls now (rare — the model is
@@ -855,18 +857,17 @@ class ConversationSupervisor:
 
         body = build_auto_seed_body(
             # The enable call belongs to the assistant turn persisted at the
-            # caller's trace_id, so the continuation targets it; fall back to
-            # the record's own leaf for a flip without one (defensive — the
-            # idle re-arm parity), and None starts a fresh conversation (R2).
-            trace_id=trace_id or record.current_leaf_trace_id,
+            # conversation's tail — the record's own leaf is authoritative
+            # (phase 5: the old endpoint took the browser's copy of the same
+            # id; the engine's on_trace keeps this one fresh). None starts a
+            # fresh conversation (Revision R2).
+            trace_id=record.current_leaf_trace_id,
             enable_tool_call_id=enable_tool_call_id,
             extra_messages=extra_messages,
             sibling_results=sibling_results,
         )
         self.start_run(record.session_id, body)
-        logger.info(
-            "Started auto conversation %s (trace_id=%s)", record.session_id, trace_id
-        )
+        logger.info("Started auto conversation %s", record.session_id)
         return record
 
     async def disable_auto(self, session_id: str) -> bool:

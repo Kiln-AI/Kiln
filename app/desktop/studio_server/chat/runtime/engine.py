@@ -307,6 +307,23 @@ class ConversationEngine:
                     ),
                     stop_requested=io.stop_requested,
                 ):
+                    # Early ROOT/leaf stamp (phase-5 CR LOW 3): the parser sets
+                    # round_state.trace_id BEFORE the kiln_chat_trace payload
+                    # is yielded (iter_upstream_round parses each chunk, then
+                    # forwards its lines), so stamping here — before the emit —
+                    # guarantees the record already carries the durable root
+                    # when the browser's turn-persisted item GET lands (that
+                    # GET is triggered BY this very byte; stamping only at the
+                    # round boundary left a race window for single-turn
+                    # conversations). The FULL trace advance (seen chain,
+                    # on_trace index, continuation rebuild) still happens once
+                    # at step 2 below; the `root_id is None` check keeps the
+                    # two sites idempotent.
+                    live_state = result.round_state
+                    if live_state is not None and live_state.trace_id:
+                        if record.root_id is None and not record.seen_trace_ids:
+                            record.root_id = live_state.trace_id
+                        record.current_leaf_trace_id = live_state.trace_id
                     io.emit(payload)
 
                 round_state = result.round_state
@@ -332,6 +349,18 @@ class ConversationEngine:
                     record.final_report = round_state.assistant_text
                 if round_state.trace_id:
                     # Single-writer rule: the run loop owns the leaf pointer.
+                    # A FRESH conversation's first persisted snapshot is its
+                    # durable root (backend stamps session_meta.root_id =
+                    # snapshot_id on the first persist — see
+                    # stream_orchestration.save_chat_snapshot), so stamp
+                    # record.root_id (phase 5: the browser's restart-recovery
+                    # key). Normally already done by the early pre-emit stamp
+                    # in the round loop above (CR LOW 3) — this is the
+                    # boundary backstop, idempotent via the None check.
+                    # Adopted records (seen_trace_ids seeded at adopt) joined
+                    # mid-chain and never stamp from a trace.
+                    if record.root_id is None and not record.seen_trace_ids:
+                        record.root_id = round_state.trace_id
                     record.current_leaf_trace_id = round_state.trace_id
                     if round_state.trace_id not in record.seen_trace_ids:
                         record.seen_trace_ids.append(round_state.trace_id)
@@ -391,7 +420,6 @@ class ConversationEngine:
                 ictx = InterceptContext(
                     record=record,
                     policy=policy,
-                    trace_id=round_state.trace_id,
                     client_events=client_events,
                 )
 

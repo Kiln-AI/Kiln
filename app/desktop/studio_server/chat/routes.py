@@ -1,4 +1,6 @@
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated, Any, NoReturn
@@ -22,6 +24,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.chat import orchestration
+from app.desktop.studio_server.chat.runtime.models import ConversationRecord
 from app.desktop.studio_server.chat.runtime.supervisor import conversation_supervisor
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -45,6 +48,187 @@ def _upstream_chat_url() -> str:
     return f"{_get_base_url()}/v1/chat/"
 
 
+# ── Phase 5: desktop-side conversation-key resolution ────────────────────────
+#
+# The browser keys everything on SESSION ids now (functional spec §4:
+# "Browser code never sees trace_id") while the UPSTREAM chat API stays
+# trace-keyed until phase 6 — so the desktop owns the mapping from the
+# browser's opaque conversation key to the upstream leaf. A key is one of:
+#
+# - a supervisor session id (``cv_…``) — the LIVE handle (history rows for
+#   runtime-known conversations, the browser's attached conversation);
+# - an upstream ``root_id`` (``session_meta.root_id``, the first persisted
+#   snapshot's id) — the DURABLE handle (cold history rows, the browser's
+#   restart-recovery key);
+# - a bare upstream leaf id — LEGACY rows only (sessions without
+#   ``session_meta`` expose no root; functional spec §4: "legacy sessions
+#   resolve as today").
+#
+# TODO(phase-6): the root→leaf list scan collapses once the backend accepts
+# session ids on ``GET/DELETE /v1/chat/sessions/{id}`` and ``POST /v1/chat/``
+# (implementation plan phase 6) — resolution then forwards the key verbatim.
+
+# Bounds for the root→leaf scan: the upstream list is the only root-keyed
+# source until phase 6 (each row carries BOTH ids), so resolution pages
+# through it. Mirrors the "bounded leaf scan" trust model architecture §8
+# specifies for the backend's own pointer fallback.
+#
+# Accepted cost (phase-5 CR LOW 4): a legacy leaf-shaped key pays one list
+# page per resolution (it can never match a root, but only a completed scan
+# can prove that). Deliberately NOT cached — history opens fetched the same
+# list moments earlier and the common case is a single page; phase 6 makes
+# the whole scan moot (the backend resolves either id kind itself).
+_ROOT_SCAN_PAGE_SIZE = 100
+_ROOT_SCAN_MAX_PAGES = 10
+
+
+class UpstreamResolutionError(Exception):
+    """Root→leaf resolution could not be COMPLETED (phase-5 CR MEDIUM 1 /
+    LOW 4).
+
+    Raised when the upstream sessions list is unreachable / errors, or when
+    the page bound is exhausted with pages remaining — in both cases "is
+    this key a root id?" is INDETERMINATE, which must never be conflated
+    with the completed-scan-no-match result (None, the by-design legacy-leaf
+    fall-through): falling through on an indeterminate scan would treat the
+    ROOT snapshot as the current leaf — a silent conversation fork from
+    turn 1 on create/adopt, or a stale first-turn transcript on GET. Callers
+    map this to a loud 503 instead.
+    """
+
+
+# Upstream snapshot ids (roots AND leaves — a root IS the first snapshot's
+# id) start with a 10-digit reverse-timestamp prefix (the backend's
+# ``ChatSnapshot.validate_id`` contract). Keys without that shape can never
+# match a ``root_id``, so the scan is skipped for them — a garbage or dead
+# key must not cost an upstream list walk.
+_SNAPSHOT_ID_PREFIX_RE = re.compile(r"^\d{10}_")
+
+
+@dataclass(frozen=True)
+class ResolvedConversationKey:
+    """What a browser conversation key resolves to.
+
+    ``record`` is set when the key names a LIVE supervisor conversation (by
+    session id, or by any leaf its whole-chain trace index has seen).
+    ``leaf_trace_id`` is the upstream id to hydrate/continue from — for live
+    records the record's CURRENT leaf (strictly fresher than whatever the
+    caller held; this replaces the deleted ``current_trace_id`` refresh the
+    browser used to do). ``root_id`` rides along when resolution learned it.
+    All three are None for a dead ``cv_`` handle (desktop restart/eviction) —
+    callers degrade exactly like the old world did with no stored trace.
+    """
+
+    record: ConversationRecord | None = None
+    leaf_trace_id: str | None = None
+    root_id: str | None = None
+
+
+async def _leaf_for_root_id(root_id: str) -> str | None:
+    """Resolve an upstream ``root_id`` to the session's CURRENT leaf via the
+    upstream sessions list (each row carries ``id`` = leaf AND ``root_id``).
+
+    Kept desktop-side deliberately (phase 5 scope note): cold history rows
+    (no live record) must still open, and fetching the FIRST snapshot by its
+    id directly would hydrate a truncated first-turn transcript — only the
+    list knows the current leaf.
+
+    Three outcomes (phase-5 CR MEDIUM 1 / LOW 4 — the distinction is
+    load-bearing):
+
+    - a leaf: the key IS a root id and this is its session's current leaf;
+    - ``None``: the FULL list was scanned (a short page ended it) and no row
+      matches — the key is not a root id, so the caller's legacy-leaf
+      fall-through is correct by construction;
+    - ``UpstreamResolutionError``: transport failure, upstream error, or the
+      page bound exhausted with pages remaining — indeterminate, never
+      fall-through material.
+    """
+    api_key = get_copilot_api_key()
+    client = get_authenticated_client(api_key)
+    offset = 0
+    for _ in range(_ROOT_SCAN_MAX_PAGES):
+        try:
+            detailed = await list_sessions_v1_chat_sessions_get.asyncio_detailed(
+                client=client,
+                limit=_ROOT_SCAN_PAGE_SIZE,
+                offset=offset,
+            )
+        except httpx.HTTPError as exc:
+            raise UpstreamResolutionError(
+                f"Upstream sessions list unreachable while resolving {root_id}"
+            ) from exc
+        if detailed.status_code != HTTPStatus.OK or not isinstance(
+            detailed.parsed, list
+        ):
+            raise UpstreamResolutionError(
+                f"Upstream sessions list returned {detailed.status_code} "
+                f"while resolving {root_id}"
+            )
+        for item in detailed.parsed:
+            if not isinstance(item, ApiSessionListItem):
+                continue
+            if item.additional_properties.get("root_id") == root_id:
+                return item.id
+        if len(detailed.parsed) < _ROOT_SCAN_PAGE_SIZE:
+            # Short page ⇒ the list is exhausted: a COMPLETED scan with no
+            # match — the only case where "not a root id" is proven.
+            return None
+        offset += _ROOT_SCAN_PAGE_SIZE
+    # Page bound hit with pages remaining: indeterminate (LOW 4 — failing
+    # open here would misread a beyond-bound root as a legacy leaf).
+    raise UpstreamResolutionError(
+        f"Root scan bound ({_ROOT_SCAN_MAX_PAGES} pages) exhausted while "
+        f"resolving {root_id}"
+    )
+
+
+async def resolve_conversation_key(key: str) -> ResolvedConversationKey:
+    """Resolve a browser conversation key (see the section comment above).
+
+    Resolution order:
+
+    1. live record by session id — the primary key for runtime-known
+       conversations;
+    2. live record by the supervisor's whole-chain trace index — a legacy
+       leaf-shaped key naming a live conversation resolves to that record
+       (and its CURRENT leaf, which may be many rounds fresher);
+    3. ``cv_``-shaped but unknown → a dead desktop handle (the record died
+       with a restart/eviction; a ``cv_`` id is desktop-minted and never a
+       valid upstream id, so there is nothing to fall through to);
+    4. upstream root→leaf scan (cold history rows);
+    5. the key itself as a leaf (legacy rows) — reached only when step 4
+       COMPLETED with no match (or was skipped for a non-snapshot-shaped
+       key).
+
+    Raises ``UpstreamResolutionError`` when step 4 could not complete
+    (CR MEDIUM 1): an indeterminate scan must never degrade into the leaf
+    interpretation — callers answer 503 so the browser retries instead of
+    silently forking/staling the conversation.
+    """
+    record = conversation_supervisor.get(key)
+    if record is None:
+        session_id = conversation_supervisor.session_for_trace(key)
+        if session_id is not None:
+            record = conversation_supervisor.get(session_id)
+    if record is not None:
+        return ResolvedConversationKey(
+            record=record,
+            leaf_trace_id=record.current_leaf_trace_id,
+            root_id=record.root_id,
+        )
+    if key.startswith("cv_"):
+        return ResolvedConversationKey()
+    if _SNAPSHOT_ID_PREFIX_RE.match(key):
+        # Only snapshot-shaped keys can be upstream root ids; fetching a ROOT
+        # directly would return the FIRST (stale) snapshot, so the scan must
+        # run before the leaf interpretation.
+        leaf = await _leaf_for_root_id(key)
+        if leaf is not None:
+            return ResolvedConversationKey(leaf_trace_id=leaf, root_id=key)
+    return ResolvedConversationKey(leaf_trace_id=key)
+
+
 def _raise_upstream_error(detailed: KilnResponse) -> NoReturn:
     try:
         body = json.loads(detailed.content) if detailed.content else None
@@ -63,6 +247,13 @@ def _raise_upstream_error(detailed: KilnResponse) -> NoReturn:
 class ChatSessionListItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    # Phase 5: the row's PRIMARY key is a conversation key, never a raw leaf
+    # trace id when anything better exists (functional spec §4 "history rows
+    # key on session id"): the live record's session id for runtime-known
+    # conversations, else the durable upstream root_id, else — legacy
+    # sessions without session_meta only — the upstream leaf (opaque to the
+    # browser; resolve_conversation_key handles all three on the way back
+    # in). The old world keyed rows on the upstream leaf directly.
     id: str
     title: str | None = None
     updated_at: datetime | None = None
@@ -156,6 +347,11 @@ class ChatSessionSnapshot(BaseModel):
     id: str
     task_run: TaskRunSnapshot
     context_usage: ContextUsage | None = None
+    # The session's durable id (``session_meta.root_id``), passed through
+    # from the upstream response (phase 5): the browser persists it as its
+    # restart-recovery key — a SESSION id, unlike the leaf-shaped ``id``
+    # above, which the browser no longer stores. None for legacy sessions.
+    root_id: str | None = None
 
 
 def connect_chat_api(app: FastAPI) -> None:
@@ -245,21 +441,36 @@ def connect_chat_api(app: FastAPI) -> None:
                 # these fields; regeneration isn't needed to read them).
                 extra = item.additional_properties
                 # Live-run join against the in-memory conversation supervisor:
-                # resolve the row's leaf trace id (any leaf the child session
-                # ever had is indexed) to a live sub-agent record. The kind
-                # guard matters once phases 3–4 put parent conversations on
-                # the same supervisor — a parent's leaf must never stamp its
-                # own row as a sub-agent.
-                child_sid = conversation_supervisor.session_for_trace(item.id)
-                child_record = (
-                    conversation_supervisor.get(child_sid) if child_sid else None
+                # resolve the row's leaf trace id (any leaf the session ever
+                # had is indexed) to its live record. The subagent kind guard
+                # matters because parents live on the same supervisor since
+                # phases 3–4 — a parent's leaf must never stamp its own row
+                # as a sub-agent.
+                live_sid = conversation_supervisor.session_for_trace(item.id)
+                live_record = (
+                    conversation_supervisor.get(live_sid) if live_sid else None
                 )
-                if child_record is not None and child_record.kind != "subagent":
-                    child_record = None
+                child_record = (
+                    live_record
+                    if live_record is not None and live_record.kind == "subagent"
+                    else None
+                )
+                # Phase 5 row key (see ChatSessionListItem.id): the live
+                # record's session id when the row's leaf resolves through
+                # the supervisor (ANY kind — parents and children, terminal
+                # children included, so a finished child's row stays
+                # addressable while its record lives), else the durable
+                # root_id, else the legacy leaf. resolve_conversation_key is
+                # the exact inverse on GET/DELETE/adopt.
+                row_id = (
+                    live_record.session_id
+                    if live_record is not None
+                    else (extra.get("root_id") or item.id)
+                )
                 items.append(
                     ChatSessionListItem.model_validate(
                         {
-                            "id": item.id,
+                            "id": row_id,
                             "title": item.title,
                             "updated_at": item.updated_at,
                             "auto_active": auto_active,
@@ -290,14 +501,40 @@ def connect_chat_api(app: FastAPI) -> None:
     async def get_chat_session(
         session_id: Annotated[
             str,
-            Path(description="Chat session id (same as trace id for continuation)."),
+            Path(
+                description=(
+                    "Conversation key: a live conversation's session id, an "
+                    "upstream root id, or (legacy sessions only) a leaf id."
+                )
+            ),
         ],
     ) -> ChatSessionSnapshot:
-        """Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``."""
+        """Proxy to Kiln Copilot ``GET /v1/chat/sessions/{leaf}``.
+
+        Phase 5: accepts any browser conversation key and resolves the
+        upstream leaf DESKTOP-side (``resolve_conversation_key``) — for a
+        live conversation that is the record's CURRENT leaf, so hydration is
+        always fresh (the browser used to refresh a ``current_trace_id``
+        itself; that field is gone). 404 when the key yields no leaf: a dead
+        ``cv_`` handle after a desktop restart, or a live record with nothing
+        persisted yet. 503 when the root→leaf scan couldn't COMPLETE
+        (CR MEDIUM 1 / LOW 4): serving the key-as-leaf on an indeterminate
+        scan could return the stale FIRST snapshot of a root-keyed session —
+        fail clean and let the client retry (only a completed-no-match scan
+        falls through, which is the by-design legacy-leaf path).
+        """
+        try:
+            resolved = await resolve_conversation_key(session_id)
+        except UpstreamResolutionError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        if resolved.leaf_trace_id is None:
+            raise HTTPException(
+                status_code=404, detail=f"Chat session not found: {session_id}"
+            )
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         detailed = await get_session_v1_chat_sessions_session_id_get.asyncio_detailed(
-            session_id=str(session_id),
+            session_id=resolved.leaf_trace_id,
             client=client,
         )
         if detailed.status_code == HTTPStatus.OK and detailed.parsed is not None:
@@ -312,14 +549,30 @@ def connect_chat_api(app: FastAPI) -> None:
         status_code=204,
     )
     async def delete_chat_session(
-        session_id: Annotated[str, Path(description="Chat session id to delete.")],
+        session_id: Annotated[
+            str, Path(description="Conversation key of the session to delete.")
+        ],
     ) -> None:
-        """Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``."""
+        """Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{leaf}``.
+
+        Phase 5: accepts any browser conversation key; the upstream DELETE is
+        leaf-keyed until phase 6, so the leaf is resolved desktop-side like
+        the GET above — including the 503 on an indeterminate root scan
+        (deleting the key-as-leaf could delete the WRONG snapshot of a
+        root-keyed session)."""
+        try:
+            resolved = await resolve_conversation_key(session_id)
+        except UpstreamResolutionError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        if resolved.leaf_trace_id is None:
+            raise HTTPException(
+                status_code=404, detail=f"Chat session not found: {session_id}"
+            )
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         detailed = (
             await delete_session_v1_chat_sessions_session_id_delete.asyncio_detailed(
-                session_id=session_id,
+                session_id=resolved.leaf_trace_id,
                 client=client,
             )
         )
@@ -327,4 +580,10 @@ def connect_chat_api(app: FastAPI) -> None:
             _raise_upstream_error(detailed)
         # Cascade: stop children spawned by this session (and drop their pending
         # reports), or stop the sub-agent itself if a child session was deleted.
-        await orchestration.handle_session_deleted(session_id)
+        # Keyed by the resolved LEAF: handle_session_deleted resolves it back
+        # through the whole-chain trace index, and a live record's current
+        # leaf is always indexed. (Known corner: the engine's pre-emit leaf
+        # stamp can briefly precede indexing if a round then fails terminally
+        # before its boundary advance — a delete in that instant misses the
+        # cascade for that one unindexed leaf; accepted, self-heals next turn.)
+        await orchestration.handle_session_deleted(resolved.leaf_trace_id)

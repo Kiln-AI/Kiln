@@ -19,7 +19,6 @@ function child(overrides: Partial<ConversationItem> = {}): ConversationItem {
     name: "Eval sweep",
     agent_type: "general",
     parent_session_id: "trace:parent-1",
-    current_trace_id: "trace-cv_1",
     auto_flag: false,
     rounds_used: 0,
     report_available: false,

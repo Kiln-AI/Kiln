@@ -3201,14 +3201,32 @@ export interface paths {
         };
         /**
          * Get chat session
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{leaf}``.
+         *
+         *     Phase 5: accepts any browser conversation key and resolves the
+         *     upstream leaf DESKTOP-side (``resolve_conversation_key``) — for a
+         *     live conversation that is the record's CURRENT leaf, so hydration is
+         *     always fresh (the browser used to refresh a ``current_trace_id``
+         *     itself; that field is gone). 404 when the key yields no leaf: a dead
+         *     ``cv_`` handle after a desktop restart, or a live record with nothing
+         *     persisted yet. 503 when the root→leaf scan couldn't COMPLETE
+         *     (CR MEDIUM 1 / LOW 4): serving the key-as-leaf on an indeterminate
+         *     scan could return the stale FIRST snapshot of a root-keyed session —
+         *     fail clean and let the client retry (only a completed-no-match scan
+         *     falls through, which is the by-design legacy-leaf path).
          */
         get: operations["get_chat_session_api_chat_sessions__session_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete chat session
-         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{leaf}``.
+         *
+         *     Phase 5: accepts any browser conversation key; the upstream DELETE is
+         *     leaf-keyed until phase 6, so the leaf is resolved desktop-side like
+         *     the GET above — including the 503 on an indeterminate root scan
+         *     (deleting the key-as-leaf could delete the WRONG snapshot of a
+         *     root-keyed session).
          */
         delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
         options?: never;
@@ -3228,17 +3246,22 @@ export interface paths {
         put?: never;
         /**
          * Create (or adopt/flip) a conversation
-         * @description Create a conversation, by kind (functional spec §2):
+         * @description Create a conversation, by kind (functional spec §2; phase 5 keys
+         *     the body on ``session_id`` — see ``CreateConversationRequest``):
          *
-         *     - ``kind="interactive"`` (phase 4): create-or-adopt the interactive
-         *       conversation for ``trace_id`` — the replacement for the old
-         *       ``POST /api/chat`` conversation-per-request model. Idempotent: a
-         *       trace resolving to a live record (any kind) returns that record's
-         *       session id. A fresh adopt rehydrates pending approvals from the
-         *       persisted trace tail (functional spec §5 restart recovery).
-         *     - ``kind="auto"`` (default): enable auto mode — create, or flip if
-         *       the trace already resolves to a live record, and start the first
-         *       burst if the seed carries anything to run (old
+         *     - ``kind="interactive"`` (phase 4): create-or-adopt the conversation
+         *       for the given key — the replacement for the old ``POST /api/chat``
+         *       conversation-per-request model. Idempotent: a key resolving to a
+         *       live record (any kind) returns that record's session id; a
+         *       TERMINAL record's key (a finished sub-agent reopened from history)
+         *       continues its trace on a fresh interactive record; a cold key
+         *       (upstream root id / legacy leaf) adopts the desktop-resolved leaf
+         *       and rehydrates pending approvals from the persisted trace tail
+         *       (functional spec §5 restart recovery); a dead ``cv_`` key — the
+         *       record died with a desktop restart — creates a fresh empty record
+         *       (exactly the old world's no-stored-trace behavior).
+         *     - ``kind="auto"`` (default): enable auto mode — flip the named
+         *       conversation, or create one for the armed-first-send seed (old
          *       ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for
          *       the preserved entry shapes, including the ARMED-only manual enable
          *       that never POSTs an empty turn upstream).
@@ -3247,37 +3270,6 @@ export interface paths {
          *     disconnects.
          */
         post: operations["create_conversation_api_conversations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/conversations/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Resolve a trace id to a live auto conversation
-         * @description Resolve a (possibly stale) leaf trace id to the live auto
-         *     conversation for its session (old ``GET /api/chat/auto/resolve``).
-         *
-         *     Used by the web UI to resync after a hard refresh: the stored trace
-         *     id is the leaf the tab last saw, but the desktop-owned run advances
-         *     the leaf each round while the tab is gone. The supervisor's
-         *     whole-chain trace index matches the stale id anyway, and the returned
-         *     ``current_trace_id`` lets the client hydrate the rounds it missed
-         *     before attaching to the live events stream. 404 if no live flag-on
-         *     auto conversation owns the trace. Deleted in phase 5 when the
-         *     browser keys conversations on session ids. NOTE: registered before
-         *     the ``/{{session_id}}`` routes so the literal path wins.
-         */
-        get: operations["resolve_conversation_api_conversations_resolve_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4568,6 +4560,8 @@ export interface components {
             id: string;
             task_run: components["schemas"]["TaskRunSnapshot"];
             context_usage?: components["schemas"]["ContextUsage"] | null;
+            /** Root Id */
+            root_id?: string | null;
         };
         /**
          * ChatStrategy
@@ -4802,13 +4796,16 @@ export interface components {
          *     - ``state`` uses the unified ``RunState`` vocabulary; every value the old
          *       ``SubAgentStatus`` could produce keeps its exact string, so terminal
          *       checks port mechanically.
-         *     - ``current_trace_id`` is the child's latest persisted upstream leaf. It
-         *       exists ONLY so the browser can hydrate history via
-         *       ``/api/chat/sessions/{leaf}`` (which is keyed by leaf trace ids until
-         *       the backend adopts session ids); phase 5 removes it from this surface.
-         *       It rides the REST responses but deliberately NOT the
-         *       ``conversation-state`` event — observers re-fetch the item when they
-         *       need a fresh leaf (see the conversation store's observe()).
+         *     - ``current_trace_id`` (phases 2–4) is GONE: browsers never see trace ids
+         *       (functional spec §4). History hydration goes through
+         *       ``GET /api/chat/sessions/{session_id}`` and the DESKTOP resolves the
+         *       record's current leaf (``routes.resolve_conversation_key``) — strictly
+         *       fresher than the re-fetched field the browser used to hold.
+         *     - ``root_id`` is the upstream session's DURABLE id (``session_meta.
+         *       root_id``) when the desktop has learned it — a SESSION id, exposed so
+         *       the browser can persist a restart-proof recovery key (the in-memory
+         *       ``session_id`` dies with the desktop process until phase 6 moves
+         *       resume server-side).
          *     - ``final_report`` is included only when requested with
          *       ``include_report`` (same contract as the old API).
          */
@@ -4827,8 +4824,8 @@ export interface components {
             agent_type?: string | null;
             /** Parent Session Id */
             parent_session_id?: string | null;
-            /** Current Trace Id */
-            current_trace_id?: string | null;
+            /** Root Id */
+            root_id?: string | null;
             /**
              * Auto Flag
              * @default false
@@ -4904,16 +4901,18 @@ export interface components {
          * CreateConversationRequest
          * @description ``POST /api/conversations`` body.
          *
-         *     ``kind`` selects the flow (phase 4):
+         *     ``kind`` selects the flow (phase 4); phase 5 re-keys the body from
+         *     ``trace_id`` to ``session_id`` (functional spec §4: browsers never see
+         *     trace ids — the desktop resolves the key to the upstream leaf):
          *
-         *     - ``"auto"`` (default — the phase-3 enable flow unchanged): the old
-         *       ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
-         *       preserved verbatim. Creates — or flips — the auto conversation.
-         *     - ``"interactive"``: create-or-adopt the interactive conversation for
-         *       ``trace_id`` (functional spec §2 "create"; idempotent — a trace that
-         *       already resolves to a live record returns that record's session id).
-         *       Only ``trace_id`` applies; the first message goes through
-         *       ``POST /{sid}/messages`` like every other message.
+         *     - ``"auto"`` (default — the phase-3 enable flow, session-id keyed): the
+         *       old ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
+         *       preserved verbatim. Flips the named conversation — or creates one when
+         *       ``session_id`` is absent (armed-first-send, Revision R2).
+         *     - ``"interactive"``: create-or-adopt the conversation for ``session_id``
+         *       (functional spec §2 "create"; idempotent — a key resolving to a live
+         *       record returns that record's session id). The first message goes
+         *       through ``POST /{sid}/messages`` like every other message.
          */
         CreateConversationRequest: {
             /**
@@ -4922,8 +4921,8 @@ export interface components {
              * @enum {string}
              */
             kind: "interactive" | "auto";
-            /** Trace Id */
-            trace_id?: string | null;
+            /** Session Id */
+            session_id?: string | null;
             /** Enable Tool Call Id */
             enable_tool_call_id?: string | null;
             /** Pending Tool Calls */
@@ -9813,20 +9812,6 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["RerankerModelDetails"][];
-        };
-        /**
-         * ResolveConversationResponse
-         * @description Result of resolving a (possibly stale) trace id to a live auto
-         *     conversation (old ``ResolveAutoResponse``, session-id vocabulary).
-         */
-        ResolveConversationResponse: {
-            /** Session Id */
-            session_id: string;
-            /** Current Trace Id */
-            current_trace_id: string;
-            state: components["schemas"]["RunState"];
-            /** Auto Flag */
-            auto_flag: boolean;
         };
         /**
          * ReviewedExample
@@ -19180,7 +19165,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Chat session id (same as trace id for continuation). */
+                /** @description Conversation key: a live conversation's session id, an upstream root id, or (legacy sessions only) a leaf id. */
                 session_id: string;
             };
             cookie?: never;
@@ -19212,7 +19197,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Chat session id to delete. */
+                /** @description Conversation key of the session to delete. */
                 session_id: string;
             };
             cookie?: never;
@@ -19240,7 +19225,7 @@ export interface operations {
     list_conversations_api_conversations_get: {
         parameters: {
             query?: {
-                /** @description Filter to children of this conversation. Accepts the parent's session id or (until phase 5 keys the browser on session ids) any leaf trace id the parent conversation has had — old-loop interactive parents and supervisor-resident auto parents both resolve. Omit for all live conversations. */
+                /** @description Filter to children of this conversation, by the parent's session id. Omit for all live conversations. */
                 parent?: string | null;
             };
             header?: never;
@@ -19289,38 +19274,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationCreatedResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resolve_conversation_api_conversations_resolve_get: {
-        parameters: {
-            query: {
-                /** @description A trace id from the conversation (may be stale). */
-                trace_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResolveConversationResponse"];
                 };
             };
             /** @description Validation Error */

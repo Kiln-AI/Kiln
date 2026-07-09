@@ -141,6 +141,17 @@ class ConversationRecord(BaseModel):
     # THE handle. Permanent for the conversation's lifetime; the rotating
     # upstream trace_id becomes the internal `current_leaf_trace_id` detail.
     session_id: str = Field(default_factory=new_session_id)
+    # The upstream session's DURABLE id (`session_meta.root_id` — the first
+    # persisted snapshot's id, stamped backend-side by
+    # `stream_orchestration.save_chat_snapshot`). Phase 5: this is the
+    # browser's restart-recovery key (the in-memory `session_id` dies with
+    # the desktop process; the old world persisted a leaf trace id for the
+    # same purpose, which phase 5 removes from the browser surface). Learned
+    # best-effort: stamped by the engine on a FRESH record's first
+    # `kiln_chat_trace` (first persist ⇒ root == that snapshot id), by
+    # adopt-by-root (`adopt_interactive(root_id=…)`), or backfilled from the
+    # approval-rehydration snapshot fetch. None until one of those fires.
+    root_id: str | None = None
     kind: ConversationKind
     state: RunState = RunState.IDLE
     # Latest persisted upstream leaf (rotates every snapshot). Single writer =
@@ -148,9 +159,9 @@ class ConversationRecord(BaseModel):
     # record.current_trace_id updated only by the runner's on_trace callback).
     current_leaf_trace_id: str | None = None
     # Whole chain of leaves this conversation has touched — preserved from
-    # both old registries; still needed for the sessions-list join (a history
-    # row is keyed by a possibly-stale leaf until phase 5 keys rows on
-    # session id).
+    # both old registries; still needed INTERNALLY (phase 5): the upstream
+    # sessions list stays leaf-keyed until phase 6, so the desktop's history
+    # join resolves upstream rows to live records through this chain.
     seen_trace_ids: list[str] = Field(default_factory=list)
     # Sub-agent lineage: the parent conversation's session id. Replaces the
     # old parent_key ("auto:<run_id>" / "trace:<leaf>") + parent-alias maps —

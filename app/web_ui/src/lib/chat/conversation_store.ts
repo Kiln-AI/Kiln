@@ -68,8 +68,8 @@ export type ConversationConnection = "idle" | "connecting" | "open" | "errored"
  * per-conversation observer stream (as the on-subscribe liveness marker).
  * Replaces the old `kiln-subagent-status` shape: `session_id` is the handle,
  * `state` uses the unified RunState strings, and trace ids are deliberately
- * absent (the browser never sees trace ids on the new event vocabulary — the
- * REST item carries the hydration leaf until phase 5).
+ * absent (phase 5: the browser never sees trace ids anywhere — hydration is
+ * keyed by session id and the desktop resolves the current leaf).
  */
 interface ConversationStateEvent {
   type?: string
@@ -141,12 +141,12 @@ export interface ConversationStore {
   /** Close the firehose (navigation away). Observers are left alone. */
   disconnect(): void
   /**
-   * Replace `children` with the sub-agents of the conversation owning the
-   * given parent handle — while parents run on the legacy loops this is the
-   * main transcript's (possibly stale) leaf trace id, which the server
-   * resolves through the whole trace chain. `null` (no conversation yet)
-   * clears the list. Deduped by value, so it is safe to call on every
-   * reactive trace change.
+   * Replace `children` with the sub-agents of the given parent conversation,
+   * keyed by its SESSION id (phase 5: the browser's only parent handle —
+   * chat.svelte binds this to `main_conversation_store.sessionId`; the old
+   * leaf-trace-id handle and its server-side chain resolution are gone).
+   * `null` (no conversation attached) clears the list. Deduped by value, so
+   * it is safe to call reactively.
    */
   syncForConversation(parentId: string | null): Promise<void>
   /** Select a tab; selecting a child starts observing it. */
@@ -257,8 +257,8 @@ export function createConversationStore(): ConversationStore {
 
   function updateChildFromStateEvent(event: ConversationStateEvent): void {
     // conversation-state events carry no trace id (unlike the old status
-    // events): the item's current_trace_id is refreshed by observe()'s
-    // re-fetch instead, so hydration never depends on event payloads.
+    // events) — and since phase 5 hydration doesn't either: it fetches by
+    // session id and the desktop resolves the fresh leaf per request.
     children.update((list) =>
       list.map((child) =>
         child.session_id === event.session_id
@@ -270,14 +270,6 @@ export function createConversationStore(): ConversationStore {
                 event.report_available ?? child.report_available,
             }
           : child,
-      ),
-    )
-  }
-
-  function updateChildFromItem(item: ConversationItem): void {
-    children.update((list) =>
-      list.map((child) =>
-        child.session_id === item.session_id ? { ...child, ...item } : child,
       ),
     )
   }
@@ -532,50 +524,30 @@ export function createConversationStore(): ConversationStore {
 
   async function observe(sessionId: string): Promise<void> {
     if (observations.has(sessionId)) return
-    let child = get(children).find((c) => c.session_id === sessionId)
+    const child = get(children).find((c) => c.session_id === sessionId)
     if (!child) return
     const abort = new AbortController()
     const obs: ChildObservation = { abort, pendingFreshTurn: true }
     observations.set(sessionId, obs)
 
-    // 0. Re-fetch the item so hydration uses a FRESH persisted leaf. The old
-    // store refreshed current_trace_id from status events; conversation-state
-    // events deliberately carry no trace ids, so a re-observe (e.g. selecting
-    // a child again after its stream ended) would otherwise hydrate a stale
-    // snapshot. Best effort: on failure the listed item is used as-is.
+    // 1. Hydrate the child's persisted history by SESSION id (phase 5): the
+    // desktop resolves the record's CURRENT leaf per request, so hydration
+    // is always fresh — this replaces the deleted current_trace_id field
+    // AND the pre-hydration item re-fetch that kept it fresh. Best effort:
+    // a failure (including 404 for a child with nothing persisted yet)
+    // still attaches the live tail on an empty transcript.
+    let messages: ChatMessage[] = []
     try {
       const response = await fetch(
-        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}`,
+        `${base_url}/api/chat/sessions/${encodeURIComponent(sessionId)}`,
         { signal: abort.signal },
       )
       if (response.ok) {
-        const item = (await response.json()) as ConversationItem
-        if (item?.session_id === sessionId) {
-          updateChildFromItem(item)
-          child = { ...child, ...item }
-        }
+        const snapshot = (await response.json()) as ChatSessionSnapshot
+        messages = hydrateSessionFromSnapshot(snapshot).messages
       }
     } catch {
-      /* aborted or unreachable — hydrate with what the list already has */
-    }
-    if (abort.signal.aborted) return
-
-    // 1. Hydrate the child's persisted history (its session snapshot). Best
-    // effort: a failure still attaches the live tail on an empty transcript.
-    let messages: ChatMessage[] = []
-    if (child.current_trace_id) {
-      try {
-        const response = await fetch(
-          `${base_url}/api/chat/sessions/${encodeURIComponent(child.current_trace_id)}`,
-          { signal: abort.signal },
-        )
-        if (response.ok) {
-          const snapshot = (await response.json()) as ChatSessionSnapshot
-          messages = hydrateSessionFromSnapshot(snapshot).messages
-        }
-      } catch {
-        /* aborted or unreachable — live tail below still attaches */
-      }
+      /* aborted or unreachable — live tail below still attaches */
     }
     if (abort.signal.aborted) return
     setTranscript(sessionId, messages)
@@ -761,7 +733,14 @@ export interface MainConversationSink {
   /** Begin a fresh assistant turn (append an empty assistant message). */
   beginAssistantTurn: () => void
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
-  onChatTrace: (traceId: string) => void
+  /**
+   * A turn's snapshot persisted upstream (the `kiln_chat_trace` event).
+   * Phase 5: deliberately carries NO trace id — the browser never keys on
+   * one (functional spec §4); the session store uses this purely as the
+   * moment to learn the conversation's durable `root_id` (one item fetch)
+   * for its restart-recovery key, replacing the old persisted-leaf update.
+   */
+  onTurnPersisted: () => void
   /** Fired when a snapshot event carries ``context_usage`` (the gauge). */
   onContextUsage: (usage: ContextUsage) => void
   /** ``kiln_compaction_status``: true shows the "summarizing…" indicator. */
@@ -841,13 +820,16 @@ export interface MainConversationStore {
   connection: Readable<MainConnection>
   bind(sink: MainConversationSink): void
   /**
-   * Create-or-adopt the interactive conversation for the given (possibly
-   * stale) leaf trace id — or a brand-new conversation when null — and
-   * attach the observer. Idempotent while attached. Replaces the old
-   * conversation-per-request POST /api/chat model.
+   * Create-or-adopt the conversation for the given conversation KEY — a
+   * session id, a history row id (live sid / durable root id / legacy
+   * leaf), or null for a brand-new conversation — and attach the observer.
+   * The desktop resolves the key (phase 5: the browser never holds trace
+   * ids; the old trace-keyed ensure died with them). Idempotent while
+   * attached. Replaces the old conversation-per-request POST /api/chat
+   * model.
    */
   ensure(
-    traceId: string | null,
+    sessionKey: string | null,
     opts?: {
       openInflightTurn?: boolean
       initialWorking?: boolean
@@ -981,7 +963,11 @@ export function createMainConversationStore(): MainConversationStore {
         consumeInflightTurn()
         sink?.onAssistantMessage(update)
       },
-      onChatTrace: (tid) => sink?.onChatTrace(tid),
+      // The processor's kiln_chat_trace hook still receives the upstream
+      // event's trace id (backend vocabulary, untouched until phase 6) but
+      // it is DROPPED at this boundary — the sink only learns "a turn
+      // persisted" (functional spec §4: browser code never sees trace_id).
+      onChatTrace: () => sink?.onTurnPersisted(),
       onContextUsage: (usage) => sink?.onContextUsage(usage),
       onCompactionStatus: (compacting) => sink?.onCompactionStatus(compacting),
       onInlineError: (message, traceId, code) =>
@@ -1273,7 +1259,7 @@ export function createMainConversationStore(): MainConversationStore {
   }
 
   async function ensure(
-    traceId: string | null,
+    sessionKey: string | null,
     opts?: {
       openInflightTurn?: boolean
       initialWorking?: boolean
@@ -1293,7 +1279,7 @@ export function createMainConversationStore(): MainConversationStore {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             kind: "interactive",
-            ...(traceId ? { trace_id: traceId } : {}),
+            ...(sessionKey ? { session_id: sessionKey } : {}),
           }),
         })
       } catch (err) {

@@ -23,7 +23,15 @@ Old → new mapping (behavior preserved, vocabulary unified):
 - ``POST /api/chat/auto/{run}/stop``            → ``POST /api/conversations/{sid}/stop``
 - ``POST /api/chat/auto/{run}/message``         → ``POST /api/conversations/{sid}/messages``
 - ``GET  /api/chat/auto/{run}/events``          → ``GET /api/conversations/{sid}/events``
-- ``GET  /api/chat/auto/resolve``               → ``GET /api/conversations/resolve``
+- ``GET  /api/chat/auto/resolve``               → DELETED in phase 5 (was
+                                                  ``GET /api/conversations/resolve``
+                                                  in phases 3–4; the browser
+                                                  keys conversations on
+                                                  session ids, and an observed
+                                                  conversation converges via
+                                                  replay + the state marker,
+                                                  so trace-keyed resync has
+                                                  nothing to resolve)
 - ``POST /api/chat``                            → ``POST /api/conversations``
                                                   (kind=interactive create/adopt)
                                                   + ``POST /{sid}/messages``
@@ -102,13 +110,16 @@ class ConversationItem(BaseModel):
     - ``state`` uses the unified ``RunState`` vocabulary; every value the old
       ``SubAgentStatus`` could produce keeps its exact string, so terminal
       checks port mechanically.
-    - ``current_trace_id`` is the child's latest persisted upstream leaf. It
-      exists ONLY so the browser can hydrate history via
-      ``/api/chat/sessions/{leaf}`` (which is keyed by leaf trace ids until
-      the backend adopts session ids); phase 5 removes it from this surface.
-      It rides the REST responses but deliberately NOT the
-      ``conversation-state`` event — observers re-fetch the item when they
-      need a fresh leaf (see the conversation store's observe()).
+    - ``current_trace_id`` (phases 2–4) is GONE: browsers never see trace ids
+      (functional spec §4). History hydration goes through
+      ``GET /api/chat/sessions/{session_id}`` and the DESKTOP resolves the
+      record's current leaf (``routes.resolve_conversation_key``) — strictly
+      fresher than the re-fetched field the browser used to hold.
+    - ``root_id`` is the upstream session's DURABLE id (``session_meta.
+      root_id``) when the desktop has learned it — a SESSION id, exposed so
+      the browser can persist a restart-proof recovery key (the in-memory
+      ``session_id`` dies with the desktop process until phase 6 moves
+      resume server-side).
     - ``final_report`` is included only when requested with
       ``include_report`` (same contract as the old API).
     """
@@ -119,7 +130,7 @@ class ConversationItem(BaseModel):
     name: str | None = None
     agent_type: str | None = None
     parent_session_id: str | None = None
-    current_trace_id: str | None = None
+    root_id: str | None = None
     auto_flag: bool = False
     idle_reason: str | None = None
     rounds_used: int = 0
@@ -138,7 +149,7 @@ class ConversationItem(BaseModel):
             name=record.name,
             agent_type=record.agent_type,
             parent_session_id=record.parent_session_id,
-            current_trace_id=record.current_leaf_trace_id,
+            root_id=record.root_id,
             auto_flag=record.auto_flag,
             idle_reason=record.idle_reason,
             rounds_used=record.rounds_used,
@@ -165,25 +176,31 @@ class ConversationMessageAccepted(BaseModel):
 class CreateConversationRequest(BaseModel):
     """``POST /api/conversations`` body.
 
-    ``kind`` selects the flow (phase 4):
+    ``kind`` selects the flow (phase 4); phase 5 re-keys the body from
+    ``trace_id`` to ``session_id`` (functional spec §4: browsers never see
+    trace ids — the desktop resolves the key to the upstream leaf):
 
-    - ``"auto"`` (default — the phase-3 enable flow unchanged): the old
-      ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
-      preserved verbatim. Creates — or flips — the auto conversation.
-    - ``"interactive"``: create-or-adopt the interactive conversation for
-      ``trace_id`` (functional spec §2 "create"; idempotent — a trace that
-      already resolves to a live record returns that record's session id).
-      Only ``trace_id`` applies; the first message goes through
-      ``POST /{sid}/messages`` like every other message.
+    - ``"auto"`` (default — the phase-3 enable flow, session-id keyed): the
+      old ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
+      preserved verbatim. Flips the named conversation — or creates one when
+      ``session_id`` is absent (armed-first-send, Revision R2).
+    - ``"interactive"``: create-or-adopt the conversation for ``session_id``
+      (functional spec §2 "create"; idempotent — a key resolving to a live
+      record returns that record's session id). The first message goes
+      through ``POST /{sid}/messages`` like every other message.
     """
 
     kind: Literal["interactive", "auto"] = "auto"
-    # The conversation's current leaf trace id. Optional (Revision R2 for
-    # auto: a brand-new conversation has no trace yet, so the seed carries
-    # only the first user message in ``extra_messages`` and the backend
-    # starts a fresh conversation; for interactive: a brand-new conversation
-    # simply creates an empty record whose first /messages send opens it).
-    trace_id: str | None = None
+    # The conversation key. For kind="interactive": any key the browser can
+    # hold — a live session id, a history row id (live sid / upstream root
+    # id / legacy leaf), or the persisted recovery key; None creates a fresh
+    # empty record (first send opens it). For kind="auto": the LIVE
+    # conversation's session id (consent accept / manual enable — since
+    # phase 4 the consent event arrives on the observer of a live record, so
+    # a sid is always in hand); None is the armed-first-send create
+    # (Revision R2: the seed carries the first user message in
+    # ``extra_messages`` and the backend mints the conversation).
+    session_id: str | None = None
     # Resolve this enable_auto_mode call as "enabled" before the first round
     # (the consent-accept flow). Auto kind only.
     enable_tool_call_id: str | None = None
@@ -252,22 +269,6 @@ class ApprovalDecisionsRequest(BaseModel):
     decisions: dict[str, bool]
 
 
-class ResolveConversationResponse(BaseModel):
-    """Result of resolving a (possibly stale) trace id to a live auto
-    conversation (old ``ResolveAutoResponse``, session-id vocabulary)."""
-
-    session_id: str
-    # The conversation's CURRENT leaf so the resyncing client can hydrate the
-    # rounds completed while the tab was gone. Removed in phase 5 (browser
-    # keys everything on session ids).
-    current_trace_id: str
-    # Replaces the old ``status`` (running | idle): lets the client choose
-    # the right post-resync affordance — thinking indicator when running,
-    # "· waiting for you" when idle — without waiting for the events stream.
-    state: RunState
-    auto_flag: bool
-
-
 async def _observer_stream(session_id: str) -> AsyncGenerator[bytes, None]:
     """Pure-observer SSE over one conversation's bus: current-turn replay +
     conversation-state marker + live tail. Disconnecting only unsubscribes;
@@ -301,32 +302,6 @@ async def _state_firehose_stream() -> AsyncGenerator[bytes, None]:
             yield item
 
 
-def _resolve_parent_key(parent: str) -> str:
-    """Resolve the ``parent`` query param to the key children are indexed by.
-
-    The browser identifies the main conversation by its (possibly stale) leaf
-    TRACE id until phase 5 keys everything on session ids, so resolution
-    tries, in order:
-
-    1. the supervisor's whole-chain trace index (every parent is a supervisor
-       record since phase 4 — the phase-2/3 ``trace:<leaf>`` alias chain died
-       with ``ParentConversationIndex``): any leaf the conversation ever had
-       resolves to its SESSION id, which is exactly what its children carry
-       as ``parent_session_id``. Guarded to non-subagent kinds: a CHILD
-       session's own leaves are also indexed, and a child's leaf is never a
-       parent handle (children can't have children — depth guard);
-    2. the value itself, unresolved — which (a) yields the correct empty list
-       for unknown traces and (b) already works for real parent session ids,
-       so phase 5 needs no route change to switch the browser to session ids.
-    """
-    session_id = conversation_supervisor.session_for_trace(parent)
-    if session_id is not None:
-        record = conversation_supervisor.get(session_id)
-        if record is not None and record.kind != "subagent":
-            return session_id
-    return parent
-
-
 def connect_conversations_api(app: FastAPI) -> None:
     @app.get(
         "/api/conversations",
@@ -340,18 +315,19 @@ def connect_conversations_api(app: FastAPI) -> None:
             str | None,
             Query(
                 description=(
-                    "Filter to children of this conversation. Accepts the "
-                    "parent's session id or (until phase 5 keys the browser "
-                    "on session ids) any leaf trace id the parent "
-                    "conversation has had — old-loop interactive parents and "
-                    "supervisor-resident auto parents both resolve. Omit for "
-                    "all live conversations."
+                    "Filter to children of this conversation, by the "
+                    "parent's session id. Omit for all live conversations."
                 )
             ),
         ] = None,
     ) -> list[ConversationItem]:
+        # Phase 5: ``parent`` is a session id — children carry their parent's
+        # ``parent_session_id`` verbatim, so no resolution is needed (the
+        # phase-3/4 ``_resolve_parent_key`` trace-index fallback died with the
+        # browser's last trace handle; an unknown value yields the correct
+        # empty list).
         if parent is not None:
-            records = conversation_supervisor.children_of(_resolve_parent_key(parent))
+            records = conversation_supervisor.children_of(parent)
         else:
             records = conversation_supervisor.list_records()
         return [ConversationItem.from_record(record) for record in records]
@@ -366,17 +342,22 @@ def connect_conversations_api(app: FastAPI) -> None:
     async def create_conversation(
         body: CreateConversationRequest,
     ) -> ConversationCreatedResponse:
-        """Create a conversation, by kind (functional spec §2):
+        """Create a conversation, by kind (functional spec §2; phase 5 keys
+        the body on ``session_id`` — see ``CreateConversationRequest``):
 
-        - ``kind="interactive"`` (phase 4): create-or-adopt the interactive
-          conversation for ``trace_id`` — the replacement for the old
-          ``POST /api/chat`` conversation-per-request model. Idempotent: a
-          trace resolving to a live record (any kind) returns that record's
-          session id. A fresh adopt rehydrates pending approvals from the
-          persisted trace tail (functional spec §5 restart recovery).
-        - ``kind="auto"`` (default): enable auto mode — create, or flip if
-          the trace already resolves to a live record, and start the first
-          burst if the seed carries anything to run (old
+        - ``kind="interactive"`` (phase 4): create-or-adopt the conversation
+          for the given key — the replacement for the old ``POST /api/chat``
+          conversation-per-request model. Idempotent: a key resolving to a
+          live record (any kind) returns that record's session id; a
+          TERMINAL record's key (a finished sub-agent reopened from history)
+          continues its trace on a fresh interactive record; a cold key
+          (upstream root id / legacy leaf) adopts the desktop-resolved leaf
+          and rehydrates pending approvals from the persisted trace tail
+          (functional spec §5 restart recovery); a dead ``cv_`` key — the
+          record died with a desktop restart — creates a fresh empty record
+          (exactly the old world's no-stored-trace behavior).
+        - ``kind="auto"`` (default): enable auto mode — flip the named
+          conversation, or create one for the armed-first-send seed (old
           ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for
           the preserved entry shapes, including the ARMED-only manual enable
           that never POSTs an empty turn upstream).
@@ -385,21 +366,67 @@ def connect_conversations_api(app: FastAPI) -> None:
         disconnects."""
         upstream_url, headers = _upstream_target()
         if body.kind == "interactive":
+            # Lazy import for the same routes.py cycle _upstream_target
+            # documents. The key→leaf mapping lives DESKTOP-side in routes.py
+            # (shared with the history GET/DELETE); the supervisor's
+            # internals stay trace-keyed until phase 6.
+            from app.desktop.studio_server.chat.routes import (
+                UpstreamResolutionError,
+                resolve_conversation_key,
+            )
+
+            leaf: str | None = None
+            root_id: str | None = None
+            if body.session_id is not None:
+                try:
+                    resolved = await resolve_conversation_key(body.session_id)
+                except UpstreamResolutionError as exc:
+                    # CR MEDIUM 1: an INDETERMINATE root→leaf scan (upstream
+                    # list down / errored / page bound exhausted) must fail
+                    # the create LOUDLY — adopting the key as a leaf would
+                    # seed the conversation from its stale ROOT snapshot and
+                    # silently fork it from turn 1. 503 lets the browser
+                    # surface "couldn't open the conversation" and retry.
+                    raise HTTPException(status_code=503, detail=str(exc))
+                if (
+                    resolved.record is not None
+                    and not resolved.record.state.is_terminal
+                ):
+                    # Idempotent adopt: the key names a live conversation.
+                    return ConversationCreatedResponse(
+                        session_id=resolved.record.session_id
+                    )
+                leaf = resolved.leaf_trace_id
+                root_id = resolved.root_id
             record = await conversation_supervisor.adopt_interactive(
-                body.trace_id,
+                leaf,
                 upstream_url=upstream_url,
                 headers=headers,
+                root_id=root_id,
             )
             return ConversationCreatedResponse(session_id=record.session_id)
         try:
             record = await conversation_supervisor.enable_auto(
-                trace_id=body.trace_id,
+                session_id=body.session_id,
                 enable_tool_call_id=body.enable_tool_call_id,
                 pending_tool_calls=body.pending_tool_calls,
                 extra_messages=body.extra_messages,
                 upstream_url=upstream_url,
                 headers=headers,
             )
+        except KeyError:
+            # The named conversation died with a restart/eviction — and so
+            # did the consent dialog's context (the old create-a-record-for-
+            # any-trace branch is unreachable now that the browser can only
+            # name live conversations by session id).
+            raise HTTPException(
+                status_code=404,
+                detail=f"Conversation not found: {body.session_id}",
+            )
+        except ValueError as exc:
+            # Sub-agent/terminal records can't enable auto mode (mirrors
+            # set_auto_flag's "invalid" outcome).
+            raise HTTPException(status_code=409, detail=str(exc))
         except ConversationCapError as exc:
             # Same cap surface as today: HTTP 429 with the preserved message.
             raise HTTPException(status_code=429, detail=str(exc))
@@ -419,42 +446,11 @@ def connect_conversations_api(app: FastAPI) -> None:
             )
         return ConversationCreatedResponse(session_id=record.session_id)
 
-    @app.get(
-        "/api/conversations/resolve",
-        summary="Resolve a trace id to a live auto conversation",
-        tags=["Copilot"],
-        openapi_extra=DENY_AGENT,
-    )
-    async def resolve_conversation(
-        trace_id: Annotated[
-            str,
-            Query(description="A trace id from the conversation (may be stale)."),
-        ],
-    ) -> ResolveConversationResponse:
-        """Resolve a (possibly stale) leaf trace id to the live auto
-        conversation for its session (old ``GET /api/chat/auto/resolve``).
-
-        Used by the web UI to resync after a hard refresh: the stored trace
-        id is the leaf the tab last saw, but the desktop-owned run advances
-        the leaf each round while the tab is gone. The supervisor's
-        whole-chain trace index matches the stale id anyway, and the returned
-        ``current_trace_id`` lets the client hydrate the rounds it missed
-        before attaching to the live events stream. 404 if no live flag-on
-        auto conversation owns the trace. Deleted in phase 5 when the
-        browser keys conversations on session ids. NOTE: registered before
-        the ``/{{session_id}}`` routes so the literal path wins."""
-        record = conversation_supervisor.resolve_auto_for_trace(trace_id)
-        if record is None or record.current_leaf_trace_id is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No active auto conversation for trace: {trace_id}",
-            )
-        return ResolveConversationResponse(
-            session_id=record.session_id,
-            current_trace_id=record.current_leaf_trace_id,
-            state=record.state,
-            auto_flag=record.auto_flag,
-        )
+    # Phase 5 note: ``GET /api/conversations/resolve`` (the phase-3 re-home
+    # of ``/api/chat/auto/resolve``) is DELETED — the browser keys
+    # conversations on session ids, so there is no stale trace id left to
+    # resync; a refreshed tab just re-attaches by sid and converges via the
+    # buffer replay + on-subscribe state marker.
 
     @app.get(
         "/api/conversations/events",

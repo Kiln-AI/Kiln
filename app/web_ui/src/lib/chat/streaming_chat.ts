@@ -39,7 +39,12 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system" | "error"
   content?: string
   parts?: ChatMessagePart[]
-  /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
+  /**
+   * Diagnostic trace id riding an ERROR message (from the upstream error
+   * event's payload). Never rendered and never a key — phase 5 removed all
+   * trace-id KEYING from the browser (assistant messages no longer carry
+   * one; the desktop record owns continuation state).
+   */
   traceId?: string
   /**
    * Set when this user-role message is a sub-agent completion report frame
@@ -169,12 +174,13 @@ export interface ToolCallsPendingPayload {
 }
 
 /**
- * Payload of the ``auto-mode-consent-required`` event. The interactive stream
- * emits this (then ends) when the model calls ``enable_auto_mode``; the UI must
- * gate auto-mode behind explicit consent.
+ * Payload of the ``auto-mode-consent-required`` event. The engine emits this
+ * (then idles the turn) when the model calls ``enable_auto_mode``; the UI must
+ * gate auto-mode behind explicit consent. Phase 5: the payload carries no
+ * trace id — accept/decline is keyed by the observed conversation's session
+ * id (functional spec §4).
  */
 export interface AutoModeConsentRequiredPayload {
-  traceId: string | null
   enableToolCallId: string
   reason: string | null
   siblingToolCalls: ToolCallsPendingItem[]
@@ -184,18 +190,9 @@ function generateId(): string {
   return `msg-${crypto.randomUUID()}`
 }
 
-/** Latest stored assistant ``traceId`` for continuing the conversation. */
-export function traceIdForNextChatRequest(
-  msgs: ChatMessage[],
-): string | undefined {
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i]
-    if (m.role === "assistant" && m.traceId) {
-      return m.traceId
-    }
-  }
-  return undefined
-}
+// Phase 5 note: ``traceIdForNextChatRequest`` (the browser's continuation
+// key, scanned off assistant messages) is DELETED — conversations are keyed
+// by session id end-to-end and the desktop record owns the current leaf.
 
 type PartSlot = { kind: "text"; id: string } | { kind: "tool"; id: string }
 
@@ -530,7 +527,6 @@ export function autoModeConsentPayloadFromEvent(
   event: StreamEvent,
 ): AutoModeConsentRequiredPayload {
   return {
-    traceId: event.trace_id ?? null,
     enableToolCallId: event.enable_tool_call_id ?? "",
     reason: event.reason ?? null,
     siblingToolCalls: Array.isArray(event.sibling_tool_calls)

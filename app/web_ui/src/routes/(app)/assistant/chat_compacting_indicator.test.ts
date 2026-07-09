@@ -84,7 +84,7 @@ function baseState(
     contextUsage: null as ContextUsage | null,
     status: "submitted",
     sessionId: null,
-    traceId: null,
+    rootId: null,
     toolApprovalWaiter: null,
     toolApprovalPicks: {},
     toolExecuting: false,

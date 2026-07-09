@@ -19,7 +19,6 @@
     main_conversation_store,
     conversation_store,
   } from "$lib/chat/conversation_store"
-  import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
   import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
@@ -42,9 +41,12 @@
 
   const autoModeOn = main_conversation_store.autoModeOn
   // Client-armed flag (Revision R2): auto mode turned on for a brand-new
-  // conversation that has no trace_id yet. The indicator shows on ("waiting for
-  // you") with no server run; the first message creates the run.
+  // conversation that has no server-side record yet. The indicator shows on
+  // ("waiting for you") with no server run; the first message creates the run.
   const autoArmed = main_conversation_store.armed
+  // The main conversation's session id (null until ensure/attach) — since
+  // phase 5 the browser's ONLY conversation handle (functional spec §4).
+  const mainSessionId = main_conversation_store.sessionId
   const autoModeWorking = main_conversation_store.working
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
   // History restore) hydrates → attaches the live observer.
@@ -79,9 +81,9 @@
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
   // branch), and is ALWAYS clickable (Revision R2) — including on a brand-new
   // empty chat. It is disabled only while a consent prompt is already open (so we
-  // never stack dialogs). On a conversation with a trace_id, enable arms a
-  // server-owned run (IDLE); with no trace_id yet it arms client-side (no server
-  // call) and the first message creates the run.
+  // never stack dialogs). On an observed conversation, enable arms a
+  // server-owned run (IDLE); with no conversation yet it arms client-side (no
+  // server call) and the first message creates the run.
   let consentPending = false
 
   async function openManualAutoMode() {
@@ -93,11 +95,14 @@
     try {
       const accepted = await consentDialog.prompt(null)
       if (!accepted) return
-      const traceId = traceIdForNextChatRequest(messages)
-      if (!traceId) {
-        // Brand-new conversation (Revision R2): no trace to key a server run, so
-        // arm client-side. The indicator turns on ("waiting for you"); the first
-        // message creates the run (enable seeded with that message, no trace_id).
+      // Phase 5: the enable is keyed by the LIVE conversation's session id
+      // (the old flow keyed it by a leaf trace id scanned off the messages —
+      // the browser no longer holds trace ids, functional spec §4).
+      const sessionId = get(mainSessionId)
+      if (!sessionId) {
+        // Brand-new conversation (Revision R2): no server record to flip, so
+        // arm client-side. The indicator turns on ("waiting for you"); the
+        // first message creates the run (enable seeded with that message).
         main_conversation_store.arm()
         return
       }
@@ -107,7 +112,7 @@
       // them — the dialog has already closed.
       const result = await main_conversation_store.requestEnable({
         kind: "auto",
-        trace_id: traceId,
+        session_id: sessionId,
       })
       if (!result.ok) {
         store.pushInlineError(
@@ -179,14 +184,13 @@
   $: hasMessages = messages.length > 0
   $: status = $store.status
 
-  // Keep the sub-agent list in sync with the conversation the transcript shows.
-  // The leaf trace id advances every turn; syncForConversation dedupes by value,
-  // so this is cheap to run reactively (session load / resync / new chat all
-  // funnel through a messages change). The leaf trace id remains the browser's
-  // parent handle until phases 4-5 give the main conversation a session id —
-  // the server resolves the whole trace chain.
-  $: currentLeafTraceId = traceIdForNextChatRequest(messages) ?? null
-  $: void conversation_store.syncForConversation(currentLeafTraceId)
+  // Keep the sub-agent list in sync with the conversation the transcript
+  // shows, keyed by the main conversation's SESSION id (phase 5 — the old
+  // handle was a leaf trace id scanned off the messages, chain-resolved
+  // server-side). Stable for the conversation's whole life, so the dedupe
+  // inside syncForConversation makes the reactive call cheap; null (New
+  // Chat / detached) clears the tab strip.
+  $: void conversation_store.syncForConversation($mainSessionId)
 
   // Pause autoscroll around a step-group expand/collapse in the transcript
   // (the toggle mutates layout without new content arriving).
@@ -383,12 +387,12 @@
   function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
     store.loadSession(
       e.detail.messages,
-      e.detail.continuationTraceId,
+      e.detail.sessionId,
       e.detail.contextUsage,
-      { autoActive: e.detail.autoActive },
+      { autoActive: e.detail.autoActive, rootId: e.detail.rootId },
     )
     // Back to the main transcript; the loaded conversation's children sync
-    // reactively from its trace id.
+    // reactively from its session id once ensure() attaches.
     conversation_store.select(null)
     userNearBottom = true
     tick().then(() => {

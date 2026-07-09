@@ -10,19 +10,19 @@
  * renders what the observer sink reports (the old `streamChat` /
  * `resumePendingToolCalls` request-driving machinery is gone).
  *
- * sessionStorage persists ONLY `{sessionId, traceId, ui prefs}` — the
+ * sessionStorage persists ONLY `{sessionId, rootId, ui prefs}` — the
  * transcript ALWAYS rebuilds from hydrate+observe (functional spec §7 /
  * architecture §7: this removes the persisted message-cache divergence
- * class). `traceId` is the hydration key until phases 5/6 key everything on
- * session ids (it also recovers the conversation across a desktop restart,
- * where the in-memory session id dies but the trace survives upstream).
+ * class). Phase 5: both handles are SESSION ids (functional spec §4 —
+ * browser code never sees trace_id): `sessionId` is the live desktop handle
+ * and `rootId` the durable upstream one, replacing the old persisted leaf
+ * trace id in its desktop-restart-recovery role.
  */
 
 import { writable, get, type Readable } from "svelte/store"
 import posthog from "posthog-js"
 import {
   chatGenerateId,
-  traceIdForNextChatRequest,
   type ChatMessage,
   type ContextUsage,
   type ToolCallsPendingItem,
@@ -59,11 +59,18 @@ const SESSION_STORAGE_KEY = "kiln_chat_session"
  */
 export interface PersistedChatSession {
   /** The main conversation's supervisor session id (in-memory server-side —
-   * dies with a desktop restart; `traceId` is the durable fallback). */
+   * dies with a desktop restart; `rootId` is the durable fallback). */
   sessionId: string | null
-  /** The conversation's last known leaf trace id (the hydration key until
-   * phase 5/6). */
-  traceId: string | null
+  /**
+   * The conversation's durable upstream session id (`session_meta.root_id`)
+   * — the desktop-restart recovery key, learned from the history row, the
+   * hydration snapshot, or a one-shot item fetch on the first persisted
+   * turn (phase 5: replaces the old persisted leaf `traceId`, which was the
+   * browser's last trace-id key). Null until the conversation first
+   * persists (or for legacy sessions without meta, whose row key already
+   * IS the only durable handle).
+   */
+  rootId: string | null
   collapsedPartKeys: Record<string, boolean>
   lastSentAppState: AppState | null
 }
@@ -155,13 +162,19 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   reset(): void
   loadSession(
     messages: ChatMessage[],
-    continuationTraceId: string,
+    /** The history row's conversation key (live session id / durable root
+     * id / legacy leaf) — resolved desktop-side; phase 5 replaced the old
+     * continuation trace id here. */
+    sessionKey: string,
     contextUsage?: ContextUsage | null,
     opts?: {
       /** From the history row's sessions-list join: reflect the auto
        * indicator immediately on re-attach (the old attach's behavior)
        * instead of waiting for the observer's state marker. */
       autoActive?: boolean
+      /** The session's durable root id (persisted as the restart-recovery
+       * key). */
+      rootId?: string | null
     },
   ): void
   /**
@@ -186,7 +199,7 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
 
 const EMPTY_PERSISTED: PersistedChatSession = {
   sessionId: null,
-  traceId: null,
+  rootId: null,
   collapsedPartKeys: {},
   lastSentAppState: null,
 }
@@ -245,7 +258,7 @@ export function createChatSessionStore(
     combined.update((s) => ({
       ...s,
       sessionId: $persisted.sessionId,
-      traceId: $persisted.traceId,
+      rootId: $persisted.rootId,
       collapsedPartKeys: $persisted.collapsedPartKeys,
       lastSentAppState: $persisted.lastSentAppState,
     }))
@@ -297,21 +310,51 @@ export function createChatSessionStore(
     updateMessages((msgs) => [...msgs, errorMsg])
   }
 
-  function setLastAssistantTraceId(traceId: string) {
-    combined.update((s) => {
-      const msgs = s.messages
-      const last = msgs[msgs.length - 1]
-      if (last?.role === "assistant") {
-        return {
-          ...s,
-          messages: [...msgs.slice(0, -1), { ...last, traceId }],
+  // One item fetch in flight for the durable-key learn below.
+  let rootFetchInFlight = false
+
+  /**
+   * Learn the conversation's durable `root_id` once a turn has persisted
+   * (phase 5). A conversation opened from history already carries it (the
+   * row / hydration snapshot expose root_id); a conversation created FRESH
+   * in this tab only gains a root when its first snapshot persists — the
+   * same moment the old world persisted the leaf trace id — so the observer's
+   * turn-persisted signal triggers a one-shot `GET /api/conversations/{sid}`
+   * (the desktop stamps `root_id` from that first snapshot). Best-effort:
+   * on failure the next persisted turn retries; until it lands, a desktop
+   * restart falls back to History (the old world's only pre-trace recovery
+   * too).
+   */
+  async function maybeLearnRootId(): Promise<void> {
+    if (get(persisted).rootId || rootFetchInFlight) return
+    const sid = get(persisted).sessionId
+    if (!sid) return
+    // Stale-write guard (phase-5 CR MEDIUM 2): a New Chat / loadSession /
+    // resync can race this fetch — the fetched root then belongs to the OLD
+    // conversation, and stamping it onto the new handles would make the next
+    // send/resync silently adopt the old conversation. Both signals are
+    // checked on completion: the generation counter (bumped by every
+    // conversation switch) and the persisted sid itself. A skipped stamp is
+    // harmless — the next persisted turn retries.
+    const thisGeneration = generation
+    rootFetchInFlight = true
+    try {
+      const response = await fetch(
+        `${base_url}/api/conversations/${encodeURIComponent(sid)}`,
+      )
+      if (!response.ok) return
+      const item = (await response.json()) as { root_id?: string | null }
+      if (typeof item?.root_id === "string" && item.root_id) {
+        if (generation !== thisGeneration || get(persisted).sessionId !== sid) {
+          return
         }
+        persisted.update((p) => ({ ...p, rootId: item.root_id ?? null }))
       }
-      return s
-    })
-    // Track the conversation's leaf for hydration/recovery (phase 5 keys
-    // everything on session ids and drops this).
-    persisted.update((p) => ({ ...p, traceId }))
+    } catch {
+      /* desktop unreachable — retry on the next persisted turn */
+    } finally {
+      rootFetchInFlight = false
+    }
   }
 
   function setContextUsage(usage: ContextUsage) {
@@ -453,7 +496,9 @@ export function createChatSessionStore(
       if (status === "submitted") setStatus("streaming")
       updateLastAssistant(update)
     },
-    onChatTrace: setLastAssistantTraceId,
+    onTurnPersisted: () => {
+      void maybeLearnRootId()
+    },
     onContextUsage: setContextUsage,
     onCompactionStatus: setCompacting,
     onInlineError: (message, traceId, code) => {
@@ -588,7 +633,12 @@ export function createChatSessionStore(
   ): Promise<void> {
     consentFlowPending = true
     try {
-      const traceId = payload.traceId ?? get(persisted).traceId
+      // Phase 5: the enable is keyed by the observed conversation's SESSION
+      // id — the consent event always arrives on the observer of a live
+      // record, so the sid is in hand (the old payload traceId died with
+      // the trace-keyed surface; the desktop record's own leaf is
+      // authoritative for the continuation).
+      const sid = get(conversationStore.sessionId)
       // If auto mode is already on/armed — the user turned it on themselves
       // while the model's enable call was streaming — accept silently.
       const alreadyOn =
@@ -610,7 +660,7 @@ export function createChatSessionStore(
       if (accepted) {
         const seed: CreateAutoConversationRequest = {
           kind: "auto",
-          trace_id: traceId ?? undefined,
+          session_id: sid ?? undefined,
           enable_tool_call_id: payload.enableToolCallId,
           pending_tool_calls: siblings,
           reason: payload.reason,
@@ -793,10 +843,14 @@ export function createChatSessionStore(
   ): Promise<boolean> {
     removeErrors()
     const currentMessages = get(combined).messages
-    const priorTraceId =
-      traceIdForNextChatRequest(currentMessages) ?? get(persisted).traceId
+    // Phase 5: the conversation key is the persisted session handle — the
+    // live sid when the desktop still knows the record, else the durable
+    // root id (desktop-restart recovery). The old world derived a leaf
+    // trace id from the messages here (traceIdForNextChatRequest); the
+    // browser no longer holds trace ids at all (functional spec §4).
+    const sessionKey = get(persisted).sessionId ?? get(persisted).rootId
 
-    const ensured = await conversationStore.ensure(priorTraceId)
+    const ensured = await conversationStore.ensure(sessionKey)
     if (!ensured.ok || !ensured.sessionId) {
       pushInlineError(
         `Couldn't reach the assistant: ${ensured.error ?? "unknown error"}`,
@@ -817,12 +871,12 @@ export function createChatSessionStore(
     persisted.update((p) => ({ ...p, lastSentAppState: currentAppState }))
 
     posthog.capture("chat_message_sent", {
-      is_new_conversation: !priorTraceId && !isRetry,
+      is_new_conversation: !sessionKey && !isRetry,
       message_length: text.length,
       has_app_context_header: !!header,
       message_count: currentMessages.length,
     })
-    if (!priorTraceId && !isRetry) {
+    if (!sessionKey && !isRetry) {
       posthog.capture("chat_conversation_started")
     }
 
@@ -891,6 +945,11 @@ export function createChatSessionStore(
     const apiContent = header ? header + "\n" + text : text
     const seed: CreateAutoConversationRequest = {
       kind: "auto",
+      // Normally absent (arming is only reachable on a brand-new
+      // conversation); when an observed conversation DOES exist — the
+      // arm raced its creation — the sid keys the enable onto the SAME
+      // record instead of forking a parallel upstream conversation.
+      session_id: get(conversationStore.sessionId) ?? undefined,
       extra_messages: [{ role: "user", content: apiContent }],
     }
     const result = await conversationStore.requestEnable(seed)
@@ -900,6 +959,11 @@ export function createChatSessionStore(
       )
       return false
     }
+    // The enable attached (or confirmed) the conversation — persist its live
+    // handle so a refresh resyncs (beginInteractiveTurn does the same after
+    // ensure; the durable rootId follows on the first persisted turn).
+    const sid = get(conversationStore.sessionId)
+    if (sid) persisted.update((p) => ({ ...p, sessionId: sid }))
     return true
   }
 
@@ -955,31 +1019,36 @@ export function createChatSessionStore(
 
   function loadSession(
     messages: ChatMessage[],
-    traceId: string,
+    sessionKey: string,
     contextUsage: ContextUsage | null = null,
-    opts?: { autoActive?: boolean },
+    opts?: { autoActive?: boolean; rootId?: string | null },
   ): void {
     generation++
     // Detach any prior conversation's observer before showing a different one.
     conversationStore.detach()
     clearToolApprovalState()
     pendingOwnEchoes.length = 0
+    // Phase 5: `sessionKey` is the history row's id (live sid / durable
+    // root / legacy leaf — opaque to the browser); persist it immediately
+    // so the conversation is addressable even before ensure() resolves.
+    // `rootId` (from the row / hydration snapshot) is the durable recovery
+    // key that replaced the old persisted leaf trace id.
     persisted.set({
-      sessionId: null,
-      traceId,
+      sessionId: sessionKey,
+      rootId: opts?.rootId ?? null,
       collapsedPartKeys: {},
       lastSentAppState: null,
     })
     combined.update((s) => ({ ...s, messages, contextUsage }))
     clearRuntimeAffordances()
     setStatus("ready")
-    // Re-attach the conversation's observer (create-or-adopt by trace):
+    // Re-attach the conversation's observer (create-or-adopt by key):
     // in-flight turns replay into a fresh assistant turn, the state marker
     // restores working/auto affordances, and a parked approval re-surfaces
     // (replayed pending event → approvals fetch). Best-effort async — the
     // hydrated transcript is already showing.
     void conversationStore
-      .ensure(traceId, {
+      .ensure(sessionKey, {
         openInflightTurn: true,
         assumeAutoOn: opts?.autoActive ?? false,
       })
@@ -993,15 +1062,19 @@ export function createChatSessionStore(
   // Reconnect after a hard refresh: sessionStorage holds only the handles, so
   // hydrate the transcript from the persisted snapshot, then re-attach.
   async function resyncOnLoad(): Promise<void> {
-    const { sessionId: storedSid, traceId: storedTrace } = get(persisted)
-    if (!storedSid && !storedTrace) return
+    const { sessionId: storedSid, rootId: storedRoot } = get(persisted)
+    if (!storedSid && !storedRoot) return
     const thisGeneration = ++generation
     const isStale = () => thisGeneration !== generation
 
-    // Freshest leaf wins: a live record knows rounds the tab never saw. A 404
-    // means the desktop restarted or evicted the record — the trace id still
-    // recovers the conversation (create-or-adopt + trace-tail rehydration).
-    let leaf = storedTrace
+    // Prefer the live handle; a 404 means the desktop restarted or evicted
+    // the record — the durable root id still recovers the conversation
+    // (create-or-adopt resolves root→leaf desktop-side + rehydrates any
+    // parked approval from the trace tail). This replaces the old
+    // current_trace_id refresh: hydration below is keyed by the SAME
+    // conversation key and the desktop resolves the current leaf per
+    // request, so no leaf ever crosses the surface (functional spec §4).
+    let key = storedSid ?? storedRoot
     let initialWorking: boolean | undefined
     if (storedSid) {
       try {
@@ -1010,47 +1083,56 @@ export function createChatSessionStore(
         )
         if (response.ok) {
           const item = (await response.json()) as {
-            current_trace_id?: string | null
             state?: string
+            root_id?: string | null
           }
-          if (item?.current_trace_id) leaf = item.current_trace_id
           initialWorking = item?.state === "running"
+          // Stale-write guard (CR MEDIUM 2's residual): a New Chat /
+          // loadSession racing this fetch replaced the persisted handles —
+          // stamping the OLD conversation's root onto them would make the
+          // next send silently adopt the old conversation.
+          if (!isStale() && typeof item?.root_id === "string" && item.root_id) {
+            // Upgrade the durable key opportunistically (e.g. the tab was
+            // refreshed before the first-turn root fetch landed).
+            persisted.update((p) => ({ ...p, rootId: item.root_id ?? null }))
+          }
+        } else if (storedRoot) {
+          // Dead live handle → recover by the durable key.
+          key = storedRoot
         }
       } catch {
-        /* desktop unreachable — fall through to the trace-keyed path */
+        /* desktop unreachable — hydration/ensure below degrade the same way */
       }
     }
-    if (isStale()) return
+    if (isStale() || !key) return
 
     // Show the reconnecting affordance while we hydrate → attach so the
     // conversation doesn't look empty/dead before liveness is known.
     conversationStore.beginReconnect()
-    if (leaf) {
-      try {
-        const { data: snapshot, error } = await client.GET(
-          "/api/chat/sessions/{session_id}",
-          { params: { path: { session_id: leaf } } },
-        )
-        if (isStale()) return
-        if (!error && snapshot) {
-          const hydrated = hydrateSessionFromSnapshot(snapshot)
-          combined.update((s) => ({
-            ...s,
-            messages: hydrated.messages,
-            contextUsage: hydrated.contextUsage,
-          }))
-          persisted.update((p) => ({
-            ...p,
-            traceId: hydrated.continuationTraceId,
-          }))
+    try {
+      const { data: snapshot, error } = await client.GET(
+        "/api/chat/sessions/{session_id}",
+        { params: { path: { session_id: key } } },
+      )
+      if (isStale()) return
+      if (!error && snapshot) {
+        const hydrated = hydrateSessionFromSnapshot(snapshot)
+        combined.update((s) => ({
+          ...s,
+          messages: hydrated.messages,
+          contextUsage: hydrated.contextUsage,
+        }))
+        if (hydrated.rootId) {
+          const rootId = hydrated.rootId
+          persisted.update((p) => ({ ...p, rootId }))
         }
-      } catch {
-        /* hydration failed — still attach so live events come back */
       }
+    } catch {
+      /* hydration failed — still attach so live events come back */
     }
     if (isStale()) return
     conversationStore.beginReconnect()
-    const ensured = await conversationStore.ensure(leaf, {
+    const ensured = await conversationStore.ensure(key, {
       openInflightTurn: true,
       initialWorking,
     })

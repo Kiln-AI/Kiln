@@ -68,6 +68,21 @@ def _text_run_responses(final_text: str = "final report") -> list[FakeUpstreamRe
     return [FakeUpstreamResponse([text_delta(final_text), trace("tr-1"), finish()])]
 
 
+def _seeded_conversation(
+    sup: ConversationSupervisor, leaf: str, kind: str = "interactive"
+):
+    """A live conversation already holding a persisted leaf — the state
+    ``adopt_interactive``/``enable_auto`` used to build from a browser trace
+    id. Phase 5 keys the browser surface on session ids, so tests seed the
+    record directly (same shape adopt/on_trace produce) instead of going
+    through the deleted enable-by-trace path."""
+    record = sup.create_conversation(kind, upstream_url=URL, headers={})
+    record.current_leaf_trace_id = leaf
+    record.seen_trace_ids.append(leaf)
+    sup._trace_index[leaf] = record.session_id
+    return record
+
+
 async def _collect_stream(sup, session_id: str, settle: float = 0.05) -> list[bytes]:
     received: list[bytes] = []
     sub = sup.subscribe(session_id)
@@ -675,32 +690,69 @@ async def test_stop_running_auto_burst_preserves_stop_reason(hang_engine):
 # ── Auto enable (old POST /api/chat/auto/enable → AutoChatRegistry.start) ─────
 
 
-async def test_enable_auto_armed_only_creates_idle_record_no_upstream_post():
+async def test_enable_auto_armed_only_flips_idle_record_no_upstream_post():
     # Manual enable with nothing to send upstream: the record is merely ARMED
     # (flag on, IDLE("armed"), NO run task) — the old is_armed_only branch,
     # which existed because an empty upstream POST would be rejected by the
-    # backend ("No messages were sent to the server").
+    # backend ("No messages were sent to the server"). Phase 5: keyed by the
+    # LIVE conversation's session id (the old enable-by-trace adoption is
+    # unreachable — the browser can only name live conversations).
     sup = _sup()
+    seeded = _seeded_conversation(sup, "t1")
     client = FakeUpstreamClient([])  # any POST would blow up the fake
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded.session_id,
             enable_tool_call_id=None,
             pending_tool_calls=[],
             extra_messages=[],
             upstream_url=URL,
             headers={},
         )
+    assert record is seeded
     assert record.kind == "auto"
     assert record.auto_flag is True
     assert record.state == RunState.IDLE
     assert record.idle_reason == "armed"
     assert client.bodies == []
-    # The seed trace was adopted: leaf + chain + index (old AutoRunRecord
-    # seeding), so the sessions-list join and resync see the record at once.
+    # The conversation's leaf/index survive the flip (the record IS the
+    # conversation), so the sessions-list join sees it at once.
     assert record.current_leaf_trace_id == "t1"
     assert sup.session_for_trace("t1") == record.session_id
     assert sup.auto_record_for_trace("t1") is record
+
+
+async def test_enable_auto_unknown_or_subagent_session_id_is_rejected():
+    # Phase 5: the browser names conversations by session id, so an unknown
+    # sid means the record (and any consent context) died with a restart —
+    # 404 at the route, never a silently forked parallel record. Sub-agent
+    # records can't enable auto mode (mirrors set_auto_flag's "invalid").
+    sup = _sup()
+    with pytest.raises(KeyError, match="cv_missing"):
+        await sup.enable_auto(
+            session_id="cv_missing",
+            enable_tool_call_id=None,
+            pending_tool_calls=[],
+            extra_messages=[],
+            upstream_url=URL,
+            headers={},
+        )
+    child = sup.create_conversation(
+        "subagent",
+        upstream_url=URL,
+        headers={},
+        parent_session_id="cv_parent",
+        seed=_seed(),
+    )
+    with pytest.raises(ValueError, match="cannot enable auto mode"):
+        await sup.enable_auto(
+            session_id=child.session_id,
+            enable_tool_call_id=None,
+            pending_tool_calls=[],
+            extra_messages=[],
+            upstream_url=URL,
+            headers={},
+        )
 
 
 async def test_enable_auto_consent_accept_starts_burst_with_seed_body():
@@ -708,10 +760,11 @@ async def test_enable_auto_consent_accept_starts_burst_with_seed_body():
     # seed body and the burst starts immediately (old enable flow; body shape
     # pinned end-to-end by the auto_seed_and_tool_round golden fixture).
     sup = _sup()
+    seeded = _seeded_conversation(sup, "t1")
     client = FakeUpstreamClient(_text_run_responses("on it"))
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded.session_id,
             enable_tool_call_id="tc_enable",
             pending_tool_calls=[],
             extra_messages=[],
@@ -721,6 +774,8 @@ async def test_enable_auto_consent_accept_starts_burst_with_seed_body():
         await _wait_for(lambda: record.state == RunState.IDLE)
 
     seed_body = client.bodies[0]
+    # Phase 5: the continuation targets the RECORD's own leaf (the browser's
+    # copy of the same id is gone; the engine's on_trace keeps this fresh).
     assert seed_body["trace_id"] == "t1"
     assert seed_body["auto_mode"] is True
     assert seed_body["messages"][0]["tool_call_id"] == "tc_enable"
@@ -730,8 +785,8 @@ async def test_enable_auto_consent_accept_starts_burst_with_seed_body():
     assert record.idle_reason == "asked_user"
 
 
-async def test_enable_auto_no_trace_r2_seed_carries_first_message():
-    # Revision R2: enable on a brand-new conversation — no trace_id, the
+async def test_enable_auto_no_session_r2_seed_carries_first_message():
+    # Revision R2: enable on a brand-new conversation — no session_id, the
     # first user message rides extra_messages; the backend mints the first
     # trace, which then indexes the conversation.
     sup = _sup()
@@ -740,7 +795,7 @@ async def test_enable_auto_no_trace_r2_seed_carries_first_message():
     )
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = await sup.enable_auto(
-            trace_id=None,
+            session_id=None,
             enable_tool_call_id=None,
             pending_tool_calls=[],
             extra_messages=[{"role": "user", "content": "first message"}],
@@ -755,17 +810,22 @@ async def test_enable_auto_no_trace_r2_seed_carries_first_message():
     assert seed_body["messages"] == [{"role": "user", "content": "first message"}]
     assert record.current_leaf_trace_id == "t-new-1"
     assert sup.session_for_trace("t-new-1") == record.session_id
+    # A fresh conversation's first persisted snapshot IS its durable root
+    # (the backend stamps session_meta.root_id = snapshot_id on the first
+    # persist) — the engine records it for the browser's recovery key.
+    assert record.root_id == "t-new-1"
 
 
 async def test_enable_auto_flips_existing_record_instead_of_duplicating():
-    # Re-enable before the OFF record's TTL evicts it: the SAME record flips
-    # back on (architecture §2 — the policy flips on the SAME run; the old
-    # registry minted a fresh run here, stranding two entries per trace).
+    # Re-enable after a stop: the SAME record flips back on (architecture §2
+    # — the policy flips on the SAME run; the old registry minted a fresh run
+    # here, stranding two entries per conversation).
     sup = _sup(terminal_ttl_seconds=60.0)
+    seeded = _seeded_conversation(sup, "t1")
     client = FakeUpstreamClient([])
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded.session_id,
             enable_tool_call_id=None,
             pending_tool_calls=[],
             extra_messages=[],
@@ -775,7 +835,7 @@ async def test_enable_auto_flips_existing_record_instead_of_duplicating():
         await sup.stop(record.session_id)
         assert record.auto_flag is False
         again = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded.session_id,
             enable_tool_call_id=None,
             pending_tool_calls=[],
             extra_messages=[],
@@ -785,16 +845,18 @@ async def test_enable_auto_flips_existing_record_instead_of_duplicating():
     assert again.session_id == record.session_id
     assert record.auto_flag is True
     assert record.idle_reason == "armed"
-    # The flip cancelled the OFF record's pending GC.
+    # The flip cancelled any pending GC on the record.
     assert record.session_id not in sup._gc_tasks
 
 
 async def test_enable_auto_cap_counts_flag_on_conversations():
     sup = _sup(auto_max_concurrent=1)
+    seeded_one = _seeded_conversation(sup, "t1")
+    seeded_two = _seeded_conversation(sup, "t2")
     client = FakeUpstreamClient([])
     with patch.object(httpx, "AsyncClient", return_value=client):
         first = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded_one.session_id,
             enable_tool_call_id=None,
             pending_tool_calls=[],
             extra_messages=[],
@@ -803,7 +865,7 @@ async def test_enable_auto_cap_counts_flag_on_conversations():
         )
         with pytest.raises(ConversationCapError, match="concurrent auto runs"):
             await sup.enable_auto(
-                trace_id="t2",
+                session_id=seeded_two.session_id,
                 enable_tool_call_id=None,
                 pending_tool_calls=[],
                 extra_messages=[],
@@ -814,7 +876,7 @@ async def test_enable_auto_cap_counts_flag_on_conversations():
         # including for a FLIP of a lingering off record.
         await sup.stop(first.session_id)
         second = await sup.enable_auto(
-            trace_id="t2",
+            session_id=seeded_two.session_id,
             enable_tool_call_id=None,
             pending_tool_calls=[],
             extra_messages=[],
@@ -918,17 +980,23 @@ async def test_set_auto_flag_outcomes():
     assert sup._conversations[record.session_id].policy.approvals == "auto"
 
 
-# ── Resync resolve (old GET /api/chat/auto/resolve) ───────────────────────────
+# ── Trace-index join (INTERNAL since phase 5 — sessions-list only) ────────────
 
 
-async def test_resolve_auto_for_trace_matches_stale_leaf_and_filters():
+async def test_auto_record_for_trace_matches_stale_leaf_and_filters():
+    # The whole-chain lookup powering routes.py's sessions-list auto join.
+    # Its browser-facing sibling (resolve_auto_for_trace behind
+    # GET /api/conversations/resolve) died in phase 5 — the browser keys
+    # conversations on session ids and never resyncs by trace — but the join
+    # still resolves upstream leaf-keyed rows until phase 6.
     sup = _sup(terminal_ttl_seconds=60.0)
+    seeded = _seeded_conversation(sup, "t1")
     client = FakeUpstreamClient(
         [FakeUpstreamResponse([text_delta("hi"), trace("t2"), finish("stop")])]
     )
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded.session_id,
             enable_tool_call_id="tc_enable",
             pending_tool_calls=[],
             extra_messages=[],
@@ -937,16 +1005,15 @@ async def test_resolve_auto_for_trace_matches_stale_leaf_and_filters():
         )
         await _wait_for(lambda: record.state == RunState.IDLE)
 
-    # The stale seed leaf t1 resolves via the whole-chain index; the record's
-    # CURRENT leaf (t2) is what the resyncing client hydrates from.
-    resolved = sup.resolve_auto_for_trace("t1")
-    assert resolved is record
+    # The stale seed leaf t1 resolves via the whole-chain index even though
+    # the record's current leaf advanced to t2.
     assert record.current_leaf_trace_id == "t2"
-    assert sup.resolve_auto_for_trace("t2") is record
-    assert sup.resolve_auto_for_trace("never-seen") is None
-    # Flag-off records stop resolving (green dot/resync gone once stopped).
+    assert sup.auto_record_for_trace("t1") is record
+    assert sup.auto_record_for_trace("t2") is record
+    assert sup.auto_record_for_trace("never-seen") is None
+    # Flag-off records stop resolving (green dot gone once stopped).
     await sup.stop(record.session_id)
-    assert sup.resolve_auto_for_trace("t1") is None
+    assert sup.auto_record_for_trace("t1") is None
 
 
 # ── Orchestration identity threading ──────────────────────────────────────────
@@ -960,12 +1027,13 @@ async def test_auto_conversation_gets_orchestration_ctx_with_fresh_leaf():
     # the engine advances per round — assert the record carries the fresh
     # leaf a spawn would forward as the agent block's parent_trace_id.
     sup = _sup()
+    seeded = _seeded_conversation(sup, "t1")
     client = FakeUpstreamClient(
         [FakeUpstreamResponse([text_delta("hi"), trace("t2"), finish("stop")])]
     )
     with patch.object(httpx, "AsyncClient", return_value=client):
         record = await sup.enable_auto(
-            trace_id="t1",
+            session_id=seeded.session_id,
             enable_tool_call_id="tc_enable",
             pending_tool_calls=[],
             extra_messages=[],
@@ -1264,14 +1332,7 @@ async def test_adopt_interactive_creates_and_is_idempotent():
 
         # A trace resolving to a live AUTO record adopts THAT record — one
         # record per conversation is the whole point of the flip model.
-        auto = await sup.enable_auto(
-            trace_id="t-auto",
-            enable_tool_call_id=None,
-            pending_tool_calls=[],
-            extra_messages=[],
-            upstream_url=URL,
-            headers={},
-        )
+        auto = _seeded_conversation(sup, "t-auto", kind="auto")
         adopted = await sup.adopt_interactive("t-auto", upstream_url=URL, headers={})
         assert adopted is auto
 
@@ -1279,6 +1340,21 @@ async def test_adopt_interactive_creates_and_is_idempotent():
         fresh = await sup.adopt_interactive(None, upstream_url=URL, headers={})
         assert fresh.kind == "interactive"
         assert fresh.current_leaf_trace_id is None
+
+        # Adopt-by-root (phase 5): the API layer resolves the browser's
+        # durable root key to a leaf and passes both — the record's root_id
+        # is stamped immediately; a later adopt of a live record backfills
+        # a missing root without minting a duplicate.
+        rooted = await sup.adopt_interactive(
+            "leaf-9", upstream_url=URL, headers={}, root_id="root-9"
+        )
+        assert rooted.root_id == "root-9"
+        assert record.root_id is None
+        backfilled = await sup.adopt_interactive(
+            "leaf-1", upstream_url=URL, headers={}, root_id="root-1"
+        )
+        assert backfilled is record
+        assert record.root_id == "root-1"
 
 
 async def test_adopt_interactive_does_not_steal_terminal_records_index_entry():
@@ -1421,6 +1497,42 @@ async def test_rehydrate_skips_answered_and_signal_only_tails():
     assert sup.pending_approval(record2.session_id) is None
 
 
+class _FakeSnapshotClient:
+    """httpx.AsyncClient stand-in for the rehydration snapshot GET."""
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+        self.urls: list[str] = []
+
+    async def get(self, url: str, headers: dict | None = None) -> httpx.Response:
+        self.urls.append(url)
+        return httpx.Response(200, json=self._payload)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+async def test_rehydrate_fetch_backfills_root_id():
+    # Phase 5: the upstream snapshot response carries session_meta.root_id at
+    # the top level; a record adopted from a bare legacy leaf learns its
+    # durable handle opportunistically from the rehydration fetch (the
+    # browser then persists it as the restart-recovery key).
+    sup = _sup()
+    payload = {
+        "id": "leaf-1",
+        "root_id": "root-1",
+        "task_run": {"trace": _tail_trace_with_pending_calls()},
+    }
+    with patch.object(httpx, "AsyncClient", return_value=_FakeSnapshotClient(payload)):
+        record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
+    assert record.root_id == "root-1"
+    # The tail rehydration itself still worked off the same fetch.
+    assert record.state == RunState.AWAITING_APPROVAL
+
+
 async def test_decide_runless_batch_starts_resume_run():
     # Deciding a rehydrated (runless) batch starts the RESUME RUN: execute
     # with decisions, continue from the batch's trace-only base — the exact
@@ -1547,7 +1659,7 @@ async def test_enable_auto_flips_interactive_record_policy_and_kind():
     client = FakeUpstreamClient(_text_run_responses("working"))
     with patch.object(httpx, "AsyncClient", return_value=client):
         flipped = await sup.enable_auto(
-            trace_id="leaf-1",
+            session_id=record.session_id,
             enable_tool_call_id="tc_enable",
             pending_tool_calls=[],
             extra_messages=[],

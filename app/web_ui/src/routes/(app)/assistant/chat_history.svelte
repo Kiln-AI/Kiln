@@ -67,6 +67,10 @@
   }
 
   async function selectSession(row: SessionListItem) {
+    // Phase 5: row.id is an opaque conversation KEY (live session id /
+    // upstream root id / legacy leaf — never a trace id the browser
+    // interprets); the desktop resolves it to the current leaf for the
+    // hydration GET and again on the ensure/adopt in the apply handler.
     const sessionId = row.id
     sessionDetailLoading = sessionId
     sessionsError = null
@@ -81,11 +85,14 @@
         sessionsError = createKilnError(error)
         return
       }
-      const { messages, continuationTraceId, contextUsage } =
+      const { messages, rootId, contextUsage } =
         hydrateSessionFromSnapshot(snapshot)
       dispatch("apply", {
         messages,
-        continuationTraceId,
+        sessionId,
+        // The durable recovery key: the row's root_id (present for every
+        // non-legacy session) with the snapshot's copy as fallback.
+        rootId: row.root_id ?? rootId,
         contextUsage,
         autoActive: !!row.auto_active,
       })
