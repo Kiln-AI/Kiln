@@ -1206,3 +1206,308 @@ class TestRealBuiltInTools:
         result = await tool.run(None, x="test")
         assert not result.is_error
         assert "not available" in result.output
+
+
+# ---------------------------------------------------------------------------
+# UI example validation tests
+#
+# These tests execute the EXACT code strings shown in the "Code Tool Examples"
+# modal (app/web_ui/src/lib/utils/code_tool_helpers.ts → generateExamples()).
+# If you change those examples, you MUST update these tests to match.
+# ---------------------------------------------------------------------------
+
+# The example code strings are duplicated here intentionally so any drift
+# between the UI and these tests causes a test failure during review.
+
+EXAMPLE_PARALLEL_WITH_RETRIES = """\
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from kiln import tools
+
+def run(urls: list[str], max_retries: int = 3) -> str:
+    \"\"\"Fetch multiple URLs in parallel with retries.\"\"\"
+    results = {}
+
+    def fetch_with_retry(url):
+        for attempt in range(max_retries):
+            try:
+                result = tools.fetch_url(url=url)
+                return url, json.loads(result)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    return url, {"error": str(e)}
+                time.sleep(0.5 * (attempt + 1))
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = [pool.submit(fetch_with_retry, u) for u in urls]
+        for future in as_completed(futures):
+            url, data = future.result()
+            results[url] = data
+
+    return json.dumps(results)
+"""
+
+EXAMPLE_ASYNC_FAN_OUT = """\
+import json
+import asyncio
+from kiln import async_tools
+
+async def run(user_ids: list[str]) -> str:
+    \"\"\"Fetch user details concurrently using async_tools.\"\"\"
+    async def fetch_user(uid):
+        result = await async_tools.get_user(id=uid)
+        return json.loads(result)
+
+    users = await asyncio.gather(*(fetch_user(uid) for uid in user_ids))
+    return json.dumps(users)
+"""
+
+EXAMPLE_FILTER_AND_TRANSFORM = """\
+import json
+from kiln import tools
+
+def run(query: str, max_results: int = 10) -> str:
+    \"\"\"Search and filter results, returning only relevant fields.\"\"\"
+    raw = tools.search(query=query)
+    results = json.loads(raw)
+
+    filtered = [
+        {"title": r["title"], "url": r["url"]}
+        for r in results[:max_results]
+        if "title" in r and "url" in r
+    ]
+
+    return json.dumps(filtered)
+"""
+
+
+class TestUIExampleParallelWithRetries:
+    """Validate the 'Parallel with Retries' example from the Code Tool Examples modal."""
+
+    @pytest.mark.asyncio
+    async def test_parallel_with_retries_happy_path(self, tmp_path):
+        fetch_url_responses = {
+            "https://a.com": '{"status": "ok_a"}',
+            "https://b.com": '{"status": "ok_b"}',
+        }
+        fake = FakeTool(
+            "mcp::remote::test_server::fetch_url",
+            "fetch_url",
+            fn_desc="Fetch a URL",
+            params={
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            },
+        )
+
+        async def route_fetch(context=None, **kwargs):
+            url = kwargs["url"]
+            return ToolCallResult(output=fetch_url_responses[url])
+
+        fake.run = route_fetch  # type: ignore[assignment]
+
+        tool = _make_python_code_tool(
+            tmp_path,
+            EXAMPLE_PARALLEL_WITH_RETRIES,
+            tool_allowlist=["mcp::remote::test_server::fetch_url"],
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "urls": {"type": "array", "items": {"type": "string"}},
+                    "max_retries": {"type": "integer"},
+                },
+                "required": ["urls"],
+            },
+        )
+        with patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            return_value=fake,
+        ):
+            result = await tool.run(
+                None, urls=["https://a.com", "https://b.com"], max_retries=1
+            )
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        parsed = json.loads(result.output)
+        assert parsed["https://a.com"] == {"status": "ok_a"}
+        assert parsed["https://b.com"] == {"status": "ok_b"}
+
+    @pytest.mark.asyncio
+    async def test_parallel_with_retries_error_fallback(self, tmp_path):
+        """When a tool call fails, the retry logic catches the exception and
+        returns an error dict after exhausting retries."""
+        fake = FakeTool(
+            "mcp::remote::test_server::fetch_url",
+            "fetch_url",
+            fn_desc="Fetch a URL",
+            params={
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            },
+            result=ToolCallResult(
+                output="connection refused",
+                is_error=True,
+                error_message="connection refused",
+            ),
+        )
+        tool = _make_python_code_tool(
+            tmp_path,
+            EXAMPLE_PARALLEL_WITH_RETRIES,
+            tool_allowlist=["mcp::remote::test_server::fetch_url"],
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "urls": {"type": "array", "items": {"type": "string"}},
+                    "max_retries": {"type": "integer"},
+                },
+                "required": ["urls"],
+            },
+        )
+        with patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            return_value=fake,
+        ):
+            result = await tool.run(None, urls=["https://fail.com"], max_retries=1)
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        parsed = json.loads(result.output)
+        assert "error" in parsed["https://fail.com"]
+
+
+class TestUIExampleAsyncFanOut:
+    """Validate the 'Async Fan-Out' example from the Code Tool Examples modal."""
+
+    @pytest.mark.asyncio
+    async def test_async_fan_out_happy_path(self, tmp_path):
+        user_data = {
+            "u1": '{"name": "Alice", "id": "u1"}',
+            "u2": '{"name": "Bob", "id": "u2"}',
+        }
+        fake = FakeTool(
+            "mcp::remote::test_server::get_user",
+            "get_user",
+            fn_desc="Get user details",
+            params={
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            },
+        )
+
+        async def route_user(context=None, **kwargs):
+            uid = kwargs["id"]
+            return ToolCallResult(output=user_data[uid])
+
+        fake.run = route_user  # type: ignore[assignment]
+
+        tool = _make_python_code_tool(
+            tmp_path,
+            EXAMPLE_ASYNC_FAN_OUT,
+            tool_allowlist=["mcp::remote::test_server::get_user"],
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "user_ids": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["user_ids"],
+            },
+        )
+        with patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            return_value=fake,
+        ):
+            result = await tool.run(None, user_ids=["u1", "u2"])
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        parsed = json.loads(result.output)
+        assert len(parsed) == 2
+        assert parsed[0] == {"name": "Alice", "id": "u1"}
+        assert parsed[1] == {"name": "Bob", "id": "u2"}
+
+
+class TestUIExampleFilterAndTransform:
+    """Validate the 'Filter & Transform' example from the Code Tool Examples modal."""
+
+    @pytest.mark.asyncio
+    async def test_filter_and_transform_happy_path(self, tmp_path):
+        search_results = json.dumps(
+            [
+                {"title": "Result 1", "url": "https://1.com", "score": 0.9},
+                {"title": "Result 2", "url": "https://2.com", "score": 0.8},
+                {"description": "no title or url"},
+                {"title": "Result 3", "url": "https://3.com", "score": 0.7},
+            ]
+        )
+        fake = FakeTool(
+            "mcp::remote::test_server::search",
+            "search",
+            fn_desc="Search",
+            params={
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+            result=ToolCallResult(output=search_results),
+        )
+        tool = _make_python_code_tool(
+            tmp_path,
+            EXAMPLE_FILTER_AND_TRANSFORM,
+            tool_allowlist=["mcp::remote::test_server::search"],
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        )
+        with patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            return_value=fake,
+        ):
+            result = await tool.run(None, query="test query")
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        parsed = json.loads(result.output)
+        assert len(parsed) == 3
+        assert parsed[0] == {"title": "Result 1", "url": "https://1.com"}
+        assert parsed[1] == {"title": "Result 2", "url": "https://2.com"}
+        assert parsed[2] == {"title": "Result 3", "url": "https://3.com"}
+
+    @pytest.mark.asyncio
+    async def test_filter_and_transform_respects_max_results(self, tmp_path):
+        search_results = json.dumps(
+            [{"title": f"R{i}", "url": f"https://{i}.com"} for i in range(20)]
+        )
+        fake = FakeTool(
+            "mcp::remote::test_server::search",
+            "search",
+            fn_desc="Search",
+            params={
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+            result=ToolCallResult(output=search_results),
+        )
+        tool = _make_python_code_tool(
+            tmp_path,
+            EXAMPLE_FILTER_AND_TRANSFORM,
+            tool_allowlist=["mcp::remote::test_server::search"],
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        )
+        with patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+            return_value=fake,
+        ):
+            result = await tool.run(None, query="test", max_results=3)
+        assert not result.is_error, f"Expected success, got: {result.output}"
+        parsed = json.loads(result.output)
+        assert len(parsed) == 3

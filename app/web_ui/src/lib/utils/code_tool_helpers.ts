@@ -213,6 +213,12 @@ export function formatParamPreview(value: unknown): string {
 
 /**
  * Generate example code snippets for the "More Examples" dialog.
+ *
+ * WARNING: These examples are validated by Python tests that execute the exact
+ * code strings through the real code-tool engine. Do not modify the examples
+ * without updating the corresponding tests in:
+ *   libs/core/kiln_ai/sandbox/test_code_tool_execution.py
+ *   (search for "TestUIExample")
  */
 export function generateExamples(): { label: string; code: string }[] {
   return [
