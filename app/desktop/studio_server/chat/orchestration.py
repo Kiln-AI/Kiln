@@ -93,9 +93,11 @@ def _record_payload(record: ConversationRecord, include_report: bool) -> dict[st
     OLD wire shape, preserved verbatim (they are persisted into parent traces
     via tool results): ``subagent_id`` is the child handle used for
     wait/stop — now the child's session id — and ``session_id`` is the
-    child's current UPSTREAM leaf trace id (what the backend's session
-    endpoints understand today; renamed only when the backend adopts session
-    ids in phase 6)."""
+    child's current UPSTREAM leaf trace id. The backend's session endpoints
+    accept either id kind since phase 6, but the field keeps its name AND its
+    leaf value: these payloads are persisted in parent traces, so changing
+    the shape would break the "indistinguishable persisted traces" contract
+    for zero benefit."""
     payload: dict[str, Any] = {
         "subagent_id": record.session_id,
         "name": record.name,
@@ -287,17 +289,24 @@ async def _stop(args: dict[str, Any], parent_key: str) -> str:
     return json.dumps({"status": "stopped"}, ensure_ascii=False)
 
 
-async def handle_session_deleted(trace_id: str) -> None:
+async def handle_session_deleted(conversation_key: str) -> None:
     """Cascade for a deleted chat session (functional spec §5 "deleting a
     session stops its run and cascades to children"; old
-    ``SubAgentRegistry.handle_session_deleted``): resolve the deleted leaf
-    through the supervisor's whole-chain index and, if it belongs to a live
-    conversation, stop its children (explicitly — a plain interactive
-    ``stop()`` deliberately does NOT cascade since phase 4, but a DELETED
-    parent's children have nothing left to consume their reports) and stop
-    the conversation itself — a deleted CHILD session stops that child (old
-    behavior), and a deleted parent's in-flight run is cancelled."""
-    session_id = conversation_supervisor.session_for_trace(trace_id)
+    ``SubAgentRegistry.handle_session_deleted``): resolve the deleted key —
+    a live session id directly, anything else (any leaf the conversation
+    ever had, or the key it was adopted from) through the supervisor's
+    whole-chain index. Phase 6: the delete proxy hands us the browser's
+    ORIGINAL key (the upstream delete no longer needs a desktop-resolved
+    leaf, so none exists to pass). If it names a live conversation, stop its
+    children (explicitly — a plain interactive ``stop()`` deliberately does
+    NOT cascade since phase 4, but a DELETED parent's children have nothing
+    left to consume their reports) and stop the conversation itself — a
+    deleted CHILD session stops that child (old behavior), and a deleted
+    parent's in-flight run is cancelled."""
+    if conversation_supervisor.get(conversation_key) is not None:
+        session_id: str | None = conversation_key
+    else:
+        session_id = conversation_supervisor.session_for_trace(conversation_key)
     if session_id is None:
         return
     await conversation_supervisor.stop_children(session_id)

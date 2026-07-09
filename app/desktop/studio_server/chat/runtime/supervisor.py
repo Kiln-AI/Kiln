@@ -83,6 +83,7 @@ from .models import (
     _utc_now,
     auto_policy,
     build_auto_seed_body,
+    continuation_key_fields,
     format_subagent_report,
     interactive_policy,
     subagent_policy,
@@ -335,13 +336,14 @@ class ConversationSupervisor:
         self._undelivered_report_ttl_seconds = undelivered_report_ttl_seconds
         self._max_idle_interactive_records = max_idle_interactive_records
         self._conversations: dict[str, _Conversation] = {}
-        # Every seen leaf trace id → session id. INTERNAL since phase 5 (the
-        # browser never sees trace ids): still required because the UPSTREAM
-        # surface stays trace-keyed until phase 6 — the sessions-list join
-        # resolves upstream leaf-keyed rows to live records, and history keys
-        # that are legacy leaves resolve to their conversation here.
-        # TODO(phase-6): shrinks further once the backend accepts session ids
-        # (the desktop drops leaf bookkeeping for resume).
+        # Every seen leaf trace id (plus any adopted resume key) → session id.
+        # INTERNAL since phase 5 (the browser never sees trace ids). Phase 6
+        # removed its RESUME role (the backend resolves session ids itself),
+        # but the index stays for the HISTORY JOIN: the upstream sessions
+        # list is leaf-keyed (each row's ``id`` is its current leaf), so the
+        # list proxy resolves rows to live records through this chain, and
+        # browser keys naming a live conversation (by any leaf it ever had,
+        # or its adopted key) resolve here without an upstream round-trip.
         self._trace_index: dict[str, str] = {}
         # Terminal-but-undelivered child reports queued per PARENT session id
         # (child session ids, drained in completion order).
@@ -541,66 +543,74 @@ class ConversationSupervisor:
 
     async def adopt_interactive(
         self,
-        trace_id: str | None,
+        session_key: str | None,
         *,
         upstream_url: str,
         headers: dict[str, str],
-        root_id: str | None = None,
     ) -> ConversationRecord:
-        """Create — or ADOPT — the interactive conversation for a leaf trace
-        id (POST /api/conversations kind="interactive").
+        """Create — or ADOPT — the interactive conversation for an upstream
+        session key (POST /api/conversations kind="interactive").
 
-        Phase 5: the BROWSER no longer holds trace ids — the API layer
-        resolves its opaque conversation key (session id / upstream root id /
-        legacy leaf) to a leaf via ``routes.resolve_conversation_key`` and
-        passes the leaf here (the supervisor's internals stay trace-keyed
-        until phase 6 because the upstream API is). ``root_id`` rides along
-        when the key resolution learned it (adopt-by-root / the upstream
-        list row), so the record's durable handle is stamped immediately.
+        Phase 6: the key is OPAQUE — a durable ``root_id`` for post-phase-5
+        history rows, a bare leaf for legacy rows, or a terminal record's
+        current leaf (re-opening a finished sub-agent continues its trace on
+        a fresh interactive record). The desktop no longer resolves roots to
+        leaves (the phase-5 scan is gone): the key is stored as the record's
+        ``resume_session_key`` and the FIRST turn continues upstream by
+        ``session_id`` — the backend resolves the session's current leaf
+        itself (architecture §8). After the first ``kiln_chat_trace`` the
+        engine holds the real leaf and every later turn continues by
+        ``trace_id`` exactly as before.
 
-        The whole-chain index resolves any leaf the conversation ever had,
-        making this idempotent: opening a history row twice (or racing tabs)
-        returns the SAME record instead of minting duplicates. A resolving
-        record of ANY kind is returned as-is — if the conversation is
-        currently an auto conversation, that record IS the conversation (one
-        record per conversation is the whole point of the flip model).
+        The whole-chain index resolves any leaf the conversation ever had —
+        and the adopted key itself (a root IS the conversation's first leaf,
+        so it belongs in the chain) — making this idempotent: opening a
+        history row twice (or racing tabs) returns the SAME record instead of
+        minting duplicates. A resolving record of ANY kind is returned as-is
+        — if the conversation is currently an auto conversation, that record
+        IS the conversation (one record per conversation is the whole point
+        of the flip model).
 
-        A fresh create with a trace id is the history-open / desktop-restart
-        path: adopt the leaf, then rehydrate pending approvals from the
-        persisted trace tail (functional spec §5 — a parked approval survives
-        a desktop restart via the persisted trace).
+        A fresh create with a key is the history-open / desktop-restart path:
+        adopt the key, then rehydrate pending approvals from the persisted
+        trace tail (functional spec §5 — a parked approval survives a desktop
+        restart via the persisted trace). The rehydration fetch also
+        backfills the TRUE ``root_id`` from the snapshot response — which is
+        why the key is never stamped into ``root_id`` directly: a legacy-leaf
+        key there would hand the browser a recovery key that goes stale on
+        the next persist (see the field comments on ``ConversationRecord``).
         """
-        if trace_id is not None:
-            session_id = self._trace_index.get(trace_id)
+        if session_key is not None:
+            session_id = self._trace_index.get(session_key)
             if session_id is not None:
                 existing = self._conversations.get(session_id)
                 if existing is not None and not existing.record.state.is_terminal:
-                    if existing.record.root_id is None and root_id is not None:
-                        # Backfill the durable handle on an already-live
-                        # record (e.g. adopted earlier from a bare leaf).
-                        existing.record.root_id = root_id
                     return existing.record
 
         record = self.create_conversation(
             "interactive", upstream_url=upstream_url, headers=headers
         )
-        record.root_id = root_id
-        if trace_id is not None:
-            record.current_leaf_trace_id = trace_id
-            record.seen_trace_ids.append(trace_id)
+        if session_key is not None:
+            record.resume_session_key = session_key
+            # Seeding the chain with the adopted key does double duty: it
+            # keeps this adopt idempotent (and the sessions-list join able to
+            # find the record by its row key), and a NON-EMPTY chain is what
+            # tells the engine this record joined mid-conversation, so it
+            # never mis-stamps a continuation trace as the durable root.
+            record.seen_trace_ids.append(session_key)
             # Don't steal another record's index entry: a TERMINAL record can
-            # still own this leaf (e.g. re-opening a finished sub-agent's
+            # still own this key (e.g. re-opening a finished sub-agent's
             # session from history continues its TRACE on a fresh interactive
             # record, but the child's sessions-list "finished" chip must keep
             # resolving until its record GCs). The new conversation's own
             # leaves index normally via on_trace from its first turn.
-            if trace_id not in self._trace_index:
-                self._trace_index[trace_id] = record.session_id
+            if session_key not in self._trace_index:
+                self._trace_index[session_key] = record.session_id
             await self.rehydrate_pending_approvals(record.session_id)
         logger.info(
-            "Adopted interactive conversation %s (trace_id=%s)",
+            "Adopted interactive conversation %s (session_key=%s)",
             record.session_id,
-            trace_id,
+            session_key,
         )
         return record
 
@@ -652,11 +662,15 @@ class ConversationSupervisor:
         if conv.task is not None and not conv.task.done():
             # A live run owns its own round context — never second-guess it.
             return None
-        leaf = conv.record.current_leaf_trace_id
-        if leaf is None:
+        # The fetch key mirrors the continuation precedence (phase 6): the
+        # record's own leaf when one is known, else the adopted resume key —
+        # the upstream GET accepts either id kind and returns the session's
+        # CURRENT leaf snapshot either way.
+        fetch_key = conv.record.current_leaf_trace_id or conv.record.resume_session_key
+        if fetch_key is None:
             return None
 
-        trace = await self._fetch_persisted_trace(conv, leaf)
+        trace = await self._fetch_persisted_trace(conv, fetch_key)
         if not trace:
             return None
         events, signal_events, assistant_text = _pending_events_from_trace_tail(trace)
@@ -672,7 +686,12 @@ class ConversationSupervisor:
             # The continuation base is the trace-only shape — identical to
             # what the old /execute-tools continuation POSTed, and what the
             # engine's parked path holds for a batch parked at this boundary.
-            body={"trace_id": leaf, "messages": []},
+            # For a key-adopted record with no known leaf the base is the
+            # session_id equivalent: the backend resolves the current leaf —
+            # whose tail is exactly what we just rebuilt the batch from —
+            # and _build_openai_tool_continuation treats a session_id base
+            # as trace-only too, so the wire stays role:tool results only.
+            body={**continuation_key_fields(conv.record), "messages": []},
             assistant_text=assistant_text,
             # Signal calls ride the event list so their resolutions land on
             # the continuation, but never the ITEMS (nothing to approve)…
@@ -691,25 +710,28 @@ class ConversationSupervisor:
         self._touch(conv)
         self._publish_state(conv)
         logger.info(
-            "Rehydrated pending approval batch for %s (%d calls, leaf=%s)",
+            "Rehydrated pending approval batch for %s (%d calls, key=%s)",
             session_id,
             len(events),
-            leaf,
+            fetch_key,
         )
         return batch
 
     async def _fetch_persisted_trace(
-        self, conv: _Conversation, leaf_trace_id: str
+        self, conv: _Conversation, session_key: str
     ) -> list[dict[str, Any]] | None:
-        """Fetch the persisted snapshot's trace for a leaf (best-effort).
+        """Fetch the persisted snapshot's trace for a session key
+        (best-effort). ``session_key`` may be a leaf trace id OR a durable
+        root id — the upstream endpoint resolves either kind to the session's
+        current leaf (phase 6, architecture §8).
 
         The conversation's ``upstream_url`` is the chat POST URL
         (``…/v1/chat/``); the session snapshot lives beside it at
-        ``…/v1/chat/sessions/{leaf}`` — same target the desktop's history
+        ``…/v1/chat/sessions/{key}`` — same target the desktop's history
         proxy reads, fetched directly here because rehydration is a
         supervisor concern, not a browser round-trip.
         """
-        url = f"{conv.upstream_url}sessions/{leaf_trace_id}"
+        url = f"{conv.upstream_url}sessions/{session_key}"
         try:
             async with httpx.AsyncClient(
                 timeout=REHYDRATE_FETCH_TIMEOUT_SECONDS
@@ -719,7 +741,7 @@ class ConversationSupervisor:
                 return None
             data = response.json()
         except (httpx.HTTPError, json.JSONDecodeError, ValueError):
-            logger.debug("Approval rehydration fetch failed for %s", leaf_trace_id)
+            logger.debug("Approval rehydration fetch failed for %s", session_key)
             return None
         if isinstance(data, dict) and conv.record.root_id is None:
             # Opportunistic backfill of the durable session handle (phase 5):
@@ -859,9 +881,12 @@ class ConversationSupervisor:
             # The enable call belongs to the assistant turn persisted at the
             # conversation's tail — the record's own leaf is authoritative
             # (phase 5: the old endpoint took the browser's copy of the same
-            # id; the engine's on_trace keeps this one fresh). None starts a
-            # fresh conversation (Revision R2).
+            # id; the engine's on_trace keeps this one fresh). A key-adopted
+            # record with no leaf yet continues by session_id instead (phase
+            # 6 — the backend resolves the current leaf); with NEITHER key a
+            # fresh conversation starts (Revision R2).
             trace_id=record.current_leaf_trace_id,
+            session_id=record.resume_session_key,
             enable_tool_call_id=enable_tool_call_id,
             extra_messages=extra_messages,
             sibling_results=sibling_results,
@@ -1030,12 +1055,16 @@ class ConversationSupervisor:
                     "content": DENIED_TOOL_OUTPUT,
                 }
             )
-        body: dict[str, Any] = {"messages": messages}
-        if record.current_leaf_trace_id is not None:
-            # The dangling enable call lives in the conversation's tail
-            # snapshot — the record's own leaf is authoritative (the old
-            # endpoint took the browser's copy of the same id).
-            body["trace_id"] = record.current_leaf_trace_id
+        # The dangling enable call lives in the conversation's tail snapshot —
+        # the record's own leaf is authoritative (the old endpoint took the
+        # browser's copy of the same id). continuation_key_fields also covers
+        # the defensive corner of a key-adopted record with no leaf yet
+        # (session_id continuation) — a live consent can't normally exist on
+        # one, but the shared helper keeps every idle-start body consistent.
+        body: dict[str, Any] = {
+            **continuation_key_fields(record),
+            "messages": messages,
+        }
         self.start_run(session_id, body)
         logger.info("Declined auto mode for conversation %s", session_id)
         return "ok"
@@ -1421,9 +1450,14 @@ class ConversationSupervisor:
             for report in self.drain_reports(session_id):
                 messages.append({"role": "user", "content": report})
                 conv.bus.emit(format_user_message(report))
-        body: dict[str, Any] = {"messages": messages}
-        if conv.record.current_leaf_trace_id is not None:
-            body["trace_id"] = conv.record.current_leaf_trace_id
+        # Continuation key (phase 6): trace_id from the record's own leaf for
+        # the normal in-process flow, session_id for a key-adopted record's
+        # FIRST turn (the backend resolves the current leaf), nothing for a
+        # brand-new conversation — see continuation_key_fields.
+        body: dict[str, Any] = {
+            "messages": messages,
+            **continuation_key_fields(conv.record),
+        }
         if conv.record.auto_flag:
             body["auto_mode"] = True
         self.start_run(session_id, body)

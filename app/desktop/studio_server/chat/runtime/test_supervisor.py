@@ -988,7 +988,8 @@ async def test_auto_record_for_trace_matches_stale_leaf_and_filters():
     # Its browser-facing sibling (resolve_auto_for_trace behind
     # GET /api/conversations/resolve) died in phase 5 — the browser keys
     # conversations on session ids and never resyncs by trace — but the join
-    # still resolves upstream leaf-keyed rows until phase 6.
+    # still resolves upstream leaf-keyed rows (the sessions LIST stays
+    # leaf-keyed even after phase 6's session-id continuation).
     sup = _sup(terminal_ttl_seconds=60.0)
     seeded = _seeded_conversation(sup, "t1")
     client = FakeUpstreamClient(
@@ -1322,39 +1323,32 @@ async def test_adopt_interactive_creates_and_is_idempotent():
         record = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
         assert record.kind == "interactive"
         assert record.state == RunState.IDLE
-        assert record.current_leaf_trace_id == "leaf-1"
+        # Phase 6: the adopted key is stored as the RESUME key, not a leaf —
+        # the desktop no longer resolves keys to leaves (the backend does,
+        # on the first session_id continuation).
+        assert record.current_leaf_trace_id is None
+        assert record.resume_session_key == "leaf-1"
+        # …and NEVER stamped into root_id (a legacy-leaf key there would hand
+        # the browser a recovery key that goes stale on the next persist).
+        assert record.root_id is None
         assert sup.session_for_trace("leaf-1") == record.session_id
 
-        # Idempotent: the same trace (or ANY leaf the conversation ever had)
+        # Idempotent: the same key (or ANY leaf the conversation ever had)
         # returns the SAME record instead of minting a duplicate.
         again = await sup.adopt_interactive("leaf-1", upstream_url=URL, headers={})
         assert again is record
 
-        # A trace resolving to a live AUTO record adopts THAT record — one
+        # A key resolving to a live AUTO record adopts THAT record — one
         # record per conversation is the whole point of the flip model.
         auto = _seeded_conversation(sup, "t-auto", kind="auto")
         adopted = await sup.adopt_interactive("t-auto", upstream_url=URL, headers={})
         assert adopted is auto
 
-        # No trace at all (brand-new conversation): a fresh empty record.
+        # No key at all (brand-new conversation): a fresh empty record.
         fresh = await sup.adopt_interactive(None, upstream_url=URL, headers={})
         assert fresh.kind == "interactive"
         assert fresh.current_leaf_trace_id is None
-
-        # Adopt-by-root (phase 5): the API layer resolves the browser's
-        # durable root key to a leaf and passes both — the record's root_id
-        # is stamped immediately; a later adopt of a live record backfills
-        # a missing root without minting a duplicate.
-        rooted = await sup.adopt_interactive(
-            "leaf-9", upstream_url=URL, headers={}, root_id="root-9"
-        )
-        assert rooted.root_id == "root-9"
-        assert record.root_id is None
-        backfilled = await sup.adopt_interactive(
-            "leaf-1", upstream_url=URL, headers={}, root_id="root-1"
-        )
-        assert backfilled is record
-        assert record.root_id == "root-1"
+        assert fresh.resume_session_key is None
 
 
 async def test_adopt_interactive_does_not_steal_terminal_records_index_entry():
@@ -1376,7 +1370,9 @@ async def test_adopt_interactive_does_not_steal_terminal_records_index_entry():
         adopted = await sup.adopt_interactive("tr-1", upstream_url=URL, headers={})
     assert adopted.session_id != child.session_id
     assert adopted.kind == "interactive"
-    assert adopted.current_leaf_trace_id == "tr-1"
+    # The fresh record resumes the child's TRACE by key (phase 6): the leaf
+    # arrives with its first persist, the key seeds the resume continuation.
+    assert adopted.resume_session_key == "tr-1"
     # The child still owns the leaf in the index.
     assert sup.session_for_trace("tr-1") == child.session_id
 
@@ -1429,7 +1425,10 @@ async def test_rehydrate_pending_approvals_from_trace_tail():
     assert batch is not None
     assert [item["toolCallId"] for item in batch.items] == ["tc_open"]
     assert batch.items[0]["requiresApproval"] is True
-    assert batch.body == {"trace_id": "leaf-1", "messages": []}
+    # Phase 6: a key-adopted record has no leaf, so the batch's trace-only
+    # base rides the resume key — the backend resolves the current leaf
+    # (whose tail is exactly what the batch was rebuilt from).
+    assert batch.body == {"session_id": "leaf-1", "messages": []}
     assert batch.assistant_text == "on it"
     # The unanswered SIGNAL sibling never enters the items (nothing to
     # approve) but rides the batch pre-resolved as declined so the resume
@@ -1560,12 +1559,15 @@ async def test_decide_runless_batch_starts_resume_run():
         )
         await _wait_for(lambda: record.state == RunState.IDLE)
 
-    # Old execute-tools continuation shape: trace-only base → role:tool rows.
+    # Old execute-tools continuation shape: trace-only base → role:tool rows
+    # (phase 6: keyed by session_id for a key-adopted record — the builder
+    # treats a session_id base as trace-only, so the wire stays results-only).
     # The signal sibling (tc_enable) is answered as declined right alongside
     # the executed call — the decline-flow payload, so the persisted trace
     # has no dangling tool call (LOW-2 recovery contract).
     (body,) = client.bodies
-    assert body["trace_id"] == "leaf-1"
+    assert body["session_id"] == "leaf-1"
+    assert "trace_id" not in body
     rows = {m["tool_call_id"]: m for m in body["messages"]}
     assert all(m["role"] == "tool" for m in body["messages"])
     assert rows["tc_open"]["content"] == "5"
@@ -1608,7 +1610,9 @@ async def test_decline_auto_starts_interactive_declined_continuation():
         await _wait_for(lambda: record.state == RunState.IDLE)
 
     (body,) = client.bodies
-    assert body["trace_id"] == "leaf-1"
+    # Phase 6: the key-adopted record's continuation identity is its resume
+    # key (session_id); a record with a live leaf would ride trace_id here.
+    assert body["session_id"] == "leaf-1"
     assert body["messages"][0] == {
         "role": "tool",
         "tool_call_id": "tc_enable",
@@ -1671,8 +1675,11 @@ async def test_enable_auto_flips_interactive_record_policy_and_kind():
         assert record.auto_flag is True
         assert sup._conversations[record.session_id].policy.approvals == "auto"
         await _wait_for(lambda: record.state == RunState.IDLE)
-    # The seed continued from the interactive conversation's leaf.
-    assert client.bodies[0]["trace_id"] == "leaf-1"
+    # The seed continued from the adopted conversation's key (phase 6: a
+    # key-adopted record has no leaf until its first persist, so the seed
+    # rides session_id and the backend resolves the current leaf).
+    assert client.bodies[0]["session_id"] == "leaf-1"
+    assert "trace_id" not in client.bodies[0]
     assert client.bodies[0]["auto_mode"] is True
 
 

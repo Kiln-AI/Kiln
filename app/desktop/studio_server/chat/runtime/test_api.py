@@ -62,16 +62,6 @@ def no_rehydrate_network():
         yield
 
 
-@pytest.fixture(autouse=True)
-def no_root_scan_network():
-    # The phase-5 key resolution's root→leaf fallback pages the UPSTREAM
-    # sessions list; the API tests exercise supervisor-resident keys and raw
-    # leaves, so the default is "no cold root matches" (the routes tests own
-    # the scan itself).
-    with patch.object(routes_module, "_leaf_for_root_id", return_value=None):
-        yield
-
-
 @pytest.fixture
 def mock_api_key():
     # The auto endpoints build upstream headers via get_copilot_api_key (the
@@ -442,9 +432,10 @@ async def test_decline_via_sid_auto_streams_on_observer(
     # (enabled=false + decline ctx): the enable call resolves as declined +
     # denied siblings via an interactive turn on the SAME conversation, whose
     # reply streams on the observer channel instead of the request response.
-    record = await supervisor.adopt_interactive(
-        "t1", upstream_url="https://example.test", headers={}
-    )
+    # The record HOLDS a leaf (a decline follows a live turn that persisted
+    # the enable call), so the continuation rides trace_id — the normal
+    # in-process flow phase 6 deliberately keeps.
+    record = _seeded_interactive(supervisor, "t1")
     continuation = [text_delta("continuing interactively"), trace("t2"), finish("stop")]
     fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
 
@@ -643,12 +634,15 @@ async def test_create_interactive_creates_and_adopts(supervisor, client, mock_ap
     assert supervisor.get(fresh_sid).kind == "interactive"
     assert supervisor.get(fresh_sid).state == RunState.IDLE
 
-    # A legacy leaf-shaped key adopts the leaf directly.
+    # A cold upstream-shaped key is adopted VERBATIM as the resume key
+    # (phase 6: no desktop-side key→leaf resolution — the record's first
+    # turn continues by session_id and the backend resolves the leaf).
     r = await client.post(
         "/api/conversations", json={"kind": "interactive", "session_id": "leaf-9"}
     )
     adopted_sid = r.json()["session_id"]
-    assert supervisor.get(adopted_sid).current_leaf_trace_id == "leaf-9"
+    assert supervisor.get(adopted_sid).resume_session_key == "leaf-9"
+    assert supervisor.get(adopted_sid).current_leaf_trace_id is None
     # Idempotent: the same key returns the SAME conversation — including its
     # own session id (the live handle the browser normally sends).
     r = await client.post(
@@ -664,21 +658,25 @@ async def test_create_interactive_creates_and_adopts(supervisor, client, mock_ap
 async def test_create_interactive_by_root_key_and_dead_cv_key(
     supervisor, client, mock_api_key
 ):
-    # A COLD root key (history row after a desktop restart) resolves to the
-    # current leaf via the desktop-side upstream-list scan, and the adopted
-    # record is stamped with its durable root id. Root ids are snapshot-
-    # shaped (10-digit reverse-timestamp prefix) — the scan only runs for
-    # keys that could actually be one.
+    # A COLD root key (history row after a desktop restart) is adopted
+    # VERBATIM as the record's resume key — the phase-5 desktop-side
+    # root→leaf scan is gone (the backend resolves either id kind on the
+    # first session_id continuation; the loud-failure contract for an
+    # indeterminate resolution moved server-side with it — see the backend's
+    # 503 `chat_session_resolution_incomplete`). The key is deliberately NOT
+    # stamped into root_id: roots and legacy leaves are indistinguishable
+    # desktop-side, and root_id must stay the TRUE durable handle (it is
+    # backfilled from the rehydration fetch / first persist instead).
     root_key = "1234567890_root-42"
-    with patch.object(routes_module, "_leaf_for_root_id", return_value="leaf-42"):
-        r = await client.post(
-            "/api/conversations",
-            json={"kind": "interactive", "session_id": root_key},
-        )
+    r = await client.post(
+        "/api/conversations",
+        json={"kind": "interactive", "session_id": root_key},
+    )
     assert r.status_code == 200
     record = supervisor.get(r.json()["session_id"])
-    assert record.current_leaf_trace_id == "leaf-42"
-    assert record.root_id == root_key
+    assert record.resume_session_key == root_key
+    assert record.current_leaf_trace_id is None
+    assert record.root_id is None
 
     # A dead cv_ key (the record died with a restart, no durable fallback):
     # a fresh EMPTY record — exactly the old world's no-stored-trace path
@@ -690,30 +688,56 @@ async def test_create_interactive_by_root_key_and_dead_cv_key(
     assert r.status_code == 200
     fresh = supervisor.get(r.json()["session_id"])
     assert fresh.current_leaf_trace_id is None
+    assert fresh.resume_session_key is None
     assert fresh.root_id is None
 
 
-async def test_create_interactive_fails_loudly_on_indeterminate_root_scan(
+async def test_create_interactive_resume_turn_continues_by_session_id(
     supervisor, client, mock_api_key
 ):
-    # Phase-5 CR MEDIUM 1: when the desktop cannot COMPLETE the root→leaf
-    # scan (upstream list down / errored / bound exhausted), the create must
-    # 503 and adopt NOTHING — falling through to key-as-leaf would seed the
-    # conversation from its stale ROOT snapshot: a silent fork from turn 1.
-    from app.desktop.studio_server.chat.routes import UpstreamResolutionError
+    # The resume flow end-to-end (phase 6): adopt by cold key, first send →
+    # the upstream body carries session_id=<key> (the backend resolves the
+    # current leaf); after the turn persists, the engine holds the real leaf
+    # and the NEXT send continues by trace_id — the normal in-process flow.
+    root_key = "1234567890_root-77"
+    r = await client.post(
+        "/api/conversations",
+        json={"kind": "interactive", "session_id": root_key},
+    )
+    sid = r.json()["session_id"]
 
-    with patch.object(
-        routes_module,
-        "_leaf_for_root_id",
-        side_effect=UpstreamResolutionError("upstream sessions list unreachable"),
-    ):
+    fake = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(
+                chunks=[text_delta("resumed"), trace("leaf-77b"), finish("stop")]
+            ),
+            FakeUpstreamResponse(
+                chunks=[text_delta("again"), trace("leaf-77c"), finish("stop")]
+            ),
+        ]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=fake):
         r = await client.post(
-            "/api/conversations",
-            json={"kind": "interactive", "session_id": "1234567890_root-9"},
+            f"/api/conversations/{sid}/messages", json={"content": "hello again"}
         )
-    assert r.status_code == 503
-    # No record was minted or seeded from the unresolved key.
-    assert supervisor.list_records() == []
+        assert r.status_code == 202
+        await _wait_idle(supervisor, sid)
+        r = await client.post(
+            f"/api/conversations/{sid}/messages", json={"content": "and more"}
+        )
+        assert r.status_code == 202
+        await _wait_idle(supervisor, sid)
+
+    first, second = fake.bodies
+    assert first["session_id"] == root_key
+    assert "trace_id" not in first
+    assert second["trace_id"] == "leaf-77b"
+    assert "session_id" not in second
+    # The engine never mistakes a continuation leaf for the durable root of
+    # an adopted (mid-chain) conversation.
+    record = supervisor.get(sid)
+    assert record.current_leaf_trace_id == "leaf-77c"
+    assert record.root_id is None
 
 
 def _stage_runless_batch(supervisor, session_id: str):

@@ -118,8 +118,9 @@ class ConversationItem(BaseModel):
     - ``root_id`` is the upstream session's DURABLE id (``session_meta.
       root_id``) when the desktop has learned it — a SESSION id, exposed so
       the browser can persist a restart-proof recovery key (the in-memory
-      ``session_id`` dies with the desktop process until phase 6 moves
-      resume server-side).
+      ``session_id`` dies with the desktop process; since phase 6 the
+      recovery key resumes via the backend's own session-id resolution, no
+      leaf bookkeeping anywhere).
     - ``final_report`` is included only when requested with
       ``include_report`` (same contract as the old API).
     """
@@ -351,8 +352,9 @@ def connect_conversations_api(app: FastAPI) -> None:
           live record (any kind) returns that record's session id; a
           TERMINAL record's key (a finished sub-agent reopened from history)
           continues its trace on a fresh interactive record; a cold key
-          (upstream root id / legacy leaf) adopts the desktop-resolved leaf
-          and rehydrates pending approvals from the persisted trace tail
+          (upstream root id / legacy leaf) is adopted VERBATIM — the backend
+          resolves it on the first turn (phase 6) — and rehydrates pending
+          approvals from the persisted trace tail
           (functional spec §5 restart recovery); a dead ``cv_`` key — the
           record died with a desktop restart — creates a fresh empty record
           (exactly the old world's no-stored-trace behavior).
@@ -367,27 +369,19 @@ def connect_conversations_api(app: FastAPI) -> None:
         upstream_url, headers = _upstream_target()
         if body.kind == "interactive":
             # Lazy import for the same routes.py cycle _upstream_target
-            # documents. The key→leaf mapping lives DESKTOP-side in routes.py
-            # (shared with the history GET/DELETE); the supervisor's
-            # internals stay trace-keyed until phase 6.
+            # documents. Phase 6: resolution is purely LOCAL now (live-record
+            # lookup); a cold key is adopted AS-IS and the record's first
+            # turn continues upstream by session_id — the backend resolves
+            # the session's current leaf itself (architecture §8), so the
+            # phase-5 root→leaf scan (and its 503 indeterminate surface)
+            # is gone.
             from app.desktop.studio_server.chat.routes import (
-                UpstreamResolutionError,
                 resolve_conversation_key,
             )
 
-            leaf: str | None = None
-            root_id: str | None = None
+            session_key: str | None = None
             if body.session_id is not None:
-                try:
-                    resolved = await resolve_conversation_key(body.session_id)
-                except UpstreamResolutionError as exc:
-                    # CR MEDIUM 1: an INDETERMINATE root→leaf scan (upstream
-                    # list down / errored / page bound exhausted) must fail
-                    # the create LOUDLY — adopting the key as a leaf would
-                    # seed the conversation from its stale ROOT snapshot and
-                    # silently fork it from turn 1. 503 lets the browser
-                    # surface "couldn't open the conversation" and retry.
-                    raise HTTPException(status_code=503, detail=str(exc))
+                resolved = resolve_conversation_key(body.session_id)
                 if (
                     resolved.record is not None
                     and not resolved.record.state.is_terminal
@@ -396,13 +390,15 @@ def connect_conversations_api(app: FastAPI) -> None:
                     return ConversationCreatedResponse(
                         session_id=resolved.record.session_id
                     )
-                leaf = resolved.leaf_trace_id
-                root_id = resolved.root_id
+                # A terminal record's key (a finished sub-agent reopened from
+                # history) resolves to its current leaf so the fresh
+                # interactive record continues that trace; a cold key rides
+                # verbatim; a dead cv_ key yields None (fresh empty record).
+                session_key = resolved.upstream_key
             record = await conversation_supervisor.adopt_interactive(
-                leaf,
+                session_key,
                 upstream_url=upstream_url,
                 headers=headers,
-                root_id=root_id,
             )
             return ConversationCreatedResponse(session_id=record.session_id)
         try:

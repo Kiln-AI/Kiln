@@ -225,6 +225,43 @@ async def test_adopted_record_never_stamps_root_from_a_trace():
     assert h.record.root_id is None
 
 
+async def test_session_id_resume_body_switches_to_trace_id_after_first_trace():
+    # Phase 6: a resume-by-key first POST carries session_id (the backend
+    # resolves the current leaf). Once the round persists a trace, the
+    # continuation rebuild must DROP session_id and continue by trace_id —
+    # the backend 400s the two keys together, so leaving it riding would
+    # break every multi-round resumed turn.
+    round1 = [
+        text_delta("adding"),
+        tool_input_available("tc1", "add", {"a": 2, "b": 3}, APPROVAL_META),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("sum is 5"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
+    )
+    record = ConversationRecord(
+        kind="interactive",
+        resume_session_key="1111111119_root",
+        seen_trace_ids=["1111111119_root"],
+    )
+    h = _harness(record=record, decisions={"tc1": True})
+    body = {
+        "session_id": "1111111119_root",
+        "messages": [{"role": "user", "content": "go"}],
+    }
+    await _run(h, client, interactive_policy(), body)
+    first, second = client.bodies
+    assert first["session_id"] == "1111111119_root"
+    assert second["trace_id"] == "tr-1"
+    assert "session_id" not in second
+    # An adopted record never claims a continuation leaf as its durable root
+    # (the seeded seen_trace_ids chain is the mid-conversation marker).
+    assert h.record.root_id is None
+    assert h.record.current_leaf_trace_id == "tr-2"
+
+
 async def test_auto_text_only_round_settles_idle_flag_on():
     client = FakeUpstreamClient(
         [FakeUpstreamResponse([text_delta("done?"), trace("tr-1"), finish("stop")])]

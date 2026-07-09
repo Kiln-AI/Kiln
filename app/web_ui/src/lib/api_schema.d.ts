@@ -3201,31 +3201,30 @@ export interface paths {
         };
         /**
          * Get chat session
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{leaf}``.
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{id}``.
          *
-         *     Phase 5: accepts any browser conversation key and resolves the
-         *     upstream leaf DESKTOP-side (``resolve_conversation_key``) — for a
-         *     live conversation that is the record's CURRENT leaf, so hydration is
-         *     always fresh (the browser used to refresh a ``current_trace_id``
-         *     itself; that field is gone). 404 when the key yields no leaf: a dead
-         *     ``cv_`` handle after a desktop restart, or a live record with nothing
-         *     persisted yet. 503 when the root→leaf scan couldn't COMPLETE
-         *     (CR MEDIUM 1 / LOW 4): serving the key-as-leaf on an indeterminate
-         *     scan could return the stale FIRST snapshot of a root-keyed session —
-         *     fail clean and let the client retry (only a completed-no-match scan
-         *     falls through, which is the by-design legacy-leaf path).
+         *     Phase 6: accepts any browser conversation key. For a LIVE
+         *     conversation the desktop substitutes the record's freshest upstream
+         *     identity (its current leaf — hydration is always fresh); any other
+         *     key is forwarded VERBATIM, because the upstream now resolves either
+         *     id kind itself (root ids via the pointer index, architecture §8 —
+         *     the phase-5 desktop-side root→leaf scan and its 503 surface are
+         *     gone; the upstream owns that failure mode now and this proxy passes
+         *     its status through like any other error). 404 when the key yields
+         *     nothing to forward: a dead ``cv_`` handle after a desktop restart,
+         *     or a live record with nothing persisted yet.
          */
         get: operations["get_chat_session_api_chat_sessions__session_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete chat session
-         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{leaf}``.
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{id}``.
          *
-         *     Phase 5: accepts any browser conversation key; the upstream DELETE is
-         *     leaf-keyed until phase 6, so the leaf is resolved desktop-side like
-         *     the GET above — including the 503 on an indeterminate root scan
-         *     (deleting the key-as-leaf could delete the WRONG snapshot of a
+         *     Phase 6: accepts any browser conversation key; live records forward
+         *     their freshest upstream identity, cold keys forward verbatim (the
+         *     upstream deletes by either id kind — root ids resolve to the current
+         *     leaf server-side, so the desktop no longer needs the leaf to delete a
          *     root-keyed session).
          */
         delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
@@ -3255,8 +3254,9 @@ export interface paths {
          *       live record (any kind) returns that record's session id; a
          *       TERMINAL record's key (a finished sub-agent reopened from history)
          *       continues its trace on a fresh interactive record; a cold key
-         *       (upstream root id / legacy leaf) adopts the desktop-resolved leaf
-         *       and rehydrates pending approvals from the persisted trace tail
+         *       (upstream root id / legacy leaf) is adopted VERBATIM — the backend
+         *       resolves it on the first turn (phase 6) — and rehydrates pending
+         *       approvals from the persisted trace tail
          *       (functional spec §5 restart recovery); a dead ``cv_`` key — the
          *       record died with a desktop restart — creates a fresh empty record
          *       (exactly the old world's no-stored-trace behavior).
@@ -4804,8 +4804,9 @@ export interface components {
          *     - ``root_id`` is the upstream session's DURABLE id (``session_meta.
          *       root_id``) when the desktop has learned it — a SESSION id, exposed so
          *       the browser can persist a restart-proof recovery key (the in-memory
-         *       ``session_id`` dies with the desktop process until phase 6 moves
-         *       resume server-side).
+         *       ``session_id`` dies with the desktop process; since phase 6 the
+         *       recovery key resumes via the backend's own session-id resolution, no
+         *       leaf bookkeeping anywhere).
          *     - ``final_report`` is included only when requested with
          *       ``include_report`` (same contract as the old API).
          */

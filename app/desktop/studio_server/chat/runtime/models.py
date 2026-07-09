@@ -152,6 +152,18 @@ class ConversationRecord(BaseModel):
     # adopt-by-root (`adopt_interactive(root_id=…)`), or backfilled from the
     # approval-rehydration snapshot fetch. None until one of those fires.
     root_id: str | None = None
+    # The opaque upstream session key a COLD record was adopted from (phase 6):
+    # a durable ``root_id`` for post-phase-5 history rows, or — legacy sessions
+    # without ``session_meta`` only — a leaf id. The two are snapshot-id-shaped
+    # and indistinguishable desktop-side, which is exactly why this is NOT
+    # stamped into ``root_id`` (that field must stay the TRUE durable id the
+    # browser persists as its recovery key; stamping a legacy LEAF there would
+    # hand the browser a key that goes stale on the next persist). Used to
+    # build ``session_id`` continuation bodies until the first
+    # ``kiln_chat_trace`` reveals the real current leaf — the backend resolves
+    # the key to the session's current leaf itself (architecture §8), so the
+    # desktop needs no leaf to resume.
+    resume_session_key: str | None = None
     kind: ConversationKind
     state: RunState = RunState.IDLE
     # Latest persisted upstream leaf (rotates every snapshot). Single writer =
@@ -159,9 +171,12 @@ class ConversationRecord(BaseModel):
     # record.current_trace_id updated only by the runner's on_trace callback).
     current_leaf_trace_id: str | None = None
     # Whole chain of leaves this conversation has touched — preserved from
-    # both old registries; still needed INTERNALLY (phase 5): the upstream
-    # sessions list stays leaf-keyed until phase 6, so the desktop's history
-    # join resolves upstream rows to live records through this chain.
+    # both old registries; still needed INTERNALLY: the upstream sessions
+    # LIST is leaf-keyed (each row's ``id`` is its current leaf), so the
+    # desktop's history join resolves upstream rows to live records through
+    # this chain. Adopt-by-key seeds the adopted key here too — it was a leaf
+    # once (a root IS the first leaf) and a non-empty chain is what tells the
+    # engine this record joined mid-conversation (root-stamp suppression).
     seen_trace_ids: list[str] = Field(default_factory=list)
     # Sub-agent lineage: the parent conversation's session id. Replaces the
     # old parent_key ("auto:<run_id>" / "trace:<leaf>") + parent-alias maps —
@@ -238,6 +253,32 @@ class SubAgentSeed(BaseModel):
     parent_trace_id: str | None = None
 
 
+def continuation_key_fields(record: ConversationRecord) -> dict[str, Any]:
+    """The continuation-identity field(s) for a fresh upstream turn body.
+
+    One helper so every idle-start body builder (message re-arm, consent
+    decline, rehydrated approval batches) picks the SAME key with the same
+    precedence:
+
+    - a known leaf → ``trace_id`` (the normal in-process flow; DELIBERATELY
+      kept on trace-id continuation — the engine's ``on_trace`` holds the
+      fresh leaf, so switching these to session ids would only add a backend
+      pointer resolution per turn for zero benefit);
+    - no leaf but a ``resume_session_key`` (adopted from history, nothing
+      persisted since) → ``session_id`` — the backend resolves the current
+      leaf (phase 6; the desktop no longer resolves roots to leaves itself);
+    - neither → empty: a brand-new conversation, the backend mints the first
+      trace on the opening turn.
+
+    Never both: the backend 400s ``trace_id`` + ``session_id`` together.
+    """
+    if record.current_leaf_trace_id is not None:
+        return {"trace_id": record.current_leaf_trace_id}
+    if record.resume_session_key is not None:
+        return {"session_id": record.resume_session_key}
+    return {}
+
+
 def kickoff_message(name: str, prompt: str) -> str:
     """The first user message of a child session — byte-identical to the old
     ``subagents/runner.py`` ``_kickoff_message`` (it is persisted in the
@@ -288,6 +329,7 @@ def build_auto_seed_body(
     enable_tool_call_id: str | None,
     extra_messages: list[dict[str, Any]],
     sibling_results: dict[str, str],
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """The first upstream continuation body of an auto burst — byte-identical
     port of ``AutoChatRunner._build_seed_body`` (``chat/auto/runner.py``,
@@ -307,11 +349,17 @@ def build_auto_seed_body(
     enough. The upstream orchestrator reads it to phrase the auto-round-cap
     reminder for an absent user (act or report stuck, don't ask a question).
 
-    Revision R2 preserved: when ``trace_id`` is absent (a brand-new
-    conversation) the body omits it entirely so the backend starts a fresh
+    Revision R2 preserved: when NEITHER continuation key is present (a
+    brand-new conversation) the body omits both so the backend starts a fresh
     conversation and mints the first trace on the opening turn; the seed then
     carries the first user message in ``extra_messages`` so the opening turn
     is never empty.
+
+    ``session_id`` (phase 6) is the resume-by-key continuation for records
+    adopted from history with no leaf yet (``resume_session_key``): the
+    backend resolves the session's current leaf itself. ``trace_id`` wins
+    when both are supplied — a known leaf is strictly fresher information and
+    the backend rejects the two together (mutually exclusive).
     """
     messages: list[dict[str, Any]] = list(extra_messages)
 
@@ -333,13 +381,19 @@ def build_auto_seed_body(
             }
         )
 
-    if trace_id is None:
-        return {"messages": messages, "auto_mode": True}
-    return {
-        "trace_id": trace_id,
-        "messages": messages,
-        "auto_mode": True,
-    }
+    if trace_id is not None:
+        return {
+            "trace_id": trace_id,
+            "messages": messages,
+            "auto_mode": True,
+        }
+    if session_id is not None:
+        return {
+            "session_id": session_id,
+            "messages": messages,
+            "auto_mode": True,
+        }
+    return {"messages": messages, "auto_mode": True}
 
 
 def format_subagent_report(record: ConversationRecord) -> str:

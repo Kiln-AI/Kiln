@@ -370,10 +370,18 @@ class ConversationEngine:
                     # leaf with empty messages. The `agent` block is dropped —
                     # it is first-POST-only (the backend 400s agent + trace_id
                     # together; old SubAgentRunner rebuilt minimally for the
-                    # same reason). Everything else ({**body}) is preserved so
-                    # auto_mode and any extra interactive body fields keep
-                    # riding every continuation (old interactive/auto rebuild).
-                    body = {k: v for k, v in body.items() if k != "agent"}
+                    # same reason). `session_id` (a resume-by-key first POST,
+                    # phase 6) is dropped for the same lifecycle reason: once
+                    # a real leaf exists the turn continues by trace_id, and
+                    # the backend 400s the two keys together. Everything else
+                    # ({**body}) is preserved so auto_mode and any extra
+                    # interactive body fields keep riding every continuation
+                    # (old interactive/auto rebuild).
+                    body = {
+                        k: v
+                        for k, v in body.items()
+                        if k not in ("agent", "session_id")
+                    }
                     body = {**body, "trace_id": round_state.trace_id, "messages": []}
 
                 # ── 3/4. Natural end (no tool-call finish boundary). ─────────

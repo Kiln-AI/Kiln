@@ -964,7 +964,8 @@ export function createMainConversationStore(): MainConversationStore {
         sink?.onAssistantMessage(update)
       },
       // The processor's kiln_chat_trace hook still receives the upstream
-      // event's trace id (backend vocabulary, untouched until phase 6) but
+      // event's trace id (backend vocabulary — the event keeps carrying the
+      // rotating leaf id even after phase 6's session-id continuation) but
       // it is DROPPED at this boundary — the sink only learns "a turn
       // persisted" (functional spec §4: browser code never sees trace_id).
       onChatTrace: () => sink?.onTurnPersisted(),

@@ -567,7 +567,18 @@ def _build_openai_tool_continuation(
         )
 
     prior_messages = list(original_body.get("messages", []))
-    trace_only_continuation = bool(original_body.get("trace_id")) and not prior_messages
+    # A continuation whose base is a bare conversation KEY with no new
+    # messages ("trace-only"): the persisted trace already holds the
+    # assistant message with its tool calls, so the continuation must carry
+    # ONLY the role:tool results — re-sending the assistant message would
+    # duplicate it in the persisted trace. A `session_id` base (phase-6
+    # resume-by-key, e.g. a rehydrated approval batch on a record with no
+    # known leaf) is the same shape keyed differently: the backend resolves
+    # it to the current leaf whose tail already holds that assistant message.
+    trace_only_continuation = (
+        bool(original_body.get("trace_id") or original_body.get("session_id"))
+        and not prior_messages
+    )
 
     if trace_only_continuation:
         new_messages = tool_messages
