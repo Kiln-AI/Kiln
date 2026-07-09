@@ -38,7 +38,7 @@ function getMinimalPropsForType(type: string): Record<string, unknown> {
         model_name: "gpt-4",
         model_provider: "openai",
         prompt_template: "Evaluate the output.",
-        required_var: [],
+        reference_keys: [],
         g_eval: false,
       }
     case "code_eval":
@@ -71,7 +71,7 @@ describe("EvalConfigInstruction", () => {
         model_name: "gpt-4",
         model_provider: "openai",
         prompt_template: "Evaluate the output.",
-        required_var: [],
+        reference_keys: [],
         g_eval: false,
       })
       const { container } = render(EvalConfigInstruction, {
@@ -97,7 +97,7 @@ describe("EvalConfigInstruction", () => {
         model_name: "gpt-4",
         model_provider: "openai",
         prompt_template: "Evaluate.",
-        required_var: [],
+        reference_keys: [],
         g_eval: true,
       })
       const { container } = render(EvalConfigInstruction, {
@@ -116,7 +116,7 @@ describe("EvalConfigInstruction", () => {
         model_name: "gpt-4",
         model_provider: "openai",
         prompt_template: "Evaluate.",
-        required_var: [],
+        reference_keys: [],
         g_eval: false,
       })
       const { container } = render(EvalConfigInstruction, {
@@ -200,7 +200,7 @@ describe("EvalConfigInstruction", () => {
         model_name: "gpt-4",
         model_provider: "openai",
         prompt_template: "Evaluate.",
-        required_var: [],
+        reference_keys: [],
         g_eval: false,
       })
       const { container } = render(EvalConfigInstruction, {
@@ -237,7 +237,7 @@ describe("EvalConfigInstruction", () => {
         model_name: "gpt-4",
         model_provider: "openai",
         prompt_template: "Evaluate the quality.",
-        required_var: [],
+        reference_keys: [],
         g_eval: false,
       })
       const { container } = render(EvalConfigInstruction, {
@@ -257,7 +257,7 @@ describe("EvalConfigInstruction", () => {
         model_provider: "openai",
         prompt_template: "Evaluate the quality.",
         system_prompt: "You are an expert.",
-        required_var: [],
+        reference_keys: [],
         g_eval: false,
       })
       const { container } = render(EvalConfigInstruction, {

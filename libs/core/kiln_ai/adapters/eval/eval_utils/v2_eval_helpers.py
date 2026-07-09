@@ -145,30 +145,3 @@ def stringify_for_match(value: object) -> str:
         return json.dumps(value, ensure_ascii=False)
     except (TypeError, ValueError):
         return str(value)
-
-
-def check_required_vars(
-    required_vars: list[str],
-    eval_input: EvalTaskInput,
-) -> tuple[SkippedReason | None, str | None]:
-    """Check that all required_var expressions resolve to non-Undefined/non-None values."""
-    data = eval_input.model_dump()
-    for var_expr in required_vars:
-        if eval_input.trace is None and references_trace(var_expr):
-            return (
-                SkippedReason.missing_trace,
-                f"required_var '{var_expr}' requires a trace, but this run has no trace",
-            )
-        try:
-            result = extract(var_expr, data)
-        except JinjaExtractionError as e:
-            return (
-                SkippedReason.extraction_failed,
-                f"required_var '{var_expr}' failed: {e}",
-            )
-        if isinstance(result, Undefined) or result is None:
-            return (
-                SkippedReason.extraction_failed,
-                f"required_var '{var_expr}' resolved to {'undefined' if isinstance(result, Undefined) else 'None'}",
-            )
-    return None, None

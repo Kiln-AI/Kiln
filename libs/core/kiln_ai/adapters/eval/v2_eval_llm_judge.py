@@ -10,12 +10,15 @@ as the template namespace.
 
 from typing import TYPE_CHECKING
 
+from jinja2 import UndefinedError
+
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
+
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
     build_llm_as_judge_score,
@@ -24,7 +27,6 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     raw_output_from_logprobs,
     score_from_token_string,
 )
-from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_required_vars
 from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models_from_provider,
@@ -98,10 +100,6 @@ class LlmJudgeEval(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, LlmJudgeProperties)
 
-        skip, detail = check_required_vars(props.required_var, eval_input)
-        if skip is not None:
-            return V2EvalResult(skipped_reason=skip, skipped_detail=detail)
-
         namespace = eval_input.model_dump()
         try:
             rendered_prompt = _template_env.from_string(props.prompt_template).render(
@@ -111,6 +109,11 @@ class LlmJudgeEval(BaseV2EvalBridge):
             return V2EvalResult(
                 skipped_reason=SkippedReason.extraction_failed,
                 skipped_detail=f"Template rendering failed: {e}",
+            )
+        except UndefinedError as e:
+            return V2EvalResult(
+                skipped_reason=SkippedReason.missing_reference_key,
+                skipped_detail=f"Template references missing data: {e}",
             )
 
         output_json_schema = BaseEval.build_score_schema(

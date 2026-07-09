@@ -235,7 +235,6 @@ def materialize_llm_judge_properties(
         prompt_template=prompt_template,
         system_prompt=resolved_system_prompt,
         thinking_instruction=_DEFAULT_THINKING_INSTRUCTION,
-        required_var=[],
         g_eval=g_eval,
     )
 

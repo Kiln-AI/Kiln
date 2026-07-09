@@ -27,6 +27,7 @@ from kiln_ai.datamodel.eval import (
     ToolCallSpec,
     UserMessage,
     V2EvalResult,
+    reference_data_keys,
     validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.task import Task
@@ -2616,30 +2617,30 @@ class TestV2TemplateValidation:
         assert isinstance(cfg.properties, ExactMatchProperties)
         assert cfg.properties.value_expression is None
 
-    def test_valid_required_var(self):
-        """Valid required_var expressions compile without error."""
+    def test_reference_keys_stored(self):
+        """reference_keys are stored on LlmJudgeProperties."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
                 model_provider="p",
                 prompt_template="{{ final_message }}",
-                required_var=["reference_data.expected", "task_input"],
+                reference_keys=["expected_answer", "context"],
             ),
         )
         assert isinstance(cfg.properties, LlmJudgeProperties)
-        assert cfg.properties.required_var == ["reference_data.expected", "task_input"]
+        assert cfg.properties.reference_keys == ["expected_answer", "context"]
 
-    def test_invalid_required_var(self):
-        """Bad Jinja syntax in a required_var entry is rejected."""
-        with pytest.raises(ValidationError, match="Invalid Jinja2 expression"):
-            _make_v2_eval_config(
-                properties=LlmJudgeProperties(
-                    model_name="m",
-                    model_provider="p",
-                    prompt_template="{{ final_message }}",
-                    required_var=["valid_var", "bad["],
-                ),
-            )
+    def test_reference_keys_default_empty(self):
+        """reference_keys defaults to empty list."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="{{ final_message }}",
+            ),
+        )
+        assert isinstance(cfg.properties, LlmJudgeProperties)
+        assert cfg.properties.reference_keys == []
 
     def test_legacy_config_skips_jinja_validation(self):
         """Legacy (g_eval) configs bypass Jinja validation entirely."""
@@ -3291,3 +3292,153 @@ class TestReferenceKeyMinLength:
             expected_set=["a"], reference_key=None, mode="subset"
         )
         assert props.reference_key is None
+
+
+# ---------------------------------------------------------------------------
+# reference_data_keys — exhaustive per-type accessor
+# ---------------------------------------------------------------------------
+
+
+class TestReferenceDataKeys:
+    def test_exact_match_with_reference_key(self):
+        props = ExactMatchProperties(reference_key="answer")
+        assert reference_data_keys(props) == ["answer"]
+
+    def test_exact_match_without_reference_key(self):
+        props = ExactMatchProperties(expected_value="foo")
+        assert reference_data_keys(props) == []
+
+    def test_contains_with_reference_key(self):
+        props = ContainsProperties(reference_key="expected")
+        assert reference_data_keys(props) == ["expected"]
+
+    def test_contains_without_reference_key(self):
+        props = ContainsProperties(substring="hi")
+        assert reference_data_keys(props) == []
+
+    def test_set_check_with_reference_key(self):
+        props = SetCheckProperties(reference_key="items", mode="equal")
+        assert reference_data_keys(props) == ["items"]
+
+    def test_set_check_without_reference_key(self):
+        props = SetCheckProperties(expected_set=["a"], mode="equal")
+        assert reference_data_keys(props) == []
+
+    def test_llm_judge_with_keys(self):
+        props = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="{{ final_message }}",
+            reference_keys=["expected_answer", "context"],
+        )
+        assert reference_data_keys(props) == ["expected_answer", "context"]
+
+    def test_llm_judge_empty_keys(self):
+        props = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="{{ final_message }}",
+        )
+        assert reference_data_keys(props) == []
+
+    def test_code_eval_with_keys(self):
+        code = "def score(output, trace, reference_data, task_input):\n    return {'q': 1.0}"
+        props = CodeEvalProperties(code=code, reference_keys=["gold"])
+        assert reference_data_keys(props) == ["gold"]
+
+    def test_code_eval_empty_keys(self):
+        code = "def score(output, trace, reference_data, task_input):\n    return {'q': 1.0}"
+        props = CodeEvalProperties(code=code)
+        assert reference_data_keys(props) == []
+
+    def test_pattern_match(self):
+        props = PatternMatchProperties(pattern=".*")
+        assert reference_data_keys(props) == []
+
+    def test_tool_call_check(self):
+        props = ToolCallCheckProperties(
+            expected_tools=[ToolCallSpec(tool_name="search")]
+        )
+        assert reference_data_keys(props) == []
+
+    def test_step_count_check(self):
+        props = StepCountCheckProperties(count_type="tool_calls", min_count=1)
+        assert reference_data_keys(props) == []
+
+    def test_returns_copy_not_reference(self):
+        props = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="{{ final_message }}",
+            reference_keys=["a"],
+        )
+        result = reference_data_keys(props)
+        result.append("mutated")
+        assert reference_data_keys(props) == ["a"]
+
+
+# ---------------------------------------------------------------------------
+# eval_reference_data_keys — union across configs
+# ---------------------------------------------------------------------------
+
+
+class TestEvalReferenceDataKeys:
+    def _make_eval_with_configs(self, props_list):
+        """Build an Eval with V2 configs carrying the given properties."""
+        from unittest.mock import Mock
+
+        eval_obj = Mock(spec=Eval)
+        configs = []
+        for props in props_list:
+            cfg = Mock(spec=EvalConfig)
+            cfg.config_type = EvalConfigType.v2
+            cfg.properties = props
+            configs.append(cfg)
+        eval_obj.configs = Mock(return_value=configs)
+        eval_obj.eval_reference_data_keys = Eval.eval_reference_data_keys.__get__(
+            eval_obj, Eval
+        )
+        return eval_obj
+
+    def test_single_config(self):
+        props = ExactMatchProperties(reference_key="answer")
+        eval_obj = self._make_eval_with_configs([props])
+        assert eval_obj.eval_reference_data_keys() == ["answer"]
+
+    def test_union_across_configs(self):
+        p1 = ExactMatchProperties(reference_key="answer")
+        p2 = ContainsProperties(reference_key="context")
+        p3 = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="{{ final_message }}",
+            reference_keys=["answer", "extra"],
+        )
+        eval_obj = self._make_eval_with_configs([p1, p2, p3])
+        keys = eval_obj.eval_reference_data_keys()
+        assert keys == ["answer", "context", "extra"]
+
+    def test_empty_configs(self):
+        eval_obj = self._make_eval_with_configs([])
+        assert eval_obj.eval_reference_data_keys() == []
+
+    def test_no_reference_data_configs(self):
+        props = PatternMatchProperties(pattern=".*")
+        eval_obj = self._make_eval_with_configs([props])
+        assert eval_obj.eval_reference_data_keys() == []
+
+    def test_dedup_preserves_insertion_order(self):
+        p1 = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="{{ final_message }}",
+            reference_keys=["b", "a"],
+        )
+        p2 = LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="{{ final_message }}",
+            reference_keys=["a", "c"],
+        )
+        eval_obj = self._make_eval_with_configs([p1, p2])
+        assert eval_obj.eval_reference_data_keys() == ["b", "a", "c"]

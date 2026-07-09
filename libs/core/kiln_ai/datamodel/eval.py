@@ -84,7 +84,7 @@ class LlmJudgeProperties(BaseModel):
     model_provider: str
     system_prompt: str | None = None
     prompt_template: str
-    required_var: list[str] = []
+    reference_keys: list[str] = []
     thinking_instruction: str | None = None
     g_eval: bool = False
 
@@ -203,6 +203,7 @@ class StepCountCheckProperties(BaseModel):
 class CodeEvalProperties(BaseModel):
     type: Literal[V2EvalType.code_eval] = V2EvalType.code_eval
     code: str
+    reference_keys: list[str] = []
     timeout_seconds: int = Field(default=30, ge=1, le=300)
 
     @model_validator(mode="after")
@@ -262,6 +263,33 @@ V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = (
     StepCountCheckProperties,
     CodeEvalProperties,
 )
+
+
+def reference_data_keys(props: V2EvalConfigProperties) -> list[str]:
+    """Return the reference-data keys a single judge needs.
+
+    Exhaustive match over the V2 properties union: adding a new V2 type
+    without handling it here will fail ``ty`` type-checking.
+    """
+    match props:
+        case ExactMatchProperties():
+            return [props.reference_key] if props.reference_key else []
+        case ContainsProperties():
+            return [props.reference_key] if props.reference_key else []
+        case SetCheckProperties():
+            return [props.reference_key] if props.reference_key else []
+        case LlmJudgeProperties():
+            return list(props.reference_keys)
+        case CodeEvalProperties():
+            return list(props.reference_keys)
+        case PatternMatchProperties():
+            return []
+        case ToolCallCheckProperties():
+            return []
+        case StepCountCheckProperties():
+            return []
+        case _:
+            raise_exhaustive_enum_error(props)
 
 
 def validate_scores_against_output_scores(
@@ -752,8 +780,6 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
                     "produces the same judge prompt for every run. "
                     "Reference the output, e.g. {{ final_message }}."
                 )
-            for var in props.required_var:
-                compile_expression_or_raise(var)
 
         if isinstance(
             props,
@@ -862,6 +888,24 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             if spec.eval_id == self.id:
                 return spec
         return None
+
+    def eval_reference_data_keys(self) -> list[str]:
+        """Union of reference-data keys across all of this eval's V2 configs.
+
+        Returns deduplicated keys in stable insertion order.
+        """
+        seen: set[str] = set()
+        result: list[str] = []
+        for config in self.configs(readonly=True):
+            if config.config_type != EvalConfigType.v2:
+                continue
+            if not isinstance(config.properties, V2_PROPERTY_TYPES):
+                continue
+            for key in reference_data_keys(config.properties):  # type: ignore[arg-type]
+                if key not in seen:
+                    seen.add(key)
+                    result.append(key)
+        return result
 
     @model_validator(mode="after")
     def upgrade_old_reference_answer_eval_config(self) -> Self:

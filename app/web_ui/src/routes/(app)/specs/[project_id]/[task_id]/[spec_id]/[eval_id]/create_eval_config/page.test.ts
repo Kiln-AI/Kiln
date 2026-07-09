@@ -240,6 +240,12 @@ const { showCalls, resetCalls, actionButtonsByTitle } = await import(
 const { ALL_V2_EVAL_TYPES, getV2EvalTypeMetadata } = await import(
   "$lib/utils/eval_types/registry"
 )
+const { setInitialCode, resetInitialCode } = await import(
+  "./__tests__/v2_form_stub.svelte"
+)
+const { setInitialLlmJudgeValues, resetInitialLlmJudgeValues } = await import(
+  "./__tests__/llm_judge_form_stub.svelte"
+)
 const { CREATE_EVAL_LAYOUT_KEY } = await import("./context")
 
 // ---------------------------------------------------------------------------
@@ -956,7 +962,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       expect(icon!.classList.contains("h-10")).toBe(true)
     })
 
-    it("trust dialog action button is labeled 'Run — I Trust This Code'", async () => {
+    it("trust dialog action button is labeled 'I Trust this Code'", async () => {
       const { container } = await renderBuilder("code_eval")
 
       const dialogs = container.querySelectorAll("[data-testid='dialog-stub']")
@@ -971,7 +977,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
         (b: Record<string, unknown>) => b.isWarning === true,
       )
       expect(trustBtn).toBeTruthy()
-      expect(trustBtn.label).toContain("I Trust This Code")
+      expect(trustBtn.label).toBe("I Trust this Code")
     })
 
     it("C8/C9: trust dialog text is left-aligned with horizontal icon+text layout", async () => {
@@ -1385,5 +1391,735 @@ describe("Phase 9 — Docs-link audit + theme-aware colors", () => {
       expect(confirmDialog?.innerHTML).toContain("text-gray-500")
       expect(confirmDialog?.innerHTML).not.toContain("text-base-content")
     })
+  })
+})
+
+describe("Reference data save gate", () => {
+  beforeEach(() => {
+    resetCalls()
+    resetInitialCode()
+    resetInitialLlmJudgeValues()
+    mockTestV2Eval.mockReset()
+    mockTestV2EvalLlmJudge.mockReset()
+    mockCreateEvalConfig.mockReset()
+    mockCreateLlmJudgeConfig.mockReset()
+    mockCheckCodeEvalTrust.mockReset()
+    mockGrantCodeEvalTrust.mockReset()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    resetInitialCode()
+    resetInitialLlmJudgeValues()
+    cleanup()
+  })
+
+  describe("code_eval save gate", () => {
+    it("blocks save when code body uses reference_data and no passing test", async () => {
+      setInitialCode(
+        'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
+      )
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+
+      const { container } = await renderBuilder("code_eval")
+
+      // Wait for code_string binding to propagate from the stub to the builder
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Test Required")
+      expect(showCalls).not.toContain("Save Without Testing?")
+      expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+      expect(mockCreateLlmJudgeConfig).not.toHaveBeenCalled()
+    })
+
+    it("allows save when code only has reference_data in signature (no gate)", async () => {
+      setInitialCode(
+        "def score(output, reference_data=None):\n  return {'score': 1.0}",
+      )
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+
+      const { container } = await renderBuilder("code_eval")
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Save Without Testing?")
+    })
+
+    it("allows save after passing test when code uses reference_data", async () => {
+      setInitialCode(
+        'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
+      )
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+
+      const { container } = await renderBuilder("code_eval")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: { score: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      const tryBtn = container.querySelector(
+        '[data-testid="run-test-btn"]',
+      ) as HTMLButtonElement
+      expect(tryBtn).not.toBeNull()
+      await fireEvent.click(tryBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      resetCalls()
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCreateEvalConfig.mockResolvedValueOnce({
+        id: "config123",
+        type: "v2",
+        properties: {},
+      })
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).not.toContain("Save Without Testing?")
+      expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+    })
+
+    it("starter code with docstring + signature reference_data does NOT trigger Test Required", async () => {
+      const starterCode = `def score(output, trace, reference_data, task_input):
+    """Score the model output.
+
+    Args:
+        output: The model's final output string.
+        trace: List of message dicts from the conversation.
+        reference_data: Dict of reference/expected data (if any).
+        task_input: The original task input string.
+
+    Returns:
+        no_dark_humour: return 0.0 for Fail or 1.0 for Pass
+    """
+    if not output:
+        return {"no_dark_humour": 0.0}
+    return {"no_dark_humour": 1.0}`
+      setInitialCode(starterCode)
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+
+      const { container } = await renderBuilder("code_eval")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).not.toContain("Test Required")
+      expect(showCalls).toContain("Save Without Testing?")
+    })
+  })
+
+  describe("llm_judge save gate", () => {
+    afterEach(() => {
+      resetInitialLlmJudgeValues()
+    })
+
+    it("blocks save when prompt contains reference_data and no passing test", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score based on {{ reference_data.expected_answer }}",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      expect(submitBtn).not.toBeNull()
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Test Required")
+      expect(showCalls).not.toContain("Save Without Testing?")
+      expect(mockCreateLlmJudgeConfig).not.toHaveBeenCalled()
+      expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+    })
+
+    it("shows Save Without Testing when prompt does NOT contain reference_data", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score the output for quality.",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      expect(submitBtn).not.toBeNull()
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Save Without Testing?")
+    })
+  })
+
+  describe("reference_keys on save", () => {
+    /**
+     * Helper: enter reference data via the test-pane's reference data editor.
+     * Opens the editor, fills in rows, and invokes the dialog Save action
+     * so the change event propagates to the builder's advanced_reference_data.
+     */
+    async function enterReferenceData(
+      container: HTMLElement,
+      entries: Array<{ key: string; value: string }>,
+    ) {
+      const editBtn = container.querySelector(
+        '[data-testid="reference-data-edit"]',
+      ) as HTMLButtonElement
+      expect(editBtn).not.toBeNull()
+      await fireEvent.click(editBtn)
+      await tick()
+
+      // The editor now has one empty row. Fill in the first entry.
+      const keyInputs = container.querySelectorAll(
+        '[data-testid="reference-data-key"]',
+      )
+      const valueInputs = container.querySelectorAll(
+        '[data-testid="reference-data-value"]',
+      )
+      expect(keyInputs.length).toBeGreaterThanOrEqual(1)
+
+      // Fill the first row
+      await fireEvent.input(keyInputs[0], {
+        target: { value: entries[0].key },
+      })
+      await fireEvent.input(valueInputs[0], {
+        target: { value: entries[0].value },
+      })
+      await tick()
+
+      // Add and fill additional rows
+      for (let i = 1; i < entries.length; i++) {
+        const addBtn = container.querySelector(
+          '[data-testid="reference-data-add"]',
+        ) as HTMLButtonElement
+        await fireEvent.click(addBtn)
+        await tick()
+
+        const allKeys = container.querySelectorAll(
+          '[data-testid="reference-data-key"]',
+        )
+        const allValues = container.querySelectorAll(
+          '[data-testid="reference-data-value"]',
+        )
+        await fireEvent.input(allKeys[i], {
+          target: { value: entries[i].key },
+        })
+        await fireEvent.input(allValues[i], {
+          target: { value: entries[i].value },
+        })
+        await tick()
+      }
+
+      // Invoke the dialog's Save action to dispatch the change event
+      const refDataButtons = actionButtonsByTitle["Reference Data"]
+      expect(refDataButtons).toBeTruthy()
+      const saveAction = refDataButtons.find(
+        (b: Record<string, unknown>) => b.label === "Save",
+      )
+      expect(saveAction).toBeTruthy()
+      const actionFn = saveAction!.action as () => boolean
+      actionFn()
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+    }
+
+    it("code_eval: saves non-empty reference_keys from entered reference data", async () => {
+      setInitialCode(
+        'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
+      )
+
+      const { container } = await renderBuilder("code_eval")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Enter reference data with two keys
+      await enterReferenceData(container, [
+        { key: "expected", value: '"foo"' },
+        { key: "context", value: '"bar"' },
+      ])
+
+      // Run a passing test (required by save gate)
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: { score: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      const tryBtn = container.querySelector(
+        '[data-testid="run-test-btn"]',
+      ) as HTMLButtonElement
+      expect(tryBtn).not.toBeNull()
+      await fireEvent.click(tryBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Save
+      resetCalls()
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCreateEvalConfig.mockResolvedValueOnce({
+        id: "config123",
+        type: "v2",
+        properties: {},
+      })
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+      const savedProps = mockCreateEvalConfig.mock.calls[0][3].properties
+      expect(savedProps.reference_keys).toEqual(["expected", "context"])
+    })
+
+    it("llm_judge: saves non-empty reference_keys from entered reference data", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score based on {{ reference_data.expected_answer }}",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Enter reference data with two keys
+      await enterReferenceData(container, [
+        { key: "expected_answer", value: '"hello"' },
+        { key: "topic", value: '"greetings"' },
+      ])
+
+      // Run a passing test (required by save gate)
+      mockTestV2EvalLlmJudge.mockResolvedValueOnce({
+        scores: { quality: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      const tryBtn = container.querySelector(
+        '[data-testid="run-test-btn"]',
+      ) as HTMLButtonElement
+      expect(tryBtn).not.toBeNull()
+      await fireEvent.click(tryBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Save
+      resetCalls()
+      mockCreateLlmJudgeConfig.mockResolvedValueOnce({
+        id: "config456",
+        type: "v2",
+        properties: {},
+      })
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
+      const savedPayload = mockCreateLlmJudgeConfig.mock.calls[0][3]
+      expect(savedPayload.reference_keys).toEqual(["expected_answer", "topic"])
+    })
+
+    it("code_eval: reference_keys are empty when no reference data is entered", async () => {
+      setInitialCode(
+        'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
+      )
+
+      const { container } = await renderBuilder("code_eval")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Run a passing test (required by save gate) — no reference data entered
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: { score: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      const tryBtn = container.querySelector(
+        '[data-testid="run-test-btn"]',
+      ) as HTMLButtonElement
+      expect(tryBtn).not.toBeNull()
+      await fireEvent.click(tryBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Save
+      resetCalls()
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCreateEvalConfig.mockResolvedValueOnce({
+        id: "config123",
+        type: "v2",
+        properties: {},
+      })
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+      const savedProps = mockCreateEvalConfig.mock.calls[0][3].properties
+      expect(savedProps.reference_keys).toEqual([])
+    })
+
+    it("code_eval: reference_keys are empty when config does not use reference_data", async () => {
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCreateEvalConfig.mockResolvedValueOnce({
+        id: "config123",
+        type: "v2",
+        properties: {},
+      })
+
+      const { container } = await renderBuilder("code_eval")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Run a passing test
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: { score: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      const tryBtn = container.querySelector(
+        '[data-testid="run-test-btn"]',
+      ) as HTMLButtonElement
+      expect(tryBtn).not.toBeNull()
+      await fireEvent.click(tryBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      resetCalls()
+      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCreateEvalConfig.mockResolvedValueOnce({
+        id: "config123",
+        type: "v2",
+        properties: {},
+      })
+
+      const submitBtn = container.querySelector(
+        '[data-testid="column-save-button"]',
+      ) as HTMLButtonElement
+      await fireEvent.click(submitBtn)
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+      const savedProps = mockCreateEvalConfig.mock.calls[0][3].properties
+      expect(savedProps.reference_keys).toEqual([])
+    })
+  })
+})
+
+describe("Save flow — handle_submit logic", () => {
+  beforeEach(() => {
+    resetCalls()
+    resetInitialCode()
+    resetInitialLlmJudgeValues()
+    mockTestV2Eval.mockReset()
+    mockTestV2EvalLlmJudge.mockReset()
+    mockCreateEvalConfig.mockReset()
+    mockCreateLlmJudgeConfig.mockReset()
+    mockCheckCodeEvalTrust.mockReset()
+    mockGrantCodeEvalTrust.mockReset()
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
+  })
+
+  afterEach(() => {
+    resetInitialCode()
+    resetInitialLlmJudgeValues()
+    cleanup()
+  })
+
+  it("contains: save after passing test calls createEvalConfig", async () => {
+    const { container } = await renderBuilder("contains")
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Run a passing test
+    mockTestV2Eval.mockResolvedValueOnce({
+      scores: { accuracy: 1.0 },
+      skipped_reason: null,
+      skipped_detail: null,
+    })
+
+    const tryBtn = container.querySelector(
+      '[data-testid="run-test-btn"]',
+    ) as HTMLButtonElement
+    expect(tryBtn).not.toBeNull()
+    await fireEvent.click(tryBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Now save
+    resetCalls()
+    mockCreateEvalConfig.mockResolvedValueOnce({
+      id: "config_contains",
+      type: "v2",
+      properties: { type: "contains" },
+    })
+
+    const submitBtn = container.querySelector(
+      '[data-testid="column-save-button"]',
+    ) as HTMLButtonElement
+    expect(submitBtn).not.toBeNull()
+    await fireEvent.click(submitBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+    expect(showCalls).not.toContain("Save Without Testing?")
+  })
+
+  it("code_eval: save after passing test calls createEvalConfig", async () => {
+    const { container } = await renderBuilder("code_eval")
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Run a passing test
+    mockTestV2Eval.mockResolvedValueOnce({
+      scores: { score: 1.0 },
+      skipped_reason: null,
+      skipped_detail: null,
+    })
+
+    const tryBtn = container.querySelector(
+      '[data-testid="run-test-btn"]',
+    ) as HTMLButtonElement
+    expect(tryBtn).not.toBeNull()
+    await fireEvent.click(tryBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Now save (trust granted)
+    resetCalls()
+    mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+    mockCreateEvalConfig.mockResolvedValueOnce({
+      id: "config_code",
+      type: "v2",
+      properties: { type: "code_eval" },
+    })
+
+    const submitBtn = container.querySelector(
+      '[data-testid="column-save-button"]',
+    ) as HTMLButtonElement
+    expect(submitBtn).not.toBeNull()
+    await fireEvent.click(submitBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+    expect(showCalls).not.toContain("Save Without Testing?")
+  })
+
+  it("llm_judge: save after passing test calls createLlmJudgeConfig", async () => {
+    setInitialLlmJudgeValues({
+      selected_algo: "llm_as_judge",
+      combined_model_name: "openai:gpt-4o",
+      model_name: "gpt-4o",
+      provider_name: "openai",
+      judge_prompt: "Score the output for quality.",
+    })
+
+    const { container } = await renderBuilder("llm_judge")
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Run a passing test
+    mockTestV2EvalLlmJudge.mockResolvedValueOnce({
+      scores: { quality: 4.0 },
+      skipped_reason: null,
+      skipped_detail: null,
+    })
+
+    const tryBtn = container.querySelector(
+      '[data-testid="run-test-btn"]',
+    ) as HTMLButtonElement
+    expect(tryBtn).not.toBeNull()
+    await fireEvent.click(tryBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // Now save
+    resetCalls()
+    mockCreateLlmJudgeConfig.mockResolvedValueOnce({
+      id: "config_llm",
+      type: "v2",
+      properties: { type: "llm_judge" },
+    })
+
+    const submitBtn = container.querySelector(
+      '[data-testid="column-save-button"]',
+    ) as HTMLButtonElement
+    expect(submitBtn).not.toBeNull()
+    await fireEvent.click(submitBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
+    expect(showCalls).not.toContain("Save Without Testing?")
+  })
+
+  it("contains: save without test shows confirm dialog and Save Anyway calls createEvalConfig", async () => {
+    const { container } = await renderBuilder("contains")
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    mockCreateEvalConfig.mockResolvedValueOnce({
+      id: "config_contains",
+      type: "v2",
+      properties: { type: "contains" },
+    })
+
+    const submitBtn = container.querySelector(
+      '[data-testid="column-save-button"]',
+    ) as HTMLButtonElement
+    expect(submitBtn).not.toBeNull()
+    await fireEvent.click(submitBtn)
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(showCalls).toContain("Save Without Testing?")
+
+    // Click Save Anyway via the dialog stub's action button
+    const buttons = actionButtonsByTitle["Save Without Testing?"]
+    expect(buttons).toBeTruthy()
+    const saveAnyway = buttons.find(
+      (b: Record<string, unknown>) => b.label === "Save Anyway",
+    )
+    expect(saveAnyway).toBeTruthy()
+
+    const asyncAction = saveAnyway!.asyncAction as () => Promise<boolean>
+    await asyncAction()
+
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
   })
 })

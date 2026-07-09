@@ -14,14 +14,19 @@
   } = {
     type: "code_eval",
     code: generate_default_code(output_scores),
+    reference_keys: [],
     timeout_seconds: 30,
   }
+
+  // Bindable code string so the parent can track code edits reactively.
+  export let code_string: string = properties.code
 
   let user_has_edited = false
 
   $: if (output_scores && !user_has_edited) {
     const new_code = generate_default_code(output_scores)
     properties.code = new_code
+    code_string = new_code
     code_editor?.setValue(new_code)
   }
 
@@ -29,7 +34,10 @@
 
   $: properties.timeout_seconds = timeout_seconds
 
-  export function getProperties(): components["schemas"]["CodeEvalProperties"] & {
+  export function getProperties(): Omit<
+    components["schemas"]["CodeEvalProperties"],
+    "reference_keys"
+  > & {
     timeout_seconds?: number
   } {
     return {
@@ -51,6 +59,7 @@
 
   function use_example(): boolean {
     properties.code = examples[active_example_tab].code
+    code_string = examples[active_example_tab].code
     code_editor?.setValue(examples[active_example_tab].code)
     user_has_edited = true
     return true
@@ -65,6 +74,7 @@
 
   function on_code_change(e: CustomEvent<string>) {
     properties.code = e.detail
+    code_string = e.detail
     user_has_edited = true
   }
 </script>

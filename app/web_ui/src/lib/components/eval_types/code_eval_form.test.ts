@@ -146,6 +146,7 @@ describe("CodeEvalForm", () => {
     const customProps = {
       type: "code_eval" as const,
       code: 'def score(output, trace, reference_data, task_input):\n    return {"custom": 0.5}\n',
+      reference_keys: [] as string[],
       timeout_seconds: 120,
     }
     const { component } = render(CodeEvalForm, {

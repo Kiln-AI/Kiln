@@ -4276,6 +4276,11 @@ export interface components {
             /** Code */
             code: string;
             /**
+             * Reference Keys
+             * @default []
+             */
+            reference_keys: string[];
+            /**
              * Timeout Seconds
              * @default 30
              */
@@ -4598,6 +4603,12 @@ export interface components {
              * @description The name of the eval config.
              */
             name?: string | null;
+            /**
+             * Reference Keys
+             * @description Reference data keys this judge needs (captured from test).
+             * @default []
+             */
+            reference_keys?: string[];
         };
         /**
          * CreateMcpRunConfigRequest
@@ -7480,10 +7491,10 @@ export interface components {
             /** Prompt Template */
             prompt_template: string;
             /**
-             * Required Var
+             * Reference Keys
              * @default []
              */
-            required_var: string[];
+            reference_keys: string[];
             /** Thinking Instruction */
             thinking_instruction?: string | null;
             /**

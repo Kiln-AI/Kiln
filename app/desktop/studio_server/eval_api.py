@@ -263,6 +263,10 @@ class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
     """Request to create a V2 llm_judge eval config with server-baked template."""
 
     name: str | None = Field(default=None, description="The name of the eval config.")
+    reference_keys: list[str] = Field(
+        default_factory=list,
+        description="Reference data keys this judge needs (captured from test).",
+    )
 
 
 class TestV2EvalRequest(BaseModel):
@@ -1089,6 +1093,7 @@ def connect_evals_api(app: FastAPI):
                 judge_prompt=request.judge_prompt,
                 system_prompt=request.system_prompt,
             )
+            properties.reference_keys = list(request.reference_keys)
             eval_config = EvalConfig(
                 name=name,
                 config_type=EvalConfigType.v2,
