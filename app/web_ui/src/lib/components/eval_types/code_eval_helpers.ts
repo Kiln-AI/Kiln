@@ -143,6 +143,8 @@ export function generate_default_code(
   return `def score(output, trace, reference_data, task_input):
     """Score the model output.
 
+    Parameters are optional and order-independent — declare only the ones you need.
+
     Args:
         output: The model's final output string.
         trace: List of message dicts from the conversation.
@@ -188,7 +190,7 @@ export function generate_examples(
       code: `import json
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output):
     """Check if the output is valid JSON with required fields."""
     try:
         data = json.loads(output)
@@ -205,7 +207,7 @@ def score(output, trace, reference_data, task_input):
       label: "Check tool usage",
       code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(trace):
     """Verify the model used the expected tools."""
     tool_calls = KilnEvalHelpers.get_tool_calls(trace)
     used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
@@ -218,7 +220,7 @@ def score(output, trace, reference_data, task_input):
       label: "Domain-specific grading",
       code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output, reference_data):
     """Grade output against domain-specific criteria."""
     expected = (reference_data or {}).get("expected_answer", "")
 

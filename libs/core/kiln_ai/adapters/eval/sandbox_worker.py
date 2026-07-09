@@ -4,6 +4,7 @@ Thin module: only imports stdlib and kiln_ai.sandbox (which is itself
 stdlib-only). No Pydantic / Kiln-model / DB / UI imports.
 """
 
+import inspect
 import io
 import multiprocessing
 import multiprocessing.queues
@@ -65,15 +66,25 @@ def _execute_scorer(
             )
             return
 
-        result = call_entrypoint(
-            score_fn,
-            {
-                "output": inputs["output"],
-                "trace": inputs.get("trace"),
-                "reference_data": inputs.get("reference_data"),
-                "task_input": inputs["task_input"],
-            },
-        )
+        known_params = {
+            "output": inputs["output"],
+            "trace": inputs.get("trace"),
+            "reference_data": inputs.get("reference_data"),
+            "task_input": inputs["task_input"],
+        }
+        sig = inspect.signature(score_fn)
+        declared = set(sig.parameters.keys())
+        if not declared & {"output", "trace"}:
+            result_queue.put(
+                {
+                    "error": "score() must accept at least 'output' or 'trace' as a parameter",
+                    "stdout": captured_stdout.getvalue(),
+                    "stderr": captured_stderr.getvalue(),
+                }
+            )
+            return
+        call_kwargs = {k: v for k, v in known_params.items() if k in declared}
+        result = call_entrypoint(score_fn, call_kwargs)
 
         result_queue.put(
             {

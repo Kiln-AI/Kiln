@@ -199,3 +199,102 @@ class TestErrors:
         )
         with pytest.raises(RuntimeError, match="exit code"):
             run_scorer(code, _inputs(), timeout=10)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic (named) score() signature
+# ---------------------------------------------------------------------------
+
+
+class TestDynamicSignature:
+    """Verify that the harness introspects score() params and passes only declared ones."""
+
+    def test_subset_output_only(self):
+        code = (
+            "def score(output):\n"
+            "    return {'has_hello': 1.0 if 'hello' in output else 0.0}\n"
+        )
+        result = run_scorer(code, _inputs(output="hello"), timeout=10)
+        assert result["ok"] == {"has_hello": 1.0}
+
+    def test_subset_trace_only(self):
+        code = "def score(trace):\n    return {'has_trace': 1.0 if trace else 0.0}\n"
+        result = run_scorer(code, _inputs(trace=[{"role": "user"}]), timeout=10)
+        assert result["ok"] == {"has_trace": 1.0}
+
+    def test_subset_output_and_task_input(self):
+        code = (
+            "def score(output, task_input):\n"
+            "    return {'match': 1.0 if task_input in output else 0.0}\n"
+        )
+        result = run_scorer(
+            code,
+            _inputs(output="echo: test input", task_input="test input"),
+            timeout=10,
+        )
+        assert result["ok"] == {"match": 1.0}
+
+    def test_reordered_params(self):
+        code = "def score(task_input, trace):\n    return {'ok': 1.0}\n"
+        result = run_scorer(code, _inputs(), timeout=10)
+        assert result["ok"] == {"ok": 1.0}
+
+    def test_full_four_params_backward_compat(self):
+        code = (
+            "def score(output, trace, reference_data, task_input):\n"
+            "    return {'all': 1.0}\n"
+        )
+        result = run_scorer(code, _inputs(), timeout=10)
+        assert result["ok"] == {"all": 1.0}
+
+    def test_output_and_reference_data(self):
+        code = (
+            "def score(output, reference_data):\n"
+            "    expected = (reference_data or {}).get('answer', '')\n"
+            "    return {'match': 1.0 if expected in output else 0.0}\n"
+        )
+        result = run_scorer(
+            code,
+            _inputs(output="42 is the answer", reference_data={"answer": "42"}),
+            timeout=10,
+        )
+        assert result["ok"] == {"match": 1.0}
+
+
+class TestDynamicSignatureGuard:
+    """Verify the guard: score() must accept at least 'output' or 'trace'."""
+
+    def test_no_output_or_trace_error(self):
+        code = "def score(reference_data):\n    return {'x': 1.0}\n"
+        result = run_scorer(code, _inputs(), timeout=10)
+        assert "error" in result
+        assert "output" in result["error"]
+        assert "trace" in result["error"]
+
+    def test_empty_params_error(self):
+        code = "def score():\n    return {'x': 1.0}\n"
+        result = run_scorer(code, _inputs(), timeout=10)
+        assert "error" in result
+        assert "output" in result["error"]
+        assert "trace" in result["error"]
+
+    def test_only_task_input_error(self):
+        code = "def score(task_input):\n    return {'x': 1.0}\n"
+        result = run_scorer(code, _inputs(), timeout=10)
+        assert "error" in result
+        assert "output" in result["error"]
+        assert "trace" in result["error"]
+
+
+class TestDynamicSignatureAsync:
+    """Verify dynamic signature works with async score functions too."""
+
+    def test_async_subset_output_only(self):
+        code = "async def score(output):\n    return {'length': float(len(output))}\n"
+        result = run_scorer(code, _inputs(output="hi"), timeout=10)
+        assert result["ok"] == {"length": 2.0}
+
+    def test_async_reordered(self):
+        code = "async def score(task_input, output):\n    return {'ok': 1.0}\n"
+        result = run_scorer(code, _inputs(), timeout=10)
+        assert result["ok"] == {"ok": 1.0}
