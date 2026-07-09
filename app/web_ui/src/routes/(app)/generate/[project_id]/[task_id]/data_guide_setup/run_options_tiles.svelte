@@ -1,12 +1,8 @@
 <script lang="ts">
-  // Shared "Generation Options" block for the input data guide setup + refine
-  // flows. Two display modes:
-  //   - "tiles" (default): a single compact clickable tile for the input
-  //     generation stage.
-  //   - "link": no inline UI; parent renders its own trigger and calls
-  //     open_combined_dialog() to launch the input config dialog.
-  //
-  // Parents read the resulting config via get_input_run_config().
+  // Shared generation-settings config for the input data guide setup + refine
+  // flows. Renders no inline UI of its own — the parent renders its own trigger
+  // (a gear card / link) and calls open_combined_dialog() to launch the settings
+  // dialog. Parents read the resulting config via get_input_run_config().
   import { onMount } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
@@ -21,13 +17,11 @@
   import type { AvailableModels, RunConfigProperties } from "$lib/types"
 
   export let project_id: string
-  export let mode: "tiles" | "link" = "tiles"
-  // Bindable friendly names for the currently-selected input model, so a
-  // `link`-mode parent can render its own trigger (e.g. "GPT-5.5" / "OpenRouter").
+  // Bindable friendly names for the currently-selected input model, so the
+  // parent can render its own trigger (e.g. "GPT-5.5" / "OpenRouter").
   export let selected_model_name_display: string = ""
   export let selected_provider_display: string = ""
 
-  let input_config_dialog: Dialog
   let combined_config_dialog: Dialog
   let input_run_config_component: RunConfigComponent | null = null
   let input_model_name: string = ""
@@ -72,11 +66,14 @@
     load_model_info()
   })
 
-  function open_input_config_dialog() {
-    input_config_dialog?.show()
-  }
+  // Optional custom primary action for the settings dialog's footer, set per
+  // open. Defaults to a plain "Done" (just close). Callers that want the dialog
+  // to advance a flow (e.g. "Continue" into a review) pass an action here.
+  type CombinedAction = { label: string; action: () => boolean }
+  let combined_action_override: CombinedAction | null = null
 
-  export function open_combined_dialog() {
+  export function open_combined_dialog(action: CombinedAction | null = null) {
+    combined_action_override = action
     combined_config_dialog?.show()
   }
 
@@ -87,70 +84,34 @@
   }
 </script>
 
-{#if mode === "tiles"}
-  <div class="flex flex-row flex-wrap gap-2">
-    <button
-      type="button"
-      class="text-left rounded-md border bg-white px-3 py-2 hover:border-primary hover:shadow-sm transition-all min-w-[180px]"
-      on:click={open_input_config_dialog}
-    >
-      <div
-        class="text-[10px] text-gray-500 uppercase font-medium tracking-wide"
-      >
-        Generation Model
-      </div>
-      <div class="mt-0.5 text-xs truncate">
-        {input_model_name
-          ? friendly_model_name(input_model_name, $model_info)
-          : "—"}
-      </div>
-    </button>
-  </div>
-
-  <Dialog
-    bind:this={input_config_dialog}
-    title="Generation Settings"
-    sub_subtitle="The run options used to generate synthetic inputs for review."
-    action_buttons={[{ label: "Done", isPrimary: true }]}
-  >
-    <RunConfigComponent
-      bind:this={input_run_config_component}
-      bind:model_name={input_model_name}
-      bind:provider={input_provider}
-      model={recommended_data_gen_model}
-      {project_id}
-      requires_structured_output={true}
-      show_name_field={false}
-      hide_prompt_selector={true}
-      show_tools_selector_in_advanced={true}
-      model_dropdown_settings={{
-        requires_data_gen: true,
-        suggested_mode: "data_gen",
-      }}
-    />
-  </Dialog>
-{:else}
-  <Dialog
-    bind:this={combined_config_dialog}
-    title="Generation Settings"
-    sub_subtitle="The run options used to generate synthetic inputs for review."
-    width="wide"
-    action_buttons={[{ label: "Done", isPrimary: true }]}
-  >
-    <RunConfigComponent
-      bind:this={input_run_config_component}
-      bind:model_name={input_model_name}
-      bind:provider={input_provider}
-      model={recommended_data_gen_model}
-      {project_id}
-      requires_structured_output={true}
-      show_name_field={false}
-      hide_prompt_selector={true}
-      show_tools_selector_in_advanced={true}
-      model_dropdown_settings={{
-        requires_data_gen: true,
-        suggested_mode: "data_gen",
-      }}
-    />
-  </Dialog>
-{/if}
+<Dialog
+  bind:this={combined_config_dialog}
+  title="Generation Settings"
+  sub_subtitle="The run options used to generate synthetic inputs for review."
+  width="wide"
+  action_buttons={combined_action_override
+    ? [
+        {
+          label: combined_action_override.label,
+          action: combined_action_override.action,
+          isPrimary: true,
+        },
+      ]
+    : [{ label: "Done", isPrimary: true }]}
+>
+  <RunConfigComponent
+    bind:this={input_run_config_component}
+    bind:model_name={input_model_name}
+    bind:provider={input_provider}
+    model={recommended_data_gen_model}
+    {project_id}
+    requires_structured_output={true}
+    show_name_field={false}
+    hide_prompt_selector={true}
+    show_tools_selector_in_advanced={true}
+    model_dropdown_settings={{
+      requires_data_gen: true,
+      suggested_mode: "data_gen",
+    }}
+  />
+</Dialog>

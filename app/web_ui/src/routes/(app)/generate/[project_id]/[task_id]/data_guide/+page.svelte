@@ -165,7 +165,7 @@
           },
           {
             label: "Edit",
-            handler: () => refine_view?.open_edit_dialog(),
+            handler: () => refine_view?.open_edit_chooser(),
           },
         ]
       : []}
