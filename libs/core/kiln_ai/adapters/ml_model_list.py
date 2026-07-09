@@ -678,7 +678,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_terra,
         friendly_name="GPT-5.6 Terra",
-        editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        editorial_notes="OpenAI's balanced GPT-5.6 model. Strong reasoning and multimodal at a lower cost.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -733,7 +733,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_luna,
         friendly_name="GPT-5.6 Luna",
-        editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        editorial_notes="OpenAI's fast, cost-efficient GPT-5.6 model. Optimized for speed and high-volume tasks.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
