@@ -496,9 +496,25 @@ async def test_report_delivered_to_auto_parent_via_inbox_wakes_idle_parent():
     assert sup.has_pending_reports(parent.session_id) is False
 
 
-async def test_report_queued_for_interactive_parent_and_drained_once():
+async def test_report_delivered_to_interactive_parent_wakes_idle_parent():
+    # Unified-runtime behavior (product decision): an IDLE INTERACTIVE parent
+    # is WOKEN by a child's report — the report is injected via the inbox and
+    # starts a normal gated turn — instead of the old v1 limitation where an
+    # interactive parent's report merely queued and waited for the USER's next
+    # message. This is exactly what the auto-parent test above asserts, minus
+    # the auto_mode flag on the woken turn's body (the interactive parent runs
+    # a gated turn).
     sup = _sup()
-    client = FakeUpstreamClient(_text_run_responses("child done"))
+    # Response 1: the child's whole run. Response 2: the interactive parent
+    # turn the report injection wakes up.
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse([text_delta("child done"), trace("tr-c1"), finish()]),
+            FakeUpstreamResponse(
+                [text_delta("got it"), trace("tr-p1"), finish("stop")]
+            ),
+        ]
+    )
     parent = sup.create_conversation("interactive", upstream_url=URL, headers={})
     with patch.object(httpx, "AsyncClient", return_value=client):
         child = sup.spawn_subagent(
@@ -508,17 +524,23 @@ async def test_report_queued_for_interactive_parent_and_drained_once():
             headers={},
         )
         await _wait_for(lambda: child.state.is_terminal)
+        # The injection woke the idle interactive parent into a turn.
+        await _wait_for(lambda: len(client.bodies) == 2)
+        await _wait_for(lambda: parent.state == RunState.IDLE)
 
-    # Queued (interactive parents drain at their next continuation), not
-    # delivered through the inbox.
-    assert sup.has_pending_reports(parent.session_id) is True
-    assert child.report_delivered is False
-    reports = sup.drain_reports(parent.session_id)
-    assert len(reports) == 1
-    assert 'status="completed"' in reports[0]
     assert child.report_delivered is True
-    # Drained exactly once.
-    assert sup.drain_reports(parent.session_id) == []
+    # The framed report seeded the parent's turn as an UNFRAMED user message
+    # (report frames are excluded from side-note framing), and the woken
+    # interactive turn carries NO auto_mode flag (it is gated).
+    parent_body = client.bodies[1]
+    (msg,) = parent_body["messages"]
+    assert msg["role"] == "user"
+    assert msg["content"].startswith("<subagent_report")
+    assert 'status="completed"' in msg["content"]
+    assert f'id="{child.session_id}"' in msg["content"]
+    assert "auto_mode" not in parent_body
+    # Delivered through the inbox — nothing left queued for drain.
+    assert sup.has_pending_reports(parent.session_id) is False
 
 
 async def test_report_queues_when_auto_parent_flag_off_before_child_settles():
@@ -1080,17 +1102,23 @@ async def test_terminal_ttl_evicts_delivered_child():
 
 
 async def test_undelivered_report_pins_record_past_terminal_ttl():
+    # A report stays UNDELIVERED (and pins the child record) only when it
+    # can't be delivered — a live parent now WAKES on the report via the inbox
+    # (see test_report_delivered_to_interactive_parent_wakes_idle_parent). The
+    # realistic undelivered case is a GONE parent (evicted / never registered):
+    # _deliver_report finds no parent record and queues the report, which pins
+    # the child past the terminal TTL until the report TTL lapses.
     sup = _sup(terminal_ttl_seconds=0.05, undelivered_report_ttl_seconds=0.3)
     client = FakeUpstreamClient(_text_run_responses())
-    parent = sup.create_conversation("interactive", upstream_url=URL, headers={})
     with patch.object(httpx, "AsyncClient", return_value=client):
         child = sup.spawn_subagent(
             _seed(),
-            parent_session_id=parent.session_id,
+            parent_session_id="cv_gone_parent",  # not a live supervisor record
             upstream_url=URL,
             headers={},
         )
         await _wait_for(lambda: child.state.is_terminal)
+        assert sup.has_pending_reports("cv_gone_parent")  # queued, undelivered
         # Past the terminal TTL the undelivered report still pins the record…
         await asyncio.sleep(0.15)
         assert sup.get(child.session_id) is not None
@@ -1684,17 +1712,29 @@ async def test_enable_auto_flips_interactive_record_policy_and_kind():
 
 
 async def test_message_idle_start_drains_queued_reports_into_seed():
-    # Old routes.post_chat next-turn injection, re-homed: reports queued while
-    # the interactive conversation idled ride the fresh turn AFTER the user's
-    # message and are echoed to observers.
+    # send_message's idle-start still drains any QUEUED reports into the fresh
+    # turn's seed (old routes.post_chat next-turn injection). A LIVE parent now
+    # WAKES on report delivery instead (see
+    # test_report_delivered_to_interactive_parent_wakes_idle_parent), so this
+    # exercises the FALLBACK: a report that could NOT be delivered when the
+    # child settled (parent off-auto / gone) queued under the parent's session
+    # id, and drains when the conversation next runs an interactive turn (the
+    # in-burst-disable → swap-to-interactive flow leaves exactly this state).
     sup = _sup()
     parent = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    # A terminal child whose report is queued (the state the off-auto / gone-
+    # parent fallback leaves behind); re-home the queue entry onto the live
+    # interactive parent, as the off-auto→swap flow would.
     child_client = FakeUpstreamClient(_text_run_responses("child done"))
     with patch.object(httpx, "AsyncClient", return_value=child_client):
         child = sup.spawn_subagent(
-            _seed(), parent_session_id=parent.session_id, upstream_url=URL, headers={}
+            _seed(), parent_session_id="cv_offauto_holder", upstream_url=URL, headers={}
         )
         await _wait_for(lambda: child.state.is_terminal)
+    assert sup.has_pending_reports("cv_offauto_holder")
+    sup._pending_reports.pop("cv_offauto_holder")
+    child.report_delivered = False
+    sup._pending_reports[parent.session_id] = [child.session_id]
     assert sup.has_pending_reports(parent.session_id)
 
     turn_client = FakeUpstreamClient(

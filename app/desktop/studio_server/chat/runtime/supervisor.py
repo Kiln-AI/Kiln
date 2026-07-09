@@ -1674,14 +1674,33 @@ class ConversationSupervisor:
 
     async def stop_children(self, parent_session_id: str) -> int:
         """Cascade-stop every running child of a parent (parent
-        stopped/disabled/deleted). Also drops the parent's undelivered
-        reports — there is nothing left to consume them. Returns how many
-        children were stopped. (Old SubAgentRegistry.stop_children.)"""
+        stopped/disabled/deleted). The parent is being torn down, so its
+        children's reports are DROPPED — nothing is left to consume them.
+        Returns how many children were stopped. (Old
+        SubAgentRegistry.stop_children.)
+
+        Report suppression (important since reports now WAKE parents): a
+        child's report is delivered from inside its own ``_finish_run`` when it
+        settles. Now that delivery goes through the parent's inbox — which
+        would START A TURN on the (about-to-be-deleted) parent — clearing the
+        pending-reports QUEUE afterwards is no longer enough (the report never
+        touches the queue on the wake path). So mark each child
+        ``report_delivered`` BEFORE stopping it: ``_deliver_report`` early-
+        returns on that guard, so the cascade never wakes the parent. This is
+        the cascade path ONLY — a standalone ``stop(child)`` (the user stopping
+        one helper) still delivers its stop-note report so the parent learns
+        the outcome.
+        """
         stopped = 0
         for record in self.children_of(parent_session_id):
+            # Suppress delivery (see docstring) for EVERY child — even an
+            # already-terminal one may hold an undelivered queued report.
+            record.report_delivered = True
             if not record.state.is_terminal:
                 await self.stop(record.session_id)
                 stopped += 1
+        # Belt and suspenders: drop any reports already queued before this
+        # cascade (e.g. children that settled earlier while the parent idled).
         self._pending_reports.pop(parent_session_id, None)
         return stopped
 
@@ -1747,44 +1766,56 @@ class ConversationSupervisor:
     def _deliver_report(self, conv: _Conversation) -> None:
         """Deliver a settled child's report to its parent.
 
-        Mechanism unchanged from the old registries, now keyed by stable ids:
-        an auto-flag parent gets the framed report pushed as an inbox message
-        immediately (waking an IDLE parent into a fresh burst — old
-        auto-parent completion injection, native since phase 3 replaced the
-        ``legacy_report_deliverer`` bridge with real supervisor records for
-        auto parents); an interactive parent gets it queued for the
-        next-turn / mid-stream drain (``drain_reports``). Exactly one channel
-        per report — the routing here is what lets the engine call
-        drain_reports unconditionally.
+        The report is pushed to the parent as an INBOX message (via
+        ``send_message``) for EVERY live parent — auto OR interactive. This is
+        the unified-runtime win over the old split behavior:
 
-        Phase 4 closed the last seam: every parent is a supervisor record and
-        ``parent_session_id`` is always a real session id (the old
-        ``trace:<leaf>`` keys died with ``ParentConversationIndex``). A queue
-        entry now has exactly two consumers — the engine's mid-run
-        ``drain_reports`` and ``send_message``'s idle-start drain (the old
-        next-turn injection) — plus the queue fallback below for a parent
-        whose flag flipped off mid-delivery (old
-        ``SubAgentRegistry._deliver_report`` fallback, unchanged).
+        - Auto-flag parent: the report wakes an IDLE parent into a fresh burst
+          (native since phase 3) — unchanged.
+        - Interactive parent: the report now ALSO wakes an idle parent to
+          process it (it starts a normal gated turn), instead of the old v1
+          limitation where an interactive parent's report merely queued and
+          waited for the USER's next message to drain it. That deferral
+          defeated the point of sub-agents (you delegate work, the helpers
+          finish, and nothing happens until you poke the parent). Waking the
+          parent is safe: an interactive turn is still fully GATED — any tool
+          call the parent makes while processing the report parks for user
+          approval; only the already-consented sub-agent spawns run without a
+          prompt. (Product decision confirmed with the user; the old
+          "interactive never runs unattended" choice is deliberately reversed
+          for the report-arrival case.)
+
+        ``send_message``'s state routing does the right thing for both kinds:
+        IDLE → start a turn (wake); RUNNING/AWAITING_APPROVAL → append to the
+        inbox, drained at the next round boundary (or by inbox-drain-on-settle
+        — BUG 1 fix). The report frame is delivered UNFRAMED (the engine's
+        ``_frame_inbox_message`` excludes ``<subagent_report>`` from side-note
+        framing) and echoed onto the bus, so the report panel appears LIVE the
+        moment the child finishes.
+
+        Queue fallback: ``send_message`` returns None when the parent is
+        unknown/terminal, or a flag-off auto record (the narrow disable window
+        — a report must never silently start a gated turn on a record that was
+        just disabled; the old auto-parent-gone fallback). In those cases the
+        report is queued in ``_pending_reports`` so a later resumed turn's
+        ``drain_reports`` still picks it up. An interactive conversation is
+        never terminal, so a live interactive parent always takes the wake
+        path; the queue only catches an evicted/unknown parent.
         """
         record = conv.record
         if record.report_delivered or record.parent_session_id is None:
             return
         parent = self._conversations.get(record.parent_session_id)
-        if (
-            parent is not None
-            and parent.record.auto_flag
-            and not parent.record.state.is_terminal
-        ):
+        if parent is not None and not parent.record.state.is_terminal:
             delivered = self.send_message(
                 parent.record.session_id, format_subagent_report(record)
             )
             if delivered:
                 self._mark_report_delivered(conv)
                 return
-            # Parent flag flipped off between the check and the send (
-            # send_message refuses flag-off auto records): fall through to
-            # the queue so a resumed turn can still pick the report up (old
-            # auto-parent-gone fallback).
+            # send_message refused (flag-off auto record in the disable
+            # window, or otherwise not deliverable right now): fall through to
+            # the queue so a resumed turn can still pick the report up.
         self._pending_reports.setdefault(record.parent_session_id, []).append(
             record.session_id
         )

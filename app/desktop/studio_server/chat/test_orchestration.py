@@ -177,13 +177,16 @@ async def test_wait_returns_statuses_and_timeouts(supervisor):
     )
     by_id = {s["subagent_id"]: s for s in result["subagents"]}
     assert by_id[a]["state"] == "stopped"
-    # Statuses only — reports flow through the injection channel so they are
-    # persisted in the parent trace and rendered as report panels.
+    # Statuses only — reports flow through the injection channel (NOT the wait
+    # result) so they are persisted in the parent trace and rendered as panels.
     assert "report" not in by_id[a]
     assert "note" in result
     assert result["timed_out"] == [b]
-    # The terminal child's report stays queued for injection.
-    assert supervisor.has_pending_reports(ctx.parent_key())
+    # a's report was DELIVERED via the injection channel (it woke the idle
+    # interactive parent through the inbox) — not surfaced in the wait result.
+    assert supervisor.get(a).report_delivered is True
+    assert not supervisor.has_pending_reports(ctx.parent_key())
+    await supervisor.stop(ctx.parent_key())  # tear down the woken parent turn
 
     unknown = await _call("wait_for_subagents", {"subagent_ids": ["cv_nope"]}, ctx)
     assert unknown["status"] == "error"
@@ -232,22 +235,24 @@ async def test_children_keyed_by_parent_session_id(supervisor):
 #    cascade). ──────────────────────────────────────────────────────────────
 
 
-async def test_interactive_parent_report_queued_and_drained_once(supervisor):
+async def test_interactive_parent_report_wakes_idle_parent(supervisor):
+    # Unified-runtime behavior (product decision, confirmed with the user): a
+    # child's report WAKES an idle INTERACTIVE parent through the inbox — the
+    # same channel auto parents use — instead of the old v1 limitation where
+    # it merely queued and waited for the user's next message. The parent
+    # starts a normal gated turn to process the report.
     ctx = _parent_ctx(supervisor)
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
     await supervisor.stop(sid)
 
-    # Queued for the parent's next-turn / mid-stream drain — session-keyed
-    # since phase 4 (the trace-keyed pending_reports_for_trace died with the
-    # old loop; the engine drains via io.drain_reports and the idle-start
-    # send drains via supervisor.send_message).
-    assert supervisor.has_pending_reports(ctx.parent_key())
-    reports = supervisor.drain_reports(ctx.parent_key())
-    assert len(reports) == 1
-    assert f'id="{sid}"' in reports[0]
-    assert 'status="stopped"' in reports[0]
-    # Drained exactly once.
-    assert supervisor.drain_reports(ctx.parent_key()) == []
+    assert supervisor.get(sid).report_delivered is True
+    # Inbox was the one channel — nothing queued for the drain path.
+    assert not supervisor.has_pending_reports(ctx.parent_key())
+    # The idle interactive parent woke into a turn seeded with the report
+    # (engine hangs here; the state transition is the observable).
+    parent = supervisor.get(ctx.parent_key())
+    assert parent is not None and parent.state == RunState.RUNNING
+    await supervisor.stop(ctx.parent_key())
 
 
 async def test_auto_parent_report_injected_natively_via_supervisor_inbox(supervisor):
