@@ -127,6 +127,10 @@ function normalize_scores(
     : [{ key: "quality", type: "pass_fail" as ScoreType }]
 }
 
+// IMPORTANT: The code strings produced by generate_default_code and generate_examples
+// are the exact snippets users run. They are mirrored byte-for-byte and executed through
+// the real sandbox in libs/core/kiln_ai/adapters/eval/test_code_eval_samples.py to prove
+// they stay valid. Do NOT change these strings without updating those mirrored fixtures.
 export function generate_default_code(
   output_scores?: EvalOutputScore[],
 ): string {
@@ -154,6 +158,9 @@ export function generate_default_code(
 `
 }
 
+// IMPORTANT: See the note on generate_default_code above. These example snippets are
+// mirrored byte-for-byte and executed in test_code_eval_samples.py. Do NOT change them
+// without updating those mirrored fixtures.
 export function generate_examples(
   output_scores?: EvalOutputScore[],
 ): { label: string; code: string }[] {

@@ -69,7 +69,7 @@
 
   const examples_inline_action: InlineAction = {
     handler: show_examples,
-    label: "More Examples",
+    label: "Examples",
   }
 
   function on_code_change(e: CustomEvent<string>) {
@@ -110,7 +110,7 @@
 
 <Dialog
   bind:this={examples_dialog}
-  title="Code Eval Examples"
+  title="Code Judge Examples"
   width="wide"
   action_buttons={[
     {

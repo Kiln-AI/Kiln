@@ -83,12 +83,12 @@ describe("CodeEvalForm", () => {
     )
   })
 
-  it("Score Function FormElement has More Examples inline action", () => {
+  it("Score Function FormElement has Examples inline action", () => {
     const { container } = render(CodeEvalForm)
     const el = container.querySelector(
       '[data-testid="form-element-code_eval_score_function"]',
     )
-    expect(el?.getAttribute("data-inline-action-label")).toBe("More Examples")
+    expect(el?.getAttribute("data-inline-action-label")).toBe("Examples")
   })
 
   it("does not display the footer paragraph with range hints", () => {
@@ -170,7 +170,7 @@ describe("CodeEvalForm", () => {
     const { container } = render(CodeEvalForm)
     const dialogStub = container.querySelector('[data-testid="dialog-stub"]')
     expect(dialogStub).not.toBeNull()
-    expect(dialogStub?.getAttribute("data-title")).toBe("Code Eval Examples")
+    expect(dialogStub?.getAttribute("data-title")).toBe("Code Judge Examples")
   })
 
   it("renders example tabs (Parse JSON, Check tool usage, Domain-specific grading)", () => {
