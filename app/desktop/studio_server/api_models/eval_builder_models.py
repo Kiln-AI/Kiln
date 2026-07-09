@@ -10,6 +10,7 @@ to the UI.
 from typing import Literal
 
 from kiln_ai.datamodel.basemodel import FilenameStringShort
+from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -146,6 +147,59 @@ class BuildClaimsApiOutput(BaseModel):
 
     claims: list[ClaimApi]
     final_judgement: FinalJudgementApi
+
+
+# ── Refine judge loop ─────────────────────────────────────────────────────
+
+
+class GradedTraceApi(BaseModel):
+    """One human-reviewed trace's grades, shaped to feed judge refinement.
+
+    Mirrors the persisted ClaimReview (judge verdict + per-claim
+    agree/disagree with optional whys) plus a `trace_label` the refine model
+    cites in its change rationales. Only the claims the reviewer actually
+    graded appear — an absent claim is "not reviewed", never agreement.
+    """
+
+    trace_label: str = Field(
+        description="A label for the trace the refine model cites in its "
+        "rationales; derived UI-side from the run id (often opaque)."
+    )
+    judge_score: JudgeScoreLiteral
+    judge_reasoning: str
+    claims: list[GradedClaim]
+    final_judgement: GradedClaim
+
+
+class RefineJudgeApiInput(BaseModel):
+    """The current judge prompt plus the human's grades on reviewed traces.
+
+    `judge_prompt` is the plain-text rubric being refined (the same text the
+    review judge ran with). The refined result is a PROPOSAL — the studio
+    never auto-applies it.
+    """
+
+    judge_prompt: str = Field(min_length=1)
+    graded_traces: list[GradedTraceApi] = Field(min_length=1, max_length=50)
+
+
+class RefineJudgeChangeApi(BaseModel):
+    """One edit the refine model made to the judge prompt, with its rationale."""
+
+    change: str
+    rationale: str
+
+
+class RefineJudgeApiOutput(BaseModel):
+    """The proposed judge-prompt revision + a per-edit rationale.
+
+    A PROPOSAL: the UI shows the changes for approval and validates the
+    prompt before any write; it is never auto-applied.
+    """
+
+    refined_judge_prompt: str
+    changes: list[RefineJudgeChangeApi]
+    not_incorporated_feedback: str | None
 
 
 # ── SSE event payloads ────────────────────────────────────────────────────

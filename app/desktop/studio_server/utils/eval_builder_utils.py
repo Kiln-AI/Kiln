@@ -15,18 +15,23 @@ from typing import Any, cast
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     build_claim_evidence_v1_copilot_build_claim_evidence_post,
+    refine_judge_prompt_v1_copilot_refine_judge_prompt_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     BuildClaimEvidenceInput,
     BuildClaimEvidenceOutput,
+    RefineJudgePromptInput,
+    RefineJudgePromptOutput,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
+    GradedTraceApi,
     JudgeConfig,
     JudgeScoreLiteral,
+    RefineJudgeApiOutput,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from app.desktop.studio_server.utils.response_utils import unwrap_response
@@ -277,3 +282,45 @@ async def build_claims_for_trace(
         return BuildClaimsApiOutput.model_validate(result.to_dict())
 
     raise HTTPException(status_code=500, detail="Unknown error building claims.")
+
+
+async def refine_judge_prompt_from_grades(
+    judge_prompt: str,
+    graded_traces: list[GradedTraceApi],
+) -> RefineJudgeApiOutput:
+    """Refine the judge prompt from the human's per-claim grades via kiln_server.
+
+    Thin remote passthrough: marshal → SDK call → map back. The refinement (LLM)
+    runs on kiln_server. The returned prompt is a PROPOSAL — callers validate it
+    and show it for approval before any write; it is never auto-applied.
+    """
+    api_key = get_copilot_api_key()
+    client = get_authenticated_client(api_key)
+
+    body = RefineJudgePromptInput.from_dict(
+        {
+            "judge_prompt": judge_prompt,
+            # model_dump keeps human_feedback=None as an explicit null (a blank
+            # 'why'); the task's input schema marks it required-nullable, so a
+            # dropped key would 422.
+            "graded_traces": [t.model_dump() for t in graded_traces],
+        }
+    )
+
+    detailed_result = (
+        await refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed(
+            client=client,
+            body=body,
+        )
+    )
+    result = unwrap_response(
+        detailed_result,
+        none_detail="Failed to refine the judge prompt. Please try again.",
+    )
+
+    if isinstance(result, RefineJudgePromptOutput):
+        return RefineJudgeApiOutput.model_validate(result.to_dict())
+
+    raise HTTPException(
+        status_code=500, detail="Unknown error refining the judge prompt."
+    )

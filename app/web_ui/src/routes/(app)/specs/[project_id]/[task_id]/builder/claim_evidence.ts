@@ -206,3 +206,66 @@ export function disagreement_feedback(review: TraceReview): string {
     .map((v) => v.why.trim())
     .join(" ")
 }
+
+// ── Refine judge loop ─────────────────────────────────────────────────────
+
+// One reviewed trace's grades shaped to feed judge refinement: the persisted
+// ClaimReview payload plus a trace_label the refine model cites in rationales.
+export type GradedTracePayload = ClaimReviewPayload & { trace_label: string }
+
+// The refine model's proposed edit + its one-line rationale.
+export type RefineJudgeChange = { change: string; rationale: string }
+
+// The refine loop's response — a PROPOSAL, never auto-applied.
+export type RefineJudgeProposal = {
+  refined_judge_prompt: string
+  changes: RefineJudgeChange[]
+  not_incorporated_feedback: string | null
+}
+
+// Build the graded-traces payload for the refine call from the in-session
+// review. Only reviewed traces contribute (a half-reviewed trace is no
+// signal); trace_label is the durable run id when present, else the client
+// trace id (opaque — the refine prompt tolerates that).
+export function build_graded_traces(
+  traces: TraceClaims[],
+  reviews: TraceReview[],
+): GradedTracePayload[] {
+  return traces
+    .map((trace, i) => ({ trace, review: reviews[i] }))
+    .filter(({ trace, review }) => review && is_trace_reviewed(trace, review))
+    .map(({ trace, review }) => ({
+      trace_label: trace.leaf_run_id || trace.trace_id,
+      ...build_claim_review_payload(trace, review),
+    }))
+}
+
+// A judge prompt/rubric this long is almost certainly runaway model output,
+// not a rubric — reject it rather than persist it into the judge config.
+export const MAX_JUDGE_PROMPT_CHARS = 20000
+
+// Mechanically validate a refined judge prompt before it is written into the
+// judge config. The prompt is inserted into the judge harness verbatim (then
+// raw-wrapped server-side), so it must be plain text: non-empty, no Jinja /
+// template braces, no code fences, and a sane length. Returns an error message
+// to surface to the user, or null when the prompt is safe to apply. The
+// refined prompt is a PROPOSAL from an LLM — never trust it into a write blind.
+export function validate_refined_judge_prompt(prompt: string): string | null {
+  const text = (prompt ?? "").trim()
+  if (!text) return "The refined judge prompt is empty."
+  if (text.length > MAX_JUDGE_PROMPT_CHARS) {
+    return `The refined judge prompt is too long (${text.length} characters; max ${MAX_JUDGE_PROMPT_CHARS}).`
+  }
+  const forbidden: [RegExp, string][] = [
+    [/\{\{|\}\}/, "Jinja expression braces ({{ or }})"],
+    [/\{%|%\}/, "Jinja statement braces ({% or %})"],
+    [/\{#|#\}/, "Jinja comment braces ({# or #})"],
+    [/```/, "code fences"],
+  ]
+  for (const [pattern, label] of forbidden) {
+    if (pattern.test(text)) {
+      return `The refined judge prompt contains ${label}; it must be plain text.`
+    }
+  }
+  return null
+}

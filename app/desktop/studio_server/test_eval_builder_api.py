@@ -5,6 +5,9 @@ import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_judge_prompt_output import (
+    RefineJudgePromptOutput,
+)
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
     CitationApi,
@@ -607,6 +610,128 @@ class TestBuildClaims:
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 422
             assert "Validation error from server" in response.json()["message"]
+
+
+# ───────────────────────── refine_judge ──────────────────────────────────
+
+REFINE_JUDGE_URL = "/api/projects/p1/tasks/t1/eval_builder/refine_judge"
+
+
+@pytest.fixture
+def refine_judge_input():
+    return {
+        "judge_prompt": "The agent must not fabricate policies. PASS if it hedges, FAIL otherwise.",
+        "graded_traces": [
+            {
+                "trace_label": "leaf-abc",
+                "judge_score": "fail",
+                "judge_reasoning": "Stated a return window as fact.",
+                "claims": [
+                    {
+                        "claim": "The agent stated an unverified return window as fact.",
+                        "evidence": "The reply gives 30 days [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    }
+                ],
+                "final_judgement": {
+                    "claim": "Fails Eval.",
+                    "evidence": "Asserts an unverified window [1].",
+                    "expected_result": "fail",
+                    "human_grade": "disagree",
+                    "human_feedback": "The window is actually documented, so this should pass.",
+                },
+            }
+        ],
+    }
+
+
+class TestRefineJudge:
+    def test_refine_judge_no_api_key(self, client, refine_judge_input):
+        """Fail-fast: a keyless caller gets a clean 401 before the remote call."""
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_refine_judge_success(self, client, refine_judge_input, mock_api_key):
+        mock_output = MagicMock(spec=RefineJudgePromptOutput)
+        mock_output.to_dict.return_value = {
+            "refined_judge_prompt": "The agent must not fabricate policies. A specific unverified detail stated as fact is a FAILURE.",
+            "changes": [
+                {
+                    "change": "Made an unverified detail stated as fact an explicit failure.",
+                    "rationale": "trace leaf-abc: reviewer disagreed with the fail on a documented window.",
+                }
+            ],
+            "not_incorporated_feedback": None,
+        }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 200
+            result = response.json()
+            assert "FAILURE" in result["refined_judge_prompt"]
+            assert len(result["changes"]) == 1
+            assert result["changes"][0]["rationale"].startswith("trace leaf-abc")
+            assert result["not_incorporated_feedback"] is None
+
+    def test_refine_judge_remote_error_surfaces_upstream_message(
+        self, client, refine_judge_input, mock_api_key
+    ):
+        """A remote failure propagates the upstream status + message (the
+        custom error handler renders it as {"message": ...} for the UI)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 502
+        mock_response.content = b'{"message": "upstream refused"}'
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 502
+            assert "upstream refused" in response.json()["message"]
+
+    def test_refine_judge_no_response_is_500(
+        self, client, refine_judge_input, mock_api_key
+    ):
+        """A 2xx with no parsed body surfaces as a 500 with a clear message."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 500
+            assert "Failed to refine the judge prompt" in response.json()["message"]
+
+    def test_refine_judge_rejects_empty_graded_traces(self, client, mock_api_key):
+        """graded_traces must be non-empty (min_length=1) — a 422 before any
+        remote call."""
+        response = client.post(
+            REFINE_JUDGE_URL,
+            json={"judge_prompt": "p", "graded_traces": []},
+        )
+        assert response.status_code == 422
 
 
 # ───────────────────────── review_pipeline (SSE) ─────────────────────────

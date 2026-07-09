@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest"
 import {
   all_traces_reviewed,
   build_claim_review_payload,
+  build_graded_traces,
   build_trace_reviews,
   disagreement_feedback,
   is_trace_reviewed,
+  MAX_JUDGE_PROMPT_CHARS,
   resolve_citation_span,
   user_says_meets_spec,
+  validate_refined_judge_prompt,
   type Claim,
   type TraceClaims,
   type TraceReview,
@@ -149,6 +152,71 @@ describe("disagreement_feedback", () => {
       final_judgement_verdict: { agrees: false, why: "final why" },
     }
     expect(disagreement_feedback(review)).toBe("claim why final why")
+  })
+})
+
+describe("build_graded_traces", () => {
+  it("includes only reviewed traces and labels them by run id, else trace id", () => {
+    const reviewed_t = trace({ leaf_run_id: "leaf-abc" })
+    const reviewed_review: TraceReview = {
+      trace_id: "trace_0",
+      claim_verdicts: [{ agrees: true, why: "" }],
+      final_judgement_verdict: { agrees: false, why: "policy is real" },
+    }
+    const half_t = trace({ trace_id: "trace_1", leaf_run_id: null })
+    const half_review = build_trace_reviews([half_t])[0] // ungraded final → excluded
+
+    const graded = build_graded_traces(
+      [reviewed_t, half_t],
+      [reviewed_review, half_review],
+    )
+    expect(graded).toHaveLength(1)
+    expect(graded[0].trace_label).toBe("leaf-abc")
+    expect(graded[0].final_judgement.human_grade).toBe("disagree")
+    // Falls back to the client trace id when no durable run id exists.
+    const single = build_graded_traces(
+      [half_t],
+      [
+        {
+          trace_id: "trace_1",
+          claim_verdicts: [{ agrees: true, why: "" }],
+          final_judgement_verdict: { agrees: true, why: "" },
+        },
+      ],
+    )
+    expect(single[0].trace_label).toBe("trace_1")
+  })
+})
+
+describe("validate_refined_judge_prompt", () => {
+  it("accepts a plain-text prompt", () => {
+    expect(
+      validate_refined_judge_prompt(
+        "PASS if the reply is polite, FAIL otherwise.",
+      ),
+    ).toBeNull()
+  })
+
+  it("rejects empty / whitespace-only prompts", () => {
+    expect(validate_refined_judge_prompt("")).toMatch(/empty/)
+    expect(validate_refined_judge_prompt("   \n ")).toMatch(/empty/)
+  })
+
+  it("rejects Jinja/template braces and code fences", () => {
+    expect(validate_refined_judge_prompt("Score {{ trace }}")).toMatch(/Jinja/)
+    expect(validate_refined_judge_prompt("{% if x %}pass{% endif %}")).toMatch(
+      /Jinja/,
+    )
+    expect(validate_refined_judge_prompt("{# comment #} judge")).toMatch(
+      /Jinja/,
+    )
+    expect(validate_refined_judge_prompt("```\nrubric\n```")).toMatch(/fences/)
+  })
+
+  it("rejects an oversized prompt", () => {
+    expect(
+      validate_refined_judge_prompt("a".repeat(MAX_JUDGE_PROMPT_CHARS + 1)),
+    ).toMatch(/too long/)
   })
 })
 

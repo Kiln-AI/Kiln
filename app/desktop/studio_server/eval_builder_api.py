@@ -35,6 +35,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     PipelineCaseFailedEvent,
     PipelineCaseReviewedEvent,
     PipelineTurnCompletedEvent,
+    RefineJudgeApiInput,
+    RefineJudgeApiOutput,
     ReviewTracesRequest,
     TraceErrorEvent,
     TraceInput,
@@ -53,6 +55,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_claims_for_trace,
+    refine_judge_prompt_from_grades,
     run_judge_for_trace,
     transcript_io_for_trace,
 )
@@ -642,4 +645,34 @@ def connect_eval_builder_api(app: FastAPI):
             eval_rubric=input.eval_rubric,
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
+        )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
+        tags=["Eval Builder"],
+        openapi_extra=agent_policy_require_approval(
+            "Refine the judge prompt from the reviewer's grades?"
+        ),
+    )
+    async def refine_judge(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: RefineJudgeApiInput,
+    ) -> RefineJudgeApiOutput:
+        """Propose a judge-prompt revision from the human's per-claim grades.
+
+        The refined prompt is a PROPOSAL — the UI validates it and shows the
+        changes for approval; it is never auto-applied.
+        """
+        # Fail fast on a missing copilot key before the remote refine call
+        # (5.2 convention): a keyless caller gets a clean 401, not a deep error.
+        get_copilot_api_key()
+        # Remote failures propagate as HTTPExceptions with the upstream's
+        # message (custom_errors renders {"message": ...} for the UI), same as
+        # the build_claims primitive.
+        return await refine_judge_prompt_from_grades(
+            judge_prompt=input.judge_prompt,
+            graded_traces=input.graded_traces,
         )

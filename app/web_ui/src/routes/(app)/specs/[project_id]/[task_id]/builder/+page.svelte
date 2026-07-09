@@ -28,9 +28,12 @@
   import {
     all_traces_reviewed,
     build_claim_review_payload,
+    build_graded_traces,
     build_trace_reviews,
     disagreement_feedback,
     user_says_meets_spec,
+    validate_refined_judge_prompt,
+    type RefineJudgeProposal,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -1054,6 +1057,40 @@
   let claims_error: string | null = null
   $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
 
+  // ── Under-the-hood judge refinement (Step 6, at save). The reviewer aligns
+  // on CLAIMS, never on prompt text — so refinement is invisible: if their
+  // grades carry any disagreement, the judge prompt is refined from those
+  // grades and the REFINED judge is what ships. Non-blocking — any failure or
+  // an unusable refined prompt keeps the original judge, so a refine hiccup
+  // never blocks the save.
+  async function refined_judge_for_save(
+    judge: JudgeConfig,
+  ): Promise<JudgeConfig> {
+    const graded_traces = build_graded_traces(trace_claims, trace_reviews)
+    const has_disagreement = graded_traces.some(
+      (t) =>
+        t.final_judgement.human_grade === "disagree" ||
+        t.claims.some((c) => c.human_grade === "disagree"),
+    )
+    if (!has_disagreement) return judge
+    const { data, error } = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
+      {
+        params: { path: { project_id, task_id } },
+        body: { judge_prompt: judge.prompt, graded_traces },
+        signal: new_copilot_abort_signal(),
+      },
+    )
+    // Refine failed — ship the original judge rather than block the save.
+    if (error || !data) return judge
+    const proposal = data as RefineJudgeProposal
+    // Only ship a mechanically-valid refined prompt (it renders into the judge
+    // harness verbatim); otherwise fall back to the original.
+    if (validate_refined_judge_prompt(proposal.refined_judge_prompt))
+      return judge
+    return { ...judge, prompt: proposal.refined_judge_prompt }
+  }
+
   // SSE events from the eval_builder review_traces endpoint (single-turn).
   // The judge runs server-side (local, in-app) via the Eval V2 llm_judge
   // adapter; the claim step calls the remote claim builder.
@@ -1229,8 +1266,13 @@
 
       // The judge to persist = the judge the review ran (review_judge). The
       // fallback only fires if save is somehow reached without a review.
-      const save_judge =
+      const review_judge_config =
         review_judge ?? judge_info ?? build_default_judge_info(spec_text())
+      // Under the hood: if the reviewer disagreed anywhere, refine the judge
+      // from their grades so the shipped judge incorporates their feedback.
+      // Falls back to the reviewed judge on any refine failure (never blocks
+      // the save).
+      const save_judge = await refined_judge_for_save(review_judge_config)
 
       // Multi-turn save: tag the chains produced by run_cases_batch.
       if (is_multi_turn) {

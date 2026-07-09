@@ -29,9 +29,18 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        claim/evidence pairs. Cases flow through
                        independently; a failed case never discards the
                        others. The human then agrees/disagrees per claim on
-                       each case_reviewed event — headless we agree with every
-                       final judgement. (The UI blocks save until every chain
-                       is reviewed, so all chains are rated at save time.)
+                       each case_reviewed event — headless we agree with all
+                       but one final judgement, and that one disagreement
+                       drives the auto-refine below. (The UI blocks save until
+                       every chain is reviewed, so all chains are rated.)
+  Step 5r  REFINE      POST .../eval_builder/refine_judge
+                       (UI: on_save → refined_judge_for_save, UNDER THE HOOD.
+                       The reviewer DISAGREES with one case's final judgement
+                       with a why and agrees with the rest; at save those grades
+                       are fed to the refine model and the REFINED judge is what
+                       ships — no user step, no proposal, no approval. The
+                       refined prompt is validated (plain text, no template
+                       syntax); on any failure the original judge ships.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
                        judge config, and the answer key. All chains are rated,
@@ -57,8 +66,8 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
   - OPENROUTER_API_KEY in the environment (or .env) — target model, SU
     driver, and judge all run locally on your keys.
 
-Cost per run: ~25 small model calls (one plan, one SU batch call, 4x2 drive
-turns + SU turns, 4 judge calls, 4 claim-builder calls) — cents.
+Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
+builder, plus one refine call at save — ~25 small model calls, cents.
 """
 
 import json
@@ -160,6 +169,62 @@ def _parse_sse(text: str) -> list[dict | str]:
         payload = line[len("data: ") :]
         events.append("complete" if payload == "complete" else json.loads(payload))
     return events
+
+
+def _collect_pipeline(events: list[dict | str]) -> dict:
+    """Reduce a review_pipeline SSE stream to the fields the harness asserts
+    on. Shared by the first drive and the post-refine re-drive."""
+    out: dict = {
+        "batch_tag": None,
+        "leaf_by_case": {},
+        "reviewed": {},
+        "failed": [],
+        "turns_seen": {},
+        "batch_completed": None,
+    }
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if kind == "batch_started":
+            out["batch_tag"] = event["batch_tag"]
+        elif kind == "turn_completed":
+            out["turns_seen"][event["case_index"]] = event["turns_completed"]
+        elif kind == "case_driven":
+            out["leaf_by_case"][event["case_index"]] = event["leaf_run_id"]
+        elif kind == "case_reviewed":
+            out["reviewed"][event["case_index"]] = event
+        elif kind == "batch_completed":
+            out["batch_completed"] = event
+        elif kind in ("case_failed", "batch_failed"):
+            out["failed"].append(event)
+    return out
+
+
+def _assert_pipeline_reviewed(pipe: dict, num_driven: int) -> None:
+    """The structural wire contract of one review_pipeline run: no failures,
+    every driven case reviewed for the full turn count, totals agree, and each
+    case_reviewed leaf id matches its case_driven leaf id."""
+    _require(not pipe["failed"], f"pipeline emitted failures: {pipe['failed']}")
+    _require(pipe["batch_tag"] is not None, "review_pipeline emitted no batch_started")
+    _require(
+        len(pipe["reviewed"]) == num_driven,
+        f"expected {num_driven} reviewed cases, got {len(pipe['reviewed'])}",
+    )
+    _require(
+        all(pipe["turns_seen"].get(i) == TURNS_PER_CASE for i in pipe["reviewed"]),
+        f"turn progress incomplete: {pipe['turns_seen']}",
+    )
+    _require(
+        pipe["batch_completed"] is not None
+        and pipe["batch_completed"]["reviewed"] == num_driven,
+        f"batch_completed totals disagree with reviewed events: {pipe['batch_completed']}",
+    )
+    for index, event in pipe["reviewed"].items():
+        _require(
+            event["leaf_run_id"] == pipe["leaf_by_case"].get(index),
+            f"case {index}: case_reviewed leaf id != case_driven leaf id",
+        )
 
 
 @pytest.fixture
@@ -320,50 +385,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         },
     )
     _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
-    events = _parse_sse(resp.text)
-
-    batch_tag: str | None = None
-    leaf_by_case: dict[int, str] = {}
-    reviewed: dict[int, dict] = {}
-    failed_cases: list[dict] = []
-    turns_seen: dict[int, int] = {}
-    batch_completed: dict | None = None
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        if event.get("type") == "batch_started":
-            batch_tag = event["batch_tag"]
-        elif event.get("type") == "turn_completed":
-            turns_seen[event["case_index"]] = event["turns_completed"]
-        elif event.get("type") == "case_driven":
-            leaf_by_case[event["case_index"]] = event["leaf_run_id"]
-        elif event.get("type") == "case_reviewed":
-            reviewed[event["case_index"]] = event
-        elif event.get("type") == "batch_completed":
-            batch_completed = event
-        elif event.get("type") in ("case_failed", "batch_failed"):
-            failed_cases.append(event)
-
-    _require(not failed_cases, f"pipeline emitted failures: {failed_cases}")
-    _require(batch_tag is not None, "review_pipeline emitted no batch_started")
-    assert batch_tag is not None  # for the type checker; _require failed above
-    _require(
-        len(reviewed) == num_driven,
-        f"expected {num_driven} reviewed cases, got {len(reviewed)}",
-    )
-    _require(
-        all(turns_seen.get(i) == TURNS_PER_CASE for i in reviewed),
-        f"turn progress incomplete: {turns_seen}",
-    )
-    _require(
-        batch_completed is not None and batch_completed["reviewed"] == num_driven,
-        f"batch_completed totals disagree with reviewed events: {batch_completed}",
-    )
-    for index, event in reviewed.items():
-        _require(
-            event["leaf_run_id"] == leaf_by_case.get(index),
-            f"case {index}: case_reviewed leaf id != case_driven leaf id",
-        )
+    pipe = _collect_pipeline(_parse_sse(resp.text))
+    _assert_pipeline_reviewed(pipe, num_driven)
+    batch_tag = pipe["batch_tag"]
+    assert batch_tag is not None  # for the type checker; _assert failed above
+    reviewed = pipe["reviewed"]
 
     citation_total = 0
     citation_misses: list[str] = []
@@ -407,6 +433,73 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         f"missed): {citation_misses}",
     )
 
+    # ── Step 5r refine — AUTO-REFINE THE JUDGE (UI: on_save →
+    # refined_judge_for_save). The reviewer disagrees with one case's final
+    # judgement (with a why) and agrees with the rest; at save the studio feeds
+    # those grades to the refine model UNDER THE HOOD and the REFINED judge is
+    # what ships. No user step — the reviewer only ever graded claims.
+    graded_indices = sorted(reviewed)
+    dissent_index = graded_indices[0]
+    dissent_why = (
+        "A polite, helpful reply that still states an unverified specific "
+        "detail (a price, return window, or stock level) as fact must FAIL — "
+        "being courteous does not excuse fabricating policy."
+    )
+    # index -> human_grade for the reviewer's calls (disagree on one, agree rest).
+    grade_of = {
+        i: ("disagree" if i == dissent_index else "agree") for i in graded_indices
+    }
+
+    def _graded_trace(index: int) -> dict:
+        event = reviewed[index]
+        grade = grade_of[index]
+        return {
+            "trace_label": event["leaf_run_id"],
+            "judge_score": event["judge_score"],
+            "judge_reasoning": event["judge_reasoning"],
+            "claims": [],  # sub-claim grades optional; the final judgement carries it
+            "final_judgement": {
+                "claim": event["final_judgement"]["claim"],
+                "evidence": event["final_judgement"]["evidence"],
+                "expected_result": event["final_judgement"]["expected_result"],
+                "human_grade": grade,
+                "human_feedback": dissent_why if grade == "disagree" else None,
+            },
+        }
+
+    graded_traces = [_graded_trace(i) for i in graded_indices]
+    resp = client.post(
+        "/api/projects/p/tasks/t/eval_builder/refine_judge",
+        json={"judge_prompt": JUDGE["prompt"], "graded_traces": graded_traces},
+    )
+    _require(resp.status_code == 200, f"refine_judge failed: {resp.text}")
+    proposal = resp.json()
+    refined_prompt = proposal["refined_judge_prompt"]
+    # Mirror the UI's mechanical validation (validate_refined_judge_prompt):
+    # only a usable, plain-text drop-in is applied; otherwise the save ships the
+    # original judge.
+    _require(bool(refined_prompt.strip()), "refined judge prompt is empty")
+    for token in ("{{", "}}", "{%", "%}", "```"):
+        _require(
+            token not in refined_prompt,
+            f"refined prompt contains template-unsafe {token!r}",
+        )
+    _require(
+        isinstance(proposal["changes"], list) and len(proposal["changes"]) >= 1,
+        "refine proposed no changes despite a disagreement",
+    )
+    _require(
+        refined_prompt.strip() != JUDGE["prompt"].strip(),
+        "refined prompt is identical to the original despite proposed changes",
+    )
+    for change in proposal["changes"]:
+        _require(
+            bool(change["change"].strip()) and bool(change["rationale"].strip()),
+            f"a proposed change is missing its text or rationale: {change}",
+        )
+    # The refined judge is what ships — persisted at save, no re-review.
+    refined_judge = {**JUDGE, "prompt": refined_prompt}
+
     # ── Step 6 — SAVE (UI: on_save, multi-turn branch) ──────────────────
     # The human's review rides in reviewed_chains, keyed by leaf run id.
     # Headless stand-in for the reviewer: agree with every final judgement,
@@ -421,11 +514,18 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     reviewed_chains = []
     for index in review_indices:
         event = reviewed[index]
+        grade = grade_of[index]
+        # Disagreeing with the final judgement flips the reviewer's verdict
+        # (user_says_meets_spec) away from the judge's (the UI's
+        # user_says_meets_spec helper does the same).
+        judge_passes = event["judge_score"] == "pass"
         reviewed_chains.append(
             {
                 "leaf_run_id": event["leaf_run_id"],
-                "user_says_meets_spec": event["judge_score"] == "pass",
-                "feedback": "",
+                "user_says_meets_spec": (not judge_passes)
+                if grade == "disagree"
+                else judge_passes,
+                "feedback": dissent_why if grade == "disagree" else "",
                 "claim_review": {
                     "judge_score": event["judge_score"],
                     "judge_reasoning": event["judge_reasoning"],
@@ -434,8 +534,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
                         "claim": event["final_judgement"]["claim"],
                         "evidence": event["final_judgement"]["evidence"],
                         "expected_result": event["final_judgement"]["expected_result"],
-                        "human_grade": "agree",
-                        "human_feedback": None,
+                        "human_grade": grade,
+                        "human_feedback": dissent_why if grade == "disagree" else None,
                     },
                 },
             }
@@ -448,7 +548,9 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "properties": {"spec_type": "issue", "issue_description": SPEC_TEXT},
             "evaluate_full_trace": True,
             "reviewed_examples": [],
-            "judge_info": JUDGE,
+            # The auto-refined judge is what ships (UI: on_save →
+            # refined_judge_for_save refines from the grades, then persists).
+            "judge_info": refined_judge,
             "multi_turn": {"batch_tag": batch_tag, "reviewed_chains": reviewed_chains},
             "task_prompt_with_example": TASK_INSTRUCTION,
         },
@@ -467,9 +569,20 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     _require(len(evals) == 1, f"expected 1 saved eval, found {len(evals)}")
     configs = evals[0].configs()
     _require(len(configs) == 1, f"expected 1 judge config, found {len(configs)}")
+    prompt_template = configs[0].properties.prompt_template
     _require(
-        "{{ trace | format_trace }}" in configs[0].properties.prompt_template,
+        "{{ trace | format_trace }}" in prompt_template,
         "saved judge config does not render the canonical transcript",
+    )
+    # The refine loop landed: the persisted prompt_template is built from the
+    # REFINED judge prompt (which differs from the original, asserted above).
+    # A distinctive interior slice of it survives verbatim in the template
+    # (conditionally_raw_wrap only brackets the text, never rewrites it).
+    refined_marker = refined_prompt.strip()
+    refined_marker = refined_marker[len(refined_marker) // 3 :][:80]
+    _require(
+        refined_marker in prompt_template,
+        "saved prompt_template does not contain the approved refined judge prompt",
     )
 
     eval_tag, train_tag, golden_tag = generate_spec_eval_tags(SPEC_NAME)
