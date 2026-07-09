@@ -4813,7 +4813,6 @@ export interface components {
             /**
              * Reference Keys
              * @description Reference data keys this judge needs (captured from test).
-             * @default []
              */
             reference_keys?: string[];
         };
