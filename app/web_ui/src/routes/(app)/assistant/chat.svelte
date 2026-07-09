@@ -16,7 +16,7 @@
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
   import { auto_run_store } from "$lib/chat/auto_run_store"
-  import { subagent_store } from "$lib/chat/subagent_store"
+  import { conversation_store } from "$lib/chat/conversation_store"
   import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
@@ -53,23 +53,25 @@
   // one can be active at a time, so prefer whichever is set.
   const autoRetry = auto_run_store.retry
 
-  // Sub-agents (background child runs) of the current conversation. The tab
-  // strip selects between the main transcript and a child's read-only one; the
-  // composer routes to a running child when its tab is selected.
-  const subagentChildren = subagent_store.children
-  const subagentSelectedId = subagent_store.selectedId
-  const subagentTranscripts = subagent_store.transcripts
-  const subagentRuntime = subagent_store.runtime
+  // Sub-agents (background child runs) of the current conversation, served by
+  // the unified conversation store (children are keyed by session id and speak
+  // the conversation-state vocabulary). The tab strip selects between the main
+  // transcript and a child's read-only one; the composer routes to a running
+  // child when its tab is selected.
+  const subagentChildren = conversation_store.children
+  const subagentSelectedId = conversation_store.selectedId
+  const subagentTranscripts = conversation_store.transcripts
+  const subagentRuntime = conversation_store.runtime
   $: selectedChild = $subagentSelectedId
-    ? $subagentChildren.find((c) => c.subagent_id === $subagentSelectedId) ??
+    ? $subagentChildren.find((c) => c.session_id === $subagentSelectedId) ??
       null
     : null
-  $: selectedChildRunning = selectedChild?.status === "running"
+  $: selectedChildRunning = selectedChild?.state === "running"
   $: selectedChildMessages = selectedChild
-    ? $subagentTranscripts.get(selectedChild.subagent_id) ?? []
+    ? $subagentTranscripts.get(selectedChild.session_id) ?? []
     : []
   $: selectedChildRuntime = selectedChild
-    ? $subagentRuntime.get(selectedChild.subagent_id) ?? null
+    ? $subagentRuntime.get(selectedChild.session_id) ?? null
     : null
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
@@ -181,9 +183,11 @@
   // Keep the sub-agent list in sync with the conversation the transcript shows.
   // The leaf trace id advances every turn; syncForConversation dedupes by value,
   // so this is cheap to run reactively (session load / resync / new chat all
-  // funnel through a messages change).
+  // funnel through a messages change). The leaf trace id remains the browser's
+  // parent handle until phases 4-5 give the main conversation a session id —
+  // the server resolves the whole trace chain.
   $: currentLeafTraceId = traceIdForNextChatRequest(messages) ?? null
-  $: void subagent_store.syncForConversation(currentLeafTraceId)
+  $: void conversation_store.syncForConversation(currentLeafTraceId)
 
   // Pause autoscroll around a step-group expand/collapse in the transcript
   // (the toggle mutates layout without new content arriving).
@@ -262,9 +266,9 @@
     // Surface the upgrade banners up front, before any message is sent.
     void store.checkVersionPolicy()
 
-    // Watch the sub-agent status firehose while the assistant page is active so
-    // tabs reflect spawns/finishes even with no chat stream in flight.
-    subagent_store.connect()
+    // Watch the conversation-state firehose while the assistant page is active
+    // so tabs reflect spawns/finishes even with no chat stream in flight.
+    conversation_store.connect()
 
     const container = messagesContainer
     const end = messagesEndRef
@@ -311,7 +315,7 @@
   })
 
   onDestroy(() => {
-    subagent_store.disconnect()
+    conversation_store.disconnect()
     messagesContainer?.removeEventListener("scroll", handleScroll)
     messagesContainer?.removeEventListener("wheel", handleWheel)
     messagesContainer?.removeEventListener("touchstart", handleTouchStart)
@@ -385,7 +389,7 @@
     )
     // Back to the main transcript; the loaded conversation's children sync
     // reactively from its trace id.
-    subagent_store.select(null)
+    conversation_store.select(null)
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -399,7 +403,7 @@
     })
     store.reset()
     // A new conversation has no children yet; drop tabs/observers/selection.
-    subagent_store.reset()
+    conversation_store.reset()
   }
 
   export function openHistory() {
@@ -416,8 +420,8 @@
     // composer is disabled with a hint to return to Main).
     if (selectedChild) {
       if (!selectedChildRunning) return
-      const result = await subagent_store.sendMessage(
-        selectedChild.subagent_id,
+      const result = await conversation_store.sendMessage(
+        selectedChild.session_id,
         text,
       )
       if (!result.ok) return

@@ -21,17 +21,16 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     _get_common_headers,
     get_authenticated_client,
 )
+from app.desktop.studio_server.chat import orchestration
 from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
+from app.desktop.studio_server.chat.orchestration import OrchestrationContext
+from app.desktop.studio_server.chat.runtime.sse import format_user_message
+from app.desktop.studio_server.chat.runtime.supervisor import conversation_supervisor
 from app.desktop.studio_server.chat.stream_session import (
     ChatStreamSession,
     ToolCallInfo,
     execute_tool_batch,
 )
-from app.desktop.studio_server.chat.subagents.orchestration import (
-    OrchestrationContext,
-)
-from app.desktop.studio_server.chat.subagents.registry import subagent_registry
-from app.desktop.studio_server.chat.subagents.sse import format_user_message
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
@@ -82,7 +81,13 @@ class ChatSessionListItem(BaseModel):
     auto_run_id: str | None = None
     # Sub-agent lineage. agent_type/root_id/parent_root_id come from the
     # upstream session meta (durable, survives app restarts); subagent_id/
-    # subagent_status are joined from the in-memory registry (live runs only).
+    # subagent_status are joined from the in-memory conversation supervisor
+    # (live runs only). The wire names are unchanged across the phase-2
+    # migration so the history UI needs no changes, but the VALUES moved to
+    # the unified vocabulary: subagent_id now carries the child's conversation
+    # session id (cv_…, addressable via /api/conversations) and
+    # subagent_status carries a RunState value (same strings as the old
+    # SubAgentStatus for every reachable state).
     agent_type: str | None = None
     root_id: str | None = None
     parent_root_id: str | None = None
@@ -301,8 +306,18 @@ def connect_chat_api(app: FastAPI) -> None:
                 # generated SDK's additional_properties (the SDK model predates
                 # these fields; regeneration isn't needed to read them).
                 extra = item.additional_properties
-                # Live-run join against the in-memory sub-agent registry.
-                subagent_record = subagent_registry.subagent_for_trace(item.id)
+                # Live-run join against the in-memory conversation supervisor:
+                # resolve the row's leaf trace id (any leaf the child session
+                # ever had is indexed) to a live sub-agent record. The kind
+                # guard matters once phases 3–4 put parent conversations on
+                # the same supervisor — a parent's leaf must never stamp its
+                # own row as a sub-agent.
+                child_sid = conversation_supervisor.session_for_trace(item.id)
+                child_record = (
+                    conversation_supervisor.get(child_sid) if child_sid else None
+                )
+                if child_record is not None and child_record.kind != "subagent":
+                    child_record = None
                 items.append(
                     ChatSessionListItem.model_validate(
                         {
@@ -316,12 +331,10 @@ def connect_chat_api(app: FastAPI) -> None:
                             "parent_root_id": extra.get("parent_root_id"),
                             "is_subagent": bool(extra.get("is_subagent")),
                             "subagent_id": (
-                                subagent_record.subagent_id if subagent_record else None
+                                child_record.session_id if child_record else None
                             ),
                             "subagent_status": (
-                                subagent_record.status.value
-                                if subagent_record
-                                else None
+                                child_record.state.value if child_record else None
                             ),
                         }
                     )
@@ -376,7 +389,7 @@ def connect_chat_api(app: FastAPI) -> None:
             _raise_upstream_error(detailed)
         # Cascade: stop children spawned by this session (and drop their pending
         # reports), or stop the sub-agent itself if a child session was deleted.
-        await subagent_registry.handle_session_deleted(session_id)
+        await orchestration.handle_session_deleted(session_id)
 
     @app.post(
         "/api/chat",
@@ -396,7 +409,7 @@ def connect_chat_api(app: FastAPI) -> None:
         # to the live stream so the transcript shows them immediately.
         report_echoes: list[bytes] = []
         if body.trace_id:
-            reports = subagent_registry.pending_reports_for_trace(body.trace_id)
+            reports = orchestration.pending_reports_for_trace(body.trace_id)
             if reports:
                 messages = list(initial_body.get("messages", []))
                 messages.extend(

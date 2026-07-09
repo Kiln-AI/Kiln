@@ -1,10 +1,17 @@
 <script lang="ts">
-  import type { SubAgentStatus } from "$lib/chat/subagent_store"
+  import type { RunState } from "$lib/chat/conversation_store"
 
-  export let status: SubAgentStatus
+  export let status: RunState
 
-  const LABELS: Record<SubAgentStatus, string> = {
+  // The unified RunState vocabulary. Sub-agent children only ever surface
+  // running + the four terminal states (same strings as the old
+  // SubAgentStatus, so the visuals are unchanged); idle/awaiting_approval
+  // exist for the parent kinds that join the store in phases 3-4 and are
+  // mapped defensively here.
+  const LABELS: Record<RunState, string> = {
+    idle: "Idle",
     running: "Running",
+    awaiting_approval: "Waiting for approval",
     completed: "Completed",
     failed: "Failed",
     stopped: "Stopped",
@@ -13,8 +20,10 @@
 
   // Live state as a colored dot: pulsing green while running; solid green /
   // red / gray / amber for the terminal states.
-  const COLORS: Record<SubAgentStatus, string> = {
+  const COLORS: Record<RunState, string> = {
+    idle: "bg-base-content/30",
     running: "bg-success",
+    awaiting_approval: "bg-warning",
     completed: "bg-success",
     failed: "bg-error",
     stopped: "bg-base-content/30",

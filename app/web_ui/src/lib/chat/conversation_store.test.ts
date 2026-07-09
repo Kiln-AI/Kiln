@@ -1,15 +1,20 @@
 // @vitest-environment jsdom
+//
+// Port of subagent_store.test.ts (deleted in phase 2 with the store it
+// covered): the same behavior contracts, asserted against the unified
+// conversation store — new endpoints (/api/conversations), new vocabulary
+// (session ids, RunState strings, conversation-state events).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { get } from "svelte/store"
 import {
-  createSubagentStore,
-  isTerminalSubagentStatus,
-  shouldCollapseSubagentTabs,
-  visibleSubagentTabs,
-  SUBAGENT_TAB_OVERFLOW_LIMIT,
-  type SubAgentItem,
-  type SubagentStore,
-} from "./subagent_store"
+  createConversationStore,
+  isTerminalState,
+  shouldCollapseChildTabs,
+  visibleChildTabs,
+  CHILD_TAB_OVERFLOW_LIMIT,
+  type ConversationItem,
+  type ConversationStore,
+} from "./conversation_store"
 
 vi.mock("$lib/api_client", () => ({
   base_url: "http://localhost:8757",
@@ -55,15 +60,17 @@ class FakeEventSource {
 
 function child(
   id: string,
-  overrides: Partial<SubAgentItem> = {},
-): SubAgentItem {
+  overrides: Partial<ConversationItem> = {},
+): ConversationItem {
   return {
-    subagent_id: id,
+    session_id: id,
+    kind: "subagent",
+    state: "running",
     name: `Agent ${id}`,
     agent_type: "general",
-    status: "running",
+    parent_session_id: "trace:parent-1",
     current_trace_id: `trace-${id}`,
-    parent_trace_id_at_spawn: "parent-1",
+    auto_flag: false,
     rounds_used: 0,
     report_available: false,
     report_delivered: false,
@@ -103,14 +110,14 @@ function sseResponse(events: unknown[]): Response {
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-describe("subagent_store", () => {
-  let store: SubagentStore
+describe("conversation_store", () => {
+  let store: ConversationStore
 
   beforeEach(() => {
     // @ts-expect-error install fake on global
     globalThis.EventSource = FakeEventSource
     FakeEventSource.reset()
-    store = createSubagentStore()
+    store = createConversationStore()
   })
 
   afterEach(() => {
@@ -121,25 +128,25 @@ describe("subagent_store", () => {
   })
 
   describe("syncForConversation", () => {
-    it("fetches the children for the parent trace and replaces the list", async () => {
+    it("fetches the children for the parent handle and replaces the list", async () => {
       const fetchMock = vi
         .fn()
-        .mockResolvedValue(jsonResponse([child("sa_1"), child("sa_2")]))
+        .mockResolvedValue(jsonResponse([child("cv_1"), child("cv_2")]))
       vi.stubGlobal("fetch", fetchMock)
 
       await store.syncForConversation("trace-leaf")
 
       expect(fetchMock).toHaveBeenCalledWith(
-        "http://localhost:8757/api/chat/subagents?parent_trace_id=trace-leaf",
+        "http://localhost:8757/api/conversations?parent=trace-leaf",
       )
-      expect(get(store.children).map((c) => c.subagent_id)).toEqual([
-        "sa_1",
-        "sa_2",
+      expect(get(store.children).map((c) => c.session_id)).toEqual([
+        "cv_1",
+        "cv_2",
       ])
     })
 
-    it("dedupes by trace id (no refetch for the same value)", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("sa_1")]))
+    it("dedupes by parent handle (no refetch for the same value)", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("cv_1")]))
       vi.stubGlobal("fetch", fetchMock)
 
       await store.syncForConversation("trace-leaf")
@@ -148,12 +155,12 @@ describe("subagent_store", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
-    it("clears the list (and the selection) for a null trace", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("sa_1")]))
+    it("clears the list (and the selection) for a null parent", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("cv_1")]))
       vi.stubGlobal("fetch", fetchMock)
 
       await store.syncForConversation("trace-leaf")
-      store.select("sa_1")
+      store.select("cv_1")
       await store.syncForConversation(null)
 
       expect(get(store.children)).toEqual([])
@@ -161,85 +168,110 @@ describe("subagent_store", () => {
     })
 
     it("clears the selection when the new list lacks the selected child", async () => {
-      // Route by URL: select() also starts an observation (session hydration +
-      // events stream), which must not race the list fetches out of order.
+      // Route by URL: select() also starts an observation (item re-fetch +
+      // session hydration + events stream), which must not race the list
+      // fetches out of order.
       const fetchMock = vi.fn().mockImplementation((url: string) => {
         const u = String(url)
-        if (u.includes("parent_trace_id=trace-a")) {
-          return Promise.resolve(jsonResponse([child("sa_1")]))
+        if (u.includes("parent=trace-a")) {
+          return Promise.resolve(jsonResponse([child("cv_1")]))
         }
-        if (u.includes("parent_trace_id=trace-b")) {
-          return Promise.resolve(jsonResponse([child("sa_other")]))
+        if (u.includes("parent=trace-b")) {
+          return Promise.resolve(jsonResponse([child("cv_other")]))
         }
         if (u.includes("/api/chat/sessions/")) {
           return Promise.resolve(
-            jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
+            jsonResponse({ id: "trace-cv_1", task_run: { trace: [] } }),
           )
+        }
+        if (u.endsWith("/api/conversations/cv_1")) {
+          return Promise.resolve(jsonResponse(child("cv_1")))
         }
         return Promise.resolve(sseResponse([]))
       })
       vi.stubGlobal("fetch", fetchMock)
 
       await store.syncForConversation("trace-a")
-      store.select("sa_1")
+      store.select("cv_1")
       await store.syncForConversation("trace-b")
 
-      expect(get(store.children).map((c) => c.subagent_id)).toEqual([
-        "sa_other",
-      ])
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_other"])
       expect(get(store.selectedId)).toBeNull()
     })
   })
 
-  describe("status firehose", () => {
-    it("connects to the firehose and updates a known child from status events", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("sa_1")]))
+  describe("state firehose", () => {
+    it("connects to the firehose and updates a known child from state events", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("cv_1")]))
       vi.stubGlobal("fetch", fetchMock)
       await store.syncForConversation("trace-leaf")
 
       store.connect()
       const source = FakeEventSource.latest()
-      expect(source.url).toBe("http://localhost:8757/api/chat/subagents/events")
+      expect(source.url).toBe("http://localhost:8757/api/conversations/events")
       source.open()
       expect(get(store.connection)).toBe("open")
 
       source.message({
-        type: "kiln-subagent-status",
-        subagent_id: "sa_1",
-        name: "Agent sa_1",
-        agent_type: "general",
-        status: "completed",
-        trace_id: "trace-new-leaf",
+        type: "conversation-state",
+        session_id: "cv_1",
+        kind: "subagent",
+        state: "completed",
+        auto_flag: false,
+        name: "Agent cv_1",
         report_available: true,
       })
 
       const updated = get(store.children)[0]
-      expect(updated.status).toBe("completed")
-      expect(updated.current_trace_id).toBe("trace-new-leaf")
+      expect(updated.state).toBe("completed")
       expect(updated.report_available).toBe(true)
     })
 
-    it("re-fetches the list when a status event arrives for an unknown child", async () => {
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(jsonResponse([]))
-        .mockResolvedValueOnce(jsonResponse([child("sa_new")]))
+    it("ignores state events for non-subagent kinds", async () => {
+      // Phase 3-4 forward-compat: parent conversations will share the
+      // firehose; their state changes must never disturb the children strip.
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("cv_1")]))
       vi.stubGlobal("fetch", fetchMock)
       await store.syncForConversation("trace-leaf")
 
       store.connect()
       FakeEventSource.latest().message({
-        type: "kiln-subagent-status",
-        subagent_id: "sa_new",
-        status: "running",
+        type: "conversation-state",
+        session_id: "cv_parent",
+        kind: "auto",
+        state: "running",
+        auto_flag: true,
+      })
+      await flush()
+
+      // No refetch for the unknown non-child, and the list is untouched.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
+    })
+
+    it("re-fetches the list when a state event arrives for an unknown child", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse([child("cv_new")]))
+      vi.stubGlobal("fetch", fetchMock)
+      await store.syncForConversation("trace-leaf")
+
+      store.connect()
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_new",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
       })
       await flush()
 
       expect(fetchMock).toHaveBeenCalledTimes(2)
       expect(fetchMock.mock.calls[1][0]).toBe(
-        "http://localhost:8757/api/chat/subagents?parent_trace_id=trace-leaf",
+        "http://localhost:8757/api/conversations?parent=trace-leaf",
       )
-      expect(get(store.children).map((c) => c.subagent_id)).toEqual(["sa_new"])
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_new"])
     })
 
     it("reconnects after an error while active", async () => {
@@ -279,6 +311,8 @@ describe("subagent_store", () => {
   describe("select / observe", () => {
     function routeFetch(routes: Record<string, () => Response>) {
       const fetchMock = vi.fn().mockImplementation((url: string) => {
+        // Insertion order = priority; register more-specific prefixes first
+        // (the /events route before the bare item route).
         for (const [prefix, make] of Object.entries(routes)) {
           if (String(url).startsWith(prefix)) {
             return Promise.resolve(make())
@@ -290,13 +324,41 @@ describe("subagent_store", () => {
       return fetchMock
     }
 
+    // The standard observe() routes: list, item re-fetch, hydration, events.
+    function observeRoutes(events: unknown[], overrides = {}) {
+      return {
+        "http://localhost:8757/api/conversations?": () =>
+          jsonResponse([child("cv_1")]),
+        "http://localhost:8757/api/conversations/cv_1/events": () =>
+          sseResponse(events),
+        "http://localhost:8757/api/conversations/cv_1": () =>
+          jsonResponse(child("cv_1", overrides)),
+        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
+          jsonResponse({ id: "trace-cv_1", task_run: { trace: [] } }),
+      }
+    }
+
     it("hydrates persisted history, then renders the replayed turn into a fresh message", async () => {
       routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
+        "http://localhost:8757/api/conversations?": () =>
+          jsonResponse([child("cv_1")]),
+        "http://localhost:8757/api/conversations/cv_1/events": () =>
+          sseResponse([
+            { type: "text-start", id: "t1" },
+            { type: "text-delta", delta: "live tail" },
+            {
+              type: "conversation-state",
+              session_id: "cv_1",
+              kind: "subagent",
+              state: "running",
+              auto_flag: false,
+            },
+          ]),
+        "http://localhost:8757/api/conversations/cv_1": () =>
+          jsonResponse(child("cv_1")),
+        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
           jsonResponse({
-            id: "trace-sa_1",
+            id: "trace-cv_1",
             task_run: {
               trace: [
                 { role: "user", content: "briefing" },
@@ -304,24 +366,14 @@ describe("subagent_store", () => {
               ],
             },
           }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
-          sseResponse([
-            { type: "text-start", id: "t1" },
-            { type: "text-delta", delta: "live tail" },
-            {
-              type: "kiln-subagent-status",
-              subagent_id: "sa_1",
-              status: "running",
-            },
-          ]),
       })
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
-      expect(get(store.selectedId)).toBe("sa_1")
+      store.select("cv_1")
+      expect(get(store.selectedId)).toBe("cv_1")
       await flush()
 
-      const transcript = get(store.transcripts).get("sa_1") ?? []
+      const transcript = get(store.transcripts).get("cv_1") ?? []
       expect(transcript.map((m) => m.role)).toEqual([
         "user",
         "assistant",
@@ -334,94 +386,119 @@ describe("subagent_store", () => {
       expect(transcript[2].parts).toEqual([{ type: "text", text: "live tail" }])
     })
 
-    it("strips steer framing from replayed user-message echoes", async () => {
+    it("hydrates from the RE-FETCHED item's fresh leaf, not the stale list entry", async () => {
+      // conversation-state events carry no trace ids, so the list's
+      // current_trace_id can go stale between syncs; observe() re-fetches the
+      // item and must hydrate from ITS leaf.
+      const hydrated: string[] = []
       routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
-          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
-          sseResponse([
-            {
-              type: "user-message",
-              content:
-                "<system-reminder>steer framing</system-reminder>\n\nfocus on evals",
-              id: "echo-1",
-            },
-          ]),
+        "http://localhost:8757/api/conversations?": () =>
+          jsonResponse([child("cv_1", { current_trace_id: "trace-stale" })]),
+        "http://localhost:8757/api/conversations/cv_1/events": () =>
+          sseResponse([]),
+        "http://localhost:8757/api/conversations/cv_1": () =>
+          jsonResponse(child("cv_1", { current_trace_id: "trace-fresh" })),
+        "http://localhost:8757/api/chat/sessions/": () => {
+          hydrated.push("hit")
+          return jsonResponse({ id: "trace-fresh", task_run: { trace: [] } })
+        },
       })
+      const fetchMock = vi.mocked(globalThis.fetch)
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
+      store.select("cv_1")
       await flush()
 
-      const transcript = get(store.transcripts).get("sa_1") ?? []
+      const sessionCalls = fetchMock.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.includes("/api/chat/sessions/"))
+      expect(sessionCalls).toEqual([
+        "http://localhost:8757/api/chat/sessions/trace-fresh",
+      ])
+      // The list entry was refreshed from the item fetch.
+      expect(get(store.children)[0].current_trace_id).toBe("trace-fresh")
+    })
+
+    it("strips steer framing from replayed user-message echoes", async () => {
+      routeFetch(
+        observeRoutes([
+          {
+            type: "user-message",
+            content:
+              "<system-reminder>steer framing</system-reminder>\n\nfocus on evals",
+            id: "echo-1",
+          },
+        ]),
+      )
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+
+      const transcript = get(store.transcripts).get("cv_1") ?? []
       expect(transcript[0].content).toBe("focus on evals")
     })
 
     it("appends the kickoff echo as the briefing bubble when hydration is empty", async () => {
-      routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
-          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
-          sseResponse([
-            {
-              type: "user-message",
-              content: "Agent sa_1 — your assignment:\n\nDo the thing.",
-              id: "kickoff-sa_1",
-            },
-            { type: "text-delta", delta: "on it" },
-          ]),
-      })
+      routeFetch(
+        observeRoutes([
+          {
+            type: "user-message",
+            content: "Agent cv_1 — your assignment:\n\nDo the thing.",
+            id: "kickoff-cv_1",
+          },
+          { type: "text-delta", delta: "on it" },
+        ]),
+      )
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
+      store.select("cv_1")
       await flush()
 
-      const transcript = get(store.transcripts).get("sa_1") ?? []
+      const transcript = get(store.transcripts).get("cv_1") ?? []
       expect(transcript.map((m) => m.role)).toEqual(["user", "assistant"])
       expect(transcript[0].content).toBe(
-        "Agent sa_1 — your assignment:\n\nDo the thing.",
+        "Agent cv_1 — your assignment:\n\nDo the thing.",
       )
-      expect(transcript[0].echoId).toBe("kickoff-sa_1")
+      expect(transcript[0].echoId).toBe("kickoff-cv_1")
       expect(transcript[1].parts).toEqual([{ type: "text", text: "on it" }])
     })
 
     it("skips a replayed kickoff echo when hydration already seeded the briefing", async () => {
       routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
+        "http://localhost:8757/api/conversations?": () =>
+          jsonResponse([child("cv_1")]),
+        "http://localhost:8757/api/conversations/cv_1/events": () =>
+          sseResponse([
+            {
+              type: "user-message",
+              content: "Agent cv_1 — your assignment:\n\nDo the thing.",
+              id: "kickoff-cv_1",
+            },
+            { type: "text-delta", delta: "second round" },
+          ]),
+        "http://localhost:8757/api/conversations/cv_1": () =>
+          jsonResponse(child("cv_1")),
+        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
           jsonResponse({
-            id: "trace-sa_1",
+            id: "trace-cv_1",
             task_run: {
               trace: [
                 {
                   role: "user",
-                  content: "Agent sa_1 — your assignment:\n\nDo the thing.",
+                  content: "Agent cv_1 — your assignment:\n\nDo the thing.",
                 },
                 { role: "assistant", content: "first round" },
               ],
             },
           }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
-          sseResponse([
-            {
-              type: "user-message",
-              content: "Agent sa_1 — your assignment:\n\nDo the thing.",
-              id: "kickoff-sa_1",
-            },
-            { type: "text-delta", delta: "second round" },
-          ]),
       })
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
+      store.select("cv_1")
       await flush()
 
-      const transcript = get(store.transcripts).get("sa_1") ?? []
+      const transcript = get(store.transcripts).get("cv_1") ?? []
       // Exactly ONE briefing bubble (the hydrated one, no echoId), then the
       // hydrated round and the replayed live round in a fresh message.
       expect(transcript.map((m) => m.role)).toEqual([
@@ -469,27 +546,29 @@ describe("subagent_store", () => {
       } as unknown as ReadableStreamDefaultReader<Uint8Array>
 
       routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
-          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
+        "http://localhost:8757/api/conversations?": () =>
+          jsonResponse([child("cv_1")]),
+        "http://localhost:8757/api/conversations/cv_1/events": () =>
           ({
             ok: true,
             status: 200,
             body: { getReader: () => reader },
           }) as unknown as Response,
+        "http://localhost:8757/api/conversations/cv_1": () =>
+          jsonResponse(child("cv_1")),
+        "http://localhost:8757/api/chat/sessions/trace-cv_1": () =>
+          jsonResponse({ id: "trace-cv_1", task_run: { trace: [] } }),
       })
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
+      store.select("cv_1")
       await flush()
 
       push({ type: "kiln-tool-execution-start", tool_count: 1 })
       push({ type: "kiln-chat-retry", attempt: 1, max_attempts: 3 })
       await flush()
 
-      const state = get(store.runtime).get("sa_1")
+      const state = get(store.runtime).get("cv_1")
       expect(state?.showActivityIndicator).toBe(true)
       expect(state?.retry).toEqual({ attempt: 1, max: 3 })
 
@@ -497,28 +576,23 @@ describe("subagent_store", () => {
       await flush()
 
       // The live-only affordances die with the stream.
-      expect(get(store.runtime).has("sa_1")).toBe(false)
+      expect(get(store.runtime).has("cv_1")).toBe(false)
     })
 
     it("appends user-message echoes and dedupes them by echo id", async () => {
-      routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
-          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
-          sseResponse([
-            { type: "user-message", content: "steer left", id: "echo-1" },
-            { type: "user-message", content: "steer left", id: "echo-1" },
-            { type: "text-delta", delta: "ok, steering" },
-          ]),
-      })
+      routeFetch(
+        observeRoutes([
+          { type: "user-message", content: "steer left", id: "echo-1" },
+          { type: "user-message", content: "steer left", id: "echo-1" },
+          { type: "text-delta", delta: "ok, steering" },
+        ]),
+      )
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
+      store.select("cv_1")
       await flush()
 
-      const transcript = get(store.transcripts).get("sa_1") ?? []
+      const transcript = get(store.transcripts).get("cv_1") ?? []
       expect(transcript.map((m) => m.role)).toEqual(["user", "assistant"])
       expect(transcript[0].content).toBe("steer left")
       expect(transcript[0].echoId).toBe("echo-1")
@@ -527,28 +601,25 @@ describe("subagent_store", () => {
       ])
     })
 
-    it("updates the child from the on-subscribe status marker", async () => {
-      routeFetch({
-        "http://localhost:8757/api/chat/subagents?": () =>
-          jsonResponse([child("sa_1")]),
-        "http://localhost:8757/api/chat/sessions/trace-sa_1": () =>
-          jsonResponse({ id: "trace-sa_1", task_run: { trace: [] } }),
-        "http://localhost:8757/api/chat/subagents/sa_1/events": () =>
-          sseResponse([
-            {
-              type: "kiln-subagent-status",
-              subagent_id: "sa_1",
-              status: "completed",
-              report_available: true,
-            },
-          ]),
-      })
+    it("updates the child from the on-subscribe state marker", async () => {
+      routeFetch(
+        observeRoutes([
+          {
+            type: "conversation-state",
+            session_id: "cv_1",
+            kind: "subagent",
+            state: "completed",
+            auto_flag: false,
+            report_available: true,
+          },
+        ]),
+      )
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_1")
+      store.select("cv_1")
       await flush()
 
-      expect(get(store.children)[0].status).toBe("completed")
+      expect(get(store.children)[0].state).toBe("completed")
       expect(get(store.children)[0].report_available).toBe(true)
     })
 
@@ -557,9 +628,9 @@ describe("subagent_store", () => {
       vi.stubGlobal("fetch", fetchMock)
       await store.syncForConversation("trace-leaf")
 
-      store.select("sa_missing")
+      store.select("cv_missing")
       await flush()
-      expect(get(store.selectedId)).toBe("sa_missing")
+      expect(get(store.selectedId)).toBe("cv_missing")
       // No observation started for an unknown child (only the list fetch ran).
       expect(fetchMock).toHaveBeenCalledTimes(1)
 
@@ -575,10 +646,10 @@ describe("subagent_store", () => {
         .mockResolvedValue({ ok: true, status: 202 } as Response)
       vi.stubGlobal("fetch", fetchMock)
 
-      await store.stop("sa_1")
+      await store.stop("cv_1")
 
       expect(fetchMock).toHaveBeenCalledWith(
-        "http://localhost:8757/api/chat/subagents/sa_1/stop",
+        "http://localhost:8757/api/conversations/cv_1/stop",
         { method: "POST" },
       )
     })
@@ -589,11 +660,11 @@ describe("subagent_store", () => {
         .mockResolvedValue({ ok: true, status: 202 } as Response)
       vi.stubGlobal("fetch", fetchMock)
 
-      const result = await store.sendMessage("sa_1", "keep going")
+      const result = await store.sendMessage("cv_1", "keep going")
 
       expect(result.ok).toBe(true)
       const [url, init] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:8757/api/chat/subagents/sa_1/message")
+      expect(url).toBe("http://localhost:8757/api/conversations/cv_1/messages")
       expect(JSON.parse((init as RequestInit).body as string)).toEqual({
         content: "keep going",
       })
@@ -602,120 +673,123 @@ describe("subagent_store", () => {
     it("surfaces a friendly error (and refreshes the list) on 409", async () => {
       const fetchMock = vi
         .fn()
-        .mockResolvedValueOnce(jsonResponse([child("sa_1")]))
+        .mockResolvedValueOnce(jsonResponse([child("cv_1")]))
         .mockResolvedValueOnce({ ok: false, status: 409 } as Response)
         .mockResolvedValueOnce(
-          jsonResponse([child("sa_1", { status: "completed" })]),
+          jsonResponse([child("cv_1", { state: "completed" })]),
         )
       vi.stubGlobal("fetch", fetchMock)
       await store.syncForConversation("trace-leaf")
 
-      const result = await store.sendMessage("sa_1", "too late")
+      const result = await store.sendMessage("cv_1", "too late")
       await flush()
 
       expect(result.ok).toBe(false)
       expect(result.error).toContain("already finished")
-      const transcript = get(store.transcripts).get("sa_1") ?? []
+      const transcript = get(store.transcripts).get("cv_1") ?? []
       expect(transcript[transcript.length - 1]).toMatchObject({
         role: "error",
         content: expect.stringContaining("already finished"),
       })
-      // The terminal status was re-fetched.
-      expect(get(store.children)[0].status).toBe("completed")
+      // The terminal state was re-fetched.
+      expect(get(store.children)[0].state).toBe("completed")
     })
 
     it("reports a non-409 failure with the server detail", async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        json: () => Promise.resolve({ detail: "Sub-agent not found: sa_1" }),
+        json: () => Promise.resolve({ detail: "Conversation not found: cv_1" }),
       } as unknown as Response)
       vi.stubGlobal("fetch", fetchMock)
 
-      const result = await store.sendMessage("sa_1", "hello?")
+      const result = await store.sendMessage("cv_1", "hello?")
 
       expect(result.ok).toBe(false)
-      expect(result.error).toBe("Sub-agent not found: sa_1")
+      expect(result.error).toBe("Conversation not found: cv_1")
     })
   })
 
   describe("reset", () => {
     it("clears children, transcripts and selection, and re-arms sync", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("sa_1")]))
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([child("cv_1")]))
       vi.stubGlobal("fetch", fetchMock)
       await store.syncForConversation("trace-leaf")
-      store.select("sa_1")
+      store.select("cv_1")
 
       store.reset()
 
       expect(get(store.children)).toEqual([])
       expect(get(store.selectedId)).toBeNull()
       expect(get(store.transcripts).size).toBe(0)
-      // The same trace can be re-synced after a reset (dedupe was cleared).
+      // The same parent can be re-synced after a reset (dedupe was cleared).
       await store.syncForConversation("trace-leaf")
-      expect(get(store.children).map((c) => c.subagent_id)).toEqual(["sa_1"])
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
     })
   })
 })
 
-describe("isTerminalSubagentStatus", () => {
-  it("classifies statuses", () => {
-    expect(isTerminalSubagentStatus("running")).toBe(false)
-    for (const status of ["completed", "failed", "stopped", "timeout"]) {
-      expect(isTerminalSubagentStatus(status)).toBe(true)
+describe("isTerminalState", () => {
+  it("classifies states", () => {
+    expect(isTerminalState("running")).toBe(false)
+    expect(isTerminalState("idle")).toBe(false)
+    expect(isTerminalState("awaiting_approval")).toBe(false)
+    for (const state of ["completed", "failed", "stopped", "timeout"]) {
+      expect(isTerminalState(state)).toBe(true)
     }
   })
 })
 
-describe("visibleSubagentTabs", () => {
-  it("shows running children and hides terminal ones", () => {
+describe("visibleChildTabs", () => {
+  it("shows live children and hides terminal ones", () => {
     const list = [
-      child("sa_run"),
-      child("sa_done", { status: "completed" }),
-      child("sa_fail", { status: "failed" }),
-      child("sa_stop", { status: "stopped" }),
-      child("sa_time", { status: "timeout" }),
+      child("cv_run"),
+      child("cv_done", { state: "completed" }),
+      child("cv_fail", { state: "failed" }),
+      child("cv_stop", { state: "stopped" }),
+      child("cv_time", { state: "timeout" }),
     ]
-    expect(visibleSubagentTabs(list, null).map((c) => c.subagent_id)).toEqual([
-      "sa_run",
+    expect(visibleChildTabs(list, null).map((c) => c.session_id)).toEqual([
+      "cv_run",
     ])
   })
 
   it("keeps the selected child visible even when terminal", () => {
-    const list = [child("sa_run"), child("sa_done", { status: "completed" })]
-    expect(
-      visibleSubagentTabs(list, "sa_done").map((c) => c.subagent_id),
-    ).toEqual(["sa_run", "sa_done"])
+    const list = [child("cv_run"), child("cv_done", { state: "completed" })]
+    expect(visibleChildTabs(list, "cv_done").map((c) => c.session_id)).toEqual([
+      "cv_run",
+      "cv_done",
+    ])
     // Selecting away drops the terminal tab (pure derivation, no tombstoning).
-    expect(visibleSubagentTabs(list, null).map((c) => c.subagent_id)).toEqual([
-      "sa_run",
+    expect(visibleChildTabs(list, null).map((c) => c.session_id)).toEqual([
+      "cv_run",
     ])
   })
 
   it("a revived child's tab reappears automatically", () => {
-    const terminal = [child("sa_1", { status: "failed" })]
-    expect(visibleSubagentTabs(terminal, null)).toEqual([])
-    const revived = [child("sa_1", { status: "running" })]
-    expect(
-      visibleSubagentTabs(revived, null).map((c) => c.subagent_id),
-    ).toEqual(["sa_1"])
+    const terminal = [child("cv_1", { state: "failed" })]
+    expect(visibleChildTabs(terminal, null)).toEqual([])
+    const revived = [child("cv_1", { state: "running" })]
+    expect(visibleChildTabs(revived, null).map((c) => c.session_id)).toEqual([
+      "cv_1",
+    ])
   })
 
   it("returns empty when everything is terminal and nothing is selected", () => {
     const list = [
-      child("sa_a", { status: "completed" }),
-      child("sa_b", { status: "stopped" }),
+      child("cv_a", { state: "completed" }),
+      child("cv_b", { state: "stopped" }),
     ]
-    expect(visibleSubagentTabs(list, null)).toEqual([])
+    expect(visibleChildTabs(list, null)).toEqual([])
   })
 })
 
-describe("shouldCollapseSubagentTabs", () => {
+describe("shouldCollapseChildTabs", () => {
   it("collapses only above the overflow limit", () => {
-    expect(SUBAGENT_TAB_OVERFLOW_LIMIT).toBe(3)
-    const atLimit = [child("sa_1"), child("sa_2"), child("sa_3")]
-    expect(shouldCollapseSubagentTabs(atLimit)).toBe(false)
-    const overLimit = [...atLimit, child("sa_4")]
-    expect(shouldCollapseSubagentTabs(overLimit)).toBe(true)
+    expect(CHILD_TAB_OVERFLOW_LIMIT).toBe(3)
+    const atLimit = [child("cv_1"), child("cv_2"), child("cv_3")]
+    expect(shouldCollapseChildTabs(atLimit)).toBe(false)
+    const overLimit = [...atLimit, child("cv_4")]
+    expect(shouldCollapseChildTabs(overLimit)).toBe(true)
   })
 })

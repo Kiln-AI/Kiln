@@ -79,20 +79,25 @@ AUTO_MODE_NOOP_RESULT = json.dumps(
     ensure_ascii=False,
 )
 
-# Orchestration tool names, and the one whose approval carries the one-time
-# spawn-consent downgrade. Deliberately literal here rather than imported
-# from chat/subagents/orchestration.py: importing that module drags in the
-# old sub-agent registry (and through it the old auto registry), which this
-# package must stay decoupled from until phase 2 retargets orchestration onto
-# the supervisor. A drift test (test_interceptors.py) asserts these match the
-# orchestration module's values for as long as both exist.
+# Orchestration tool names — the CANONICAL home since phase 2 (the executor
+# in chat/orchestration.py imports them from here; the old
+# chat/subagents/orchestration.py copy is deleted). They live in this module
+# rather than next to the executor because the import chain runs
+# orchestration → supervisor → engine → interceptors: defining them at the
+# leaf keeps the chain acyclic. Names must match the backend's
+# client-visible tool schemas (kiln_server tools/subagent_tools.py) — they
+# are how execute_tool_batch recognizes a call that needs conversation
+# identity instead of the kiln_ai tool registry.
 SPAWN_SUBAGENT_TOOL_NAME = "spawn_subagent"
+GET_SUBAGENT_STATUS_TOOL_NAME = "get_subagent_status"
+WAIT_FOR_SUBAGENTS_TOOL_NAME = "wait_for_subagents"
+STOP_SUBAGENT_TOOL_NAME = "stop_subagent"
 ORCHESTRATION_TOOL_NAMES: frozenset[str] = frozenset(
     [
         SPAWN_SUBAGENT_TOOL_NAME,
-        "get_subagent_status",
-        "wait_for_subagents",
-        "stop_subagent",
+        GET_SUBAGENT_STATUS_TOOL_NAME,
+        WAIT_FOR_SUBAGENTS_TOOL_NAME,
+        STOP_SUBAGENT_TOOL_NAME,
     ]
 )
 

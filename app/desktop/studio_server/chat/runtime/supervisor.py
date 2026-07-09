@@ -25,9 +25,20 @@ started (a cancelled-before-first-run task never enters ``_supervise``, so
 its ``finally`` never fires — the old ``SubAgentRegistry.stop()`` backstop,
 now generalized to every kind).
 
-Phase 1: nothing constructs the module-level instance for the running app —
-the supervisor exists purely under test until phase 2 wires sub-agents onto
-it.
+Phase 2: the module-level ``conversation_supervisor`` singleton is live and
+owns every SUB-AGENT conversation (spawned via
+``chat/orchestration.py``, observed via ``runtime/api.py``). Interactive and
+auto conversations still run on the OLD loops until phases 3–4 — a
+conversation is wholly old-world or wholly new-world, so the supervisor and
+the old registries never share one. Two phase-2-only seams bridge the worlds
+(both die as the parents migrate):
+
+- children of old-loop parents store the old ``parent_key`` string
+  (``trace:<leaf>`` / ``auto:<run_id>``) as their ``parent_session_id`` —
+  see ``chat/orchestration.py``'s ``ParentConversationIndex``;
+- ``legacy_report_deliverer`` (set by ``chat/orchestration.py``) injects a
+  settled child's report into the OLD auto registry's inbox for ``auto:*``
+  parents, since those parents have no supervisor record to route to.
 
 Restart recovery (architecture §5): the supervisor cold-starts empty; later
 phases create records from history session ids on first observe/send and
@@ -39,9 +50,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, AsyncGenerator, Literal
+from typing import Any, AsyncGenerator, Callable, Literal
 
-from .bus import ByteEventBus
+from .bus import BroadcastBus, ByteEventBus
 from .engine import ConversationEngine, EngineIO
 from .models import (
     ConversationKind,
@@ -197,6 +208,18 @@ class ConversationSupervisor:
         # (child session ids, drained in completion order).
         self._pending_reports: dict[str, list[str]] = {}
         self._gc_tasks: dict[str, asyncio.Task] = {}
+        # Registry-level conversation-state firehose (the old
+        # SubAgentStatusBus, generalized): every state publish also lands
+        # here, so the UI learns a child finished even when no per-run
+        # observer stream is open. See _publish_state.
+        self.status_bus = BroadcastBus()
+        # PHASE-2-ONLY seam (delete in phase 3): attempt out-of-supervisor
+        # report delivery for parents that live on the OLD loops. Called with
+        # (parent_session_id, framed_report); returns True when the report
+        # reached the parent (an auto:* parent's inbox). Set by
+        # chat/orchestration.py so this package never imports chat/auto/
+        # (the phase-1 decoupling constraint).
+        self.legacy_report_deliverer: Callable[[str, str], bool] | None = None
 
     # ── Reads. ────────────────────────────────────────────────────────────────
 
@@ -373,8 +396,10 @@ class ConversationSupervisor:
         self._touch(conv)
         conv.task = asyncio.create_task(self._supervise(conv, initial_body))
         # Live observers learn the run started; attaching observers get the
-        # same truth from the on-subscribe marker.
-        conv.bus.publish(format_conversation_state(conv.record))
+        # same truth from the on-subscribe marker. (The firehose copy is what
+        # tells the UI a NEW child appeared — the old registry published a
+        # status on spawn, and spawn == create + start_run here.)
+        self._publish_state(conv)
 
     async def _supervise(
         self, conv: _Conversation, initial_body: dict[str, Any] | None
@@ -473,7 +498,7 @@ class ConversationSupervisor:
             conv.inbox.clear()
             conv.settled.set()
             self._touch(conv)
-            conv.bus.publish(format_conversation_state(record))
+            self._publish_state(conv)
             self._deliver_report(conv)
             self._schedule_gc(record.session_id)
             logger.info(
@@ -491,7 +516,7 @@ class ConversationSupervisor:
             # boundary is the safe truth.
             record.state = RunState.IDLE
         self._touch(conv)
-        conv.bus.publish(format_conversation_state(record))
+        self._publish_state(conv)
         if record.kind == "auto" and not record.auto_flag:
             # The auto-mode flag cleared during this burst (stop/disable):
             # old "off" semantics — queued inbox dies with the flag, and the
@@ -522,7 +547,7 @@ class ConversationSupervisor:
             # Tell live observers the run parked (the engine already emitted
             # the tool-calls-pending payload with the batch contents; this is
             # the lifecycle marker).
-            conv.bus.publish(format_conversation_state(record))
+            self._publish_state(conv)
             await batch.decided.wait()
             # The batch stays on the conversation (decided) until the run
             # settles or the next park replaces it, so a second decide can be
@@ -537,11 +562,16 @@ class ConversationSupervisor:
             drain_reports=lambda: self.drain_reports(record.session_id),
             await_decisions=await_decisions,
             stop_requested=lambda: conv.stop_requested,
-            # Phase 1: orchestration tools still execute against the OLD
-            # registries via the old loops; the new engine has no
-            # orchestration identity until phase 2 retargets
-            # execute_orchestration_tool onto this supervisor. A None ctx
-            # resolves those calls to a structured "unavailable" error.
+            # The only conversations the supervisor runs in phase 2 are
+            # SUB-AGENTS, whose orchestration calls never reach dispatch: the
+            # depth-guard interceptor answers them with DEPTH_LIMIT_RESULT
+            # first (sub-agents cannot manage sub-agents — old SubAgentRunner
+            # interception). A None ctx is therefore correct AND a backstop:
+            # if a call somehow slipped past the guard, execute_tool_batch
+            # resolves it to a structured "unavailable" error instead of
+            # executing. TODO(phase-3/4): parent kinds running on this
+            # supervisor need a real OrchestrationContext (their session id as
+            # the parent identity) threaded here.
             orchestration_ctx=None,
         )
 
@@ -673,7 +703,7 @@ class ConversationSupervisor:
             record.idle_reason = "user_stopped"
             conv.inbox.clear()
             self._touch(conv)
-            conv.bus.publish(format_conversation_state(record))
+            self._publish_state(conv)
             self._schedule_gc(session_id)
         await self.stop_children(session_id)
 
@@ -732,6 +762,21 @@ class ConversationSupervisor:
                 timed_out.append(sid)
         return records, timed_out
 
+    # ── State publishing. ─────────────────────────────────────────────────────
+
+    def _publish_state(self, conv: _Conversation) -> None:
+        """Publish the conversation's current state to BOTH channels: the
+        per-conversation bus (live observers of this run) and the registry
+        firehose (the UI's children store, which may have no per-run stream
+        open). One helper so the two can never drift — the old registry's
+        ``_publish_status`` did the same dual publish. ``publish`` (not
+        ``emit``) on the run bus: lifecycle markers must not enter the replay
+        buffer (a replayed stale state would lie to a late subscriber; the
+        on-subscribe marker provides the fresh truth instead)."""
+        payload = format_conversation_state(conv.record)
+        conv.bus.publish(payload)
+        self.status_bus.publish(payload)
+
     # ── Report delivery (completion injection). ───────────────────────────────
 
     def _deliver_report(self, conv: _Conversation) -> None:
@@ -743,6 +788,15 @@ class ConversationSupervisor:
         parent gets it queued for the next-turn / mid-stream drain
         (``drain_reports``). Exactly one channel per report — the routing here
         is what lets the engine call drain_reports unconditionally.
+
+        Phase-2 seam: parents still run on the OLD loops, so
+        ``record.parent_session_id`` is an old parent_key
+        (``auto:<run_id>`` / ``trace:<leaf>``) with no supervisor record. The
+        ``legacy_report_deliverer`` hook (chat/orchestration.py) preserves the
+        old auto-parent immediate injection for ``auto:*`` keys; everything
+        else queues for the old interactive drains, exactly like the old
+        ``SubAgentRegistry._deliver_report``. The in-supervisor parent branch
+        above it becomes the ONLY path once phases 3–4 migrate the parents.
         """
         record = conv.record
         if record.report_delivered or record.parent_session_id is None:
@@ -762,6 +816,17 @@ class ConversationSupervisor:
             # Parent vanished between the check and the send: fall through to
             # the queue so a resumed turn can still pick the report up (old
             # auto-parent-gone fallback).
+        elif parent is None and self.legacy_report_deliverer is not None:
+            # Old-world parent (phase 2 only — see docstring). The hook
+            # returns False for non-auto keys and for a stopped/GC'd auto
+            # parent, which falls through to the queue so a resumed
+            # interactive turn on the same trace can still pick it up (the
+            # old auto-parent-gone fallback, verbatim).
+            if self.legacy_report_deliverer(
+                record.parent_session_id, format_subagent_report(record)
+            ):
+                self._mark_report_delivered(conv)
+                return
         self._pending_reports.setdefault(record.parent_session_id, []).append(
             record.session_id
         )
@@ -900,3 +965,13 @@ class ConversationSupervisor:
             return
         for conv in sorted(idle, key=lambda c: c.record.updated_at)[:overflow]:
             self._evict(conv.record.session_id)
+
+
+# The one process-wide supervisor (phase 2 onward), mirroring the old
+# module-level ``subagent_registry`` / ``auto_chat_registry`` singletons.
+# Everything that owns a conversation targets THIS instance:
+# chat/orchestration.py (spawn/status/wait/stop + report drains + cascades)
+# and runtime/api.py (the /api/conversations browser surface). Tests construct
+# their own instances and patch this name where needed (same pattern the old
+# registry tests used).
+conversation_supervisor = ConversationSupervisor()

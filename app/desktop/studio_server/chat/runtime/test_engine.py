@@ -635,6 +635,65 @@ async def test_interactive_drain_rides_unframed():
     assert msg == {"role": "user", "content": "one more thing"}
 
 
+def test_frame_inbox_message_matrix():
+    # Direct pin of the per-policy framing rules (ported with the old
+    # runners' framing helpers when chat/subagents/ was deleted in phase 2):
+    # - side_note (auto): framed, EXCEPT <subagent_report> frames — the frame
+    #   IS the message, and wrapping it would break the client's report-panel
+    #   detection (old auto _side_note_message).
+    # - steer (sub-agent): framed unconditionally — children never receive
+    #   report frames, so the old _steer_message had no skip; preserved as-is.
+    # - none (interactive): raw.
+    from .engine import SIDE_NOTE_REMINDER, STEER_REMINDER, _frame_inbox_message
+
+    report = '<subagent_report id="x" agent_type="g" status="completed" title="t">\nhi\n</subagent_report>'
+    aside = InboundMessage(content="also do X")
+    report_msg = InboundMessage(content=report)
+
+    auto = auto_policy()
+    assert _frame_inbox_message(aside, auto)["content"] == (
+        f"{SIDE_NOTE_REMINDER}\n\nalso do X"
+    )
+    assert _frame_inbox_message(report_msg, auto)["content"] == report
+
+    child = subagent_policy(_CHILD_SEED)
+    assert _frame_inbox_message(aside, child)["content"] == (
+        f"{STEER_REMINDER}\n\nalso do X"
+    )
+    assert _frame_inbox_message(report_msg, child)["content"] == (
+        f"{STEER_REMINDER}\n\n{report}"
+    )
+
+    assert _frame_inbox_message(aside, interactive_policy()) == {
+        "role": "user",
+        "content": "also do X",
+    }
+
+
+async def test_steer_message_drained_before_finish_continues_run():
+    # Port of the old subagents/test_runner.py drain-before-finish contract: a
+    # steer sent the instant the child would COMPLETE must not be dropped —
+    # the run continues with the framed steer as a fresh turn and the LATER
+    # text becomes the report.
+    inbound = ["also check model B"]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(
+                [text_delta("thought I was done"), trace("tr-1"), finish()]
+            ),
+            FakeUpstreamResponse([text_delta("real report"), trace("tr-2"), finish()]),
+        ]
+    )
+    h = _harness(kind="subagent", inbox=inbound)
+    await _run(h, client, subagent_policy(_CHILD_SEED), None)
+    steer_body = client.bodies[1]
+    contents = [m.get("content", "") for m in steer_body["messages"]]
+    assert any("also check model B" in c for c in contents)
+    assert any("system-reminder" in c for c in contents)
+    assert h.record.state == RunState.COMPLETED
+    assert h.record.final_report == "real report"
+
+
 async def test_report_drain_appends_and_echoes():
     report = '<subagent_report id="x" agent_type="g" status="completed" title="t">\nhi\n</subagent_report>'
     round1 = [

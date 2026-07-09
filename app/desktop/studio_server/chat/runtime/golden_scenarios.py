@@ -295,8 +295,8 @@ def _report_injection_responses() -> list[FakeUpstreamResponse]:
 
 
 async def _old_interactive_report_injection() -> list[dict[str, Any]]:
+    from app.desktop.studio_server.chat import orchestration
     from app.desktop.studio_server.chat.stream_session import ChatStreamSession
-    from app.desktop.studio_server.chat.subagents.registry import subagent_registry
 
     client = FakeUpstreamClient(_report_injection_responses())
     session = ChatStreamSession(
@@ -304,10 +304,13 @@ async def _old_interactive_report_injection() -> list[dict[str, Any]]:
         headers={},
         initial_body=dict(_REPORT_INITIAL_BODY),
     )
-    # Drain-once semantics, like the real registry queue. Patching the drain
-    # (rather than staging real registry state) keeps the fixture free of the
-    # registry's random ids; the queue mechanics have their own unit tests —
-    # this scenario pins how a drained report rides the continuation body.
+    # Drain-once semantics, like the real supervisor queue. Patching the drain
+    # (rather than staging real supervisor state) keeps the fixture free of
+    # random session ids; the queue mechanics have their own unit tests — this
+    # scenario pins how a drained report rides the continuation body. (Phase 2
+    # moved the drain from the deleted sub-agent registry to
+    # chat/orchestration.pending_reports_for_trace; the old interactive loop
+    # calls it as a module attribute precisely so this patch lands.)
     queue = [REPORT_FRAME]
 
     def fake_pending_reports_for_trace(trace_id: str) -> list[str]:
@@ -318,7 +321,7 @@ async def _old_interactive_report_injection() -> list[dict[str, Any]]:
     with (
         patch.object(httpx, "AsyncClient", return_value=client),
         patch.object(
-            subagent_registry,
+            orchestration,
             "pending_reports_for_trace",
             side_effect=fake_pending_reports_for_trace,
         ),
@@ -473,40 +476,13 @@ def _subagent_steer_responses() -> list[FakeUpstreamResponse]:
     ]
 
 
-async def _old_subagent_seed_and_steer() -> list[dict[str, Any]]:
-    from app.desktop.studio_server.chat.auto.models import (
-        InboundMessage as OldInboundMessage,
-    )
-    from app.desktop.studio_server.chat.subagents.models import (
-        SubAgentSeed as OldSubAgentSeed,
-    )
-    from app.desktop.studio_server.chat.subagents.runner import SubAgentRunner
-
-    client = FakeUpstreamClient(_subagent_steer_responses())
-    queue = [OldInboundMessage(content=_STEER_TEXT)]
-
-    def drain_inbound():
-        taken = list(queue)
-        queue.clear()
-        return taken
-
-    runner = SubAgentRunner(
-        subagent_id="sa_golden",
-        seed=OldSubAgentSeed(
-            agent_type=_SUBAGENT_SEED.agent_type,
-            name=_SUBAGENT_SEED.name,
-            prompt=_SUBAGENT_SEED.prompt,
-            parent_key="trace:parent-leaf-1",
-            parent_trace_id=_SUBAGENT_SEED.parent_trace_id,
-        ),
-        upstream_url=UPSTREAM_URL,
-        headers={},
-        emit=lambda payload: None,
-        drain_inbound=drain_inbound,
-    )
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await runner.run()
-    return _bodies(client)
+# NOTE (phase 2): the OLD side of this scenario is gone — SubAgentRunner was
+# deleted when sub-agents moved onto the unified runtime. Its checked-in
+# fixture (captured from the old runner while it existed) REMAINS the durable
+# protocol contract: test_engine_matches_fixture still asserts the engine's
+# byte-equivalence against it, exactly as the fixture-lifecycle plan in the
+# module docstring prescribes. run_old=None makes test_old_loop_matches_fixture
+# skip for this scenario.
 
 
 async def _engine_subagent_seed_and_steer() -> list[dict[str, Any]]:
@@ -570,8 +546,9 @@ async def _engine_auto_report_inbox_unwrapped() -> list[dict[str, Any]]:
 class GoldenScenario:
     name: str
     # Captures the upstream request bodies from the OLD loop. Deleted along
-    # with its loop in phases 2–4; the JSON fixture then remains the contract.
-    run_old: Callable[[], Awaitable[list[dict[str, Any]]]]
+    # with its loop in phases 2–4 (None once the loop is gone — the sub-agent
+    # loop went in phase 2); the JSON fixture then remains the contract.
+    run_old: Callable[[], Awaitable[list[dict[str, Any]]]] | None
     # Captures the same from the new ConversationEngine.
     run_engine: Callable[[], Awaitable[list[dict[str, Any]]]]
 
@@ -604,7 +581,7 @@ SCENARIOS: tuple[GoldenScenario, ...] = (
     ),
     GoldenScenario(
         "subagent_seed_and_steer",
-        _old_subagent_seed_and_steer,
+        None,  # SubAgentRunner deleted in phase 2; the fixture is the contract.
         _engine_subagent_seed_and_steer,
     ),
     GoldenScenario(
@@ -634,7 +611,11 @@ def _write_fixture(name: str, bodies: list[dict[str, Any]]) -> None:
 
 async def _regenerate_all() -> None:
     for scenario in SCENARIOS:
-        bodies = await scenario.run_old()
+        # While an old loop exists it is the reference; once deleted the
+        # engine IS the reference implementation (module docstring), so
+        # deliberate scenario changes re-capture from it.
+        capture = scenario.run_old or scenario.run_engine
+        bodies = await capture()
         _write_fixture(scenario.name, bodies)
         print(f"wrote {fixture_path(scenario.name)} ({len(bodies)} bodies)")
 

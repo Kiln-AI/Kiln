@@ -504,6 +504,85 @@ async def test_report_queued_for_interactive_parent_and_drained_once():
     assert sup.drain_reports(parent.session_id) == []
 
 
+async def test_legacy_deliverer_bridges_report_to_old_world_parent():
+    # PHASE-2 seam: a child whose parent lives on the OLD loops (its
+    # parent_session_id is an old parent_key with no supervisor record) must
+    # still deliver immediately to an auto parent — the hook (wired by
+    # chat/orchestration.py in production) is tried before queuing.
+    sup = _sup()
+    delivered: list[tuple[str, str]] = []
+
+    def deliverer(parent_sid: str, framed: str) -> bool:
+        delivered.append((parent_sid, framed))
+        return True
+
+    sup.legacy_report_deliverer = deliverer
+    client = FakeUpstreamClient(_text_run_responses("child done"))
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        child = sup.spawn_subagent(
+            _seed(),
+            parent_session_id="auto:ar_1",
+            upstream_url=URL,
+            headers={},
+        )
+        await _wait_for(lambda: child.state.is_terminal)
+
+    assert delivered and delivered[0][0] == "auto:ar_1"
+    assert delivered[0][1].startswith("<subagent_report")
+    assert child.report_delivered is True
+    # Delivered through the hook — nothing queued for a drain.
+    assert sup.has_pending_reports("auto:ar_1") is False
+
+
+async def test_legacy_deliverer_false_falls_back_to_queue():
+    # Old auto-parent-gone fallback: the hook says the parent can't take the
+    # report (stopped/GC'd), so it queues for a resumed interactive turn.
+    sup = _sup()
+    sup.legacy_report_deliverer = lambda parent_sid, framed: False
+    client = FakeUpstreamClient(_text_run_responses("child done"))
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        child = sup.spawn_subagent(
+            _seed(),
+            parent_session_id="auto:ar_gone",
+            upstream_url=URL,
+            headers={},
+        )
+        await _wait_for(lambda: child.state.is_terminal)
+
+    assert child.report_delivered is False
+    assert sup.has_pending_reports("auto:ar_gone") is True
+
+
+async def test_state_publishes_mirror_to_status_bus():
+    # Every conversation-state publish must reach the registry firehose too
+    # (the UI's children store may have no per-run stream open) — the old
+    # SubAgentRegistry._publish_status dual-publish contract.
+    sup = _sup()
+    received: list[bytes] = []
+
+    async def _drain():
+        async for payload in sup.status_bus.subscribe():
+            received.append(payload)
+
+    drain_task = asyncio.create_task(_drain())
+    await asyncio.sleep(0)  # let the subscription register
+    client = FakeUpstreamClient(_text_run_responses("done"))
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        child = sup.spawn_subagent(
+            _seed(),
+            parent_session_id="trace:leaf-1",
+            upstream_url=URL,
+            headers={},
+        )
+        await _wait_for(lambda: child.state.is_terminal)
+        await _wait_for(lambda: len(received) >= 2)
+    drain_task.cancel()
+
+    events = _state_events(received)
+    assert [e["state"] for e in events] == ["running", "completed"]
+    assert all(e["session_id"] == child.session_id for e in events)
+
+
 async def test_stop_parent_cascades_to_children_and_drops_reports(hang_engine):
     sup = _sup()
     parent = sup.create_conversation("interactive", upstream_url=URL, headers={})

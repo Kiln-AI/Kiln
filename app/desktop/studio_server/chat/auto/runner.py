@@ -134,7 +134,8 @@ class AutoChatRunner:
         self._on_trace = on_trace
         self._drain_inbound = drain_inbound
         # Conversation identity for sub-agent orchestration tool calls (built
-        # lazily — the subagents package imports this package's models).
+        # lazily — the orchestration module's runtime shares this package's
+        # round primitives).
         self._orchestration_ctx = None
         self.status: AutoRunStatus = AutoRunStatus.RUNNING
         # Revision R1: the burst-end reason carried on the auto-mode-idle event
@@ -166,7 +167,7 @@ class AutoChatRunner:
 
     def _ctx(self):
         if self._orchestration_ctx is None:
-            from app.desktop.studio_server.chat.subagents.orchestration import (
+            from app.desktop.studio_server.chat.orchestration import (
                 OrchestrationContext,
             )
 
@@ -204,12 +205,15 @@ class AutoChatRunner:
                         # Chain the rotating leaf to this conversation's stable
                         # parent key so trace-id lookups (UI children list,
                         # report injection) keep resolving. No-op until a spawn
-                        # registers the first alias.
-                        from app.desktop.studio_server.chat.subagents.registry import (
-                            subagent_registry,
+                        # registers the first alias. (Phase-2 bridge: the
+                        # alias chain lives in chat/orchestration.py while
+                        # this OLD runner hosts parents; phase 3 replaces it
+                        # with the parent's own session id.)
+                        from app.desktop.studio_server.chat.orchestration import (
+                            parent_index,
                         )
 
-                        subagent_registry.note_parent_trace(
+                        parent_index.note_parent_trace(
                             ctx.parent_trace_id, round_state.trace_id
                         )
                     ctx.parent_trace_id = round_state.trace_id

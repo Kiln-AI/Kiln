@@ -34,6 +34,11 @@ def test_every_scenario_has_a_checked_in_fixture():
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=_IDS)
 async def test_old_loop_matches_fixture(scenario: GoldenScenario):
+    if scenario.run_old is None:
+        # The old loop for this scenario was deleted (sub-agents in phase 2);
+        # its fixture is now append-only history and the engine assertion
+        # below is the durable contract.
+        pytest.skip("old loop deleted; fixture is the durable contract")
     bodies = await scenario.run_old()
     assert bodies == load_fixture(scenario.name), (
         f"the OLD loop's upstream protocol for {scenario.name!r} no longer "

@@ -549,14 +549,18 @@ class AutoChatRegistry:
     @staticmethod
     async def _stop_subagent_children(run_id: str) -> None:
         """Cascade-stop sub-agents spawned by this auto run: their reports have
-        nothing left to consume them once the parent's flag is off. Lazy import
-        (the subagents package depends on this module)."""
-        from app.desktop.studio_server.chat.subagents.registry import (
-            subagent_registry,
+        nothing left to consume them once the parent's flag is off. Phase 2:
+        children live on the conversation supervisor, keyed by the old
+        ``auto:<run_id>`` parent key (the phase-2 identity bridge — see
+        chat/orchestration.py). Lazy import so this doomed module (deleted in
+        phase 3) never enters the new packages' import graph."""
+        from app.desktop.studio_server.chat.orchestration import parent_index
+        from app.desktop.studio_server.chat.runtime.supervisor import (
+            conversation_supervisor,
         )
 
-        await subagent_registry.stop_children(
-            subagent_registry.parent_key_for_auto_run(run_id)
+        await conversation_supervisor.stop_children(
+            parent_index.parent_key_for_auto_run(run_id)
         )
 
     # -- terminal GC ---------------------------------------------------------

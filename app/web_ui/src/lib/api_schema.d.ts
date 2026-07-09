@@ -3416,15 +3416,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/subagents": {
+    "/api/conversations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List sub-agent runs */
-        get: operations["list_subagents_api_chat_subagents_get"];
+        /** List conversations */
+        get: operations["list_conversations_api_conversations_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3433,46 +3433,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/subagents/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream sub-agent status events
-         * @description Registry-level firehose of kiln-subagent-status events (snapshot then
-         *     live). Lets the UI learn a child finished even when the parent
-         *     conversation has no stream in flight.
-         */
-        get: operations["stream_subagent_status_events_api_chat_subagents_events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/subagents/{subagent_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a sub-agent run */
-        get: operations["get_subagent_api_chat_subagents__subagent_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/subagents/{subagent_id}/events": {
+    "/api/conversations/events": {
         parameters: {
             query?: never;
             header?: never;
@@ -3480,11 +3441,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Stream a sub-agent's chat events
-         * @description Pure-observer SSE of the child's chat stream (buffer replay + live);
-         *     404 if unknown or GC'd.
+         * Stream conversation state events
+         * @description Registry-level firehose of ``conversation-state`` events (snapshot
+         *     then live).
          */
-        get: operations["stream_subagent_events_api_chat_subagents__subagent_id__events_get"];
+        get: operations["stream_conversation_state_events_api_conversations_events_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3493,7 +3454,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/subagents/{subagent_id}/stop": {
+    "/api/conversations/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a conversation */
+        get: operations["get_conversation_api_conversations__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a conversation's chat events
+         * @description Pure-observer SSE (buffer replay + state marker + live); 404 if
+         *     unknown or GC'd. Any number of concurrent observers; disconnect never
+         *     affects the run.
+         */
+        get: operations["stream_conversation_events_api_conversations__session_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/stop": {
         parameters: {
             query?: never;
             header?: never;
@@ -3503,18 +3503,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stop a sub-agent run
-         * @description Hard-stop the run. Idempotent — stopping an unknown or terminal run
-         *     is a no-op (its report, if any, is still delivered to the parent).
+         * Stop a conversation's run
+         * @description Stop the run. Idempotent — stopping an unknown or terminal
+         *     conversation is a no-op (a child's report, if any, is still delivered
+         *     to the parent). Same 202-always contract as the old stop endpoint.
          */
-        post: operations["stop_subagent_api_chat_subagents__subagent_id__stop_post"];
+        post: operations["stop_conversation_api_conversations__session_id__stop_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/chat/subagents/{subagent_id}/message": {
+    "/api/conversations/{session_id}/messages": {
         parameters: {
             query?: never;
             header?: never;
@@ -3524,11 +3525,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Send a user message into a running sub-agent
-         * @description Inject a steer message from the overseeing user; drained by the child
-         *     at its next round boundary. 404 for unknown runs, 409 for terminal ones.
+         * Send a user message into a conversation
+         * @description Queue a user message (202). For a RUNNING child this is the steer
+         *     path — drained at the next round boundary, echoed to observers at
+         *     enqueue time. 404 for unknown conversations, 409 for terminal ones
+         *     (same statuses the old message endpoint returned).
          */
-        post: operations["send_subagent_message_api_chat_subagents__subagent_id__message_post"];
+        post: operations["send_conversation_message_api_conversations__session_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4860,6 +4863,67 @@ export interface components {
             context_percent?: number | null;
             /** Compacted */
             compacted?: boolean | null;
+        };
+        /**
+         * ConversationItem
+         * @description UI-facing view of one conversation record.
+         *
+         *     Field notes:
+         *
+         *     - ``state`` uses the unified ``RunState`` vocabulary; every value the old
+         *       ``SubAgentStatus`` could produce keeps its exact string, so terminal
+         *       checks port mechanically.
+         *     - ``current_trace_id`` is the child's latest persisted upstream leaf. It
+         *       exists ONLY so the browser can hydrate history via
+         *       ``/api/chat/sessions/{leaf}`` (which is keyed by leaf trace ids until
+         *       the backend adopts session ids); phase 5 removes it from this surface.
+         *       It rides the REST responses but deliberately NOT the
+         *       ``conversation-state`` event — observers re-fetch the item when they
+         *       need a fresh leaf (see the conversation store's observe()).
+         *     - ``final_report`` is included only when requested with
+         *       ``include_report`` (same contract as the old API).
+         */
+        ConversationItem: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "interactive" | "auto" | "subagent";
+            state: components["schemas"]["RunState"];
+            /** Name */
+            name?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Parent Session Id */
+            parent_session_id?: string | null;
+            /** Current Trace Id */
+            current_trace_id?: string | null;
+            /**
+             * Auto Flag
+             * @default false
+             */
+            auto_flag: boolean;
+            /** Idle Reason */
+            idle_reason?: string | null;
+            /**
+             * Rounds Used
+             * @default 0
+             */
+            rounds_used: number;
+            /**
+             * Report Available
+             * @default false
+             */
+            report_available: boolean;
+            /**
+             * Report Delivered
+             * @default false
+             */
+            report_delivered: boolean;
+            /** Final Report */
+            final_report?: string | null;
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -9863,6 +9927,18 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunState
+         * @description Lifecycle state of a conversation's run (functional spec §1).
+         *
+         *     ``COMPLETED``/``FAILED``/``STOPPED``/``TIMEOUT`` are reachable only by
+         *     one-shot (sub-agent) policies — they preserve ``SubAgentStatus``'s
+         *     one-shot semantics 1:1. Interactive/auto conversations cycle
+         *     IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto mode off" is the
+         *     ``auto_flag`` axis, not a state.
+         * @enum {string}
+         */
+        RunState: "idle" | "running" | "awaiting_approval" | "completed" | "failed" | "stopped" | "timeout";
+        /**
          * RunSummary
          * @description A summary of a task run for list views.
          */
@@ -10166,6 +10242,11 @@ export interface components {
              */
             breakpoint_percentile_threshold: number;
         };
+        /** SendConversationMessageRequest */
+        SendConversationMessageRequest: {
+            /** Content */
+            content: string;
+        };
         /**
          * SendMessageRequest
          * @description A user message sent into an auto-mode conversation via ``/message``
@@ -10176,11 +10257,6 @@ export interface components {
             content: string;
             /** Trace Id */
             trace_id?: string | null;
-        };
-        /** SendSubAgentMessageRequest */
-        SendSubAgentMessageRequest: {
-            /** Content */
-            content: string;
         };
         /**
          * SkillContentResponse
@@ -10529,48 +10605,6 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
-        /**
-         * SubAgentItem
-         * @description UI-facing view of a sub-agent run.
-         */
-        SubAgentItem: {
-            /** Subagent Id */
-            subagent_id: string;
-            /** Name */
-            name: string;
-            /** Agent Type */
-            agent_type: string;
-            status: components["schemas"]["SubAgentStatus"];
-            /** Current Trace Id */
-            current_trace_id?: string | null;
-            /** Parent Trace Id At Spawn */
-            parent_trace_id_at_spawn?: string | null;
-            /**
-             * Rounds Used
-             * @default 0
-             */
-            rounds_used: number;
-            /**
-             * Report Available
-             * @default false
-             */
-            report_available: boolean;
-            /**
-             * Report Delivered
-             * @default false
-             */
-            report_delivered: boolean;
-            /** Final Report */
-            final_report?: string | null;
-        };
-        /**
-         * SubAgentStatus
-         * @description One-shot lifecycle — unlike auto mode there is no IDLE re-arm: a
-         *     sub-agent runs to a terminal state exactly once, and COMPLETED is the
-         *     success case.
-         * @enum {string}
-         */
-        SubAgentStatus: "running" | "completed" | "failed" | "stopped" | "timeout";
         /**
          * SubmitAnswersRequest
          * @description Request to submit answers to a question set.
@@ -19517,11 +19551,11 @@ export interface operations {
             };
         };
     };
-    list_subagents_api_chat_subagents_get: {
+    list_conversations_api_conversations_get: {
         parameters: {
             query?: {
-                /** @description Filter to children of the conversation owning this (possibly stale) leaf trace id. Omit for all runs. */
-                parent_trace_id?: string | null;
+                /** @description Filter to children of this conversation. Accepts the parent's session id or (while parents run on the legacy loops) any leaf trace id the parent conversation has had. Omit for all live conversations. */
+                parent?: string | null;
             };
             header?: never;
             path?: never;
@@ -19535,7 +19569,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubAgentItem"][];
+                    "application/json": components["schemas"]["ConversationItem"][];
                 };
             };
             /** @description Validation Error */
@@ -19549,7 +19583,7 @@ export interface operations {
             };
         };
     };
-    stream_subagent_status_events_api_chat_subagents_events_get: {
+    stream_conversation_state_events_api_conversations_events_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19569,7 +19603,7 @@ export interface operations {
             };
         };
     };
-    get_subagent_api_chat_subagents__subagent_id__get: {
+    get_conversation_api_conversations__session_id__get: {
         parameters: {
             query?: {
                 /** @description Include the final report for terminal runs. */
@@ -19577,8 +19611,8 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The sub-agent id. */
-                subagent_id: string;
+                /** @description The conversation session id. */
+                session_id: string;
             };
             cookie?: never;
         };
@@ -19590,7 +19624,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubAgentItem"];
+                    "application/json": components["schemas"]["ConversationItem"];
                 };
             };
             /** @description Validation Error */
@@ -19604,13 +19638,13 @@ export interface operations {
             };
         };
     };
-    stream_subagent_events_api_chat_subagents__subagent_id__events_get: {
+    stream_conversation_events_api_conversations__session_id__events_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The sub-agent id to observe. */
-                subagent_id: string;
+                /** @description The conversation session id to observe. */
+                session_id: string;
             };
             cookie?: never;
         };
@@ -19636,13 +19670,13 @@ export interface operations {
             };
         };
     };
-    stop_subagent_api_chat_subagents__subagent_id__stop_post: {
+    stop_conversation_api_conversations__session_id__stop_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The sub-agent id to stop. */
-                subagent_id: string;
+                /** @description The conversation session id to stop. */
+                session_id: string;
             };
             cookie?: never;
         };
@@ -19668,19 +19702,19 @@ export interface operations {
             };
         };
     };
-    send_subagent_message_api_chat_subagents__subagent_id__message_post: {
+    send_conversation_message_api_conversations__session_id__messages_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The sub-agent id to message. */
-                subagent_id: string;
+                /** @description The conversation session id to message. */
+                session_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SendSubAgentMessageRequest"];
+                "application/json": components["schemas"]["SendConversationMessageRequest"];
             };
         };
         responses: {

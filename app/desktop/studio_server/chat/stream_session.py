@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
-    from app.desktop.studio_server.chat.subagents.orchestration import (
+    from app.desktop.studio_server.chat.orchestration import (
         OrchestrationContext,
     )
 
@@ -465,9 +465,10 @@ async def execute_tool_batch(
     thread their ctx through; a ``None`` ctx resolves those calls to an error
     result instead of executing.
     """
-    # Lazy import: the subagents package depends on this module's round
-    # mechanics (same pattern as _clear_auto_mode_flag).
-    from app.desktop.studio_server.chat.subagents.orchestration import (
+    # Lazy import: the orchestration module targets the runtime supervisor,
+    # whose engine imports this module's round mechanics (same pattern as
+    # _clear_auto_mode_flag).
+    from app.desktop.studio_server.chat.orchestration import (
         ORCHESTRATION_TOOL_NAMES,
         execute_orchestration_tool,
     )
@@ -515,9 +516,10 @@ class ChatStreamSession:
 
     def _get_orchestration_ctx(self) -> "OrchestrationContext":
         """The conversation identity for sub-agent orchestration calls. Built
-        lazily (the subagents package imports this module's round mechanics)."""
+        lazily (the orchestration module's runtime imports this module's round
+        mechanics)."""
         if self._orchestration_ctx is None:
-            from app.desktop.studio_server.chat.subagents.orchestration import (
+            from app.desktop.studio_server.chat.orchestration import (
                 OrchestrationContext,
             )
 
@@ -563,12 +565,15 @@ class ChatStreamSession:
                     ):
                         # Chain the rotating leaf to the conversation's stable
                         # parent key so consent memory / pending sub-agent
-                        # reports survive across turns.
-                        from app.desktop.studio_server.chat.subagents.registry import (
-                            subagent_registry,
+                        # reports survive across turns. (Phase-2 bridge: the
+                        # alias chain lives in chat/orchestration.py while
+                        # interactive parents remain on this OLD loop; it dies
+                        # in phase 4 when parents get stable session ids.)
+                        from app.desktop.studio_server.chat.orchestration import (
+                            parent_index,
                         )
 
-                        subagent_registry.note_parent_trace(
+                        parent_index.note_parent_trace(
                             ctx.parent_trace_id, round_state.trace_id
                         )
                     ctx.parent_trace_id = round_state.trace_id
@@ -714,10 +719,12 @@ class ChatStreamSession:
     def _effective_requires_approval(self, event: ToolInputAvailableEvent) -> bool:
         """Per-tool approval verdict, with the spawn-consent downgrade: once a
         conversation has approved its first spawn_subagent, later spawns run
-        without asking again (the sub-agent registry is the consent authority)."""
+        without asking again (the orchestration module's parent index is the
+        consent authority while this OLD loop hosts parents; phase 4 moves
+        consent onto the conversation record)."""
         if not tool_requires_user_approval(event):
             return False
-        from app.desktop.studio_server.chat.subagents.orchestration import (
+        from app.desktop.studio_server.chat.orchestration import (
             SPAWN_SUBAGENT_TOOL_NAME,
             is_spawn_consented,
         )
@@ -769,12 +776,12 @@ class ChatStreamSession:
         ctx = self._get_orchestration_ctx()
         if not ctx.parent_trace_id:
             return body, []
-        from app.desktop.studio_server.chat.subagents.registry import (
-            subagent_registry,
-        )
-        from app.desktop.studio_server.chat.subagents.sse import format_user_message
+        from app.desktop.studio_server.chat import orchestration
+        from app.desktop.studio_server.chat.runtime.sse import format_user_message
 
-        reports = subagent_registry.pending_reports_for_trace(ctx.parent_trace_id)
+        # Module-attribute call (not a from-import of the function) so tests
+        # and the golden harness can patch the drain at its one home.
+        reports = orchestration.pending_reports_for_trace(ctx.parent_trace_id)
         if not reports:
             return body, []
         messages = list(body.get("messages", []))

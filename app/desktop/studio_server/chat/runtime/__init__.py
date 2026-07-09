@@ -1,9 +1,9 @@
-"""Unified conversation runtime (assistant_unified_runtime, phase 1).
+"""Unified conversation runtime (assistant_unified_runtime, phases 1-2).
 
-This package is the future single home for every desktop-owned chat
-conversation — interactive, auto mode, and sub-agents — replacing the three
-parallel loops (``ChatStreamSession.stream()``, ``AutoChatRunner``,
-``SubAgentRunner``) and their two registries with:
+This package is the single home for every desktop-owned chat conversation —
+interactive, auto mode, and sub-agents — replacing the three parallel loops
+(``ChatStreamSession.stream()``, ``AutoChatRunner``, ``SubAgentRunner``) and
+their two registries with:
 
 - ONE data model (``models.ConversationRecord`` + ``models.RunState``),
 - ONE event bus + replay buffer (``bus.ByteEventBus``),
@@ -12,14 +12,24 @@ parallel loops (``ChatStreamSession.stream()``, ``AutoChatRunner``,
   ``interceptors`` chain — never subclasses,
 - ONE lifecycle owner (``supervisor.ConversationSupervisor``) with a single
   settle path (including the cancel-before-first-run backstop),
-- ONE control-event vocabulary (``sse.format_conversation_state``).
+- ONE control-event vocabulary (``sse.format_conversation_state``),
+- ONE browser surface (``api.connect_conversations_api`` under
+  ``/api/conversations``).
 
-IMPORTANT (phase 1): NOTHING here is wired into the running app. The old
-code paths (``chat/routes.py``, ``chat/auto/``, ``chat/subagents/``) remain
-untouched and authoritative. This package must therefore never import from
-``chat/auto/`` or ``chat/subagents/`` (both are deleted as later phases port
-their kinds); the few helpers it needs from those doomed packages exist here
-as canonical copies, each annotated with the old location it preserves.
+Wiring status by phase:
+
+- Phase 1 built everything below fully tested but UNWIRED.
+- Phase 2 (current): SUB-AGENTS run here for real — spawned by
+  ``chat/orchestration.py`` (the relocated tool executor) onto the
+  ``supervisor.conversation_supervisor`` singleton, observed via
+  ``/api/conversations``. ``chat/subagents/`` was deleted. Interactive and
+  auto conversations still run on the OLD loops (``chat/routes.py``,
+  ``chat/auto/``) until phases 3-4; the bridge seams for their parent
+  identity live in ``chat/orchestration.py``, not here.
+
+This package must never import from ``chat/auto/`` (deleted in phase 3); the
+few helpers it needed from the doomed packages exist here as canonical
+copies, each annotated with the old location it preserves.
 
 What IS shared with the old world — deliberately, so the upstream protocol
 cannot drift — are the round primitives in ``chat/stream_session.py``
@@ -29,12 +39,15 @@ formatters). Those survive every phase.
 
 The behavior contract that later phases must keep passing lives in
 ``golden_scenarios.py`` + ``golden/*.json`` + ``test_golden_protocol.py``:
-the exact upstream request-body sequences the OLD loops produce for scripted
-scenarios, which the new engine must reproduce byte-for-byte (compared as
-parsed JSON, so key order is irrelevant).
+the exact upstream request-body sequences the OLD loops produce(d) for
+scripted scenarios, which the new engine must reproduce byte-for-byte
+(compared as parsed JSON, so key order is irrelevant). Fixtures whose old
+loop is deleted remain the durable contract.
 """
 
-from .bus import ByteEventBus
+from .api import ConversationItem, connect_conversations_api
+from .bus import BroadcastBus, ByteEventBus
+
 from .engine import ConversationEngine, EngineIO
 from .models import (
     ConversationPolicy,
@@ -47,12 +60,18 @@ from .models import (
     interactive_policy,
     subagent_policy,
 )
-from .supervisor import ConversationCapError, ConversationSupervisor
+from .supervisor import (
+    ConversationCapError,
+    ConversationSupervisor,
+    conversation_supervisor,
+)
 
 __all__ = [
+    "BroadcastBus",
     "ByteEventBus",
     "ConversationCapError",
     "ConversationEngine",
+    "ConversationItem",
     "ConversationPolicy",
     "ConversationRecord",
     "ConversationSupervisor",
@@ -62,6 +81,8 @@ __all__ = [
     "RunState",
     "SubAgentSeed",
     "auto_policy",
+    "connect_conversations_api",
+    "conversation_supervisor",
     "interactive_policy",
     "subagent_policy",
 ]

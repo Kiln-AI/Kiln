@@ -1,15 +1,21 @@
 /**
- * Owns the sub-agent (child run) state for the active conversation.
+ * The unified conversation store (architecture §7).
  *
- * The desktop server runs sub-agents in the background and exposes them as
- * pure-observer streams (mirroring ``auto_run_store.ts``): observing, stopping
- * observation, or reconnecting never mutates a run. This store tracks the
- * current conversation's children (``syncForConversation`` + a registry-level
- * status firehose, connection handling modeled on ``jobs_store.ts``), and — per
- * observed child — maintains a read-only transcript by hydrating the child's
- * persisted session then feeding its live events SSE into the EXISTING
- * ``StreamEventProcessor``, so a child transcript renders exactly like a main
- * transcript.
+ * One store for desktop-owned conversations, keyed by session id, speaking the
+ * `/api/conversations` surface and the unified `conversation-state` event
+ * vocabulary. Phase 2 scope: it powers the CHILDREN (sub-agent) UI —
+ * `subagent_store.ts` was folded in here, behavior preserved 1:1 — and it is
+ * deliberately shaped to absorb the auto/main conversation state in phases
+ * 3–4 (`ConversationItem` already carries kind/auto_flag/idle_reason).
+ *
+ * The desktop server runs conversations in the background and exposes them as
+ * pure-observer streams: observing, stopping observation, or reconnecting
+ * never mutates a run. This store tracks the current conversation's children
+ * (`syncForConversation` + a registry-level `conversation-state` firehose,
+ * connection handling modeled on `jobs_store.ts`), and — per observed child —
+ * maintains a read-only transcript by hydrating the child's persisted session
+ * then feeding its live events SSE into the EXISTING `StreamEventProcessor`,
+ * so a child transcript renders exactly like a main transcript.
  */
 
 import { get, writable, type Readable } from "svelte/store"
@@ -28,68 +34,77 @@ import {
   type ChatSessionSnapshot,
 } from "./session_messages"
 
-export type SubAgentItem = components["schemas"]["SubAgentItem"]
-export type SubAgentStatus = components["schemas"]["SubAgentStatus"]
+export type ConversationItem = components["schemas"]["ConversationItem"]
+export type RunState = components["schemas"]["RunState"]
 
 /**
- * Per-child runtime affordances mirrored from the child's live stream so its
+ * Per-conversation runtime affordances mirrored from the live stream so its
  * transcript renders with the SAME fidelity as the main one (thinking dots via
  * the activity indicator, "retrying N/M…" via the retry state). Runtime-only —
  * cleared when the observation ends.
  */
-export interface SubagentRuntimeState {
+export interface ConversationRuntimeState {
   showActivityIndicator: boolean
   retry: { attempt: number; max: number } | null
 }
 
-const SUBAGENTS_BASE_URL = `${base_url}/api/chat/subagents`
+const CONVERSATIONS_BASE_URL = `${base_url}/api/conversations`
 const RECONNECT_DELAY_MS = 2000
 
-// Lifecycle of the status-firehose EventSource, surfaced for tests / debugging.
+// Lifecycle of the state-firehose EventSource, surfaced for tests / debugging.
 // A pure observer: this only reports the connection, it never mutates a run.
-export type SubagentConnection = "idle" | "connecting" | "open" | "errored"
+export type ConversationConnection = "idle" | "connecting" | "open" | "errored"
 
 /**
- * ``kiln-subagent-status`` payload as it arrives on the firehose and on the
- * per-run observer stream (as the on-subscribe liveness marker).
+ * `conversation-state` payload as it arrives on the firehose and on the
+ * per-conversation observer stream (as the on-subscribe liveness marker).
+ * Replaces the old `kiln-subagent-status` shape: `session_id` is the handle,
+ * `state` uses the unified RunState strings, and trace ids are deliberately
+ * absent (the browser never sees trace ids on the new event vocabulary — the
+ * REST item carries the hydration leaf until phase 5).
  */
-interface SubagentStatusEvent {
+interface ConversationStateEvent {
   type?: string
-  subagent_id?: string
+  session_id?: string
+  kind?: string
+  state?: string
+  auto_flag?: boolean
+  idle_reason?: string
   name?: string
-  agent_type?: string
-  status?: string
-  trace_id?: string | null
   report_available?: boolean
 }
 
-const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+// Terminal = the run can never advance again (one-shot kinds only). Same
+// strings the old SubAgentStatus used, plus nothing: idle/awaiting_approval
+// are live states (unreachable for phase-2 children, but the type covers
+// every kind for phases 3-4).
+const TERMINAL_STATES: ReadonlySet<string> = new Set([
   "completed",
   "failed",
   "stopped",
   "timeout",
 ])
 
-export function isTerminalSubagentStatus(status: string): boolean {
-  return TERMINAL_STATUSES.has(status)
+export function isTerminalState(state: string): boolean {
+  return TERMINAL_STATES.has(state)
 }
 
 /** Max individual child tabs before the strip collapses into a count chip. */
-export const SUBAGENT_TAB_OVERFLOW_LIMIT = 3
+export const CHILD_TAB_OVERFLOW_LIMIT = 3
 
 /**
- * Children whose tab is visible in the strip: running ones, plus the currently
- * selected child even when terminal (so the view isn't yanked while the user
- * is reading it — selecting away drops the terminal tab). Purely derived from
- * status + selection (no tombstoning), so a child whose status ever returns to
- * running reappears automatically.
+ * Children whose tab is visible in the strip: live (non-terminal) ones, plus
+ * the currently selected child even when terminal (so the view isn't yanked
+ * while the user is reading it — selecting away drops the terminal tab).
+ * Purely derived from state + selection (no tombstoning), so a child whose
+ * state ever returns to live reappears automatically.
  */
-export function visibleSubagentTabs(
-  children: SubAgentItem[],
+export function visibleChildTabs(
+  children: ConversationItem[],
   selectedId: string | null,
-): SubAgentItem[] {
+): ConversationItem[] {
   return children.filter(
-    (c) => c.status === "running" || c.subagent_id === selectedId,
+    (c) => !isTerminalState(c.state) || c.session_id === selectedId,
   )
 }
 
@@ -97,44 +112,46 @@ export function visibleSubagentTabs(
  * Whether the strip should collapse individual child tabs into a single
  * "N agents running" chip (the selected child keeps its own tab beside it).
  */
-export function shouldCollapseSubagentTabs(
-  visibleChildren: SubAgentItem[],
+export function shouldCollapseChildTabs(
+  visibleChildren: ConversationItem[],
 ): boolean {
-  return visibleChildren.length > SUBAGENT_TAB_OVERFLOW_LIMIT
+  return visibleChildren.length > CHILD_TAB_OVERFLOW_LIMIT
 }
 
-export interface SubagentStore {
+export interface ConversationStore {
   /** Children of the current conversation (server order). */
-  children: Readable<SubAgentItem[]>
-  /** Selected tab: a child's subagent_id, or null for the main agent. */
+  children: Readable<ConversationItem[]>
+  /** Selected tab: a child's session_id, or null for the main agent. */
   selectedId: Readable<string | null>
-  /** Per-child read-only transcripts, keyed by subagent_id. */
+  /** Per-child read-only transcripts, keyed by session_id. */
   transcripts: Readable<Map<string, ChatMessage[]>>
   /** Per-child live rendering affordances (activity indicator, retry). */
-  runtime: Readable<Map<string, SubagentRuntimeState>>
-  connection: Readable<SubagentConnection>
-  /** Open the registry-level status firehose (assistant page active). */
+  runtime: Readable<Map<string, ConversationRuntimeState>>
+  connection: Readable<ConversationConnection>
+  /** Open the registry-level state firehose (assistant page active). */
   connect(): void
   /** Close the firehose (navigation away). Observers are left alone. */
   disconnect(): void
   /**
-   * Replace ``children`` with the sub-agents of the conversation owning the
-   * given (possibly stale) leaf trace id — the server resolves the whole trace
-   * chain. ``null`` (no conversation yet) clears the list. Deduped by trace id,
-   * so it is safe to call on every reactive trace change.
+   * Replace `children` with the sub-agents of the conversation owning the
+   * given parent handle — while parents run on the legacy loops this is the
+   * main transcript's (possibly stale) leaf trace id, which the server
+   * resolves through the whole trace chain. `null` (no conversation yet)
+   * clears the list. Deduped by value, so it is safe to call on every
+   * reactive trace change.
    */
-  syncForConversation(parentTraceId: string | null): Promise<void>
+  syncForConversation(parentId: string | null): Promise<void>
   /** Select a tab; selecting a child starts observing it. */
-  select(subagentId: string | null): void
+  select(sessionId: string | null): void
   /**
    * Observe one child: hydrate its persisted history, then attach the live
-   * events tail (buffer replay + status marker + live). Idempotent while an
+   * events tail (buffer replay + state marker + live). Idempotent while an
    * observation is active; a re-observe after the stream ended re-hydrates.
    */
-  observe(subagentId: string): Promise<void>
-  stop(subagentId: string): Promise<void>
+  observe(sessionId: string): Promise<void>
+  stop(sessionId: string): Promise<void>
   sendMessage(
-    subagentId: string,
+    sessionId: string,
     content: string,
   ): Promise<{ ok: boolean; error?: string }>
   /** Clear everything for a new chat (the firehose connection is kept). */
@@ -150,17 +167,17 @@ interface ChildObservation {
   pendingFreshTurn: boolean
 }
 
-export function createSubagentStore(): SubagentStore {
-  const children = writable<SubAgentItem[]>([])
+export function createConversationStore(): ConversationStore {
+  const children = writable<ConversationItem[]>([])
   const selectedId = writable<string | null>(null)
   const transcripts = writable<Map<string, ChatMessage[]>>(new Map())
-  const runtime = writable<Map<string, SubagentRuntimeState>>(new Map())
-  const connection = writable<SubagentConnection>("idle")
+  const runtime = writable<Map<string, ConversationRuntimeState>>(new Map())
+  const connection = writable<ConversationConnection>("idle")
 
-  // The trace id the current children list was fetched for (undefined = never
-  // synced). Dedupes reactive syncForConversation calls and keys the firehose
-  // "unknown child → re-fetch" rule.
-  let syncedTraceId: string | null | undefined = undefined
+  // The parent handle the current children list was fetched for (undefined =
+  // never synced). Dedupes reactive syncForConversation calls and keys the
+  // firehose "unknown child → re-fetch" rule.
+  let syncedParentId: string | null | undefined = undefined
   let syncGeneration = 0
 
   let eventSource: EventSource | null = null
@@ -206,7 +223,7 @@ export function createSubagentStore(): SubagentStore {
 
   function updateRuntime(
     id: string,
-    patch: Partial<SubagentRuntimeState>,
+    patch: Partial<ConversationRuntimeState>,
   ): void {
     runtime.update((map) => {
       const next = new Map(map)
@@ -230,16 +247,17 @@ export function createSubagentStore(): SubagentStore {
 
   // --- Children list ----------------------------------------------------------
 
-  function updateChildFromStatusEvent(event: SubagentStatusEvent): void {
+  function updateChildFromStateEvent(event: ConversationStateEvent): void {
+    // conversation-state events carry no trace id (unlike the old status
+    // events): the item's current_trace_id is refreshed by observe()'s
+    // re-fetch instead, so hydration never depends on event payloads.
     children.update((list) =>
       list.map((child) =>
-        child.subagent_id === event.subagent_id
+        child.session_id === event.session_id
           ? {
               ...child,
               name: event.name ?? child.name,
-              agent_type: event.agent_type ?? child.agent_type,
-              status: (event.status ?? child.status) as SubAgentStatus,
-              current_trace_id: event.trace_id ?? child.current_trace_id,
+              state: (event.state ?? child.state) as RunState,
               report_available:
                 event.report_available ?? child.report_available,
             }
@@ -248,10 +266,18 @@ export function createSubagentStore(): SubagentStore {
     )
   }
 
+  function updateChildFromItem(item: ConversationItem): void {
+    children.update((list) =>
+      list.map((child) =>
+        child.session_id === item.session_id ? { ...child, ...item } : child,
+      ),
+    )
+  }
+
   // Drop observations/transcripts for children no longer in the list, and clear
   // the selection if the selected child disappeared (conversation switch).
-  function pruneToChildren(list: SubAgentItem[]): void {
-    const ids = new Set(list.map((c) => c.subagent_id))
+  function pruneToChildren(list: ConversationItem[]): void {
+    const ids = new Set(list.map((c) => c.session_id))
     for (const [id, obs] of observations) {
       if (!ids.has(id)) {
         obs.abort.abort()
@@ -286,15 +312,15 @@ export function createSubagentStore(): SubagentStore {
     }
   }
 
-  async function fetchChildren(parentTraceId: string): Promise<void> {
+  async function fetchChildren(parentId: string): Promise<void> {
     const thisGeneration = ++syncGeneration
-    let list: SubAgentItem[] = []
+    let list: ConversationItem[] = []
     try {
       const response = await fetch(
-        `${SUBAGENTS_BASE_URL}?parent_trace_id=${encodeURIComponent(parentTraceId)}`,
+        `${CONVERSATIONS_BASE_URL}?parent=${encodeURIComponent(parentId)}`,
       )
       if (response.ok) {
-        const data = (await response.json()) as SubAgentItem[]
+        const data = (await response.json()) as ConversationItem[]
         if (Array.isArray(data)) list = data
       }
     } catch {
@@ -307,33 +333,35 @@ export function createSubagentStore(): SubagentStore {
     pruneToChildren(list)
   }
 
-  async function syncForConversation(
-    parentTraceId: string | null,
-  ): Promise<void> {
-    if (parentTraceId === syncedTraceId) return
-    syncedTraceId = parentTraceId
-    if (!parentTraceId) {
+  async function syncForConversation(parentId: string | null): Promise<void> {
+    if (parentId === syncedParentId) return
+    syncedParentId = parentId
+    if (!parentId) {
       syncGeneration++
       children.set([])
       pruneToChildren([])
       return
     }
-    await fetchChildren(parentTraceId)
+    await fetchChildren(parentId)
   }
 
-  // --- Status firehose ---------------------------------------------------------
+  // --- State firehose ---------------------------------------------------------
 
-  function handleFirehoseEvent(event: SubagentStatusEvent): void {
-    if (event.type !== "kiln-subagent-status" || !event.subagent_id) return
-    const known = get(children).some((c) => c.subagent_id === event.subagent_id)
+  function handleFirehoseEvent(event: ConversationStateEvent): void {
+    if (event.type !== "conversation-state" || !event.session_id) return
+    // Phase 2: only sub-agent records exist on the server registry, but guard
+    // by kind anyway so phase 3-4 parent records never leak into the children
+    // strip once they share the firehose.
+    if (event.kind && event.kind !== "subagent") return
+    const known = get(children).some((c) => c.session_id === event.session_id)
     if (known) {
-      updateChildFromStatusEvent(event)
+      updateChildFromStateEvent(event)
       return
     }
     // Unknown child: we can't tell whether it belongs to this conversation from
     // the event alone, so re-fetch the list for the current parent (cheap).
-    if (syncedTraceId) {
-      void fetchChildren(syncedTraceId)
+    if (syncedParentId) {
+      void fetchChildren(syncedParentId)
     }
   }
 
@@ -362,14 +390,14 @@ export function createSubagentStore(): SubagentStore {
   function connectFirehose(): void {
     // Pure observer: opening or closing this stream never affects a run. A
     // dropped connection is recovered by reconnecting; the fresh snapshot
-    // (one status event per known run) re-syncs the children.
+    // (one state event per known conversation) re-syncs the children.
     const EventSourceCtor = globalThis.EventSource
     if (!EventSourceCtor) return
     closeSource()
     clearReconnect()
     connection.set("connecting")
 
-    const source = new EventSourceCtor(`${SUBAGENTS_BASE_URL}/events`)
+    const source = new EventSourceCtor(`${CONVERSATIONS_BASE_URL}/events`)
     eventSource = source
 
     source.onopen = () => {
@@ -380,9 +408,9 @@ export function createSubagentStore(): SubagentStore {
       if (eventSource !== source) return
       const data = typeof e.data === "string" ? e.data.trim() : ""
       if (!data) return
-      let event: SubagentStatusEvent
+      let event: ConversationStateEvent
       try {
-        event = JSON.parse(data) as SubagentStatusEvent
+        event = JSON.parse(data) as ConversationStateEvent
       } catch {
         return
       }
@@ -446,17 +474,18 @@ export function createSubagentStore(): SubagentStore {
     })
   }
 
-  // Control events on the per-run stream: status markers keep the children list
-  // fresh even without the firehose; user-message echoes open a new turn.
+  // Control events on the per-conversation stream: state markers keep the
+  // children list fresh even without the firehose; user-message echoes open a
+  // new turn.
   function handleObserverControlEvent(
     id: string,
     obs: ChildObservation,
     processor: StreamEventProcessor,
     event: StreamEvent,
   ): boolean {
-    if (event.type === "kiln-subagent-status") {
-      const statusEvent = event as SubagentStatusEvent
-      if (statusEvent.subagent_id) updateChildFromStatusEvent(statusEvent)
+    if (event.type === "conversation-state") {
+      const stateEvent = event as ConversationStateEvent
+      if (stateEvent.session_id) updateChildFromStateEvent(stateEvent)
       return true
     }
     if (event.type === "user-message") {
@@ -468,15 +497,15 @@ export function createSubagentStore(): SubagentStore {
       if (echoId && transcriptFor(id).some((m) => m.echoId === echoId)) {
         return true
       }
-      // Kickoff echo ("kickoff-<id>") replayed after hydration already seeded
-      // the briefing: the hydrated message carries no echoId, so dedupe
+      // Kickoff echo ("kickoff-<session_id>") replayed after hydration already
+      // seeded the briefing: the hydrated message carries no echoId, so dedupe
       // structurally — a kickoff can only ever be the first message, so skip it
       // whenever a user message already opens the transcript.
       if (echoId === `kickoff-${id}` && transcriptFor(id)[0]?.role === "user") {
         return true
       }
       // A buffer-replayed echo may carry the steer framing (<system-reminder>)
-      // the runner adds before sending upstream; strip it for display the same
+      // the engine adds before sending upstream; strip it for display the same
       // way hydration does, so the bubble shows what the user actually typed.
       appendMessage(id, {
         id: chatGenerateId(),
@@ -493,13 +522,35 @@ export function createSubagentStore(): SubagentStore {
     return false
   }
 
-  async function observe(subagentId: string): Promise<void> {
-    if (observations.has(subagentId)) return
-    const child = get(children).find((c) => c.subagent_id === subagentId)
+  async function observe(sessionId: string): Promise<void> {
+    if (observations.has(sessionId)) return
+    let child = get(children).find((c) => c.session_id === sessionId)
     if (!child) return
     const abort = new AbortController()
     const obs: ChildObservation = { abort, pendingFreshTurn: true }
-    observations.set(subagentId, obs)
+    observations.set(sessionId, obs)
+
+    // 0. Re-fetch the item so hydration uses a FRESH persisted leaf. The old
+    // store refreshed current_trace_id from status events; conversation-state
+    // events deliberately carry no trace ids, so a re-observe (e.g. selecting
+    // a child again after its stream ended) would otherwise hydrate a stale
+    // snapshot. Best effort: on failure the listed item is used as-is.
+    try {
+      const response = await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}`,
+        { signal: abort.signal },
+      )
+      if (response.ok) {
+        const item = (await response.json()) as ConversationItem
+        if (item?.session_id === sessionId) {
+          updateChildFromItem(item)
+          child = { ...child, ...item }
+        }
+      }
+    } catch {
+      /* aborted or unreachable — hydrate with what the list already has */
+    }
+    if (abort.signal.aborted) return
 
     // 1. Hydrate the child's persisted history (its session snapshot). Best
     // effort: a failure still attaches the live tail on an empty transcript.
@@ -519,28 +570,28 @@ export function createSubagentStore(): SubagentStore {
       }
     }
     if (abort.signal.aborted) return
-    setTranscript(subagentId, messages)
+    setTranscript(sessionId, messages)
 
-    // 2. Attach the live tail: buffer replay (current turn) + status marker +
+    // 2. Attach the live tail: buffer replay (current turn) + state marker +
     // live events. For terminal runs the stream ends after the marker.
-    void observeEvents(subagentId, obs)
+    void observeEvents(sessionId, obs)
   }
 
   async function observeEvents(
-    subagentId: string,
+    sessionId: string,
     obs: ChildObservation,
   ): Promise<void> {
     try {
       const response = await fetch(
-        `${SUBAGENTS_BASE_URL}/${encodeURIComponent(subagentId)}/events`,
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}/events`,
         { signal: obs.abort.signal },
       )
       if (!response.ok) return
       const reader = response.body?.getReader()
       if (!reader) return
-      const processor = buildProcessor(subagentId, obs)
+      const processor = buildProcessor(sessionId, obs)
       await consumeSseStream(reader, processor, (event) =>
-        handleObserverControlEvent(subagentId, obs, processor, event),
+        handleObserverControlEvent(sessionId, obs, processor, event),
       )
     } catch {
       /* aborted or dropped — the transcript keeps what it has */
@@ -548,26 +599,26 @@ export function createSubagentStore(): SubagentStore {
       // Allow a later select to re-observe (re-hydrate + re-attach) after the
       // stream ended — terminal run, network drop, or abort. The live-only
       // affordances (activity indicator, retry) die with the stream.
-      if (observations.get(subagentId) === obs) {
-        observations.delete(subagentId)
-        clearRuntime(subagentId)
+      if (observations.get(sessionId) === obs) {
+        observations.delete(sessionId)
+        clearRuntime(sessionId)
       }
     }
   }
 
   // --- Actions ----------------------------------------------------------------
 
-  function select(subagentId: string | null): void {
-    selectedId.set(subagentId)
-    if (subagentId) void observe(subagentId)
+  function select(sessionId: string | null): void {
+    selectedId.set(sessionId)
+    if (sessionId) void observe(sessionId)
   }
 
-  async function stop(subagentId: string): Promise<void> {
-    // Idempotent server-side; the authoritative status change arrives as a
-    // kiln-subagent-status event (firehose and observer stream).
+  async function stop(sessionId: string): Promise<void> {
+    // Idempotent server-side; the authoritative state change arrives as a
+    // conversation-state event (firehose and observer stream).
     try {
       await fetch(
-        `${SUBAGENTS_BASE_URL}/${encodeURIComponent(subagentId)}/stop`,
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}/stop`,
         { method: "POST" },
       )
     } catch {
@@ -576,13 +627,13 @@ export function createSubagentStore(): SubagentStore {
   }
 
   async function sendMessage(
-    subagentId: string,
+    sessionId: string,
     content: string,
   ): Promise<{ ok: boolean; error?: string }> {
     let response: Response
     try {
       response = await fetch(
-        `${SUBAGENTS_BASE_URL}/${encodeURIComponent(subagentId)}/message`,
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}/messages`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -591,7 +642,7 @@ export function createSubagentStore(): SubagentStore {
       )
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      appendErrorMessage(subagentId, `Couldn't send the message: ${message}`)
+      appendErrorMessage(sessionId, `Couldn't send the message: ${message}`)
       return { ok: false, error: message }
     }
     if (response.status === 409) {
@@ -599,8 +650,8 @@ export function createSubagentStore(): SubagentStore {
       // list so the tab reflects it, and surface a friendly inline error.
       const message =
         "This sub-agent has already finished, so it can't receive messages."
-      appendErrorMessage(subagentId, message)
-      if (syncedTraceId) void fetchChildren(syncedTraceId)
+      appendErrorMessage(sessionId, message)
+      if (syncedParentId) void fetchChildren(syncedParentId)
       return { ok: false, error: message }
     }
     if (!response.ok) {
@@ -611,7 +662,7 @@ export function createSubagentStore(): SubagentStore {
       } catch {
         /* keep default */
       }
-      appendErrorMessage(subagentId, message)
+      appendErrorMessage(sessionId, message)
       return { ok: false, error: message }
     }
     // No optimistic append: the run echoes the message on the observer stream
@@ -625,7 +676,7 @@ export function createSubagentStore(): SubagentStore {
     }
     observations.clear()
     syncGeneration++
-    syncedTraceId = undefined
+    syncedParentId = undefined
     children.set([])
     selectedId.set(null)
     transcripts.set(new Map())
@@ -650,4 +701,4 @@ export function createSubagentStore(): SubagentStore {
   }
 }
 
-export const subagent_store: SubagentStore = createSubagentStore()
+export const conversation_store: ConversationStore = createConversationStore()

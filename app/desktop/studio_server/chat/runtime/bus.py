@@ -105,6 +105,39 @@ MarkerProvider = Callable[[], bytes | None]
 TerminalCheck = Callable[[], bool]
 
 
+class BroadcastBus:
+    """Registry-level fan-out of raw SSE bytes — no buffering, no replay, no
+    marker.
+
+    Generalizes the old ``SubAgentStatusBus`` (``chat/subagents/events.py``,
+    deleted in phase 2): one subscription per UI client (the conversation
+    store's firehose), filtered client-side. It exists so an interactive, idle
+    parent still learns that a child finished — there is no parent stream to
+    ride in that case. Deliberately NOT a ``ByteEventBus``: lifecycle events
+    describe the moment they fire, so replaying stale ones would lie about
+    current state — the firehose route prepends a fresh snapshot instead.
+    """
+
+    def __init__(self) -> None:
+        self._subscribers: set[_ByteSubscriber] = set()
+
+    def publish(self, payload: bytes) -> None:
+        for subscriber in self._subscribers:
+            subscriber.queue.put_nowait(payload)
+
+    async def subscribe(self) -> AsyncGenerator[bytes, None]:
+        subscriber = _ByteSubscriber()
+        self._subscribers.add(subscriber)
+        try:
+            while True:
+                item = await subscriber.queue.get()
+                if isinstance(item, _CloseSentinel):
+                    return
+                yield item
+        finally:
+            self._subscribers.discard(subscriber)
+
+
 class ByteEventBus:
     """Per-conversation async pub/sub of raw chat SSE bytes with a
     current-turn replay buffer (see module docstring for the full contract).
