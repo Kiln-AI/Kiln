@@ -28,7 +28,11 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
-from kiln_ai.tools.tool_registry import tool_definitions_from_ids, tool_from_id
+from kiln_ai.tools.tool_registry import (
+    tool_definitions_from_ids,
+    tool_from_id,
+    tool_from_id_and_project,
+)
 
 
 class TestToolRegistry:
@@ -787,3 +791,94 @@ class TestToolRegistry:
             match="Kiln Task External tool server not found: nonexistent_server in project ID test_project_id",
         ):
             tool_from_id(tool_id, task=mock_task)
+
+
+class TestToolFromIdAndProject:
+    """Tests for tool_from_id_and_project — the core resolver accepting a project directly."""
+
+    async def test_builtins_work_without_project(self):
+        tool = tool_from_id_and_project(KilnBuiltInToolId.ADD_NUMBERS)
+        assert isinstance(tool, AddTool)
+        assert await tool.name() == "add"
+
+    def test_mcp_tool_with_project(self):
+        mock_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://example.com", "is_archived": False},
+        )
+        mock_project = Mock(spec=Project)
+        mock_project.id = "proj_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::echo"
+        tool = tool_from_id_and_project(tool_id, project=mock_project)
+        assert isinstance(tool, MCPServerTool)
+
+    def test_mcp_tool_without_project_raises(self):
+        with pytest.raises(ValueError, match="Requires a parent project"):
+            tool_from_id_and_project(f"{MCP_REMOTE_TOOL_ID_PREFIX}s::t")
+
+
+class TestCodeToolRegistry:
+    """Tests for code tool resolution via tool_from_id."""
+
+    def test_code_tool_resolves(self, tmp_path):
+        from kiln_ai.datamodel.code_tool import CodeTool
+        from kiln_ai.tools.code_tool import PythonCodeTool
+
+        project = Project(name="test_proj", path=tmp_path / "project")
+        project.save_to_file()
+
+        ct = CodeTool(
+            name="My Tool",
+            tool_function_name="my_tool",
+            tool_description="Does things",
+            parameters_schema={
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+            },
+            code="def run(x):\n    return x\n",
+            parent=project,
+        )
+        ct.save_to_file()
+
+        tool_id = f"kiln_tool::code::{ct.id}"
+        tool = tool_from_id_and_project(tool_id, project=project)
+        assert isinstance(tool, PythonCodeTool)
+
+    async def test_code_tool_definition(self, tmp_path):
+        from kiln_ai.datamodel.code_tool import CodeTool
+
+        project = Project(name="test_proj", path=tmp_path / "project")
+        project.save_to_file()
+
+        ct = CodeTool(
+            name="My Tool",
+            tool_function_name="my_tool",
+            tool_description="Does things",
+            parameters_schema={
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+            },
+            code="def run(x):\n    return x\n",
+            parent=project,
+        )
+        ct.save_to_file()
+
+        tool_id = f"kiln_tool::code::{ct.id}"
+        tool = tool_from_id_and_project(tool_id, project=project)
+        defn = await tool.toolcall_definition()
+        assert defn["function"]["name"] == "my_tool"
+        assert defn["function"]["description"] == "Does things"
+
+    def test_code_tool_missing_raises(self, tmp_path):
+        project = Project(name="test_proj", path=tmp_path / "project")
+        project.save_to_file()
+
+        with pytest.raises(ValueError, match="Code tool not found"):
+            tool_from_id_and_project("kiln_tool::code::nonexistent_id", project=project)
+
+    def test_code_tool_no_project_raises(self):
+        with pytest.raises(ValueError, match="Requires a parent project"):
+            tool_from_id_and_project("kiln_tool::code::12345")

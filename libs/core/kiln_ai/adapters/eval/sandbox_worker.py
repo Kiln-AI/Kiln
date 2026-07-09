@@ -1,20 +1,19 @@
 """Multiprocessing worker for executing user-authored scorer functions.
 
-Thin module: stdlib only. No Pydantic / Kiln-model / DB / UI imports.
+Thin module: only imports stdlib and kiln_ai.sandbox (which is itself
+stdlib-only). No Pydantic / Kiln-model / DB / UI imports.
 """
 
-import asyncio
-import inspect
 import io
 import multiprocessing
 import multiprocessing.queues
 import queue
 import sys
-import threading
 import traceback
 from typing import Any
 
-_spawn_lock = threading.Lock()
+from kiln_ai.sandbox.entrypoint import call_entrypoint
+from kiln_ai.sandbox.spawn import start_process_with_light_main
 
 
 def _execute_scorer(
@@ -66,15 +65,15 @@ def _execute_scorer(
             )
             return
 
-        result = score_fn(
-            output=inputs["output"],
-            trace=inputs.get("trace"),
-            reference_data=inputs.get("reference_data"),
-            task_input=inputs["task_input"],
+        result = call_entrypoint(
+            score_fn,
+            {
+                "output": inputs["output"],
+                "trace": inputs.get("trace"),
+                "reference_data": inputs.get("reference_data"),
+                "task_input": inputs["task_input"],
+            },
         )
-
-        if inspect.iscoroutine(result):
-            result = asyncio.run(result)
 
         result_queue.put(
             {
@@ -112,47 +111,8 @@ def run_scorer(
     """
     ctx = multiprocessing.get_context("spawn")
     q: multiprocessing.Queue = ctx.Queue()  # type: ignore[type-arg]
-    with _spawn_lock:
-        p = ctx.Process(target=_execute_scorer, args=(code, inputs, q), daemon=True)
-        # Prevent the spawn child from re-importing the parent's heavy
-        # ``__main__`` module (e.g. dev_server.py which transitively pulls
-        # in litellm, google.cloud.aiplatform, etc.).
-        #
-        # ``multiprocessing.spawn.get_preparation_data`` reads
-        # ``sys.modules['__main__']`` to decide what to re-execute in the
-        # child.  By swapping in a lightweight stub named ``"__main__"``
-        # (with no ``__file__`` or ``__spec__``) before ``p.start()``
-        # (which pickles the prep data), neither ``init_main_from_name``
-        # nor ``init_main_from_path`` is set, so the child skips the
-        # heavy re-import entirely.  ``_execute_scorer`` only needs
-        # stdlib, so this is safe.
-        #
-        # The stub is named ``"__main__"`` (not ``"__mp_main__"``, which
-        # would collide with multiprocessing's internal main-module
-        # name).  Third-party code that inspects
-        # ``sys.modules["__main__"].__name__`` during the brief swap
-        # window sees the expected ``"__main__"`` value.
-        #
-        # This stays within ``multiprocessing.spawn``'s existing
-        # bootstrap, so ``freeze_support()`` and PyInstaller frozen
-        # builds continue to work.
-        #
-        # Thread safety: the swap is process-global, but the window is
-        # sub-millisecond (only spans ``p.start()``), is serialized by
-        # ``_spawn_lock``, and ``__main__`` is not read by request-
-        # handling code, so cross-thread visibility is benign.
-        import types
-
-        _real_main = sys.modules.get("__main__")
-        if _real_main is not None:
-            _light_main = types.ModuleType("__main__")
-            sys.modules["__main__"] = _light_main
-            try:
-                p.start()
-            finally:
-                sys.modules["__main__"] = _real_main
-        else:
-            p.start()
+    p = ctx.Process(target=_execute_scorer, args=(code, inputs, q), daemon=True)
+    start_process_with_light_main(p)
     p.join(timeout=timeout)
 
     if p.is_alive():
