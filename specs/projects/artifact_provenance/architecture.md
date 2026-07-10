@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Artifact Provenance
@@ -139,32 +139,31 @@ Additive, `default=None`, no `v` bump, no migration (the `is_archived` precedent
 
 ## 2. API layer
 
-### 2.1 Shared validation helper
+### 2.1 Validation helper (in the datamodel)
 
-New helper in `libs/server/kiln_ai/...` (base server package, importable by both `kiln_server` and `studio_server`) — e.g. `libs/server/kiln_server/provenance_api.py`:
+Lives in `datamodel/provenance.py` next to the submodel — it is a **data-model utility** (the server is only its consumer). It stays pure: **no FastAPI import in `libs/core`**. It raises `ValueError`; the server maps that to `HTTPException(400)`. Existence is delegated to an injected predicate, so core never touches FastAPI or assumes a lookup strategy. This is a standalone create-time function, **not** a model validator, so doing existence checks here is fine (Kiln's "no existence checks" rule is about *validators*, which run on load).
 
 ```python
 from collections.abc import Callable
-from fastapi import HTTPException
-from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
-def validate_provenance_on_create(
+def validate_derived_from_ids(
     provenance: KilnArtifactProvenance | None,
-    new_id: str,
-    resolve_sibling: Callable[[str], object | None],
+    self_id: str | None,
+    sibling_exists: Callable[[str], bool],
 ) -> None:
-    """API-layer semantic checks for a to-be-created artifact's provenance.
-    Format checks already ran in the submodel validators (422). Raises 400."""
+    """Create-time semantic check. Raises ValueError on unknown parent or self-reference."""
     if provenance is None:
         return
     for parent_id in provenance.derived_from_ids:
-        if parent_id == new_id:
-            raise HTTPException(400, "provenance.derived_from_ids cannot reference the new artifact itself")
-        if resolve_sibling(parent_id) is None:
-            raise HTTPException(400, f"provenance.derived_from_ids references unknown sibling: {parent_id}")
+        # Self-reference is P3/defensive: server-generated ids make it near-impossible.
+        # Cheap to keep; safe to drop.
+        if parent_id == self_id:
+            raise ValueError("derived_from_ids cannot reference this artifact itself")
+        if not sibling_exists(parent_id):
+            raise ValueError(f"derived_from_ids references unknown sibling: {parent_id}")
 ```
 
-`resolve_sibling` is `lambda cid: HostModel.from_id_and_parent_path(cid, parent.path)` — the same targeted-lookup precedent as `create_rag_config` (reads archived siblings too, satisfying "archived included").
+The server injects `sibling_exists = lambda cid: HostModel.from_id_and_parent_path(cid, parent.path) is not None` — the same targeted, archived-inclusive lookup as `create_rag_config` (only referenced ids are resolved, never a full folder scan). To avoid repeating `try/except ValueError` in every endpoint, a one-line server-side wrapper (e.g. `validate_provenance_or_400(...)` in `kiln_server`) can call the datamodel helper and re-raise as `HTTPException(400, str(e))`.
 
 ### 2.2 Per-model create flow
 
@@ -172,7 +171,7 @@ Uniform recipe for each create endpoint:
 
 1. Add `provenance: KilnArtifactProvenance | None = None` to the **create request model**. (Format validators run when FastAPI parses the body → **422** on bad `origin`/dupes/over-length.)
 2. Construct the datamodel with `provenance=req.provenance` (this generates the new `id`).
-3. Call `validate_provenance_on_create(model.provenance, model.id, resolve_sibling)` → **400** on self-ref/missing.
+3. Call `validate_derived_from_ids(model.provenance, model.id, sibling_exists)` and map `ValueError` → **400** (via the `validate_provenance_or_400` wrapper).
 4. `model.save_to_file()`.
 
 Ordering matters: the `id` needed for the self-reference check is generated at construction (step 2), before validation (step 3).
@@ -240,7 +239,7 @@ pytest, co-located `test_*.py` (see the repo's `python_test_guide.md`); frontend
 **API (per tier, in the existing `test_*_api.py`):**
 - Create with valid provenance (referencing a real sibling) → persisted and returned on read.
 - Create referencing a **nonexistent** sibling → 400; referencing an **archived** sibling → 200 (allowed).
-- `validate_provenance_on_create` unit test: `new_id` present in `derived_from_ids` → 400 self-reference (defensive; the client can't normally force this since the id is server-generated).
+- `validate_derived_from_ids` unit test (in `test_provenance.py`): `provenance=None` → no raise; unknown id (`sibling_exists` → False) → `ValueError`; `self_id` in `derived_from_ids` → `ValueError` (defensive); all-good → no raise.
 - Create with invalid `origin` / over-length `notes` → 422.
 - PATCH cannot change provenance: for CodeTool, PATCH with `provenance` → 422 (`extra="forbid"`); for others, confirm the update model has no such field and provenance is unchanged after an edit.
 - Clone (Skill, Prompt, TaskRunConfig, CodeTool, RagConfig): the created artifact has `derived_from_ids == [source.id]` and `origin == "human"`.
@@ -252,7 +251,7 @@ pytest, co-located `test_*.py` (see the repo's `python_test_guide.md`); frontend
 | Layer | Failure | Result |
 |---|---|---|
 | Submodel validator (body parse) | bad `origin`, dupe/empty id, over-length note | 422 (Pydantic) |
-| API helper | self-reference / unknown sibling | 400 (HTTPException) |
+| Datamodel helper (called at create) | self-reference / unknown sibling | `ValueError` → server maps to 400 |
 | PATCH model | attempt to set provenance | field absent (ignored) or 422 (`extra="forbid"`) |
 | Load from file | any imperfect/future provenance | accepted (lenient) |
 

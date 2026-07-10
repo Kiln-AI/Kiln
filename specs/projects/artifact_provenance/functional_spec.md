@@ -110,7 +110,7 @@ Read and list endpoints return `provenance` as-is (including `None`). Agent acce
 ### 5.2 Create validation
 On create, when a `provenance` is supplied, the endpoint validates (in addition to the submodel's format validators):
 
-1. **Self-reference:** no entry in `derived_from_ids` equals the new artifact's own `id`. → **400**
+1. **Self-reference** (P3 / defensive — the id is server-generated, so a client can't normally trigger it; cheap to keep, safe to drop): no entry in `derived_from_ids` equals the new artifact's own `id`. → **400**
 2. **Existence:** every entry in `derived_from_ids` resolves to an existing same-type sibling in the same parent scope, **archived included** (lineage may point at archived losers). Resolution uses the existing `from_id_and_parent_path` / sibling-scan helpers. → **400** per missing id.
 
 Error copy for a rejected edit attempt (if an active guard is ever added rather than relying on structural omission) mirrors the CodeTool immutability doctrine: *"provenance is immutable — it describes creation."*
