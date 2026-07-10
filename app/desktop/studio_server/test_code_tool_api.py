@@ -166,6 +166,142 @@ class TestCreateCodeTool:
         assert "run" in response.json()["message"].lower()
 
 
+class TestCreateCodeToolProvenance:
+    def test_create_with_valid_provenance(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        saved_code_tool,
+        create_request,
+    ):
+        create_request["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": [saved_code_tool.id],
+            "notes": "Cloned from my_tool.",
+        }
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["provenance"]["origin"] == "human"
+        assert result["provenance"]["derived_from_ids"] == [saved_code_tool.id]
+
+        # Returned on read too.
+        read = client.get(f"/api/projects/{test_project.id}/code_tools/{result['id']}")
+        assert read.json()["provenance"]["origin"] == "human"
+
+        loaded = CodeTool.from_id_and_parent_path(result["id"], test_project.path)
+        assert loaded is not None
+        assert loaded.provenance is not None
+        assert loaded.provenance.derived_from_ids == [saved_code_tool.id]
+
+    def test_create_derived_from_unknown_sibling_400(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        create_request["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": ["missing"],
+        }
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+
+    def test_create_derived_from_archived_sibling_allowed(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        saved_code_tool,
+        create_request,
+    ):
+        saved_code_tool.is_archived = True
+        saved_code_tool.save_to_file()
+        create_request["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": [saved_code_tool.id],
+        }
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 200
+
+    def test_create_invalid_origin_422(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        create_request["provenance"] = {"origin": "banana"}
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 422
+
+    def test_patch_forward_compat_provenance_does_not_500(
+        self, client, test_project, mock_project_from_id
+    ):
+        # Renaming a code tool whose stored provenance was lenient-loaded
+        # (unknown origin, over-length notes, dirty ids) must not re-validate it
+        # in create mode: the update path returns 200 and preserves provenance.
+        ct = CodeTool.model_validate(
+            {
+                "name": "future_tool",
+                "tool_function_name": "future_tool",
+                "tool_description": "From a newer client.",
+                "parameters_schema": SIMPLE_SCHEMA,
+                "code": SIMPLE_CODE,
+                "provenance": {
+                    "origin": "future_origin",
+                    "derived_from_ids": ["dup", "dup"],
+                    "notes": "y" * 3000,
+                },
+            },
+            context={"loading_from_file": True},
+        )
+        ct.parent = test_project
+        ct.save_to_file()
+        ct_id = ct.id
+        assert ct_id is not None
+
+        response = client.patch(
+            f"/api/projects/{test_project.id}/code_tools/{ct_id}",
+            json={"name": "renamed_future_tool"},
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "renamed_future_tool"
+        assert response.json()["provenance"]["origin"] == "future_origin"
+
+        reloaded = CodeTool.from_id_and_parent_path(ct_id, test_project.path)
+        assert reloaded is not None
+        assert reloaded.provenance is not None
+        assert reloaded.provenance.origin == "future_origin"
+        assert reloaded.provenance.notes == "y" * 3000
+
+    def test_patch_with_provenance_rejected_422(
+        self, client, test_project, mock_project_from_id, saved_code_tool
+    ):
+        # CodeToolUpdateRequest is extra="forbid": a stray provenance is rejected.
+        response = client.patch(
+            f"/api/projects/{test_project.id}/code_tools/{saved_code_tool.id}",
+            json={"name": "ok", "provenance": {"origin": "agent"}},
+        )
+        assert response.status_code == 422
+        reloaded = CodeTool.from_id_and_parent_path(
+            saved_code_tool.id, test_project.path
+        )
+        assert reloaded is not None
+        assert reloaded.provenance is None
+
+
 class TestListCodeTools:
     def test_list_empty(self, client, test_project, mock_project_from_id):
         response = client.get(f"/api/projects/{test_project.id}/code_tools")

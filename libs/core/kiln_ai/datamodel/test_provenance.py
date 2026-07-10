@@ -3,11 +3,14 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.provenance import (
     NOTES_MAX_LENGTH,
     KilnArtifactProvenance,
     validate_derived_from_ids,
 )
+from kiln_ai.datamodel.skill import Skill
 
 LOAD_CONTEXT = {"loading_from_file": True}
 
@@ -192,3 +195,89 @@ def test_helper_self_reference_raises():
         validate_derived_from_ids(p, "self-id", sibling_exists)
     # Self-reference is detected before the existence check.
     sibling_exists.assert_not_called()
+
+
+# ---- host model: field presence, round-trip, back-compat ----
+
+
+def test_prompt_has_provenance_but_base_prompt_does_not():
+    # Provenance lives on the stored Prompt, never on BasePrompt (which is
+    # embedded inside TaskRunConfig/Finetune).
+    assert "provenance" in Prompt.model_fields
+    assert "provenance" not in BasePrompt.model_fields
+
+
+@pytest.fixture
+def project(tmp_path):
+    project = Project(name="Provenance Test", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    return project
+
+
+def test_host_skill_provenance_round_trips(project):
+    skill = Skill(
+        name="derived-skill",
+        description="A derived skill.",
+        provenance=KilnArtifactProvenance(
+            notes="Derived from the parent skill.",
+            derived_from_ids=["parent-skill-id"],
+            origin="human",
+        ),
+        parent=project,
+    )
+    skill.save_to_file()
+
+    skill_id = skill.id
+    assert skill_id is not None
+    reloaded = Skill.from_id_and_parent_path(skill_id, project.path)
+    assert reloaded is not None
+    assert reloaded.provenance is not None
+    assert reloaded.provenance.origin == "human"
+    assert reloaded.provenance.notes == "Derived from the parent skill."
+    assert reloaded.provenance.derived_from_ids == ["parent-skill-id"]
+    assert reloaded.provenance == skill.provenance
+
+
+def test_host_skill_loads_without_provenance_key():
+    # A legacy file predating this field has no `provenance` key: it must load
+    # with provenance=None (additive optional field, no migration).
+    legacy = Skill.model_validate(
+        {"name": "legacy-skill", "description": "Old file."},
+        context=LOAD_CONTEXT,
+    )
+    assert legacy.provenance is None
+
+
+def test_host_skill_loads_unknown_origin_and_dirty_ids_leniently():
+    # Context propagates into the nested submodel: a file carrying an unknown
+    # origin and a duplicate/empty derived_from_ids list still loads (lenient).
+    loaded = Skill.model_validate(
+        {
+            "name": "future-skill",
+            "description": "Written by a newer client.",
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup", ""],
+                "notes": "x" * 3000,
+            },
+        },
+        context=LOAD_CONTEXT,
+    )
+    assert loaded.provenance is not None
+    assert loaded.provenance.origin == "future_origin"
+    assert loaded.provenance.derived_from_ids == ["dup", "dup", ""]
+    assert loaded.provenance.notes == "x" * 3000
+
+
+def test_host_skill_create_rejects_provenance_without_origin():
+    # Validating (not loading) a host with a provenance object missing origin
+    # is a hard error — required-when-present, fail-loud. Uses model_validate so
+    # the create-mode submodel validators run without a load context.
+    with pytest.raises(ValidationError, match="origin is required"):
+        Skill.model_validate(
+            {
+                "name": "bad-skill",
+                "description": "Missing origin.",
+                "provenance": {"notes": "no origin here"},
+            }
+        )

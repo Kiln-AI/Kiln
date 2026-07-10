@@ -9,6 +9,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_dict
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.tool_id import (
     KILN_UNMANAGED_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
@@ -35,6 +36,10 @@ class CodeTool(KilnParentedModel):
     is_archived: bool = Field(
         default=False,
         description="Archived tools are hidden from pickers but still resolve if referenced.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter.",
     )
 
     # Functional content — immutable post-create (enforced at the API layer)

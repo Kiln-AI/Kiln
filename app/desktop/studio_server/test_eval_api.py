@@ -7,6 +7,7 @@ import pytest
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    UpdateRunConfigRequest,
     compute_score_summary,
     connect_evals_api,
     eval_config_from_id,
@@ -405,6 +406,87 @@ async def test_create_task_run_config_reuses_existing_frozen_prompt(
     # Only the first config contributes a frozen prompt to the task
     frozen_prompts = [rc.prompt for rc in mock_task.run_configs() if rc.prompt]
     assert len(frozen_prompts) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_with_valid_provenance(
+    client, mock_task_from_id, mock_task, mock_run_config
+):
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Derived Run Config",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {
+                "origin": "human",
+                "derived_from_ids": [mock_run_config.id],
+                "notes": "Cloned from the seed run config.",
+            },
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["provenance"]["origin"] == "human"
+    assert result["provenance"]["derived_from_ids"] == [mock_run_config.id]
+
+    # Returned on read (datamodel is serialized directly).
+    fetch = client.get("/api/projects/project1/tasks/task1/run_configs")
+    derived = next(rc for rc in fetch.json() if rc["id"] == result["id"])
+    assert derived["provenance"]["derived_from_ids"] == [mock_run_config.id]
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_unknown_sibling_400(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Bad Lineage",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+        },
+    )
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_invalid_origin_422(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Bad Origin",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {"origin": "banana"},
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_update_run_config_model_has_no_provenance_field():
+    assert "provenance" not in UpdateRunConfigRequest.model_fields
 
 
 def test_reusable_frozen_prompt_id_no_match(mock_task):

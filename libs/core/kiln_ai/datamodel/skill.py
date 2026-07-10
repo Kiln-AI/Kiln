@@ -7,6 +7,7 @@ import yaml
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.utils.validation import SkillNameString
 
 if TYPE_CHECKING:
@@ -38,6 +39,10 @@ class Skill(KilnParentedModel):
     is_archived: bool = Field(
         default=False,
         description="Whether the skill is archived. Archived skills are hidden from the UI and not available for use.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter.",
     )
 
     def parent_project(self) -> Union["Project", None]:

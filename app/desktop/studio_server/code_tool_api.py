@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.run_context import (
     clear_agent_run_id,
@@ -19,6 +20,7 @@ from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool, ToolCallLogEntry
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -53,6 +55,10 @@ class CodeToolCreateRequest(BaseModel):
     tool_allowlist: list[ToolId] = Field(
         default_factory=list, description="Tools this code tool may call."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this code tool exists and what it was derived from. Immutable after create.",
+    )
 
 
 class CodeToolResponse(BaseModel):
@@ -68,6 +74,7 @@ class CodeToolResponse(BaseModel):
     tool_allowlist: list[ToolId] = Field(default_factory=list)
     created_at: datetime | None = None
     created_by: str | None = None
+    provenance: KilnArtifactProvenance | None = None
 
 
 class CodeToolCreateResponse(BaseModel):
@@ -83,6 +90,7 @@ class CodeToolCreateResponse(BaseModel):
     tool_allowlist: list[ToolId] = Field(default_factory=list)
     created_at: datetime | None = None
     created_by: str | None = None
+    provenance: KilnArtifactProvenance | None = None
     not_trusted: bool = False
 
 
@@ -150,6 +158,7 @@ def _code_tool_to_response(ct: CodeTool) -> CodeToolResponse:
         tool_allowlist=ct.tool_allowlist,
         created_at=ct.created_at,
         created_by=ct.created_by,
+        provenance=ct.provenance,
     )
 
 
@@ -234,10 +243,17 @@ def connect_code_tool_api(app: FastAPI):
                 code=request.code,
                 timeout_seconds=request.timeout_seconds,
                 tool_allowlist=request.tool_allowlist,
+                provenance=request.provenance,
                 parent=project,
             )
         except (ValueError, PydanticValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+        validate_provenance_or_400(
+            code_tool.provenance,
+            code_tool.id,
+            lambda cid: CodeTool.from_id_and_parent_path(cid, project.path) is not None,
+        )
 
         code_tool.save_to_file()
         return CodeToolCreateResponse(**_code_tool_to_response(code_tool).model_dump())
@@ -361,7 +377,12 @@ def connect_code_tool_api(app: FastAPI):
 
         merged = ct.model_dump()
         merged.update(update_fields)
-        updated = CodeTool.model_validate(merged)
+        # loading_from_file context keeps the stored provenance validation lenient:
+        # merged carries provenance as a dict, so a plain model_validate would re-run
+        # the create-strict provenance validators and 500 on a forward-compat file.
+        # provenance stays immutable (it's not in update_fields); this only edits
+        # name/description.
+        updated = CodeTool.model_validate(merged, context={"loading_from_file": True})
         updated.path = ct.path
         updated.save_to_file()
         return _code_tool_to_response(updated)

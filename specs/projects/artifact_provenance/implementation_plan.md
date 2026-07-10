@@ -9,7 +9,7 @@ Phased build order. Details live in [functional_spec.md](functional_spec.md) and
 ## Phase 1 — Core + Tier 1
 
 - [x] **Phase 1 — Submodel & helper (pure core).** `KilnArtifactProvenance` in `datamodel/provenance.py` (context-aware, lenient-on-load validators) + `validate_derived_from_ids` helper; export from `datamodel/__init__.py`; unit tests (`test_provenance.py`) covering the create-vs-load validator matrix and the helper.
-- [ ] **Phase 2 — Tier-1 backend.** Add the `provenance` field to Skill, Prompt (on `Prompt`, not `BasePrompt`), TaskRunConfig, CodeTool; wire create endpoints (accept + `validate_provenance_or_400`), leave PATCH models untouched, ensure reads return it (add to `CodeToolResponse`/`CodeToolCreateResponse`); datamodel load/back-compat tests + API tests. Covers TaskRunConfig's two create paths.
+- [x] **Phase 2 — Tier-1 backend.** Add the `provenance` field to Skill, Prompt (on `Prompt`, not `BasePrompt`), TaskRunConfig, CodeTool; wire create endpoints (accept + `validate_provenance_or_400`), leave PATCH models untouched, ensure reads return it (add to `CodeToolResponse`/`CodeToolCreateResponse`); datamodel load/back-compat tests + API tests. Covers TaskRunConfig's two create paths.
 - [ ] **Phase 3 — Tier-1 clone wiring + client.** Thread `provenance` (`origin:"human"` + `derived_from_ids:[source.id]`) through the four Tier-1 clone/create forms; regenerate OpenAPI schema; add `KilnArtifactProvenance` to `types.ts`; clone tests. No provenance display UI.
 
 ## Phase 2 — Tier 2

@@ -576,6 +576,146 @@ def test_create_task_from_tool_invalid_tool(client, tmp_path):
     assert "Tool selected is not an MCP tool." in response.text
 
 
+def test_create_mcp_run_config_with_provenance(client, tmp_path):
+    project = Project(
+        id="project_prov_mcp",
+        name="Provenance MCP Project",
+        path=tmp_path / "project_prov_mcp.kiln",
+    )
+    project.save_to_file()
+
+    task_input_schema = {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+        "required": ["message"],
+    }
+    task = Task(
+        id="task_prov_mcp",
+        name="Prov MCP Task",
+        instruction="Do the thing.",
+        path=tmp_path / "task_prov_mcp.kiln",
+        input_json_schema=json.dumps(task_input_schema),
+        parent=project,
+    )
+    task.save_to_file()
+
+    fake_tool = FakeMcpTool(task_input_schema, None)
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.task_from_id"
+        ) as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.run_config_api._load_mcp_tool",
+            return_value=fake_tool,
+        ),
+    ):
+        mock_task_from_id.return_value = task
+        response = client.post(
+            "/api/projects/project_prov_mcp/tasks/task_prov_mcp/mcp_run_config",
+            json={
+                "tool_id": "mcp::local::server::fake_tool",
+                "provenance": {"origin": "agent"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provenance"]["origin"] == "agent"
+
+    rc = task.run_configs()[0]
+    assert rc.provenance is not None
+    assert rc.provenance.origin == "agent"
+
+
+def test_create_mcp_run_config_unknown_sibling_400(client, tmp_path):
+    project = Project(
+        id="project_prov_mcp_bad",
+        name="Bad Provenance MCP Project",
+        path=tmp_path / "project_prov_mcp_bad.kiln",
+    )
+    project.save_to_file()
+
+    task_input_schema = {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+        "required": ["message"],
+    }
+    task = Task(
+        id="task_prov_mcp_bad",
+        name="Bad Prov MCP Task",
+        instruction="Do the thing.",
+        path=tmp_path / "task_prov_mcp_bad.kiln",
+        input_json_schema=json.dumps(task_input_schema),
+        parent=project,
+    )
+    task.save_to_file()
+
+    fake_tool = FakeMcpTool(task_input_schema, None)
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.task_from_id"
+        ) as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.run_config_api._load_mcp_tool",
+            return_value=fake_tool,
+        ),
+    ):
+        mock_task_from_id.return_value = task
+        response = client.post(
+            "/api/projects/project_prov_mcp_bad/tasks/task_prov_mcp_bad/mcp_run_config",
+            json={
+                "tool_id": "mcp::local::server::fake_tool",
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+def test_create_task_from_tool_stamps_provenance(client, tmp_path):
+    project = Project(
+        id="project_prov_tft",
+        name="Provenance TaskFromTool Project",
+        path=tmp_path / "project_prov_tft.kiln",
+    )
+    project.save_to_file()
+
+    tool_input_schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+    }
+    fake_tool = FakeMcpTool(tool_input_schema, None)
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.project_from_id"
+        ) as mock_project_from_id,
+        patch(
+            "app.desktop.studio_server.run_config_api._resolve_mcp_tool_from_id",
+            return_value=fake_tool,
+        ),
+    ):
+        mock_project_from_id.return_value = project
+        response = client.post(
+            "/api/projects/project_prov_tft/create_task_from_tool",
+            json={
+                "tool_id": "mcp::local::server::fake_tool",
+                "task_name": "Provenance Task",
+                "instruction": "Use the tool.",
+                "provenance": {"origin": "agent"},
+            },
+        )
+
+    assert response.status_code == 200
+    created_task = next(t for t in project.tasks() if t.name == "Provenance Task")
+    rc = created_task.run_configs()[0]
+    assert rc.provenance is not None
+    assert rc.provenance.origin == "agent"
+
+
 def test_create_mcp_run_config_success(client, tmp_path):
     project = Project(
         id="project4",

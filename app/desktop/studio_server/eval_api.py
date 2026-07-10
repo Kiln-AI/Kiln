@@ -42,6 +42,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
@@ -49,6 +50,7 @@ from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -308,6 +310,10 @@ class CreateTaskRunConfigRequest(BaseModel):
     )
     run_config_properties: RunConfigProperties = Field(
         description="The run configuration properties."
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this run config exists and what it was derived from. Immutable after create.",
     )
 
 
@@ -957,6 +963,14 @@ def connect_evals_api(app: FastAPI):
             run_config_properties=run_config_properties,
             description=request.description,
             prompt=frozen_prompt,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            task_run_config.provenance,
+            task_run_config.id,
+            lambda cid: (
+                TaskRunConfig.from_id_and_parent_path(cid, task.path) is not None
+            ),
         )
         if isinstance(
             task_run_config.run_config_properties, KilnAgentRunConfigProperties
