@@ -189,9 +189,9 @@
           </label>
         </li>
         <div class="mb-2 ml-3 mt-1">
-          <div class="flex flex-row items-center mx-[-5px] p-0">
-            <img src="/images/animated_logo.svg" alt="logo" class="w-7 h-7" />
-            <div class="text-base font-bold ml-1">Kiln AI</div>
+          <div class="flex flex-row items-center gap-1.5 mx-[-5px]">
+            <img src="/images/animated_logo.svg" alt="Kiln" class="w-7 h-7" />
+            <span class="text-xl font-light leading-none">kiln ai</span>
           </div>
         </div>
         <button
