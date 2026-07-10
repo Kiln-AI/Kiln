@@ -59,11 +59,13 @@ class KilnArtifactProvenance(BaseModel):
 
 | Field | Rule | Enforced |
 |---|---|---|
-| `notes` | Strip surrounding whitespace; coerce empty/whitespace-only → `None`; enforce the 2,000-char cap **after** stripping (raise `ValueError` if over). | Always |
-| `derived_from_ids` | Reject empty/whitespace-only strings; reject duplicate ids. | Always |
-| `origin` | If **not** loading from file (i.e. constructing a new object): **required** — must be present and exactly `"human"` or `"agent"`; raise `ValueError` if `None` or any other value. If loading from file: accept any string **or** `None` (forward/back-compat). | Create vs. load |
+| `notes` | Strip surrounding whitespace and coerce empty/whitespace-only → `None` (**always**). Enforce the 2,000-char cap, measured **after** stripping (raise `ValueError` if over) — **create only**; on load, over-length notes are accepted. | Coerce always; cap create-only |
+| `derived_from_ids` | Reject `None`/empty/whitespace-only entries; reject duplicate ids. **Create only**; on load, the list is accepted as-is. | Create (lenient on load) |
+| `origin` | **Required** — must be present and exactly `"human"` or `"agent"`; raise `ValueError` if `None` or any other value. **Create only**; on load, accept any string **or** `None` (forward/back-compat). | Create (lenient on load) |
 
-Load-vs-create is detected with the existing `loading_from_file(info)` helper (`basemodel.py`) — the same mechanism `TaskOutput.validate_output_source` uses. This validation is **format-only**: no existence checks and no cross-sibling lookups happen in a validator (they break file loads — established Kiln rule). Existence/self-reference checks live at the API layer ([§5.2](#52-create-validation)).
+**All *rejection*-type checks are strict on create and lenient on load** — Kiln's "load any data, create perfect data" rule. Only the whitespace coercion of `notes` is unconditional. This guarantees the submodel never breaks loading an imperfect or future-written file (e.g. a longer note, an unknown `origin`, a duplicate id). Consequently the 2,000-cap is enforced **in the validator**, not via a `Field(max_length=...)` constraint (which would fire on load too).
+
+Load-vs-create is detected by reading the validation context directly (`info.context.get("loading_from_file")`) — the submodel is a plain `BaseModel`, so it can't use `KilnBaseModel.loading_from_file()`, but Pydantic v2 propagates the host's `model_validate(..., context={"loading_from_file": True})` into nested-submodel validators. This validation is **format-only**: no existence checks and no cross-sibling lookups happen in a validator (they break file loads). Existence/self-reference checks live at the API layer ([§5.2](#52-create-validation)).
 
 > **Correction (see Appendix A):** `derived_from_ids` entries are **not** run through an "ID format validator" — no such validator exists in Kiln (`ID_TYPE = Optional[str]`, unconstrained). The enforceable rules are non-empty + no-duplicates.
 
@@ -168,8 +170,8 @@ The OpenAPI schema is regenerated (`generate_schema.sh`) so the new field appear
 | `derived_from_ids` references a non-existent sibling | 400 on create. |
 | `derived_from_ids` references the artifact's own id | 400 on create (self-reference). |
 | `derived_from_ids` references an **archived** sibling | Allowed (lineage may point at archived losers). |
-| `derived_from_ids` contains duplicates or empty strings | Rejected by the submodel validator (`ValueError` → 422). |
-| `notes` over 2,000 chars (after strip) | Rejected by the submodel validator. |
+| `derived_from_ids` contains duplicates or empty strings (on create) | Rejected by the submodel validator (`ValueError` → 422). On load: accepted as-is. |
+| `notes` over 2,000 chars after strip (on create) | Rejected by the submodel validator. On load: accepted (lenient). |
 | `notes` empty/whitespace | Coerced to `None`. |
 | Create request omits `provenance` | Saved as `provenance=None` (legal; no default). |
 | `provenance` object present but `origin` missing/`None` on create | Rejected (422) — `origin` is required when provenance is set. |
