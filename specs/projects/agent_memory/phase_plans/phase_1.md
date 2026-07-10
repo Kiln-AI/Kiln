@@ -21,8 +21,9 @@ Build the `Memory` datamodel record, register it under `Project`, and build the 
      - `scope` `mode="before"`: `strip()`, reject empty, reject newline, reject `len > 255`.
      - `tags`: `@field_validator("tags")` calling the **shared** `validate_tags` helper (see step 1b) — reject empty-string tags and tags containing spaces.
    - Confirm nothing fails on load for once-valid data (rules are monotonic; document the `loading_from_file` escape hatch is available but unused).
+   - **Override `save_to_file`** for atomic writes (temp file + `os.replace`) — required for the lock-free multi-process design so concurrent readers never see a torn file (architecture §4).
 
-1b. **`libs/core/kiln_ai/utils/validation.py`** — add the shared `validate_tags(tags: list[str]) -> list[str]` helper (architecture §2.5). Reuse it in `Memory`. **Recommended, low-risk consolidation in the same PR:** migrate the four existing copies (`task_run.py`, `extraction.py`, `spec.py`, and the tag loop in `rag.py`) to the helper; reconcile `spec.py`'s lowercase error-message assertion. If the reviewer wants a narrower memory PR, the four-site consolidation can split into a follow-up commit, but the helper ships with `Memory`.
+1b. **`libs/core/kiln_ai/utils/validation.py`** — add the shared `validate_tags(tags: list[str]) -> list[str]` helper (architecture §2.5). Reuse it in `Memory`. Consolidate the three identical copies (`task_run.py`, `extraction.py`, `spec.py`) onto the helper (update the two `test_spec.py` assertions for the now-capitalized message). Leave `rag.py` as-is — it bundles extra empty-list/tool-field checks and pins a different per-tag message (`"Tags cannot be empty."`) that `test_rag.py` asserts.
 
 2. **`libs/core/kiln_ai/datamodel/project.py`** — register the relationship:
    - Add `"memories": ParentOfRelationship(model=Memory, filesystem_name="assistant_memory")` to `Project.parent_of`; import `ParentOfRelationship` and `Memory`.

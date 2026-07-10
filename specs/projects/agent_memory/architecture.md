@@ -117,6 +117,8 @@ class Memory(KilnParentedModel):
 
 **No `name` field — deliberate.** `KilnParentedModel.build_child_dirname` (basemodel.py:601) does `getattr(self, "name", None)`; with no `name`, the child folder is exactly `{id}`. That is the id-only-subfolder requirement (decision 1) with zero extra code. `base_filename()` = `type_name() + ".kiln"` = `memory.kiln`, so the on-disk path is `assistant_memory/{id}/memory.kiln`, matching the docstring.
 
+**Atomic `save_to_file` override.** `Memory` overrides `save_to_file` to write atomically (temp file + `os.replace`) — required for the lock-free multi-process design; see §4.
+
 ### 2.2 Registration on `Project`
 
 `Memory`'s Python accessor (`memories`) and its on-disk folder (`assistant_memory`) differ, so register with the **decoupled form** — `ParentOfRelationship` (basemodel.py:742), which exists for exactly this "attribute name ≠ folder name" case:
@@ -177,7 +179,8 @@ def validate_tags(tags: list[str]) -> list[str]:
 ```
 
 - `Memory` calls it from a `@field_validator("tags")` (the new consumer — this is the whole point of the helper).
-- **Consolidate the existing duplicates in the same PR** (recommended, low-risk, identical behavior): `task_run`, `extraction`, and `spec` swap their loop for `validate_tags(self.tags)`; `rag` delegates its tag loop to the helper and keeps its extra empty-list / tool-name checks. One nuance to reconcile: `spec.py` currently lowercases its message ("tags cannot…"); the helper standardizes on the capitalized form used by the other three — update `spec`'s test assertion on that message text if it pins the exact string. If the reviewer prefers to keep the memory PR narrow, the consolidation of the four existing sites can be split into a follow-up cleanup commit, but the helper itself ships with `Memory`.
+- **Consolidated the three identical duplicates** (`task_run`, `extraction`, `spec`) onto the helper. `spec` previously lowercased its messages ("tags cannot…"); it now uses the helper's capitalized form, and the two `test_spec.py` assertions were updated to match. `task_run` / `extraction` messages already matched the helper exactly (no test changes).
+- **`rag` is left as-is** (not folded in): its validator bundles an extra empty-**list** check plus `tool_name` / `tool_description` checks, and its per-tag empty message is `"Tags cannot be empty."` — different from the helper's `"Tags cannot be empty strings"`, and `test_rag.py` pins that message as a substring. Folding rag in would force a user-facing message change for marginal benefit, so its local loop stays. (If a qualified-ID cleanup ever revisits rag, it can adopt the helper then.)
 - `utils/validation.py` imports only `re`/`typing`/`pydantic`; datamodel files already import from `utils`, so there is no import cycle.
 
 ## 3. Core Memory API — `libs/core/kiln_ai/memory/memory_store.py`
@@ -338,11 +341,31 @@ Small, explicit exception types in the `memory` package: `MemoryNotFoundError(id
 
 ## 4. Concurrency (design + test)
 
-The store never serializes writes and needs no lock:
+The store never serializes writes and needs no lock. Unlike the rest of Kiln —
+which coordinates writes with a single-process, API-level git-sync write lock —
+the memory store is **lock-free and multi-process** (decision 1). For that to be
+safe, two things must hold:
 
-- **save** → a new `{id}/memory.kiln`; `save_to_file` (basemodel.py:479) does `mkdir(parents=True, exist_ok=True)` then a single `open(w)` write. Distinct ids ⇒ distinct files ⇒ no interleave. This is the whole reason for file-per-record with random ids.
-- **update** → overwrites one record's file; two updaters race to last-writer-wins on that one file (accepted).
-- **read** → `os.scandir` walk (basemodel.py:671); tolerates files appearing/vanishing mid-scan.
+- **Distinct files.** Each `save_memory` writes a new `{id}/memory.kiln`; distinct
+  random ids ⇒ distinct files ⇒ concurrent appends never interleave. This is the
+  whole reason for file-per-record.
+- **Atomic writes.** Core `save_to_file` (basemodel.py:479) writes in place
+  (`open(w)` truncate + write), so a reader in another process can catch a
+  half-written file — `basemodel.py:886` itself notes atomic move is the
+  intended-but-unimplemented approach. `Memory` therefore **overrides
+  `save_to_file`** to write to a temp file in the same directory and `os.replace`
+  it into place. `os.replace` is atomic on a single filesystem, so every
+  concurrent reader sees either the previous complete file or the new complete
+  file — never a torn one. (Memory has no attachments, so the plain JSON dump is
+  sufficient; the override does not touch core, keeping the blast radius to this
+  one lock-free model.) A brand-new save is likewise safe: a scanner that races
+  the mkdir sees `{id}/` with no `memory.kiln` yet and simply skips it (the record
+  appears atomically once replaced).
+- **read** → `os.scandir` walk (basemodel.py:671); with atomic writes it tolerates
+  files appearing/vanishing mid-scan and never reads a partial file.
+
+Same-record updates remain last-writer-wins (accepted): two updaters race, and
+`os.replace` guarantees the loser/winner boundary is a whole file, never a merge.
 
 **Test (`test_memory_store_concurrency.py`):** spawn ≥2 OS processes (e.g. `multiprocessing.Process` or `concurrent.futures.ProcessPoolExecutor`) each constructing its own `MemoryStore` on the *same* project folder and doing a burst of `save_memory` (plus some `update_memory` on a shared id). Assert: (a) the number of records equals the total saved (no lost appends), (b) same-id updates leave a single valid record whose fields match one of the writers (last-writer-wins, not a corrupt merge), (c) every `memory.kiln` on disk parses (`Memory.load_from_file`). The MCP layer repeats this with two **server processes** (the real Phase-0 topology) in the experiments repo.
 
