@@ -131,7 +131,7 @@
     if (!started_outputs) {
       if (failed_inputs === 0) return null
       return {
-        message: `${failed_inputs} input ${failed_inputs === 1 ? "plan" : "plans"} failed to generate. Use Generate Inputs → Retry failed only.`,
+        message: `${failed_inputs} input ${failed_inputs === 1 ? "plan" : "plans"} failed to generate. Use Generate Inputs → Retry Failed.`,
         color: ok_inputs > 0 ? "warning" : "error",
       }
     }
@@ -148,11 +148,10 @@
     outputs_missing,
     outputs_savable,
   )
-  $: plan_summary_line = !inputs_done
-    ? `${generated_inputs} of ${total} generated…`
-    : `${generated_inputs} of ${total} inputs generated${
-        input_errors > 0 ? ` — ${input_errors} failed` : ""
-      }`
+  // Only rendered once generation is done — see the provenance line below.
+  $: plan_summary_line = `${generated_inputs} of ${total} inputs generated${
+    input_errors > 0 ? ` — ${input_errors} failed` : ""
+  }`
 
   const outputs_dialog_id = "kiln_pro_outputs_dialog"
   let outputs_run_config: RunConfigComponent | null = null
@@ -486,13 +485,13 @@
             width="w-72"
             items={[
               {
-                label: `Retry failed only (${input_errors})`,
+                label: `Retry Failed (${input_errors})`,
                 description: "Re-run just the input plans that failed.",
                 onclick: () => open_inputs_dialog("retry"),
                 hidden: input_errors === 0,
               },
               {
-                label: "Regenerate all inputs",
+                label: "Regenerate All Inputs",
                 description: `Discard all ${total} and generate fresh from the plan.`,
                 onclick: () => open_inputs_dialog("regenerate"),
                 // A reset can't undo rows already written to the dataset.
@@ -544,14 +543,15 @@
 
   {#if saving}
     <div>
+      <div class="flex flex-row justify-between text-xs font-light mb-1">
+        <span class="font-medium">Saving</span>
+        <span class="text-gray-500">{save_progress} of {save_target}</span>
+      </div>
       <progress
         class="progress progress-success w-full"
         value={save_progress}
         max={save_target}
       ></progress>
-      <div class="text-xs font-light text-gray-500 mt-1">
-        Saving {save_progress} of {save_target}…
-      </div>
     </div>
   {/if}
 
@@ -577,21 +577,31 @@
   {/if}
 
   {#if save_completed && save_errors.length === 0 && total_saved > 0 && outputs_savable === 0}
-    <div
-      class="rounded-lg bg-success/10 border border-success/30 px-4 py-3 text-sm"
-    >
-      Saved {total_saved} items into your dataset. They're available in the
-      <a href={`/dataset/${project_id}/${task_id}`} class="link">dataset tab</a
-      >.
-    </div>
+    <Warning
+      warning_message={`Saved ${total_saved} ${
+        total_saved === 1 ? "item" : "items"
+      } into your Dataset.`}
+      warning_color="success"
+      warning_icon="check"
+      tight
+    />
   {/if}
 
   {#if generating}
-    <progress
-      class="progress progress-primary w-full"
-      value={inputs_done ? generated_outputs : generated_inputs}
-      max={total}
-    ></progress>
+    {@const progress = inputs_done ? generated_outputs : generated_inputs}
+    <div>
+      <div class="flex flex-row justify-between text-xs font-light mb-1">
+        <span class="font-medium">
+          {inputs_done ? "Generating Outputs" : "Generating Inputs"}
+        </span>
+        <span class="text-gray-500">{progress} of {total}</span>
+      </div>
+      <progress
+        class="progress progress-primary w-full"
+        value={progress}
+        max={total}
+      ></progress>
+    </div>
   {/if}
 
   <!-- Plan provenance. The plan itself lives in a dialog — by this point it's
@@ -601,10 +611,14 @@
   >
     <div class="flex items-center gap-1.5 text-gray-600">
       <span class="w-4 h-4 text-primary"><StarsIcon /></span>
-      {inputs_done ? "Generated from your" : "Generating from your"}
+      {generating ? "Generating from your" : "Generated from your"}
       <span class="font-medium text-base-content">Batch Plan</span>
-      <span class="text-gray-400">·</span>
-      {plan_summary_line}
+      <!-- The count lives in the progress bar while it's up; showing it here too
+           would duplicate it. -->
+      {#if !generating}
+        <span class="text-gray-400">·</span>
+        {plan_summary_line}
+      {/if}
     </div>
     <button class="link" on:click={() => open_dialog(plan_dialog_id)}>
       View Plan

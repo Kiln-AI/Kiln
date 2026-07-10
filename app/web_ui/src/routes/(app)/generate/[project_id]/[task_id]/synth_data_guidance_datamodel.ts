@@ -193,18 +193,29 @@ export class SynthDataGuidanceDataModel {
     this.selected_template.set(template || "custom")
   }
 
-  // Default guidance for the Kiln Pro batch planner. For spec-backed evals we
-  // embed the spec details (mirroring how the eval judge references the spec),
-  // so the plan targets the spec. Legacy evals and fine-tuning are left blank
-  // for now.
+  // Default guidance for the Kiln Pro batch planner. For evals backed by a
+  // definition we embed it (mirroring how the eval judge references it), so the
+  // plan targets the behavior being measured. Legacy evals and fine-tuning are
+  // left blank for now.
   public kiln_pro_batch_plan_prefill(): string {
     if (this.gen_type === "eval" && this.spec) {
-      return `Come up with a batch plan to generate evaluation data for the spec "${this.spec.name}".
+      // The planner on kiln_server is use-case agnostic — it only learns this is
+      // an eval batch from this text, so the distribution an eval needs is
+      // stated here explicitly. The instruction leads; the definition follows as
+      // reference, delimited so the planner can't mistake its markdown headings
+      // for instructions addressed to it.
+      return `Generate a diverse batch of inputs that exercise the behavior defined by the eval "${this.spec.name}". Cover that behavior thoroughly — representative cases, edge cases, and the aspects worth emphasizing.
 
-Here are the details of the spec for reference:
+The batch should:
+- Split roughly evenly between inputs where the task is likely to exhibit the defined behavior and inputs where it is likely to violate it.
+- Spread across difficulty: clear-cut cases, and cases that sit close to the boundary where the correct result is genuinely arguable.
+- Exercise each distinct behavior the definition describes, rather than clustering on the most obvious one.
+
+The eval's definition is below, for reference:
+
+<eval_definition>
 ${this.spec.definition}
-
-Generate a diverse batch that covers the spec thoroughly — representative cases, edge cases, and the behaviors worth emphasizing.`
+</eval_definition>`
     }
     // Legacy eval (no spec) or fine-tuning: blank for now.
     return ""

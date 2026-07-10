@@ -3,20 +3,27 @@
   export let on_kiln_pro: () => void
 
   const rows: { label: string; manual: string; pro: string }[] = [
-    { label: "Batch planning", manual: "By hand", pro: "Automatic" },
     {
-      label: "Per-input prompts",
-      manual: "Write each one",
-      pro: "Drafted for you",
+      label: "Topic tree",
+      manual: "You build one",
+      pro: "Not needed",
     },
-    { label: "Coverage across topics", manual: "Manual", pro: "Automatic" },
     {
-      label: "Edge cases",
-      manual: "You add them",
-      pro: "Included deliberately",
+      label: "Input guidance",
+      manual: "One for the whole batch",
+      pro: "Tailored per input",
+    },
+    {
+      label: "Coverage and edge cases",
+      manual: "You steer them",
+      pro: "Planned deliberately",
+    },
+    {
+      label: "Review",
+      manual: "After generating",
+      pro: "Plan first, then generate",
     },
     { label: "Batch summary", manual: "—", pro: "Generated" },
-    { label: "Approx. effort", manual: "~30 min", pro: "~2 min" },
     { label: "Kiln account", manual: "Optional", pro: "Required" },
   ]
 </script>

@@ -81,9 +81,13 @@
     connect_success = false
   }
 
+  // The template the guidance box started from, so edits can be undone.
+  let batch_guidance_template = ""
+
   async function open_generate_batch_modal() {
     if (!guidance_initialized) {
-      batch_guidance = guidance_data.kiln_pro_batch_plan_prefill()
+      batch_guidance_template = guidance_data.kiln_pro_batch_plan_prefill()
+      batch_guidance = batch_guidance_template
       guidance_initialized = true
     }
     await tick()
@@ -191,7 +195,7 @@
   <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
     <RefiningAnimation
       title="Planning Batch"
-      description={`Kiln is drafting ${num_inputs} tailored prompts for you to review. This may take a while.`}
+      description={`Kiln is drafting ${num_inputs} tailored prompts for you to review.`}
     />
   </div>
 {:else if stage === "plan" && plan}
@@ -274,6 +278,13 @@
         inputType="textarea"
         height="xl"
         bind:value={batch_guidance}
+        inline_action={batch_guidance_template &&
+        batch_guidance !== batch_guidance_template
+          ? {
+              handler: () => (batch_guidance = batch_guidance_template),
+              label: "Reset",
+            }
+          : null}
       />
       <SynthDataGuide {guidance_data} />
     </FormContainer>
