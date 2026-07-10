@@ -48,6 +48,46 @@ def is_openai_gpt5_no_summary(model_name: str, provider_name: str) -> bool:
     ) and model_name.startswith("gpt_5")
 
 
+def assert_thinking_level_reasoning(
+    reasoning_content: str | None,
+    thinking_level: str,
+    model_name: str,
+    provider_name: str,
+) -> None:
+    """Assert reasoning-content expectations for a thinking-level run.
+
+    `none` level must produce no reasoning content; Anthropic adaptive-thinking
+    models and OpenAI GPT-5.x models (which don't surface reasoning summaries over
+    chat/completions) are allowed to have none; all other models must return
+    reasoning content.
+    """
+    if thinking_level == "none":
+        assert reasoning_content is None, (
+            f"Expected no reasoning content for thinking_level='none', "
+            f"but got {len(reasoning_content)} chars "
+            f"(provider={provider_name}, model={model_name})"
+        )
+    elif (
+        provider_name == ModelProviderName.anthropic
+        and model_name in ANTHROPIC_ADAPTIVE_THINKING_MODELS
+    ):
+        # Adaptive/encrypted-thinking models may not surface reasoning content (see
+        # note above); reaching here means the run succeeded, which is what we verify.
+        pass
+    elif is_openai_gpt5_no_summary(model_name, provider_name):
+        # OpenAI GPT-5.x reasoning models only return reasoning summaries via the
+        # Responses API; Kiln uses chat/completions, so no summary is surfaced (see
+        # note above). The thinking level still applies; reaching here means the run
+        # succeeded, which is what we verify.
+        pass
+    else:
+        assert reasoning_content is not None, (
+            f"Expected reasoning content for thinking_level='{thinking_level}', "
+            f"but got None "
+            f"(provider={provider_name}, model={model_name})"
+        )
+
+
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
     project.save_to_file()
@@ -142,31 +182,9 @@ async def test_thinking_level_reasoning_content(
         "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
     )
     reasoning_content = reasoning_content_from_run(run)
-    if thinking_level == "none":
-        assert reasoning_content is None, (
-            f"Expected no reasoning content for thinking_level='none', "
-            f"but got {len(reasoning_content)} chars "
-            f"(provider={provider_name}, model={model_name})"
-        )
-    elif (
-        provider_name == ModelProviderName.anthropic
-        and model_name in ANTHROPIC_ADAPTIVE_THINKING_MODELS
-    ):
-        # Adaptive/encrypted-thinking models may not surface reasoning content (see
-        # note above); reaching here means the run succeeded, which is what we verify.
-        pass
-    elif is_openai_gpt5_no_summary(model_name, provider_name):
-        # OpenAI GPT-5.x reasoning models only return reasoning summaries via the
-        # Responses API; Kiln uses chat/completions, so no summary is surfaced (see
-        # note above). The thinking level still applies; reaching here means the run
-        # succeeded, which is what we verify.
-        pass
-    else:
-        assert reasoning_content is not None, (
-            f"Expected reasoning content for thinking_level='{thinking_level}', "
-            f"but got None "
-            f"(provider={provider_name}, model={model_name})"
-        )
+    assert_thinking_level_reasoning(
+        reasoning_content, thinking_level, model_name, provider_name
+    )
 
 
 # Curated prerelease smoke test: same behavior as test_thinking_level_reasoning_content
@@ -200,15 +218,6 @@ async def test_thinking_level_reasoning_content_prerelease_smoke(
         "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
     )
     reasoning_content = reasoning_content_from_run(run)
-    if thinking_level == "none":
-        assert reasoning_content is None, (
-            f"Expected no reasoning content for thinking_level='none', "
-            f"but got {len(reasoning_content) if reasoning_content else 0} chars "
-            f"(provider={provider_name}, model={model_name})"
-        )
-    else:
-        assert reasoning_content is not None, (
-            f"Expected reasoning content for thinking_level='{thinking_level}', "
-            f"but got None "
-            f"(provider={provider_name}, model={model_name})"
-        )
+    assert_thinking_level_reasoning(
+        reasoning_content, thinking_level, model_name, provider_name
+    )
