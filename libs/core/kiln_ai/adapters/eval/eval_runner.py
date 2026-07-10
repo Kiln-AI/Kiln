@@ -29,6 +29,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
+from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
@@ -411,29 +412,96 @@ class EvalRunner:
                 eval_run.save_to_file()
             return True
 
-        is_multi_turn = (
-            isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None
-        ) or (
-            isinstance(job.item, EvalInput)
-            and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
-        )
-        if is_multi_turn:
+        if isinstance(job.item, EvalInput) and isinstance(
+            job.item.data, MultiTurnSyntheticEvalInputData
+        ):
+            # Multi-turn synthetic inputs require re-driving a conversation at
+            # eval time, which the runner does not support yet. Stored
+            # multi-turn TaskRuns are supported (trace path below).
             async with self._save_context():
                 eval_run = EvalRun(
                     parent=job.eval_config,
                     task_run_config_id=job.task_run_config.id
                     if job.task_run_config
                     else None,
-                    dataset_id=job.item.id if isinstance(job.item, TaskRun) else None,
-                    eval_input_id=job.item.id
-                    if isinstance(job.item, EvalInput)
-                    else None,
+                    dataset_id=None,
+                    eval_input_id=job.item.id,
                     eval_config_eval=job.type == "eval_config_eval",
                     scores={},
                     input=early_input_str,
                     output=None,
                     skipped_reason=SkippedReason.incompatible_input_shape.value,
-                    skipped_detail="V2 evals do not yet support multi-turn inputs",
+                    skipped_detail="V2 evals do not yet support multi-turn synthetic inputs",
+                )
+                eval_run.save_to_file()
+            return True
+
+        if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
+            # Multi-turn chain leaf: a conversation can't be regenerated in a
+            # single model call, so both run modes evaluate the stored trace.
+            # In task_run_eval mode the scores are therefore a property of the
+            # stored conversation, identical across run configs — regenerating
+            # per run config requires re-driving the conversation, which is
+            # not supported yet.
+            leaf = job.item
+            if not leaf.trace:
+                async with self._save_context():
+                    eval_run = EvalRun(
+                        parent=job.eval_config,
+                        task_run_config_id=job.task_run_config.id
+                        if job.task_run_config
+                        else None,
+                        dataset_id=leaf.id,
+                        eval_input_id=None,
+                        eval_config_eval=job.type == "eval_config_eval",
+                        scores={},
+                        input=leaf.input,
+                        output=None,
+                        skipped_reason=SkippedReason.missing_trace.value,
+                        skipped_detail="Multi-turn task run has no stored trace to evaluate",
+                    )
+                    eval_run.save_to_file()
+                return True
+
+            eval_task_input = EvalTaskInput.from_task_run(leaf)
+            result = await evaluator.evaluate(eval_task_input)
+
+            # Like the legacy runner, only successful task-run-eval records of
+            # a full_trace eval carry the serialized trace.
+            trace_json: str | None = None
+            if (
+                job.type == "task_run_eval"
+                and result.skipped_reason is None
+                and self.eval.evaluation_data_type == EvalDataType.full_trace
+            ):
+                trace_json = json.dumps(
+                    eval_task_input.trace,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=_trace_json_default,
+                )
+
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=leaf.id,
+                    eval_input_id=None,
+                    eval_config_eval=job.type == "eval_config_eval",
+                    scores=result.scores,
+                    input=leaf.input,
+                    output=leaf.output.output
+                    if result.skipped_reason is None
+                    else None,
+                    reference_data=eval_task_input.reference_data,
+                    skipped_reason=result.skipped_reason.value
+                    if result.skipped_reason
+                    else None,
+                    skipped_detail=result.skipped_detail,
+                    intermediate_outputs=result.intermediate_outputs,
+                    task_run_trace=trace_json,
                 )
                 eval_run.save_to_file()
             return True
@@ -544,6 +612,15 @@ class EvalRunner:
                 )
                 eval_run.save_to_file()
             return True
+
+
+def _trace_json_default(obj: object) -> object:
+    """json.dumps `default` for stored traces: in-memory assistant turns carry
+    MessageUsage (Pydantic). The whitelist stays narrow so any new non-JSON
+    type fails loudly instead of leaking through a blanket str() fallback."""
+    if isinstance(obj, MessageUsage):
+        return obj.model_dump(mode="json")
+    raise TypeError(f"{type(obj).__name__} is not JSON serializable")
 
 
 def _is_retryable_error(e: BaseException) -> bool:

@@ -46,6 +46,16 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        judge config, and the answer key. All chains are rated,
                        so the 50/25/25 split caps golden at 25% and holds the
                        rest out as disjoint eval/train slices.)
+  Step 7   RUN         GET .../evals/{id}/eval_config/{id}/run_comparison
+                       GET .../evals/{id}/run_calibration          [SSE x2]
+                       (What the user does AFTER the wizard: execute the
+                       saved eval from the evals UI, via that UI's own
+                       endpoints. Multi-turn chains can't be regenerated in
+                       a single model call, so the runner judges the STORED
+                       traces — run_comparison scores the held-out eval
+                       slice; run_calibration validates the judge against
+                       the golden answer key and the harness reports the
+                       judge-vs-human agreement.)
 
 The generation knobs (num_cases, turns) are request parameters, so the small
 constants need no code patching; only task-id resolution is patched to a
@@ -67,7 +77,8 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
     driver, and judge all run locally on your keys.
 
 Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
-builder, plus one refine call at save — ~25 small model calls, cents.
+builder, one refine call at save, plus the runner's judge calls over the
+eval + golden slices — ~27 small model calls, cents.
 
 A second paid test (`test_eval_builder_pipeline_tools_e2e`) drives a
 tool-calling task via its SAVED run config (2x2, built-in calculator tools)
@@ -84,6 +95,7 @@ import httpx
 import pytest
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
+from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.utils.copilot_utils import (
@@ -332,6 +344,8 @@ def client():
     connect_multiturn_sdg_api(app)
     connect_eval_builder_api(app)
     connect_copilot_api(app)
+    # The saved eval is executed through the evals UI's own run endpoints.
+    connect_evals_api(app)
     return TestClient(app)
 
 
@@ -609,8 +623,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     leaves = find_multi_turn_chain_leaves(temp_task, batch_tag)
     _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
-    golden_leaf_ids: set[str] = set()
-    eval_count = 0
+    golden_leaf_ids: set[str | None] = set()
+    eval_leaf_ids: set[str | None] = set()
     train_count = 0
     for leaf in leaves:
         tags = set(leaf.tags or [])
@@ -634,8 +648,10 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         )
         if golden_tag in tags:
             golden_leaf_ids.add(leaf.id)
-        eval_count += 1 if eval_tag in tags else 0
+        if eval_tag in tags:
+            eval_leaf_ids.add(leaf.id)
         train_count += 1 if train_tag in tags else 0
+    eval_count = len(eval_leaf_ids)
 
     # Golden is drawn only from rated chains and capped at 25%; here every chain
     # is rated, so golden is a subset sized by the cap.
@@ -652,6 +668,120 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         f"split not 50/25/25 (golden={len(golden_leaf_ids)}, eval={eval_count}, "
         f"train={train_count}, n={num_driven})",
     )
+
+    # ── Step 7 — RUN THE SAVED EVAL (the evals UI's own endpoints) ──────
+    # What the user does after the wizard: execute the eval from the evals
+    # UI. Multi-turn chains can't be regenerated in a single model call, so
+    # the runner scores the STORED traces — run_comparison (task_run_eval)
+    # over the held-out eval slice, then run_calibration (eval_config_eval)
+    # over the golden slice, where judge-vs-human agreement is the number
+    # the judge screen reports.
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    saved_eval = evals[0]
+    judge_config = configs[0]
+    score_key = saved_eval.output_scores[0].json_key()
+
+    def _run_sse_complete(url: str, params: dict | None = None) -> None:
+        """Drive one eval-runner SSE endpoint to completion, zero errors."""
+        resp = client.get(url, params=params)
+        _require(resp.status_code == 200, f"{url} failed: {resp.text}")
+        events = _parse_sse(resp.text)
+        _require(
+            bool(events) and events[-1] == "complete",
+            f"{url}: eval run stream did not complete: {events[-3:]}",
+        )
+        progress = [e for e in events if isinstance(e, dict)]
+        _require(
+            bool(progress) and progress[-1]["errors"] == 0,
+            f"{url}: eval run reported errors: {progress[-1:]}",
+        )
+
+    # task_run_eval requires a saved run config to attribute results to; its
+    # properties mirror the inline drive config.
+    eval_run_config = TaskRunConfig(
+        name="E2E Runner Config",
+        parent=temp_task,
+        run_config_properties=KilnAgentRunConfigProperties(**TARGET_RUN_CONFIG),
+    )
+    eval_run_config.save_to_file()
+    _run_sse_complete(
+        f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
+        f"/eval_config/{judge_config.id}/run_comparison",
+        params={"run_config_ids": [eval_run_config.id]},
+    )
+    eval_set_runs = [
+        r for r in judge_config.runs(readonly=True) if not r.eval_config_eval
+    ]
+    _require(
+        {r.dataset_id for r in eval_set_runs} == eval_leaf_ids,
+        f"task_run_eval did not cover the eval slice exactly: "
+        f"{sorted(str(r.dataset_id) for r in eval_set_runs)} vs {eval_leaf_ids}",
+    )
+    for run in eval_set_runs:
+        _require(
+            run.skipped_reason is None,
+            f"eval-set run for leaf {run.dataset_id} was skipped "
+            f"({run.skipped_reason}): {run.skipped_detail}",
+        )
+        _require(
+            run.scores.get(score_key) in (0.0, 1.0),
+            f"eval-set run for leaf {run.dataset_id} has no {score_key} "
+            f"verdict: {run.scores}",
+        )
+        _require(
+            run.task_run_config_id == eval_run_config.id,
+            f"eval-set run for leaf {run.dataset_id} not attributed to the run config",
+        )
+        # full_trace evals record the scored conversation on the eval run.
+        _require(
+            bool(run.task_run_trace),
+            f"eval-set run for leaf {run.dataset_id} did not record the stored trace",
+        )
+
+    # eval_config_eval: validate the judge against the golden answer key.
+    _run_sse_complete(f"/api/projects/p/tasks/t/evals/{saved_eval.id}/run_calibration")
+    golden_runs = [r for r in judge_config.runs(readonly=True) if r.eval_config_eval]
+    _require(
+        {r.dataset_id for r in golden_runs} == golden_leaf_ids,
+        f"eval_config_eval did not cover the golden slice exactly: "
+        f"{sorted(str(r.dataset_id) for r in golden_runs)} vs {golden_leaf_ids}",
+    )
+    leaf_by_id = {leaf.id: leaf for leaf in leaves}
+    agreements: list[bool] = []
+    for run in golden_runs:
+        _require(
+            run.skipped_reason is None,
+            f"golden run for leaf {run.dataset_id} was skipped "
+            f"({run.skipped_reason}): {run.skipped_detail}",
+        )
+        judge_score = run.scores.get(score_key)
+        _require(
+            judge_score in (0.0, 1.0),
+            f"golden run for leaf {run.dataset_id} has no {score_key} "
+            f"verdict: {run.scores}",
+        )
+        rating = leaf_by_id[run.dataset_id].output.rating
+        assert rating is not None  # every leaf's rating asserted above
+        human_passes = rating.requirement_ratings[f"named::{SPEC_NAME}"].value == 1.0
+        agreements.append((judge_score == 1.0) == human_passes)
+    # Agreement is a report, not a gate: with a tiny golden slice a single
+    # judge/human disagreement is legitimate signal, not a pipeline break.
+    # An empty golden slice only happens when SU salvage shrank the batch
+    # below 4 driven cases (golden_target = num_driven // 4 = 0).
+    if agreements:
+        agreement = sum(agreements) / len(agreements)
+        print(
+            f"\ngolden-set judge agreement: {agreement:.0%} "
+            f"({sum(agreements)}/{len(agreements)} golden leaves)"
+        )
+    else:
+        warnings.warn(
+            "golden slice is empty (SU salvage shrank the batch) — judge "
+            "agreement not computed this run",
+            stacklevel=1,
+        )
 
 
 # ─────────────────── tool-calling leg (saved run config) ───────────────────

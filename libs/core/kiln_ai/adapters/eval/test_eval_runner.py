@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Dict
@@ -32,6 +33,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalScores,
+    EvalTaskInput,
     ExactMatchProperties,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
@@ -41,6 +43,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -1269,6 +1272,48 @@ class TestCollectTasksForEvalInput:
 # -------------------------------------------------------------------
 # run_job V2 dispatch tests
 # -------------------------------------------------------------------
+MULTI_TURN_TRACE: list[ChatCompletionMessageParam] = [
+    {"role": "user", "content": "turn 1"},
+    {"role": "assistant", "content": "hi"},
+    {"role": "user", "content": "turn 2"},
+    {"role": "assistant", "content": "reply"},
+]
+
+
+def make_multi_turn_leaf(
+    task: Task,
+    data_source: DataSource,
+    trace: list[ChatCompletionMessageParam] | None = MULTI_TURN_TRACE,
+) -> TaskRun:
+    """A saved multi-turn chain-leaf TaskRun (parent_task_run_id set).
+
+    parent_task_run_id is only constructible when the task is multiturn;
+    turn_mode is frozen, so use a multiturn copy (same path) as parent.
+    """
+    multiturn_task = task.model_copy(update={"turn_mode": TurnMode.multiturn})
+    task_run = TaskRun(
+        input="turn 1",
+        output=TaskOutput(output="reply", source=data_source),
+        parent=multiturn_task,
+        parent_task_run_id="some_parent_id",
+        trace=trace,
+    )
+    task_run.save_to_file()
+    return task_run
+
+
+class RecordingStubV2Eval(StubV2Eval):
+    """StubV2Eval that records the EvalTaskInput it was asked to evaluate."""
+
+    def __init__(self, eval_config: EvalConfig):
+        super().__init__(eval_config)
+        self.seen_inputs: list[EvalTaskInput] = []
+
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
+        self.seen_inputs.append(eval_input)
+        return await super().evaluate(eval_input)
+
+
 class TestRunV2Job:
     @pytest.mark.asyncio
     async def test_v2_dispatch_from_run_job(
@@ -1414,21 +1459,78 @@ class TestRunV2Job:
         assert saved.input == "Say hello"
 
     @pytest.mark.asyncio
-    async def test_multi_turn_task_run_skipped(
-        self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs, data_source
+    async def test_multi_turn_task_run_eval_config_eval_scores_stored_trace(
+        self, mock_v2_runner, mock_v2_eval_config, data_source
     ):
-        # parent_task_run_id is only constructible when the task is multiturn;
-        # turn_mode is frozen, so use a multiturn copy (same path) as parent.
-        multiturn_task = mock_v2_runner.task.model_copy(
-            update={"turn_mode": TurnMode.multiturn}
+        task_run = make_multi_turn_leaf(mock_v2_runner.task, data_source)
+        job = EvalJob(
+            item=task_run,
+            eval_config=mock_v2_eval_config,
+            type="eval_config_eval",
         )
-        task_run = TaskRun(
-            input="turn 1",
-            output=TaskOutput(output="reply", source=data_source),
-            parent=multiturn_task,
-            parent_task_run_id="some_parent_id",
+        stub = RecordingStubV2Eval(mock_v2_eval_config)
+        with patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            return_value=stub,
+        ):
+            result = await mock_v2_runner.run_job(job)
+        assert result is True
+
+        # The adapter received the stored conversation, not a regeneration.
+        assert len(stub.seen_inputs) == 1
+        eval_task_input = stub.seen_inputs[0]
+        assert eval_task_input.final_message == "reply"
+        assert eval_task_input.task_input == "turn 1"
+        assert eval_task_input.trace == MULTI_TURN_TRACE
+
+        runs = mock_v2_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.skipped_reason is None
+        assert saved.dataset_id == task_run.id
+        assert saved.eval_input_id is None
+        assert saved.eval_config_eval is True
+        assert saved.task_run_config_id is None
+        assert saved.input == "turn 1"
+        assert saved.output == "reply"
+        # mock_v2_eval defaults to final_answer, so no trace on the record.
+        assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
+    async def test_multi_turn_eval_config_eval_full_trace_records_no_trace(
+        self, mock_v2_runner, mock_v2_eval_config, data_source
+    ):
+        # Only task-run-eval records carry the serialized trace (legacy-runner
+        # parity); eval_config_eval scores the stored run without copying it.
+        mock_v2_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+        mock_v2_eval_config.parent.save_to_file()
+
+        task_run = make_multi_turn_leaf(mock_v2_runner.task, data_source)
+        job = EvalJob(
+            item=task_run,
+            eval_config=mock_v2_eval_config,
+            type="eval_config_eval",
         )
-        task_run.save_to_file()
+        with patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            return_value=StubV2Eval(mock_v2_eval_config),
+        ):
+            result = await mock_v2_runner.run_job(job)
+        assert result is True
+
+        runs = mock_v2_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("trace", [None, []])
+    async def test_multi_turn_task_run_without_trace_skipped(
+        self, mock_v2_runner, mock_v2_eval_config, data_source, trace
+    ):
+        task_run = make_multi_turn_leaf(mock_v2_runner.task, data_source, trace=trace)
         job = EvalJob(
             item=task_run,
             eval_config=mock_v2_eval_config,
@@ -1444,9 +1546,33 @@ class TestRunV2Job:
         assert len(runs) == 1
         saved = runs[0]
         assert saved.scores == {}
-        assert saved.skipped_reason == SkippedReason.incompatible_input_shape.value
-        assert "multi-turn" in saved.skipped_detail
+        assert saved.skipped_reason == SkippedReason.missing_trace.value
+        assert "no stored trace" in saved.skipped_detail
         assert saved.input == "turn 1"
+        assert saved.output is None
+
+    @pytest.mark.asyncio
+    async def test_multi_turn_task_run_adapter_skip_persists(
+        self, mock_v2_runner, mock_v2_eval_config, data_source
+    ):
+        task_run = make_multi_turn_leaf(mock_v2_runner.task, data_source)
+        job = EvalJob(
+            item=task_run,
+            eval_config=mock_v2_eval_config,
+            type="eval_config_eval",
+        )
+        with patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            return_value=SkippingStubV2Eval(mock_v2_eval_config),
+        ):
+            result = await mock_v2_runner.run_job(job)
+        assert result is True
+        runs = mock_v2_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.scores == {}
+        assert saved.skipped_reason == SkippedReason.extraction_failed.value
+        assert saved.skipped_detail == "test skip detail"
         assert saved.output is None
 
     @pytest.mark.asyncio
@@ -1477,7 +1603,7 @@ class TestRunV2Job:
         saved = runs[0]
         assert saved.scores == {}
         assert saved.skipped_reason == SkippedReason.incompatible_input_shape.value
-        assert "multi-turn" in saved.skipped_detail
+        assert "multi-turn synthetic" in saved.skipped_detail
         assert saved.eval_input_id == "ei_multi"
         assert saved.output is None
 
@@ -1678,6 +1804,102 @@ class TestV2FreshGeneration:
         assert saved.scores == {}
         assert saved.eval_config_eval is False
         assert saved.dataset_id == fresh_task_run.id
+
+    @pytest.mark.asyncio
+    async def test_task_run_eval_multi_turn_scores_stored_trace_without_regen(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Multi-turn leaves can't be regenerated single-shot; task_run_eval
+        mode scores the stored trace and never calls run_task."""
+        leaf = make_multi_turn_leaf(mock_v2_task_run_eval_runner.task, data_source)
+        job = EvalJob(
+            item=leaf,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = RecordingStubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(
+                stub, "run_task", side_effect=AssertionError("run_task called")
+            ),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
+
+        assert result is True
+        assert len(stub.seen_inputs) == 1
+        assert stub.seen_inputs[0].trace == MULTI_TURN_TRACE
+
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.output == "reply"
+        assert saved.dataset_id == leaf.id
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.eval_config_eval is False
+        assert saved.task_run_config_id == mock_run_config.id
+        assert saved.skipped_reason is None
+        # The parent eval defaults to final_answer, so no trace on the record.
+        assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
+    async def test_task_run_eval_multi_turn_full_trace_serializes_trace(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        mock_v2_task_run_eval_config.parent.evaluation_data_type = (
+            EvalDataType.full_trace
+        )
+        mock_v2_task_run_eval_config.parent.save_to_file()
+
+        # In-memory assistant turns carry a MessageUsage object (not plain
+        # JSON) — the serialization must handle it, not crash.
+        trace_with_usage: list[ChatCompletionMessageParam] = [
+            {"role": "user", "content": "turn 1"},
+            {
+                "role": "assistant",
+                "content": "reply",
+                "usage": MessageUsage(input_tokens=5, output_tokens=7),
+            },
+        ]
+        leaf = make_multi_turn_leaf(
+            mock_v2_task_run_eval_runner.task, data_source, trace=trace_with_usage
+        )
+        job = EvalJob(
+            item=leaf,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            return_value=StubV2Eval(mock_v2_task_run_eval_config),
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.scores == {"accuracy": 1.0}
+        assert saved.task_run_trace is not None
+        parsed = json.loads(saved.task_run_trace)
+        assert [m["role"] for m in parsed] == ["user", "assistant"]
+        assert parsed[1]["content"] == "reply"
+        assert parsed[1]["usage"]["input_tokens"] == 5
+        assert parsed[1]["usage"]["output_tokens"] == 7
 
     @pytest.mark.asyncio
     async def test_eval_config_eval_scores_existing_without_fresh_gen(
