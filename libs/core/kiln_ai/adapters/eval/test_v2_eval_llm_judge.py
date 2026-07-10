@@ -428,20 +428,22 @@ class TestLlmJudgeEvalGEvalFailFast:
         assert result.skipped_reason is None
 
 
-class TestLlmJudgeEvalRequiredVars:
+class TestLlmJudgeEvalMissingReferenceData:
     @pytest.mark.asyncio
-    async def test_missing_required_var_skips(self):
-        props = _make_props(required_var=["reference_data.answer"])
+    async def test_undefined_reference_key_skips_cleanly(self):
+        props = _make_props(
+            prompt_template="Answer: {{ reference_data.answer }} Output: {{ final_message }}"
+        )
         cfg = _make_config(props)
         result = await LlmJudgeEval(cfg).evaluate(_inp(reference_data=None))
         assert result.scores == {}
-        assert result.skipped_reason is not None
+        assert result.skipped_reason == SkippedReason.missing_reference_key
         assert result.skipped_detail is not None
-        assert result.intermediate_outputs is None
+        assert "missing data" in result.skipped_detail.lower()
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
-    async def test_present_required_var_proceeds(self, mock_adapter_for_task):
+    async def test_present_reference_data_proceeds(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
             Mock(),
@@ -449,7 +451,9 @@ class TestLlmJudgeEvalRequiredVars:
         )
         mock_adapter_for_task.return_value = mock_adapter
 
-        props = _make_props(required_var=["reference_data.answer"])
+        props = _make_props(
+            prompt_template="Answer: {{ reference_data.answer }} Output: {{ final_message }}"
+        )
         cfg = _make_config(props)
         result = await LlmJudgeEval(cfg).evaluate(
             _inp(reference_data={"answer": "correct"})

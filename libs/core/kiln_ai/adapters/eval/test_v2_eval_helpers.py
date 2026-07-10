@@ -1,8 +1,7 @@
-"""Tests for v2_eval_helpers -- extract_value, extract_output_value, check_required_vars, check_reference_key, stringify_for_match."""
+"""Tests for v2_eval_helpers -- extract_value, extract_output_value, check_reference_key, stringify_for_match."""
 
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
-    check_required_vars,
     extract_output_value,
     extract_value,
     stringify_for_match,
@@ -58,42 +57,6 @@ class TestExtractValue:
 
 
 # ---------------------------------------------------------------------------
-# check_required_vars
-# ---------------------------------------------------------------------------
-
-
-class TestCheckRequiredVars:
-    def test_all_present(self):
-        inp = _make_input(final_message="hi", task_input="some input")
-        skip, detail = check_required_vars(["final_message", "task_input"], inp)
-        assert skip is None
-        assert detail is None
-
-    def test_undefined_var_skips(self):
-        inp = _make_input()
-        skip, detail = check_required_vars(["nonexistent"], inp)
-        assert skip == SkippedReason.extraction_failed
-        assert detail is not None and "undefined" in detail
-
-    def test_none_var_skips(self):
-        inp = _make_input(trace=None)
-        skip, detail = check_required_vars(["trace"], inp)
-        assert skip == SkippedReason.missing_trace
-        assert detail is not None and "trace" in detail
-
-    def test_empty_list_passes(self):
-        inp = _make_input()
-        skip, _detail = check_required_vars([], inp)
-        assert skip is None
-
-    def test_first_none_stops_early(self):
-        inp = _make_input(trace=None, task_input="present")
-        skip, detail = check_required_vars(["trace", "task_input"], inp)
-        assert skip == SkippedReason.missing_trace
-        assert "trace" in (detail or "")
-
-
-# ---------------------------------------------------------------------------
 # check_reference_key
 # ---------------------------------------------------------------------------
 
@@ -139,13 +102,6 @@ class TestFromjsonExtractionSkip:
         assert detail is not None
         assert "not valid JSON" in detail
         assert "(final_message | fromjson).field" in detail
-
-    def test_check_required_vars_fromjson_invalid_json_skips(self):
-        inp = _make_input(final_message="plain text")
-        skip, detail = check_required_vars(["(final_message | fromjson).key"], inp)
-        assert skip == SkippedReason.extraction_failed
-        assert detail is not None
-        assert "not valid JSON" in detail
 
     def test_extract_value_fromjson_valid_json_passes(self):
         inp = _make_input(final_message='{"status": "ok"}')

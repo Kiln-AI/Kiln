@@ -1,9 +1,14 @@
 """Integration tests: run code-eval sample snippets through the real execution path.
 
-Sample code is mirrored from the frontend's dynamic generators:
-  - "See examples" snippets → code_eval_helpers.ts (generate_examples)
-  - Default starter code shape → code_eval_helpers.ts (generate_default_code)
-Keep these fixtures in sync with those sources.
+The fixtures below are **byte-exact mirrors** of the code strings the frontend generates:
+  - "Code Judge Examples" modal snippets → code_eval_helpers.ts (generate_examples)
+  - Default starter code → code_eval_helpers.ts (generate_default_code)
+
+Each fixture is executed through the real CodeEvalAdapter/sandbox so we know the exact code
+a user runs stays valid. If you change the generator strings in code_eval_helpers.ts, update
+these fixtures to match (a comment in that file points back here). Byte-exactness cannot be
+proven by a passing run alone — docstring/whitespace differences do not affect execution —
+so keep the copies literally identical.
 """
 
 from typing import ClassVar
@@ -109,7 +114,7 @@ PARSE_JSON_CODE = """\
 import json
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output):
     \"\"\"Check if the output is valid JSON with required fields.\"\"\"
     try:
         data = json.loads(output)
@@ -129,7 +134,7 @@ def score(output, trace, reference_data, task_input):
 CHECK_TOOL_USAGE_CODE = """\
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(trace):
     \"\"\"Verify the model used the expected tools.\"\"\"
     tool_calls = KilnEvalHelpers.get_tool_calls(trace)
     used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
@@ -145,7 +150,7 @@ def score(output, trace, reference_data, task_input):
 DOMAIN_GRADING_CODE = """\
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
-def score(output, trace, reference_data, task_input):
+def score(output, reference_data):
     \"\"\"Grade output against domain-specific criteria.\"\"\"
     expected = (reference_data or {}).get("expected_answer", "")
 
@@ -162,33 +167,126 @@ def score(output, trace, reference_data, task_input):
 
 
 # ---------------------------------------------------------------------------
-# Default starter code fixtures — matching generate_default_code output shape
+# Single-score (quality fallback) example fixtures — byte-exact mirror of
+# generate_examples() for a single pass_fail score. These exercise the
+# inline-return path (no multi-line dict, no "Adjust each score's logic" comment)
+# that the multi-score fixtures above do not.
+# ---------------------------------------------------------------------------
+
+PARSE_JSON_CODE_SINGLE = """\
+import json
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output):
+    \"\"\"Check if the output is valid JSON with required fields.\"\"\"
+    try:
+        data = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return {"quality": 0.0}
+
+    required = ["name", "description"]
+    has_all = all(k in data for k in required)
+    passed = isinstance(data, dict) and has_all
+    return {"quality": KilnEvalHelpers.pass_fail(passed)}
+"""
+
+CHECK_TOOL_USAGE_CODE_SINGLE = """\
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(trace):
+    \"\"\"Verify the model used the expected tools.\"\"\"
+    tool_calls = KilnEvalHelpers.get_tool_calls(trace)
+    used_search = KilnEvalHelpers.has_tool_call(tool_calls, "search")
+    call_count = KilnEvalHelpers.count_tool_calls(tool_calls, "search")
+
+    return {"quality": KilnEvalHelpers.pass_fail(used_search)}
+"""
+
+DOMAIN_GRADING_CODE_SINGLE = """\
+from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output, reference_data):
+    \"\"\"Grade output against domain-specific criteria.\"\"\"
+    expected = (reference_data or {}).get("expected_answer", "")
+
+    contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
+
+    word_count = len(output.split())
+
+    return {"quality": KilnEvalHelpers.pass_fail(contains)}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Default starter code fixtures — byte-exact mirror of generate_default_code
 # from code_eval_helpers.ts
 # ---------------------------------------------------------------------------
 
 
-def _default_code_single(key: str, passing: str, low: str) -> str:
-    """Build a minimal default-code snippet for a single output score."""
+def _default_code_single(key: str, returns_line: str, passing: str, low: str) -> str:
+    """Byte-exact mirror of generate_default_code for a single output score."""
     return (
         "def score(output, trace, reference_data, task_input):\n"
-        '    """Score the model output."""\n'
+        '    """Score the model output.\n'
+        "\n"
+        "    Parameters are optional and order-independent — declare only the ones you need.\n"
+        "\n"
+        "    Args:\n"
+        "        output: The model's final output string.\n"
+        "        trace: List of message dicts from the conversation.\n"
+        "        reference_data: Dict of reference/expected data (if any).\n"
+        "        task_input: The original task input string.\n"
+        "\n"
+        "    Returns:\n"
+        f"        {returns_line}\n"
+        '    """\n'
         "    if not output:\n"
         f'        return {{"{key}": {low}}}\n'
         f'    return {{"{key}": {passing}}}\n'
     )
 
 
-DEFAULT_PASS_FAIL_CODE = _default_code_single("quality", "1.0", "0.0")
-DEFAULT_FIVE_STAR_CODE = _default_code_single("quality", "5.0", "1.0")
-DEFAULT_PASS_FAIL_CRITICAL_CODE = _default_code_single("quality", "1.0", "0.0")
-
-DEFAULT_MULTI_CODE = (
-    "def score(output, trace, reference_data, task_input):\n"
-    '    """Score the model output."""\n'
-    "    if not output:\n"
-    '        return {"accuracy": 0.0, "depth": 1.0, "safety": 0.0}\n'
-    '    return {"accuracy": 1.0, "depth": 5.0, "safety": 1.0}\n'
+DEFAULT_PASS_FAIL_CODE = _default_code_single(
+    "quality", "quality: return 0.0 for Fail or 1.0 for Pass", "1.0", "0.0"
 )
+DEFAULT_FIVE_STAR_CODE = _default_code_single(
+    "quality",
+    "quality: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)",
+    "5.0",
+    "1.0",
+)
+DEFAULT_PASS_FAIL_CRITICAL_CODE = _default_code_single(
+    "quality",
+    "quality: return -1.0 for a critical failure, 0.0 for Fail, or 1.0 for Pass",
+    "1.0",
+    "0.0",
+)
+
+# Multi-score default. NOTE: the generator indents the bullet lines 6 spaces -- less than
+# the 8-space "A dictionary..." line above them (a cosmetic quirk in generate_default_code).
+# Mirror it exactly; execution is unaffected by the docstring.
+DEFAULT_MULTI_CODE = """\
+def score(output, trace, reference_data, task_input):
+    \"\"\"Score the model output.
+
+    Parameters are optional and order-independent — declare only the ones you need.
+
+    Args:
+        output: The model's final output string.
+        trace: List of message dicts from the conversation.
+        reference_data: Dict of reference/expected data (if any).
+        task_input: The original task input string.
+
+    Returns:
+        A dictionary of score names to scores:
+      - accuracy: return 0.0 for Fail or 1.0 for Pass
+      - depth: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)
+      - safety: return -1.0 for a critical failure, 0.0 for Fail, or 1.0 for Pass
+    \"\"\"
+    if not output:
+        return {"accuracy": 0.0, "depth": 1.0, "safety": 0.0}
+    return {"accuracy": 1.0, "depth": 5.0, "safety": 1.0}
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -533,6 +631,127 @@ class TestDomainGradingExample:
         assert result.skipped_reason is None
         _assert_valid_scores(scores, self.KEYS, self.SCORES)
         assert scores["rating"] == 3.0
+
+
+# ---------------------------------------------------------------------------
+# Tests: single-score (quality fallback) example variants — inline-return path
+# ---------------------------------------------------------------------------
+
+SINGLE_SCORE: list[EvalOutputScore] = [_score("Quality", PF)]
+SINGLE_KEYS = {"quality"}
+
+
+class TestParseJsonExampleSingleScore:
+    """Single-score variant of the Parse JSON example (inline return)."""
+
+    @pytest.mark.asyncio
+    async def test_valid_json_with_required_fields(self):
+        cfg = _make_config(PARSE_JSON_CODE_SINGLE, SINGLE_SCORE)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        inp = _inp(final_message='{"name": "Alice", "description": "A person"}')
+        result = await adapter.evaluate(inp)
+        scores = result.scores
+
+        assert result.skipped_reason is None
+        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
+        assert scores["quality"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_invalid_json(self):
+        cfg = _make_config(PARSE_JSON_CODE_SINGLE, SINGLE_SCORE)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        inp = _inp(final_message="not json at all")
+        result = await adapter.evaluate(inp)
+        scores = result.scores
+
+        assert result.skipped_reason is None
+        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
+        assert scores["quality"] == 0.0
+
+
+class TestCheckToolUsageExampleSingleScore:
+    """Single-score variant of the Check tool usage example (inline return)."""
+
+    @pytest.mark.asyncio
+    async def test_search_tool_used(self):
+        cfg = _make_config(CHECK_TOOL_USAGE_CODE_SINGLE, SINGLE_SCORE)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        trace = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": '{"q": "x"}'},
+                    },
+                ],
+            }
+        ]
+        result = await adapter.evaluate(_inp(final_message="result", trace=trace))
+        scores = result.scores
+
+        assert result.skipped_reason is None
+        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
+        assert scores["quality"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_no_tool_calls(self):
+        cfg = _make_config(CHECK_TOOL_USAGE_CODE_SINGLE, SINGLE_SCORE)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        result = await adapter.evaluate(_inp(final_message="result", trace=None))
+        scores = result.scores
+
+        assert result.skipped_reason is None
+        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
+        assert scores["quality"] == 0.0
+
+
+class TestDomainGradingExampleSingleScore:
+    """Single-score variant of the Domain-specific grading example (inline return)."""
+
+    @pytest.mark.asyncio
+    async def test_output_contains_expected(self):
+        cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE, SINGLE_SCORE)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        inp = _inp(
+            final_message="The answer is 42",
+            reference_data={"expected_answer": "42"},
+        )
+        result = await adapter.evaluate(inp)
+        scores = result.scores
+
+        assert result.skipped_reason is None
+        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
+        assert scores["quality"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_output_missing_expected(self):
+        cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE, SINGLE_SCORE)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust(PROJECT_PATH)
+
+        inp = _inp(
+            final_message="nothing relevant here",
+            reference_data={"expected_answer": "UNICORN_NOT_PRESENT"},
+        )
+        result = await adapter.evaluate(inp)
+        scores = result.scores
+
+        assert result.skipped_reason is None
+        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
+        assert scores["quality"] == 0.0
 
 
 # ---------------------------------------------------------------------------

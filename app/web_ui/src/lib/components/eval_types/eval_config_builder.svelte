@@ -36,6 +36,10 @@
   import { onMount } from "svelte"
   import EvalTypeIntro from "$lib/components/eval_types/eval_type_intro.svelte"
   import EvalTestRunPane from "$lib/components/eval_types/test_run/eval_test_run_pane.svelte"
+  import {
+    uses_reference_data_llm_judge,
+    uses_reference_data_code_eval,
+  } from "$lib/utils/eval_types/reference_data_gate"
 
   export let eval_config_type: V2EvalType
   export let evaluator: Eval
@@ -55,6 +59,10 @@
   let llm_selected_algo: EvalConfigType | undefined = undefined
   let llm_judge_prompt: string | undefined = undefined
   let llm_system_prompt: string | undefined = undefined
+
+  // Code eval form binding — tracks code edits reactively for the save gate.
+  // Starts undefined so the child's initial value flows up via bind:.
+  let code_eval_code: string | undefined = undefined
 
   // Form component references -- bind:this on svelte:component yields a
   // generic component instance, so we keep a loose ref and cast it.
@@ -82,9 +90,10 @@
   let test_score_range_warning: string | null = null
   let test_abort_controller: AbortController | null = null
 
-  // Trust and confirm modal refs
+  // Trust, confirm, and test-required modal refs
   let trust_dialog: Dialog
   let confirm_save_dialog: Dialog
+  let test_required_dialog: Dialog
   let form_container: FormContainer
 
   // Pending action after trust grant: "test" or "save"
@@ -109,6 +118,62 @@
     } catch {
       return []
     }
+  }
+
+  // Whether the current config uses reference_data (drives the test-before-save gate).
+  // Both llm_judge_prompt and code_eval_code are direct reactive dependencies so
+  // Svelte's $: tracking re-evaluates when the user edits either one.
+  $: config_uses_reference_data = compute_uses_reference_data(
+    eval_config_type,
+    llm_judge_prompt,
+    code_eval_code,
+  )
+
+  function compute_uses_reference_data(
+    type: V2EvalType,
+    judge_prompt: string | undefined,
+    code: string | undefined,
+  ): boolean {
+    if (type === "llm_judge") {
+      return uses_reference_data_llm_judge(judge_prompt ?? "")
+    }
+    if (type === "code_eval") {
+      return uses_reference_data_code_eval(code ?? "")
+    }
+    return false
+  }
+
+  // Snapshot of prompt/code + reference data at the time of the last passing test.
+  // When either changes, the passing test is invalidated.
+  let test_passed_snapshot: {
+    prompt_or_code: string
+    reference_data: string
+  } | null = null
+
+  // The effective "test passed" flag: true only when the snapshot matches current state.
+  // Uses llm_judge_prompt and code_eval_code as direct reactive dependencies so
+  // edits to either invalidate the snapshot immediately.
+  $: test_passed_for_current_config = (() => {
+    if (!test_passed_snapshot) return false
+    const current_prompt_or_code = get_prompt_or_code(
+      eval_config_type,
+      llm_judge_prompt,
+      code_eval_code,
+    )
+    return (
+      test_passed_snapshot.prompt_or_code === current_prompt_or_code &&
+      test_passed_snapshot.reference_data === advanced_reference_data
+    )
+  })()
+
+  function get_prompt_or_code(
+    type: V2EvalType,
+    judge_prompt: string | undefined,
+    code: string | undefined,
+  ): string {
+    if (type === "llm_judge") return judge_prompt ?? ""
+    if (type === "code_eval") return code ?? ""
+    return ""
   }
 
   // Required reference fields surfaced by the active form.
@@ -270,9 +335,11 @@
       }
     }
 
+    const controller = new AbortController()
+    test_abort_controller = controller
+
     try {
       test_loading = true
-      test_abort_controller = new AbortController()
 
       let result: TestV2EvalResponse
 
@@ -291,7 +358,7 @@
             system_prompt: llm_system_prompt ?? null,
           },
           eval_input,
-          test_abort_controller.signal,
+          controller.signal,
         )
       } else {
         const properties = v2FormComponent!.getProperties()
@@ -303,7 +370,7 @@
             properties,
             eval_input,
           },
-          test_abort_controller.signal,
+          controller.signal,
         )
       }
 
@@ -328,6 +395,17 @@
           test_score_range_warning = result.score_range_errors.join("; ")
           test_has_valid_run = false
         }
+
+        if (test_has_valid_run) {
+          test_passed_snapshot = {
+            prompt_or_code: get_prompt_or_code(
+              eval_config_type,
+              llm_judge_prompt,
+              code_eval_code,
+            ),
+            reference_data: advanced_reference_data,
+          }
+        }
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
@@ -336,8 +414,10 @@
         test_error = createKilnError(e)
       }
     } finally {
-      test_loading = false
-      test_abort_controller = null
+      if (test_abort_controller === controller) {
+        test_loading = false
+        test_abort_controller = null
+      }
     }
   }
 
@@ -398,7 +478,15 @@
       }
     }
 
-    if (!test_has_valid_run) {
+    // When the config uses reference_data, require a passing test with
+    // current prompt/code AND reference data before allowing save.
+    if (config_uses_reference_data) {
+      if (!test_passed_for_current_config) {
+        create_evaluator_loading = false
+        test_required_dialog.show()
+        return
+      }
+    } else if (!test_has_valid_run) {
       create_evaluator_loading = false
       confirm_save_dialog.show()
       return
@@ -414,6 +502,11 @@
 
       let data: components["schemas"]["EvalConfig"]
 
+      // Compute reference_keys from on-page reference data for types that use it.
+      const save_reference_keys = config_uses_reference_data
+        ? reference_candidate_keys
+        : []
+
       if (is_llm_judge) {
         if (!llm_model_name || !llm_provider_name || !llm_selected_algo) {
           throw new Error("No model or algorithm selected")
@@ -426,6 +519,7 @@
           g_eval,
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
+          reference_keys: save_reference_keys,
         })
       } else if (eval_config_type && v2FormComponent) {
         if (v2FormComponent.validate) {
@@ -438,6 +532,9 @@
           string,
           unknown
         >
+        if (eval_config_type === "code_eval") {
+          properties.reference_keys = save_reference_keys
+        }
         data = await createEvalConfig(project_id, task_id, eval_id, {
           type: "v2",
           properties,
@@ -499,141 +596,149 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<FormContainer
-  bind:this={form_container}
-  submit_visible={false}
-  keyboard_submit={false}
-  focus_on_mount={false}
-  submit_label="Save"
-  on:submit={handle_submit}
-  bind:error={create_evaluator_error}
-  bind:submitting={create_evaluator_loading}
-  warn_before_unload={!complete && !!eval_config_type && has_typed}
+<!--
+  Grid so the intro spans only the form column (row 1, col 1) while the
+  Judge Configuration and Test Judge panes sit side-by-side on row 2 at the
+  same level. Collapses to a single column below xl.
+
+  FormContainer wraps only the left column so its <form> boundary and
+  FormElement validators don't span into the test-run pane.
+-->
+<div
+  class="grid grid-cols-1 gap-y-6 xl:gap-x-16 xl:items-start xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]"
 >
-  <!-- on:input/on:change capture real form interactions for unsaved-changes guard -->
-  <!--
-    Grid so the intro spans only the form column (row 1, col 1) while the
-    Judge Configuration and Test Judge panes sit side-by-side on row 2 at the
-    same level. Collapses to a single column below xl.
-  -->
-  <div
-    class="grid grid-cols-1 gap-y-6 xl:gap-x-16 xl:items-start xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]"
-    on:input={markDirty}
-    on:change={markDirty}
-  >
-    {#if metadata}
-      <div class="min-w-0 xl:col-start-1 xl:row-start-1">
-        <EvalTypeIntro evalType={eval_config_type} {metadata} />
-      </div>
-    {/if}
-
-    <!-- Left: form -->
-    <div class="min-w-0 flex flex-col gap-6 xl:col-start-1 xl:row-start-2">
-      <div>
-        <div class="text-xl font-bold">Judge Configuration</div>
-      </div>
-
-      {#if is_llm_judge}
-        <LlmJudgeForm
-          bind:this={llmJudgeFormComponent}
-          {task_id}
-          {project_id}
-          {eval_id}
-          bind:model_name={llm_model_name}
-          bind:provider_name={llm_provider_name}
-          bind:combined_model_name={llm_combined_model_name}
-          bind:selected_algo={llm_selected_algo}
-          bind:judge_prompt={llm_judge_prompt}
-          bind:system_prompt={llm_system_prompt}
-        />
-      {:else if eval_config_type === "code_eval" && metadata}
-        <svelte:component
-          this={metadata.createFormComponent}
-          bind:this={v2FormComponentRef}
-          output_scores={evaluator?.output_scores}
-        />
-      {:else if (eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check") && metadata}
-        <svelte:component
-          this={metadata.createFormComponent}
-          bind:this={v2FormComponentRef}
-          {reference_candidate_keys}
-          bind:required_reference_fields
-          bind:output_value_expression={active_value_expression}
-        />
-      {:else if eval_config_type === "pattern_match" && metadata}
-        <svelte:component
-          this={metadata.createFormComponent}
-          bind:this={v2FormComponentRef}
-          bind:output_value_expression={active_value_expression}
-        />
-      {:else if eval_config_type === "tool_call_check" && metadata}
-        <svelte:component
-          this={metadata.createFormComponent}
-          bind:this={v2FormComponentRef}
-          {project_id}
-          {task_id}
-        />
-      {:else if metadata}
-        <svelte:component
-          this={metadata.createFormComponent}
-          bind:this={v2FormComponentRef}
-        />
-      {/if}
-
-      {#if can_submit}
-        <button
-          type="button"
-          class="btn btn-primary w-full"
-          data-testid="column-save-button"
-          disabled={create_evaluator_loading}
-          on:click={() => form_container.validate_and_submit()}
-        >
-          {#if create_evaluator_loading}
-            <span class="loading loading-spinner loading-md"></span>
-          {:else}
-            Save
-          {/if}
-        </button>
-      {/if}
+  {#if metadata}
+    <div class="min-w-0 xl:col-start-1 xl:row-start-1">
+      <EvalTypeIntro evalType={eval_config_type} {metadata} />
     </div>
+  {/if}
 
-    <!-- Right: test run pane -->
-    <div class="min-w-0 xl:col-start-2 xl:row-start-2">
-      <EvalTestRunPane
-        {project_id}
-        {task_id}
-        {eval_config_type}
-        {runs_loading}
-        {runs_error}
-        {available_runs}
-        selected_run={selected_task_run}
-        reference_data={advanced_reference_data}
-        {required_reference_fields}
-        {test_loading}
-        {test_result}
-        {test_error}
-        {test_shape_warning}
-        {test_score_range_warning}
-        {test_has_valid_run}
-        {is_llm_judge}
-        {can_submit_llm}
-        manual_example_supported={manual_example_support.supported}
-        on:select={(e) => select_task_run(e.detail)}
-        on:run={run_test}
-        on:cancel={cancel_test}
-        on:updateReferenceData={(e) => (advanced_reference_data = e.detail)}
-        on:runAgain={run_test}
-      />
-    </div>
+  <!-- Left: form (inside FormContainer so validation scopes to config fields only) -->
+  <div class="min-w-0 xl:col-start-1 xl:row-start-2">
+    <FormContainer
+      bind:this={form_container}
+      submit_visible={false}
+      keyboard_submit={false}
+      focus_on_mount={false}
+      submit_label="Save"
+      on:submit={handle_submit}
+      bind:error={create_evaluator_error}
+      bind:submitting={create_evaluator_loading}
+      warn_before_unload={!complete && !!eval_config_type && has_typed}
+    >
+      <!-- on:input/on:change capture real form interactions for unsaved-changes guard -->
+      <div
+        class="flex flex-col gap-6"
+        on:input={markDirty}
+        on:change={markDirty}
+      >
+        <div>
+          <div class="text-xl font-bold">Judge Configuration</div>
+        </div>
+
+        {#if is_llm_judge}
+          <LlmJudgeForm
+            bind:this={llmJudgeFormComponent}
+            {task_id}
+            {project_id}
+            {eval_id}
+            bind:model_name={llm_model_name}
+            bind:provider_name={llm_provider_name}
+            bind:combined_model_name={llm_combined_model_name}
+            bind:selected_algo={llm_selected_algo}
+            bind:judge_prompt={llm_judge_prompt}
+            bind:system_prompt={llm_system_prompt}
+          />
+        {:else if eval_config_type === "code_eval" && metadata}
+          <svelte:component
+            this={metadata.createFormComponent}
+            bind:this={v2FormComponentRef}
+            bind:code_string={code_eval_code}
+            output_scores={evaluator?.output_scores}
+          />
+        {:else if (eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check") && metadata}
+          <svelte:component
+            this={metadata.createFormComponent}
+            bind:this={v2FormComponentRef}
+            {reference_candidate_keys}
+            bind:required_reference_fields
+            bind:output_value_expression={active_value_expression}
+          />
+        {:else if eval_config_type === "pattern_match" && metadata}
+          <svelte:component
+            this={metadata.createFormComponent}
+            bind:this={v2FormComponentRef}
+            bind:output_value_expression={active_value_expression}
+          />
+        {:else if eval_config_type === "tool_call_check" && metadata}
+          <svelte:component
+            this={metadata.createFormComponent}
+            bind:this={v2FormComponentRef}
+            {project_id}
+            {task_id}
+          />
+        {:else if metadata}
+          <svelte:component
+            this={metadata.createFormComponent}
+            bind:this={v2FormComponentRef}
+          />
+        {/if}
+
+        {#if can_submit}
+          <button
+            type="button"
+            class="btn btn-primary w-full"
+            data-testid="column-save-button"
+            disabled={create_evaluator_loading}
+            on:click={() => form_container.validate_and_submit()}
+          >
+            {#if create_evaluator_loading}
+              <span class="loading loading-spinner loading-md"></span>
+            {:else}
+              Save
+            {/if}
+          </button>
+        {/if}
+      </div>
+    </FormContainer>
   </div>
-</FormContainer>
+
+  <!-- Right: test run pane (outside FormContainer — not validated on save) -->
+  <div class="min-w-0 xl:col-start-2 xl:row-start-2">
+    <EvalTestRunPane
+      {project_id}
+      {task_id}
+      {eval_config_type}
+      {runs_loading}
+      {runs_error}
+      {available_runs}
+      selected_run={selected_task_run}
+      reference_data={advanced_reference_data}
+      {required_reference_fields}
+      {test_loading}
+      {test_result}
+      {test_error}
+      {test_shape_warning}
+      {test_score_range_warning}
+      {test_has_valid_run}
+      {is_llm_judge}
+      {can_submit_llm}
+      manual_example_supported={manual_example_support.supported}
+      on:select={(e) => select_task_run(e.detail)}
+      on:run={run_test}
+      on:cancel={cancel_test}
+      on:updateReferenceData={(e) => (advanced_reference_data = e.detail)}
+      on:runAgain={run_test}
+    />
+  </div>
+</div>
 
 <Dialog
   bind:this={trust_dialog}
   title="Trust Code and Project?"
   action_buttons={[
     {
-      label: "Run — I Trust This Code",
+      label: "I Trust this Code",
       isWarning: true,
       asyncAction: grant_trust_and_retry,
     },
@@ -679,5 +784,27 @@
   <p class="text-sm text-gray-500">
     You haven't tested this judge yet. Running a quick test helps catch issues
     before saving. Are you sure you want to save without testing?
+  </p>
+</Dialog>
+
+<Dialog
+  bind:this={test_required_dialog}
+  title="Test Required"
+  action_buttons={[
+    {
+      label: "OK",
+      isPrimary: true,
+      action: () => true,
+    },
+  ]}
+>
+  <p class="text-sm text-gray-500">
+    You must successfully run your judge once in the <code
+      class="bg-base-200 px-1 py-0.5 rounded text-xs font-mono">Test Judge</code
+    >
+    panel before saving. We must check your
+    <code class="bg-base-200 px-1 py-0.5 rounded text-xs font-mono"
+      >reference_data</code
+    > code works properly.
   </p>
 </Dialog>

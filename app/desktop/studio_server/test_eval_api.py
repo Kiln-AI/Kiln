@@ -4124,7 +4124,7 @@ class TestCreateLlmJudgeConfig:
         assert "{{ final_message }}" in props["prompt_template"]
         assert props["system_prompt"] is not None
         assert props["thinking_instruction"] is not None
-        assert props["required_var"] == []
+        assert props["reference_keys"] == []
 
     def test_g_eval_true(self, client, mock_v2_eval):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
@@ -4497,7 +4497,6 @@ class TestTestV2EvalOverrides:
                 prompt_template="Custom {{ task_input }} {{ final_message }}",
                 system_prompt="Be strict.",
                 thinking_instruction="Think.",
-                required_var=[],
                 g_eval=False,
             )
 

@@ -11,7 +11,6 @@ from kiln_ai.adapters.eval.conftest import (
 )
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
-    check_required_vars,
     extract_value,
 )
 from kiln_ai.adapters.eval.g_eval import GEval
@@ -255,20 +254,3 @@ class TestCheckReferenceKey:
         value, skip, _detail = check_reference_key("answer", inp)
         assert value is None
         assert skip == SkippedReason.missing_reference_key
-
-
-class TestCheckRequiredVars:
-    def test_all_present(self):
-        inp = _sample_eval_input(
-            trace=[{"role": "user"}],
-            reference_data={"key": "val"},
-        )
-        skip, detail = check_required_vars(["trace[0].role", "reference_data.key"], inp)
-        assert skip is None
-        assert detail is None
-
-    def test_missing(self):
-        inp = _sample_eval_input()
-        skip, detail = check_required_vars(["nonexistent_var"], inp)
-        assert skip == SkippedReason.extraction_failed
-        assert detail is not None and "nonexistent_var" in detail

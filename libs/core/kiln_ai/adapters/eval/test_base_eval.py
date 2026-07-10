@@ -1076,7 +1076,7 @@ def test_materialize_llm_judge_properties_defaults():
     assert props.model_name == "gpt-4o"
     assert props.model_provider == "openai"
     assert props.g_eval is False
-    assert props.required_var == []
+    assert props.reference_keys == []
     assert props.system_prompt == "You are an evaluator."
     assert (
         props.thinking_instruction == "Think step by step, explaining your reasoning."
