@@ -1,9 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte"
   import { client } from "$lib/api_client"
+  import posthog from "posthog-js"
   import type { components } from "$lib/api_schema"
   import { isKilnAgentRunConfig } from "$lib/types"
-  import type { KilnAgentRunConfigProperties } from "$lib/types"
+  import type {
+    KilnAgentRunConfigProperties,
+    RunConfigProperties,
+  } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -266,12 +270,40 @@
     return typeof out === "string" ? out : JSON.stringify(out)
   }
 
+  // Run config in the shape the legacy synth analytics use, so Kiln Pro events
+  // line up with generate_synthetic_inputs / save_synthetic_data in PostHog.
+  // Synth always uses kiln_agent configs; guard so an MCP config doesn't throw.
+  function run_config_analytics(rcp: RunConfigProperties) {
+    if (!isKilnAgentRunConfig(rcp)) return {}
+    return {
+      model_name: rcp.model_name,
+      provider: rcp.model_provider_name,
+      prompt_method: rcp.prompt_id,
+      tools: rcp.tools_config?.tools ?? [],
+      structured_output_mode: rcp.structured_output_mode,
+    }
+  }
+
+  // Config used for the last output batch, so save analytics can report what
+  // produced the runs being saved.
+  let outputs_rcp: RunConfigProperties | null = null
+
   // Generates inputs for a subset of rows. The batch indexes its results by
   // position within the prompts it was given, so `row_indices` maps them back.
-  function run_inputs(row_indices: number[]) {
+  function run_inputs(
+    row_indices: number[],
+    action: "initial" | "retry" | "regenerate",
+  ) {
     if (row_indices.length === 0) return
     const gen_type = guidance_data.gen_type
     const prompts = row_indices.map((i) => rows[i].prompt)
+
+    posthog.capture("kiln_pro_generate_inputs", {
+      count: row_indices.length,
+      action,
+      gen_type,
+      ...run_config_analytics(active_rcp),
+    })
 
     inputs_run?.cancel()
     inputs_unsub.forEach((u) => u())
@@ -324,7 +356,10 @@
   }
 
   function start_inputs() {
-    run_inputs(rows.map((_, i) => i))
+    run_inputs(
+      rows.map((_, i) => i),
+      "initial",
+    )
   }
 
   // Re-runs only the descriptions whose input generation failed. Non-destructive:
@@ -338,7 +373,7 @@
       rows[i].input = null
     }
     rows = rows
-    run_inputs(failed)
+    run_inputs(failed, "retry")
   }
 
   // Discards every input and generates again from the same descriptions. Only
@@ -354,7 +389,10 @@
     }))
     expanded = new Array(rows.length).fill(false)
     outputs_pending = new Set()
-    run_inputs(rows.map((_, i) => i))
+    run_inputs(
+      rows.map((_, i) => i),
+      "regenerate",
+    )
   }
 
   function start_outputs() {
@@ -381,6 +419,12 @@
       )
       .map(({ index, input }) => ({ index, input }))
     if (items.length === 0) return
+
+    outputs_rcp = rcp
+    posthog.capture("kiln_pro_generate_outputs", {
+      count: items.length,
+      ...run_config_analytics(rcp),
+    })
 
     outputs_run?.cancel()
     outputs_unsub.forEach((u) => u())
@@ -434,6 +478,10 @@
   async function save_all() {
     const to_save = rows.filter((r) => r.task_run && !r.saved_id)
     if (to_save.length === 0) return
+    posthog.capture("kiln_pro_save_data", {
+      count: to_save.length,
+      ...(outputs_rcp ? run_config_analytics(outputs_rcp) : {}),
+    })
     saving = true
     save_completed = false
     save_errors = []

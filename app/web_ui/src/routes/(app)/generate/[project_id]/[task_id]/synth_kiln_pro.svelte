@@ -5,6 +5,7 @@
   // (act_mock_kiln_server.spec.ts mocks the copilot endpoints).
   import { onMount, tick } from "svelte"
   import { get } from "svelte/store"
+  import posthog from "posthog-js"
   import { client } from "$lib/api_client"
   import Intro from "$lib/ui/intro.svelte"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
@@ -105,6 +106,11 @@
       : null
     plan_error = null
     stage = "planning"
+    posthog.capture("kiln_pro_batch_plan", {
+      count: requested,
+      gen_type: guidance_data.gen_type,
+      template: get(selected_template),
+    })
     try {
       if (KILN_PRO_DEV_MOCKS) {
         plan = await mock_batch_plan(requested)

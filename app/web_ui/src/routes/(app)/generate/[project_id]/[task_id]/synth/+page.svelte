@@ -915,8 +915,14 @@
         </div>
       {:else if is_empty && is_setup && !guide_loading && (data_guide || skip_data_guide) && batch_mode === null}
         <SynthBatchChooser
-          on_manual={() => advance_synth_step("batch", "manual")}
-          on_kiln_pro={() => advance_synth_step("batch", "pro")}
+          on_manual={() => {
+            posthog.capture("batch_chooser_picked", { choice: "manual" })
+            advance_synth_step("batch", "manual")
+          }}
+          on_kiln_pro={() => {
+            posthog.capture("batch_chooser_picked", { choice: "kiln_pro" })
+            advance_synth_step("batch", "pro")
+          }}
         />
       {:else if is_empty && is_setup && batch_mode === "pro"}
         <SynthKilnPro {project_id} {task_id} {guidance_data} />
