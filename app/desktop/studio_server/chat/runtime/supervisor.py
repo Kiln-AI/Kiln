@@ -731,7 +731,10 @@ class ConversationSupervisor:
         proxy reads, fetched directly here because rehydration is a
         supervisor concern, not a browser round-trip.
         """
-        url = f"{conv.upstream_url}sessions/{session_key}"
+        # rstrip guards the join: upstream_url is minted with a trailing slash
+        # (routes._chat_url), but a caller passing it bare would otherwise
+        # silently produce …/v1/chatsessions/… and read as "nothing persisted".
+        url = f"{conv.upstream_url.rstrip('/')}/sessions/{session_key}"
         try:
             async with httpx.AsyncClient(
                 timeout=REHYDRATE_FETCH_TIMEOUT_SECONDS
@@ -1924,8 +1927,15 @@ class ConversationSupervisor:
         # forever on a dead queue. EOF lets the client re-open from history,
         # which recreates the record.
         conv.bus.close()
-        for tid in list(self._trace_index):
-            if self._trace_index[tid] == session_id:
+        # Every index entry pointing at this record has its key in the
+        # record's own seen chain (on_trace appends before indexing; adopt
+        # appends the adopted key), so iterating the chain beats a full-index
+        # scan. The ownership check is load-bearing, not defensive: an
+        # adopted record's chain can carry a key whose index entry belongs to
+        # ANOTHER record (see adopt_interactive's don't-steal guard) — that
+        # entry must survive this eviction.
+        for tid in conv.record.seen_trace_ids:
+            if self._trace_index.get(tid) == session_id:
                 del self._trace_index[tid]
         # Drop this record from its parent's report queue (it can never be
         # formatted again) and orphan its own children's queue.

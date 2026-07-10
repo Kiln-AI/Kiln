@@ -72,7 +72,9 @@ def extract_trace_id(payload: bytes) -> str | None:
             continue
         try:
             event = json.loads(body)
-        except (json.JSONDecodeError, TypeError):
+        except (ValueError, TypeError):
+            # ValueError covers JSONDecodeError AND UnicodeDecodeError (a
+            # non-UTF-8 byte payload raises the latter before JSON parsing).
             continue
         if isinstance(event, dict) and event.get("type") == KILN_SSE_CHAT_TRACE:
             tid = event.get("trace_id")
