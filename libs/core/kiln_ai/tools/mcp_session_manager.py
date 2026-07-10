@@ -134,8 +134,11 @@ class MCPSessionManager:
                 _, exit_stack = self._session_cache.pop(key)
                 to_cleanup.append((key, exit_stack))
 
-        # Close outside the lock to avoid holding it during I/O
-        for key, exit_stack in to_cleanup:
+        # Close outside the lock to avoid holding it during I/O.
+        # LIFO order: each session leaves anyio cancel scopes open on this
+        # task; closing in creation order corrupts the cancel-scope stack
+        # when two+ sessions are live (KIL-759).
+        for key, exit_stack in reversed(to_cleanup):
             try:
                 await exit_stack.aclose()
             except Exception:
