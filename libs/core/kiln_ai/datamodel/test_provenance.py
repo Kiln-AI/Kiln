@@ -281,3 +281,134 @@ def test_host_skill_create_rejects_provenance_without_origin():
                 "provenance": {"notes": "no origin here"},
             }
         )
+
+
+# ---- Tier-2 host models: field presence, round-trip, back-compat ----
+
+
+def _tier2_host_classes():
+    from kiln_ai.datamodel.chunk import ChunkerConfig
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+    from kiln_ai.datamodel.eval import EvalConfig
+    from kiln_ai.datamodel.extraction import ExtractorConfig
+    from kiln_ai.datamodel.finetune import Finetune
+    from kiln_ai.datamodel.rag import RagConfig
+    from kiln_ai.datamodel.reranker import RerankerConfig
+    from kiln_ai.datamodel.vector_store import VectorStoreConfig
+
+    return [
+        EvalConfig,
+        Finetune,
+        RagConfig,
+        ExtractorConfig,
+        ChunkerConfig,
+        EmbeddingConfig,
+        VectorStoreConfig,
+        RerankerConfig,
+    ]
+
+
+@pytest.mark.parametrize("host_cls", _tier2_host_classes(), ids=lambda c: c.__name__)
+def test_tier2_host_has_provenance_field(host_cls):
+    assert "provenance" in host_cls.model_fields
+
+
+def _make_embedding_config(project, provenance=None):
+    from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+    return EmbeddingConfig(
+        parent=project,
+        name="Derived Embedding",
+        description="An embedding config.",
+        model_provider_name=ModelProviderName.openai,
+        model_name="openai_text_embedding_3_small",
+        properties={},
+        provenance=provenance,
+    )
+
+
+def test_host_tier2_provenance_round_trips(project):
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+    config = _make_embedding_config(
+        project,
+        provenance=KilnArtifactProvenance(
+            notes="Derived from the parent embedding config.",
+            derived_from_ids=["parent-embedding-id"],
+            origin="agent",
+        ),
+    )
+    config.save_to_file()
+
+    config_id = config.id
+    assert config_id is not None
+    reloaded = EmbeddingConfig.from_id_and_parent_path(config_id, project.path)
+    assert reloaded is not None
+    assert reloaded.provenance is not None
+    assert reloaded.provenance.origin == "agent"
+    assert reloaded.provenance.notes == "Derived from the parent embedding config."
+    assert reloaded.provenance.derived_from_ids == ["parent-embedding-id"]
+    assert reloaded.provenance == config.provenance
+
+
+def test_host_tier2_loads_without_provenance_key():
+    # A legacy Tier-2 file predating this field has no `provenance` key: it must
+    # load with provenance=None (additive optional field, no migration).
+    from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+    legacy = EmbeddingConfig.model_validate(
+        {
+            "name": "legacy-embedding",
+            "model_provider_name": ModelProviderName.openai,
+            "model_name": "openai_text_embedding_3_small",
+            "properties": {},
+        },
+        context=LOAD_CONTEXT,
+    )
+    assert legacy.provenance is None
+
+
+def test_host_tier2_loads_unknown_origin_and_dirty_ids_leniently():
+    # Context propagates into the nested submodel on a Tier-2 host: a file carrying
+    # an unknown origin, a duplicate/empty derived_from_ids list, and an over-length
+    # note still loads (lenient-on-load / forward-compat).
+    from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+    loaded = EmbeddingConfig.model_validate(
+        {
+            "name": "future-embedding",
+            "model_provider_name": ModelProviderName.openai,
+            "model_name": "openai_text_embedding_3_small",
+            "properties": {},
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup", ""],
+                "notes": "x" * 3000,
+            },
+        },
+        context=LOAD_CONTEXT,
+    )
+    assert loaded.provenance is not None
+    assert loaded.provenance.origin == "future_origin"
+    assert loaded.provenance.derived_from_ids == ["dup", "dup", ""]
+    assert loaded.provenance.notes == "x" * 3000
+
+
+def test_host_tier2_create_rejects_provenance_without_origin():
+    # required-when-present, fail-loud on create (no load context).
+    from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+    with pytest.raises(ValidationError, match="origin is required"):
+        EmbeddingConfig.model_validate(
+            {
+                "name": "bad-embedding",
+                "model_provider_name": ModelProviderName.openai,
+                "model_name": "openai_text_embedding_3_small",
+                "properties": {},
+                "provenance": {"notes": "no origin here"},
+            }
+        )

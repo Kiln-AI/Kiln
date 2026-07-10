@@ -65,6 +65,7 @@ from kiln_ai.datamodel.extraction import (
     get_kind_from_mime_type,
 )
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import (
     CohereCompatibleProperties,
@@ -93,6 +94,7 @@ from pydantic import BaseModel, Field, PositiveInt, model_validator
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -370,6 +372,10 @@ class CreateRagConfigRequest(BaseModel):
         description="List of document tags to filter by. If None, all documents in the project are used.",
         default=None,
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this RAG config exists and what it was derived from. Immutable after create.",
+    )
 
 
 class SemanticChunkerPropertiesPublic(BaseModel):
@@ -416,6 +422,10 @@ class CreateChunkerConfigRequest(BaseModel):
             discriminator="chunker_type",
         )
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this chunker config exists and what it was derived from. Immutable after create.",
+    )
 
     def get_properties_for_chunker_type(
         self,
@@ -458,6 +468,10 @@ class CreateEmbeddingConfigRequest(BaseModel):
     properties: EmbeddingProperties = Field(
         default_factory=lambda: {},
         description="Properties to be used to execute the embedding config.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this embedding config exists and what it was derived from. Immutable after create.",
     )
 
     @model_validator(mode="after")
@@ -521,6 +535,10 @@ class CreateVectorStoreConfigRequest(BaseModel):
         | LanceDBConfigHybridPropertiesPublic
     ) = Field(
         description="The properties of the vector store config, specific to the selected store_type."
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this vector store config exists and what it was derived from. Immutable after create.",
     )
 
     def get_properties_for_store_type(
@@ -592,6 +610,10 @@ class CreateRerankerConfigRequest(BaseModel):
             type=RerankerType.COHERE_COMPATIBLE,
         ),
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this reranker config exists and what it was derived from. Immutable after create.",
+    )
 
     @model_validator(mode="after")
     def validate_properties(self):
@@ -645,6 +667,10 @@ class CreateExtractorConfigRequest(BaseModel):
     )
     properties: LitellmExtractorConfigProperties = Field(
         description="The properties of the extractor config, specific to the selected extractor_type.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this extractor config exists and what it was derived from. Immutable after create.",
     )
 
     @model_validator(mode="after")
@@ -1343,6 +1369,14 @@ def connect_document_api(app: FastAPI):
             extractor_type=properties["extractor_type"],
             properties=request.get_properties(),
             is_archived=False,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            extractor_config.provenance,
+            extractor_config.id,
+            lambda cid: (
+                ExtractorConfig.from_id_and_parent_path(cid, project.path) is not None
+            ),
         )
         extractor_config.save_to_file()
 
@@ -1947,6 +1981,14 @@ def connect_document_api(app: FastAPI):
             description=request.description,
             chunker_type=request.chunker_type,
             properties=request.get_properties_for_chunker_type(),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            chunker_config.provenance,
+            chunker_config.id,
+            lambda cid: (
+                ChunkerConfig.from_id_and_parent_path(cid, project.path) is not None
+            ),
         )
         chunker_config.save_to_file()
 
@@ -1990,6 +2032,14 @@ def connect_document_api(app: FastAPI):
             model_provider_name=request.model_provider_name,
             model_name=request.model_name,
             properties=request.properties,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            embedding_config.provenance,
+            embedding_config.id,
+            lambda cid: (
+                EmbeddingConfig.from_id_and_parent_path(cid, project.path) is not None
+            ),
         )
         embedding_config.save_to_file()
 
@@ -2029,6 +2079,14 @@ def connect_document_api(app: FastAPI):
             model_provider_name=request.model_provider_name,
             model_name=request.model_name,
             properties=request.get_reranker_config_properties(),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            reranker_config.provenance,
+            reranker_config.id,
+            lambda cid: (
+                RerankerConfig.from_id_and_parent_path(cid, project.path) is not None
+            ),
         )
         reranker_config.save_to_file()
 
@@ -2090,6 +2148,14 @@ def connect_document_api(app: FastAPI):
             description=request.description,
             store_type=request.store_type,
             properties=request.get_properties_for_store_type(),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            vector_store_config.provenance,
+            vector_store_config.id,
+            lambda cid: (
+                VectorStoreConfig.from_id_and_parent_path(cid, project.path) is not None
+            ),
         )
         vector_store_config.save_to_file()
 
@@ -2207,6 +2273,14 @@ def connect_document_api(app: FastAPI):
             vector_store_config_id=vector_store_config.id,
             reranker_config_id=reranker_config.id if reranker_config else None,
             tags=request.tags,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            rag_config.provenance,
+            rag_config.id,
+            lambda cid: (
+                RagConfig.from_id_and_parent_path(cid, project.path) is not None
+            ),
         )
         rag_config.save_to_file()
 

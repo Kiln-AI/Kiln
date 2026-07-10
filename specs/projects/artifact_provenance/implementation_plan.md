@@ -14,7 +14,7 @@ Phased build order. Details live in [functional_spec.md](functional_spec.md) and
 
 ## Phase 2 — Tier 2
 
-- [ ] **Phase 4 — Tier-2 backend.** Add the `provenance` field + create-endpoint plumbing to EvalConfig, Finetune (thread through `create_and_start`), RagConfig, ExtractorConfig, ChunkerConfig, EmbeddingConfig, VectorStoreConfig, RerankerConfig; PATCH untouched; reads return it; tests.
+- [x] **Phase 4 — Tier-2 backend.** Add the `provenance` field + create-endpoint plumbing to EvalConfig, Finetune (thread through `create_and_start`), RagConfig, ExtractorConfig, ChunkerConfig, EmbeddingConfig, VectorStoreConfig, RerankerConfig; PATCH untouched; reads return it; tests.
 - [ ] **Phase 5 — Tier-2 clone wiring + client.** RagConfig clone wiring (the only Tier-2 clone path) + OpenAPI regen + clone test.
 
 ## Notes

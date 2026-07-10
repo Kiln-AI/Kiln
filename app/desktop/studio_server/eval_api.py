@@ -236,6 +236,10 @@ class CreateEvalConfigRequest(BaseModel):
         default=None,
         description="The provider of the evaluation model. Required for LLM-based eval types.",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Optional provenance: why this eval config exists and what it was derived from. Immutable after create.",
+    )
 
 
 class LlmJudgeBuilderInput(BaseModel):
@@ -1063,6 +1067,7 @@ def connect_evals_api(app: FastAPI):
                 properties=request.properties,
                 model_name=request.model_name,
                 model_provider=request.provider,
+                provenance=request.provenance,
                 parent=eval,
             )
         except ValidationError:
@@ -1075,6 +1080,11 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail=str(e),
             )
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            lambda cid: EvalConfig.from_id_and_parent_path(cid, eval.path) is not None,
+        )
         eval_config.save_to_file()
         return eval_config
 
