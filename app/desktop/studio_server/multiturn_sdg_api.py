@@ -36,7 +36,11 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
     TurnMode,
 )
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    ToolsRunConfig,
+    as_kiln_agent_run_config,
+)
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
@@ -59,6 +63,7 @@ from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field, model_validator
 
+from app.desktop.studio_server.eval_api import task_run_config_from_id
 from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserClient,
     SyntheticUserRequestError,
@@ -124,8 +129,9 @@ class GenerateCasesApiOutput(BaseModel):
 
 
 class TargetRunConfigSpec(BaseModel):
-    """How to invoke the target task on each turn — same fields a manual
-    UI run would use.
+    """A transient config for invoking the target task on each turn. Tools
+    are disabled on this path — reference one of the task's saved run
+    configs (target_run_config_id) to drive the task with its tools.
     """
 
     model_name: str = Field(..., min_length=1)
@@ -161,7 +167,24 @@ class RunCasesBatchApiInput(BaseModel):
             "loop has no early termination."
         ),
     )
-    target_run_config: TargetRunConfigSpec
+    target_run_config: TargetRunConfigSpec | None = Field(
+        default=None,
+        description=(
+            "Transient target-task config (tools disabled). Exactly one of "
+            "target_run_config / target_run_config_id is required."
+        ),
+    )
+    target_run_config_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "ID of one of the target task's saved run configs. The drive "
+            "uses the saved config verbatim — model, prompt, sampling, and "
+            "tools — so the agent under test behaves exactly like a manual "
+            "run. Exactly one of target_run_config / target_run_config_id "
+            "is required."
+        ),
+    )
     su_driver: SyntheticUserDriverSpec
     batch_tag: str | None = Field(
         default=None,
@@ -174,6 +197,14 @@ class RunCasesBatchApiInput(BaseModel):
             "TaskRuns. Auto-generated if not provided."
         ),
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_target_config(self) -> "RunCasesBatchApiInput":
+        if (self.target_run_config is None) == (self.target_run_config_id is None):
+            raise ValueError(
+                "Provide exactly one of target_run_config or target_run_config_id."
+            )
+        return self
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -206,6 +237,60 @@ def to_target_run_config(spec: TargetRunConfigSpec) -> KilnAgentRunConfigPropert
         structured_output_mode=StructuredOutputMode.default,
         tools_config=ToolsRunConfig(tools=[]),
     )
+
+
+def resolve_target_run_config(
+    input: RunCasesBatchApiInput, project_id: str, task_id: str
+) -> tuple[KilnAgentRunConfigProperties, str | None]:
+    """The runner's target config, from whichever source the request used,
+    plus the saved config's id for run attribution (None on the transient
+    path — those runs are ad-hoc by definition).
+
+    A saved run config is used verbatim — tools included — so the driven
+    task behaves exactly like a manual run; the transient spec drives
+    tool-less with default sampling. Raises HTTPException, so callers must
+    resolve BEFORE opening an SSE stream (clean 4xx, not a mid-stream
+    error frame).
+    """
+    if input.target_run_config_id is not None:
+        # task_run_config_from_id is the same resolver the run-config list
+        # endpoint is built on, so every id the UI can offer resolves here —
+        # including virtual fine-tune configs, which never appear under
+        # task.run_configs().
+        try:
+            run_config = task_run_config_from_id(
+                project_id, task_id, input.target_run_config_id
+            )
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "run_config_not_found",
+                    "message": (
+                        "Task has no saved run config with ID "
+                        f"'{input.target_run_config_id}'."
+                    ),
+                },
+            ) from exc
+        try:
+            properties = as_kiln_agent_run_config(run_config.run_config_properties)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "run_config_not_agent",
+                    "message": (
+                        "Multi-turn driving requires a Kiln agent run config; "
+                        "the selected run config is a different type."
+                    ),
+                },
+            ) from exc
+        return properties, input.target_run_config_id
+    if input.target_run_config is None:
+        # Unreachable behind the request validator; a regression there is a
+        # server bug, not a client error.
+        raise RuntimeError("target_run_config missing despite request validation")
+    return to_target_run_config(input.target_run_config), None
 
 
 def to_su_driver_config(spec: SyntheticUserDriverSpec) -> SyntheticUserDriverConfig:
@@ -386,7 +471,9 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                 },
             ) from exc
 
-        target_run_config = to_target_run_config(input.target_run_config)
+        target_run_config, target_run_config_id = resolve_target_run_config(
+            input, project_id, task_id
+        )
         su_driver_config = to_su_driver_config(input.su_driver)
         save_context = build_save_context(request)
 
@@ -401,6 +488,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                     concurrency=CONCURRENCY,
                     batch_tag=input.batch_tag,
                     save_context=save_context,
+                    task_run_config_id=target_run_config_id,
                 ):
                     yield (
                         "data: "

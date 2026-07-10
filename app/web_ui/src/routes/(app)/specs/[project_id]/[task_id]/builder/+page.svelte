@@ -589,8 +589,9 @@
   // Sequence:
   //   1. POST copilot/batch_plan → one scenario prompt per conversation;
   //      the user approves (edit/delete/regenerate) before anything runs.
-  //   2. Pull the task's default run config → target_run_config for the
-  //      drive loop. Multi-turn requires a KilnAgentRunConfig (the
+  //   2. Pull the task's default run config and send its ID — the server
+  //      drives the task with the saved config verbatim (model, prompt,
+  //      sampling, tools). Multi-turn requires a KilnAgentRunConfig (the
   //      conversation needs an agent-shaped invoker).
   //   3. POST /multiturn_sdg/generate_cases with the approved prompts →
   //      ONE batch call, one synthetic-user case per prompt.
@@ -798,11 +799,13 @@
           "Multi-turn requires a Kiln Agent run config; the selected one isn't."
         return
       }
-      const target_run_config = {
-        model_name: rcp.model_name,
-        model_provider: rcp.model_provider_name,
-        prompt_id: rcp.prompt_id ?? "simple_prompt_builder",
+      if (!chosen_config.id) {
+        generation_error = "The selected run config has no id."
+        return
       }
+      // Reference the saved config by id: the server drives the task with it
+      // verbatim, so model, prompt, sampling, and TOOLS all match a manual run.
+      const target_run_config_id = chosen_config.id
 
       // 2. Generate synthetic-user cases via copilot — ONE batch call, one
       // case per approved scenario prompt. Under the upstream salvage
@@ -864,7 +867,7 @@
         body: JSON.stringify({
           cases,
           turns: TURNS_PER_CASE,
-          target_run_config,
+          target_run_config_id,
           su_driver: SU_DRIVER_DEFAULT,
           replace_batch_tags: tags_to_replace,
           spec_name: name,
@@ -877,7 +880,13 @@
         let detail: string
         try {
           const err_json = await response.json()
-          detail = err_json?.message ?? err_json?.detail?.message ?? "unknown"
+          // The error handler wraps detail as {message}; typed route errors
+          // nest {code, message} inside it — unwrap either shape.
+          const message = err_json?.message
+          detail =
+            (typeof message === "string" ? message : message?.message) ??
+            err_json?.detail?.message ??
+            "unknown"
         } catch {
           detail = await response.text().catch(() => "unknown")
         }

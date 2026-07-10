@@ -12,7 +12,8 @@ import uuid
 from dataclasses import dataclass
 from typing import AsyncIterator
 
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
@@ -113,6 +114,7 @@ async def run_cases_batch(
     concurrency: int = CONCURRENCY,
     batch_tag: str | None = None,
     save_context: SaveContext | None = None,
+    task_run_config_id: str | None = None,
 ) -> AsyncIterator[BatchEvent]:
     """Drive `cases` concurrently against `target_task`, streaming progress.
 
@@ -136,6 +138,11 @@ async def run_cases_batch(
         raise ValueError("concurrency must be >= 1")
 
     resolved_batch_tag = batch_tag or _new_batch_tag()
+    # Skills referenced by the run config must be pre-loaded at the
+    # orchestration layer and injected via AdapterConfig — the adapter
+    # raises if it meets a skill tool id with no injected dict. One
+    # directory scan covers the whole batch.
+    skills = load_skills_for_task(target_task, target_run_config)
     save_ctx: SaveContext = save_context or default_save_context
     semaphore = asyncio.Semaphore(concurrency)
     # `None` is the end-of-stream sentinel pushed when all cases finish.
@@ -153,6 +160,8 @@ async def run_cases_batch(
                 batch_tag=resolved_batch_tag,
                 queue=queue,
                 save_ctx=save_ctx,
+                skills=skills,
+                task_run_config_id=task_run_config_id,
             )
 
     # Kick the cases off BEFORE the first yield so they start running
@@ -229,6 +238,8 @@ async def _drive_one_case_and_emit(
     batch_tag: str,
     queue: asyncio.Queue[BatchEvent | None],
     save_ctx: SaveContext,
+    skills: SkillsDict,
+    task_run_config_id: str | None,
 ) -> None:
     """Run drive_case for one case, emitting events on `queue`.
 
@@ -255,6 +266,8 @@ async def _drive_one_case_and_emit(
             target_run_config=target_run_config,
             su_driver_config=su_driver_config,
             batch_tag=batch_tag,
+            skills=skills,
+            task_run_config_id=task_run_config_id,
         )
 
         async def _on_turn(*, run: TaskRun, su_message: str) -> None:
@@ -322,6 +335,8 @@ def _make_target_invoker(
     target_run_config: KilnAgentRunConfigProperties,
     su_driver_config: SyntheticUserDriverConfig,
     batch_tag: str,
+    skills: SkillsDict,
+    task_run_config_id: str | None,
 ) -> TargetInvoker:
     """Build a per-case TargetInvoker over the real adapter.
 
@@ -337,7 +352,15 @@ def _make_target_invoker(
     `for _ in range(turns)` loop), which is the contract; cases are
     isolated by having their own closure with their own `turn_index`.
     """
-    adapter = adapter_for_task(target_task, target_run_config)
+    adapter = adapter_for_task(
+        target_task,
+        target_run_config,
+        # task_run_config_id stamps each run's output source with the saved
+        # config it came from, exactly as a manual run of that config would.
+        base_adapter_config=AdapterConfig(
+            skills=skills, task_run_config_id=task_run_config_id
+        ),
+    )
     turn_index = 0
 
     async def _invoker(

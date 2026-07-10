@@ -94,7 +94,9 @@ def _patch_adapter_for_task(
     adapter = Mock()
     adapter.invoke = AsyncMock(side_effect=invoke_side_effect)
     monkeypatch.setattr(
-        runner_mod, "adapter_for_task", lambda task, run_config: adapter
+        runner_mod,
+        "adapter_for_task",
+        lambda task, run_config, base_adapter_config=None: adapter,
     )
     return adapter.invoke
 
@@ -381,6 +383,53 @@ async def test_auto_generates_batch_tag_when_not_provided(
     # us in to a specific length/charset just because that's what we picked.
     started = next(e for e in events if isinstance(e, BatchStartedEvent))
     assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}", started.batch_tag) is not None
+
+
+@pytest.mark.asyncio
+async def test_skills_preloaded_once_and_injected_into_every_adapter(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skills load once per batch and reach each case's adapter via
+    AdapterConfig — the adapter raises on skill tools without them.
+    """
+    sentinel_skills = {"skill_1": Mock()}
+    load_calls: list[Any] = []
+
+    def _fake_load(task, run_config):
+        load_calls.append((task, run_config))
+        return sentinel_skills
+
+    monkeypatch.setattr(runner_mod, "load_skills_for_task", _fake_load)
+
+    adapter = Mock()
+    adapter.invoke = AsyncMock(side_effect=[_fake_run("r0"), _fake_run("r1")])
+    adapter_configs: list[Any] = []
+
+    def _fake_adapter_for_task(task, run_config, base_adapter_config=None):
+        adapter_configs.append(base_adapter_config)
+        return adapter
+
+    monkeypatch.setattr(runner_mod, "adapter_for_task", _fake_adapter_for_task)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    run_config = _target_run_config()
+    await _collect(
+        run_cases_batch(
+            cases=[_case(0), _case(1)],
+            target_task=fake_task,
+            target_run_config=run_config,
+            su_driver_config=_su_driver_config(),
+            turns=1,
+            task_run_config_id="rc-42",
+        )
+    )
+
+    assert load_calls == [(fake_task, run_config)]
+    assert len(adapter_configs) == 2
+    assert all(cfg.skills is sentinel_skills for cfg in adapter_configs)
+    # The saved config's id rides through to each adapter so persisted runs
+    # attribute back to it, matching a manual run of that config.
+    assert all(cfg.task_run_config_id == "rc-42" for cfg in adapter_configs)
 
 
 # ───────────────────────── per-case failure isolation ─────────────────────────

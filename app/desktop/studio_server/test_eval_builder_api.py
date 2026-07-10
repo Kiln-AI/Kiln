@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
@@ -25,7 +25,15 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TaskOutputRatingType,
+)
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    ToolsRunConfig,
+)
 from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
@@ -1091,6 +1099,68 @@ class TestReviewPipeline:
         completed = _events_of(events, "batch_completed")[0]
         assert completed["failed"] == 2
         pipeline_seams["delete"].assert_not_called()
+
+    def test_saved_run_config_reaches_the_runner_verbatim(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A target_run_config_id resolves to the saved config's properties,
+        handed to the runner untouched — tools and sampling included — with
+        the config's id for run attribution."""
+        rc = Mock()
+        rc.id = "rc-1"
+        rc.run_config_properties = KilnAgentRunConfigProperties(
+            model_name="gpt_5_5",
+            model_provider_name=ModelProviderName.openrouter,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+            tools_config=ToolsRunConfig(tools=["kiln_tool::add_numbers"]),
+        )
+        task = pipeline_seams["task"].return_value
+        task.run_configs.return_value = [rc]
+
+        captured: dict = {}
+        inner = _fake_run_cases_batch()
+
+        async def capturing(*, cases, turns, **kwargs):
+            captured.update(kwargs)
+            async for event in inner(cases=cases, turns=turns, **kwargs):
+                yield event
+
+        del pipeline_request["target_run_config"]
+        pipeline_request["target_run_config_id"] = "rc-1"
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+                new=capturing,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_api.task_from_id",
+                return_value=task,
+            ),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200
+        assert captured["target_run_config"] is rc.run_config_properties
+        assert captured["task_run_config_id"] == "rc-1"
+
+    def test_unknown_run_config_id_is_404_before_the_stream(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """Resolution happens at construction, so a bad id is a clean 404 —
+        never a half-open event stream."""
+        task = pipeline_seams["task"].return_value
+        task.run_configs.return_value = []
+        del pipeline_request["target_run_config"]
+        pipeline_request["target_run_config_id"] = "missing"
+        with patch(
+            "app.desktop.studio_server.eval_api.task_from_id",
+            return_value=task,
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 404
+        assert resp.json()["message"]["code"] == "run_config_not_found"
+        assert not resp.headers["content-type"].startswith("text/event-stream")
 
     def test_rejects_single_turn_task(self, client, pipeline_request, pipeline_seams):
         from kiln_ai.datamodel.datamodel_enums import TurnMode

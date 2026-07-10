@@ -46,8 +46,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
 from app.desktop.studio_server.multiturn_sdg_api import (
     RunCasesBatchApiInput,
     guard_multiturn,
+    resolve_target_run_config,
     to_su_driver_config,
-    to_target_run_config,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     delete_multi_turn_batch_chains,
@@ -220,6 +220,12 @@ class ReviewPipelineRun:
         self._task = task
         self._cases = cases
         self._input = input
+        # Resolved at construction — i.e. inside the endpoint, before the
+        # stream opens — so an unknown/non-agent run config id is a clean
+        # 4xx rather than a mid-stream error frame.
+        self._target_run_config, self._target_run_config_id = resolve_target_run_config(
+            input, project_id, task_id
+        )
         # build_save_context returns None outside a git-synced request; fall
         # back the same way the runner does.
         self._save_context = save_context or default_save_context
@@ -308,12 +314,13 @@ class ReviewPipelineRun:
         async for event in run_cases_batch(
             cases=self._cases,
             target_task=self._task,
-            target_run_config=to_target_run_config(self._input.target_run_config),
+            target_run_config=self._target_run_config,
             su_driver_config=to_su_driver_config(self._input.su_driver),
             turns=self._input.turns,
             concurrency=DRIVE_CONCURRENCY,
             batch_tag=self._input.batch_tag,
             save_context=self._save_context,
+            task_run_config_id=self._target_run_config_id,
         ):
             if isinstance(event, BatchStartedEvent):
                 self._batch_tag = event.batch_tag

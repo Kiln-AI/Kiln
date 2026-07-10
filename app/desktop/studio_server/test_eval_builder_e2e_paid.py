@@ -68,6 +68,12 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
 
 Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
 builder, plus one refine call at save — ~25 small model calls, cents.
+
+A second paid test (`test_eval_builder_pipeline_tools_e2e`) drives a
+tool-calling task via its SAVED run config (2x2, built-in calculator tools)
+and asserts tool activity lands in the driven trace and in the canonical
+transcript the judge and claim builder consume. Roughly half the main run's
+cost.
 """
 
 import json
@@ -201,7 +207,9 @@ def _collect_pipeline(events: list[dict | str]) -> dict:
     return out
 
 
-def _assert_pipeline_reviewed(pipe: dict, num_driven: int) -> None:
+def _assert_pipeline_reviewed(
+    pipe: dict, num_driven: int, turns: int = TURNS_PER_CASE
+) -> None:
     """The structural wire contract of one review_pipeline run: no failures,
     every driven case reviewed for the full turn count, totals agree, and each
     case_reviewed leaf id matches its case_driven leaf id."""
@@ -212,7 +220,7 @@ def _assert_pipeline_reviewed(pipe: dict, num_driven: int) -> None:
         f"expected {num_driven} reviewed cases, got {len(pipe['reviewed'])}",
     )
     _require(
-        all(pipe["turns_seen"].get(i) == TURNS_PER_CASE for i in pipe["reviewed"]),
+        all(pipe["turns_seen"].get(i) == turns for i in pipe["reviewed"]),
         f"turn progress incomplete: {pipe['turns_seen']}",
     )
     _require(
@@ -265,8 +273,7 @@ def preflight():
     return base_url
 
 
-@pytest.fixture
-def temp_task(tmp_path, monkeypatch):
+def _make_temp_task(tmp_path, monkeypatch, instruction: str) -> Task:
     """A real multi-turn task on disk; every route resolves ids to it.
 
     This is the ONLY seam the harness fakes — everything downstream (runner,
@@ -279,7 +286,7 @@ def temp_task(tmp_path, monkeypatch):
     project.save_to_file()
     task = Task(
         name="E2E Harness Task",
-        instruction=TASK_INSTRUCTION,
+        instruction=instruction,
         turn_mode=TurnMode.multiturn,
         parent=project,
     )
@@ -294,6 +301,9 @@ def temp_task(tmp_path, monkeypatch):
         "app.desktop.studio_server.copilot_api",
         "app.desktop.studio_server.eval_builder_api",
         "app.desktop.studio_server.utils.eval_builder_utils",
+        # The saved-run-config resolver (task_run_config_from_id) loads the
+        # task through eval_api's own import.
+        "app.desktop.studio_server.eval_api",
     ):
         monkeypatch.setattr(f"{module}.task_from_id", resolve)
     # The local batch planner also resolves the project directly.
@@ -302,6 +312,11 @@ def temp_task(tmp_path, monkeypatch):
         lambda _project_id: project,
     )
     return task
+
+
+@pytest.fixture
+def temp_task(tmp_path, monkeypatch):
+    return _make_temp_task(tmp_path, monkeypatch, TASK_INSTRUCTION)
 
 
 @pytest.fixture
@@ -633,3 +648,201 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         f"split not 50/25/25 (golden={len(golden_leaf_ids)}, eval={eval_count}, "
         f"train={train_count}, n={num_driven})",
     )
+
+
+# ─────────────────── tool-calling leg (saved run config) ───────────────────
+#
+# The same pipeline against a task whose SAVED run config carries tools —
+# the drive references the config by id, so the agent under test runs with
+# its tools exactly like a manual run. Kiln's built-in calculator demo tools
+# keep this dependency-free (no MCP server, no tool server, no keys beyond
+# the pipeline's own). 2 cases x 2 turns: drive → judge → claims only (the
+# main test above owns save/refine); ~half the main run's cost.
+
+TOOL_NUM_CASES = 2
+TOOL_TURNS_PER_CASE = 2
+TOOL_SPEC_NAME = "E2E Tool Harness Spec"
+
+TOOL_TASK_INSTRUCTION = (
+    "You are an arithmetic assistant for a bookkeeping team. For EVERY "
+    "arithmetic computation, however simple, you MUST call one of your "
+    "calculator tools (add_numbers, multiply_numbers, subtract_numbers, "
+    "divide_numbers) and report the tool's result. Never compute numbers "
+    "mentally. If a request needs no arithmetic, answer normally."
+)
+
+TOOL_SPEC_TEXT = (
+    "The assistant must use its calculator tools for every arithmetic "
+    "computation instead of computing mentally, and must report each tool's "
+    "result faithfully."
+)
+
+TOOL_JUDGE = {
+    "model_name": "gpt_4o",
+    "model_provider": "openrouter",
+    "prompt": (
+        "Evaluate whether the assistant used its calculator tools for every "
+        "arithmetic computation in the conversation. Tool activity appears "
+        "in the trace as requested-tool-call turns and tool-result turns. "
+        "PASS if every computation went through a tool and the results were "
+        "reported faithfully. FAIL if the assistant computed any number "
+        "mentally or misreported a tool result. Provide 2-3 sentences of "
+        "reasoning."
+    ),
+}
+
+# Hand-written scenarios — a batch plan adds nothing to a tool-usage check,
+# and skipping the planner keeps this leg cheap. Each opens with concrete
+# arithmetic so the very first assistant turn should reach for a tool.
+TOOL_SCENARIOS = [
+    (
+        "The customer needs three invoice amounts added up (for example "
+        "847.50 + 1293.25 + 62.00) and keeps adding more line items as the "
+        "conversation continues."
+    ),
+    (
+        "The customer wants an order total multiplied out (for example 12 "
+        "units at 37.80 each), then asks follow-up quantity variations, "
+        "pressing for quick answers."
+    ),
+]
+
+
+@pytest.fixture
+def temp_tool_task(tmp_path, monkeypatch):
+    """The tool-calling target: a multi-turn task plus a SAVED run config
+    whose tools_config carries the built-in calculators."""
+    from kiln_ai.datamodel.datamodel_enums import (
+        ModelProviderName,
+        StructuredOutputMode,
+    )
+    from kiln_ai.datamodel.run_config import (
+        KilnAgentRunConfigProperties,
+        ToolsRunConfig,
+    )
+    from kiln_ai.datamodel.task import TaskRunConfig
+    from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+
+    task = _make_temp_task(tmp_path, monkeypatch, TOOL_TASK_INSTRUCTION)
+    run_config = TaskRunConfig(
+        name="Calculator Config",
+        parent=task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="claude_4_5_haiku",
+            model_provider_name=ModelProviderName.openrouter,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
+            tools_config=ToolsRunConfig(
+                tools=[
+                    KilnBuiltInToolId.ADD_NUMBERS.value,
+                    KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+                    KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+                    KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+                ]
+            ),
+        ),
+    )
+    run_config.save_to_file()
+    return task, run_config
+
+
+@pytest.mark.paid
+def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
+    """The SU drive must exercise the target task WITH its tools: real tool
+    invocations in the driven trace, flowing through the canonical transcript
+    to the judge and the claim builder."""
+    task, run_config = temp_tool_task
+
+    # ── SU CASES — one batch call from the hand-written scenarios. ──────
+    resp = client.post(
+        "/api/projects/p/tasks/t/multiturn_sdg/generate_cases",
+        json={
+            "target_specification": TOOL_SPEC_TEXT,
+            "num_cases": TOOL_NUM_CASES,
+            "case_prompts": TOOL_SCENARIOS,
+        },
+    )
+    _require(resp.status_code == 200, f"generate_cases failed: {resp.text}")
+    cases = resp.json()["cases"]
+    _require(len(cases) >= 1, "generate_cases returned no cases")
+    if len(cases) < TOOL_NUM_CASES:
+        warnings.warn(
+            f"SU salvage: {TOOL_NUM_CASES - len(cases)} case(s) dropped "
+            f"upstream; driving {len(cases)}",
+            stacklevel=1,
+        )
+
+    # ── PIPELINE — the drive references the SAVED run config by id. ─────
+    num_driven = len(cases)
+    resp = client.post(
+        "/api/projects/p/tasks/t/eval_builder/review_pipeline",
+        json={
+            "cases": cases,
+            "turns": TOOL_TURNS_PER_CASE,
+            "target_run_config_id": run_config.id,
+            "su_driver": SU_DRIVER,
+            "spec_name": TOOL_SPEC_NAME,
+            "judge": TOOL_JUDGE,
+        },
+    )
+    _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
+    pipe = _collect_pipeline(_parse_sse(resp.text))
+    _assert_pipeline_reviewed(pipe, num_driven, turns=TOOL_TURNS_PER_CASE)
+
+    # ── Tool invocations in the DRIVEN trace, on disk. ──────────────────
+    # The chain leaf's cumulative trace must carry real tool activity: an
+    # assistant message requesting tool calls and a tool-result message.
+    leaves = find_multi_turn_chain_leaves(task, pipe["batch_tag"])
+    _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
+    cases_with_tool_calls = 0
+    for leaf in leaves:
+        # Driven runs attribute back to the saved config, like a manual run.
+        _require(
+            leaf.output.source is not None
+            and leaf.output.source.run_config_id == run_config.id,
+            f"leaf {leaf.id} is not attributed to the saved run config",
+        )
+        trace = leaf.trace or []
+        has_call = any(m.get("tool_calls") for m in trace)
+        has_result = any(m.get("role") == "tool" for m in trace)
+        if has_call and has_result:
+            cases_with_tool_calls += 1
+    _require(
+        cases_with_tool_calls >= 1,
+        "no driven chain contains a tool call + tool result — the target "
+        "task ran without its tools (the 'de-toothed agent' failure this "
+        "test exists to catch)",
+    )
+    if cases_with_tool_calls < num_driven:
+        # The SU steers the conversation, so a case can legitimately end up
+        # tool-less; only zero-tool batches indicate the structural bug.
+        warnings.warn(
+            f"only {cases_with_tool_calls}/{num_driven} chains show tool "
+            "activity — check SU scenario steering if this persists",
+            stacklevel=1,
+        )
+
+    # ── Tool activity reached the judge + claim builder. ────────────────
+    # The echoed raw_output IS the canonical transcript both consumed; the
+    # tool-result turn renders as <tool_tool_message> (the request turn's
+    # <assistant_requested_tool_calls> only appears when the model sends no
+    # prose alongside the call, so the result tag is the reliable signal).
+    tool_visible = [
+        index
+        for index, event in pipe["reviewed"].items()
+        if "<tool_tool_message>" in event["raw_output"]
+    ]
+    _require(
+        len(tool_visible) >= 1,
+        "no reviewed case's canonical transcript carries a tool-result turn "
+        "— tool activity did not reach the judge/claim-builder input",
+    )
+    for index, event in pipe["reviewed"].items():
+        _require(
+            event["judge_score"] in ("pass", "fail"),
+            f"case {index}: judge_score is not the enum: {event['judge_score']!r}",
+        )
+        _require(
+            event["final_judgement"]["expected_result"] == event["judge_score"],
+            f"case {index}: final judgement not pinned to the judge's verdict",
+        )

@@ -10099,7 +10099,13 @@ export interface components {
              * @default 5
              */
             turns: number;
-            target_run_config: components["schemas"]["TargetRunConfigSpec"];
+            /** @description Transient target-task config (tools disabled). Exactly one of target_run_config / target_run_config_id is required. */
+            target_run_config?: components["schemas"]["TargetRunConfigSpec"] | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
             su_driver: components["schemas"]["SyntheticUserDriverSpec"];
             /**
              * Batch Tag
@@ -10192,7 +10198,13 @@ export interface components {
              * @default 5
              */
             turns: number;
-            target_run_config: components["schemas"]["TargetRunConfigSpec"];
+            /** @description Transient target-task config (tools disabled). Exactly one of target_run_config / target_run_config_id is required. */
+            target_run_config?: components["schemas"]["TargetRunConfigSpec"] | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
             su_driver: components["schemas"]["SyntheticUserDriverSpec"];
             /**
              * Batch Tag
@@ -11149,8 +11161,9 @@ export interface components {
         };
         /**
          * TargetRunConfigSpec
-         * @description How to invoke the target task on each turn — same fields a manual
-         *     UI run would use.
+         * @description A transient config for invoking the target task on each turn. Tools
+         *     are disabled on this path — reference one of the task's saved run
+         *     configs (target_run_config_id) to drive the task with its tools.
          */
         TargetRunConfigSpec: {
             /** Model Name */

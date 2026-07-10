@@ -16,7 +16,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 
-from kiln_ai.datamodel.datamodel_enums import TurnMode
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TurnMode,
+)
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+    ToolsRunConfig,
+)
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_server.custom_errors import connect_custom_errors
@@ -88,6 +98,14 @@ def patch_api_key():
         return_value="test-key",
     ):
         yield
+
+
+@pytest.fixture
+def patch_eval_api_task_from_id():
+    """The saved-run-config resolver (task_run_config_from_id) loads the task
+    through eval_api's own task_from_id import — patch it alongside ours."""
+    with patch("app.desktop.studio_server.eval_api.task_from_id") as m:
+        yield m
 
 
 def _sdk_cases(n: int, with_indices: bool = False) -> list[SyntheticUserCase]:
@@ -764,6 +782,143 @@ def test_run_cases_batch_accepts_valid_batch_tags(
             json=body,
         )
     assert resp.status_code == 200
+
+
+# ───────────────────── target run config resolution ─────────────────────
+
+
+def _saved_agent_run_config(rc_id: str = "rc-1") -> Mock:
+    """A saved TaskRunConfig stand-in whose properties carry everything the
+    transient spec cannot — tools, sampling, structured output mode."""
+    rc = Mock()
+    rc.id = rc_id
+    rc.run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_5_5",
+        model_provider_name=ModelProviderName.openrouter,
+        prompt_id="simple_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+        temperature=0.3,
+        tools_config=ToolsRunConfig(tools=["kiln_tool::add_numbers"]),
+    )
+    return rc
+
+
+def _multiturn_task_with_run_configs(run_configs: list[Mock]) -> Mock:
+    task = _multiturn_task()
+    task.run_configs.return_value = run_configs
+    return task
+
+
+def test_run_cases_batch_rejects_both_target_config_sources(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    patch_task_from_id.return_value = _multiturn_task()
+    body = _run_cases_batch_body()
+    body["target_run_config_id"] = "rc-1"
+    resp = _sse_get(client, body)
+    assert resp.status_code == 422
+    assert "exactly one" in resp.text.lower()
+
+
+def test_run_cases_batch_rejects_missing_target_config_source(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    patch_task_from_id.return_value = _multiturn_task()
+    body = _run_cases_batch_body()
+    del body["target_run_config"]
+    resp = _sse_get(client, body)
+    assert resp.status_code == 422
+    assert "exactly one" in resp.text.lower()
+
+
+def test_run_cases_batch_uses_saved_run_config_verbatim(
+    client: TestClient, patch_task_from_id, patch_eval_api_task_from_id, patch_api_key
+) -> None:
+    """A referenced saved run config reaches the runner as-is — tools,
+    temperature, and structured output mode included, nothing rebuilt — and
+    the config's id rides along for run attribution."""
+    rc = _saved_agent_run_config()
+    task = _multiturn_task_with_run_configs([rc])
+    patch_task_from_id.return_value = task
+    patch_eval_api_task_from_id.return_value = task
+
+    captured: dict = {}
+
+    async def _fake_runner(**kwargs) -> AsyncIterator:
+        captured.update(kwargs)
+        yield BatchStartedEvent(batch_tag="t", num_cases=1)
+        yield BatchCompletedEvent(successful=0, failed=0, batch_tag="t", total_cost=0.0)
+
+    body = _run_cases_batch_body()
+    del body["target_run_config"]
+    body["target_run_config_id"] = "rc-1"
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.run_cases_batch",
+        _fake_runner,
+    ):
+        resp = _sse_get(client, body)
+
+    assert resp.status_code == 200
+    assert captured["target_run_config"] is rc.run_config_properties
+    assert captured["task_run_config_id"] == "rc-1"
+
+
+def test_run_cases_batch_transient_config_has_no_attribution_id(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """The transient spec is an ad-hoc run — no saved config to attribute to."""
+    patch_task_from_id.return_value = _multiturn_task()
+
+    captured: dict = {}
+
+    async def _fake_runner(**kwargs) -> AsyncIterator:
+        captured.update(kwargs)
+        yield BatchStartedEvent(batch_tag="t", num_cases=1)
+        yield BatchCompletedEvent(successful=0, failed=0, batch_tag="t", total_cost=0.0)
+
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.run_cases_batch",
+        _fake_runner,
+    ):
+        resp = _sse_get(client)
+
+    assert resp.status_code == 200
+    assert captured["task_run_config_id"] is None
+
+
+def test_run_cases_batch_unknown_run_config_id_is_404(
+    client: TestClient, patch_task_from_id, patch_eval_api_task_from_id, patch_api_key
+) -> None:
+    task = _multiturn_task_with_run_configs([_saved_agent_run_config("other-rc")])
+    patch_task_from_id.return_value = task
+    patch_eval_api_task_from_id.return_value = task
+    body = _run_cases_batch_body()
+    del body["target_run_config"]
+    body["target_run_config_id"] = "rc-1"
+    resp = _sse_get(client, body)
+    assert resp.status_code == 404
+    assert resp.json()["message"]["code"] == "run_config_not_found"
+
+
+def test_run_cases_batch_non_agent_run_config_is_400(
+    client: TestClient, patch_task_from_id, patch_eval_api_task_from_id, patch_api_key
+) -> None:
+    """An MCP-type run config can't drive a conversation — the drive loop
+    needs an agent-shaped invoker; surface a typed 400, not a crash."""
+    rc = Mock()
+    rc.id = "rc-1"
+    rc.run_config_properties = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id="mcp::local::srv::tool")
+    )
+    task = _multiturn_task_with_run_configs([rc])
+    patch_task_from_id.return_value = task
+    patch_eval_api_task_from_id.return_value = task
+    body = _run_cases_batch_body()
+    del body["target_run_config"]
+    body["target_run_config_id"] = "rc-1"
+    resp = _sse_get(client, body)
+    assert resp.status_code == 400
+    assert resp.json()["message"]["code"] == "run_config_not_agent"
 
 
 def test_generate_cases_preserves_upstream_401_status(
