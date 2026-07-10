@@ -66,14 +66,44 @@ class KilnEvalHelpers:
 
     @staticmethod
     def get_tool_results(trace: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """Return all tool-result entries from a trace."""
+        """Return all tool-result entries from a trace.
+
+        Matches OpenAI-format ``role: "tool"`` messages — the shape Kiln
+        actually stores (``ChatCompletionToolMessageParamWrapper``) — as well
+        as the ``role``/``type`` == "tool_result" variants.
+        """
         if not trace:
             return []
         return [
             entry
             for entry in trace
-            if entry.get("role") == "tool_result" or entry.get("type") == "tool_result"
+            if entry.get("role") in ("tool", "tool_result")
+            or entry.get("type") == "tool_result"
         ]
+
+    @staticmethod
+    def get_tool_result_content(
+        trace: list[dict[str, Any]] | None, tool_call_id: str
+    ) -> str:
+        """Return the text content of the tool result answering *tool_call_id*.
+
+        Pairs OpenAI-format tool results (``role: "tool"``) with their
+        originating call by ``tool_call_id``. List-of-blocks content is
+        flattened to text. Returns ``""`` when no result matches.
+        """
+        for entry in KilnEvalHelpers.get_tool_results(trace):
+            if entry.get("tool_call_id") != tool_call_id:
+                continue
+            content = entry.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                return "\n".join(
+                    block.get("text", "") if isinstance(block, dict) else str(block)
+                    for block in content
+                )
+            return "" if content is None else str(content)
+        return ""
 
     # -- Tool-call matching -------------------------------------------------
 
@@ -157,3 +187,14 @@ class KilnEvalHelpers:
             return re.search(pattern, text) is not None
         except Exception:
             return False
+
+    @staticmethod
+    def get_markdown_links(text: str | None) -> list[tuple[str, str]]:
+        """Return ``(link_text, target)`` pairs for every markdown link in *text*.
+
+        Never raises; ``None``/empty input yields ``[]``.
+        """
+        try:
+            return re.findall(r"\[([^\]]+)\]\(([^)]+)\)", text or "")
+        except Exception:
+            return []

@@ -114,10 +114,47 @@ class TestTraceNavigation:
         trace = [
             {"role": "tool_result", "content": "result1"},
             {"type": "tool_result", "content": "result2"},
+            # OpenAI format — the shape Kiln actually stores
+            {"role": "tool", "tool_call_id": "tc1", "content": "result3"},
         ]
         results = helpers.get_tool_results(trace)
-        assert len(results) == 2
+        assert len(results) == 3
         assert results[0]["content"] == "result1"
+        assert results[2]["tool_call_id"] == "tc1"
+
+    def test_get_tool_results_openai_dialect(self, helpers: KilnEvalHelpers):
+        """Stored Kiln traces use role "tool" (ChatCompletionToolMessageParamWrapper)."""
+        results = helpers.get_tool_results(_OPENAI_FORMAT_TRACE)
+        assert len(results) >= 1
+        assert all(r.get("role") == "tool" for r in results)
+
+    def test_get_tool_result_content(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "tool", "tool_call_id": "tc1", "content": "plain text"},
+            {
+                "role": "tool",
+                "tool_call_id": "tc2",
+                "content": [
+                    {"type": "text", "text": "block a"},
+                    {"type": "text", "text": "block b"},
+                ],
+            },
+            {"role": "tool", "tool_call_id": "tc3", "content": None},
+        ]
+        assert helpers.get_tool_result_content(trace, "tc1") == "plain text"
+        assert helpers.get_tool_result_content(trace, "tc2") == "block a\nblock b"
+        assert helpers.get_tool_result_content(trace, "tc3") == ""
+        assert helpers.get_tool_result_content(trace, "missing") == ""
+        assert helpers.get_tool_result_content(None, "tc1") == ""
+
+    def test_get_markdown_links(self, helpers: KilnEvalHelpers):
+        text = "See [the task](/optimize/1/2) and [docs](https://docs.kiln.tech)."
+        assert helpers.get_markdown_links(text) == [
+            ("the task", "/optimize/1/2"),
+            ("docs", "https://docs.kiln.tech"),
+        ]
+        assert helpers.get_markdown_links("") == []
+        assert helpers.get_markdown_links(None) == []
 
 
 # ---------------------------------------------------------------------------
