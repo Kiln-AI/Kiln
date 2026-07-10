@@ -149,9 +149,12 @@ def test_batch_plan_success(
         input_source=data_source,
         parent=test_task,
     )
-    with patch(
-        "app.desktop.studio_server.batch_plan_api.adapter_for_task"
-    ) as mock_adapter_for_task:
+    with (
+        patch("app.desktop.studio_server.batch_plan_api.RUN_BATCH_PLAN_LOCALLY", True),
+        patch(
+            "app.desktop.studio_server.batch_plan_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+    ):
         mock_adapter_for_task.return_value = _mock_adapter(run)
         resp = client.post(
             "/api/projects/proj-ID/tasks/task-ID/copilot/batch_plan",
@@ -191,9 +194,12 @@ def test_batch_plan_malformed_output(
         input_source=data_source,
         parent=test_task,
     )
-    with patch(
-        "app.desktop.studio_server.batch_plan_api.adapter_for_task"
-    ) as mock_adapter_for_task:
+    with (
+        patch("app.desktop.studio_server.batch_plan_api.RUN_BATCH_PLAN_LOCALLY", True),
+        patch(
+            "app.desktop.studio_server.batch_plan_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+    ):
         mock_adapter_for_task.return_value = _mock_adapter(run)
         resp = client.post(
             "/api/projects/proj-ID/tasks/task-ID/copilot/batch_plan",

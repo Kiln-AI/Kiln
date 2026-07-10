@@ -40,7 +40,7 @@ from app.desktop.studio_server.utils.response_utils import unwrap_response
 #           it at a local kiln_server with KILN_SERVER_BASE_URL=http://localhost:<port>,
 #           or leave the default (https://api.kiln.tech) for staging/prod.
 # This is the single switch for the local→GCP move.
-RUN_BATCH_PLAN_LOCALLY = True
+RUN_BATCH_PLAN_LOCALLY = False
 
 
 class BatchPlanApiInput(BaseModel):

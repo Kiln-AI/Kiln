@@ -1,4 +1,8 @@
 <script lang="ts">
+  // TODO: add Playwright tests for the Kiln Pro batch flow — plan, review and
+  // trim input plans, generate inputs, retry/regenerate, generate outputs,
+  // remove output/sample, and save. See app/web_ui/tests/e2e for the pattern
+  // (act_mock_kiln_server.spec.ts mocks the copilot endpoints).
   import { onMount, tick } from "svelte"
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
@@ -14,6 +18,9 @@
   import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import SynthDataGuide from "./synth_data_guide.svelte"
+  // TODO: remove the dev mocks — this import and the KILN_PRO_DEV_MOCKS branch
+  // in submit_batch.
+  import { KILN_PRO_DEV_MOCKS, mock_batch_plan } from "./kiln_pro_dev_mocks"
   import KilnProBatchPlan from "./kiln_pro_batch_plan.svelte"
   import KilnProInputs from "./kiln_pro_inputs.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
@@ -95,6 +102,12 @@
     plan_error = null
     stage = "planning"
     try {
+      if (KILN_PRO_DEV_MOCKS) {
+        plan = await mock_batch_plan(requested)
+        plan_edited = false
+        stage = "plan"
+        return
+      }
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
         {
@@ -198,6 +211,7 @@
     run_config_properties={inputs_rcp}
     data_guide={inputs_data_guide}
     summary_out_of_sync={plan_edited}
+    on_back={() => (stage = "plan")}
   />
 {:else}
   <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
@@ -278,22 +292,20 @@
       >
     </form>
     <h3 class="text-lg font-bold">Generate Inputs</h3>
-    <p class="text-sm font-light mb-5">
-      {#if plan}
-        Kiln Pro will generate {plan.prompts.length} inputs in parallel — one per
-        planned prompt.
-      {/if}
+    <p class="text-sm font-light mb-8">
+      Generate synthetic inputs: the data that will be passed into the task.
     </p>
     {#if inputs_error}
       <div class="text-error text-sm mb-3">{inputs_error.getMessage()}</div>
     {/if}
     <FormContainer
       submit_label={plan
-        ? `Generate ${plan.prompts.length} Inputs`
+        ? `Generate Inputs (${plan.prompts.length})`
         : "Generate"}
       bind:submitting={inputs_submitting}
       on:submit={submit_inputs}
     >
+      <SynthDataGuide {guidance_data} />
       {#if task}
         <RunConfigComponent
           bind:this={inputs_run_config}
@@ -313,7 +325,6 @@
           }}
         />
       {/if}
-      <SynthDataGuide {guidance_data} />
     </FormContainer>
   </div>
   <form method="dialog" class="modal-backdrop">

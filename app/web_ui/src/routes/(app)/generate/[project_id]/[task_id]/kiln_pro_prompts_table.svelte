@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import KilnProPlansTable from "./kiln_pro_plans_table.svelte"
 
   export let prompts: string[]
   // When provided, each row gets a delete action.
@@ -11,11 +11,12 @@
 <div class="rounded-lg border">
   <button
     class="w-full flex items-center justify-between px-4 py-3 text-left"
+    aria-label={show_prompts ? "Hide input plans" : "Show input plans"}
+    aria-expanded={show_prompts}
     on:click={() => (show_prompts = !show_prompts)}
   >
-    <span class="text-sm font-medium">Batch Prompts</span>
-    <div class="flex items-center gap-1 text-sm text-gray-500">
-      {show_prompts ? "Hide" : "Show"}
+    <span class="text-sm font-medium">Input Plans</span>
+    <div class="flex items-center text-sm text-gray-500">
       <svg
         class="w-4 h-4 transition-transform {show_prompts ? 'rotate-180' : ''}"
         viewBox="0 0 24 24"
@@ -31,29 +32,8 @@
   </button>
 
   {#if show_prompts}
-    <table class="table table-fixed border-t">
-      <tbody>
-        {#each prompts as prompt, i}
-          <tr>
-            <td class="whitespace-normal">{prompt}</td>
-            {#if on_delete}
-              <td class="w-12 align-top">
-                <div class="flex flex-row justify-end items-start">
-                  <TableActionMenu
-                    width="w-40"
-                    items={[
-                      {
-                        label: "Delete",
-                        onclick: () => on_delete?.(i),
-                      },
-                    ]}
-                  />
-                </div>
-              </td>
-            {/if}
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <div class="border-t">
+      <KilnProPlansTable {prompts} {on_delete} />
+    </div>
   {/if}
 </div>

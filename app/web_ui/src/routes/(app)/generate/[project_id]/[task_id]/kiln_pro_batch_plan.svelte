@@ -16,8 +16,9 @@
     <div class="flex-grow">
       <div class="text-xl font-bold">Batch Plan</div>
       <div class="text-sm font-light text-gray-500">
-        <span class="font-medium text-base-content">{count} prompts</span> ready
-        — review and trim, then generate inputs.
+        <span class="font-medium text-base-content"
+          >{count} {count === 1 ? "input" : "inputs"} planned</span
+        > — review and trim, then generate.
       </div>
     </div>
     <div class="flex flex-row gap-2 shrink-0">
@@ -29,7 +30,7 @@
         disabled={count === 0}
         on:click={on_generate_inputs}
       >
-        Generate {count} Inputs
+        Generate Inputs ({count})
       </button>
     </div>
   </div>
