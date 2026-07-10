@@ -1,12 +1,12 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Artifact Provenance
 
 ## Overview
 
-Add a shared, immutable **provenance** record to Kiln's compiled/tunable artifacts. Provenance answers three questions about an artifact: *why it exists* (`notes`), *what it was derived from* (`derived_from_ids`), and *whose judgment created it* (`origin`). A single Pydantic submodel — `KilnArtifactProvenance` — is embedded as one optional field on each host model. Clone flows stamp lineage automatically; creation stamps origin automatically. Provenance is written once at creation and is immutable thereafter (enforced at the API layer).
+Add a shared, immutable **provenance** record to Kiln's compiled/tunable artifacts. Provenance answers three questions about an artifact: *why it exists* (`notes`), *what it was derived from* (`derived_from_ids`), and *whose judgment created it* (`origin`). A single Pydantic submodel — `KilnArtifactProvenance` — is embedded as one optional field on each host model. Clone flows stamp lineage (`derived_from_ids`) automatically; whenever a provenance object is created its `origin` is required (no default — fail-loud, never fabricate). Provenance is written once at creation and is immutable thereafter (enforced at the API layer).
 
 This is compile-time metadata for **future agent sessions and humans reading the project on disk**. It is deliberately *not* a UI feature and *not* a runtime model surface: nothing about provenance is rendered in the web app (this release), and it is never injected into any tool/prompt/context sent to a runtime model.
 
@@ -42,7 +42,7 @@ Every host model is an on-disk `KilnParentedModel` stored as a child in a relati
 
 **Deliberately excluded** (per overview decision 10): `Eval` (the goal, immutable — its tunable `EvalConfig` is included) and `ExternalToolServer` (the tunable artifact is the tool list on the run config).
 
-**Clone-path summary:** 5 of the 12 models have a clone path — **Skill, Prompt, TaskRunConfig, CodeTool** (all of Tier 1) and **RagConfig**. The other 7 gain the field + API plumbing but have no clone to wire; their provenance is populated only on explicit create (typically just the auto-stamped `origin`).
+**Clone-path summary:** 5 of the 12 models have a clone path — **Skill, Prompt, TaskRunConfig, CodeTool** (all of Tier 1) and **RagConfig**. The other 7 gain the field + API plumbing but have no clone to wire; their provenance is populated only when a create request supplies it (typically just an explicit `origin`).
 
 ## 2. The `KilnArtifactProvenance` submodel
 
@@ -61,13 +61,13 @@ class KilnArtifactProvenance(BaseModel):
 |---|---|---|
 | `notes` | Strip surrounding whitespace; coerce empty/whitespace-only → `None`; enforce the 2,000-char cap **after** stripping (raise `ValueError` if over). | Always |
 | `derived_from_ids` | Reject empty/whitespace-only strings; reject duplicate ids. | Always |
-| `origin` | If **not** loading from file: a non-`None` value must be exactly `"human"` or `"agent"` (raise `ValueError` otherwise). If loading from file: accept any string (forward-compat). `None` is always permitted. | Create vs. load |
+| `origin` | If **not** loading from file (i.e. constructing a new object): **required** — must be present and exactly `"human"` or `"agent"`; raise `ValueError` if `None` or any other value. If loading from file: accept any string **or** `None` (forward/back-compat). | Create vs. load |
 
 Load-vs-create is detected with the existing `loading_from_file(info)` helper (`basemodel.py`) — the same mechanism `TaskOutput.validate_output_source` uses. This validation is **format-only**: no existence checks and no cross-sibling lookups happen in a validator (they break file loads — established Kiln rule). Existence/self-reference checks live at the API layer ([§5.2](#52-create-validation)).
 
 > **Correction (see Appendix A):** `derived_from_ids` entries are **not** run through an "ID format validator" — no such validator exists in Kiln (`ID_TYPE = Optional[str]`, unconstrained). The enforceable rules are non-empty + no-duplicates.
 
-> **Interpretation of decision 5:** the sketch declares `origin` with `default=None`, so `None` remains a legal model-level value (meaning "unspecified/legacy"). "Strict on create" therefore means *"a value that is present must be valid,"* not *"a value must be present."* The API layer is what guarantees a real value gets stamped ([§6](#6-origin-semantics--defaulting)).
+> **`origin` is required-when-present, with no default (decision, scosman).** Defaults are dangerous: a silent default would let an agent that forgets to set `origin` record wrong data. So whenever a `KilnArtifactProvenance` object exists (constructed, not loaded), `origin` **must** be an explicit `"human"` or `"agent"` — the model errors otherwise. The field keeps `default=None` in its signature *only* so that a file carrying a provenance object without `origin` still loads (lenient-on-load); on create, `None` is rejected. The `provenance` field **as a whole remains optional** — a create may legitimately yield `provenance=None` (unknown/legacy) — but a provenance that *is* set must carry a valid `origin`.
 
 ## 3. Host field & back-compat
 
@@ -84,11 +84,7 @@ provenance: KilnArtifactProvenance | None = None
 ## 4. Lifecycle behaviors
 
 ### 4.1 Creation
-When an artifact is created through its create endpoint, provenance is **always stamped** (overview Q-decision: "stamp origin on all creates"):
-- If the request omits `provenance`, the endpoint constructs `KilnArtifactProvenance(origin="human", derived_from_ids=[])`.
-- If the request includes `provenance`, the endpoint validates it ([§5.2](#52-create-validation)) and, if `origin` is `None`, sets it to `"human"`.
-
-Result: every newly created artifact of a covered type records at least its origin. See [§6](#6-origin-semantics--defaulting) for how `"human"` vs `"agent"` is chosen.
+Creation does **not** auto-stamp provenance and applies **no server-side default**. The create endpoint persists whatever `provenance` the request provides (after validation), or `None` if none is provided — `provenance=None` is a legal outcome. Stamping provenance on UI-created artifacts is a **goal the UI fulfills by setting it explicitly** ([§8](#8-ui-scope)), not an API behavior. If a `provenance` *is* provided, its `origin` is required and must be valid ([§2.1](#21-validators-on-the-submodel)) — a provenance without a valid `origin` is a **422**, never a silent default. See [§6](#6-origin-semantics-no-default) for how `"human"` vs `"agent"` is chosen by the caller.
 
 ### 4.2 Cloning
 Cloning is deriving a new artifact from an existing one. The clone flow additionally sets `derived_from_ids = [source.id]` on the new artifact's provenance (first element = primary parent). Multi-parent lineage (`derived_from_ids` with >1 entry, e.g. a GEPA-style merge) is supported by the data model and API but is not produced by any current UI clone flow. `notes` is left empty by UI clones (no note-input UI this release; empty is fine — the parent id is the value).
@@ -105,7 +101,7 @@ Read and list endpoints return `provenance` as-is (including `None`). Agent acce
 ## 5. API contracts
 
 ### 5.1 Request/response shape
-- **Create request models** gain an optional `provenance: KilnArtifactProvenance | None = None`. The submodel is reused directly as the request component.
+- **Create request models** gain an optional `provenance: KilnArtifactProvenance | None = None`. The submodel is reused directly as the request component. Omitted → the artifact is saved with `provenance=None`. Provided → its `origin` is required-and-valid ([§2.1](#21-validators-on-the-submodel)); an incomplete provenance is a 422.
 - **PATCH/update request models** do **not** gain the field (omission is the mechanism).
 - **Read/list responses**: models that already serialize the datamodel directly get `provenance` for free; models with a dedicated response model (e.g. `CodeToolResponse`) gain the field explicitly.
 
@@ -123,18 +119,18 @@ Error copy for a rejected edit attempt (if an active guard is ever added rather 
 - **EvalConfig / ChunkerConfig / EmbeddingConfig / VectorStoreConfig / RerankerConfig**: no PATCH endpoint exists, so immutability is automatically satisfied.
 - **CodeTool**: `provenance` added to `CodeToolCreateRequest` and `CodeToolResponse`/`CodeToolCreateResponse`; `CodeToolUpdateRequest` (already `extra="forbid"`) is left untouched.
 
-## 6. Origin semantics & defaulting
+## 6. Origin semantics (no default)
 
 `origin` records **whose judgment** produced the artifact (not who typed):
 - `"human"` — a person authored it directly, **or** an agent created it fulfilling a direct human request ("clone this skill", "write me a prompt that…").
 - `"agent"` — an agent created it autonomously, on its own judgment during exploration/optimization.
-- `None` — unknown/legacy.
+- `None` — unknown/legacy (the whole `provenance` was never set).
 
-**Defaulting rule (create endpoints):** when the caller does not specify `origin`, the endpoint stamps `"human"`. Autonomous agents override by sending `origin="agent"` in the request. Rationale:
-- The web UI represents human action, so `"human"` is correct for every UI-driven create/clone with **zero** frontend changes to non-clone flows.
-- `"human"` is the **safe default** for the downstream consumer: the auto-research agent treats human-origin artifacts as constraints (do not prune/re-test) and agent-origin ones as re-testable prior work. Defaulting an uncertain origin to `"human"` errs toward *preserving* work rather than wrongly pruning a real constraint.
+**No default. Required whenever provenance is set.** If a `KilnArtifactProvenance` object exists, `origin` must be an explicit `"human"` or `"agent"`; the model errors otherwise ([§2.1](#21-validators-on-the-submodel)). A silent default would let an autonomous agent that forgets to set `origin` record its work as human (or vice-versa), corrupting the exact signal the auto-research agent depends on — **fail-loud beats wrong-data.** The caller declares origin:
+- UI-driven creates and clones set `origin="human"` explicitly (a person is driving, or an agent is fulfilling a direct human request).
+- Autonomous agents set `origin="agent"` explicitly.
 
-**Known limitation (flagged):** an autonomous agent that creates an artifact via the shared create endpoint and forgets to set `origin="agent"` will be mislabeled `"human"`. Making agents set `origin` correctly is skill-library guidance owned by the O3 repo (out of scope here); this project provides the field, the strict-on-create validation, and the safe default.
+**Consumer handling of `None`:** the auto-research agent treats human-origin artifacts as constraints (don't prune/re-test) and agent-origin ones as re-testable prior work. An artifact with no provenance (`None`, unknown) should be treated **conservatively as a constraint**, so uncertain/legacy artifacts are preserved rather than wrongly pruned. (This is consumer behavior, not an API default — the stored value stays honestly `None`.)
 
 The documented future upgrade path (if finer grain is ever needed) is ARA's four-tag taxonomy (`user` / `ai-suggested` / `ai-executed` / `user-revised`) — but consumers must always tolerate unknown `origin` values.
 
@@ -142,7 +138,7 @@ The documented future upgrade path (if finer grain is ever needed) is ARA's four
 
 **Architecture fact:** Kiln has **no backend clone endpoints**. Every clone is frontend-orchestrated — the UI loads the source artifact, prefills a create form/dialog (renaming to "Copy of…"), and calls the **normal create endpoint**. The **cross-scope assertion holds**: every clone stays in the same parent scope (verified across all clone paths), so `derived_from_ids` sibling resolution is always valid and the overview's cross-scope fallback is never needed.
 
-Lineage is therefore stamped by **threading provenance through the existing create request** (chosen over adding dedicated clone endpoints): each clone flow adds `provenance.derived_from_ids = [source.id]` to the create POST body. `origin` is left to the API default (`"human"`). The five wired flows:
+Lineage is therefore stamped by **threading provenance through the existing create request** (chosen over adding dedicated clone endpoints): each clone flow sends `provenance = { origin: "human", derived_from_ids: [source.id] }` in the create POST body (origin set explicitly — there is no API default). The five wired flows:
 
 | Model | Clone entry point |
 |---|---|
@@ -158,7 +154,11 @@ RagConfig clone references (does not duplicate) its five sub-configs; only the n
 
 **No provenance is displayed in the web UI this release**, and no read-only provenance block, origin badge, "derived from" chips, or note-input box is added. Provenance is agent- and disk-facing metadata; a human-facing UI is explicitly deferred.
 
-The **only** frontend change is invisible clone wiring: the five clone flows above add `derived_from_ids` to their create POST bodies. Non-clone create flows need no frontend change (the backend stamps `origin="human"`). The OpenAPI schema is regenerated (`generate_schema.sh`) so the new field appears in `api_schema.d.ts`; a `KilnArtifactProvenance` type is added to `types.ts` for the clone-wiring code.
+The frontend changes are **input-wiring only** (no display):
+- **Clone forms (mandatory):** the five clone flows set `provenance = { origin: "human", derived_from_ids: [source.id] }` in their create POST.
+- **Fresh (non-clone) create forms (goal):** set `provenance = { origin: "human" }`. Because create and clone share one form for most models, a single edit per form covers both fresh-create and clone. Since there is no API default, this UI wiring is how "origin on all UI-created artifacts" is achieved — but the API tolerates omission (`provenance=None`), so it is a goal, not an enforced contract.
+
+The OpenAPI schema is regenerated (`generate_schema.sh`) so the new field appears in `api_schema.d.ts`; a `KilnArtifactProvenance` type is added to `types.ts` for the wiring code.
 
 ## 9. Edge cases & error handling
 
@@ -171,8 +171,10 @@ The **only** frontend change is invisible clone wiring: the five clone flows abo
 | `derived_from_ids` contains duplicates or empty strings | Rejected by the submodel validator (`ValueError` → 422). |
 | `notes` over 2,000 chars (after strip) | Rejected by the submodel validator. |
 | `notes` empty/whitespace | Coerced to `None`. |
+| Create request omits `provenance` | Saved as `provenance=None` (legal; no default). |
+| `provenance` object present but `origin` missing/`None` on create | Rejected (422) — `origin` is required when provenance is set. |
 | `origin` not in `{human, agent}` on create | Rejected (422/400). |
-| `origin` an unknown string when loading an old/newer file | Accepted (forward-compat). |
+| `origin` missing/unknown when loading an old/newer file | Accepted (lenient-on-load, forward/back-compat). |
 | PATCH request includes `provenance` | Ignored (field not on the model) or rejected 422 where `extra="forbid"`. |
 | Cross-scope clone | Does not occur in Kiln; asserted during implementation. If ever found: stop and flag (fallback: source in `notes`, `derived_from_ids` empty). |
 
@@ -187,5 +189,5 @@ Forced by the `evals_v2` codebase; each should be confirmed at spec review:
 1. **No `ID_TYPE` validator exists.** `ID_TYPE = Optional[str]` with no format/length validator. `derived_from_ids` validation is therefore non-empty + no-duplicates only (plus API-layer existence/self-ref). The overview's "validate with the existing `ID_TYPE` validator" refers to something that isn't in the code.
 2. **CodeTool is an in-scope Tier-1 host model here.** The overview expected the Code Tools project to add the field ("verify, don't re-add"). On `evals_v2` the Code Tools feature is merged but its spec does **not** mention provenance and CodeTool has no provenance field — so this project adds it, coordinating with (not duplicating) the existing CodeTool. CodeTool also supplies the real immutable-artifact + clone-to-derive precedent the overview references.
 3. **Clone stamps lineage via the create request, not clone endpoints.** No backend clone endpoints exist; "wire every Clone function/endpoint" becomes "thread `derived_from_ids` through the five clone UI flows' create calls."
-4. **`origin` defaulting is a create-endpoint responsibility** (default `"human"`, agents override) so that "stamp origin on all creates" holds with no non-clone frontend changes.
+4. **`origin` has no default and is required whenever a provenance object exists** (created, not loaded). A provenance without a valid `origin` errors (fail-loud). "Stamp origin on all creates" is a goal the UI fulfills by explicitly setting `origin="human"`; the API neither defaults nor fabricates provenance (defaults risk silently mislabeling agent work). *(This supersedes an earlier draft that had the API default `origin` to `"human"`.)*
 5. **No UI display.** The overview's Phase-1 "read-only provenance block" and optional clone note-input are dropped; provenance is agent-facing only this release.
