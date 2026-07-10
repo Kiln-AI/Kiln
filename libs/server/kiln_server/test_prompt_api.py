@@ -107,6 +107,104 @@ def test_get_prompts_success(client, project_and_task):
     assert res["prompts"][0]["name"] == "Test Prompt"
 
 
+def test_create_prompt_with_valid_provenance(client, project_and_task):
+    project, task = project_and_task
+
+    parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
+    parent_prompt.save_to_file()
+
+    prompt_data = {
+        "name": "Derived Prompt",
+        "prompt": "Derived text",
+        "provenance": {
+            "origin": "human",
+            "derived_from_ids": [parent_prompt.id],
+            "notes": "Cloned from the parent prompt.",
+        },
+    }
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["provenance"]["origin"] == "human"
+    assert res["provenance"]["derived_from_ids"] == [parent_prompt.id]
+
+    # Persisted on disk.
+    saved = next(p for p in task.prompts() if p.name == "Derived Prompt")
+    assert saved.provenance is not None
+    assert saved.provenance.derived_from_ids == [parent_prompt.id]
+
+
+def test_create_prompt_derived_from_unknown_sibling_400(client, project_and_task):
+    project, task = project_and_task
+    prompt_data = {
+        "name": "Bad Lineage",
+        "prompt": "text",
+        "provenance": {"origin": "human", "derived_from_ids": ["nope"]},
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+def test_create_prompt_invalid_origin_422(client, project_and_task):
+    project, task = project_and_task
+    prompt_data = {
+        "name": "Bad Origin",
+        "prompt": "text",
+        "provenance": {"origin": "banana"},
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 422
+
+
+def test_update_prompt_model_has_no_provenance_field():
+    from kiln_server.prompt_api import PromptUpdateRequest
+
+    assert "provenance" not in PromptUpdateRequest.model_fields
+
+
+def test_list_prompts_forward_compat_provenance_does_not_500(client, project_and_task):
+    project, task = project_and_task
+    # A prompt written by a newer client with a lenient (unknown-origin,
+    # over-length) provenance must list via the API, returned as-is, never 500.
+    fc_prompt = Prompt.model_validate(
+        {
+            "name": "future-prompt",
+            "prompt": "text",
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup"],
+                "notes": "y" * 3000,
+            },
+        },
+        context={"loading_from_file": True},
+    )
+    fc_prompt.parent = task
+    fc_prompt.save_to_file()
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/prompts")
+
+    assert response.status_code == 200
+    saved = next(p for p in response.json()["prompts"] if p["name"] == "future-prompt")
+    assert saved["provenance"]["origin"] == "future_origin"
+
+
 def test_get_prompts_task_not_found(client):
     response = client.get("/api/projects/project-id/tasks/fake-task-id/prompts")
     assert response.status_code == 404
