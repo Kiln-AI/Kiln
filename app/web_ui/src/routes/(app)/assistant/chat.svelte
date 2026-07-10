@@ -15,9 +15,10 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
-  import { auto_run_store } from "$lib/chat/auto_run_store"
-  import { subagent_store } from "$lib/chat/subagent_store"
-  import { traceIdForNextChatRequest } from "$lib/chat/streaming_chat"
+  import {
+    main_conversation_store,
+    conversation_store,
+  } from "$lib/chat/conversation_store"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
   import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
@@ -38,46 +39,51 @@
   // accept/decline via the dialog. The store handles enable/decline + handoff.
   $: store.onAutoModeConsentNeeded = (payload) => consentDialog.prompt(payload)
 
-  const autoModeOn = auto_run_store.autoModeOn
+  const autoModeOn = main_conversation_store.autoModeOn
   // Client-armed flag (Revision R2): auto mode turned on for a brand-new
-  // conversation that has no trace_id yet. The indicator shows on ("waiting for
-  // you") with no server run; the first message creates the run.
-  const autoArmed = auto_run_store.armed
-  const autoModeWorking = auto_run_store.working
+  // conversation that has no server-side record yet. The indicator shows on
+  // ("waiting for you") with no server run; the first message creates the run.
+  const autoArmed = main_conversation_store.armed
+  // The main conversation's session id (null until ensure/attach) — since
+  // phase 5 the browser's ONLY conversation handle (functional spec §4).
+  const mainSessionId = main_conversation_store.sessionId
+  const autoModeWorking = main_conversation_store.working
   // Transient "reconnecting…" window while a re-attach (hard-refresh resync or
-  // History restore) resolves → hydrates → attaches the live observer (Phase 9).
-  const autoReconnecting = auto_run_store.reconnecting
+  // History restore) hydrates → attaches the live observer.
+  const autoReconnecting = main_conversation_store.reconnecting
   // Transient "retrying N/M…" affordance while a transient upstream failure
-  // (rate limit / 5xx / connection blip) is retried with backoff. Auto mode
-  // surfaces it via auto_run_store; interactive chat via the session store. Only
-  // one can be active at a time, so prefer whichever is set.
-  const autoRetry = auto_run_store.retry
+  // (rate limit / 5xx / connection blip) is retried with backoff — carried by
+  // the main conversation store for BOTH kinds (the session store's retry
+  // field stays for compatibility but the observer owns it now).
+  const autoRetry = main_conversation_store.retry
 
-  // Sub-agents (background child runs) of the current conversation. The tab
-  // strip selects between the main transcript and a child's read-only one; the
-  // composer routes to a running child when its tab is selected.
-  const subagentChildren = subagent_store.children
-  const subagentSelectedId = subagent_store.selectedId
-  const subagentTranscripts = subagent_store.transcripts
-  const subagentRuntime = subagent_store.runtime
+  // Sub-agents (background child runs) of the current conversation, served by
+  // the unified conversation store (children are keyed by session id and speak
+  // the conversation-state vocabulary). The tab strip selects between the main
+  // transcript and a child's read-only one; the composer routes to a running
+  // child when its tab is selected.
+  const subagentChildren = conversation_store.children
+  const subagentSelectedId = conversation_store.selectedId
+  const subagentTranscripts = conversation_store.transcripts
+  const subagentRuntime = conversation_store.runtime
   $: selectedChild = $subagentSelectedId
-    ? $subagentChildren.find((c) => c.subagent_id === $subagentSelectedId) ??
+    ? $subagentChildren.find((c) => c.session_id === $subagentSelectedId) ??
       null
     : null
-  $: selectedChildRunning = selectedChild?.status === "running"
+  $: selectedChildRunning = selectedChild?.state === "running"
   $: selectedChildMessages = selectedChild
-    ? $subagentTranscripts.get(selectedChild.subagent_id) ?? []
+    ? $subagentTranscripts.get(selectedChild.session_id) ?? []
     : []
   $: selectedChildRuntime = selectedChild
-    ? $subagentRuntime.get(selectedChild.subagent_id) ?? null
+    ? $subagentRuntime.get(selectedChild.session_id) ?? null
     : null
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
   // branch), and is ALWAYS clickable (Revision R2) — including on a brand-new
   // empty chat. It is disabled only while a consent prompt is already open (so we
-  // never stack dialogs). On a conversation with a trace_id, enable arms a
-  // server-owned run (IDLE); with no trace_id yet it arms client-side (no server
-  // call) and the first message creates the run.
+  // never stack dialogs). On an observed conversation, enable arms a
+  // server-owned run (IDLE); with no conversation yet it arms client-side (no
+  // server call) and the first message creates the run.
   let consentPending = false
 
   async function openManualAutoMode() {
@@ -89,18 +95,25 @@
     try {
       const accepted = await consentDialog.prompt(null)
       if (!accepted) return
-      const traceId = traceIdForNextChatRequest(messages)
-      if (!traceId) {
-        // Brand-new conversation (Revision R2): no trace to key a server run, so
-        // arm client-side. The indicator turns on ("waiting for you"); the first
-        // message creates the run (enable seeded with that message, no trace_id).
-        auto_run_store.arm()
+      // Phase 5: the enable is keyed by the LIVE conversation's session id
+      // (the old flow keyed it by a leaf trace id scanned off the messages —
+      // the browser no longer holds trace ids, functional spec §4).
+      const sessionId = get(mainSessionId)
+      if (!sessionId) {
+        // Brand-new conversation (Revision R2): no server record to flip, so
+        // arm client-side. The indicator turns on ("waiting for you"); the
+        // first message creates the run (enable seeded with that message).
+        main_conversation_store.arm()
         return
       }
-      // Existing conversation: enable arms a server-owned run keyed by the trace
-      // id (functional spec §4.1(2)). Surface enable failures (e.g. 429) instead
-      // of silently swallowing them — the dialog has already closed.
-      const result = await auto_run_store.requestEnable({ trace_id: traceId })
+      // Existing conversation: enable FLIPS the same conversation record to
+      // the auto policy (ARMED — no upstream POST; functional spec §4.1(2)).
+      // Surface enable failures (e.g. 429) instead of silently swallowing
+      // them — the dialog has already closed.
+      const result = await main_conversation_store.requestEnable({
+        kind: "auto",
+        session_id: sessionId,
+      })
       if (!result.ok) {
         store.pushInlineError(
           `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
@@ -115,7 +128,7 @@
     // Brand-new armed conversation: no server run exists yet, so nothing could
     // have been kicked off — just disarm without the explainer dialog.
     if (!get(autoModeOn)) {
-      auto_run_store.disarm()
+      main_conversation_store.disarm()
       store.clearQueued()
       return
     }
@@ -129,21 +142,14 @@
     // below is silent, so onAutoModeOff won't fire to clear it for us.)
     store.clearQueued()
 
-    // Hard stop: halt the agent completely. Abort any in-flight interactive
-    // stream (e.g. a tool-call continuation or a normal streaming turn), tell the
-    // server to cancel the background run, and detach the observer so nothing
-    // further — including any client tool calls the server might hand back — gets
-    // dispatched from the browser.
-    //
-    // Order matters: auto_run_store.stop() reads the run id synchronously (before
-    // its first await), so calling it before detach() — which clears that id —
-    // guarantees the server actually receives the stop. A client-armed (no-run)
-    // conversation has no server run; disarm()/detach() just clear the local
-    // armed flag so the toggle returns to off (functional spec §4.1(2)).
-    store.stop()
-    const stopping = auto_run_store.stop()
-    auto_run_store.disarm()
-    auto_run_store.detach()
+    // Hard stop: halt the agent completely — one stop for the one run (the
+    // interactive stream and the auto burst are the same conversation task
+    // since phase 4). The server cancels the run and publishes the off state;
+    // the observer stays attached (the conversation continues interactively).
+    // A client-armed (no-run) conversation has no server run; disarm() just
+    // clears the local armed flag so the toggle returns to off.
+    const stopping = main_conversation_store.stop()
+    main_conversation_store.disarm()
     await stopping
   }
 
@@ -178,12 +184,13 @@
   $: hasMessages = messages.length > 0
   $: status = $store.status
 
-  // Keep the sub-agent list in sync with the conversation the transcript shows.
-  // The leaf trace id advances every turn; syncForConversation dedupes by value,
-  // so this is cheap to run reactively (session load / resync / new chat all
-  // funnel through a messages change).
-  $: currentLeafTraceId = traceIdForNextChatRequest(messages) ?? null
-  $: void subagent_store.syncForConversation(currentLeafTraceId)
+  // Keep the sub-agent list in sync with the conversation the transcript
+  // shows, keyed by the main conversation's SESSION id (phase 5 — the old
+  // handle was a leaf trace id scanned off the messages, chain-resolved
+  // server-side). Stable for the conversation's whole life, so the dedupe
+  // inside syncForConversation makes the reactive call cheap; null (New
+  // Chat / detached) clears the tab strip.
+  $: void conversation_store.syncForConversation($mainSessionId)
 
   // Pause autoscroll around a step-group expand/collapse in the transcript
   // (the toggle mutates layout without new content arriving).
@@ -262,9 +269,9 @@
     // Surface the upgrade banners up front, before any message is sent.
     void store.checkVersionPolicy()
 
-    // Watch the sub-agent status firehose while the assistant page is active so
-    // tabs reflect spawns/finishes even with no chat stream in flight.
-    subagent_store.connect()
+    // Watch the conversation-state firehose while the assistant page is active
+    // so tabs reflect spawns/finishes even with no chat stream in flight.
+    conversation_store.connect()
 
     const container = messagesContainer
     const end = messagesEndRef
@@ -311,7 +318,7 @@
   })
 
   onDestroy(() => {
-    subagent_store.disconnect()
+    conversation_store.disconnect()
     messagesContainer?.removeEventListener("scroll", handleScroll)
     messagesContainer?.removeEventListener("wheel", handleWheel)
     messagesContainer?.removeEventListener("touchstart", handleTouchStart)
@@ -380,12 +387,13 @@
   function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
     store.loadSession(
       e.detail.messages,
-      e.detail.continuationTraceId,
+      e.detail.sessionId,
       e.detail.contextUsage,
+      { autoActive: e.detail.autoActive, rootId: e.detail.rootId },
     )
     // Back to the main transcript; the loaded conversation's children sync
-    // reactively from its trace id.
-    subagent_store.select(null)
+    // reactively from its session id once ensure() attaches.
+    conversation_store.select(null)
     userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -399,7 +407,7 @@
     })
     store.reset()
     // A new conversation has no children yet; drop tabs/observers/selection.
-    subagent_store.reset()
+    conversation_store.reset()
   }
 
   export function openHistory() {
@@ -416,8 +424,8 @@
     // composer is disabled with a hint to return to Main).
     if (selectedChild) {
       if (!selectedChildRunning) return
-      const result = await subagent_store.sendMessage(
-        selectedChild.subagent_id,
+      const result = await conversation_store.sendMessage(
+        selectedChild.session_id,
         text,
       )
       if (!result.ok) return

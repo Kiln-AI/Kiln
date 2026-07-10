@@ -1,39 +1,46 @@
 <script lang="ts">
   import {
-    subagent_store,
-    visibleSubagentTabs,
-    shouldCollapseSubagentTabs,
-    type SubAgentItem,
-  } from "$lib/chat/subagent_store"
+    conversation_store,
+    visibleChildTabs,
+    shouldCollapseChildTabs,
+    type ConversationItem,
+  } from "$lib/chat/conversation_store"
   import Dialog from "$lib/ui/dialog.svelte"
   import SubagentStatusDot from "./subagent_status_dot.svelte"
 
-  const children = subagent_store.children
-  const selectedId = subagent_store.selectedId
+  const children = conversation_store.children
+  const selectedId = conversation_store.selectedId
 
-  // Only running children keep a tab, plus the selected child even when
+  // Only live children keep a tab, plus the selected child even when
   // terminal (so the view isn't yanked while reading); selecting away drops
   // the terminal tab. Above the overflow limit the child tabs collapse into a
   // single "N agents running" chip — except the selected child, which stays as
   // its own tab so you can see where you are.
-  $: visibleChildren = visibleSubagentTabs($children, $selectedId)
-  $: collapsed = shouldCollapseSubagentTabs(visibleChildren)
+  $: visibleChildren = visibleChildTabs($children, $selectedId)
+  $: collapsed = shouldCollapseChildTabs(visibleChildren)
   $: selectedChildTab = collapsed
-    ? visibleChildren.find((c) => c.subagent_id === $selectedId) ?? null
+    ? visibleChildren.find((c) => c.session_id === $selectedId) ?? null
     : null
   $: tabChildren = collapsed
     ? selectedChildTab
       ? [selectedChildTab]
       : []
     : visibleChildren
-  $: runningCount = visibleChildren.filter((c) => c.status === "running").length
+  $: runningCount = visibleChildren.filter((c) => c.state === "running").length
 
   let pickerDialog: Dialog | null = null
 
-  function statusLabel(status: SubAgentItem["status"]): string {
-    switch (status) {
+  // Same labels as before the vocabulary unification; idle/awaiting_approval
+  // never occur for sub-agent children today but the RunState type carries
+  // them (phases 3-4 parent kinds).
+  function statusLabel(state: ConversationItem["state"]): string {
+    switch (state) {
+      case "idle":
+        return "idle"
       case "running":
         return "running"
+      case "awaiting_approval":
+        return "waiting for approval"
       case "completed":
         return "completed"
       case "failed":
@@ -46,11 +53,11 @@
   }
 
   function select(id: string | null): void {
-    subagent_store.select(id)
+    conversation_store.select(id)
   }
 
   function stopChild(id: string): void {
-    void subagent_store.stop(id)
+    void conversation_store.stop(id)
   }
 
   function openPicker(): void {
@@ -58,7 +65,7 @@
   }
 
   function pickFromDialog(id: string): void {
-    subagent_store.select(id)
+    conversation_store.select(id)
     pickerDialog?.close()
   }
 </script>
@@ -80,28 +87,26 @@
     >
       Main
     </button>
-    {#each tabChildren as child (child.subagent_id)}
+    {#each tabChildren as child (child.session_id)}
       <div class="group relative">
         <button
           type="button"
           role="tab"
-          aria-selected={$selectedId === child.subagent_id}
-          class="btn btn-xs gap-1.5 {$selectedId === child.subagent_id
+          aria-selected={$selectedId === child.session_id}
+          class="btn btn-xs gap-1.5 {$selectedId === child.session_id
             ? 'btn-neutral'
             : 'btn-ghost text-base-content/60'}"
-          on:click={() => select(child.subagent_id)}
-          title="{child.name} ({child.agent_type}) — {statusLabel(
-            child.status,
-          )}"
+          on:click={() => select(child.session_id)}
+          title="{child.name} ({child.agent_type}) — {statusLabel(child.state)}"
         >
-          <SubagentStatusDot status={child.status} />
+          <SubagentStatusDot status={child.state} />
           <span class="max-w-[10rem] truncate normal-case">{child.name}</span>
         </button>
-        {#if child.status === "running"}
+        {#if child.state === "running"}
           <button
             type="button"
             class="absolute -right-1 -top-1 hidden group-hover:flex items-center justify-center size-4 rounded-full bg-base-300 text-base-content/60 hover:bg-error/20 hover:text-error text-[10px] leading-none"
-            on:click|stopPropagation={() => stopChild(child.subagent_id)}
+            on:click|stopPropagation={() => stopChild(child.session_id)}
             title="Stop this sub-agent"
             aria-label="Stop {child.name}"
           >
@@ -129,13 +134,13 @@
 <Dialog bind:this={pickerDialog} title="Sub-agents" action_buttons={[]}>
   <div class="max-h-[min(50vh,420px)] overflow-y-auto -mx-1 px-1">
     <div class="flex flex-col gap-0.5">
-      {#each visibleChildren as child (child.subagent_id)}
+      {#each visibleChildren as child (child.session_id)}
         <button
           type="button"
           class="flex items-center gap-2 w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-base-200/80"
-          on:click={() => pickFromDialog(child.subagent_id)}
+          on:click={() => pickFromDialog(child.session_id)}
         >
-          <SubagentStatusDot status={child.status} />
+          <SubagentStatusDot status={child.state} />
           <span class="flex-1 min-w-0 truncate text-sm font-medium"
             >{child.name}</span
           >
@@ -144,7 +149,7 @@
             >{child.agent_type}</span
           >
           <span class="shrink-0 text-xs text-base-content/50"
-            >{statusLabel(child.status)}</span
+            >{statusLabel(child.state)}</span
           >
           <span class="shrink-0 text-xs text-base-content/40 whitespace-nowrap"
             >{child.rounds_used} round{child.rounds_used === 1 ? "" : "s"}</span

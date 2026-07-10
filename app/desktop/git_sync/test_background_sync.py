@@ -28,6 +28,26 @@ def second_clone(git_repos, tmp_path: Path):
     return second_path
 
 
+async def wait_for(predicate, timeout: float = 10.0, interval: float = 0.05) -> None:
+    """Poll until the (sync or async) predicate is truthy, or fail loudly.
+
+    Fixed sleeps flake on loaded CI runners — a real ``git fetch`` on an
+    executor thread can take longer than any constant chosen here. Polling
+    with a generous deadline keeps the tests fast locally and deterministic
+    under load.
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    while True:
+        result = predicate()
+        if asyncio.iscoroutine(result):
+            result = await result
+        if result:
+            return
+        if asyncio.get_event_loop().time() > deadline:
+            pytest.fail(f"Condition not met within {timeout}s")
+        await asyncio.sleep(interval)
+
+
 @pytest.mark.asyncio
 async def test_poll_loop_fetches_and_fast_forwards(manager, git_repos, second_clone):
     local_path, _ = git_repos
@@ -40,7 +60,11 @@ async def test_poll_loop_fetches_and_fast_forwards(manager, git_repos, second_cl
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
     await bg.start()
     try:
-        await asyncio.sleep(0.3)
+
+        async def head_advanced() -> bool:
+            return await manager.get_head() != old_head
+
+        await wait_for(head_advanced)
     finally:
         await bg.stop()
 
@@ -72,18 +96,26 @@ async def test_idle_pause_and_resume(manager, git_repos, second_clone):
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=0.1)
     await bg.start()
 
-    await asyncio.sleep(0.3)
+    try:
+        # Let the loop notice it has been idle for > idle_pause_after and
+        # park. (Parking has no observable flag; two 0.05s ticks past the
+        # 0.1s idle threshold suffice, so 0.5s carries a wide margin.)
+        await asyncio.sleep(0.5)
 
-    commit_in_repo(second_clone, "after_idle.txt", "data", "after idle")
-    push_from(second_clone)
+        commit_in_repo(second_clone, "after_idle.txt", "data", "after idle")
+        push_from(second_clone)
 
-    old_head = await manager.get_head()
-    assert not (local_path / "after_idle.txt").exists()
+        old_head = await manager.get_head()
+        assert not (local_path / "after_idle.txt").exists()
 
-    bg.notify_request()
-    await asyncio.sleep(0.3)
+        bg.notify_request()
 
-    await bg.stop()
+        async def head_advanced() -> bool:
+            return await manager.get_head() != old_head
+
+        await wait_for(head_advanced)
+    finally:
+        await bg.stop()
 
     new_head = await manager.get_head()
     assert new_head != old_head

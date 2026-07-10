@@ -1,0 +1,28 @@
+{
+  "scenario": "interactive_approval_flow",
+  "bodies": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "please add"
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc1",
+          "content": "3"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "tc2",
+          "content": "{\"error\": \"The user did not accept the toolcall\"}"
+        }
+      ],
+      "trace_id": "tr-1"
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
   parseSubagentReport,
@@ -12,13 +11,14 @@ import {
 function snap(
   id: string,
   trace: ChatSessionSnapshot["task_run"]["trace"],
+  rootId?: string,
 ): ChatSessionSnapshot {
-  return { id, task_run: { trace } }
+  return { id, task_run: { trace }, ...(rootId ? { root_id: rootId } : {}) }
 }
 
 describe("hydrateSessionFromSnapshot", () => {
-  it("maps user and assistant trace messages and sets traceId on last assistant", () => {
-    const { messages, continuationTraceId } = hydrateSessionFromSnapshot(
+  it("maps user and assistant trace messages without any trace keying", () => {
+    const { messages, rootId } = hydrateSessionFromSnapshot(
       snap("trace-sess", [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi there" },
@@ -29,9 +29,19 @@ describe("hydrateSessionFromSnapshot", () => {
     expect(messages[0].content).toBe("Hello")
     expect(messages[1].role).toBe("assistant")
     expect(messages[1].parts?.[0]).toEqual({ type: "text", text: "Hi there" })
-    expect(messages[1].traceId).toBe("trace-sess")
-    expect(traceIdForNextChatRequest(messages)).toBe("trace-sess")
-    expect(continuationTraceId).toBe("trace-sess")
+    // Phase 5: no message carries a trace id anymore (the old world stamped
+    // the last assistant with the snapshot id as the browser's continuation
+    // key) and the leaf-shaped snapshot id is not surfaced — only the
+    // durable root_id is (absent here → null).
+    expect(messages[1].traceId).toBeUndefined()
+    expect(rootId).toBeNull()
+  })
+
+  it("returns the snapshot's durable root_id when the desktop passes it through", () => {
+    const { rootId } = hydrateSessionFromSnapshot(
+      snap("leaf-2", [{ role: "user", content: "Hello" }], "1234567890_root"),
+    )
+    expect(rootId).toBe("1234567890_root")
   })
 
   it("ignores reasoning_content (reasoning is not surfaced in the UI)", () => {
@@ -95,20 +105,10 @@ describe("hydrateSessionFromSnapshot", () => {
     expect(messages.map((m) => m.role)).toEqual(["user"])
   })
 
-  it("continuationTraceId allows submit when trace ends on user", () => {
-    const { messages, continuationTraceId } = hydrateSessionFromSnapshot(
-      snap("sess-u", [{ role: "user", content: "Waiting" }]),
-    )
-    expect(traceIdForNextChatRequest(messages)).toBeUndefined()
-    expect(continuationTraceId).toBe("sess-u")
-  })
-
   it("handles empty trace", () => {
-    const { messages, continuationTraceId } = hydrateSessionFromSnapshot(
-      snap("empty", []),
-    )
+    const { messages, rootId } = hydrateSessionFromSnapshot(snap("empty", []))
     expect(messages).toHaveLength(0)
-    expect(continuationTraceId).toBe("empty")
+    expect(rootId).toBeNull()
   })
 
   it("handles null trace", () => {

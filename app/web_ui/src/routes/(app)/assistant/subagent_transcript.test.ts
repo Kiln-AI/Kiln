@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup } from "@testing-library/svelte"
 import type { ChatMessage } from "$lib/chat/streaming_chat"
-import type { SubAgentItem } from "$lib/chat/subagent_store"
+import type { ConversationItem } from "$lib/chat/conversation_store"
 
 const SubagentTranscript = (await import("./subagent_transcript.svelte"))
   .default
@@ -11,14 +11,15 @@ afterEach(() => {
   cleanup()
 })
 
-function child(overrides: Partial<SubAgentItem> = {}): SubAgentItem {
+function child(overrides: Partial<ConversationItem> = {}): ConversationItem {
   return {
-    subagent_id: "sa_1",
+    session_id: "cv_1",
+    kind: "subagent",
+    state: "running",
     name: "Eval sweep",
     agent_type: "general",
-    status: "running",
-    current_trace_id: "trace-sa_1",
-    parent_trace_id_at_spawn: "parent-1",
+    parent_session_id: "trace:parent-1",
+    auto_flag: false,
     rounds_used: 0,
     report_available: false,
     report_delivered: false,
@@ -73,7 +74,7 @@ describe("subagent_transcript working indicator", () => {
   it("shows no indicator for a terminal child", () => {
     const { container } = render(SubagentTranscript, {
       props: {
-        child: child({ status: "completed" }),
+        child: child({ state: "completed" }),
         messages: [kickoffMessage],
       },
     })

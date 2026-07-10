@@ -1,3 +1,28 @@
+"""Shared chat ROUND PRIMITIVES (architecture §1: this module survives every
+phase of the unified-runtime migration).
+
+Historically this file also owned ``ChatStreamSession`` — the interactive
+loop class that drove the multi-round stream inside the HTTP response
+generator of ``POST /api/chat``. Phase 4 deleted it: interactive
+conversations now run on ``chat/runtime/``'s ``ConversationEngine`` as
+supervised turn tasks, and the browser observes them via
+``/api/conversations``. What remains here is the ONE copy of the per-round
+upstream mechanics every conversation kind uses:
+
+- ``RoundState`` / ``iter_upstream_round`` — POST one round, forward SSE
+  bytes, accumulate the round outputs, own the non-200/RemoteProtocolError
+  handling;
+- ``RetryRoundResult`` / ``iter_round_with_retries`` — the shared
+  transient-failure retry wrapper (identical classification/backoff for
+  every kind);
+- ``execute_tool`` / ``execute_tool_batch`` — client tool execution with
+  approval decisions + orchestration dispatch;
+- ``_build_openai_tool_continuation`` — the continuation body builder (the
+  persisted-trace shape contract, pinned by the golden fixtures);
+- the pending/consent/retry SSE formatters (re-exported by
+  ``runtime/sse.py`` so runtime code has one import site).
+"""
+
 import asyncio
 import json
 import logging
@@ -7,35 +32,23 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
-    from app.desktop.studio_server.chat.subagents.orchestration import (
+    from app.desktop.studio_server.chat.orchestration import (
         OrchestrationContext,
     )
 
 import httpx
 from app.desktop.studio_server.chat.constants import (
-    CHAT_TIMEOUT,
     DENIED_TOOL_OUTPUT,
     FUNCTION_NAME_TO_TOOL_ID,
-    MAX_TOOL_ROUNDS,
     SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
     SSE_TYPE_CHAT_RETRY,
     SSE_TYPE_TOOL_CALLS_PENDING,
-    SSE_TYPE_TOOL_EXEC_END,
-    SSE_TYPE_TOOL_EXEC_START,
 )
 from app.desktop.studio_server.chat.sse_parser import EventParser
 from app.desktop.studio_server.chat.tool_metadata import (
     _parse_kiln_tool_metadata,
-    tool_input_executor_is_server,
-    tool_requires_user_approval,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
-    DISABLE_AUTO_MODE_TOOL_NAME,
-)
-from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
-    ENABLE_AUTO_MODE_TOOL_NAME,
-)
 from kiln_ai.tools.tool_registry import tool_from_id
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -137,22 +150,25 @@ def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> byt
 
 
 def _format_consent_required_sse(
-    trace_id: str | None,
     enable_tool_call_id: str,
     reason: str | None,
     siblings: list[ToolInputAvailableEvent],
 ) -> bytes:
-    """Format the ``auto-mode-consent-required`` SSE the interactive stream emits
-    when the model calls ``enable_auto_mode``.
+    """Format the ``auto-mode-consent-required`` SSE the engine emits when the
+    model calls ``enable_auto_mode`` on an interactive conversation.
 
     ``sibling_tool_calls`` carries any other (non-server) client tool calls from
     the same round so the accept/decline paths can resolve every ``tool_call_id``
     the backend is waiting on. The model is instructed to call ``enable_auto_mode``
     alone, so this is normally empty.
+
+    Phase 5: the payload no longer carries ``trace_id`` — consent accept
+    (``POST /api/conversations`` kind=auto) and decline (``POST /{sid}/auto``)
+    are keyed by the conversation's session id and the record's own leaf is
+    authoritative (functional spec §4: browsers never see trace ids).
     """
     payload = {
         "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
-        "trace_id": trace_id,
         "enable_tool_call_id": enable_tool_call_id,
         "reason": reason,
         "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
@@ -465,9 +481,10 @@ async def execute_tool_batch(
     thread their ctx through; a ``None`` ctx resolves those calls to an error
     result instead of executing.
     """
-    # Lazy import: the subagents package depends on this module's round
-    # mechanics (same pattern as _clear_auto_mode_flag).
-    from app.desktop.studio_server.chat.subagents.orchestration import (
+    # Lazy import: the orchestration module targets the runtime supervisor,
+    # whose engine imports this module's round mechanics (same pattern as
+    # _clear_auto_mode_flag).
+    from app.desktop.studio_server.chat.orchestration import (
         ORCHESTRATION_TOOL_NAMES,
         execute_orchestration_tool,
     )
@@ -496,316 +513,6 @@ async def execute_tool_batch(
         tool_result = await execute_tool(tc.tool_name, tc.input)
         results[tc.tool_call_id] = tool_result
     return results
-
-
-class ChatStreamSession:
-    """Owns the multi-round streaming loop for a single chat request."""
-
-    def __init__(
-        self,
-        upstream_url: str,
-        headers: dict[str, str],
-        initial_body: dict[str, Any],
-    ) -> None:
-        self._upstream_url = upstream_url
-        self._headers = headers
-        self._body = initial_body
-        self._initial_trace_id: str | None = initial_body.get("trace_id")
-        self._orchestration_ctx: "OrchestrationContext | None" = None
-
-    def _get_orchestration_ctx(self) -> "OrchestrationContext":
-        """The conversation identity for sub-agent orchestration calls. Built
-        lazily (the subagents package imports this module's round mechanics)."""
-        if self._orchestration_ctx is None:
-            from app.desktop.studio_server.chat.subagents.orchestration import (
-                OrchestrationContext,
-            )
-
-            self._orchestration_ctx = OrchestrationContext(
-                parent_trace_id=self._initial_trace_id
-            )
-        return self._orchestration_ctx
-
-    async def stream(self):
-        """AsyncGenerator yielding SSE bytes to the client."""
-        trace_id_for_error: str | None = self._initial_trace_id
-        async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
-            for _ in range(MAX_TOOL_ROUNDS):
-                # Retry transient upstream failures (rate limit / 5xx / connection)
-                # with backoff, emitting kiln-chat-retry events the UI renders as
-                # "retrying N/M…", instead of surfacing the error immediately.
-                result = RetryRoundResult()
-                async for forward_bytes in iter_round_with_retries(
-                    client,
-                    self._upstream_url,
-                    self._headers,
-                    self._body,
-                    trace_id_for_error,
-                    result,
-                ):
-                    yield forward_bytes
-
-                round_state = result.round_state
-                if round_state is not None:
-                    trace_id_for_error = round_state.trace_id_for_error
-
-                # A non-retryable or retry-exhausted upstream error: the error SSE
-                # was already yielded — nothing more to drive, end the stream.
-                # ("stopped" is auto-runner-only and never occurs here.)
-                if result.status != "ok" or round_state is None:
-                    return
-
-                if round_state.trace_id:
-                    ctx = self._get_orchestration_ctx()
-                    if (
-                        ctx.parent_trace_id
-                        and ctx.parent_trace_id != round_state.trace_id
-                    ):
-                        # Chain the rotating leaf to the conversation's stable
-                        # parent key so consent memory / pending sub-agent
-                        # reports survive across turns.
-                        from app.desktop.studio_server.chat.subagents.registry import (
-                            subagent_registry,
-                        )
-
-                        subagent_registry.note_parent_trace(
-                            ctx.parent_trace_id, round_state.trace_id
-                        )
-                    ctx.parent_trace_id = round_state.trace_id
-                    self._body = {
-                        **self._body,
-                        "trace_id": round_state.trace_id,
-                        "messages": [],
-                    }
-
-                if round_state.finish_tool_calls:
-                    client_events = [
-                        e
-                        for e in round_state.tool_input_events
-                        if not tool_input_executor_is_server(e)
-                    ]
-
-                    # enable_auto_mode interception (architecture §3.4): the model
-                    # asked to enable auto mode. Surface a consent request and
-                    # return WITHOUT executing it — enable_auto_mode is a signal,
-                    # never run as a tool. Accept/decline is handled out-of-band by
-                    # the auto-mode endpoints. This must run before the approval
-                    # gate so the consent UI takes precedence.
-                    enable_evt = next(
-                        (
-                            e
-                            for e in client_events
-                            if e.toolName == ENABLE_AUTO_MODE_TOOL_NAME
-                        ),
-                        None,
-                    )
-                    if enable_evt is not None:
-                        siblings = [e for e in client_events if e is not enable_evt]
-                        yield _format_consent_required_sse(
-                            trace_id=round_state.trace_id,
-                            enable_tool_call_id=enable_evt.toolCallId,
-                            reason=enable_evt.input.get("reason"),
-                            siblings=siblings,
-                        )
-                        return
-
-                    # disable_auto_mode interception (architecture §13.3): never
-                    # execute it. Clear the conversation auto-mode flag (publishing
-                    # auto-mode-off(user_disabled) to any observer), resolve the
-                    # call as {"status":"disabled"}, and CONTINUE streaming
-                    # interactively so the backend proceeds without auto mode. Any
-                    # siblings in the same turn are executed through the normal
-                    # approval gate (requiresApproval per tool) — on this
-                    # interactive path consent still applies. The model is
-                    # instructed to call disable_auto_mode alone so siblings are
-                    # normally empty.
-                    disable_evt = next(
-                        (
-                            e
-                            for e in client_events
-                            if e.toolName == DISABLE_AUTO_MODE_TOOL_NAME
-                        ),
-                        None,
-                    )
-                    if disable_evt is not None:
-                        await self._clear_auto_mode_flag(round_state.trace_id)
-                        non_disable = [e for e in client_events if e is not disable_evt]
-                        # Interactive path: gate siblings normally. A sibling that
-                        # requires approval is denied here (no decisions passed, so
-                        # execute_tool_batch returns DENIED_TOOL_OUTPUT) rather than
-                        # run without consent. Auto-mode auto-approval is the
-                        # runner's job, not this path's.
-                        sibling_results = await execute_tool_batch(
-                            [
-                                ToolCallInfo(
-                                    toolCallId=e.toolCallId,
-                                    toolName=e.toolName,
-                                    input=e.input,
-                                    requiresApproval=self._effective_requires_approval(
-                                        e
-                                    ),
-                                )
-                                for e in non_disable
-                            ],
-                            {},
-                            orchestration_ctx=self._get_orchestration_ctx(),
-                        )
-                        tool_results = {
-                            disable_evt.toolCallId: DISABLE_AUTO_MODE_RESULT,
-                            **sibling_results,
-                        }
-                        yield self._format_tool_exec_start(len(tool_results))
-                        for tc_id, output in tool_results.items():
-                            yield self._format_tool_output(tc_id, output)
-                        yield self._format_tool_exec_end(len(tool_results))
-                        self._body = _build_openai_tool_continuation(
-                            self._body,
-                            round_state.assistant_text,
-                            round_state.tool_input_events,
-                            tool_results,
-                        )
-                        continue
-
-                    needs_approval = [
-                        e for e in client_events if self._effective_requires_approval(e)
-                    ]
-                    if needs_approval:
-                        yield _format_tool_calls_pending_sse(client_events)
-                        return
-
-                    expected_tool_count = len(client_events)
-                    yield self._format_tool_exec_start(expected_tool_count)
-                    tool_results = await self._execute_client_tools(round_state, None)
-                    for tc_id, output in tool_results.items():
-                        yield self._format_tool_output(tc_id, output)
-                    yield self._format_tool_exec_end(len(tool_results))
-
-                    if not tool_results:
-                        return
-
-                    self._body = _build_openai_tool_continuation(
-                        self._body,
-                        round_state.assistant_text,
-                        round_state.tool_input_events,
-                        tool_results,
-                    )
-                    # Sub-agent reports that landed while this turn was running
-                    # ride the continuation as user messages (completion
-                    # injection, mid-stream path) and are echoed to the live
-                    # transcript.
-                    self._body, report_echoes = self._append_pending_subagent_reports(
-                        self._body
-                    )
-                    for payload in report_echoes:
-                        yield payload
-                    continue
-
-                return
-
-        # Loop exhausted all MAX_TOOL_ROUNDS without a natural exit
-        error_payload = {
-            "type": "error",
-            "message": "Maximum tool rounds exceeded. Please start a new message.",
-        }
-        if trace_id_for_error:
-            error_payload["trace_id"] = trace_id_for_error
-        yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
-
-    def _effective_requires_approval(self, event: ToolInputAvailableEvent) -> bool:
-        """Per-tool approval verdict, with the spawn-consent downgrade: once a
-        conversation has approved its first spawn_subagent, later spawns run
-        without asking again (the sub-agent registry is the consent authority)."""
-        if not tool_requires_user_approval(event):
-            return False
-        from app.desktop.studio_server.chat.subagents.orchestration import (
-            SPAWN_SUBAGENT_TOOL_NAME,
-            is_spawn_consented,
-        )
-
-        if event.toolName == SPAWN_SUBAGENT_TOOL_NAME and is_spawn_consented(
-            self._get_orchestration_ctx()
-        ):
-            return False
-        return True
-
-    async def _execute_client_tools(
-        self,
-        round_state: RoundState,
-        approval_decisions: dict[str, bool] | None,
-    ) -> dict[str, str]:
-        tool_calls: list[ToolCallInfo] = []
-        for event in round_state.tool_input_events:
-            if tool_input_executor_is_server(event):
-                logger.debug(
-                    "Skipping local tool execution (executor=server): %s (call_id=%s)",
-                    event.toolName,
-                    event.toolCallId,
-                )
-                continue
-            tool_calls.append(
-                ToolCallInfo(
-                    toolCallId=event.toolCallId,
-                    toolName=event.toolName,
-                    input=event.input,
-                    requiresApproval=self._effective_requires_approval(event),
-                )
-            )
-        return await execute_tool_batch(
-            tool_calls,
-            approval_decisions or {},
-            orchestration_ctx=self._get_orchestration_ctx(),
-        )
-
-    def _append_pending_subagent_reports(
-        self, body: dict[str, Any]
-    ) -> tuple[dict[str, Any], list[bytes]]:
-        """Drain any completed-but-undelivered sub-agent reports for this
-        conversation and append them as user messages to the continuation.
-
-        Also returns ``user-message`` echo SSE payloads so the caller can
-        surface the injected reports to the live transcript immediately (the
-        same echo shape auto-mode observers get), instead of the user only
-        seeing them after a rehydrate."""
-        ctx = self._get_orchestration_ctx()
-        if not ctx.parent_trace_id:
-            return body, []
-        from app.desktop.studio_server.chat.subagents.registry import (
-            subagent_registry,
-        )
-        from app.desktop.studio_server.chat.subagents.sse import format_user_message
-
-        reports = subagent_registry.pending_reports_for_trace(ctx.parent_trace_id)
-        if not reports:
-            return body, []
-        messages = list(body.get("messages", []))
-        messages.extend({"role": "user", "content": report} for report in reports)
-        echoes = [format_user_message(report) for report in reports]
-        return {**body, "messages": messages}, echoes
-
-    @staticmethod
-    async def _clear_auto_mode_flag(trace_id: str | None) -> None:
-        """Clear the conversation's auto-mode flag for an intercepted
-        disable_auto_mode call. Imported lazily to avoid a circular import
-        (the auto registry depends on this module's round mechanics)."""
-        if not trace_id:
-            return
-        from app.desktop.studio_server.chat.auto.registry import auto_chat_registry
-
-        await auto_chat_registry.disable_for_trace(trace_id)
-
-    @staticmethod
-    def _format_tool_output(tc_id: str, output: str) -> bytes:
-        return f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': output}, ensure_ascii=False)}\n\n".encode()
-
-    @staticmethod
-    def _format_tool_exec_start(tool_count: int) -> bytes:
-        payload = {"type": SSE_TYPE_TOOL_EXEC_START, "tool_count": tool_count}
-        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
-
-    @staticmethod
-    def _format_tool_exec_end(tool_count: int) -> bytes:
-        payload = {"type": SSE_TYPE_TOOL_EXEC_END, "tool_count": tool_count}
-        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
@@ -860,7 +567,18 @@ def _build_openai_tool_continuation(
         )
 
     prior_messages = list(original_body.get("messages", []))
-    trace_only_continuation = bool(original_body.get("trace_id")) and not prior_messages
+    # A continuation whose base is a bare conversation KEY with no new
+    # messages ("trace-only"): the persisted trace already holds the
+    # assistant message with its tool calls, so the continuation must carry
+    # ONLY the role:tool results — re-sending the assistant message would
+    # duplicate it in the persisted trace. A `session_id` base (phase-6
+    # resume-by-key, e.g. a rehydrated approval batch on a record with no
+    # known leaf) is the same shape keyed differently: the backend resolves
+    # it to the current leaf whose tail already holds that assistant message.
+    trace_only_continuation = (
+        bool(original_body.get("trace_id") or original_body.get("session_id"))
+        and not prior_messages
+    )
 
     if trace_only_continuation:
         new_messages = tool_messages

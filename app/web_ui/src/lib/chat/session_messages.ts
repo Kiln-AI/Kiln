@@ -141,12 +141,17 @@ function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
 
 /**
  * Converts a typed ChatSessionSnapshot into UI messages.
- * Sets ``traceId`` on the last assistant message so
- * ``traceIdForNextChatRequest`` can continue the thread.
+ *
+ * Phase 5: the snapshot's leaf-shaped ``id`` is no longer surfaced — the
+ * browser keys conversations on SESSION ids (functional spec §4) and the
+ * desktop resolves the current leaf on every hydration fetch. ``rootId`` is
+ * the session's durable id (``session_meta.root_id``, passed through by the
+ * desktop proxy), which the session store persists as its restart-recovery
+ * key; null for legacy sessions without meta.
  */
 export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   messages: ChatMessage[]
-  continuationTraceId: string
+  rootId: string | null
   contextUsage: ContextUsage | null
 } {
   const trace = snapshot.task_run.trace ?? []
@@ -196,16 +201,13 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
     }
   }
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "assistant") {
-      messages[i] = { ...messages[i], traceId: snapshot.id }
-      break
-    }
-  }
-
+  // Phase 5 note: the old world stamped the last assistant message with the
+  // snapshot's trace id here (feeding traceIdForNextChatRequest, the
+  // browser's continuation key). Both died with the trace-keyed surface —
+  // the desktop record's own leaf is authoritative for continuations.
   return {
     messages,
-    continuationTraceId: snapshot.id,
+    rootId: snapshot.root_id ?? null,
     contextUsage: normalizeContextUsage(snapshot.context_usage),
   }
 }

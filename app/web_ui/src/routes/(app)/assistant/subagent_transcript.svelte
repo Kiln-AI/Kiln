@@ -5,28 +5,33 @@
   // thinking/retry indicators) under a status header. Composer routing lives in
   // chat.svelte; nothing here mutates the run.
   import type {
-    SubAgentItem,
-    SubagentRuntimeState,
-  } from "$lib/chat/subagent_store"
+    ConversationItem,
+    ConversationRuntimeState,
+  } from "$lib/chat/conversation_store"
   import type { ChatMessage } from "$lib/chat/streaming_chat"
   import ChatTranscript from "./chat_transcript.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
 
-  export let child: SubAgentItem
+  export let child: ConversationItem
   export let messages: ChatMessage[] = []
-  /** Live affordances mirrored from the child's stream (subagent_store). */
-  export let runtime: SubagentRuntimeState | null = null
+  /** Live affordances mirrored from the child's stream (conversation_store). */
+  export let runtime: ConversationRuntimeState | null = null
 
-  const STATUS_LABELS: Record<SubAgentItem["status"], string> = {
+  // Same header labels as before the RunState unification; the two live
+  // parent-kind states (idle/awaiting_approval) are unreachable for sub-agent
+  // children but the type carries them for phases 3-4.
+  const STATUS_LABELS: Record<ConversationItem["state"], string> = {
+    idle: "Idle",
     running: "Running",
+    awaiting_approval: "Waiting for approval",
     completed: "Completed",
     failed: "Failed",
     stopped: "Stopped",
     timeout: "Timed out",
   }
 
-  $: running = child.status === "running"
+  $: running = child.state === "running"
   $: lastMessage = messages[messages.length - 1]
   // The activity indicator drives the shared transcript's thinking dots between
   // rounds. The per-child runtime is processor-driven, so it doesn't exist
@@ -58,19 +63,19 @@
       >{child.agent_type}</span
     >
     <span
-      class="shrink-0 ml-auto {child.status === 'running'
+      class="shrink-0 ml-auto {child.state === 'running'
         ? 'text-primary'
-        : child.status === 'completed'
+        : child.state === 'completed'
           ? 'text-base-content/60'
           : 'text-error/80'}"
     >
-      {#if child.status === "running"}
+      {#if child.state === "running"}
         <span class="inline-flex items-center gap-1.5">
           <BrailleSpinner />
-          {STATUS_LABELS[child.status]}
+          {STATUS_LABELS[child.state]}
         </span>
       {:else}
-        {STATUS_LABELS[child.status]}
+        {STATUS_LABELS[child.state]}
       {/if}
     </span>
   </div>
