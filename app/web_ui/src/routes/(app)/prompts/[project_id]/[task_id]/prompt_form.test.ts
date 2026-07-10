@@ -63,13 +63,15 @@ describe("PromptForm provenance stamping", () => {
     expect(body.provenance).toEqual({ origin: "human" })
   })
 
-  it("clone create stamps derived_from_ids with the source prompt id", async () => {
+  it("clone of a saved prompt stamps the RAW sibling id (strips the id:: API prefix)", async () => {
+    // The Prompt API exposes saved-prompt ids as "id::<raw>", but derived_from_ids
+    // must carry the raw datamodel sibling id or the backend rejects it with a 400.
     const { container, getByText } = render(PromptForm, {
       props: {
         project_id: "proj1",
         task_id: "task1",
         clone_mode: true,
-        clone_source_prompt_id: "src-prompt-id",
+        clone_source_prompt_id: "id::src-prompt-id",
       },
     })
     await tick()
@@ -86,5 +88,30 @@ describe("PromptForm provenance stamping", () => {
       origin: "human",
       derived_from_ids: ["src-prompt-id"],
     })
+  })
+
+  it("clone of a non-saved generator prompt records origin only (no derived_from_ids)", async () => {
+    // Generator prompts (e.g. task_run_config::...) are not saved-Prompt siblings,
+    // so their id must NOT go into derived_from_ids (it would 400). origin is still
+    // required and must never be omitted.
+    const { container, getByText } = render(PromptForm, {
+      props: {
+        project_id: "proj1",
+        task_id: "task1",
+        clone_mode: true,
+        clone_source_prompt_id: "task_run_config::proj1::task1::cfg-id",
+      },
+    })
+    await tick()
+
+    await set_input(container, "prompt_name", "Copy of Generator Prompt")
+    await set_input(container, "prompt", "You are a helpful assistant.")
+
+    await fireEvent.click(getByText("Clone Prompt"))
+    await tick()
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalled())
+    const body = mockPost.mock.calls[0][1].body
+    expect(body.provenance).toEqual({ origin: "human" })
   })
 })
