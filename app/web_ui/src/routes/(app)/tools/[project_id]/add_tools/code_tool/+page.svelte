@@ -74,6 +74,11 @@
     init_state && Array.isArray(init_state.tool_allowlist)
       ? (init_state.tool_allowlist as string[])
       : []
+  // Source code tool id when arriving from a clone; used to stamp provenance lineage.
+  let clone_source_id =
+    init_state && typeof init_state.clone_source_id === "string"
+      ? (init_state.clone_source_id as string)
+      : null
 
   // Step 2 — Code & Test
   let code = ""
@@ -256,6 +261,11 @@
             code,
             timeout_seconds,
             tool_allowlist,
+            // Stamp lineage: a clone derives from its source; a fresh create is
+            // human-origin with no parent. origin is required whenever provenance is set.
+            provenance: clone_source_id
+              ? { origin: "human", derived_from_ids: [clone_source_id] }
+              : { origin: "human" },
           },
         },
       )
