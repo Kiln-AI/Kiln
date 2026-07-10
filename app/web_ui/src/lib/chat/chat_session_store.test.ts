@@ -698,6 +698,94 @@ describe("createChatSessionStore", () => {
     })
   })
 
+  // Mid-turn sends on a LIVE run (the conversation store knows the session
+  // id) ride the server inbox — the engine folds them into the next upstream
+  // round — instead of waiting client-side for the whole turn to settle.
+  describe("mid-turn inbox injection (interactive)", () => {
+    it("POSTs a mid-turn send to the live run instead of queueing", async () => {
+      const { store, fake, sessionId } = await makeStore()
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      expect(get(store).status).toBe("submitted")
+      const ok = await store.sendMessage("second")
+      expect(ok).toBe(true)
+      expect(get(store).queuedMessage).toBeNull()
+      expect(fake.sendMessage).toHaveBeenCalledTimes(2)
+      expect(fake.sendMessage).toHaveBeenLastCalledWith("second")
+      // No local render — the run's echo renders the injected message.
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        1,
+      )
+    })
+
+    it("falls back to the queue when the inject POST fails", async () => {
+      const { store, fake, sessionId } = await makeStore()
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      vi.mocked(fake.sendMessage).mockResolvedValueOnce({
+        ok: false,
+        error: "boom",
+      })
+      const ok = await store.sendMessage("second")
+      expect(ok).toBe(true)
+      expect(get(store).queuedMessage).toBe("second")
+    })
+
+    it("queues while an approval box is open, then injects when the run resumes", async () => {
+      const approvalBatch = {
+        batchId: "ab_inject",
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "search",
+            input: {},
+            requiresApproval: true,
+          },
+        ],
+      }
+      const { store, sink, fake, sessionId } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(approvalBatch),
+      })
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      // The open box blocks injection (the POST's optimistic working flip
+      // would read as "decided elsewhere" and close it) — so the send queues.
+      await store.sendMessage("while deciding")
+      expect(get(store).queuedMessage).toBe("while deciding")
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+      // The batch resolves and the run resumes: the queued message injects
+      // into the live run right away, not at the turn's end.
+      sink().onWorkingChange(true)
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("while deciding")
+      })
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("sendQueuedNow injects into the live run without stopping it", async () => {
+      const { store, fake, sessionId } = await makeStore()
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      // A message that fell back to the queue (its inject POST failed).
+      vi.mocked(fake.sendMessage).mockResolvedValueOnce({
+        ok: false,
+        error: "boom",
+      })
+      await store.sendMessage("second")
+      expect(get(store).queuedMessage).toBe("second")
+      store.sendQueuedNow()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledTimes(3)
+      })
+      expect(fake.stop).not.toHaveBeenCalled()
+      expect(get(store).queuedMessage).toBeNull()
+    })
+  })
+
   describe("approval box (parked batches)", () => {
     const batch = {
       batchId: "ab_1",

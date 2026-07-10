@@ -57,6 +57,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Literal
 
 import httpx
 from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
     ToolCallInfo,
     _pending_item_from_event,
@@ -258,7 +259,11 @@ class _Conversation:
         self.record = record
         self.policy = policy
         self.upstream_url = upstream_url
-        self.headers = headers
+        # Correlation id for upstream requests: lets the backend's chat debug
+        # log (kiln_server ``chat_debug_log_enabled``) key its events by this
+        # conversation so the two sides' timelines can be joined. Always sent
+        # — it's just an opaque id the backend ignores unless debugging.
+        self.headers = {**headers, "X-Kiln-Conversation-Id": record.session_id}
         # The bus's on-subscribe marker must reflect the record AT SUBSCRIBE
         # TIME, hence lambdas over the live record rather than stored values.
         self.bus = ByteEventBus(
@@ -1133,6 +1138,14 @@ class ConversationSupervisor:
         conv.run_finished = False
         conv.stop_requested = False
         conv.record.state = RunState.RUNNING
+        chat_debug_log(
+            "run_started",
+            conversation_id=session_id,
+            kind=conv.record.kind,
+            auto_flag=conv.record.auto_flag,
+            resume_batch=resume_batch is not None,
+            inbox_len=len(conv.inbox),
+        )
         self._touch(conv)
         conv.task = asyncio.create_task(
             self._supervise(conv, initial_body, resume_batch)
@@ -1325,6 +1338,17 @@ class ConversationSupervisor:
             record.state.value,
             record.auto_flag,
             record.idle_reason,
+        )
+        chat_debug_log(
+            "run_settled",
+            conversation_id=record.session_id,
+            state=record.state.value,
+            auto_flag=record.auto_flag,
+            idle_reason=record.idle_reason,
+            rounds_used=record.rounds_used,
+            inbox_len=len(conv.inbox),
+            restart_stranded_inbox=restart_stranded_inbox,
+            current_leaf_trace_id=record.current_leaf_trace_id,
         )
         # BUG 1 fix — inbox-drain-on-settle. Logged the settle FIRST (above)
         # so the "run ended" line reflects the settled IDLE, then the restart
@@ -1524,7 +1548,21 @@ class ConversationSupervisor:
 
         if conv.record.state in (RunState.RUNNING, RunState.AWAITING_APPROVAL):
             conv.inbox.append(message)
+            chat_debug_log(
+                "message_enqueued",
+                conversation_id=session_id,
+                message_id=message.id,
+                state=conv.record.state.value,
+                inbox_len=len(conv.inbox),
+            )
             return message.id
+        chat_debug_log(
+            "message_starts_idle_turn",
+            conversation_id=session_id,
+            message_id=message.id,
+            stranded_inbox_len=len(conv.inbox),
+            auto_flag=conv.record.auto_flag,
+        )
 
         # IDLE → start a fresh turn/burst seeded with the message. Body shape
         # preserved from the old idle re-arm (AutoChatRegistry.send_message →
@@ -1534,7 +1572,14 @@ class ConversationSupervisor:
         # interactive ``POST /api/chat`` request shape ({trace_id?, messages:
         # [the user message]}), so an interactive turn started here persists
         # an indistinguishable trace.
-        messages: list[dict[str, Any]] = [message.as_chat_message()]
+        # Deliver any stranded inbox FIRST (messages that landed during a
+        # non-natural settle — e.g. a turn that ended in a terminal upstream
+        # error, which _finish_run deliberately does not restart from). They
+        # were echoed at enqueue (echo-once), so no re-emit here; ordering
+        # matches send order, with the fresh message last.
+        stranded = conv.drain_inbox()
+        messages: list[dict[str, Any]] = [m.as_chat_message() for m in stranded]
+        messages.append(message.as_chat_message())
         # Next-turn report injection (old routes.post_chat): sub-agent
         # reports queued while the conversation idled ride this fresh turn
         # AFTER the user's message (the old endpoint appended them the same

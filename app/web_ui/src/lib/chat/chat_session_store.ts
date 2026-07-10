@@ -123,16 +123,20 @@ export interface ChatSessionState extends PersistedChatSession {
    */
   versionRequired: boolean
   /**
-   * A user message typed while a turn was in flight (interactive turn or auto
-   * burst), held client-side until the turn yields — then auto-sent — or sent
-   * immediately via send-now. ``null`` when nothing is queued. A second send
-   * while one is queued appends to it. Runtime-only, not persisted.
+   * A user message typed while it couldn't be delivered immediately, held
+   * client-side until it can — then auto-sent — or sent immediately via
+   * send-now. ``null`` when nothing is queued. A second send while one is
+   * queued appends to it. Runtime-only, not persisted.
    *
-   * Deliberately CLIENT-side (not the server inbox) for the primary tab:
-   * dispatching mid-turn would inject the message into the SAME turn's
-   * continuation — a persisted-trace change the old world never made — and
-   * would lose the edit/discard affordances. The server inbox still accepts
-   * mid-turn sends from other tabs (functional spec §2).
+   * Mid-turn sends on a LIVE interactive run no longer queue here: they POST
+   * straight to the server inbox (the same transport sub-agent and cross-tab
+   * sends use) and the engine folds them into the run's next upstream round.
+   * This queue holds only the messages that can't ride a live run right now:
+   * an approval box open (the POST's optimistic working flip would close the
+   * box), a consent dialog resolving (the turn is already over server-side —
+   * a POST would seed a NEW turn racing the enable), no live session id yet,
+   * an auto burst in flight (flushed at the next observed round boundary),
+   * or a failed POST.
    */
   queuedMessage: string | null
 }
@@ -149,10 +153,11 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendMessage(text: string): Promise<boolean>
   /**
    * Send the currently queued message right now instead of waiting for the
-   * in-flight turn to end. Interactive: stops the turn (it then auto-sends on
-   * the ready transition). Auto mode: injects immediately, keeping auto mode
-   * running (the run picks it up at the next round boundary). No-op when
-   * nothing is queued.
+   * next flush point. Live interactive run: injects into the run's inbox
+   * (picked up at the next round boundary). Non-injectable interactive turn:
+   * stops it (the message then auto-sends on the ready transition). Auto
+   * mode: injects immediately, keeping auto mode running. No-op when nothing
+   * is queued.
    */
   sendQueuedNow(): void
   /** Discard the queued message without sending it. */
@@ -526,9 +531,10 @@ export function createChatSessionStore(
       combined.update((s) => ({ ...s, toolExecuting: true })),
     onToolExecutionEnd: () => {
       combined.update((s) => ({ ...s, toolExecuting: false }))
-      // Round boundary: flush a queued message so it rides the next request
-      // (auto mode injects at boundaries; interactive turns stay guarded by
-      // interactiveTurnActive).
+      // Round boundary: flush a queued message so it rides the next request —
+      // auto mode dispatches here (status stays "ready" during bursts);
+      // interactive fallback-queued messages inject into the live run when
+      // it's injectable.
       maybeFlush()
     },
     onShowActivityIndicator: (show) =>
@@ -543,6 +549,10 @@ export function createChatSessionStore(
           // was just decided (possibly by another tab) — clear it.
           if (get(combined).toolApprovalWaiter) clearToolApprovalState()
           if (status === "ready") setStatus("submitted")
+          // The run just became live (e.g. an approval batch resolved and it
+          // resumed): a message queued while it wasn't injectable can ride
+          // the inbox now.
+          maybeFlush()
         } else if (status !== "ready") {
           // Authoritative not-working signal WITHOUT a settle hook: the
           // on-subscribe marker of an idle/parked conversation, an approval
@@ -703,15 +713,42 @@ export function createChatSessionStore(
     }
   }
 
-  // An interactive turn is "in flight" — sending should queue rather than
-  // dispatch — while the observer reports a turn, a tool approval is open, or
-  // a consent flow is resolving. Auto mode is intentionally NOT consulted:
-  // messages sent during an auto burst inject at the next round boundary.
+  // An interactive turn is "in flight" — sending must not start a NEW turn —
+  // while the observer reports a turn, a tool approval is open, or a consent
+  // flow is resolving. Auto mode is intentionally NOT consulted: messages
+  // sent during an auto burst inject at the next round boundary.
   function interactiveTurnActive(): boolean {
     if (status !== "ready") return true
     if (get(combined).toolApprovalWaiter) return true
     if (consentFlowPending) return true
     return false
+  }
+
+  // The in-flight interactive run can accept a message RIGHT NOW via the
+  // server inbox (the engine folds it into the next upstream round). False
+  // while an approval box is open — POSTing then would flip `working` true
+  // and onWorkingChange would misread it as "batch decided elsewhere" and
+  // close the box — and while a consent flow resolves (the turn is already
+  // over server-side; a POST would seed a NEW turn racing the enable).
+  function liveRunInjectable(): boolean {
+    return (
+      status !== "ready" &&
+      !consentFlowPending &&
+      !get(combined).toolApprovalWaiter &&
+      !!get(conversationStore.sessionId)
+    )
+  }
+
+  // POST a message into the live run's inbox. On failure, restore it to the
+  // FRONT of the queue (same never-drop contract as dispatchQueued).
+  async function injectIntoLiveRun(text: string): Promise<void> {
+    const result = await conversationStore.sendMessage(text)
+    if (!result.ok) {
+      combined.update((s) => ({
+        ...s,
+        queuedMessage: s.queuedMessage ? `${text}\n\n${s.queuedMessage}` : text,
+      }))
+    }
   }
 
   // Hold a message client-side while a turn is in flight. A second send while
@@ -744,13 +781,22 @@ export function createChatSessionStore(
     }
   }
 
-  // Auto-send the queued message at the next safe point: an interactive turn
-  // finishing, or — in auto mode — a round boundary / the burst going idle.
+  // Auto-send the queued message at the next safe point. Two transports:
+  // inject into the live run's inbox the moment it becomes injectable (e.g.
+  // an approval batch just resolved and the run resumed), or — once nothing
+  // is in flight — dispatch as a new turn (an interactive turn finishing, or
+  // in auto mode a round boundary / the burst going idle).
   function maybeFlush(): void {
     const queued = get(combined).queuedMessage
     if (!queued) return
-    if (interactiveTurnActive()) return
     if (get(combined).versionRequired) return
+    if (interactiveTurnActive()) {
+      if (liveRunInjectable()) {
+        clearQueued()
+        void injectIntoLiveRun(queued)
+      }
+      return
+    }
     void dispatchQueued(queued)
   }
 
@@ -765,8 +811,16 @@ export function createChatSessionStore(
       void dispatchQueued(queued)
       return
     }
-    // Interactive turn in flight: stop it. The resulting idle transition
-    // flushes the queued message via ``maybeFlush``.
+    // Live interactive run that can take the message: inject it — no need to
+    // stop the turn (a queued message here means an earlier POST failed or
+    // the message queued while the run wasn't injectable).
+    if (liveRunInjectable()) {
+      clearQueued()
+      void injectIntoLiveRun(queued)
+      return
+    }
+    // Interactive turn in flight but not injectable: stop it. The resulting
+    // idle transition flushes the queued message via ``maybeFlush``.
     if (status !== "ready") {
       stop()
       return
@@ -801,9 +855,19 @@ export function createChatSessionStore(
     if (get(conversationStore.armed)) {
       return actuallySend(trimmed)
     }
-    // Interactive: hold while a turn is in flight; it auto-sends when the turn
-    // yields.
+    // Interactive with a turn in flight: send straight into the live run's
+    // server inbox — the engine folds it into the next upstream round, so the
+    // message reaches the model mid-turn instead of waiting for the whole
+    // turn (possibly many rounds) to settle. No local render: the run echoes
+    // the message (streaming deltas target the LAST assistant bubble, so a
+    // locally appended user message would strand them). Falls back to the
+    // client-side queue when the run can't take it right now (approval box
+    // open, consent resolving, no session id) or the POST fails.
     if (interactiveTurnActive()) {
+      if (liveRunInjectable()) {
+        const result = await conversationStore.sendMessage(trimmed)
+        if (result.ok) return true
+      }
       enqueue(trimmed)
       return true
     }

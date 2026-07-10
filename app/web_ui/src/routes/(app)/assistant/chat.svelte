@@ -28,6 +28,7 @@
   import SubagentTranscript from "./subagent_transcript.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
   import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
+  import { base_url } from "$lib/api_client"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -66,6 +67,33 @@
   const subagentSelectedId = conversation_store.selectedId
   const subagentTranscripts = conversation_store.transcripts
   const subagentRuntime = conversation_store.runtime
+
+  // Assistant forensic debug logging (KILN_CHAT_DEBUG_LOG): when the desktop
+  // flag is on, surface the conversation id — the join key for the desktop
+  // and kiln_server debug logs — with click-to-copy. Follows the selected
+  // tab so a sub-agent's id is just as reachable.
+  let debugLogEnabled = false
+  let debugIdCopied = false
+  $: debugConversationId = selectedChild
+    ? selectedChild.session_id
+    : $mainSessionId ?? $store.sessionId
+  async function fetchDebugStatus() {
+    try {
+      const res = await fetch(`${base_url}/api/chat/debug_status`)
+      if (res.ok) {
+        const parsed = (await res.json()) as { debug_log_enabled?: boolean }
+        debugLogEnabled = Boolean(parsed?.debug_log_enabled)
+      }
+    } catch {
+      // Debug affordance only — never surface an error for it.
+    }
+  }
+  function copyDebugConversationId() {
+    if (!debugConversationId) return
+    void navigator.clipboard?.writeText(debugConversationId)
+    debugIdCopied = true
+    setTimeout(() => (debugIdCopied = false), 1200)
+  }
   $: selectedChild = $subagentSelectedId
     ? $subagentChildren.find((c) => c.session_id === $subagentSelectedId) ??
       null
@@ -300,6 +328,9 @@
   onMount(() => {
     // Surface the upgrade banners up front, before any message is sent.
     void store.checkVersionPolicy()
+
+    // Debug-log affordance: show the conversation id when the flag is on.
+    void fetchDebugStatus()
 
     // Watch the conversation-state firehose while the assistant page is active
     // so tabs reflect spawns/finishes even with no chat stream in flight.
@@ -718,11 +749,22 @@
           Auto mode
         </button>
       {/if}
-      {#if contextUsage}
-        <div class="ml-auto">
+      <div class="ml-auto flex items-center gap-2">
+        {#if debugLogEnabled && debugConversationId}
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs font-mono text-[10px] text-base-content/40 hover:text-base-content/70"
+            on:click={copyDebugConversationId}
+            title="Assistant debug logging is on — click to copy this conversation's id (the key for the desktop and server debug logs)."
+            aria-label="Copy conversation id"
+          >
+            {debugIdCopied ? "copied" : debugConversationId}
+          </button>
+        {/if}
+        {#if contextUsage}
           <ContextUsageGauge usage={contextUsage} />
-        </div>
-      {/if}
+        {/if}
+      </div>
     </div>
   </div>
 </div>

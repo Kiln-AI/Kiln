@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -408,10 +409,16 @@ def connect_judge_feedback_batch_api(app: FastAPI):
         ] = False,
     ) -> list[JudgeFeedbackBatchRun]:
         """Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge feedback batch."""
-        judge_feedback_batch = judge_feedback_batch_from_id(
-            project_id, task_id, judge_feedback_batch_id
-        )
-        runs = judge_feedback_batch.runs()
-        if failing_only:
-            runs = [run for run in runs if not run.passed]
-        return runs
+
+        # Loading the batch and its runs scans child files on disk; keep the
+        # walk off the event loop.
+        def load_runs() -> list[JudgeFeedbackBatchRun]:
+            judge_feedback_batch = judge_feedback_batch_from_id(
+                project_id, task_id, judge_feedback_batch_id
+            )
+            runs = judge_feedback_batch.runs()
+            if failing_only:
+                runs = [run for run in runs if not run.passed]
+            return runs
+
+        return await asyncio.to_thread(load_runs)

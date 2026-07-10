@@ -618,14 +618,19 @@ def connect_run_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> dict[str, int]:
-        tags_count = {}
         task = task_from_id(project_id, task_id)
+
         # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
-        # We also cache the result client side
-        for run in task.runs(readonly=True):
-            for tag in run.tags:
-                tags_count[tag] = tags_count.get(tag, 0) + 1
-        return tags_count
+        # We also cache the result client side. The scan still touches every run
+        # file on disk (mtime checks at minimum), so keep it off the event loop.
+        def count_tags() -> dict[str, int]:
+            tags_count: dict[str, int] = {}
+            for run in task.runs(readonly=True):
+                for tag in run.tags:
+                    tags_count[tag] = tags_count.get(tag, 0) + 1
+            return tags_count
+
+        return await asyncio.to_thread(count_tags)
 
 
 async def update_run_util(

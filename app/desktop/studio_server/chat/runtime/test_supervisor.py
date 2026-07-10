@@ -24,7 +24,7 @@ from app.desktop.studio_server.chat.test_fakes import (
 )
 
 from .engine import ConversationEngine
-from .models import RunState, SubAgentSeed
+from .models import InboundMessage, RunState, SubAgentSeed
 from .supervisor import ConversationCapError, ConversationSupervisor
 
 URL = "https://example.test/v1/chat"
@@ -390,6 +390,48 @@ async def test_send_message_while_idle_starts_turn_with_preserved_body_shape():
             "auto_mode": True,
         }
     ]
+
+
+async def test_conversation_headers_carry_correlation_id():
+    sup = _sup()
+    record = sup.create_conversation(
+        "interactive", upstream_url=URL, headers={"Authorization": "Bearer k"}
+    )
+    conv = sup._conversations[record.session_id]
+    # Every upstream request carries the conversation id so the backend's
+    # debug log can be joined with the desktop's per conversation.
+    assert conv.headers["X-Kiln-Conversation-Id"] == record.session_id
+    assert conv.headers["Authorization"] == "Bearer k"
+
+
+async def test_send_message_while_idle_delivers_stranded_inbox_first():
+    sup = _sup()
+    burst = [
+        FakeUpstreamResponse([trace("tr-1"), text_delta("resumed"), finish("stop")])
+    ]
+    client = FakeUpstreamClient(burst)
+    record = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    record.current_leaf_trace_id = "tr-0"
+    # A message that landed during a NON-natural settle (e.g. a turn that
+    # ended in a terminal upstream error): _finish_run deliberately does not
+    # restart from it, so it waits in the inbox for the user's next send.
+    conv = sup._conversations[record.session_id]
+    conv.inbox.append(InboundMessage(content="stranded"))
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        assert sup.send_message(record.session_id, "fresh") is not None
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    # The stranded message rides the fresh turn, in send order, unframed.
+    assert client.bodies == [
+        {
+            "messages": [
+                {"role": "user", "content": "stranded"},
+                {"role": "user", "content": "fresh"},
+            ],
+            "trace_id": "tr-0",
+        }
+    ]
+    assert conv.inbox == []
 
 
 async def test_send_message_unknown_or_terminal_returns_none():

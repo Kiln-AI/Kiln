@@ -3233,6 +3233,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/debug_status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant debug-logging status
+         * @description Whether ``KILN_CHAT_DEBUG_LOG`` forensic logging is on — the UI
+         *     surfaces the conversation id (the join key for the desktop and
+         *     kiln_server debug logs) when it is.
+         */
+        get: operations["chat_debug_status_api_chat_debug_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/conversations": {
         parameters: {
             query?: never;
@@ -4525,6 +4547,14 @@ export interface components {
             role: "user";
             /** Name */
             name?: string;
+        };
+        /**
+         * ChatDebugStatus
+         * @description Whether assistant forensic debug logging (``KILN_CHAT_DEBUG_LOG``) is on.
+         */
+        ChatDebugStatus: {
+            /** Debug Log Enabled */
+            debug_log_enabled: boolean;
         };
         /** ChatSessionListItem */
         ChatSessionListItem: {
@@ -19222,6 +19252,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_debug_status_api_chat_debug_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatDebugStatus"];
                 };
             };
         };

@@ -12,6 +12,11 @@ from kiln_ai.utils.config import Config
 # Skip remote model loading when running the dev server (unless explicitly set)
 os.environ.setdefault("KILN_SKIP_REMOTE_MODEL_LIST", "true")
 
+# Assistant forensic debug logging on by default in dev (unless explicitly
+# set, e.g. KILN_CHAT_DEBUG_LOG=0) so the JSONL timeline already exists when
+# an assistant issue needs investigating. See chat/debug_log.py.
+os.environ.setdefault("KILN_CHAT_DEBUG_LOG", "1")
+
 # top level app object, as that's needed by auto-reload
 dev_app = make_app()
 

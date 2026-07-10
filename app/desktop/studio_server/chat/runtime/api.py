@@ -62,6 +62,7 @@ from typing import Annotated, Any, AsyncGenerator, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
 
+from app.desktop.studio_server.chat.debug_log import chat_debug_enabled
 from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
@@ -100,6 +101,12 @@ logger = logging.getLogger(__name__)
 # Quiet-window keepalive for the SSE streams (same value as the old
 # auto/sub-agent APIs).
 KEEPALIVE_SECONDS = 15.0
+
+
+class ChatDebugStatus(BaseModel):
+    """Whether assistant forensic debug logging (``KILN_CHAT_DEBUG_LOG``) is on."""
+
+    debug_log_enabled: bool
 
 
 class ConversationItem(BaseModel):
@@ -317,6 +324,18 @@ async def _state_firehose_stream() -> AsyncGenerator[bytes, None]:
 
 
 def connect_conversations_api(app: FastAPI) -> None:
+    @app.get(
+        "/api/chat/debug_status",
+        summary="Assistant debug-logging status",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def chat_debug_status() -> ChatDebugStatus:
+        """Whether ``KILN_CHAT_DEBUG_LOG`` forensic logging is on — the UI
+        surfaces the conversation id (the join key for the desktop and
+        kiln_server debug logs) when it is."""
+        return ChatDebugStatus(debug_log_enabled=chat_debug_enabled())
+
     @app.get(
         "/api/conversations",
         summary="List conversations",

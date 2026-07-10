@@ -36,11 +36,13 @@ Design invariants:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import httpx
 from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT, DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
     RetryRoundResult,
     RoundState,
@@ -281,6 +283,14 @@ class ConversationEngine:
         trace_id_for_error: str | None = (
             body.get("trace_id") or record.current_leaf_trace_id
         )
+        chat_debug_log(
+            "engine_run_started",
+            conversation_id=record.session_id,
+            kind=record.kind,
+            body_keys=sorted(body.keys()),
+            message_count=len(body.get("messages", [])),
+            resume_batch=resume_batch is not None,
+        )
 
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(policy.max_rounds):
@@ -288,6 +298,14 @@ class ConversationEngine:
                 # counted every attempted round, including the failing one);
                 # harmless bookkeeping for the other kinds.
                 record.rounds_used += 1
+                chat_debug_log(
+                    "upstream_round_started",
+                    conversation_id=record.session_id,
+                    round=record.rounds_used,
+                    trace_id=body.get("trace_id"),
+                    session_key=body.get("session_id"),
+                    message_count=len(body.get("messages", [])),
+                )
 
                 # ── 1. Round (shared retry helper — identical transient-error
                 # classification/backoff for every kind). ────────────────────
@@ -397,9 +415,18 @@ class ConversationEngine:
                     # would settle must not be dropped — continue with it as a
                     # fresh (framed) user turn instead of settling. (Old auto
                     # drain-before-idle + sub-agent drain-before-finish; the
-                    # interactive inbox is empty until phase 4 wires sends.)
+                    # interactive inbox is fed by the primary tab's mid-turn
+                    # sends and by other tabs.)
                     injected = io.drain_inbox()
                     if injected:
+                        chat_debug_log(
+                            "inbox_injected",
+                            conversation_id=record.session_id,
+                            round=record.rounds_used,
+                            site="drain_before_idle",
+                            count=len(injected),
+                            message_ids=[m.id for m in injected],
+                        )
                         body = {
                             **body,
                             "messages": [
@@ -601,8 +628,17 @@ class ConversationEngine:
                 # (they differ only when intercepted calls resolve without
                 # executing, which the old loops counted the same way).
                 io.emit(format_tool_exec_start(len(client_events)))
+                tools_started = time.monotonic()
                 results = await execute_tool_batch(
                     tool_calls, decisions, orchestration_ctx=io.orchestration_ctx
+                )
+                chat_debug_log(
+                    "tool_batch_executed",
+                    conversation_id=record.session_id,
+                    round=record.rounds_used,
+                    tool_names=[tc.tool_name for tc in tool_calls],
+                    intercepted=len(intercepted),
+                    duration_ms=round((time.monotonic() - tools_started) * 1000, 1),
                 )
                 results.update(intercepted)
                 for tc_id, output in results.items():
@@ -631,6 +667,14 @@ class ConversationEngine:
                         return
                     injected = io.drain_inbox()
                     if injected:
+                        chat_debug_log(
+                            "inbox_injected",
+                            conversation_id=record.session_id,
+                            round=record.rounds_used,
+                            site="server_only_batch",
+                            count=len(injected),
+                            message_ids=[m.id for m in injected],
+                        )
                         body = {
                             **body,
                             "messages": [
@@ -681,6 +725,14 @@ class ConversationEngine:
                 # sees both on the next turn — old auto _append_user_messages.
                 injected = io.drain_inbox()
                 if injected:
+                    chat_debug_log(
+                        "inbox_injected",
+                        conversation_id=record.session_id,
+                        round=record.rounds_used,
+                        site="continuation",
+                        count=len(injected),
+                        message_ids=[m.id for m in injected],
+                    )
                     body = _append_messages(
                         body, [_frame_inbox_message(m, policy) for m in injected]
                     )
