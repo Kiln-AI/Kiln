@@ -1,5 +1,4 @@
 import json
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1451,17 +1450,16 @@ _RCP_JSON = {
 }
 
 
-def _poll_batch(client, url, timeout=20.0):
-    deadline = time.time() + timeout
-    data = None
-    while time.time() < deadline:
-        resp = client.get(url)
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        if data["status"] != "running":
-            return data
-        time.sleep(0.02)
-    raise AssertionError(f"batch job did not finish in time: {data}")
+def _noop_spawn(coro):
+    """Drop-in for _spawn_batch_task that doesn't run the background job.
+
+    Endpoint tests use this to test the synchronous responsibilities (job
+    created, registered, status served, scoped) without racing the async job
+    to completion — that path is covered deterministically by the
+    _run_*_batch_job tests. Closing the coroutine avoids a
+    'coroutine was never awaited' warning.
+    """
+    coro.close()
 
 
 async def test_run_inputs_batch_job_success(test_task):
@@ -1600,9 +1598,15 @@ def test_generate_inputs_batch_endpoint(
         input_source=data_source,
         parent=test_task,
     )
-    with patch(
-        "app.desktop.studio_server.data_gen_api.adapter_for_task"
-    ) as mock_adapter_for_task:
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api._spawn_batch_task",
+            side_effect=_noop_spawn,
+        ),
+    ):
         adapter = AsyncMock()
         adapter.invoke = AsyncMock(return_value=run)
         mock_adapter_for_task.return_value = adapter
@@ -1619,17 +1623,17 @@ def test_generate_inputs_batch_endpoint(
         job_id = start.json()["job_id"]
         assert job_id
 
-        data = _poll_batch(
-            client,
-            f"/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch/{job_id}",
+        # The job is registered synchronously; the status endpoint serves it.
+        # Completion + results are covered by test_run_inputs_batch_job_success.
+        status = client.get(
+            f"/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch/{job_id}"
         )
+        assert status.status_code == 200, status.text
+        data = status.json()
 
-    assert data["status"] == "complete"
     assert data["total"] == 3
-    assert data["completed"] == 3
-    assert data["errors"] == 0
     assert data["model_name"] == "gpt-4"
-    assert all(r["input"] == "gen input" for r in data["results"])
+    assert data["model_provider"] == "openai"
 
 
 def test_inputs_batch_status_unknown_job_404(mock_task_from_id, client):
@@ -1677,9 +1681,15 @@ def test_inputs_batch_status_wrong_scope_404(
 
 
 def test_generate_outputs_batch_endpoint(mock_task_from_id, client, mock_task_run):
-    with patch(
-        "app.desktop.studio_server.data_gen_api.adapter_for_task"
-    ) as mock_adapter_for_task:
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api._spawn_batch_task",
+            side_effect=_noop_spawn,
+        ),
+    ):
         adapter = AsyncMock()
         adapter.invoke = AsyncMock(return_value=mock_task_run)
         mock_adapter_for_task.return_value = adapter
@@ -1699,15 +1709,15 @@ def test_generate_outputs_batch_endpoint(mock_task_from_id, client, mock_task_ru
         assert start.status_code == 200, start.text
         job_id = start.json()["job_id"]
 
-        data = _poll_batch(
-            client,
-            f"/api/projects/proj-ID/tasks/task-ID/generate_outputs_batch/{job_id}",
+        # Job registered synchronously; completion is covered by
+        # test_run_outputs_batch_job_success.
+        status = client.get(
+            f"/api/projects/proj-ID/tasks/task-ID/generate_outputs_batch/{job_id}"
         )
+        assert status.status_code == 200, status.text
+        data = status.json()
 
-    assert data["status"] == "complete"
     assert data["total"] == 2
-    assert data["completed"] == 2
-    assert all(r["task_run"] is not None for r in data["results"])
 
 
 def test_batch_jobs_registry_is_populated(
@@ -1722,9 +1732,15 @@ def test_batch_jobs_registry_is_populated(
         input_source=data_source,
         parent=test_task,
     )
-    with patch(
-        "app.desktop.studio_server.data_gen_api.adapter_for_task"
-    ) as mock_adapter_for_task:
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api._spawn_batch_task",
+            side_effect=_noop_spawn,
+        ),
+    ):
         adapter = AsyncMock()
         adapter.invoke = AsyncMock(return_value=run)
         mock_adapter_for_task.return_value = adapter
@@ -1738,10 +1754,7 @@ def test_batch_jobs_registry_is_populated(
             },
         )
         job_id = start.json()["job_id"]
-        _poll_batch(
-            client,
-            f"/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch/{job_id}",
-        )
 
+    # Registration is synchronous in the handler, before the job is spawned.
     assert job_id in _batch_jobs
     assert _batch_jobs[job_id].kind == "inputs"
