@@ -31,6 +31,23 @@ ANTHROPIC_ADAPTIVE_THINKING_MODELS = {
 }
 
 
+def is_openai_gpt5_no_summary(model_name: str, provider_name: str) -> bool:
+    """OpenAI's GPT-5.x reasoning models only expose reasoning *summaries* via the
+    Responses API. Kiln calls everything through chat/completions (litellm.acompletion),
+    which never returns a summary, so message.reasoning_content is always None for these
+    models on the openai/openrouter providers. Thinking-level selection itself still works;
+    only the (optional) summary text is absent. We therefore relax the reasoning-present
+    assertion for these cases and only verify the run succeeded.
+
+    Matched by ModelName string prefix ("gpt_5") so future GPT-5.x models (e.g. gpt_5_6*)
+    are covered automatically without enumerating each one.
+    """
+    return provider_name in (
+        ModelProviderName.openai,
+        ModelProviderName.openrouter,
+    ) and model_name.startswith("gpt_5")
+
+
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
     project.save_to_file()
@@ -137,6 +154,12 @@ async def test_thinking_level_reasoning_content(
     ):
         # Adaptive/encrypted-thinking models may not surface reasoning content (see
         # note above); reaching here means the run succeeded, which is what we verify.
+        pass
+    elif is_openai_gpt5_no_summary(model_name, provider_name):
+        # OpenAI GPT-5.x reasoning models only return reasoning summaries via the
+        # Responses API; Kiln uses chat/completions, so no summary is surfaced (see
+        # note above). The thinking level still applies; reaching here means the run
+        # succeeded, which is what we verify.
         pass
     else:
         assert reasoning_content is not None, (
