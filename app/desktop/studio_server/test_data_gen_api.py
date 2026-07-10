@@ -1451,7 +1451,7 @@ _RCP_JSON = {
 }
 
 
-def _poll_batch(client, url, timeout=5.0):
+def _poll_batch(client, url, timeout=20.0):
     deadline = time.time() + timeout
     data = None
     while time.time() < deadline:
