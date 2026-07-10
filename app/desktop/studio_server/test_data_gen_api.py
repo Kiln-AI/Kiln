@@ -25,9 +25,11 @@ from app.desktop.studio_server.data_gen_api import (
     DataGenSaveSamplesApiInput,
     GenerateOutputsBatchItem,
     SaveQnaPairInput,
+    _MAX_BATCH_JOBS,
     _BatchJob,
     _batch_jobs,
     _generate_one_input,
+    _register_batch_job,
     _run_inputs_batch_job,
     _run_outputs_batch_job,
     connect_data_gen_api,
@@ -1460,6 +1462,47 @@ def _noop_spawn(coro):
     'coroutine was never awaited' warning.
     """
     coro.close()
+
+
+def _mk_job(job_id: str, status="complete") -> _BatchJob:
+    return _BatchJob(
+        job_id=job_id,
+        project_id="p",
+        task_id="t",
+        kind="inputs",
+        total=1,
+        status=status,
+    )
+
+
+def test_register_batch_job_evicts_oldest_finished():
+    _batch_jobs.clear()
+    try:
+        # Fill past the cap with finished jobs.
+        for i in range(_MAX_BATCH_JOBS):
+            _register_batch_job(_mk_job(f"done-{i}", status="complete"))
+        assert len(_batch_jobs) == _MAX_BATCH_JOBS
+        _register_batch_job(_mk_job("newest", status="complete"))
+        # Back at the cap, oldest evicted, newest kept.
+        assert len(_batch_jobs) == _MAX_BATCH_JOBS
+        assert "done-0" not in _batch_jobs
+        assert "newest" in _batch_jobs
+    finally:
+        _batch_jobs.clear()
+
+
+def test_register_batch_job_never_evicts_running_jobs():
+    _batch_jobs.clear()
+    try:
+        # A registry full of still-running jobs cannot be trimmed.
+        for i in range(_MAX_BATCH_JOBS):
+            _register_batch_job(_mk_job(f"run-{i}", status="running"))
+        _register_batch_job(_mk_job("newest", status="running"))
+        # No running job is dropped, even over the cap.
+        assert len(_batch_jobs) == _MAX_BATCH_JOBS + 1
+        assert all(k in _batch_jobs for k in ["run-0", "newest"])
+    finally:
+        _batch_jobs.clear()
 
 
 async def test_run_inputs_batch_job_success(test_task):

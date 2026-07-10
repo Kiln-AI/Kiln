@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
@@ -44,6 +45,8 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class DataGenCategoriesApiInput(BaseModel):
@@ -334,14 +337,44 @@ class _BatchJob:
 # In-memory registry of batch jobs, keyed by job_id. Lives for the process
 # lifetime (matches the desktop server's single-process model).
 _batch_jobs: dict[str, _BatchJob] = {}
+# Cap the registry so the long-lived desktop process doesn't accumulate finished
+# jobs forever. Well above any realistic number of concurrent batches.
+_MAX_BATCH_JOBS = 100
 # Hold references to background tasks so they aren't garbage-collected mid-run.
 _batch_background_tasks: set[asyncio.Task] = set()
+
+
+def _register_batch_job(job: _BatchJob) -> None:
+    """Register a batch job, evicting old finished jobs to bound memory.
+
+    Only terminal (complete/error) jobs are evicted, oldest first, so a job
+    that's still running or hasn't been polled to completion is never dropped.
+    """
+    _batch_jobs[job.job_id] = job
+    if len(_batch_jobs) <= _MAX_BATCH_JOBS:
+        return
+    for job_id, existing in list(_batch_jobs.items()):
+        if len(_batch_jobs) <= _MAX_BATCH_JOBS:
+            break
+        if existing.status in ("complete", "error"):
+            del _batch_jobs[job_id]
 
 
 def _spawn_batch_task(coro) -> None:
     task = asyncio.create_task(coro)
     _batch_background_tasks.add(task)
-    task.add_done_callback(_batch_background_tasks.discard)
+
+    def _on_done(finished: asyncio.Task) -> None:
+        _batch_background_tasks.discard(finished)
+        # The job runners record their own errors on the job object, so a task
+        # raising here is unexpected — surface it instead of letting it vanish.
+        if not finished.cancelled() and finished.exception() is not None:
+            logger.error(
+                "Batch background task failed",
+                exc_info=finished.exception(),
+            )
+
+    task.add_done_callback(_on_done)
 
 
 async def _generate_one_input(
@@ -783,7 +816,7 @@ The topic path for this sample is:
             model_name=input.run_config_properties.model_name,
             model_provider=input.run_config_properties.model_provider_name,
         )
-        _batch_jobs[job.job_id] = job
+        _register_batch_job(job)
         _spawn_batch_task(
             _run_inputs_batch_job(
                 job,
@@ -856,7 +889,7 @@ The topic path for this sample is:
             kind="outputs",
             total=len(input.items),
         )
-        _batch_jobs[job.job_id] = job
+        _register_batch_job(job)
         _spawn_batch_task(
             _run_outputs_batch_job(
                 job,
