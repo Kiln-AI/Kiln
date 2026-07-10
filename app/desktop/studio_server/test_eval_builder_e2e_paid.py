@@ -106,10 +106,14 @@ SPEC_NAME = "E2E Harness Spec"
 
 # Mirrors the UI's model choices: haiku as the target agent and as the SU
 # driver (SU_DRIVER_DEFAULT), the shared default judge shape on top.
+# The inline (ad-hoc) drive mode: the FULL run-config properties shape a
+# manual run sends. The tools leg below drives by saved-config id instead —
+# together the two legs cover both target_run_config sources.
 TARGET_RUN_CONFIG = {
     "model_name": "claude_4_5_haiku",
-    "model_provider": "openrouter",
+    "model_provider_name": "openrouter",
     "prompt_id": "simple_prompt_builder",
+    "structured_output_mode": "default",
 }
 SU_DRIVER = {"model_name": "claude_4_5_haiku", "model_provider": "openrouter"}
 

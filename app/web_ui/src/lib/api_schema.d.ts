@@ -10099,11 +10099,14 @@ export interface components {
              * @default 5
              */
             turns: number;
-            /** @description Transient target-task config (tools disabled). Exactly one of target_run_config / target_run_config_id is required. */
-            target_run_config?: components["schemas"]["TargetRunConfigSpec"] | null;
+            /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
             /**
              * Target Run Config Id
-             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run. Exactly one of target_run_config / target_run_config_id is required.
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
              */
             target_run_config_id?: string | null;
             su_driver: components["schemas"]["SyntheticUserDriverSpec"];
@@ -10198,11 +10201,14 @@ export interface components {
              * @default 5
              */
             turns: number;
-            /** @description Transient target-task config (tools disabled). Exactly one of target_run_config / target_run_config_id is required. */
-            target_run_config?: components["schemas"]["TargetRunConfigSpec"] | null;
+            /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
             /**
              * Target Run Config Id
-             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run. Exactly one of target_run_config / target_run_config_id is required.
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
              */
             target_run_config_id?: string | null;
             su_driver: components["schemas"]["SyntheticUserDriverSpec"];
@@ -11158,22 +11164,6 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
-        };
-        /**
-         * TargetRunConfigSpec
-         * @description A transient config for invoking the target task on each turn. Tools
-         *     are disabled on this path — reference one of the task's saved run
-         *     configs (target_run_config_id) to drive the task with its tools.
-         */
-        TargetRunConfigSpec: {
-            /** Model Name */
-            model_name: string;
-            model_provider: components["schemas"]["ModelProviderName"];
-            /**
-             * Prompt Id
-             * @default simple_prompt_builder
-             */
-            prompt_id: string;
         };
         /**
          * Task

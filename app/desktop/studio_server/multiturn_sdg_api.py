@@ -33,12 +33,11 @@ from fastapi import FastAPI, HTTPException, Path, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
-    StructuredOutputMode,
     TurnMode,
 )
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
-    ToolsRunConfig,
+    RunConfigProperties,
     as_kiln_agent_run_config,
 )
 from kiln_ai.datamodel.task import Task
@@ -128,17 +127,6 @@ class GenerateCasesApiOutput(BaseModel):
     cases: list[SyntheticUserCaseDict] = Field(..., description=_CASE_DICT_DESCRIPTION)
 
 
-class TargetRunConfigSpec(BaseModel):
-    """A transient config for invoking the target task on each turn. Tools
-    are disabled on this path — reference one of the task's saved run
-    configs (target_run_config_id) to drive the task with its tools.
-    """
-
-    model_name: str = Field(..., min_length=1)
-    model_provider: ModelProviderName
-    prompt_id: str = Field(default="simple_prompt_builder", min_length=1)
-
-
 class SyntheticUserDriverSpec(BaseModel):
     """How to drive the synthetic user. Caller controls because probe
     quality and cost both depend on the model.
@@ -167,11 +155,14 @@ class RunCasesBatchApiInput(BaseModel):
             "loop has no early termination."
         ),
     )
-    target_run_config: TargetRunConfigSpec | None = Field(
+    target_run_config: RunConfigProperties | None = Field(
         default=None,
         description=(
-            "Transient target-task config (tools disabled). Exactly one of "
-            "target_run_config / target_run_config_id is required."
+            "Inline run config for the target task, used verbatim — the "
+            "same full properties shape a manual run sends, tools included. "
+            "For driving a config that isn't worth saving (ad-hoc "
+            "experiments, scripting). Must be a Kiln agent config. Exactly "
+            "one of target_run_config / target_run_config_id is required."
         ),
     )
     target_run_config_id: str | None = Field(
@@ -181,8 +172,8 @@ class RunCasesBatchApiInput(BaseModel):
             "ID of one of the target task's saved run configs. The drive "
             "uses the saved config verbatim — model, prompt, sampling, and "
             "tools — so the agent under test behaves exactly like a manual "
-            "run. Exactly one of target_run_config / target_run_config_id "
-            "is required."
+            "run, and driven runs attribute back to the config. Exactly one "
+            "of target_run_config / target_run_config_id is required."
         ),
     )
     su_driver: SyntheticUserDriverSpec
@@ -229,28 +220,17 @@ def guard_multiturn(task: Task) -> None:
         )
 
 
-def to_target_run_config(spec: TargetRunConfigSpec) -> KilnAgentRunConfigProperties:
-    return KilnAgentRunConfigProperties(
-        model_name=spec.model_name,
-        model_provider_name=spec.model_provider,
-        prompt_id=spec.prompt_id,
-        structured_output_mode=StructuredOutputMode.default,
-        tools_config=ToolsRunConfig(tools=[]),
-    )
-
-
 def resolve_target_run_config(
     input: RunCasesBatchApiInput, project_id: str, task_id: str
 ) -> tuple[KilnAgentRunConfigProperties, str | None]:
     """The runner's target config, from whichever source the request used,
-    plus the saved config's id for run attribution (None on the transient
+    plus the saved config's id for run attribution (None on the inline
     path — those runs are ad-hoc by definition).
 
-    A saved run config is used verbatim — tools included — so the driven
-    task behaves exactly like a manual run; the transient spec drives
-    tool-less with default sampling. Raises HTTPException, so callers must
-    resolve BEFORE opening an SSE stream (clean 4xx, not a mid-stream
-    error frame).
+    Both sources carry the FULL run config — tools included — so the driven
+    task behaves exactly like a manual run of that config. Raises
+    HTTPException, so callers must resolve BEFORE opening an SSE stream
+    (clean 4xx, not a mid-stream error frame).
     """
     if input.target_run_config_id is not None:
         # task_run_config_from_id is the same resolver the run-config list
@@ -290,7 +270,19 @@ def resolve_target_run_config(
         # Unreachable behind the request validator; a regression there is a
         # server bug, not a client error.
         raise RuntimeError("target_run_config missing despite request validation")
-    return to_target_run_config(input.target_run_config), None
+    try:
+        return as_kiln_agent_run_config(input.target_run_config), None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "run_config_not_agent",
+                "message": (
+                    "Multi-turn driving requires a Kiln agent run config; "
+                    "the inline run config is a different type."
+                ),
+            },
+        ) from exc
 
 
 def to_su_driver_config(spec: SyntheticUserDriverSpec) -> SyntheticUserDriverConfig:

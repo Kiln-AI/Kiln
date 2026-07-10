@@ -764,9 +764,12 @@ def pipeline_request():
     return {
         "cases": [_pipeline_case(0), _pipeline_case(1)],
         "turns": 2,
+        # Inline run config = the FULL properties shape a manual run sends.
         "target_run_config": {
             "model_name": "gpt_5_5",
-            "model_provider": "openrouter",
+            "model_provider_name": "openrouter",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "default",
         },
         "su_driver": {
             "model_name": "claude_4_5_haiku",

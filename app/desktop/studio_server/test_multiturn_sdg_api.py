@@ -144,9 +144,13 @@ def _run_cases_batch_body(num: int = 3) -> dict:
             for i in range(num)
         ],
         "turns": 3,
+        # The inline run config is the FULL properties shape a manual run
+        # sends — tools and sampling ride along, nothing is rebuilt.
         "target_run_config": {
             "model_name": "gpt_5_5",
-            "model_provider": "openrouter",
+            "model_provider_name": "openrouter",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "default",
         },
         "su_driver": {
             "model_name": "claude_4_5_haiku",
@@ -863,10 +867,10 @@ def test_run_cases_batch_uses_saved_run_config_verbatim(
     assert captured["task_run_config_id"] == "rc-1"
 
 
-def test_run_cases_batch_transient_config_has_no_attribution_id(
+def test_run_cases_batch_inline_config_has_no_attribution_id(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
-    """The transient spec is an ad-hoc run — no saved config to attribute to."""
+    """An inline config is an ad-hoc run — no saved config to attribute to."""
     patch_task_from_id.return_value = _multiturn_task()
 
     captured: dict = {}
@@ -884,6 +888,60 @@ def test_run_cases_batch_transient_config_has_no_attribution_id(
 
     assert resp.status_code == 200
     assert captured["task_run_config_id"] is None
+
+
+def test_run_cases_batch_inline_config_carries_full_properties(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """The inline mode is the FULL properties shape — tools and sampling
+    reach the runner verbatim, same fidelity as a saved config."""
+    patch_task_from_id.return_value = _multiturn_task()
+
+    captured: dict = {}
+
+    async def _fake_runner(**kwargs) -> AsyncIterator:
+        captured.update(kwargs)
+        yield BatchStartedEvent(batch_tag="t", num_cases=1)
+        yield BatchCompletedEvent(successful=0, failed=0, batch_tag="t", total_cost=0.0)
+
+    body = _run_cases_batch_body()
+    body["target_run_config"] = {
+        "model_name": "gpt_5_5",
+        "model_provider_name": "openrouter",
+        "prompt_id": "simple_prompt_builder",
+        "structured_output_mode": "json_schema",
+        "temperature": 0.3,
+        "tools_config": {"tools": ["kiln_tool::add_numbers"]},
+    }
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.run_cases_batch",
+        _fake_runner,
+    ):
+        resp = _sse_get(client, body)
+
+    assert resp.status_code == 200
+    config = captured["target_run_config"]
+    assert isinstance(config, KilnAgentRunConfigProperties)
+    assert config.tools_config is not None
+    assert config.tools_config.tools == ["kiln_tool::add_numbers"]
+    assert config.temperature == 0.3
+    assert config.structured_output_mode == StructuredOutputMode.json_schema
+
+
+def test_run_cases_batch_inline_mcp_config_is_400(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """An inline MCP-type config can't drive a conversation, same as the
+    saved-config path — typed 400 before the stream opens."""
+    patch_task_from_id.return_value = _multiturn_task()
+    body = _run_cases_batch_body()
+    body["target_run_config"] = {
+        "type": "mcp",
+        "tool_reference": {"tool_id": "mcp::local::srv::tool"},
+    }
+    resp = _sse_get(client, body)
+    assert resp.status_code == 400
+    assert resp.json()["message"]["code"] == "run_config_not_agent"
 
 
 def test_run_cases_batch_unknown_run_config_id_is_404(
