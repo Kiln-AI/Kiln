@@ -40,6 +40,7 @@ from kiln_ai.datamodel.judge_feedback_batch import (
     JudgeFeedbackBatch,
     JudgeFeedbackBatchRun,
 )
+from kiln_ai.datamodel.memory import Memory
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -83,6 +84,7 @@ __all__ = [
     "JudgeFeedbackBatch",
     "JudgeFeedbackBatchRun",
     "KilnArtifactProvenance",
+    "Memory",
     "MessageUsage",
     "Priority",
     "Project",

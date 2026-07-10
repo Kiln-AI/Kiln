@@ -9,7 +9,28 @@ from kiln_ai.utils.validation import (
     tool_name_validator,
     validate_return_dict_prop,
     validate_return_dict_prop_optional,
+    validate_tags,
 )
+
+
+class TestValidateTags:
+    def test_accepts_valid_tags(self):
+        assert validate_tags(["api_quirk", "dead_end", "probe"]) == [
+            "api_quirk",
+            "dead_end",
+            "probe",
+        ]
+
+    def test_accepts_empty_list(self):
+        assert validate_tags([]) == []
+
+    def test_rejects_empty_string_tag(self):
+        with pytest.raises(ValueError, match="empty"):
+            validate_tags(["ok", ""])
+
+    def test_rejects_tag_with_space(self):
+        with pytest.raises(ValueError, match="spaces"):
+            validate_tags(["has space"])
 
 
 class TestValidateReturnDictProp:
