@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Union
 from pydantic import Field, model_validator
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.utils.validation import ToolNameString
 
 if TYPE_CHECKING:
@@ -59,6 +60,11 @@ class RagConfig(KilnParentedModel):
     tags: list[str] | None = Field(
         default=None,
         description="List of document tags to filter by. If None, all documents in the project are used.",
+    )
+
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter.",
     )
 
     # Workaround to return typed parent without importing Project
