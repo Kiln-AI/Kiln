@@ -199,17 +199,14 @@ export class SynthDataGuidanceDataModel {
   // left blank for now.
   public kiln_pro_batch_plan_prefill(): string {
     if (this.gen_type === "eval" && this.spec) {
-      // The planner on kiln_server is use-case agnostic — it only learns this is
-      // an eval batch from this text, so the distribution an eval needs is
-      // stated here explicitly. The instruction leads; the definition follows as
-      // reference, delimited so the planner can't mistake its markdown headings
-      // for instructions addressed to it.
-      return `Generate a diverse batch of inputs that exercise the behavior defined by the eval "${this.spec.name}". Cover that behavior thoroughly — representative cases, edge cases, and the aspects worth emphasizing.
-
-The batch should:
-- Split roughly evenly between inputs where the task is likely to exhibit the defined behavior and inputs where it is likely to violate it.
-- Spread across difficulty: clear-cut cases, and cases that sit close to the boundary where the correct result is genuinely arguable.
-- Exercise each distinct behavior the definition describes, rather than clustering on the most obvious one.
+      // Only what Kiln knows: which eval this is, and its definition. The
+      // definition is what tells the planner this is a coverage batch, and its
+      // own rules then supply the pass/fail split, the difficulty spread, and
+      // the per-condition coverage check — restating them here would duplicate
+      // the planner and drift from it. The definition is delimited so the
+      // planner can't mistake its markdown headings for instructions addressed
+      // to it.
+      return `Generate a diverse batch of inputs that exercise the behavior defined by the eval "${this.spec.name}", to test whether the task satisfies it.
 
 The eval's definition is below, for reference:
 
