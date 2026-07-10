@@ -96,25 +96,26 @@ async def test_idle_pause_and_resume(manager, git_repos, second_clone):
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=0.1)
     await bg.start()
 
-    # Let the loop notice it has been idle for > idle_pause_after and park.
-    # (Parking has no observable flag; two 0.05s ticks past the 0.1s idle
-    # threshold suffice, so 0.5s carries a wide margin.)
-    await asyncio.sleep(0.5)
+    try:
+        # Let the loop notice it has been idle for > idle_pause_after and
+        # park. (Parking has no observable flag; two 0.05s ticks past the
+        # 0.1s idle threshold suffice, so 0.5s carries a wide margin.)
+        await asyncio.sleep(0.5)
 
-    commit_in_repo(second_clone, "after_idle.txt", "data", "after idle")
-    push_from(second_clone)
+        commit_in_repo(second_clone, "after_idle.txt", "data", "after idle")
+        push_from(second_clone)
 
-    old_head = await manager.get_head()
-    assert not (local_path / "after_idle.txt").exists()
+        old_head = await manager.get_head()
+        assert not (local_path / "after_idle.txt").exists()
 
-    bg.notify_request()
+        bg.notify_request()
 
-    async def head_advanced() -> bool:
-        return await manager.get_head() != old_head
+        async def head_advanced() -> bool:
+            return await manager.get_head() != old_head
 
-    await wait_for(head_advanced)
-
-    await bg.stop()
+        await wait_for(head_advanced)
+    finally:
+        await bg.stop()
 
     new_head = await manager.get_head()
     assert new_head != old_head
