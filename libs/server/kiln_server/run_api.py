@@ -274,7 +274,10 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
-        return list(task.runs(readonly=True))
+        # Off the event loop: this scans and parses every run file of the task,
+        # which can take seconds on large datasets and would stall every other
+        # request on this single-loop server.
+        return await asyncio.to_thread(lambda: list(task.runs(readonly=True)))
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -340,13 +343,14 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        runs = task.runs(readonly=True)
-        run_summaries: list[RunSummary] = []
-        for run in runs:
-            summary = RunSummary.from_run(run)
-            run_summaries.append(summary)
-        return run_summaries
+
+        def build_summaries() -> list[RunSummary]:
+            # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
+            runs = task.runs(readonly=True)
+            return [RunSummary.from_run(run) for run in runs]
+
+        # Off the event loop: scans and parses every run file of the task.
+        return await asyncio.to_thread(build_summaries)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",

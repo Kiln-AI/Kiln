@@ -211,6 +211,36 @@ async def test_stop_endpoint_idempotent(supervisor, hang_engine, client):
     assert (await client.post("/api/conversations/cv_missing/stop")).status_code == 202
 
 
+async def test_stop_cascade_kills_children(supervisor, hang_engine, client):
+    parent = await supervisor.adopt_interactive(
+        "leaf-1", upstream_url="https://example.test", headers={}
+    )
+    supervisor.start_run(parent.session_id, {"messages": []})
+    child_a = _spawn(supervisor, parent_key=parent.session_id)
+    child_b = _spawn(supervisor, parent_key=parent.session_id)
+
+    # Plain stop on an interactive parent cancels the turn but deliberately
+    # leaves its children running (functional spec §2).
+    r = await client.post(f"/api/conversations/{parent.session_id}/stop")
+    assert r.status_code == 202
+    assert supervisor.get(child_a.session_id).state == RunState.RUNNING
+    assert supervisor.get(child_b.session_id).state == RunState.RUNNING
+
+    # cascade=true is the kill-the-tree affordance: every running child stops
+    # (reports suppressed) and the parent stops. Works whether or not the
+    # parent still has a live run (it idled above).
+    r = await client.post(
+        f"/api/conversations/{parent.session_id}/stop", params={"cascade": "true"}
+    )
+    assert r.status_code == 202
+    assert supervisor.get(child_a.session_id).state == RunState.STOPPED
+    assert supervisor.get(child_b.session_id).state == RunState.STOPPED
+    # The cascade suppressed the children's reports: nothing queued to wake
+    # the (torn-down) parent.
+    assert supervisor.get(child_a.session_id).report_delivered is True
+    assert supervisor.get(child_b.session_id).report_delivered is True
+
+
 async def test_messages_endpoint(supervisor, hang_engine, client):
     record = _spawn(supervisor)
     r = await client.post(

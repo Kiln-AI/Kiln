@@ -156,7 +156,6 @@
   let chatHistory: { open: () => void }
   let input = ""
   let messagesContainer: HTMLDivElement | null = null
-  let messagesEndRef: HTMLDivElement | null = null
   let scrollObserver: MutationObserver | null = null
   let textareaRef: HTMLTextAreaElement | null = null
 
@@ -172,7 +171,12 @@
   $: autoWorking = $store.autoWorking
   // Retry affordance from either source (auto burst or interactive stream).
   $: activeRetry = $autoRetry ?? $store.retry
-  $: contextUsage = $store.contextUsage
+  // The gauge follows the selected tab: a sub-agent tab shows THAT agent's
+  // context usage (hydrated from its snapshot + live trace events), not the
+  // main conversation's.
+  $: contextUsage = selectedChild
+    ? selectedChildRuntime?.contextUsage ?? null
+    : $store.contextUsage
   $: upgradeNudgeVersion = $store.upgradeNudgeVersion
   $: versionRequired = $store.versionRequired
   // A message typed while a turn was in flight, held client-side and surfaced
@@ -237,6 +241,34 @@
   let isAutoScrolling = false
   const SCROLL_THRESHOLD = 0.5
 
+  // Scroll the shared container to its end. Container-based (not the main
+  // transcript's end anchor) so it works for whichever transcript is visible —
+  // scrollIntoView on the hidden main anchor is a no-op while a sub-agent tab
+  // is selected.
+  function scrollToBottom(): void {
+    const container = messagesContainer
+    if (!container) return
+    isAutoScrolling = true
+    container.scrollTop = container.scrollHeight
+    requestAnimationFrame(() => {
+      isAutoScrolling = false
+    })
+  }
+
+  // Switching tabs (main ↔ sub-agent) keeps the shared container's previous
+  // scroll offset, which lands the newly shown transcript at the top — jump to
+  // the bottom instead. Content that hydrates after the switch is carried the
+  // rest of the way by the MutationObserver (userNearBottom is reset here).
+  let prevSelectedTabId: string | null | undefined = undefined
+  $: {
+    const tabId = $subagentSelectedId
+    if (prevSelectedTabId !== undefined && tabId !== prevSelectedTabId) {
+      userNearBottom = true
+      void tick().then(() => scrollToBottom())
+    }
+    prevSelectedTabId = tabId
+  }
+
   function handleScroll() {
     if (isAutoScrolling || !messagesContainer) return
     const { scrollTop, scrollHeight, clientHeight } = messagesContainer
@@ -274,8 +306,7 @@
     conversation_store.connect()
 
     const container = messagesContainer
-    const end = messagesEndRef
-    if (container && end) {
+    if (container) {
       container.addEventListener("scroll", handleScroll, { passive: true })
       container.addEventListener("wheel", handleWheel, { passive: true })
       container.addEventListener("touchstart", handleTouchStart, {
@@ -285,7 +316,7 @@
         passive: true,
       })
       if (messages.length > 0) {
-        end.scrollIntoView({ block: "end", behavior: "auto" })
+        scrollToBottom()
       }
       let rafPending = false
       scrollObserver = new MutationObserver(() => {
@@ -293,11 +324,7 @@
           rafPending = true
           requestAnimationFrame(() => {
             rafPending = false
-            isAutoScrolling = true
-            end.scrollIntoView({ block: "end", behavior: "auto" })
-            requestAnimationFrame(() => {
-              isAutoScrolling = false
-            })
+            scrollToBottom()
           })
         }
       })
@@ -359,7 +386,16 @@
   }
 
   function stop() {
-    store.stop()
+    // The user-facing Stop kills the whole tree: cancelling the main run also
+    // stops every running sub-agent (their loops have nothing left to report
+    // to).
+    store.stop({ cascade: true })
+  }
+
+  function stopSelectedChild() {
+    const selected = selectedChild
+    if (!selected) return
+    void conversation_store.stop(selected.session_id)
   }
 
   function sendQueuedNow() {
@@ -396,7 +432,7 @@
     conversation_store.select(null)
     userNearBottom = true
     tick().then(() => {
-      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
+      scrollToBottom()
       textareaRef?.focus({ preventScroll: true })
     })
   }
@@ -439,7 +475,7 @@
     userNearBottom = true
     setTimeout(() => {
       adjustTextareaHeight()
-      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
+      scrollToBottom()
     }, 0)
   }
 </script>
@@ -501,11 +537,7 @@
             <span>Reconnecting…</span>
           </div>
         {/if}
-        <div
-          bind:this={messagesEndRef}
-          class="shrink-0 min-w-[24px] min-h-[24px]"
-          aria-hidden="true"
-        />
+        <div class="shrink-0 min-w-[24px] min-h-[24px]" aria-hidden="true" />
       </div>
     </div>
 
@@ -547,7 +579,10 @@
       </div>
     {/if}
 
-    {#if queuedMessage}
+    <!-- The queued bubble belongs to the MAIN agent (the client queue only
+       exists for the main conversation — sub-agent sends go straight to the
+       child's server-side inbox), so it only renders on the Main tab. -->
+    {#if queuedMessage && !selectedChild}
       <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
         <div
           class="rounded-xl border border-base-content/10 bg-base-200 py-2.5"
@@ -614,7 +649,18 @@
         on:input={() => adjustTextareaHeight()}
         on:keydown={handleTextareaKeydown}
       />
-      {#if isLoading && !input.trim() && !selectedChild}
+      {#if selectedChild && selectedChildRunning && !input.trim()}
+        <!-- Kill this sub-agent (same stop the tab's × does, reachable from
+           inside its transcript view). -->
+        <button
+          type="button"
+          class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-neutral"
+          on:click={stopSelectedChild}
+          aria-label="Stop this sub-agent"
+        >
+          <span class="size-4 block"><StopIcon /></span>
+        </button>
+      {:else if isLoading && !input.trim() && !selectedChild}
         <!-- Main-agent stop; hidden while a sub-agent tab is selected (the
            composer then addresses the child, not the main stream). -->
         <button

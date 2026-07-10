@@ -176,9 +176,9 @@
       class={message.role === "user"
         ? message.subagentReport
           ? ""
-          : "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
+          : "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm break-words"
         : message.role === "error"
-          ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
+          ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm break-words"
           : "flex flex-col gap-3"}
     >
       {#if message.role === "error"}
@@ -450,7 +450,7 @@
               body={message.content ?? ""}
             />
           {:else if message.content}
-            <div class="whitespace-pre-wrap">{message.content}</div>
+            <div class="whitespace-pre-wrap break-words">{message.content}</div>
           {/if}
         </div>
       {/if}

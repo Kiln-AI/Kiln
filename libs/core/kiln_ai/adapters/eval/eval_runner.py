@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -215,7 +216,10 @@ class EvalRunner:
         """
         if concurrency is None:
             concurrency = DEFAULT_EVAL_CONCURRENCY
-        jobs = self.collect_tasks()
+        # Off the event loop: collect_tasks loads every task run and eval run
+        # of every config synchronously, which can stall the loop for seconds
+        # to minutes on large datasets.
+        jobs = await asyncio.to_thread(self.collect_tasks)
 
         runner = AsyncJobRunner(
             concurrency=concurrency,

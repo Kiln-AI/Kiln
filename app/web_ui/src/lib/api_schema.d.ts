@@ -3350,6 +3350,9 @@ export interface paths {
          * @description Stop the run. Idempotent — stopping an unknown or terminal
          *     conversation is a no-op (a child's report, if any, is still delivered
          *     to the parent). Same 202-always contract as the old stop endpoint.
+         *     ``cascade=true`` stops the children FIRST (their reports are
+         *     suppressed — the parent is being torn down, same order as session
+         *     deletion) and then the conversation itself.
          */
         post: operations["stop_conversation_api_conversations__session_id__stop_post"];
         delete?: never;
@@ -19377,7 +19380,10 @@ export interface operations {
     };
     stop_conversation_api_conversations__session_id__stop_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Also stop every running sub-agent child (kill the whole tree). Without it an interactive stop only cancels the in-flight turn; auto/sub-agent stops cascade regardless. */
+                cascade?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The conversation session id to stop. */

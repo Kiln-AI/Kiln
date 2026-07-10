@@ -54,6 +54,13 @@ export type CreateAutoConversationRequest =
 export interface ConversationRuntimeState {
   showActivityIndicator: boolean
   retry: { attempt: number; max: number } | null
+  /**
+   * The child's own context/compaction gauge data: seeded from its persisted
+   * snapshot on hydration, then updated live from its `kiln_chat_trace`
+   * events. Survives the observation ending (unlike the live-only fields) so
+   * a settled child still shows its final usage.
+   */
+  contextUsage: ContextUsage | null
 }
 
 const CONVERSATIONS_BASE_URL = `${base_url}/api/conversations`
@@ -206,6 +213,9 @@ export function createConversationStore(): ConversationStore {
   // Periodic children reconcile (see RECONCILE_INTERVAL_MS): runs only while
   // the firehose is active AND a parent is set; null when stopped.
   let reconcileTimer: ReturnType<typeof setInterval> | null = null
+  // True while a reconcile-tick fetch is pending; ticks are skipped rather
+  // than stacked when the server is slow to answer.
+  let reconcileFetchInFlight = false
   // True between connect() and disconnect(): gates the reconnect loop.
   let firehoseActive = false
 
@@ -254,6 +264,7 @@ export function createConversationStore(): ConversationStore {
       const prev = next.get(id) ?? {
         showActivityIndicator: false,
         retry: null,
+        contextUsage: null,
       }
       next.set(id, { ...prev, ...patch })
       return next
@@ -262,9 +273,16 @@ export function createConversationStore(): ConversationStore {
 
   function clearRuntime(id: string): void {
     runtime.update((map) => {
-      if (!map.has(id)) return map
+      const prev = map.get(id)
+      if (!prev) return map
       const next = new Map(map)
-      next.delete(id)
+      // The live-only affordances die with the stream; the context gauge is a
+      // property of the conversation, not the observation, so it stays.
+      next.set(id, {
+        showActivityIndicator: false,
+        retry: null,
+        contextUsage: prev.contextUsage,
+      })
       return next
     })
   }
@@ -405,9 +423,14 @@ export function createConversationStore(): ConversationStore {
     if (shouldRun && reconcileTimer === null) {
       reconcileTimer = setInterval(() => {
         // Re-check inside the tick: firehoseActive/syncedParentId may have
-        // flipped between scheduling and firing.
-        if (firehoseActive && syncedParentId) {
-          void fetchChildren(syncedParentId)
+        // flipped between scheduling and firing. Skip the tick while the
+        // previous reconcile fetch is still pending — a slow server would
+        // otherwise accumulate one pending request per tick.
+        if (firehoseActive && syncedParentId && !reconcileFetchInFlight) {
+          reconcileFetchInFlight = true
+          void fetchChildren(syncedParentId).finally(() => {
+            reconcileFetchInFlight = false
+          })
         }
       }, RECONCILE_INTERVAL_MS)
     } else if (!shouldRun && reconcileTimer !== null) {
@@ -519,6 +542,9 @@ export function createConversationStore(): ConversationStore {
         updateRuntime(id, { showActivityIndicator: show }),
       onRetry: (attempt, max) => updateRuntime(id, { retry: { attempt, max } }),
       onRetryClear: () => updateRuntime(id, { retry: null }),
+      // The child's own context gauge (chat.svelte shows it while this
+      // child's tab is selected, in place of the main conversation's).
+      onContextUsage: (usage) => updateRuntime(id, { contextUsage: usage }),
     })
   }
 
@@ -592,7 +618,11 @@ export function createConversationStore(): ConversationStore {
       )
       if (response.ok) {
         const snapshot = (await response.json()) as ChatSessionSnapshot
-        messages = hydrateSessionFromSnapshot(snapshot).messages
+        const hydrated = hydrateSessionFromSnapshot(snapshot)
+        messages = hydrated.messages
+        if (hydrated.contextUsage) {
+          updateRuntime(sessionId, { contextUsage: hydrated.contextUsage })
+        }
       }
     } catch {
       /* aborted or unreachable — live tail below still attaches */
@@ -923,7 +953,12 @@ export interface MainConversationStore {
   sendMessage(
     text: string,
   ): Promise<{ ok: boolean; error?: string; messageId?: string }>
-  stop(): Promise<void>
+  /**
+   * Stop the run (POST /{sid}/stop). ``cascade`` also stops every running
+   * sub-agent child (the kill-the-tree affordance); without it an
+   * interactive stop only cancels the in-flight turn.
+   */
+  stop(opts?: { cascade?: boolean }): Promise<void>
   /** Fetch the parked approval batch (404 → null). */
   fetchApprovals(): Promise<PendingApprovalsView | null>
   /**
@@ -1633,15 +1668,19 @@ export function createMainConversationStore(): MainConversationStore {
     return { ok: true }
   }
 
-  async function stop(): Promise<void> {
+  async function stop(opts?: { cascade?: boolean }): Promise<void> {
     const id = get(sessionId)
     if (!id) return
     // Optimistic only: the authoritative state change arrives as a
     // conversation-state event (idle for interactive, flag-off for auto).
+    const suffix = opts?.cascade ? "?cascade=true" : ""
     try {
-      await fetch(`${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop`, {
-        method: "POST",
-      })
+      await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop${suffix}`,
+        {
+          method: "POST",
+        },
+      )
     } catch {
       /* idempotent; the run keeps going and the user can retry */
     }

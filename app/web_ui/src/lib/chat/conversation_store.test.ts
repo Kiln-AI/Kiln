@@ -643,8 +643,71 @@ describe("conversation_store", () => {
       end()
       await flush()
 
-      // The live-only affordances die with the stream.
-      expect(get(store.runtime).has("cv_1")).toBe(false)
+      // The live-only affordances die with the stream; the entry survives
+      // (reset) so a persistent field like contextUsage isn't lost.
+      const cleared = get(store.runtime).get("cv_1")
+      expect(cleared?.showActivityIndicator).toBe(false)
+      expect(cleared?.retry).toBeNull()
+    })
+
+    it("seeds the child's context usage from its hydrated snapshot", async () => {
+      routeFetch({
+        "http://localhost:8757/api/conversations?": () =>
+          jsonResponse([child("cv_1")]),
+        "http://localhost:8757/api/conversations/cv_1/events": () =>
+          sseResponse([]),
+        "http://localhost:8757/api/chat/sessions/cv_1": () =>
+          jsonResponse({
+            id: "trace-cv_1",
+            task_run: { trace: [] },
+            context_usage: {
+              context_tokens: 1000,
+              context_limit: 4000,
+              context_percent: 25,
+              compacted: false,
+            },
+          }),
+      })
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+
+      expect(get(store.runtime).get("cv_1")?.contextUsage).toEqual({
+        context_tokens: 1000,
+        context_limit: 4000,
+        context_percent: 25,
+        compacted: false,
+      })
+    })
+
+    it("updates the child's context usage from live kiln_chat_trace events and keeps it after the stream ends", async () => {
+      routeFetch(
+        observeRoutes([
+          {
+            type: "kiln_chat_trace",
+            trace_id: "trace-live",
+            context_usage: {
+              context_tokens: 2000,
+              context_limit: 4000,
+              context_percent: 50,
+              compacted: true,
+            },
+          },
+        ]),
+      )
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+
+      // The sse stream has ended (observation cleaned up); the usage stays.
+      expect(get(store.runtime).get("cv_1")?.contextUsage).toEqual({
+        context_tokens: 2000,
+        context_limit: 4000,
+        context_percent: 50,
+        compacted: true,
+      })
     })
 
     it("appends user-message echoes and dedupes them by echo id", async () => {
@@ -1475,6 +1538,25 @@ describe("main_conversation_store", () => {
     )
     // State stays "on" until the authoritative flag-off state arrives.
     expect(get(store.autoModeOn)).toBe(true)
+  })
+
+  it("stop with cascade posts ?cascade=true (kill the whole tree)", async () => {
+    const enableFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ session_id: "cv_3" }),
+    })
+    vi.stubGlobal("fetch", enableFetch)
+    await store.requestEnable({ kind: "auto", session_id: "cv_seed" })
+    FakeEventSource.latest().message(stateRunning("cv_3"))
+
+    const stopFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", stopFetch)
+    await store.stop({ cascade: true })
+
+    expect(stopFetch).toHaveBeenCalledTimes(1)
+    expect(stopFetch.mock.calls[0][0]).toBe(
+      "http://localhost:8757/api/conversations/cv_3/stop?cascade=true",
+    )
   })
 
   it("decline posts the fold-in body to /{sid}/auto and opens a fresh turn", async () => {

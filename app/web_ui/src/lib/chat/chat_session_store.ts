@@ -157,7 +157,12 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendQueuedNow(): void
   /** Discard the queued message without sending it. */
   clearQueued(): void
-  stop(): void
+  /**
+   * Stop the main run. ``cascade`` also kills every running sub-agent child
+   * (the user-facing Stop button); the interrupt-to-send-queued path omits it
+   * so injecting a message never tears down running sub-agents.
+   */
+  stop(opts?: { cascade?: boolean }): void
   retryLastRequest(): void
   reset(): void
   loadSession(
@@ -979,12 +984,12 @@ export function createChatSessionStore(
     return true
   }
 
-  function stop(): void {
+  function stop(opts?: { cascade?: boolean }): void {
     // POST /{sid}/stop cancels the in-flight turn server-side; the idle state
     // event settles the UI (status ready + queued flush) — replacing the old
     // client-side stream abort.
     posthog.capture("chat_stopped")
-    void conversationStore.stop()
+    void conversationStore.stop(opts)
   }
 
   function retryLastRequest(): void {

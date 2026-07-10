@@ -1083,7 +1083,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_run_results(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_run_results(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1121,7 +1123,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_progress(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_progress(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1181,7 +1185,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_config_score_summary(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_config_score_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1218,7 +1224,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_results_summary(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_results_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1297,7 +1305,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_configs_score_summary(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_configs_score_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1444,7 +1454,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Run Configs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_run_config_eval_scores(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_run_config_eval_scores(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],

@@ -90,6 +90,7 @@ describe("subagent_transcript working indicator", () => {
         runtime: {
           showActivityIndicator: false,
           retry: { attempt: 1, max: 3 },
+          contextUsage: null,
         },
       },
     })

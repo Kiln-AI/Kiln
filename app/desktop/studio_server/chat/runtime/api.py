@@ -531,10 +531,23 @@ def connect_conversations_api(app: FastAPI) -> None:
         session_id: Annotated[
             str, Path(description="The conversation session id to stop.")
         ],
+        cascade: Annotated[
+            bool,
+            Query(
+                description="Also stop every running sub-agent child (kill the"
+                " whole tree). Without it an interactive stop only cancels the"
+                " in-flight turn; auto/sub-agent stops cascade regardless."
+            ),
+        ] = False,
     ) -> Response:
         """Stop the run. Idempotent — stopping an unknown or terminal
         conversation is a no-op (a child's report, if any, is still delivered
-        to the parent). Same 202-always contract as the old stop endpoint."""
+        to the parent). Same 202-always contract as the old stop endpoint.
+        ``cascade=true`` stops the children FIRST (their reports are
+        suppressed — the parent is being torn down, same order as session
+        deletion) and then the conversation itself."""
+        if cascade:
+            await conversation_supervisor.stop_children(session_id)
         await conversation_supervisor.stop(session_id)
         return Response(status_code=202)
 
