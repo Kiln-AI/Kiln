@@ -65,6 +65,17 @@ export interface ConversationRuntimeState {
 
 const CONVERSATIONS_BASE_URL = `${base_url}/api/conversations`
 const RECONNECT_DELAY_MS = 2000
+// Hard bound on a children-list fetch. WHY: the reconcile loop deliberately
+// skips ticks while a fetch is pending (no request stacking), so a fetch that
+// never settles — e.g. a server event-loop stall holding the response open —
+// would otherwise blind the tab strip PERMANENTLY: the in-flight flag never
+// resets and every future tick is skipped. Aborting turns "hung forever"
+// into "one skipped interval"; the next tick then re-fetches.
+const CHILDREN_FETCH_TIMEOUT_MS = 10_000
+// Watchdog for a firehose connect that wedges before headers arrive (same
+// stall failure mode): an EventSource stuck CONNECTING fires neither onopen
+// nor onerror, so without a bound it never reconnects.
+const FIREHOSE_CONNECT_TIMEOUT_MS = 15_000
 // Low-frequency safety-net re-fetch of the children list while the firehose is
 // connected and a parent is set (see `updateReconcileTimer`). WHY: the children
 // strip is populated only when a child's firehose `conversation-state` event
@@ -207,9 +218,16 @@ export function createConversationStore(): ConversationStore {
   // firehose "unknown child → re-fetch" rule.
   let syncedParentId: string | null | undefined = undefined
   let syncGeneration = 0
+  // The parent whose children the `children` store CURRENTLY holds — distinct
+  // from syncedParentId (the fetch target): a failed cross-parent fetch must
+  // clear the strip, while a failed same-parent re-fetch must not.
+  let renderedParentId: string | null = null
 
   let eventSource: EventSource | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Firehose connect watchdog (see FIREHOSE_CONNECT_TIMEOUT_MS): an
+  // EventSource wedged in CONNECTING fires neither onopen nor onerror.
+  let firehoseConnectTimer: ReturnType<typeof setTimeout> | null = null
   // Periodic children reconcile (see RECONCILE_INTERVAL_MS): runs only while
   // the firehose is active AND a parent is set; null when stopped.
   let reconcileTimer: ReturnType<typeof setInterval> | null = null
@@ -349,20 +367,45 @@ export function createConversationStore(): ConversationStore {
   async function fetchChildren(parentId: string): Promise<void> {
     const thisGeneration = ++syncGeneration
     let list: ConversationItem[] = []
+    let failed = false
     try {
       const response = await fetch(
         `${CONVERSATIONS_BASE_URL}?parent=${encodeURIComponent(parentId)}`,
+        // Bounded: a hung response must not pin the reconcile loop's
+        // in-flight flag forever (see CHILDREN_FETCH_TIMEOUT_MS).
+        { signal: AbortSignal.timeout(CHILDREN_FETCH_TIMEOUT_MS) },
       )
       if (response.ok) {
         const data = (await response.json()) as ConversationItem[]
         if (Array.isArray(data)) list = data
+      } else {
+        failed = true
+        console.warn(
+          `Sub-agent list fetch failed (${response.status}) for parent ${parentId}`,
+        )
       }
-    } catch {
-      // Local server unreachable — fall through to an empty list rather than
-      // leaving another conversation's children showing.
+    } catch (err) {
+      failed = true
+      // Timeouts here previously vanished without a trace while the tab strip
+      // stayed empty — keep a breadcrumb for forensics.
+      console.warn(`Sub-agent list fetch failed for parent ${parentId}:`, err)
     }
     // A newer sync (conversation switch) superseded this fetch; drop the result.
     if (thisGeneration !== syncGeneration) return
+    if (failed) {
+      // Failure handling depends on WHOSE children are currently shown:
+      // - same parent → keep them. Clearing on a blip/timeout would flicker
+      //   running tabs away; the reconcile loop retries in a few seconds.
+      // - different parent (a switch whose first fetch failed) → clear, so
+      //   another conversation's children never linger under this one.
+      if (renderedParentId !== parentId) {
+        renderedParentId = parentId
+        children.set([])
+        pruneToChildren([])
+      }
+      return
+    }
+    renderedParentId = parentId
     children.set(list)
     pruneToChildren(list)
   }
@@ -376,6 +419,7 @@ export function createConversationStore(): ConversationStore {
     updateReconcileTimer()
     if (!parentId) {
       syncGeneration++
+      renderedParentId = null
       children.set([])
       pruneToChildren([])
       return
@@ -454,6 +498,13 @@ export function createConversationStore(): ConversationStore {
     }
   }
 
+  function clearFirehoseConnectWatchdog(): void {
+    if (firehoseConnectTimer !== null) {
+      clearTimeout(firehoseConnectTimer)
+      firehoseConnectTimer = null
+    }
+  }
+
   function connectFirehose(): void {
     // Pure observer: opening or closing this stream never affects a run. A
     // dropped connection is recovered by reconnecting; the fresh snapshot
@@ -467,8 +518,20 @@ export function createConversationStore(): ConversationStore {
     const source = new EventSourceCtor(`${CONVERSATIONS_BASE_URL}/events`)
     eventSource = source
 
+    // Watchdog: a connect wedged before response headers (server event-loop
+    // stall) fires neither onopen nor onerror — bound it and retry.
+    clearFirehoseConnectWatchdog()
+    firehoseConnectTimer = setTimeout(() => {
+      firehoseConnectTimer = null
+      if (eventSource !== source) return
+      closeSource()
+      connection.set("errored")
+      scheduleReconnect()
+    }, FIREHOSE_CONNECT_TIMEOUT_MS)
+
     source.onopen = () => {
       if (eventSource !== source) return
+      clearFirehoseConnectWatchdog()
       connection.set("open")
     }
     source.onmessage = (e: MessageEvent) => {
@@ -486,6 +549,7 @@ export function createConversationStore(): ConversationStore {
     source.onerror = () => {
       // Only act on the active source (avoid racing a teardown / reconnect).
       if (eventSource !== source) return
+      clearFirehoseConnectWatchdog()
       closeSource()
       connection.set("errored")
       scheduleReconnect()
@@ -505,6 +569,7 @@ export function createConversationStore(): ConversationStore {
     firehoseActive = false
     closeSource()
     clearReconnect()
+    clearFirehoseConnectWatchdog()
     updateReconcileTimer()
     connection.set("idle")
   }
@@ -735,6 +800,7 @@ export function createConversationStore(): ConversationStore {
     observations.clear()
     syncGeneration++
     syncedParentId = undefined
+    renderedParentId = null
     // No parent anymore: stop the reconcile timer (the firehose connection
     // itself is intentionally kept — reset() is a new-chat clear, not a
     // navigation-away).

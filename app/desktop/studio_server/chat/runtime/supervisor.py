@@ -1303,6 +1303,13 @@ class ConversationSupervisor:
                 record.state.value,
                 record.rounds_used,
             )
+            chat_debug_log(
+                "run_settled",
+                conversation_id=record.session_id,
+                state=record.state.value,
+                rounds_used=record.rounds_used,
+                report_delivered=record.report_delivered,
+            )
             return
 
         # Interactive turn / auto burst settle: the conversation persists.

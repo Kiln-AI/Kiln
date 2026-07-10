@@ -141,6 +141,8 @@ describe("conversation_store", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "http://localhost:8757/api/conversations?parent=trace-leaf",
+        // Bounded fetch: a hung response must not pin the reconcile loop.
+        expect.objectContaining({ signal: expect.anything() }),
       )
       expect(get(store.children).map((c) => c.session_id)).toEqual([
         "cv_1",
@@ -371,6 +373,115 @@ describe("conversation_store", () => {
         await vi.advanceTimersByTimeAsync(14000)
 
         expect(fetchMock).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe("children fetch resilience", () => {
+    it("a failed same-parent re-fetch keeps the current children (no flicker)", async () => {
+      vi.useFakeTimers()
+      try {
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce(jsonResponse([child("cv_1")]))
+          .mockRejectedValue(new DOMException("timeout", "TimeoutError"))
+        vi.stubGlobal("fetch", fetchMock)
+
+        await store.syncForConversation("trace-leaf")
+        store.connect()
+        expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
+
+        await vi.advanceTimersByTimeAsync(3500) // reconcile tick fails
+
+        // A timeout/blip must not yank running tabs away.
+        expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("a failed fetch releases the in-flight flag so the next reconcile retries", async () => {
+      // The regression this guards: reconcile ticks are skipped while a fetch
+      // is pending, so a fetch that never settles would blind the strip
+      // forever. The fetch is now bounded (AbortSignal.timeout) — the
+      // rejection must release the flag and the NEXT tick must fetch again.
+      vi.useFakeTimers()
+      try {
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce(jsonResponse([])) // initial sync
+          .mockRejectedValueOnce(new DOMException("timeout", "TimeoutError"))
+          .mockResolvedValue(jsonResponse([child("cv_recovered")]))
+        vi.stubGlobal("fetch", fetchMock)
+
+        await store.syncForConversation("trace-leaf")
+        store.connect()
+
+        await vi.advanceTimersByTimeAsync(3500) // tick 1: times out
+        expect(get(store.children)).toEqual([])
+        await vi.advanceTimersByTimeAsync(3500) // tick 2: recovers
+
+        expect(get(store.children).map((c) => c.session_id)).toEqual([
+          "cv_recovered",
+        ])
+        expect(fetchMock.mock.calls.length).toBe(3)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("a failed cross-parent fetch clears the previous parent's children", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse([child("cv_1")]))
+        .mockRejectedValue(new Error("unreachable"))
+      vi.stubGlobal("fetch", fetchMock)
+
+      await store.syncForConversation("parent-a")
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
+
+      await store.syncForConversation("parent-b")
+
+      // Another conversation's children must never linger under this one.
+      expect(get(store.children)).toEqual([])
+    })
+
+    it("reconnects when the firehose connect wedges before open", async () => {
+      vi.useFakeTimers()
+      try {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])))
+        store.connect()
+        const wedged = FakeEventSource.latest()
+        expect(get(store.connection)).toBe("connecting")
+
+        // Neither onopen nor onerror ever fires (server stalled before
+        // headers): the watchdog must give up and schedule a reconnect.
+        await vi.advanceTimersByTimeAsync(15000)
+        expect(wedged.closed).toBe(true)
+        expect(get(store.connection)).toBe("errored")
+
+        await vi.advanceTimersByTimeAsync(2000) // RECONNECT_DELAY_MS
+        expect(FakeEventSource.latest()).not.toBe(wedged)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("the connect watchdog does not kill a firehose that opened", async () => {
+      vi.useFakeTimers()
+      try {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])))
+        store.connect()
+        const source = FakeEventSource.latest()
+        source.open()
+        expect(get(store.connection)).toBe("open")
+
+        await vi.advanceTimersByTimeAsync(60000)
+
+        expect(source.closed).toBe(false)
+        expect(get(store.connection)).toBe("open")
       } finally {
         vi.useRealTimers()
       }
