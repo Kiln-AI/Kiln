@@ -850,6 +850,27 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert "already exists" in response.json()["message"]
         assert len(task.evals()) == 0
 
+    def test_spec_name_over_short_limit_is_422(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """The spec name becomes the eval's EvalOutputScore.name (max 32) —
+        longer names must fail request validation, not 500 mid-save."""
+        project, task = project_and_task
+        multi_turn_request_data["name"] = "A Spec Name That Is Way Too Long For Scores"
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
     def test_multi_turn_save_404_when_batch_tag_matches_nothing(
         self, client, project_and_task, multi_turn_request_data
     ):
@@ -1476,3 +1497,26 @@ class TestParseImportFile:
             response = self._post(client, b"\xff\xfe invalid bytes")
         assert response.status_code == 422
         assert "UTF-8" in response.json()["message"]
+
+
+def test_claim_review_api_rejects_unpinned_final_judgement():
+    """The request-model mirror of the persisted ClaimReview invariant: a
+    payload whose final judgement contradicts the judge's verdict 422s
+    before any model is written."""
+    import pydantic
+
+    from app.desktop.studio_server.api_models.copilot_models import ClaimReviewApi
+
+    with pytest.raises(pydantic.ValidationError, match="must equal judge_score"):
+        ClaimReviewApi(
+            judge_score="pass",
+            judge_reasoning="Fine.",
+            claims=[],
+            final_judgement={
+                "claim": "Overall verdict.",
+                "evidence": "Decisive fact [1].",
+                "expected_result": "fail",
+                "human_grade": "agree",
+                "human_feedback": None,
+            },
+        )

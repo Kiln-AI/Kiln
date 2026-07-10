@@ -437,6 +437,12 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
         for run in all_runs
         if run.parent_task_run_id is not None
     }
+    children_by_parent: dict[str, set[str]] = {}
+    for run in all_runs:
+        if run.parent_task_run_id is not None:
+            children_by_parent.setdefault(str(run.parent_task_run_id), set()).add(
+                str(run.id)
+            )
     target_tag = f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"
     runner_tags = {_TAG_SU_CASE, target_tag}
     deleted = 0
@@ -459,6 +465,19 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
                 break
             chain.append(parent)
             current = parent
+        # A mid-chain turn can parent runs OUTSIDE this chain (a conversation
+        # continued from an earlier turn). Deleting it would dangle that
+        # fork's parent_task_run_id, so the whole chain is left alone.
+        chain_ids = {str(run.id) for run in chain}
+        if any(
+            not children_by_parent.get(str(run.id), set()) <= chain_ids for run in chain
+        ):
+            logger.info(
+                "Skipping delete of chain leaf %s: a conversation outside "
+                "the batch forks from this chain",
+                leaf.id,
+            )
+            continue
         for run in chain:
             run.delete()
             deleted += 1

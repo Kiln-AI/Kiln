@@ -565,13 +565,14 @@ def human_score_from_task_run(
     if score_key == "overall_rating":
         return task_run.output.rating.value
 
-    # Task requirement ratings
+    # Task requirement ratings. A requirement whose name matches the score
+    # key may still be unrated — fall through to the named lookup rather
+    # than letting the name collision hide a named rating for this score.
     req_id = score_key_to_task_requirement_id.get(score_key, None)
     if req_id:
         req_rating = task_run.output.rating.requirement_ratings.get(req_id, None)
         if req_rating is not None:
             return req_rating.value
-        return None
 
     # Named ratings
     named_score_id = f"named::{score.name}"

@@ -4,7 +4,8 @@ from typing import Annotated, Literal
 
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
+from typing_extensions import Self
 
 
 # Base models
@@ -61,6 +62,18 @@ class ClaimReviewApi(BaseModel):
     judge_reasoning: str
     claims: list[GradedClaim]
     final_judgement: GradedClaim
+
+    @model_validator(mode="after")
+    def validate_final_judgement_pinned(self) -> Self:
+        # Same invariant the persisted ClaimReview enforces; checking here
+        # turns a corrupt payload into a 422 before any model is written.
+        if self.final_judgement.expected_result != self.judge_score:
+            raise ValueError(
+                "final_judgement.expected_result must equal judge_score "
+                f"(got {self.final_judgement.expected_result!r} vs "
+                f"{self.judge_score!r})"
+            )
+        return self
 
 
 class ReviewedExample(BaseModel):

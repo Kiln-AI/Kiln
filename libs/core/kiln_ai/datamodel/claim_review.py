@@ -1,6 +1,7 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
 
@@ -51,3 +52,16 @@ class ClaimReview(KilnParentedModel):
         description="The graded overall-verdict entry; its expected_result "
         "equals the judge's verdict."
     )
+
+    @model_validator(mode="after")
+    def validate_final_judgement_pinned(self) -> Self:
+        # Grades are interpreted relative to the judge's verdict, so a review
+        # whose final judgement points the other way is corrupt data — reject
+        # it rather than poison downstream consumers (judge refinement).
+        if self.final_judgement.expected_result != self.judge_score:
+            raise ValueError(
+                "final_judgement.expected_result must equal judge_score "
+                f"(got {self.final_judgement.expected_result!r} vs "
+                f"{self.judge_score!r})"
+            )
+        return self

@@ -246,6 +246,12 @@ async def _drive_one_case_and_emit(
     Everything runs inside a single try/except so any failure surfaces as
     a CaseFailedEvent rather than silently dropping the case.
     """
+    # Runs persist per turn (adapter autosave) but the batch tag only lands
+    # on the leaf after a successful drive, so a mid-drive failure would
+    # strand an untagged chain that no eval loader or delete-on-redrive
+    # sweep can ever find. Track what this case persisted so the failure
+    # arm can remove it.
+    persisted_runs: dict[str, TaskRun] = {}
     try:
         # Malformed blob fails this case without affecting others.
         try:
@@ -271,6 +277,8 @@ async def _drive_one_case_and_emit(
         )
 
         async def _on_turn(*, run: TaskRun, su_message: str) -> None:
+            if run.id is not None:
+                persisted_runs[str(run.id)] = run
             await queue.put(
                 TurnCompletedEvent(
                     case_index=case_index,
@@ -316,12 +324,39 @@ async def _drive_one_case_and_emit(
         logger.exception(
             "synthetic_user runner: unexpected error in case %d", case_index
         )
+        await _delete_partial_chain(persisted_runs, save_ctx)
         await queue.put(
             CaseFailedEvent(
                 case_index=case_index,
                 error_code="unexpected_error",
                 message=f"{type(e).__name__}: {e}",
             )
+        )
+
+
+async def _delete_partial_chain(
+    persisted_runs: dict[str, TaskRun], save_ctx: SaveContext
+) -> None:
+    """Best-effort removal of a failed case's partially-driven chain.
+
+    A chain only becomes discoverable through the leaf's batch tag, applied
+    after a successful drive — runs a failed case persisted would otherwise
+    be permanent on-disk orphans. Never raises: the case failure already on
+    the queue is the event that matters.
+    """
+    if not persisted_runs:
+        return
+    try:
+        async with save_ctx():
+            # Newest first: remove the dangling end of the chain before its
+            # ancestors so an interrupted cleanup can't orphan a child run.
+            for run in reversed(list(persisted_runs.values())):
+                run.delete()
+    except Exception:
+        logger.exception(
+            "synthetic_user runner: failed to clean up a failed case's "
+            "partial chain (%d runs)",
+            len(persisted_runs),
         )
 
 

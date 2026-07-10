@@ -87,7 +87,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, File, HTTPException, Path, UploadFile
 from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
-from kiln_ai.datamodel.basemodel import FilenameString
+from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, LlmJudgeProperties
 from kiln_ai.datamodel.json_schema import validate_schema
@@ -198,7 +198,9 @@ class CreateSpecWithCopilotRequest(BaseModel):
     - properties: the spec properties object (filtered, with spec_type included)
     """
 
-    name: FilenameString
+    # Short limit: the name becomes the eval's EvalOutputScore.name (max 32)
+    # — a longer name would fail deep inside Eval construction, not here.
+    name: FilenameStringShort
     definition: str = Field(
         description="The spec definition string, built by client using buildSpecDefinition()"
     )

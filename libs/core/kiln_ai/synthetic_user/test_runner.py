@@ -525,6 +525,35 @@ async def test_tag_leaf_failure_surfaces_as_case_failed(
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "unexpected_error"
     assert "disk full" in failed.message
+    # The fully-driven chain never got its batch tag, so nothing could ever
+    # find it again — the failure arm must remove it from disk.
+    bad_leaf.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_case_deletes_partial_chain(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mid-drive failure deletes the turns already persisted — an untagged
+    partial chain would otherwise be invisible to eval loaders AND to
+    delete-on-redrive, accumulating forever."""
+    turn_one = _fake_run("turn-1")
+    _patch_adapter_for_task(monkeypatch, [turn_one, RuntimeError("kaboom")])
+    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    turn_one.delete.assert_called_once()
 
 
 # ───────────────────────── concurrency ─────────────────────────

@@ -922,3 +922,22 @@ class TestDeleteMultiTurnBatchChains:
 
         assert deleted == 0
         assert len(multiturn_task.runs(include_intermediate_runs=True)) == 3
+
+    def test_skips_chain_forked_mid_conversation(self, multiturn_task):
+        """A conversation continued from a MID-chain turn parents a run
+        outside the chain — deleting the ancestors would dangle the fork's
+        parent_task_run_id, so the whole chain is left alone."""
+        chain = _build_chain(multiturn_task, "old-batch", turns=3)
+        fork = TaskRun(
+            parent=multiturn_task,
+            input="fork from the first turn",
+            input_source=_su_source(9),
+            output=TaskOutput(output="reply", source=_su_source(9)),
+            parent_task_run_id=str(chain[0].id),
+        )
+        fork.save_to_file()
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 0
+        assert len(multiturn_task.runs(include_intermediate_runs=True)) == 4

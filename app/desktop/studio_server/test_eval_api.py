@@ -2180,6 +2180,47 @@ def test_human_score_from_task_run(
     assert result == expected_score
 
 
+def test_human_score_named_rating_survives_requirement_name_collision():
+    """A task requirement whose name maps to the same json_key as the score
+    must not hide a named rating: spec-created evals store the human verdict
+    under named::{score.name}, and the like-named requirement may be unrated."""
+    task_run = Mock(spec=TaskRun)
+    task_run.output = Mock(spec=TaskOutput)
+    rating = Mock(spec=TaskOutputRating)
+    rating.value = None
+    rating.requirement_ratings = {
+        # No rating under the colliding requirement's id ("req_id"); the
+        # human verdict lives under the named key.
+        "named::My Spec": RequirementRating(
+            value=1.0, type=TaskOutputRatingType.pass_fail
+        ),
+    }
+    task_run.output.rating = rating
+
+    score = EvalOutputScore(
+        name="My Spec", instruction="Test score", type=TaskOutputRatingType.pass_fail
+    )
+    # A requirement named like the score maps to the same json_key.
+    score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {"my_spec": "req_id"}
+
+    from app.desktop.studio_server.eval_api import human_score_from_task_run
+
+    result = human_score_from_task_run(
+        task_run, score, score_key_to_task_requirement_id
+    )
+
+    assert result == 1.0
+
+    # When the colliding requirement IS rated, its rating still wins.
+    rating.requirement_ratings["req_id"] = RequirementRating(
+        value=0.0, type=TaskOutputRatingType.pass_fail
+    )
+    assert (
+        human_score_from_task_run(task_run, score, score_key_to_task_requirement_id)
+        == 0.0
+    )
+
+
 @pytest.mark.asyncio
 async def test_create_task_run_config_invalid_temperature_values(
     client, mock_task_from_id, mock_task

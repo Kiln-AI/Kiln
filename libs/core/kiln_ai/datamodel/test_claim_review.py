@@ -91,6 +91,16 @@ class TestClaimReviewModel:
         with pytest.raises(ValidationError):
             _graded_claim(expected_result="unsure")
 
+    def test_rejects_final_judgement_not_pinned_to_verdict(self):
+        # Grades are interpreted relative to the judge's verdict; a review
+        # whose final judgement contradicts it is corrupt data.
+        with pytest.raises(ValidationError, match="must equal judge_score"):
+            ClaimReview(
+                judge_score="fail",
+                judge_reasoning="Fabricated a policy.",
+                final_judgement=_graded_claim(expected_result="pass"),
+            )
+
 
 class TestClaimReviewPersistence:
     def test_save_and_load_roundtrip(self, task_and_run):
