@@ -14,6 +14,8 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTaskInput,
     DataGenSampleTask,
     DataGenSampleTaskInput,
+    DataGenSingleInputTask,
+    DataGenSingleInputTaskInput,
     wrap_task_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
@@ -350,15 +352,20 @@ async def _generate_one_input(
     data_guide: str | None,
     prompt: str,
 ) -> str | dict:
-    """Generate a single synthetic input using one plan prompt as its guidance."""
-    combined_guidance = _combine_guidance(task, prompt, "inputs", data_guide)
-    sample_task = DataGenSampleTask(
+    """Generate a single synthetic input using one input plan as its guidance.
+
+    The data guide and the input plan go to the model as separate blocks: the
+    guide constrains every input, the plan only this one.
+    """
+    data_guide_section = _data_guide_guidance(task, "inputs", data_guide)
+    sample_task = DataGenSingleInputTask(
         target_task=task,
         gen_type=gen_type,
         parent_project=project,
-        guidance=combined_guidance,
+        data_guide=data_guide_section,
+        input_plan=prompt,
     )
-    task_input = DataGenSampleTaskInput.from_task(task=task, topic=[], num_samples=1)
+    task_input = DataGenSingleInputTaskInput.from_task(task=task)
 
     rcp = run_config_properties.model_copy()
     rcp.prompt_id = PromptGenerators.SIMPLE
@@ -373,10 +380,9 @@ async def _generate_one_input(
     if samples_run.output is None or samples_run.output.output is None:
         raise ValueError("No output returned from input generation")
     parsed = json.loads(samples_run.output.output)
-    generated = parsed.get("generated_samples")
-    if not isinstance(generated, list) or len(generated) == 0:
-        raise ValueError("No sample generated")
-    return generated[0]
+    if "generated_input" not in parsed:
+        raise ValueError("No input generated")
+    return parsed["generated_input"]
 
 
 async def _generate_one_output(
@@ -1381,6 +1387,32 @@ def _combine_guidance(
     system prompt + output schema, not this guide.
     """
     parts: list[str] = []
+    data_guide_section = _data_guide_guidance(task, stage, data_guide_override)
+    if data_guide_section:
+        parts.append(data_guide_section)
+    if template_guidance:
+        parts.append(
+            "# Template Guidance\n\n"
+            "Per-stage guidance from the eval template the user picked for "
+            "this synth session. Overrides the Data Guide above when in "
+            "conflict.\n\n"
+            f"{template_guidance}"
+        )
+    return "\n\n".join(parts) if parts else None
+
+
+def _data_guide_guidance(
+    task: Task,
+    stage: Literal["topics", "inputs"],
+    data_guide_override: str | None = None,
+) -> str | None:
+    """Render the Task Data Guide section on its own.
+
+    Split out from `_combine_guidance` so the batch-plan flow can pass the guide
+    and the input plan to the model as two separate blocks rather than one fused
+    guidance string.
+    """
+    parts: list[str] = []
     data_guide_content = _resolve_data_guide(task, data_guide_override)
     if data_guide_content:
         stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
@@ -1405,8 +1437,8 @@ def _combine_guidance(
             "`<input_semantic>` blocks) — read the content the same way "
             "regardless of shape.\n\n"
             "**Authority cascade** when sources conflict (highest wins):\n"
-            "1. Template guidance for this stage (if a `# Template Guidance` "
-            "block appears below).\n"
+            "1. Guidance for this specific generation (a `# Template "
+            "Guidance` block below, or the input plan you were given).\n"
             "2. The Data Guide above.\n"
             "3. Defaults you would otherwise pick.\n\n"
             "**Invariants — must always hold regardless of source:** logical "
@@ -1416,14 +1448,6 @@ def _combine_guidance(
             "<task_data_guide>\n"
             f"{data_guide_content}\n"
             "</task_data_guide>"
-        )
-    if template_guidance:
-        parts.append(
-            "# Template Guidance\n\n"
-            "Per-stage guidance from the eval template the user picked for "
-            "this synth session. Overrides the Data Guide above when in "
-            "conflict.\n\n"
-            f"{template_guidance}"
         )
     return "\n\n".join(parts) if parts else None
 

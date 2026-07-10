@@ -1562,12 +1562,12 @@ async def test_run_outputs_batch_job_success(test_task, mock_task_run):
         assert r["task_run"] is mock_task_run
 
 
-async def test_generate_one_input_extracts_first_sample(
+async def test_generate_one_input_extracts_generated_input(
     test_project, test_task, data_source
 ):
     run = TaskRun(
         output=TaskOutput(
-            output=json.dumps({"generated_samples": ["the generated input"]}),
+            output=json.dumps({"generated_input": "the generated input"}),
             source=data_source,
         ),
         input="x",
@@ -1593,7 +1593,7 @@ def test_generate_inputs_batch_endpoint(
 ):
     run = TaskRun(
         output=TaskOutput(
-            output=json.dumps({"generated_samples": ["gen input"]}),
+            output=json.dumps({"generated_input": "gen input"}),
             source=data_source,
         ),
         input="x",
@@ -1645,7 +1645,7 @@ def test_inputs_batch_status_wrong_scope_404(
     # Start a job under one task, then poll it under a different task id.
     run = TaskRun(
         output=TaskOutput(
-            output=json.dumps({"generated_samples": ["gen input"]}),
+            output=json.dumps({"generated_input": "gen input"}),
             source=data_source,
         ),
         input="x",
@@ -1715,7 +1715,7 @@ def test_batch_jobs_registry_is_populated(
 ):
     run = TaskRun(
         output=TaskOutput(
-            output=json.dumps({"generated_samples": ["gen input"]}),
+            output=json.dumps({"generated_input": "gen input"}),
             source=data_source,
         ),
         input="x",

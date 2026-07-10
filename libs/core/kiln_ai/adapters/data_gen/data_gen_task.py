@@ -9,6 +9,7 @@ from kiln_ai.datamodel.json_schema import close_object_schemas
 
 from .data_gen_prompts import (
     generate_sample_generation_prompt,
+    generate_single_input_prompt,
     generate_topic_tree_prompt,
 )
 
@@ -198,6 +199,91 @@ class DataGenSampleTask(Task, parent_of={}):
             instruction=instruction,
             input_json_schema=json.dumps(DataGenSampleTaskInput.model_json_schema()),
             output_json_schema=list_json_schema_for_task(target_task),
+        )
+
+
+class DataGenSingleInputTaskInput(BaseModel):
+    """Input model for generating exactly one input to a kiln task.
+
+    Note: the field name is verbose to avoid accidental conflicts with the
+    system prompt or user guidance.
+
+    Attributes:
+        kiln_data_gen_system_prompt: System prompt to guide the AI generation
+    """
+
+    kiln_data_gen_system_prompt: str
+
+    @classmethod
+    def from_task(cls, task: Task) -> "DataGenSingleInputTaskInput":
+        """Create a DataGenSingleInputTaskInput instance from a Task."""
+        prompt_builder = SimplePromptBuilder(task=task)
+        return cls(
+            kiln_data_gen_system_prompt=prompt_builder.build_prompt(
+                include_json_instructions=False
+            ),
+        )
+
+
+def single_input_json_schema_for_task(task: Task) -> str:
+    """Generate a JSON schema for a single task input (json schema).
+
+    Wrapped in an object because structured output requires an object at the
+    top level, even when the task's input is a bare string.
+
+    Args:
+        task: Task object whose input schema will be used
+
+    Returns:
+        JSON string representing the schema for one task input
+    """
+    if task.input_json_schema:
+        input_schema = close_object_schemas(json.loads(task.input_json_schema))
+    else:
+        input_schema = {"type": "string"}
+
+    top_level_schema = {
+        "type": "object",
+        "properties": {
+            "generated_input": input_schema,
+        },
+        "required": ["generated_input"],
+        "additionalProperties": False,
+    }
+
+    return json.dumps(top_level_schema, ensure_ascii=False)
+
+
+class DataGenSingleInputTask(Task, parent_of={}):
+    """Task for generating exactly one input to a target task.
+
+    Used by the batch-plan flow: the caller supplies one input plan per input as
+    guidance, so there's no topic tree and no sample count.
+    """
+
+    def __init__(
+        self,
+        target_task: Task,
+        gen_type: Literal["training", "eval"],
+        parent_project: Project,
+        data_guide: str | None,
+        input_plan: str | None,
+    ):
+        instruction = generate_single_input_prompt(
+            gen_type=gen_type,
+            data_guide=data_guide,
+            input_plan=input_plan,
+        )
+
+        super().__init__(
+            name="DataGenSingleInput",
+            parent=parent_project,
+            description="A task which generates a single synthetic input to a target task, from an input plan.",
+            instruction=instruction,
+            input_json_schema=json.dumps(
+                DataGenSingleInputTaskInput.model_json_schema()
+            ),
+            output_json_schema=single_input_json_schema_for_task(target_task),
         )
 
 

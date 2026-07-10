@@ -8,6 +8,7 @@ from kiln_ai.adapters.data_gen.data_gen_prompts import (
     generate_guidance_refinement_prompt,
     generate_qna_generation_prompt,
     generate_sample_generation_prompt,
+    generate_single_input_prompt,
     generate_topic_tree_prompt,
 )
 from kiln_ai.adapters.data_gen.data_gen_task import (
@@ -16,7 +17,10 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTaskOutput,
     DataGenSampleTask,
     DataGenSampleTaskInput,
+    DataGenSingleInputTask,
+    DataGenSingleInputTaskInput,
     list_json_schema_for_task,
+    single_input_json_schema_for_task,
 )
 from kiln_ai.adapters.provider_tools import get_model_and_provider
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
@@ -926,3 +930,116 @@ def test_generate_qna_generation_prompt_with_guidance():
         "When generating Q&A pairs, focus on generating queries and answers that are relevant to the document content."
         not in prompt
     )
+
+
+def test_generate_single_input_prompt_has_no_topic_or_sample_count():
+    """The single-input prompt must not teach the model about the topic tree or
+    a sample count — the batch plan supplies the per-input variation instead."""
+    prompt = generate_single_input_prompt(gen_type="eval")
+
+    assert "kiln_data_gen_topic_path" not in prompt
+    assert "kiln_data_gen_num_samples" not in prompt
+    assert "topic" not in prompt.lower()
+    assert "generated_samples" not in prompt
+    assert "kiln_data_gen_system_prompt" in prompt
+    assert "generated_input" in prompt
+
+
+def test_generate_single_input_prompt_gen_types():
+    training = generate_single_input_prompt(gen_type="training")
+    eval_prompt = generate_single_input_prompt(gen_type="eval")
+
+    assert "generate training data" in training
+    assert "generate eval data" in eval_prompt
+    assert "exactly one input" in training
+    # No guide or plan provided, so neither block appears.
+    assert "<input_plan>" not in training
+    assert "<task_data_guide>" not in training
+
+
+def test_generate_single_input_prompt_separates_guide_and_plan():
+    """The data guide and the input plan must reach the model as two distinct
+    blocks — the guide constrains every input, the plan only this one."""
+    plan = "A refund request for a duplicate charge of $42."
+    guide = (
+        "# Task Data Guide\n\n<task_data_guide>\nemails are terse\n</task_data_guide>"
+    )
+    prompt = generate_single_input_prompt(
+        gen_type="eval", data_guide=guide, input_plan=plan
+    )
+
+    assert "## Input Plan" in prompt
+    assert f"<input_plan>\n{plan}\n</input_plan>" in prompt
+    assert "<task_data_guide>" in prompt
+    assert "emails are terse" in prompt
+    # The plan must not be swallowed into the guide's block.
+    assert plan not in prompt.split("</task_data_guide>")[0]
+
+
+def test_generate_single_input_prompt_plan_only():
+    plan = "A refund request."
+    prompt = generate_single_input_prompt(gen_type="eval", input_plan=plan)
+
+    assert "## Input Plan" in prompt
+    assert "<task_data_guide>" not in prompt
+
+
+def test_single_input_json_schema_for_task_plaintext(tmp_path):
+    project = Project(name="test", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="test",
+        instruction="test",
+        parent=project,
+        input_json_schema=None,
+    )
+
+    schema = json.loads(single_input_json_schema_for_task(task))
+    assert schema["properties"]["generated_input"] == {"type": "string"}
+    assert schema["required"] == ["generated_input"]
+    assert schema["additionalProperties"] is False
+
+
+def test_single_input_json_schema_for_task_structured(tmp_path):
+    project = Project(name="test", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="test",
+        instruction="test",
+        parent=project,
+        input_json_schema=json.dumps(
+            {
+                "type": "object",
+                "properties": {"subject": {"type": "string"}},
+                "required": ["subject"],
+            }
+        ),
+    )
+
+    schema = json.loads(single_input_json_schema_for_task(task))
+    generated = schema["properties"]["generated_input"]
+    assert generated["type"] == "object"
+    assert "subject" in generated["properties"]
+
+
+def test_data_gen_single_input_task_shape(tmp_path):
+    project = Project(name="test", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    target = Task(name="target", instruction="Translate to French.", parent=project)
+
+    task = DataGenSingleInputTask(
+        target_task=target,
+        gen_type="eval",
+        parent_project=project,
+        data_guide=None,
+        input_plan="one spicy input",
+    )
+
+    assert "kiln_data_gen_topic_path" not in task.instruction
+    assert "one spicy input" in task.instruction
+    output_schema = json.loads(task.output_json_schema)
+    assert "generated_input" in output_schema["properties"]
+
+    task_input = DataGenSingleInputTaskInput.from_task(task=target)
+    assert "Translate to French." in task_input.kiln_data_gen_system_prompt
+    assert task_input.model_dump().keys() == {"kiln_data_gen_system_prompt"}
