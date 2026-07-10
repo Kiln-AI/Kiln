@@ -22,9 +22,9 @@
 </script>
 
 <div class="my-4 max-w-[680px] mx-auto">
-  <div class="text-center mb-2">
-    <div class="text-xl font-medium">Build your synthetic batch</div>
-    <div class="font-light text-gray-500 mt-1">
+  <div class="text-center mt-8 mb-2">
+    <div class="text-lg font-medium">Build your synthetic batch</div>
+    <div class="text-sm text-gray-500 mt-1">
       Kiln Pro plans the batch for you — or build it yourself the classic way.
     </div>
   </div>

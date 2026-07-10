@@ -21,7 +21,9 @@
       </div>
     </div>
     <div class="flex flex-row gap-2 shrink-0">
-      <button class="btn btn-sm" on:click={on_regenerate}>Regenerate</button>
+      <button class="btn btn-sm" on:click={on_regenerate}
+        >Regenerate Plan</button
+      >
       <button
         class="btn btn-sm btn-primary"
         disabled={count === 0}

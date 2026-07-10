@@ -13,7 +13,11 @@
     <div
       class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-primary"
     >
-      <span class="w-4 h-4"><StarsIcon /></span>
+      <span
+        class="flex items-center justify-center rounded-[10px] flex-none w-7 h-7 p-[6px] bg-blue-50 text-[#628BD9]"
+      >
+        <StarsIcon />
+      </span>
       Plan Summary
     </div>
     {#if out_of_sync}
