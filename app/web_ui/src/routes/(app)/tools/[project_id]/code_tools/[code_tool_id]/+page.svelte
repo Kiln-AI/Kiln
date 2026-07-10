@@ -113,6 +113,8 @@
         code: code_tool.code,
         timeout_seconds: code_tool.timeout_seconds,
         tool_allowlist: code_tool.tool_allowlist || [],
+        // Source id so the create form can stamp provenance lineage on the clone.
+        clone_source_id: code_tool.id,
       },
     })
   }

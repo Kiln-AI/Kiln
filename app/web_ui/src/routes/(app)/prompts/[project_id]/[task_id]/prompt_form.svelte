@@ -14,6 +14,8 @@
   export let project_id: string
   export let task_id: string
   export let clone_mode: boolean = false
+  // Source prompt id when cloning, used to stamp provenance lineage.
+  export let clone_source_prompt_id: string | null = null
   export let generator_id: string | null = null
   export let show_chain_of_thought: boolean = true
   export let initial_prompt_name: string = ""
@@ -61,6 +63,15 @@
             chain_of_thought_instructions: cot_enabled_for_submit
               ? chain_of_thought_instructions
               : null,
+            // Stamp lineage: a clone derives from its source; a fresh create is
+            // human-origin with no parent. origin is required whenever provenance is set.
+            provenance:
+              clone_mode && clone_source_prompt_id
+                ? {
+                    origin: "human",
+                    derived_from_ids: [clone_source_prompt_id],
+                  }
+                : { origin: "human" },
           },
         },
       )

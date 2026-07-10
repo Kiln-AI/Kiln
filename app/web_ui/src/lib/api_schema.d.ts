@@ -4538,6 +4538,8 @@ export interface components {
              * @description The user who created the prompt.
              */
             created_by?: string | null;
+            /** @description Why this prompt exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** AppropriateToolUseProperties */
         AppropriateToolUseProperties: {
@@ -5463,6 +5465,8 @@ export interface components {
              * @description Tools this code tool may call.
              */
             tool_allowlist?: string[];
+            /** @description Optional provenance: why this code tool exists and what it was derived from. Immutable after create. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolCreateResponse */
         CodeToolCreateResponse: {
@@ -5495,6 +5499,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /**
              * Not Trusted
              * @default false
@@ -5532,6 +5537,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolUpdateRequest */
         CodeToolUpdateRequest: {
@@ -5960,6 +5966,8 @@ export interface components {
              * @description The MCP tool ID to use.
              */
             tool_id: string;
+            /** @description Optional provenance: why this run config exists and what it was derived from. Immutable after create. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -6113,6 +6121,8 @@ export interface components {
              * @description The instruction for the new task.
              */
             instruction: string;
+            /** @description Optional provenance stamped onto the created run config. Immutable after create. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunConfigRequest
@@ -6134,6 +6144,8 @@ export interface components {
              * @description The run configuration properties.
              */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description Optional provenance: why this run config exists and what it was derived from. Immutable after create. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunRequest
@@ -9113,6 +9125,31 @@ export interface components {
              */
             input_transform?: components["schemas"]["JinjaInputTransform"] | null;
         };
+        /**
+         * KilnArtifactProvenance
+         * @description Why this artifact exists and what it was derived from.
+         *
+         *     Written once at creation; immutable thereafter (enforced at the API layer).
+         *     Compile-time metadata for future agent sessions and humans — never shown to
+         *     runtime models (not part of any tool/prompt surface).
+         */
+        KilnArtifactProvenance: {
+            /**
+             * Notes
+             * @description Why this artifact exists: the problem/hypothesis it addresses, what changed vs. the derived_from_ids parents, what validation/evidence supports it (cite eval/run_config/trace IDs inline), and known limits. First line = one-sentence summary. Record observations with conditions, never universal rules. Max ~2000 chars.
+             */
+            notes?: string | null;
+            /**
+             * Derived From Ids
+             * @description IDs of same-type sibling artifacts this one was derived from. Ordered: first = primary parent (the artifact this replaces or is a new version of); further entries = additional sources merged in. Empty = not derived. IDs resolve among siblings in the same parent scope only.
+             */
+            derived_from_ids?: (string | null)[];
+            /**
+             * Origin
+             * @description Whose judgment created this artifact. 'human': a person authored it directly OR an agent created it fulfilling a direct human request. 'agent': an agent created it autonomously. None: unknown/legacy. Required when this provenance is created; consumers must tolerate unknown values.
+             */
+            origin?: string | null;
+        };
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -10338,6 +10375,8 @@ export interface components {
              * @description Chain of thought instructions to include in the prompt.
              */
             chain_of_thought_instructions?: string | null;
+            /** @description Optional provenance: why this prompt exists and what it was derived from. Immutable after create. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * PromptGenerator
@@ -11841,6 +11880,8 @@ export interface components {
              * @description The markdown body of the skill.
              */
             body: string;
+            /** @description Optional provenance: why this skill exists and what it was derived from. Immutable after create. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillResponse
@@ -11878,6 +11919,8 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
+            /** @description Why this skill exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillUpdateRequest
@@ -12970,6 +13013,8 @@ export interface components {
              * @default false
              */
             starred: boolean;
+            /** @description Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
