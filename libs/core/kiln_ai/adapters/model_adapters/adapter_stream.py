@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, NoReturn
 
 from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelResponse
 
@@ -28,6 +28,62 @@ MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
+
+EMPTY_RESPONSE_ERROR_MESSAGE = (
+    "Model returned an assistant message, but no content or tool calls. "
+    "This is not supported."
+)
+
+CONTENT_FILTER_ERROR_MESSAGE = (
+    "The model declined to respond to this request (the provider's safety "
+    "classifier returned a content-filter/refusal, finish_reason={finish_reason!r}). "
+    "This can be a false positive on some models; try rephrasing the prompt or using "
+    "a different model."
+)
+
+
+def _is_content_filter_finish_reason(finish_reason: Any) -> bool:
+    """Return True if the finish/stop reason indicates a content-filter/refusal."""
+    if not finish_reason:
+        return False
+    normalized = str(finish_reason).lower()
+    return "content_filter" in normalized or "refusal" in normalized
+
+
+def raise_for_empty_model_response(response_choice: Any) -> NoReturn:
+    """
+    Raise a clear error when a model returns an assistant message with no content
+    and no tool calls.
+
+    When the empty response is due to a provider content-filter/refusal, raise a
+    specific, actionable error rather than the generic "no content or tool calls"
+    message. This covers two provider signals:
+
+    - a content-filter/refusal ``finish_reason`` (e.g. Anthropic's stop_reason
+      "refusal", which LiteLLM maps to finish_reason='content_filter'), and
+    - OpenAI's ``message.refusal`` field, which can be populated while
+      ``finish_reason`` remains 'stop'.
+
+    Accepts either a dict-shaped or object-shaped choice.
+    """
+    if isinstance(response_choice, dict):
+        finish_reason = response_choice.get("finish_reason")
+        message = response_choice.get("message")
+        refusal = (
+            message.get("refusal")
+            if isinstance(message, dict)
+            else getattr(message, "refusal", None)
+        )
+    else:
+        finish_reason = getattr(response_choice, "finish_reason", None)
+        message = getattr(response_choice, "message", None)
+        refusal = getattr(message, "refusal", None) if message is not None else None
+
+    if refusal or _is_content_filter_finish_reason(finish_reason):
+        raise ValueError(
+            CONTENT_FILTER_ERROR_MESSAGE.format(finish_reason=finish_reason)
+        )
+    raise ValueError(EMPTY_RESPONSE_ERROR_MESSAGE)
 
 
 @dataclass
@@ -184,9 +240,7 @@ class AdapterStream:
             content = response_choice.message.content
             tool_calls = response_choice.message.tool_calls
             if not content and not tool_calls:
-                raise ValueError(
-                    "Model returned an assistant message, but no content or tool calls. This is not supported."
-                )
+                raise_for_empty_model_response(response_choice)
 
             self._messages.append(response_choice.message)
             self._message_latency[len(self._messages) - 1] = call_latency_ms
