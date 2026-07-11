@@ -66,7 +66,8 @@
 
   $: task = guidance_data.task
 
-  let success_dialog: Dialog | null = null
+  // Covers the whole save: spinner while it runs, success state when done.
+  let save_dialog: Dialog | null = null
 
   let inputs_status: "running" | "complete" | "error" | null = null
   let outputs_started = false
@@ -135,7 +136,7 @@
     }
     if (missing_outputs === 0) return null
     return {
-      message: `${missing_outputs} ${missing_outputs === 1 ? "item is" : "items are"} missing outputs. Use Generate Outputs to run them.`,
+      message: `${missing_outputs} ${missing_outputs === 1 ? "item is" : "items are"} missing outputs.`,
       color: savable > 0 ? "warning" : "error",
     }
   }
@@ -195,14 +196,6 @@
     } else {
       regenerate_inputs()
     }
-  }
-
-  // Per-row popup showing the prompt that produced an input.
-  let prompt_dialog: Dialog | null = null
-  let active_prompt = ""
-  function show_prompt(p: string) {
-    active_prompt = p
-    prompt_dialog?.show()
   }
 
   let expanded: boolean[] = new Array(rows.length).fill(false)
@@ -473,6 +466,9 @@
     save_errors = []
     save_progress = 0
     save_target = to_save.length
+    // Open straight away — the dialog shows the spinner, then flips to the
+    // success state when the save finishes.
+    save_dialog?.show()
     for (const row of to_save) {
       try {
         const { data, error } = await client.POST(
@@ -496,10 +492,10 @@
     }
     saving = false
     save_completed = true
-    // Nothing left to do on this screen once saved — surface a clear exit to
-    // the dataset rather than a subtle inline note.
-    if (save_errors.length === 0 && total_saved > 0) {
-      success_dialog?.show()
+    // On success the dialog stays open and renders the success state. If any
+    // item failed, get out of the way: the inline error banner has the retry.
+    if (save_errors.length > 0) {
+      save_dialog?.close()
     }
   }
 </script>
@@ -560,17 +556,6 @@
 
   {#if batch_error}
     <div class="text-error text-sm">{batch_error.getMessage()}</div>
-  {/if}
-
-  {#if saving}
-    <div class="flex flex-row items-center justify-center gap-3 py-2">
-      <span class="loading loading-spinner loading-sm text-primary"></span>
-      <span class="text-sm font-medium">Saving</span>
-      <span class="text-gray-400">·</span>
-      <span class="text-sm font-light text-gray-500">
-        {save_progress} of {save_target}
-      </span>
-    </div>
   {/if}
 
   {#if save_completed && save_errors.length > 0}
@@ -723,10 +708,6 @@
                 <TableActionMenu
                   items={[
                     {
-                      label: "View Prompt",
-                      onclick: () => show_prompt(row.prompt),
-                    },
-                    {
                       label: "Remove Output",
                       onclick: () => remove_output(i),
                       hidden: generating || !!row.saved_id || !row.task_run,
@@ -747,30 +728,43 @@
   {/if}
 </div>
 
-<!-- Save success: nothing left to do here, so point the user at the dataset -->
-<Dialog bind:this={success_dialog} title="" center_content={true}>
-  <div class="text-center flex flex-col items-center justify-center pt-2 pb-2">
-    <svg
-      fill="currentColor"
-      class="size-12 text-success mb-3"
-      viewBox="0 0 56 56"
-      xmlns="http://www.w3.org/2000/svg"
-      ><path
-        d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
-      /></svg
-    >
-    <div class="text-lg font-medium">
-      Saved {total_saved}
-      {total_saved === 1 ? "item" : "items"} into your Dataset
+<!-- Save: spinner while it runs, then the success state. Nothing is left to do
+     on this screen once saved, so point the user at the dataset. -->
+<Dialog bind:this={save_dialog} title="" center_content={true}>
+  {#if saving}
+    <div class="text-center flex flex-col items-center justify-center py-6">
+      <span class="loading loading-spinner loading-lg text-primary mb-3"></span>
+      <div class="text-lg font-medium">Saving</div>
+      <div class="font-light text-sm text-gray-500 mt-1">
+        {save_progress} of {save_target}
+      </div>
     </div>
-    <div class="font-light text-sm text-gray-500 mt-1">
-      Your synthetic data is ready to use.
-    </div>
-    <a
-      href={`/dataset/${project_id}/${task_id}`}
-      class="btn btn-primary btn-wide mt-6">View in Dataset</a
+  {:else}
+    <div
+      class="text-center flex flex-col items-center justify-center pt-2 pb-2"
     >
-  </div>
+      <svg
+        fill="currentColor"
+        class="size-12 text-success mb-3"
+        viewBox="0 0 56 56"
+        xmlns="http://www.w3.org/2000/svg"
+        ><path
+          d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+        /></svg
+      >
+      <div class="text-lg font-medium">
+        Saved {total_saved}
+        {total_saved === 1 ? "item" : "items"} into your Dataset
+      </div>
+      <div class="font-light text-sm text-gray-500 mt-1">
+        Your synthetic data is ready to use.
+      </div>
+      <a
+        href={`/dataset/${project_id}/${task_id}`}
+        class="btn btn-primary btn-wide mt-6">View in Dataset</a
+      >
+    </div>
+  {/if}
 </Dialog>
 
 <!-- One dialog, reused for both retry and regenerate -->
@@ -836,15 +830,4 @@
       />
     {/if}
   </FormContainer>
-</Dialog>
-
-<!-- Prompt popup -->
-<Dialog
-  bind:this={prompt_dialog}
-  title="Prompt"
-  subtitle="The prompt that generated this input."
->
-  <div class="rounded-lg bg-base-200 p-4 text-sm whitespace-pre-wrap mt-2">
-    {active_prompt}
-  </div>
 </Dialog>
