@@ -31,11 +31,31 @@ describe("IncrementUi", () => {
     expect(input.value).toBe("123")
   })
 
-  it("clamps a typed value above max down to max", async () => {
+  it("clamps above max immediately while typing, not on blur", async () => {
     const { input } = setup({ value: 50, max: 500 })
     await fireEvent.input(input, { target: { value: "9999" } })
-    await fireEvent.blur(input)
+    // Clamped straight away — no blur needed.
     expect(input.value).toBe("500")
+  })
+
+  it("strips non-digits as they are typed or pasted", async () => {
+    const { input } = setup({ value: 50, max: 500 })
+    await fireEvent.input(input, { target: { value: "12abc" } })
+    expect(input.value).toBe("12")
+    await fireEvent.input(input, { target: { value: "abc" } })
+    expect(input.value).toBe("")
+    // An all-letters entry leaves the box empty and editable; blur settles it.
+    await fireEvent.blur(input)
+    expect(input.value).toBe("1")
+  })
+
+  it("lets the box be cleared mid-edit so it stays editable", async () => {
+    const { input } = setup({ value: 50, min: 1, max: 500 })
+    await fireEvent.input(input, { target: { value: "" } })
+    // Not snapped to min while typing.
+    expect(input.value).toBe("")
+    await fireEvent.input(input, { target: { value: "7" } })
+    expect(input.value).toBe("7")
   })
 
   it("clamps a typed value below min up to min", async () => {

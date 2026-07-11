@@ -9,21 +9,62 @@
     return Math.min(max, Math.max(min, Math.round(n)))
   }
 
-  // The box mirrors `value` as text so it can be typed into freely. It's only
-  // committed (and clamped) on blur or Enter — otherwise a partial entry like
-  // "" or "5" on the way to "50" would get rewritten mid-keystroke. Entries
-  // above `max` clamp down to it, which is what the +/- buttons already do.
+  // `text` is what's in the box; `value` is what's in effect. They're kept in
+  // step by set_value, and `last_value` lets us tell an external change (a
+  // stepper, or the parent rebinding) from one we made ourselves while typing —
+  // so we never rewrite the box mid-keystroke.
   let text = String(value)
-  $: text = String(value)
+  let last_value = value
 
-  function commit() {
-    value = clamp(parseInt(text, 10))
-    // Re-sync, so a clamped or unparseable entry snaps to the value in effect.
+  $: if (value !== last_value) {
+    last_value = value
     text = String(value)
   }
 
+  function set_value(n: number) {
+    value = n
+    last_value = n
+  }
+
+  function on_input() {
+    // Digits only. parseInt would happily accept "12abc" as 12, so strip
+    // anything non-numeric out of the box as it's typed or pasted.
+    const digits = text.replace(/\D/g, "")
+    if (digits !== text) {
+      text = digits
+    }
+    if (digits === "") {
+      // Cleared mid-edit — leave it empty so it stays editable; blur settles it.
+      return
+    }
+    const n = parseInt(digits, 10)
+    if (!Number.isFinite(n)) {
+      return
+    }
+    if (n > max) {
+      // Clamp down to the cap immediately, so typing 9999 lands on 500 rather
+      // than waiting for blur.
+      text = String(max)
+      set_value(max)
+      return
+    }
+    if (n >= min) {
+      set_value(n)
+    }
+    // Below min (e.g. a lone "0" on the way to "50") is left for blur, so the
+    // box stays editable.
+  }
+
+  function commit() {
+    const n = clamp(parseInt(text, 10))
+    text = String(n)
+    set_value(n)
+  }
+
   function step(delta: number) {
-    value = clamp(value + delta)
+    const n = clamp(value + delta)
+    text = String(n)
+    set_value(n)
   }
 </script>
 
@@ -42,6 +83,7 @@
     class="input input-sm input-bordered text-lg font-medium w-16 text-center px-1"
     aria-label="Count"
     bind:value={text}
+    on:input={on_input}
     on:blur={commit}
     on:keydown={(e) => {
       if (e.key === "Enter") {
