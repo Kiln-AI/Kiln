@@ -563,16 +563,13 @@
   {/if}
 
   {#if saving}
-    <div>
-      <div class="flex flex-row justify-between text-xs font-light mb-1">
-        <span class="font-medium">Saving</span>
-        <span class="text-gray-500">{save_progress} of {save_target}</span>
-      </div>
-      <progress
-        class="progress progress-success w-full"
-        value={save_progress}
-        max={save_target}
-      ></progress>
+    <div class="flex flex-row items-center justify-center gap-3 py-2">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
+      <span class="text-sm font-medium">Saving</span>
+      <span class="text-gray-400">·</span>
+      <span class="text-sm font-light text-gray-500">
+        {save_progress} of {save_target}
+      </span>
     </div>
   {/if}
 
