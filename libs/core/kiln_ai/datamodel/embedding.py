@@ -37,7 +37,7 @@ class EmbeddingConfig(KilnParentedModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter.",
+        description="Why this artifact exists and what it was derived from.",
     )
 
     # Workaround to return typed parent without importing Project

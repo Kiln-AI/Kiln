@@ -335,6 +335,10 @@ class RagConfigWithSubConfigs(BaseModel):
     tags: list[str] | None = Field(
         default=None, description="Tags for document filtering."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this RAG config exists and what it was derived from.",
+    )
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -374,7 +378,7 @@ class CreateRagConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this RAG config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this RAG config exists and what it was derived from.",
     )
 
 
@@ -424,7 +428,7 @@ class CreateChunkerConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this chunker config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this chunker config exists and what it was derived from.",
     )
 
     def get_properties_for_chunker_type(
@@ -471,7 +475,7 @@ class CreateEmbeddingConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this embedding config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this embedding config exists and what it was derived from.",
     )
 
     @model_validator(mode="after")
@@ -538,7 +542,7 @@ class CreateVectorStoreConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this vector store config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this vector store config exists and what it was derived from.",
     )
 
     def get_properties_for_store_type(
@@ -612,7 +616,7 @@ class CreateRerankerConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this reranker config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this reranker config exists and what it was derived from.",
     )
 
     @model_validator(mode="after")
@@ -670,7 +674,7 @@ class CreateExtractorConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this extractor config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this extractor config exists and what it was derived from.",
     )
 
     @model_validator(mode="after")
@@ -1382,9 +1386,8 @@ def connect_document_api(app: FastAPI):
         validate_provenance_or_400(
             extractor_config.provenance,
             extractor_config.id,
-            lambda cid: (
-                ExtractorConfig.from_id_and_parent_path(cid, project.path) is not None
-            ),
+            ExtractorConfig,
+            project.path,
         )
         extractor_config.save_to_file()
 
@@ -2006,9 +2009,8 @@ def connect_document_api(app: FastAPI):
         validate_provenance_or_400(
             chunker_config.provenance,
             chunker_config.id,
-            lambda cid: (
-                ChunkerConfig.from_id_and_parent_path(cid, project.path) is not None
-            ),
+            ChunkerConfig,
+            project.path,
         )
         chunker_config.save_to_file()
 
@@ -2057,9 +2059,8 @@ def connect_document_api(app: FastAPI):
         validate_provenance_or_400(
             embedding_config.provenance,
             embedding_config.id,
-            lambda cid: (
-                EmbeddingConfig.from_id_and_parent_path(cid, project.path) is not None
-            ),
+            EmbeddingConfig,
+            project.path,
         )
         embedding_config.save_to_file()
 
@@ -2104,9 +2105,8 @@ def connect_document_api(app: FastAPI):
         validate_provenance_or_400(
             reranker_config.provenance,
             reranker_config.id,
-            lambda cid: (
-                RerankerConfig.from_id_and_parent_path(cid, project.path) is not None
-            ),
+            RerankerConfig,
+            project.path,
         )
         reranker_config.save_to_file()
 
@@ -2173,9 +2173,8 @@ def connect_document_api(app: FastAPI):
         validate_provenance_or_400(
             vector_store_config.provenance,
             vector_store_config.id,
-            lambda cid: (
-                VectorStoreConfig.from_id_and_parent_path(cid, project.path) is not None
-            ),
+            VectorStoreConfig,
+            project.path,
         )
         vector_store_config.save_to_file()
 
@@ -2298,9 +2297,8 @@ def connect_document_api(app: FastAPI):
         validate_provenance_or_400(
             rag_config.provenance,
             rag_config.id,
-            lambda cid: (
-                RagConfig.from_id_and_parent_path(cid, project.path) is not None
-            ),
+            RagConfig,
+            project.path,
         )
         rag_config.save_to_file()
 
@@ -2384,6 +2382,7 @@ def connect_document_api(app: FastAPI):
                     embedding_config=embedding_config,
                     vector_store_config=vector_store_config,
                     reranker_config=reranker_config,
+                    provenance=rag_config.provenance,
                 )
             )
 
@@ -2467,6 +2466,7 @@ def connect_document_api(app: FastAPI):
             vector_store_config=vector_store_config,
             reranker_config=reranker_config,
             tags=rag_config.tags,
+            provenance=rag_config.provenance,
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better

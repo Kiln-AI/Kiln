@@ -135,7 +135,7 @@ class PromptCreateRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this prompt exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this prompt exists and what it was derived from.",
     )
 
 
@@ -220,9 +220,8 @@ def connect_prompt_api(app: FastAPI):
         validate_provenance_or_400(
             prompt.provenance,
             prompt.id,
-            lambda cid: (
-                Prompt.from_id_and_parent_path(cid, parent_task.path) is not None
-            ),
+            Prompt,
+            parent_task.path,
         )
         prompt.save_to_file()
         return api_prompt_from_prompt(prompt)

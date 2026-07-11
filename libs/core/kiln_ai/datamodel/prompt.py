@@ -39,5 +39,5 @@ class Prompt(KilnParentedModel, BasePrompt):
     # inside TaskRunConfig/Finetune and must not carry artifact provenance.
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter.",
+        description="Why this artifact exists and what it was derived from.",
     )
