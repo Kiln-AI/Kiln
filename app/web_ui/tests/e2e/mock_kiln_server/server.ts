@@ -171,6 +171,48 @@ const server = createServer(async (req, res) => {
       return respond(res, 200, out)
     }
 
+    if (path === "/v1/verify_api_key" && method === "GET") {
+      const token = bearerOrReject(res, req.headers["authorization"] as string)
+      if (token == null) return
+      const next = popQueued(path)
+      if (next?.status && next.status >= 400) {
+        return respond(
+          res,
+          next.status,
+          next.body ?? { error: { message: "mock error" } },
+        )
+      }
+      return respond(res, next?.status ?? 200, next?.body ?? { valid: true })
+    }
+
+    if (path === "/v1/copilot/batch_plan" && method === "POST") {
+      const token = bearerOrReject(res, req.headers["authorization"] as string)
+      if (token == null) return
+      const next = popQueued(path)
+      if (next?.delayMs) {
+        await new Promise((r) => setTimeout(r, next.delayMs))
+      }
+      if (next?.status && next.status >= 400) {
+        return respond(
+          res,
+          next.status,
+          next.body ?? { error: { message: "mock error" } },
+        )
+      }
+      if (next?.body !== undefined) {
+        return respond(res, next.status ?? 200, next.body)
+      }
+      // Default: one prompt per requested input, plus a summary.
+      const count = Number((parsed as { count?: number })?.count ?? 1)
+      return respond(res, 200, {
+        prompts: Array.from(
+          { length: count },
+          (_, i) => `mock input plan ${i + 1}`,
+        ),
+        summary: `Mock batch of ${count}.`,
+      })
+    }
+
     return respond(res, 404, {
       error: {
         message: `mock-kiln-server: no route for ${method} ${path}. Tests should add the endpoint they need to mock_kiln_server/server.ts.`,

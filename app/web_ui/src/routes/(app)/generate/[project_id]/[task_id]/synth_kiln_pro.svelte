@@ -5,6 +5,8 @@
   // (act_mock_kiln_server.spec.ts mocks the copilot endpoints).
   import { onMount, tick } from "svelte"
   import { get } from "svelte/store"
+  import { pushState } from "$app/navigation"
+  import { page } from "$app/stores"
   import posthog from "posthog-js"
   import { client } from "$lib/api_client"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
@@ -90,11 +92,35 @@
     guidance_initialized = true
   }
 
-  // "New Batch Plan" returns to the Generate Batch page with the guidance
-  // preserved, rather than opening a modal.
-  function back_to_generate() {
-    plan_error = null
-    stage = "intro"
+  // Each forward step pushes a history entry tagged with the stage, so the
+  // browser back button steps back through the flow. SvelteKit restores
+  // $page.state on back; we mirror it into `stage`. The in-app back buttons
+  // just call history.back() so both paths go through the same mechanism and
+  // the history stack stays consistent.
+  function advance_stage(next: "plan" | "inputs") {
+    stage = next
+    pushState("", { kiln_pro_stage: next })
+  }
+
+  function go_back() {
+    history.back()
+  }
+
+  $: sync_stage_from_history(
+    ($page.state as Record<string, unknown>)?.kiln_pro_stage as
+      | string
+      | undefined,
+  )
+
+  function sync_stage_from_history(hist_stage: string | undefined) {
+    // "planning" is transient and owned by submit_batch — don't fight it.
+    if (stage === "planning") return
+    if (!hist_stage && (stage === "plan" || stage === "inputs")) {
+      plan_error = null
+      stage = "intro"
+    } else if (hist_stage === "plan" && stage === "inputs") {
+      stage = "plan"
+    }
   }
 
   async function submit_batch() {
@@ -114,7 +140,7 @@
       if (KILN_PRO_DEV_MOCKS) {
         plan = await mock_batch_plan(requested)
         plan_edited = false
-        stage = "plan"
+        advance_stage("plan")
         return
       }
       const { data, error } = await client.POST(
@@ -128,7 +154,7 @@
       if (!data) throw new Error("Batch planner returned no plan.")
       plan = { prompts: data.prompts, summary: data.summary }
       plan_edited = false
-      stage = "plan"
+      advance_stage("plan")
     } catch (e) {
       plan_error = createKilnError(e)
       // Drop back to the intro so the user can adjust and retry.
@@ -171,7 +197,7 @@
       : null
     // @ts-expect-error close is not typed on HTMLElement
     document.getElementById(inputs_dialog_id)?.close()
-    stage = "inputs"
+    advance_stage("inputs")
   }
 </script>
 
@@ -207,7 +233,7 @@
   <KilnProBatchPlan
     {plan}
     on_generate_inputs={open_inputs_modal}
-    on_regenerate={back_to_generate}
+    on_regenerate={go_back}
     on_delete_prompt={delete_prompt}
     summary_out_of_sync={plan_edited}
   />
@@ -219,7 +245,7 @@
     {guidance_data}
     run_config_properties={inputs_rcp}
     data_guide={inputs_data_guide}
-    on_back={() => (stage = "plan")}
+    on_back={go_back}
   />
 {:else}
   <div class="max-w-2xl mx-auto mt-16 md:mt-24 mb-8">
