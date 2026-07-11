@@ -1,6 +1,6 @@
 <script lang="ts">
   // TODO: add Playwright tests for the Kiln Pro batch flow — plan, review and
-  // trim input plans, generate inputs, retry/regenerate, generate outputs,
+  // trim prompts, generate inputs, retry/regenerate, generate outputs,
   // remove output/sample, and save. See app/web_ui/tests/e2e for the pattern
   // (act_mock_kiln_server.spec.ts mocks the copilot endpoints).
   import { onMount } from "svelte"

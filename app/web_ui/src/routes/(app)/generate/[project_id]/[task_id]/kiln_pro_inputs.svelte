@@ -109,7 +109,7 @@
   // A full reset would orphan anything already written to the dataset.
   $: any_saved = rows.some((r) => r.saved_id)
 
-  // Before outputs run, warn about failed input plans — they're hidden from the
+  // Before outputs run, warn about failed prompts — they're hidden from the
   // samples table, so nothing else surfaces them. Once the user has clicked
   // Generate Outputs they've accepted those failures, and the useful warning
   // becomes the samples still missing an output.
@@ -124,7 +124,7 @@
     if (!started_outputs) {
       if (failed_inputs === 0) return null
       return {
-        message: `${failed_inputs} input ${failed_inputs === 1 ? "plan" : "plans"} failed to generate. Use Generate Inputs → Retry Failed.`,
+        message: `${failed_inputs} ${failed_inputs === 1 ? "prompt" : "prompts"} failed to generate. Use Generate Inputs → Retry Failed.`,
         color: ok_inputs > 0 ? "warning" : "error",
       }
     }
@@ -185,7 +185,7 @@
     }
   }
 
-  // Per-row popup showing the input plan that produced an input.
+  // Per-row popup showing the prompt that produced an input.
   let prompt_dialog: Dialog | null = null
   let active_prompt = ""
   function show_prompt(p: string) {
@@ -513,7 +513,7 @@
             items={[
               {
                 label: `Retry Failed (${input_errors})`,
-                description: "Re-run just the input plans that failed.",
+                description: "Re-run just the prompts that failed.",
                 onclick: () => open_inputs_dialog("retry"),
                 hidden: input_errors === 0,
               },
@@ -652,7 +652,7 @@
             <!-- Three equal content columns; the action menu takes the last 40px. -->
             <th style="width: calc((100% - 40px) / 3)">
               Guidance <InfoTooltip
-                tooltip_text="The input plan from your batch plan that guided this sample."
+                tooltip_text="The prompt from your batch plan that guided this sample."
                 position="bottom"
               />
             </th>
@@ -731,7 +731,7 @@
                   <TableActionMenu
                     items={[
                       {
-                        label: "View Input Plan",
+                        label: "View Prompt",
                         onclick: () => show_prompt(row.prompt),
                       },
                       {
@@ -866,8 +866,8 @@
 <!-- Prompt popup -->
 <Dialog
   bind:this={prompt_dialog}
-  title="Input Plan"
-  subtitle="The input plan that generated this input."
+  title="Prompt"
+  subtitle="The prompt that generated this input."
 >
   <div class="rounded-lg bg-base-200 p-4 text-sm whitespace-pre-wrap mt-2">
     {active_prompt}

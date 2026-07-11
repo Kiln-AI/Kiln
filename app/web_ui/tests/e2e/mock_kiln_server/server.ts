@@ -207,7 +207,7 @@ const server = createServer(async (req, res) => {
       return respond(res, 200, {
         prompts: Array.from(
           { length: count },
-          (_, i) => `mock input plan ${i + 1}`,
+          (_, i) => `mock prompt ${i + 1}`,
         ),
         summary: `Mock batch of ${count}.`,
       })

@@ -4,7 +4,7 @@
   export let prompts: string[]
   // When provided, each row gets a delete action.
   export let on_delete: ((index: number) => void) | null = null
-  // When provided, each row shows its status (e.g. what became of the input plan
+  // When provided, each row shows its status (e.g. what became of the prompt
   // once inputs were generated). Parallel to `prompts`.
   export let statuses: string[] | null = null
 
