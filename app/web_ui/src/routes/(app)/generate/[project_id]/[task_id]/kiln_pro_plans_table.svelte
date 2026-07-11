@@ -14,8 +14,9 @@
 <table class="table table-fixed">
   <thead>
     <tr>
-      <!-- Status is 140 and the action menu 40, matching the samples table. -->
-      <th style="width: calc(100% - {reserved_width}px)">Input Plan</th>
+      <!-- Header text intentionally blank; the panel title labels the column.
+           Status is 140 and the action menu 40, matching the samples table. -->
+      <th style="width: calc(100% - {reserved_width}px)"></th>
       {#if statuses}
         <th style="width: 140px">Status</th>
       {/if}
@@ -37,7 +38,7 @@
               width="w-40"
               items={[
                 {
-                  label: "Remove Input Plan",
+                  label: "Remove",
                   onclick: () => on_delete?.(i),
                 },
               ]}

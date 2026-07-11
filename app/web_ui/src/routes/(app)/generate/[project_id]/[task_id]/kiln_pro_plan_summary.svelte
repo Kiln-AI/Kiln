@@ -1,6 +1,7 @@
 <script lang="ts">
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import StarsIcon from "$lib/ui/icons/stars_icon.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   export let summary: string
   // Set once the user edits the plan (e.g. deletes prompts) — the summary is
@@ -18,12 +19,16 @@
       >
         <StarsIcon />
       </span>
-      Plan Summary
+      Batch Overview
     </div>
     {#if out_of_sync}
-      <span class="text-xs text-warning whitespace-nowrap">
-        Edited — summary may be out of date
-      </span>
+      <Warning
+        warning_message="Edited — summary may be out of date"
+        warning_color="warning"
+        warning_icon="exclaim"
+        text_size="xs"
+        tight
+      />
     {/if}
   </div>
   <ChatMarkdown text={summary} />

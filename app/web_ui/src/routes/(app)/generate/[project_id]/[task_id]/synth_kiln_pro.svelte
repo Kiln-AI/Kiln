@@ -7,7 +7,6 @@
   import { get } from "svelte/store"
   import posthog from "posthog-js"
   import { client } from "$lib/api_client"
-  import Intro from "$lib/ui/intro.svelte"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
@@ -33,7 +32,6 @@
   const selected_template = guidance_data.selected_template
   $: task = guidance_data.task
 
-  const dialog_id = "generate_batch_dialog"
   const inputs_dialog_id = "kiln_pro_generate_inputs_dialog"
 
   let current_state: "loading" | "connect" | "ready" = "loading"
@@ -42,7 +40,7 @@
   // Stage within the connected flow.
   let stage: "intro" | "planning" | "plan" | "inputs" = "intro"
 
-  let num_inputs = 8
+  let num_inputs = 50
   // Saved for the session so Regenerate reopens the modal with the user's edits.
   let batch_guidance = ""
   let guidance_initialized = false
@@ -85,21 +83,22 @@
   // The template the guidance box started from, so edits can be undone.
   let batch_guidance_template = ""
 
-  async function open_generate_batch_modal() {
-    if (!guidance_initialized) {
-      batch_guidance_template = guidance_data.kiln_pro_batch_plan_prefill()
-      batch_guidance = batch_guidance_template
-      guidance_initialized = true
-    }
-    await tick()
-    // @ts-expect-error showModal is not typed on HTMLElement
-    document.getElementById(dialog_id)?.showModal()
+  // Prefill the guidance box once, as soon as the Generate Batch page shows.
+  $: if (current_state === "ready" && !guidance_initialized) {
+    batch_guidance_template = guidance_data.kiln_pro_batch_plan_prefill()
+    batch_guidance = batch_guidance_template
+    guidance_initialized = true
+  }
+
+  // "New Batch Plan" returns to the Generate Batch page with the guidance
+  // preserved, rather than opening a modal.
+  function back_to_generate() {
+    plan_error = null
+    stage = "intro"
   }
 
   async function submit_batch() {
     batch_submitting = false
-    // @ts-expect-error close is not typed on HTMLElement
-    document.getElementById(dialog_id)?.close()
     const requested = num_inputs
     const data_guide = get(guidance_data.use_data_guide)
       ? get(guidance_data.data_guide)
@@ -208,7 +207,7 @@
   <KilnProBatchPlan
     {plan}
     on_generate_inputs={open_inputs_modal}
-    on_regenerate={open_generate_batch_modal}
+    on_regenerate={back_to_generate}
     on_delete_prompt={delete_prompt}
     summary_out_of_sync={plan_edited}
   />
@@ -220,55 +219,16 @@
     {guidance_data}
     run_config_properties={inputs_rcp}
     data_guide={inputs_data_guide}
-    summary_out_of_sync={plan_edited}
     on_back={() => (stage = "plan")}
   />
 {:else}
-  <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
-    <Intro
-      title="Plan your batch before you generate"
-      description_paragraphs={[
-        "Tell Kiln what you want and how many inputs you need. Kiln Pro drafts a plan up front — a short summary plus one tailored prompt per input — balancing variety, edge cases, and emphasis so your batch is intentional rather than random.",
-        "You'll review and trim the prompts before a single input is generated.",
-      ]}
-      action_buttons={[
-        {
-          label: "Generate Batch",
-          is_primary: true,
-          onClick: open_generate_batch_modal,
-        },
-        {
-          label: "Guide",
-          is_primary: false,
-          href: `/generate/${project_id}/${task_id}/data_guide`,
-        },
-      ]}
-    >
-      <div slot="icon" class="h-12 w-12">
+  <div class="max-w-2xl mx-auto mt-16 md:mt-24 mb-8">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="h-8 w-8 flex-none">
         <img src="/images/animated_logo.svg" alt="Kiln Pro" />
       </div>
-    </Intro>
-    {#if plan_error}
-      <div class="text-error text-sm mt-4 max-w-md text-center">
-        {plan_error.getMessage()}
-      </div>
-    {/if}
-  </div>
-{/if}
-
-<dialog id={dialog_id} class="modal">
-  <div class="modal-box w-11/12 max-w-3xl">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generate Batch</h3>
-    <p class="text-sm font-light mb-8">
-      Kiln Pro will draft a batch plan — a short summary plus one tailored
-      prompt per input — for you to review before any inputs are generated.
-    </p>
+      <h2 class="text-2xl font-bold">Generate Batch</h2>
+    </div>
     <FormContainer
       submit_label="Generate Batch"
       bind:submitting={batch_submitting}
@@ -281,6 +241,7 @@
       <FormElement
         id="batch_guidance"
         label="Guidance"
+        description={`This allows you to control the dataset you are generating. Some example guidance: "Ensure coverage of all supported languages" or "Include 15% checking edge case x"`}
         inputType="textarea"
         height="xl"
         bind:value={batch_guidance}
@@ -294,11 +255,13 @@
       />
       <SynthDataGuide {guidance_data} />
     </FormContainer>
+    {#if plan_error}
+      <div class="text-error text-sm mt-4">
+        {plan_error.getMessage()}
+      </div>
+    {/if}
   </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+{/if}
 
 <dialog id={inputs_dialog_id} class="modal">
   <div class="modal-box">
@@ -308,21 +271,19 @@
         >✕</button
       >
     </form>
-    <h3 class="text-lg font-bold">Generate Inputs</h3>
-    <p class="text-sm font-light mb-8">
-      Generate synthetic inputs: the data that will be passed into the task.
-    </p>
+    <h3 class="text-lg font-bold">Generation Options</h3>
     {#if inputs_error}
-      <div class="text-error text-sm mb-3">{inputs_error.getMessage()}</div>
+      <div class="text-error text-sm mb-3 mt-2">
+        {inputs_error.getMessage()}
+      </div>
     {/if}
     <FormContainer
       submit_label={plan
-        ? `Generate Inputs (${plan.prompts.length})`
+        ? `Generate Batch (${plan.prompts.length})`
         : "Generate"}
       bind:submitting={inputs_submitting}
       on:submit={submit_inputs}
     >
-      <SynthDataGuide {guidance_data} />
       {#if task}
         <RunConfigComponent
           bind:this={inputs_run_config}

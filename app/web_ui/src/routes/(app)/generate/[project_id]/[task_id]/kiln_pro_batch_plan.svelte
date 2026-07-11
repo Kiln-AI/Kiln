@@ -11,22 +11,19 @@
   $: count = plan.prompts.length
 </script>
 
-<div class="flex flex-col gap-4 mt-4">
+<div class="flex flex-col gap-4 mt-12">
   <div class="flex flex-col md:flex-row md:items-start gap-4">
     <div class="flex-grow">
-      <div class="text-xl font-bold">Batch Plan</div>
+      <div class="text-2xl font-bold">Batch Plan</div>
       <div class="text-sm font-light text-gray-500">
-        <span class="font-medium text-base-content"
-          >{count} {count === 1 ? "input" : "inputs"} planned</span
-        > — review and trim, then generate.
+        Review the plan for generating your synthetic data batch.
       </div>
     </div>
     <div class="flex flex-row gap-2 shrink-0">
-      <button class="btn btn-sm" on:click={on_regenerate}
-        >Regenerate Plan</button
+      <button class="btn btn-lg" on:click={on_regenerate}>New Batch Plan</button
       >
       <button
-        class="btn btn-sm btn-primary"
+        class="btn btn-lg btn-primary"
         disabled={count === 0}
         on:click={on_generate_inputs}
       >

@@ -1,4 +1,7 @@
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
+
+import httpx
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -8,6 +11,9 @@ from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     BatchPlanOutput as BatchPlanOutputClient,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
+    Response,
 )
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 
@@ -147,3 +153,49 @@ def test_batch_plan_unknown_response_is_500(
             json={"guidance": "g", "count": 2},
         )
     assert resp.status_code == 500
+
+
+def test_batch_plan_kiln_server_unreachable_returns_502(
+    mock_copilot_key, mock_task_from_id, client
+):
+    """A network failure reaching kiln_server surfaces as a clear 502, not a
+    generic 500."""
+    with (
+        patch("app.desktop.studio_server.batch_plan_api.get_authenticated_client"),
+        patch(
+            "app.desktop.studio_server.batch_plan_api.batch_plan_v1_copilot_batch_plan_post.asyncio_detailed",
+            new=AsyncMock(side_effect=httpx.ConnectError("boom")),
+        ),
+    ):
+        resp = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/copilot/batch_plan",
+            json={"guidance": "g", "count": 2},
+        )
+    assert resp.status_code == 502, resp.text
+    assert "batch planning" in resp.json()["message"].lower()
+
+
+def test_batch_plan_kiln_server_404_has_clear_message(
+    mock_copilot_key, mock_task_from_id, client
+):
+    """A 404 from a kiln_server without batch planning is propagated with a
+    meaningful message rather than a bare 'Unknown error'."""
+    not_found = Response(
+        status_code=HTTPStatus.NOT_FOUND,
+        content=b'{"detail":"Not Found"}',
+        headers={},
+        parsed=None,
+    )
+    with (
+        patch("app.desktop.studio_server.batch_plan_api.get_authenticated_client"),
+        patch(
+            "app.desktop.studio_server.batch_plan_api.batch_plan_v1_copilot_batch_plan_post.asyncio_detailed",
+            new=AsyncMock(return_value=not_found),
+        ),
+    ):
+        resp = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/copilot/batch_plan",
+            json={"guidance": "g", "count": 2},
+        )
+    assert resp.status_code == 404, resp.text
+    assert "batch planning" in resp.json()["message"].lower()

@@ -6,16 +6,17 @@
   export let on_delete: ((index: number) => void) | null = null
 
   let show_prompts = false
+  $: count = prompts.length
 </script>
 
 <div class="rounded-lg border">
   <button
     class="w-full flex items-center justify-between px-4 py-3 text-left"
-    aria-label={show_prompts ? "Hide input plans" : "Show input plans"}
+    aria-label={show_prompts ? "Hide dataset items" : "Show dataset items"}
     aria-expanded={show_prompts}
     on:click={() => (show_prompts = !show_prompts)}
   >
-    <span class="text-sm font-medium">Input Plans</span>
+    <span class="text-sm font-medium">All Dataset Items ({count})</span>
     <div class="flex items-center text-sm text-gray-500">
       <svg
         class="w-4 h-4 transition-transform {show_prompts ? 'rotate-180' : ''}"
@@ -33,6 +34,9 @@
 
   {#if show_prompts}
     <div class="border-t">
+      <div class="px-4 pt-3 text-sm font-light text-gray-500">
+        Each prompt here will be used to guide one dataset sample.
+      </div>
       <KilnProPlansTable {prompts} {on_delete} />
     </div>
   {/if}

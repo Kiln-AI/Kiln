@@ -206,7 +206,7 @@ export class SynthDataGuidanceDataModel {
       // the planner and drift from it. The definition is delimited so the
       // planner can't mistake its markdown headings for instructions addressed
       // to it.
-      return `Generate a diverse batch of inputs that exercise the behavior defined by the eval "${this.spec.name}", to test whether the task satisfies it.
+      return `Generate a diverse batch of inputs that exercise the behaviour defined by the eval "${this.spec.name}", to test whether the task satisfies it.
 
 The eval's definition is below, for reference:
 

@@ -3,37 +3,16 @@
   export let on_kiln_pro: () => void
 
   const rows: { label: string; manual: string; pro: string }[] = [
-    {
-      label: "Topic tree",
-      manual: "You build one",
-      pro: "Not needed",
-    },
-    {
-      label: "Input guidance",
-      manual: "One for the whole batch",
-      pro: "Tailored per input",
-    },
-    {
-      label: "Coverage and edge cases",
-      manual: "You steer them",
-      pro: "Planned deliberately",
-    },
-    {
-      label: "Review",
-      manual: "After generating",
-      pro: "Plan first, then generate",
-    },
-    { label: "Batch summary", manual: "—", pro: "Generated" },
+    { label: "Effort", manual: "15 mins", pro: "5 mins" },
+    { label: "Use Case Coverage", manual: "Manual", pro: "AI Planned" },
+    { label: "Edge Cases Coverage", manual: "Manual", pro: "AI Planned" },
     { label: "Kiln account", manual: "Optional", pro: "Required" },
   ]
 </script>
 
-<div class="my-4 max-w-[680px] mx-auto">
-  <div class="text-center mt-8 mb-2">
-    <div class="text-lg font-medium">Build your synthetic batch</div>
-    <div class="text-sm text-gray-500 mt-1">
-      Kiln Pro plans the batch for you — or build it yourself the classic way.
-    </div>
+<div class="mt-24 md:mt-36 mb-4 max-w-[680px] mx-auto">
+  <div class="text-lg font-medium text-center mb-2">
+    Build Synthetic Dataset
   </div>
 
   <div class="overflow-x-auto">

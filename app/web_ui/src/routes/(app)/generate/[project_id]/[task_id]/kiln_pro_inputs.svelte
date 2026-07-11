@@ -12,12 +12,9 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import StarsIcon from "$lib/ui/icons/stars_icon.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import FloatingMenu from "$lib/ui/floating_menu.svelte"
-  import KilnProPlanSummary from "./kiln_pro_plan_summary.svelte"
-  import KilnProPlansTable from "./kiln_pro_plans_table.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import {
     runInputsBatch,
@@ -42,7 +39,6 @@
   // generation starts on mount with these.
   export let run_config_properties: KilnAgentRunConfigProperties
   export let data_guide: string | null
-  export let summary_out_of_sync = false
   // Returns to the plan — the only way out once every sample is removed.
   export let on_back: () => void
 
@@ -70,7 +66,7 @@
 
   $: task = guidance_data.task
 
-  const plan_dialog_id = "kiln_pro_plan_dialog"
+  const success_dialog_id = "kiln_pro_success_dialog"
 
   let inputs_status: "running" | "complete" | "error" | null = null
   let outputs_started = false
@@ -112,14 +108,6 @@
   // A full reset would orphan anything already written to the dataset.
   $: any_saved = rows.some((r) => r.saved_id)
 
-  // The input-plan panel mirrors the surviving rows, so trimming samples
-  // trims the plan too. Statuses describe the input plan, not the sample.
-  $: input_plans = rows.map((r) => r.prompt)
-  $: plan_statuses = rows.map((r) => {
-    if (r.input_error) return "Failed"
-    if (r.input !== null) return "Input Generated"
-    return "Generating…"
-  })
   // Before outputs run, warn about failed input plans — they're hidden from the
   // samples table, so nothing else surfaces them. Once the user has clicked
   // Generate Outputs they've accepted those failures, and the useful warning
@@ -152,10 +140,6 @@
     outputs_missing,
     outputs_savable,
   )
-  // Only rendered once generation is done — see the provenance line below.
-  $: plan_summary_line = `${generated_inputs} of ${total} inputs generated${
-    input_errors > 0 ? ` — ${input_errors} failed` : ""
-  }`
 
   const outputs_dialog_id = "kiln_pro_outputs_dialog"
   let outputs_run_config: RunConfigComponent | null = null
@@ -510,10 +494,15 @@
     }
     saving = false
     save_completed = true
+    // Nothing left to do on this screen once saved — surface a clear exit to
+    // the dataset rather than a subtle inline note.
+    if (save_errors.length === 0 && total_saved > 0) {
+      open_dialog(success_dialog_id)
+    }
   }
 </script>
 
-<div class="flex flex-col gap-4 mt-4">
+<div class="flex flex-col gap-4 mt-12">
   <div class="flex flex-row items-center justify-between gap-4">
     <div class="min-w-0">
       {#if !generating && active_warning}
@@ -625,53 +614,34 @@
   {/if}
 
   {#if save_completed && save_errors.length === 0 && total_saved > 0 && outputs_savable === 0}
-    <Warning
-      warning_message={`Saved ${total_saved} ${
-        total_saved === 1 ? "item" : "items"
-      } into your Dataset.`}
-      warning_color="success"
-      warning_icon="check"
-      tight
-    />
+    <div class="flex items-center justify-between gap-3 text-sm">
+      <Warning
+        warning_message={`Saved ${total_saved} ${
+          total_saved === 1 ? "item" : "items"
+        } into your Dataset.`}
+        warning_color="success"
+        warning_icon="check"
+        tight
+      />
+      <a
+        href={`/dataset/${project_id}/${task_id}`}
+        class="btn btn-sm btn-primary shrink-0">View in Dataset</a
+      >
+    </div>
   {/if}
 
   {#if generating}
     {@const progress = inputs_done ? generated_outputs : generated_inputs}
-    <div>
-      <div class="flex flex-row justify-between text-xs font-light mb-1">
-        <span class="font-medium">
-          {inputs_done ? "Generating Outputs" : "Generating Inputs"}
-        </span>
-        <span class="text-gray-500">{progress} of {total}</span>
+    <div class="flex flex-col items-center gap-3 py-10">
+      <div class="loading loading-spinner loading-lg text-primary"></div>
+      <div class="text-sm font-medium">
+        {inputs_done ? "Generating Outputs" : "Generating Inputs"}
       </div>
-      <progress
-        class="progress progress-primary w-full"
-        value={progress}
-        max={total}
-      ></progress>
+      <div class="text-sm font-light text-gray-500">
+        {progress} of {total}
+      </div>
     </div>
   {/if}
-
-  <!-- Plan provenance. The plan itself lives in a dialog — by this point it's
-       reference material, not something to read alongside the samples. -->
-  <div
-    class="rounded-lg border px-4 py-3 flex items-center justify-between text-sm"
-  >
-    <div class="flex items-center gap-1.5 text-gray-600">
-      <span class="w-4 h-4 text-primary"><StarsIcon /></span>
-      {generating ? "Generating from your" : "Generated from your"}
-      <span class="font-medium text-base-content">Batch Plan</span>
-      <!-- The count lives in the progress bar while it's up; showing it here too
-           would duplicate it. -->
-      {#if !generating}
-        <span class="text-gray-400">·</span>
-        {plan_summary_line}
-      {/if}
-    </div>
-    <button class="link" on:click={() => open_dialog(plan_dialog_id)}>
-      View Plan
-    </button>
-  </div>
 
   {#if total === 0}
     <div
@@ -689,20 +659,25 @@
       <table class="table table-fixed">
         <thead>
           <tr>
-            <!-- 140 + 40 = 180 (the width of the last two columns) -->
-            <th style="width: calc(50% - 70px)">
+            <!-- Three equal content columns; the action menu takes the last 40px. -->
+            <th style="width: calc((100% - 40px) / 3)">
+              Guidance <InfoTooltip
+                tooltip_text="The input plan from your batch plan that guided this sample."
+                position="bottom"
+              />
+            </th>
+            <th style="width: calc((100% - 40px) / 3)">
               Input <InfoTooltip
                 tooltip_text="The input to the task, generated from your batch plan."
                 position="bottom"
               />
             </th>
-            <th style="width: calc(50% - 110px)">
+            <th style="width: calc((100% - 40px) / 3)">
               Output <InfoTooltip
                 tooltip_text="The output from running the task on the input."
                 position="bottom"
               />
             </th>
-            <th style="width: 140px">Status</th>
             <th style="width: 40px"></th>
           </tr>
         </thead>
@@ -711,6 +686,16 @@
             <!-- A prompt whose input failed has nothing to show or act on. -->
             {#if !row.input_error}
               <tr on:click={() => toggle_expand(i)} class="cursor-pointer">
+                <td class="py-2 align-top">
+                  {#if expanded[i]}
+                    <pre
+                      class="whitespace-pre-wrap break-words">{row.prompt}</pre>
+                  {:else}
+                    <div class="truncate w-0 min-w-full text-gray-500">
+                      {row.prompt}
+                    </div>
+                  {/if}
+                </td>
                 <td class="py-2 align-top">
                   {#if row.input !== null}
                     {#if expanded[i]}
@@ -751,18 +736,6 @@
                     <span class="text-gray-400">Not Generated</span>
                   {/if}
                 </td>
-                <td class="py-2 align-top">
-                  {#if row.saved_id}
-                    <a
-                      href={`/dataset/${project_id}/${task_id}/${row.saved_id}/run`}
-                      class="hover:underline">Saved</a
-                    >
-                  {:else if row.output}
-                    Unsaved
-                  {:else}
-                    No Output
-                  {/if}
-                </td>
                 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
                 <td class="p-0 align-top" on:click|stopPropagation>
                   <TableActionMenu
@@ -793,24 +766,38 @@
   {/if}
 </div>
 
-<!-- Batch Plan popup: the summary, plus the descriptions it produced -->
-<dialog id={plan_dialog_id} class="modal">
-  <div class="modal-box max-w-3xl">
+<!-- Save success: nothing left to do here, so point the user at the dataset -->
+<dialog id={success_dialog_id} class="modal">
+  <div class="modal-box max-w-md">
     <form method="dialog">
       <button
         class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
         >✕</button
       >
     </form>
-    <h3 class="text-lg font-bold mb-4">Batch Plan</h3>
-    <div class="flex flex-col gap-4">
-      <KilnProPlanSummary
-        summary={plan.summary}
-        out_of_sync={summary_out_of_sync}
-      />
-      <div class="rounded-lg border">
-        <KilnProPlansTable prompts={input_plans} statuses={plan_statuses} />
+    <div
+      class="text-center flex flex-col items-center justify-center pt-4 pb-2"
+    >
+      <svg
+        fill="currentColor"
+        class="size-12 text-success mb-3"
+        viewBox="0 0 56 56"
+        xmlns="http://www.w3.org/2000/svg"
+        ><path
+          d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+        /></svg
+      >
+      <div class="text-lg font-medium">
+        Saved {total_saved}
+        {total_saved === 1 ? "item" : "items"} into your Dataset
       </div>
+      <div class="font-light text-sm text-gray-500 mt-1">
+        Your synthetic data is ready to use.
+      </div>
+      <a
+        href={`/dataset/${project_id}/${task_id}`}
+        class="btn btn-primary btn-wide mt-6">View in Dataset</a
+      >
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">

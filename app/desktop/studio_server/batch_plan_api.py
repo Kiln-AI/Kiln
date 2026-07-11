@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import httpx
 from fastapi import FastAPI, HTTPException, Path
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
@@ -59,19 +60,31 @@ async def _run_batch_plan_kiln_server(
 ) -> BatchPlanApiOutput:
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
-    detailed = await batch_plan_v1_copilot_batch_plan_post.asyncio_detailed(
-        client=client,
-        body=BatchPlanInputClient(
-            task_prompt=task_prompt,
-            count=count,
-            task_input_schema=task_input_schema,
-            task_output_schema=task_output_schema,
-            input_data_guide=input_data_guide,
-            user_guidance=user_guidance,
-        ),
-    )
+    try:
+        detailed = await batch_plan_v1_copilot_batch_plan_post.asyncio_detailed(
+            client=client,
+            body=BatchPlanInputClient(
+                task_prompt=task_prompt,
+                count=count,
+                task_input_schema=task_input_schema,
+                task_output_schema=task_output_schema,
+                input_data_guide=input_data_guide,
+                user_guidance=user_guidance,
+            ),
+        )
+    except httpx.HTTPError as e:
+        # Network-level failure (unreachable host, TLS, timeout). Without this
+        # the raw exception surfaces to the client as a generic 500.
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't reach the Kiln batch planning service. Check your connection and that your Kiln server supports batch planning.",
+        ) from e
+    # A non-2xx (e.g. a 404 from a Kiln server that doesn't have batch planning
+    # deployed) is propagated with this message rather than a bare "Unknown
+    # error" — a raw 404 reads like the endpoint is missing.
     result = unwrap_response(
         detailed,
+        default_detail="The Kiln batch planning service returned an error. Your Kiln server may not support batch planning yet.",
         none_detail="Failed to plan the batch. Please try again.",
     )
     if isinstance(result, BatchPlanOutputClient):
