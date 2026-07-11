@@ -47,7 +47,7 @@ async function gotoGenerateBatchPage(
 
   // Generate Batch page (the merged intro + guidance form; no modal)
   await expect(
-    page.getByRole("heading", { name: "Generate Batch" }),
+    page.getByRole("heading", { name: "Generate Synthetic Data Batch" }),
   ).toBeVisible({ timeout: 15000 })
 }
 
@@ -108,7 +108,7 @@ test("kiln pro: browser back returns from Batch Plan to Generate Batch", async (
   // not skip the whole Kiln Pro flow.
   await page.goBack()
   await expect(
-    page.getByRole("heading", { name: "Generate Batch" }),
+    page.getByRole("heading", { name: "Generate Synthetic Data Batch" }),
   ).toBeVisible()
   await expect(page.getByText("Batch Plan", { exact: true })).not.toBeVisible()
 })
@@ -144,6 +144,6 @@ test("kiln pro: New Batch Plan returns to the Generate Batch page", async ({
     .toContain("Are you sure you want to start a new batch plan?")
 
   await expect(
-    page.getByRole("heading", { name: "Generate Batch" }),
+    page.getByRole("heading", { name: "Generate Synthetic Data Batch" }),
   ).toBeVisible()
 })

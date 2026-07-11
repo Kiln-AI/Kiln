@@ -39,7 +39,7 @@
         disabled={count === 0}
         on:click={on_generate_inputs}
       >
-        Generate Inputs ({count})
+        Generate Batch ({count})
       </button>
     </div>
   </div>

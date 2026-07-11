@@ -251,7 +251,7 @@
       <div class="h-8 w-8 flex-none">
         <img src="/images/animated_logo.svg" alt="Kiln Pro" />
       </div>
-      <h2 class="text-xl font-medium">Generate Batch</h2>
+      <h2 class="text-xl font-medium">Generate Synthetic Data Batch</h2>
     </div>
     <FormContainer
       submit_label="Generate Batch"
@@ -290,9 +290,7 @@
 
 <Dialog bind:this={inputs_dialog} title="Generation Settings">
   <FormContainer
-    submit_label={plan
-      ? `Generate Inputs (${plan.prompts.length})`
-      : "Generate"}
+    submit_label={plan ? `Generate Batch (${plan.prompts.length})` : "Generate"}
     bind:submitting={inputs_submitting}
     on:submit={submit_inputs}
     keyboard_submit={false}

@@ -160,10 +160,6 @@
   let inputs_action: "retry" | "regenerate" = "regenerate"
   let active_rcp: KilnAgentRunConfigProperties = run_config_properties
 
-  $: inputs_pending =
-    inputs_action === "retry" ? input_errors : generated_inputs + input_errors
-  $: inputs_already_generated = inputs_action === "retry" ? generated_inputs : 0
-
   function open_inputs_dialog(action: "retry" | "regenerate") {
     inputs_action = action
     batch_error = null
@@ -520,7 +516,7 @@
         />
         {#if active_warning.retry && !saving}
           <button
-            class="btn btn-sm shrink-0"
+            class="btn btn-link btn-sm shrink-0 p-0"
             on:click={() => open_inputs_dialog("retry")}
           >
             Retry
@@ -780,24 +776,16 @@
   </div>
 </Dialog>
 
-<!-- Generate Inputs modal, for retry and regenerate -->
+<!-- One dialog, reused for both retry and regenerate -->
 <Dialog bind:this={inputs_dialog} title="Generation Settings">
   <FormContainer
-    submit_label="Generate Inputs"
+    submit_label={inputs_action === "retry"
+      ? `Retry (${input_errors})`
+      : `Regenerate Inputs (${total})`}
     bind:submitting={inputs_submitting}
     on:submit={submit_inputs_config}
     keyboard_submit={false}
   >
-    <div>
-      <div class="font-medium text-sm">Status</div>
-      <div class="font-light">
-        {inputs_pending}
-        {inputs_pending === 1 ? "item" : "items"} pending
-        {#if inputs_already_generated > 0}
-          / {inputs_already_generated} already generated
-        {/if}
-      </div>
-    </div>
     {#if task}
       <RunConfigComponent
         bind:this={inputs_run_config}
