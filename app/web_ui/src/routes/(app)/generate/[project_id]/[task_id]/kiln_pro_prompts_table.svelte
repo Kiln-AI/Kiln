@@ -16,7 +16,14 @@
     aria-expanded={show_prompts}
     on:click={() => (show_prompts = !show_prompts)}
   >
-    <span class="text-sm font-medium">All Dataset Items ({count})</span>
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium">All Dataset Items ({count})</span>
+      {#if show_prompts}
+        <div class="text-sm text-gray-500">
+          Each prompt below will be used to guide one dataset sample.
+        </div>
+      {/if}
+    </div>
     <div class="flex items-center text-sm text-gray-500">
       <svg
         class="w-4 h-4 transition-transform {show_prompts ? 'rotate-180' : ''}"
@@ -33,11 +40,6 @@
   </button>
 
   {#if show_prompts}
-    <div class="border-t">
-      <div class="px-4 pt-3 text-sm font-light text-gray-500">
-        Each prompt here will be used to guide one dataset sample.
-      </div>
-      <KilnProPlansTable {prompts} {on_delete} />
-    </div>
+    <KilnProPlansTable {prompts} {on_delete} />
   {/if}
 </div>

@@ -16,7 +16,7 @@
     <tr>
       <!-- Header text intentionally blank; the panel title labels the column.
            Status is 140 and the action menu 40, matching the samples table. -->
-      <th style="width: calc(100% - {reserved_width}px)"></th>
+      <th style="width: calc(100% - {reserved_width}px)">Prompt</th>
       {#if statuses}
         <th style="width: 140px">Status</th>
       {/if}

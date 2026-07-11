@@ -248,15 +248,16 @@
     on_back={go_back}
   />
 {:else}
-  <div class="max-w-2xl mx-auto mt-16 md:mt-24 mb-8">
-    <div class="flex items-center gap-3 mb-6">
+  <div class="max-w-2xl mx-auto mt-8 md:mt-16 mb-8">
+    <div class="flex items-center gap-2 mb-6">
       <div class="h-8 w-8 flex-none">
         <img src="/images/animated_logo.svg" alt="Kiln Pro" />
       </div>
-      <h2 class="text-2xl font-bold">Generate Batch</h2>
+      <h2 class="text-xl font-medium">Generate Batch</h2>
     </div>
     <FormContainer
       submit_label="Generate Batch"
+      compact_button={true}
       bind:submitting={batch_submitting}
       on:submit={submit_batch}
     >
@@ -267,7 +268,7 @@
       <FormElement
         id="batch_guidance"
         label="Guidance"
-        description={`This allows you to control the dataset you are generating. Some example guidance: "Ensure coverage of all supported languages" or "Include 15% checking edge case x"`}
+        description={`This allows you to control the dataset you are generating. For example, "10% of the dataset should be in Spanish."`}
         inputType="textarea"
         height="xl"
         bind:value={batch_guidance}

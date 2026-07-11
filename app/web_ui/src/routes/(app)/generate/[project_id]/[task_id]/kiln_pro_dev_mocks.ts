@@ -17,7 +17,7 @@ import type {
   OutputsBatchStatus,
 } from "$lib/stores/kiln_pro_batch_store"
 
-export const KILN_PRO_DEV_MOCKS = false
+export const KILN_PRO_DEV_MOCKS = true
 
 // How long a mocked plan takes, and how fast rows stream in.
 const PLAN_DELAY_MS = 1500

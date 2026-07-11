@@ -131,7 +131,11 @@ test("kiln pro: New Batch Plan returns to the Generate Batch page", async ({
     timeout: 30000,
   })
 
+  // Discarding the plan is destructive, so it confirms first.
   await page.getByRole("button", { name: "New Batch Plan" }).click()
+  await expect(page.getByText("New Batch Plan?")).toBeVisible()
+  await page.getByRole("button", { name: "New Plan (Discard Current)" }).click()
+
   await expect(
     page.getByRole("heading", { name: "Generate Batch" }),
   ).toBeVisible()

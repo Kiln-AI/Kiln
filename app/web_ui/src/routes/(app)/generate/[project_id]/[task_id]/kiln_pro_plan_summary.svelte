@@ -23,7 +23,7 @@
     </div>
     {#if out_of_sync}
       <Warning
-        warning_message="Edited — summary may be out of date"
+        warning_message="Dataset items edited. Overview may be out of date."
         warning_color="warning"
         warning_icon="exclaim"
         text_size="xs"
