@@ -41,7 +41,7 @@ class CreateTaskFromToolRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance stamped onto the created run config. Immutable after create.",
+        description="Provenance stamped onto the created run config.",
     )
 
 
@@ -55,7 +55,7 @@ class CreateMcpRunConfigRequest(BaseModel):
     tool_id: str = Field(description="The MCP tool ID to use.")
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this run config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this run config exists and what it was derived from.",
     )
 
 
@@ -320,9 +320,8 @@ def connect_run_config_api(app: FastAPI):
         validate_provenance_or_400(
             task_run_config.provenance,
             task_run_config.id,
-            lambda cid: (
-                TaskRunConfig.from_id_and_parent_path(cid, task.path) is not None
-            ),
+            TaskRunConfig,
+            task.path,
         )
         task_run_config.save_to_file()
         return task_run_config
@@ -398,9 +397,8 @@ def connect_run_config_api(app: FastAPI):
             validate_provenance_or_400(
                 task_run_config.provenance,
                 task_run_config.id,
-                lambda cid: (
-                    TaskRunConfig.from_id_and_parent_path(cid, task.path) is not None
-                ),
+                TaskRunConfig,
+                task.path,
             )
             task_run_config.save_to_file()
 

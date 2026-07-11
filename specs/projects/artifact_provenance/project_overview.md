@@ -68,9 +68,9 @@ class KilnArtifactProvenance(BaseModel):
 
 **Validators (on the submodel):**
 
-- `notes`: strip whitespace; coerce empty/whitespace-only to `None`; enforce the 2,000-char cap post-strip. (Caps are write discipline: Letta caps records at 2,000 chars, LangSmith commit descriptions at 1,000.)
-- `derived_from_ids`: each entry validated with the existing `ID_TYPE` validator; reject duplicates; reject empty strings.
-- `origin`: strict membership in `{"human", "agent"}` when *not* in the `loading_from_file` validation context; any non-empty string accepted when loading (forward compat — mirrors the existing strict-mode/load-context pattern).
+- `notes`: strip whitespace; coerce empty/whitespace-only to `None`; enforce the 2,000-char cap post-strip — **create-time only** (on load, over-length notes are accepted). (Caps are write discipline: Letta caps records at 2,000 chars, LangSmith commit descriptions at 1,000.)
+- `derived_from_ids`: reject empty/whitespace-only entries and duplicate ids — **create-time only**. There is no `ID_TYPE` format validator in Kiln (`ID_TYPE` is unconstrained `Optional[str]`), so entries are not run through one. On load, the list is accepted as-is (any string or `None`).
+- `origin`: strict membership in `{"human", "agent"}` when *not* in the `loading_from_file` validation context; on load, any string **or** `None` is accepted (forward/back-compat — mirrors the existing strict-mode/load-context pattern).
 
 **API-layer rules (per hosting model's endpoints):**
 
@@ -85,10 +85,10 @@ class KilnArtifactProvenance(BaseModel):
 **Phase 1 — core + Tier 1 (the models the compile loop touches today):**
 
 1. `KilnArtifactProvenance` submodel + validators + unit tests.
-2. Add `provenance` to: **`Skill`**, **`Prompt`**, **`TaskRunConfig`**. (**`CodeTool`**: field included in the Code Tools project per its revised spec — verify, don't re-add.)
+2. Add `provenance` to all four Tier-1 hosts: **`Skill`**, **`Prompt`**, **`TaskRunConfig`**, **`CodeTool`** — each gets the field + create-endpoint plumbing + clone wiring.
 3. **Clone-path inventory (do this first in implementation):** enumerate every Clone function/endpoint in the app across all models; wire each to stamp `derived_from_ids` + `origin`. While inventorying, **assert the cross-scope case does not exist** (no clone path copies an artifact into a different parent scope — believed true; if one is found, stop and flag rather than guessing: the intended fallback is source recorded in `notes`, `derived_from_ids` left empty).
 4. API plumbing per Tier-1 model: create accepts provenance (+ existence/self-ref checks), PATCH excludes, reads return.
-5. Minimal UI: read-only provenance block on artifact detail views (notes, origin badge, "derived from" as ID chips linking to siblings); optional one-line note input on Clone dialogs.
+5. **No provenance display UI** — provenance is agent/disk-facing metadata only (display deferred/out-of-scope). Clone/create forms stamp `provenance` (`origin`, plus `derived_from_ids` on a clone) silently into the create request; nothing is shown on any detail view or Clone dialog.
 
 **Phase 2 — Tier 2 (the tunable surface referenced by run configs):**
 

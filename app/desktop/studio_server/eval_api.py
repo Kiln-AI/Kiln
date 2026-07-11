@@ -238,7 +238,7 @@ class CreateEvalConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this eval config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this eval config exists and what it was derived from.",
     )
 
 
@@ -317,7 +317,7 @@ class CreateTaskRunConfigRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this run config exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this run config exists and what it was derived from.",
     )
 
 
@@ -972,9 +972,8 @@ def connect_evals_api(app: FastAPI):
         validate_provenance_or_400(
             task_run_config.provenance,
             task_run_config.id,
-            lambda cid: (
-                TaskRunConfig.from_id_and_parent_path(cid, task.path) is not None
-            ),
+            TaskRunConfig,
+            task.path,
         )
         if isinstance(
             task_run_config.run_config_properties, KilnAgentRunConfigProperties
@@ -1083,7 +1082,8 @@ def connect_evals_api(app: FastAPI):
         validate_provenance_or_400(
             eval_config.provenance,
             eval_config.id,
-            lambda cid: EvalConfig.from_id_and_parent_path(cid, eval.path) is not None,
+            EvalConfig,
+            eval.path,
         )
         eval_config.save_to_file()
         return eval_config

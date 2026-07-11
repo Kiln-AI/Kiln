@@ -68,7 +68,7 @@ class VectorStoreConfig(KilnParentedModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Why this artifact exists and what it was derived from. Written once at creation; immutable thereafter.",
+        description="Why this artifact exists and what it was derived from.",
     )
 
     @model_validator(mode="before")

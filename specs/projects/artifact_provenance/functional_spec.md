@@ -50,7 +50,10 @@ A new plain `pydantic.BaseModel` (mirrors `DataSource` — no `id`/`v`/`path`/`m
 
 ```python
 class KilnArtifactProvenance(BaseModel):
-    notes: str | None = Field(default=None, max_length=2000, description=...)
+    # No Field(max_length=...) on notes: the 2,000-char cap is enforced create-time in
+    # the validator only. A Field constraint would also reject over-length notes on load,
+    # breaking the forward-compatible-load requirement.
+    notes: str | None = Field(default=None, description=...)
     derived_from_ids: list[ID_TYPE] = Field(default_factory=list, description=...)
     origin: str | None = Field(default=None, description=...)
 ```

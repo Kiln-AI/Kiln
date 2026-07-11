@@ -57,7 +57,7 @@ class CodeToolCreateRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this code tool exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this code tool exists and what it was derived from.",
     )
 
 
@@ -252,7 +252,8 @@ def connect_code_tool_api(app: FastAPI):
         validate_provenance_or_400(
             code_tool.provenance,
             code_tool.id,
-            lambda cid: CodeTool.from_id_and_parent_path(cid, project.path) is not None,
+            CodeTool,
+            project.path,
         )
 
         code_tool.save_to_file()

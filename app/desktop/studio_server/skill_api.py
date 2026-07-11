@@ -32,7 +32,7 @@ class SkillCreationRequest(BaseModel):
     body: str = Field(min_length=1, description="The markdown body of the skill.")
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this skill exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this skill exists and what it was derived from.",
     )
 
 
@@ -169,7 +169,8 @@ def connect_skill_api(app: FastAPI):
         validate_provenance_or_400(
             skill.provenance,
             skill.id,
-            lambda cid: Skill.from_id_and_parent_path(cid, project.path) is not None,
+            Skill,
+            project.path,
         )
         skill.save_to_file()
         skill.save_skill_md(skill_data.body)

@@ -30,6 +30,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
@@ -5897,6 +5898,52 @@ async def test_create_rag_config_with_valid_provenance(
     assert loaded is not None
     assert loaded.provenance is not None
     assert loaded.provenance.origin == "human"
+
+
+async def test_get_rag_config_reads_return_provenance(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    # The list/detail reads map to RagConfigWithSubConfigs, so provenance must be
+    # carried through (not dropped) the way it is for the direct-datamodel POST response.
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Provenance RAG Config",
+        tool_name="provenance_search_tool",
+        tool_description="A search tool with provenance.",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+        provenance=KilnArtifactProvenance(
+            origin="human",
+            notes="Persisted provenance to read back.",
+        ),
+    )
+    rag_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        list_response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
+        detail_response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}"
+        )
+
+    assert list_response.status_code == 200, list_response.text
+    listed = next(item for item in list_response.json() if item["id"] == rag_config.id)
+    assert listed["provenance"] is not None
+    assert listed["provenance"]["origin"] == "human"
+    assert listed["provenance"]["notes"] == "Persisted provenance to read back."
+
+    assert detail_response.status_code == 200, detail_response.text
+    detail = detail_response.json()
+    assert detail["provenance"] is not None
+    assert detail["provenance"]["origin"] == "human"
+    assert detail["provenance"]["notes"] == "Persisted provenance to read back."
 
 
 async def test_create_rag_config_unknown_sibling_400(

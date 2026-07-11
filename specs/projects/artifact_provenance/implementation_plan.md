@@ -4,7 +4,7 @@ status: complete
 
 # Implementation Plan: Artifact Provenance
 
-Phased build order. Details live in [functional_spec.md](functional_spec.md) and [architecture.md](architecture.md). Developed on `scosman/evals_v2`. Each phase must end green on `uv run ./checks.sh --agent-mode` and the web checks (including `check_schema.sh`).
+Phased build order. Details live in [functional_spec.md](functional_spec.md) and [architecture.md](architecture.md). Developed on `scosman/evals_v2`. Each phase must end green on `uv run ./checks.sh --agent-mode` and the web checks, and `check_schema.sh` must be regenerated and green — **except** the documented Phase-4 (Tier-2 backend) step, which intentionally leaves the OpenAPI schema stale until Phase 5 regenerates it (see [phase_plans/phase_4.md](phase_plans/phase_4.md)). `check_schema.sh` must be green again after Phase 5.
 
 ## Phase 1 — Core + Tier 1
 

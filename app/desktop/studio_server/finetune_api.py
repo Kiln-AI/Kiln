@@ -175,7 +175,7 @@ class CreateFinetuneRequest(BaseModel):
     run_config_properties: KilnAgentRunConfigProperties | None = None
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Optional provenance: why this fine-tune exists and what it was derived from. Immutable after create.",
+        description="Provenance: why this fine-tune exists and what it was derived from.",
     )
 
     @model_validator(mode="after")
@@ -654,7 +654,8 @@ def connect_fine_tune_api(app: FastAPI):
         validate_provenance_or_400(
             request.provenance,
             None,
-            lambda cid: Finetune.from_id_and_parent_path(cid, task.path) is not None,
+            Finetune,
+            task.path,
         )
 
         _, finetune_model = await finetune_adapter_class.create_and_start(
