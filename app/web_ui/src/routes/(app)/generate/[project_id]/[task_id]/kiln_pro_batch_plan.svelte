@@ -1,6 +1,4 @@
 <script lang="ts">
-  import Dialog from "$lib/ui/dialog.svelte"
-  import Warning from "$lib/ui/warning.svelte"
   import KilnProPlanSummary from "./kiln_pro_plan_summary.svelte"
   import KilnProPromptsTable from "./kiln_pro_prompts_table.svelte"
 
@@ -12,9 +10,16 @@
 
   $: count = plan.prompts.length
 
-  // Starting a new plan throws away this one (and any items the user trimmed),
-  // so confirm first — same pattern as clearing a synth session.
-  let new_plan_dialog: Dialog | null = null
+  // Starting a new plan throws away this one (and any items the user trimmed).
+  // Same native confirm the Reset button uses.
+  function new_plan_with_confirm() {
+    const msg = summary_out_of_sync
+      ? "Are you sure you want to start a new batch plan? This discards the current plan, including the dataset items you removed. This cannot be undone."
+      : "Are you sure you want to start a new batch plan? This discards the current plan. This cannot be undone."
+    if (confirm(msg)) {
+      on_regenerate()
+    }
+  }
 </script>
 
 <div class="flex flex-col gap-4 mt-12">
@@ -26,7 +31,7 @@
       </div>
     </div>
     <div class="flex flex-row gap-2 shrink-0">
-      <button class="btn btn-md" on:click={() => new_plan_dialog?.show()}
+      <button class="btn btn-md" on:click={new_plan_with_confirm}
         >New Batch Plan</button
       >
       <button
@@ -45,31 +50,3 @@
   />
   <KilnProPromptsTable prompts={plan.prompts} on_delete={on_delete_prompt} />
 </div>
-
-<Dialog
-  title="New Batch Plan?"
-  bind:this={new_plan_dialog}
-  action_buttons={[
-    {
-      label: "Keep Current Plan",
-      isCancel: true,
-    },
-    {
-      label: "New Plan (Discard Current)",
-      isWarning: true,
-      action: () => {
-        on_regenerate()
-        return true
-      },
-    },
-  ]}
->
-  <div class="font-light flex flex-col gap-2">
-    <p>
-      This discards the current plan{summary_out_of_sync
-        ? ", including the dataset items you removed"
-        : ""}, and takes you back to set up a new one.
-    </p>
-    <Warning warning_message="This action cannot be undone." />
-  </div>
-</Dialog>

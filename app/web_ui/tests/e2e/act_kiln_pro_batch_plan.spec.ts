@@ -131,10 +131,17 @@ test("kiln pro: New Batch Plan returns to the Generate Batch page", async ({
     timeout: 30000,
   })
 
-  // Discarding the plan is destructive, so it confirms first.
+  // Discarding the plan is destructive, so it confirms first via the native
+  // browser confirm (same as the Reset button).
+  let confirmed = ""
+  page.once("dialog", (dialog) => {
+    confirmed = dialog.message()
+    void dialog.accept()
+  })
   await page.getByRole("button", { name: "New Batch Plan" }).click()
-  await expect(page.getByText("New Batch Plan?")).toBeVisible()
-  await page.getByRole("button", { name: "New Plan (Discard Current)" }).click()
+  await expect
+    .poll(() => confirmed)
+    .toContain("Are you sure you want to start a new batch plan?")
 
   await expect(
     page.getByRole("heading", { name: "Generate Batch" }),
