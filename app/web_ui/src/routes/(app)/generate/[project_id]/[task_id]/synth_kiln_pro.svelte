@@ -3,7 +3,7 @@
   // trim input plans, generate inputs, retry/regenerate, generate outputs,
   // remove output/sample, and save. See app/web_ui/tests/e2e for the pattern
   // (act_mock_kiln_server.spec.ts mocks the copilot endpoints).
-  import { onMount, tick } from "svelte"
+  import { onMount } from "svelte"
   import { get } from "svelte/store"
   import { pushState } from "$app/navigation"
   import { page } from "$app/stores"
@@ -15,6 +15,7 @@
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { isKilnAgentRunConfig } from "$lib/types"
   import type { KilnAgentRunConfigProperties } from "$lib/types"
@@ -34,7 +35,7 @@
   const selected_template = guidance_data.selected_template
   $: task = guidance_data.task
 
-  const inputs_dialog_id = "kiln_pro_generate_inputs_dialog"
+  let inputs_dialog: Dialog | null = null
 
   let current_state: "loading" | "connect" | "ready" = "loading"
   let connect_success = false
@@ -171,11 +172,9 @@
     plan_edited = true
   }
 
-  async function open_inputs_modal() {
+  function open_inputs_modal() {
     inputs_error = null
-    await tick()
-    // @ts-expect-error showModal is not typed on HTMLElement
-    document.getElementById(inputs_dialog_id)?.showModal()
+    inputs_dialog?.show()
   }
 
   // Capture the model config, then transition to the inputs view (which starts
@@ -195,8 +194,7 @@
     inputs_data_guide = get(guidance_data.use_data_guide)
       ? get(guidance_data.data_guide)
       : null
-    // @ts-expect-error close is not typed on HTMLElement
-    document.getElementById(inputs_dialog_id)?.close()
+    inputs_dialog?.close()
     advance_stage("inputs")
   }
 </script>
@@ -290,49 +288,36 @@
   </div>
 {/if}
 
-<dialog id={inputs_dialog_id} class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generation Options</h3>
-    {#if inputs_error}
-      <div class="text-error text-sm mb-3 mt-2">
-        {inputs_error.getMessage()}
-      </div>
+<Dialog bind:this={inputs_dialog} title="Generation Options">
+  <FormContainer
+    submit_label={plan
+      ? `Generate Inputs (${plan.prompts.length})`
+      : "Generate"}
+    bind:submitting={inputs_submitting}
+    on:submit={submit_inputs}
+    keyboard_submit={false}
+  >
+    {#if task}
+      <RunConfigComponent
+        bind:this={inputs_run_config}
+        {project_id}
+        current_task={task}
+        requires_structured_output={true}
+        hide_prompt_selector={true}
+        show_tools_selector_in_advanced={true}
+        show_name_field={false}
+        model_dropdown_settings={{
+          requires_data_gen: true,
+          requires_uncensored_data_gen:
+            guidance_data.suggest_uncensored($selected_template),
+          suggested_mode: guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen",
+        }}
+      />
     {/if}
-    <FormContainer
-      submit_label={plan
-        ? `Generate Batch (${plan.prompts.length})`
-        : "Generate"}
-      bind:submitting={inputs_submitting}
-      on:submit={submit_inputs}
-    >
-      {#if task}
-        <RunConfigComponent
-          bind:this={inputs_run_config}
-          {project_id}
-          current_task={task}
-          requires_structured_output={true}
-          hide_prompt_selector={true}
-          show_tools_selector_in_advanced={true}
-          show_name_field={false}
-          model_dropdown_settings={{
-            requires_data_gen: true,
-            requires_uncensored_data_gen:
-              guidance_data.suggest_uncensored($selected_template),
-            suggested_mode: guidance_data.suggest_uncensored($selected_template)
-              ? "uncensored_data_gen"
-              : "data_gen",
-          }}
-        />
-      {/if}
-    </FormContainer>
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+    {#if inputs_error}
+      <div class="text-error text-sm">{inputs_error.getMessage()}</div>
+    {/if}
+  </FormContainer>
+</Dialog>

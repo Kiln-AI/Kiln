@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from "svelte"
+  import { onDestroy, onMount } from "svelte"
   import { client } from "$lib/api_client"
   import posthog from "posthog-js"
   import type { components } from "$lib/api_schema"
@@ -11,6 +11,7 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
@@ -66,7 +67,7 @@
 
   $: task = guidance_data.task
 
-  const success_dialog_id = "kiln_pro_success_dialog"
+  let success_dialog: Dialog | null = null
 
   let inputs_status: "running" | "complete" | "error" | null = null
   let outputs_started = false
@@ -141,13 +142,13 @@
     outputs_savable,
   )
 
-  const outputs_dialog_id = "kiln_pro_outputs_dialog"
+  let outputs_dialog: Dialog | null = null
   let outputs_run_config: RunConfigComponent | null = null
   let outputs_submitting = false
 
   // Re-running inputs re-asks for the model rather than silently reusing the
   // one picked on the plan page. `active_rcp` is whatever was chosen last.
-  const inputs_dialog_id = "kiln_pro_regen_inputs_dialog"
+  let inputs_dialog: Dialog | null = null
   const selected_template = guidance_data.selected_template
   let inputs_run_config: RunConfigComponent | null = null
   let inputs_submitting = false
@@ -161,7 +162,7 @@
   function open_inputs_dialog(action: "retry" | "regenerate") {
     inputs_action = action
     batch_error = null
-    open_dialog(inputs_dialog_id)
+    inputs_dialog?.show()
   }
 
   function submit_inputs_config() {
@@ -176,7 +177,7 @@
       return
     }
     active_rcp = rcp
-    close_dialog(inputs_dialog_id)
+    inputs_dialog?.close()
     if (inputs_action === "retry") {
       retry_failed()
     } else {
@@ -185,11 +186,11 @@
   }
 
   // Per-row popup showing the input plan that produced an input.
-  const prompt_dialog_id = "kiln_pro_prompt_dialog"
+  let prompt_dialog: Dialog | null = null
   let active_prompt = ""
   function show_prompt(p: string) {
     active_prompt = p
-    open_dialog(prompt_dialog_id)
+    prompt_dialog?.show()
   }
 
   let expanded: boolean[] = new Array(rows.length).fill(false)
@@ -237,17 +238,6 @@
     inputs_unsub.forEach((u) => u())
     outputs_unsub.forEach((u) => u())
   })
-
-  async function open_dialog(id: string) {
-    await tick()
-    // @ts-expect-error showModal is not typed on HTMLElement
-    document.getElementById(id)?.showModal()
-  }
-
-  function close_dialog(id: string) {
-    // @ts-expect-error close is not typed on HTMLElement
-    document.getElementById(id)?.close()
-  }
 
   function output_preview(run: TaskRun): string {
     const out = run.output?.output
@@ -387,7 +377,7 @@
       batch_error = new KilnError("No run config selected.", null)
       return
     }
-    close_dialog(outputs_dialog_id)
+    outputs_dialog?.close()
 
     // Only rows still missing an output: never run, failed, or output removed.
     const items = rows
@@ -497,7 +487,7 @@
     // Nothing left to do on this screen once saved — surface a clear exit to
     // the dataset rather than a subtle inline note.
     if (save_errors.length === 0 && total_saved > 0) {
-      open_dialog(success_dialog_id)
+      success_dialog?.show()
     }
   }
 </script>
@@ -556,7 +546,7 @@
           <button
             class="btn btn-sm {outputs_savable > 0 ? '' : 'btn-primary'}"
             disabled={saving}
-            on:click={() => open_dialog(outputs_dialog_id)}
+            on:click={() => outputs_dialog?.show()}
           >
             Generate Outputs ({outputs_missing})
           </button>
@@ -767,163 +757,119 @@
 </div>
 
 <!-- Save success: nothing left to do here, so point the user at the dataset -->
-<dialog id={success_dialog_id} class="modal">
-  <div class="modal-box max-w-md">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <div
-      class="text-center flex flex-col items-center justify-center pt-4 pb-2"
+<Dialog bind:this={success_dialog} title="" center_content={true}>
+  <div class="text-center flex flex-col items-center justify-center pt-2 pb-2">
+    <svg
+      fill="currentColor"
+      class="size-12 text-success mb-3"
+      viewBox="0 0 56 56"
+      xmlns="http://www.w3.org/2000/svg"
+      ><path
+        d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+      /></svg
     >
-      <svg
-        fill="currentColor"
-        class="size-12 text-success mb-3"
-        viewBox="0 0 56 56"
-        xmlns="http://www.w3.org/2000/svg"
-        ><path
-          d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
-        /></svg
-      >
-      <div class="text-lg font-medium">
-        Saved {total_saved}
-        {total_saved === 1 ? "item" : "items"} into your Dataset
-      </div>
-      <div class="font-light text-sm text-gray-500 mt-1">
-        Your synthetic data is ready to use.
-      </div>
-      <a
-        href={`/dataset/${project_id}/${task_id}`}
-        class="btn btn-primary btn-wide mt-6">View in Dataset</a
-      >
+    <div class="text-lg font-medium">
+      Saved {total_saved}
+      {total_saved === 1 ? "item" : "items"} into your Dataset
     </div>
+    <div class="font-light text-sm text-gray-500 mt-1">
+      Your synthetic data is ready to use.
+    </div>
+    <a
+      href={`/dataset/${project_id}/${task_id}`}
+      class="btn btn-primary btn-wide mt-6">View in Dataset</a
+    >
   </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+</Dialog>
 
 <!-- Generate Inputs modal, for retry and regenerate -->
-<dialog id={inputs_dialog_id} class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generate Inputs</h3>
-    <p class="text-sm font-light mb-5">
-      Generate synthetic inputs: the data that will be passed into the task.
-    </p>
-    <FormContainer
-      submit_label="Generate Inputs"
-      bind:submitting={inputs_submitting}
-      on:submit={submit_inputs_config}
-    >
-      <div>
-        <div class="font-medium text-sm">Status</div>
-        <div class="font-light">
-          {inputs_pending}
-          {inputs_pending === 1 ? "item" : "items"} pending
-          {#if inputs_already_generated > 0}
-            / {inputs_already_generated} already generated
-          {/if}
-        </div>
+<Dialog
+  bind:this={inputs_dialog}
+  title="Generate Inputs"
+  subtitle="Generate synthetic inputs: the data that will be passed into the task."
+>
+  <FormContainer
+    submit_label="Generate Inputs"
+    bind:submitting={inputs_submitting}
+    on:submit={submit_inputs_config}
+    keyboard_submit={false}
+  >
+    <div>
+      <div class="font-medium text-sm">Status</div>
+      <div class="font-light">
+        {inputs_pending}
+        {inputs_pending === 1 ? "item" : "items"} pending
+        {#if inputs_already_generated > 0}
+          / {inputs_already_generated} already generated
+        {/if}
       </div>
-      {#if task}
-        <RunConfigComponent
-          bind:this={inputs_run_config}
-          {project_id}
-          current_task={task}
-          requires_structured_output={true}
-          hide_prompt_selector={true}
-          show_tools_selector_in_advanced={true}
-          show_name_field={false}
-          model_dropdown_settings={{
-            requires_data_gen: true,
-            requires_uncensored_data_gen:
-              guidance_data.suggest_uncensored($selected_template),
-            suggested_mode: guidance_data.suggest_uncensored($selected_template)
-              ? "uncensored_data_gen"
-              : "data_gen",
-          }}
-        />
-      {/if}
-    </FormContainer>
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+    </div>
+    {#if task}
+      <RunConfigComponent
+        bind:this={inputs_run_config}
+        {project_id}
+        current_task={task}
+        requires_structured_output={true}
+        hide_prompt_selector={true}
+        show_tools_selector_in_advanced={true}
+        show_name_field={false}
+        model_dropdown_settings={{
+          requires_data_gen: true,
+          requires_uncensored_data_gen:
+            guidance_data.suggest_uncensored($selected_template),
+          suggested_mode: guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen",
+        }}
+      />
+    {/if}
+  </FormContainer>
+</Dialog>
 
 <!-- Generate Outputs modal -->
-<dialog id={outputs_dialog_id} class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generate Outputs</h3>
-    <p class="text-sm font-light mb-5">
-      Run your task on each input to generate outputs.
-    </p>
-    <FormContainer
-      submit_label="Generate Outputs"
-      bind:submitting={outputs_submitting}
-      on:submit={start_outputs}
-    >
-      <div>
-        <div class="font-medium text-sm">Status</div>
-        <div class="font-light">
-          {outputs_missing}
-          {outputs_missing === 1 ? "item" : "items"} pending
-          {#if generated_outputs > 0}
-            / {generated_outputs} already generated
-          {/if}
-        </div>
+<Dialog
+  bind:this={outputs_dialog}
+  title="Generate Outputs"
+  subtitle="Run your task on each input to generate outputs."
+>
+  <FormContainer
+    submit_label="Generate Outputs"
+    bind:submitting={outputs_submitting}
+    on:submit={start_outputs}
+    keyboard_submit={false}
+  >
+    <div>
+      <div class="font-medium text-sm">Status</div>
+      <div class="font-light">
+        {outputs_missing}
+        {outputs_missing === 1 ? "item" : "items"} pending
+        {#if generated_outputs > 0}
+          / {generated_outputs} already generated
+        {/if}
       </div>
-      {#if task}
-        <RunConfigComponent
-          bind:this={outputs_run_config}
-          {project_id}
-          current_task={task}
-          requires_structured_output={!!task.output_json_schema}
-          show_name_field={false}
-          model_dropdown_settings={{
-            requires_structured_output: !!task.output_json_schema,
-          }}
-        />
-      {/if}
-    </FormContainer>
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+    </div>
+    {#if task}
+      <RunConfigComponent
+        bind:this={outputs_run_config}
+        {project_id}
+        current_task={task}
+        requires_structured_output={!!task.output_json_schema}
+        show_name_field={false}
+        model_dropdown_settings={{
+          requires_structured_output: !!task.output_json_schema,
+        }}
+      />
+    {/if}
+  </FormContainer>
+</Dialog>
 
 <!-- Prompt popup -->
-<dialog id={prompt_dialog_id} class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold mb-1">Input Plan</h3>
-    <p class="text-sm font-light text-gray-500 mb-4">
-      The input plan that generated this input.
-    </p>
-    <div class="rounded-lg bg-base-200 p-4 text-sm whitespace-pre-wrap">
-      {active_prompt}
-    </div>
+<Dialog
+  bind:this={prompt_dialog}
+  title="Input Plan"
+  subtitle="The input plan that generated this input."
+>
+  <div class="rounded-lg bg-base-200 p-4 text-sm whitespace-pre-wrap mt-2">
+    {active_prompt}
   </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+</Dialog>
