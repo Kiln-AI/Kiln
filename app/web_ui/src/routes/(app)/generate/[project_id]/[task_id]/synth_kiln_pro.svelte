@@ -256,11 +256,12 @@
     <FormContainer
       submit_label="Generate Batch"
       compact_button={true}
+      focus_on_mount={false}
       bind:submitting={batch_submitting}
       on:submit={submit_batch}
     >
       <div class="flex flex-row items-center gap-4">
-        <div class="flex-grow font-medium text-sm">Input Count</div>
+        <div class="flex-grow font-medium text-sm">Sample Count</div>
         <IncrementUi bind:value={num_inputs} max={500} />
       </div>
       <FormElement
