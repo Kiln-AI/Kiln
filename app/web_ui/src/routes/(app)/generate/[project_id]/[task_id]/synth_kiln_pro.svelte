@@ -288,7 +288,7 @@
   </div>
 {/if}
 
-<Dialog bind:this={inputs_dialog} title="Generation Options">
+<Dialog bind:this={inputs_dialog} title="Generation Settings">
   <FormContainer
     submit_label={plan
       ? `Generate Inputs (${plan.prompts.length})`

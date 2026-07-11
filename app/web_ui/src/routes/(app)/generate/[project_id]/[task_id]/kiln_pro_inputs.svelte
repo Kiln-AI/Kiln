@@ -15,7 +15,6 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
-  import FloatingMenu from "$lib/ui/floating_menu.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import {
     runInputsBatch,
@@ -109,11 +108,16 @@
   // A full reset would orphan anything already written to the dataset.
   $: any_saved = rows.some((r) => r.saved_id)
 
-  // Before outputs run, warn about failed prompts — they're hidden from the
-  // samples table, so nothing else surfaces them. Once the user has clicked
-  // Generate Outputs they've accepted those failures, and the useful warning
-  // becomes the samples still missing an output.
-  type WarningState = { message: string; color: "warning" | "error" }
+  // Before outputs run, warn about inputs that failed to generate — the retry
+  // action lives on the warning itself. Once the user has clicked Generate
+  // Outputs they've accepted those failures, and the useful warning becomes the
+  // samples still missing an output.
+  type WarningState = {
+    message: string
+    color: "warning" | "error"
+    // Rendered as a button beside the warning when present.
+    retry?: boolean
+  }
   function build_warning(
     started_outputs: boolean,
     failed_inputs: number,
@@ -124,8 +128,9 @@
     if (!started_outputs) {
       if (failed_inputs === 0) return null
       return {
-        message: `${failed_inputs} ${failed_inputs === 1 ? "prompt" : "prompts"} failed to generate. Use Generate Inputs → Retry Failed.`,
+        message: `${failed_inputs} ${failed_inputs === 1 ? "input" : "inputs"} failed to generate.`,
         color: ok_inputs > 0 ? "warning" : "error",
+        retry: true,
       }
     }
     if (missing_outputs === 0) return null
@@ -175,6 +180,17 @@
         null,
       )
       return
+    }
+    // Regenerating discards every input (and any outputs made from them), so
+    // confirm — same native confirm the New Batch Plan button uses. Retry is
+    // additive, so it just runs.
+    if (inputs_action === "regenerate") {
+      const msg = `Are you sure you want to regenerate all ${total} inputs? This discards the current inputs${
+        generated_outputs > 0 ? " and the outputs generated from them" : ""
+      }. This cannot be undone.`
+      if (!confirm(msg)) {
+        return
+      }
     }
     active_rcp = rcp
     inputs_dialog?.close()
@@ -494,7 +510,7 @@
 
 <div class="flex flex-col gap-4 mt-12">
   <div class="flex flex-row items-center justify-between gap-4">
-    <div class="min-w-0">
+    <div class="min-w-0 flex flex-row items-center gap-3">
       {#if !generating && active_warning}
         <Warning
           warning_message={active_warning.message}
@@ -502,45 +518,27 @@
           warning_icon="exclaim"
           tight
         />
+        {#if active_warning.retry && !saving}
+          <button
+            class="btn btn-sm shrink-0"
+            on:click={() => open_inputs_dialog("retry")}
+          >
+            Retry
+          </button>
+        {/if}
       {/if}
     </div>
     <!-- With no rows left, the empty state owns the only action: Back to Plan. -->
     {#if total > 0}
       <div class="flex flex-row gap-2 shrink-0">
-        {#if inputs_done && !generating && !saving}
-          <FloatingMenu
-            width="w-72"
-            items={[
-              {
-                label: `Retry Failed (${input_errors})`,
-                description: "Re-run just the prompts that failed.",
-                onclick: () => open_inputs_dialog("retry"),
-                hidden: input_errors === 0,
-              },
-              {
-                label: "Regenerate All Inputs",
-                description: `Discard all ${total} and generate fresh from the plan.`,
-                onclick: () => open_inputs_dialog("regenerate"),
-                // A reset can't undo rows already written to the dataset.
-                hidden: any_saved,
-              },
-            ]}
+        <!-- Once there's something to save, regenerating is no longer the job. -->
+        {#if inputs_done && !generating && !saving && !any_saved && outputs_savable === 0}
+          <button
+            class="btn btn-md"
+            on:click={() => open_inputs_dialog("regenerate")}
           >
-            <button slot="trigger" type="button" class="btn btn-md">
-              Generate Inputs
-              <svg
-                class="w-4 h-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-          </FloatingMenu>
+            Regenerate Inputs
+          </button>
         {/if}
         {#if inputs_done && !generating && outputs_missing > 0}
           <button
@@ -622,7 +620,7 @@
 
   {#if generating}
     {@const progress = inputs_done ? generated_outputs : generated_inputs}
-    <div class="flex flex-row items-center gap-3 py-2">
+    <div class="flex flex-row items-center justify-center gap-3 py-2">
       <span class="loading loading-spinner loading-sm text-primary"></span>
       <span class="text-sm font-medium">
         {inputs_done ? "Generating Outputs" : "Generating Inputs"}
@@ -674,82 +672,81 @@
         </thead>
         <tbody>
           {#each rows as row, i}
-            <!-- A prompt whose input failed has nothing to show or act on. -->
-            {#if !row.input_error}
-              <tr on:click={() => toggle_expand(i)} class="cursor-pointer">
-                <td class="py-2 align-top">
+            <tr on:click={() => toggle_expand(i)} class="cursor-pointer">
+              <td class="py-2 align-top">
+                {#if expanded[i]}
+                  <pre
+                    class="whitespace-pre-wrap break-words">{row.prompt}</pre>
+                {:else}
+                  <div class="truncate w-0 min-w-full text-gray-500">
+                    {row.prompt}
+                  </div>
+                {/if}
+              </td>
+              <td class="py-2 align-top">
+                {#if row.input !== null}
                   {#if expanded[i]}
                     <pre
-                      class="whitespace-pre-wrap break-words">{row.prompt}</pre>
+                      class="whitespace-pre-wrap break-words">{format_expanded(
+                        input_text(row.input),
+                      )}</pre>
                   {:else}
-                    <div class="truncate w-0 min-w-full text-gray-500">
-                      {row.prompt}
+                    <div class="truncate w-0 min-w-full">
+                      {input_text(row.input)}
                     </div>
                   {/if}
-                </td>
-                <td class="py-2 align-top">
-                  {#if row.input !== null}
-                    {#if expanded[i]}
-                      <pre
-                        class="whitespace-pre-wrap break-words">{format_expanded(
-                          input_text(row.input),
-                        )}</pre>
-                    {:else}
-                      <div class="truncate w-0 min-w-full">
-                        {input_text(row.input)}
-                      </div>
-                    {/if}
+                {:else if row.input_error}
+                  <span class="text-error text-sm">Failed</span>
+                {:else}
+                  <span class="flex items-center gap-2 text-gray-500">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    Generating…
+                  </span>
+                {/if}
+              </td>
+              <td class="py-2 align-top">
+                {#if row.output !== null}
+                  {#if expanded[i]}
+                    <pre
+                      class="whitespace-pre-wrap break-words">{format_expanded(
+                        row.output,
+                      )}</pre>
                   {:else}
-                    <span class="flex items-center gap-2 text-gray-500">
-                      <span class="loading loading-spinner loading-xs"></span>
-                      Generating…
-                    </span>
+                    <div class="truncate w-0 min-w-full">{row.output}</div>
                   {/if}
-                </td>
-                <td class="py-2 align-top">
-                  {#if row.output !== null}
-                    {#if expanded[i]}
-                      <pre
-                        class="whitespace-pre-wrap break-words">{format_expanded(
-                          row.output,
-                        )}</pre>
-                    {:else}
-                      <div class="truncate w-0 min-w-full">{row.output}</div>
-                    {/if}
-                  {:else if row.output_error}
-                    <span class="text-error text-sm">Failed</span>
-                  {:else if outputs_pending.has(i)}
-                    <span class="flex items-center gap-2 text-gray-500">
-                      <span class="loading loading-spinner loading-xs"></span>
-                      Generating…
-                    </span>
-                  {:else}
-                    <span class="text-gray-400">Not Generated</span>
-                  {/if}
-                </td>
-                <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-                <td class="p-0 align-top" on:click|stopPropagation>
-                  <TableActionMenu
-                    items={[
-                      {
-                        label: "View Prompt",
-                        onclick: () => show_prompt(row.prompt),
-                      },
-                      {
-                        label: "Remove Output",
-                        onclick: () => remove_output(i),
-                        hidden: generating || !!row.saved_id || !row.task_run,
-                      },
-                      {
-                        label: "Remove Sample",
-                        onclick: () => delete_row(i),
-                        hidden: generating || !!row.saved_id,
-                      },
-                    ]}
-                  />
-                </td>
-              </tr>
-            {/if}
+                {:else if row.output_error}
+                  <span class="text-error text-sm">Failed</span>
+                {:else if outputs_pending.has(i)}
+                  <span class="flex items-center gap-2 text-gray-500">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    Generating…
+                  </span>
+                {:else}
+                  <span class="text-gray-400">Not Generated</span>
+                {/if}
+              </td>
+              <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+              <td class="p-0 align-top" on:click|stopPropagation>
+                <TableActionMenu
+                  items={[
+                    {
+                      label: "View Prompt",
+                      onclick: () => show_prompt(row.prompt),
+                    },
+                    {
+                      label: "Remove Output",
+                      onclick: () => remove_output(i),
+                      hidden: generating || !!row.saved_id || !row.task_run,
+                    },
+                    {
+                      label: "Remove Sample",
+                      onclick: () => delete_row(i),
+                      hidden: generating || !!row.saved_id,
+                    },
+                  ]}
+                />
+              </td>
+            </tr>
           {/each}
         </tbody>
       </table>
@@ -784,11 +781,7 @@
 </Dialog>
 
 <!-- Generate Inputs modal, for retry and regenerate -->
-<Dialog
-  bind:this={inputs_dialog}
-  title="Generate Inputs"
-  subtitle="Generate synthetic inputs: the data that will be passed into the task."
->
+<Dialog bind:this={inputs_dialog} title="Generation Settings">
   <FormContainer
     submit_label="Generate Inputs"
     bind:submitting={inputs_submitting}
@@ -828,11 +821,7 @@
 </Dialog>
 
 <!-- Generate Outputs modal -->
-<Dialog
-  bind:this={outputs_dialog}
-  title="Generate Outputs"
-  subtitle="Run your task on each input to generate outputs."
->
+<Dialog bind:this={outputs_dialog} title="Generation Settings">
   <FormContainer
     submit_label="Generate Outputs"
     bind:submitting={outputs_submitting}
