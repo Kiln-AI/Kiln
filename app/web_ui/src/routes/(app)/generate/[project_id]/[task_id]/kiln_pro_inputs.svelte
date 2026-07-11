@@ -526,7 +526,7 @@
               },
             ]}
           >
-            <button slot="trigger" type="button" class="btn btn-sm">
+            <button slot="trigger" type="button" class="btn btn-md">
               Generate Inputs
               <svg
                 class="w-4 h-4"
@@ -544,7 +544,7 @@
         {/if}
         {#if inputs_done && !generating && outputs_missing > 0}
           <button
-            class="btn btn-sm {outputs_savable > 0 ? '' : 'btn-primary'}"
+            class="btn btn-md {outputs_savable > 0 ? '' : 'btn-primary'}"
             disabled={saving}
             on:click={() => outputs_dialog?.show()}
           >
@@ -553,7 +553,7 @@
         {/if}
         {#if !generating && outputs_savable > 0}
           <button
-            class="btn btn-sm btn-primary"
+            class="btn btn-md btn-primary"
             disabled={saving}
             on:click={save_all}
           >
