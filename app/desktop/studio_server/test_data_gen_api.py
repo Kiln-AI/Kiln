@@ -13,6 +13,7 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
@@ -1511,7 +1512,7 @@ async def test_run_inputs_batch_job_success(test_task):
         job_id="j", project_id="p", task_id="t", kind="inputs", total=len(prompts)
     )
 
-    def fake(project, task, gen_type, rcp, data_guide, prompt):
+    def fake(project, task, rcp, data_guide, prompt):
         return f"in::{prompt}"
 
     with patch(
@@ -1519,7 +1520,7 @@ async def test_run_inputs_batch_job_success(test_task):
         new=AsyncMock(side_effect=fake),
     ):
         await _run_inputs_batch_job(
-            job, MagicMock(), test_task, "eval", _batch_rcp(), None, prompts
+            job, MagicMock(), test_task, _batch_rcp(), None, prompts
         )
 
     assert job.status == "complete"
@@ -1537,7 +1538,7 @@ async def test_run_inputs_batch_job_partial_failure(test_task):
         job_id="j", project_id="p", task_id="t", kind="inputs", total=len(prompts)
     )
 
-    def fake(project, task, gen_type, rcp, data_guide, prompt):
+    def fake(project, task, rcp, data_guide, prompt):
         if prompt == "p2":
             raise ValueError("boom")
         return f"in::{prompt}"
@@ -1547,7 +1548,7 @@ async def test_run_inputs_batch_job_partial_failure(test_task):
         new=AsyncMock(side_effect=fake),
     ):
         await _run_inputs_batch_job(
-            job, MagicMock(), test_task, "eval", _batch_rcp(), None, prompts
+            job, MagicMock(), test_task, _batch_rcp(), None, prompts
         )
 
     # One failure, but not all — still completes.
@@ -1572,7 +1573,7 @@ async def test_run_inputs_batch_job_all_fail(test_task):
         new=AsyncMock(side_effect=fake),
     ):
         await _run_inputs_batch_job(
-            job, MagicMock(), test_task, "eval", _batch_rcp(), None, prompts
+            job, MagicMock(), test_task, _batch_rcp(), None, prompts
         )
 
     assert job.status == "error"
@@ -1623,7 +1624,7 @@ async def test_generate_one_input_extracts_generated_input(
         mock_adapter_for_task.return_value = adapter
 
         result = await _generate_one_input(
-            test_project, test_task, "eval", _batch_rcp(), None, "a prompt"
+            test_project, test_task, _batch_rcp(), None, "a prompt"
         )
 
     assert result == "the generated input"
@@ -1658,7 +1659,6 @@ def test_generate_inputs_batch_endpoint(
             "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch",
             json={
                 "prompts": ["a", "b", "c"],
-                "gen_type": "eval",
                 "run_config_properties": _RCP_JSON,
             },
         )
@@ -1710,7 +1710,6 @@ def test_inputs_batch_status_wrong_scope_404(
             "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch",
             json={
                 "prompts": ["a"],
-                "gen_type": "eval",
                 "run_config_properties": _RCP_JSON,
             },
         )
@@ -1792,7 +1791,6 @@ def test_batch_jobs_registry_is_populated(
             "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch",
             json={
                 "prompts": ["a", "b"],
-                "gen_type": "eval",
                 "run_config_properties": _RCP_JSON,
             },
         )
@@ -1801,3 +1799,56 @@ def test_batch_jobs_registry_is_populated(
     # Registration is synchronous in the handler, before the job is spawned.
     assert job_id in _batch_jobs
     assert _batch_jobs[job_id].kind == "inputs"
+
+
+async def _instruction_for_one_input(project, task, data_guide, data_source):
+    """Run _generate_one_input and return the instruction the generator task was
+    built with, so we can assert on what the model actually reads."""
+    run = TaskRun(
+        output=TaskOutput(
+            output=json.dumps({"generated_input": "x"}), source=data_source
+        ),
+        input="x",
+        input_source=data_source,
+        parent=task,
+    )
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        await _generate_one_input(project, task, _batch_rcp(), data_guide, "a prompt")
+        # First positional arg to adapter_for_task is the DataGenSingleInputTask.
+        return mock_adapter_for_task.call_args.args[0].instruction
+
+
+async def test_generate_one_input_omits_data_guide_when_toggle_off(
+    test_project, test_task, data_source
+):
+    """The batch flow sends None when "Use Data Guide" is off. That must mean
+    "don't use it" — not "fall back to the task's saved guide"."""
+    # The task HAS a saved guide, so a fallback would silently include it.
+    DataGuide(guide="Emails are terse.", parent=test_task).save_to_file()
+
+    instruction = await _instruction_for_one_input(
+        test_project, test_task, None, data_source
+    )
+
+    assert "<task_data_guide>" not in instruction
+    assert "Emails are terse." not in instruction
+
+
+async def test_generate_one_input_includes_data_guide_when_provided(
+    test_project, test_task, data_source
+):
+    instruction = await _instruction_for_one_input(
+        test_project, test_task, "Emails are terse.", data_source
+    )
+
+    assert "<task_data_guide>" in instruction
+    assert "Emails are terse." in instruction
+    # The guide arrives with its explanatory context, not as a bare blob.
+    assert "# Task Data Guide" in instruction
+    assert "Authority cascade" in instruction

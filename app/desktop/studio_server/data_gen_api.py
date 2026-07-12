@@ -237,11 +237,8 @@ class GenerateInputsBatchInput(BaseModel):
     prompts: list[str] = Field(
         description="One tailored prompt per input. Each is used as the guidance for a single input-generation call."
     )
-    gen_type: Literal["training", "eval"] = Field(
-        description="The type of data generation: eval or training."
-    )
     data_guide: str | None = Field(
-        description="Optional input data guide to include in every input-generation call.",
+        description="The input data guide to include in every input-generation call. Send it when the user has 'Use Data Guide' on, and null when off — null means 'do not use a guide', not 'fall back to the task's saved guide'.",
         default=None,
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
@@ -380,7 +377,6 @@ def _spawn_batch_task(coro) -> None:
 async def _generate_one_input(
     project,
     task: Task,
-    gen_type: Literal["training", "eval"],
     run_config_properties: KilnAgentRunConfigProperties,
     data_guide: str | None,
     prompt: str,
@@ -390,10 +386,18 @@ async def _generate_one_input(
     The data guide and the prompt go to the model as separate blocks: the guide
     constrains every input, the prompt only this one.
     """
-    data_guide_section = _data_guide_guidance(task, "inputs", data_guide)
+    # The batch flow decides up front whether to use the data guide (the "Use
+    # Data Guide" toggle) and sends the guide text when on, None when off. So
+    # honour that literally — do NOT fall back to the task's saved guide the way
+    # `_resolve_data_guide` does for the legacy flow, where None means "no
+    # override given". Falling back here would silently ignore the toggle, and
+    # would disagree with the batch planner, which already passes the client's
+    # choice straight through.
+    data_guide_section = (
+        _data_guide_guidance(task, "inputs", data_guide) if data_guide else None
+    )
     sample_task = DataGenSingleInputTask(
         target_task=task,
-        gen_type=gen_type,
         parent_project=project,
         data_guide=data_guide_section,
         prompt=prompt,
@@ -473,7 +477,6 @@ async def _run_inputs_batch_job(
     job: _BatchJob,
     project,
     task: Task,
-    gen_type: Literal["training", "eval"],
     run_config_properties: KilnAgentRunConfigProperties,
     data_guide: str | None,
     prompts: list[str],
@@ -486,7 +489,7 @@ async def _run_inputs_batch_job(
         idx, prompt = item
         try:
             value = await _generate_one_input(
-                project, task, gen_type, run_config_properties, data_guide, prompt
+                project, task, run_config_properties, data_guide, prompt
             )
             job.results[idx]["input"] = value
             return True
@@ -822,7 +825,6 @@ The topic path for this sample is:
                 job,
                 project,
                 task,
-                input.gen_type,
                 input.run_config_properties,
                 input.data_guide,
                 input.prompts,

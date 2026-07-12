@@ -274,6 +274,7 @@
     action: "initial" | "retry" | "regenerate",
   ) {
     if (row_indices.length === 0) return
+    // Still reported in analytics, but no longer sent to the API.
     const gen_type = guidance_data.gen_type
     const prompts = row_indices.map((i) => rows[i].prompt)
 
@@ -289,22 +290,20 @@
     inputs_unsub = []
     batch_error = null
 
+    inputs_status = "running"
     if (KILN_PRO_DEV_MOCKS) {
-      inputs_status = "running"
       inputs_run = mock_inputs_batch(
         prompts,
         active_rcp.model_name,
         active_rcp.model_provider_name,
       )
-    } else if (!gen_type) {
-      batch_error = new KilnError("No generation type selected.", null)
-      inputs_status = "error"
-      return
     } else {
-      inputs_status = "running"
+      // No gen_type: the batch plan's prompt already says what each input is
+      // for. `data_guide` is null when the user has "Use Data Guide" off, and
+      // the server treats null as "don't use one" (no fallback to the saved
+      // guide).
       inputs_run = runInputsBatch(project_id, task_id, {
         prompts,
-        gen_type,
         data_guide: data_guide || null,
         run_config_properties: active_rcp,
       })

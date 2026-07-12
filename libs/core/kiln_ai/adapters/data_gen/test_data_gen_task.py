@@ -935,7 +935,7 @@ def test_generate_qna_generation_prompt_with_guidance():
 def test_generate_single_input_prompt_has_no_topic_or_sample_count():
     """The single-input prompt must not teach the model about the topic tree or
     a sample count — the batch plan supplies the per-input variation instead."""
-    prompt = generate_single_input_prompt(gen_type="eval")
+    prompt = generate_single_input_prompt()
 
     assert "kiln_data_gen_topic_path" not in prompt
     assert "kiln_data_gen_num_samples" not in prompt
@@ -945,16 +945,17 @@ def test_generate_single_input_prompt_has_no_topic_or_sample_count():
     assert "generated_input" in prompt
 
 
-def test_generate_single_input_prompt_gen_types():
-    training = generate_single_input_prompt(gen_type="training")
-    eval_prompt = generate_single_input_prompt(gen_type="eval")
+def test_generate_single_input_prompt_has_no_gen_type_framing():
+    """The batch plan's prompt says what the input is for, so the instruction
+    carries no eval-vs-training framing that could bias it."""
+    instructions = generate_single_input_prompt()
 
-    assert "generate training data" in training
-    assert "generate eval data" in eval_prompt
-    assert "exactly one input" in training
-    # No guide or plan provided, so neither block appears.
-    assert "<prompt>" not in training
-    assert "<task_data_guide>" not in training
+    assert "exactly one input" in instructions
+    assert "training data" not in instructions
+    assert "eval data" not in instructions
+    # No guide or prompt provided, so neither block appears.
+    assert "<prompt>" not in instructions
+    assert "<task_data_guide>" not in instructions
 
 
 def test_generate_single_input_prompt_separates_guide_and_plan():
@@ -964,9 +965,7 @@ def test_generate_single_input_prompt_separates_guide_and_plan():
     guide = (
         "# Task Data Guide\n\n<task_data_guide>\nemails are terse\n</task_data_guide>"
     )
-    prompt = generate_single_input_prompt(
-        gen_type="eval", data_guide=guide, prompt=plan
-    )
+    prompt = generate_single_input_prompt(data_guide=guide, prompt=plan)
 
     assert "## Prompt" in prompt
     assert f"<prompt>\n{plan}\n</prompt>" in prompt
@@ -978,7 +977,7 @@ def test_generate_single_input_prompt_separates_guide_and_plan():
 
 def test_generate_single_input_prompt_plan_only():
     plan = "A refund request."
-    prompt = generate_single_input_prompt(gen_type="eval", prompt=plan)
+    prompt = generate_single_input_prompt(prompt=plan)
 
     assert "## Prompt" in prompt
     assert "<task_data_guide>" not in prompt
@@ -1029,7 +1028,6 @@ def test_data_gen_single_input_task_shape(tmp_path):
 
     task = DataGenSingleInputTask(
         target_task=target,
-        gen_type="eval",
         parent_project=project,
         data_guide=None,
         prompt="one spicy input",

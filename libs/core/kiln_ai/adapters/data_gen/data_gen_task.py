@@ -264,13 +264,13 @@ class DataGenSingleInputTask(Task, parent_of={}):
     def __init__(
         self,
         target_task: Task,
-        gen_type: Literal["training", "eval"],
         parent_project: Project,
         data_guide: str | None,
         prompt: str | None,
     ):
+        # No gen_type: the batch plan's prompt already says what this input is
+        # for. See generate_single_input_prompt.
         instruction = generate_single_input_prompt(
-            gen_type=gen_type,
             data_guide=data_guide,
             prompt=prompt,
         )

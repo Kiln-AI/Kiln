@@ -184,7 +184,6 @@ The custom guidance is:
 
 
 def generate_single_input_prompt(
-    gen_type: Literal["training", "eval"],
     data_guide: str | None = None,
     prompt: str | None = None,
 ) -> str:
@@ -195,20 +194,23 @@ def generate_single_input_prompt(
     call produces exactly one input. Used by the batch-plan flow, where the
     diversity that topics used to provide comes from the batch plan instead.
 
+    There is deliberately no `gen_type` (eval vs training). The batch plan
+    already encodes what this input is for — its content, difficulty and where
+    it sits in the batch — so a "generate eval data" framing here would add
+    nothing the prompt hasn't said, and could nudge the model to make the input
+    harder or edgier than the prompt actually asked for.
+
     The data guide and the prompt arrive as two separate blocks. They have
     different authority — the guide describes every input, the prompt describes
     only this one — so fusing them into a single string would hide which
     constraints are shared and which are per-input.
 
     Args:
-        gen_type: What the data is for; sets the goal description.
         data_guide: Pre-rendered Task Data Guide section, appended verbatim.
         prompt: What makes this one input distinct from the others in its batch.
     """
 
-    instructions = generate_goal_description(gen_type)
-
-    instructions += """
+    instructions = """You are generating synthetic input data for a task.
 
 ## Task Description
 Your job is to generate exactly one input to the provided system prompt. The input must be realistic, and relevant to the system prompt.
