@@ -791,20 +791,61 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         )
 
 
-def test_eval_run_custom_scores_not_allowed(valid_eval_config, valid_eval_run_data):
-    with pytest.raises(
-        ValueError, match="Custom scores are not supported in evaluators"
-    ):
-        Eval(
-            name="Test Eval",
-            eval_set_filter_id="tag::tag1",
-            eval_configs_filter_id="tag::tag2",
-            output_scores=[
-                EvalOutputScore(
-                    name="custom",
-                    type=TaskOutputRatingType.custom,
-                )
-            ],
+def test_eval_custom_scores_allowed(valid_eval_config, valid_eval_run_data):
+    """Custom-typed output scores are unbounded numeric metrics (tokens, cost,
+    latency, counts) — valid on evals, code-eval only at scoring time."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="total cost usd",
+                type=TaskOutputRatingType.custom,
+            )
+        ],
+    )
+    assert eval.output_scores[0].json_key() == "total_cost_usd"
+
+
+@pytest.mark.parametrize(
+    "score_type,value,ok",
+    [
+        (TaskOutputRatingType.custom, 12345.6, True),
+        (TaskOutputRatingType.custom, 0.0, True),
+        (TaskOutputRatingType.custom, -3.5, True),
+        (TaskOutputRatingType.custom, float("nan"), False),
+        (TaskOutputRatingType.custom, float("inf"), False),
+        (TaskOutputRatingType.pass_fail, float("nan"), False),
+        (TaskOutputRatingType.five_star, float("nan"), False),
+        (TaskOutputRatingType.pass_fail_critical, float("inf"), False),
+    ],
+)
+def test_score_validation_finiteness(score_type, value, ok):
+    """NaN/inf must never pass validation — NaN compares False against every
+    range bound, so without an explicit finiteness check it slipped through."""
+    score = EvalOutputScore(name="metric", type=score_type)
+    problems = validate_scores_against_output_scores({"metric": value}, [score])
+    assert (problems == []) is ok
+
+
+def test_judge_config_rejected_on_custom_score_eval():
+    """Judges structurally can't emit custom-typed keys — the config is
+    rejected up front instead of failing every EvalRun save."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step"]},
+            parent=eval,
         )
 
 

@@ -1,6 +1,7 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
 import asyncio
+import math
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
@@ -119,6 +120,10 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             if not isinstance(value, float):
                 raise RuntimeError(
                     f"Score '{key}' must be a float, got {type(value).__name__}"
+                )
+            if not math.isfinite(value):
+                raise RuntimeError(
+                    f"Score '{key}' must be a finite number, got {value}"
                 )
             validated[key] = value
 

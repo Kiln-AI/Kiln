@@ -333,3 +333,49 @@ class TestExecutionSerialization:
         assert max_concurrency == 1, (
             f"Expected serialized execution (max concurrency 1), got {max_concurrency}"
         )
+
+
+class TestFiniteScoreValidation:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    async def test_non_finite_rejected(self, bad):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust("/fake/project/path")
+
+        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
+            mock_run.return_value = {"ok": {"accuracy": bad}}
+            with pytest.raises(RuntimeError, match="finite"):
+                await adapter.evaluate(_inp())
+
+
+class TestUsageObjectTransport:
+    @pytest.mark.asyncio
+    async def test_message_usage_objects_survive_to_scorer(self):
+        """Live-path traces carry Pydantic MessageUsage OBJECTS (pickle
+        transport), not dicts — a scorer using get_usage_totals must work
+        end-to-end through the real sandbox."""
+        from kiln_ai.datamodel.usage import MessageUsage
+
+        code = (
+            "from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers as H\n"
+            "def score(trace):\n"
+            "    return {'accuracy': min(H.get_usage_totals(trace)['total_tokens'], 5.0)}\n"
+        )
+        cfg = _make_config(code=code)
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust("/fake/project/path")
+
+        trace = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "reply",
+                "latency_ms": 100,
+                "usage": MessageUsage(
+                    input_tokens=100, output_tokens=50, total_tokens=150
+                ),
+            },
+        ]
+        result = await adapter.evaluate(_inp(trace=trace))
+        assert result.scores == {"accuracy": 5.0}
