@@ -954,7 +954,7 @@ def test_generate_single_input_prompt_has_no_gen_type_framing():
     assert "training data" not in instructions
     assert "eval data" not in instructions
     # No guide or prompt provided, so neither block appears.
-    assert "<prompt>" not in instructions
+    assert "<input_guidance>" not in instructions
     assert "<task_data_guide>" not in instructions
 
 
@@ -967,8 +967,8 @@ def test_generate_single_input_prompt_separates_guide_and_plan():
     )
     prompt = generate_single_input_prompt(data_guide=guide, prompt=plan)
 
-    assert "## Prompt" in prompt
-    assert f"<prompt>\n{plan}\n</prompt>" in prompt
+    assert "## Input Guidance" in prompt
+    assert f"<input_guidance>\n{plan}\n</input_guidance>" in prompt
     assert "<task_data_guide>" in prompt
     assert "emails are terse" in prompt
     # The plan must not be swallowed into the guide's block.
@@ -979,7 +979,7 @@ def test_generate_single_input_prompt_plan_only():
     plan = "A refund request."
     prompt = generate_single_input_prompt(prompt=plan)
 
-    assert "## Prompt" in prompt
+    assert "## Input Guidance" in prompt
     assert "<task_data_guide>" not in prompt
 
 

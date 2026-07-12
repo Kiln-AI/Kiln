@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte"
+  import { get } from "svelte/store"
   import { client } from "$lib/api_client"
   import posthog from "posthog-js"
   import type { components } from "$lib/api_schema"
@@ -223,6 +224,25 @@
   function delete_row(index: number) {
     rows = rows.filter((_, i) => i !== index)
     expanded = expanded.filter((_, i) => i !== index)
+  }
+
+  // Dataset splits (e.g. train 80% / test 20%) are assigned per sample by
+  // drawing from the configured distribution — the same thing the legacy synth
+  // flow does at save time. Without this, Kiln Pro samples land in the dataset
+  // with no split tag at all.
+  function random_split_tag(): string | undefined {
+    const splits = get(guidance_data.splits)
+    const tags = Object.keys(splits)
+    if (tags.length === 0) return undefined
+
+    const roll = Math.random()
+    let cumulative = 0
+    for (const [tag, probability] of Object.entries(splits)) {
+      cumulative += probability
+      if (roll <= cumulative) return tag
+    }
+    // Only reachable through floating-point drift when the splits sum to 1.
+    return tags[tags.length - 1]
   }
 
   // Drops the output but keeps the input, so Generate Outputs can run it again.
@@ -470,13 +490,20 @@
     save_dialog?.show()
     for (const row of to_save) {
       try {
+        const split_tag = random_split_tag()
+        const to_post = split_tag
+          ? {
+              ...row.task_run,
+              tags: [...(row.task_run?.tags ?? []), split_tag],
+            }
+          : row.task_run
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/save_sample",
           {
             params: { path: { project_id, task_id } },
             // The batch status returns the Output variant; save_sample accepts
             // the Input variant. They round-trip the same object on the server.
-            body: row.task_run as unknown as components["schemas"]["TaskRun-Input"],
+            body: to_post as unknown as components["schemas"]["TaskRun-Input"],
           },
         )
         if (error) throw error
