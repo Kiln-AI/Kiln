@@ -518,6 +518,17 @@
         return { label: "Failed", tone: "error", title: row.message }
     }
   })
+  // A generated synthetic-user case as the wire carries it: the seed
+  // message, the persona blob, and the plan scenario it came from.
+  type SyntheticUserCaseWire = {
+    seed_prompt: string
+    synthetic_user_info: string
+    scenario_index?: number | null
+  }
+  // The cases whose conversations were actually driven (chains exist on
+  // disk). Save mints one EvalInput per driven case — the eval slice the
+  // runner re-drives per run config.
+  let driven_cases: SyntheticUserCaseWire[] = []
   // batch_tag from the pipeline's batch_started event — passed to the save
   // endpoint so the backend can tag the matching chains for the eval
   // dataset.
@@ -752,12 +763,14 @@
     // Every undeleted previous batch is superseded — the pipeline deletes
     // their chains once this drive has produced replacements.
     const previous_batch_tag = multi_turn_batch_tag
+    const previous_driven_cases = driven_cases
     const tags_to_replace = [...undeleted_batch_tags]
     generation_loading = true
     generation_error = null
     pipeline_warning = null
     trace_claims = []
     trace_reviews = []
+    driven_cases = []
     driven_prompts_json = JSON.stringify(approved_prompts)
     pipeline_total_cases = approved_prompts.length
     case_rows = approved_prompts.map(() => ({
@@ -828,11 +841,7 @@
         generation_error = "Failed to generate synthetic-user cases."
         return
       }
-      const cases = cases_resp.data.cases as {
-        seed_prompt: string
-        synthetic_user_info: string
-        scenario_index?: number | null
-      }[]
+      const cases = cases_resp.data.cases as SyntheticUserCaseWire[]
       // Pipeline case_index (position in `cases`) → plan row.
       const row_of_case = cases.map((c, i) => c.scenario_index ?? i)
       pipeline_total_cases = cases.length
@@ -918,6 +927,9 @@
           })
         } else if (event.type === "case_driven") {
           any_case_driven = true
+          // This case's conversation exists on disk — it belongs in the
+          // saved eval slice even if a later stage (judge/claims) fails.
+          driven_cases = [...driven_cases, cases[event.case_index]]
           // Chains exist on disk under this batch's tag from here on —
           // record it immediately so an abort can't orphan the batch.
           if (
@@ -970,8 +982,10 @@
         )
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
-        // pointing at the previous batch so save/cleanup still work.
+        // pointing at the previous batch (and its cases) so save/cleanup
+        // still work.
         multi_turn_batch_tag = previous_batch_tag
+        driven_cases = previous_driven_cases
       }
 
       // Compact survivors BEFORE any error/warning path: completed reviews
@@ -1283,9 +1297,10 @@
       // the save).
       const save_judge = await refined_judge_for_save(review_judge_config)
 
-      // Multi-turn save: tag the chains produced by run_cases_batch.
+      // Multi-turn save: golden/train tags land on the driven chains; the
+      // eval slice is minted server-side as EvalInputs from the driven cases.
       if (is_multi_turn) {
-        if (multi_turn_batch_tag === null) {
+        if (multi_turn_batch_tag === null || driven_cases.length === 0) {
           save_error =
             "No multi-turn chains were generated — go back to Step 4."
           return
@@ -1318,6 +1333,14 @@
               multi_turn: {
                 batch_tag: multi_turn_batch_tag,
                 reviewed_chains,
+                cases: driven_cases,
+                // The alignment-time drive settings ride onto the Eval so
+                // eval-time re-drives replay the same synthetic user.
+                drive_config: {
+                  model_name: SU_DRIVER_DEFAULT.model_name,
+                  model_provider: SU_DRIVER_DEFAULT.model_provider,
+                  turns: TURNS_PER_CASE,
+                },
               },
               task_prompt_with_example: task?.instruction ?? "",
             },

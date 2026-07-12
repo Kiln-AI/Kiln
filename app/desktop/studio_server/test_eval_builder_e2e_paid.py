@@ -3,7 +3,7 @@
 This test IS the pipeline, readable top to bottom: it makes the exact call
 sequence the builder UI wizard makes (multi-turn path), against a REAL
 kiln_server and REAL models, with tiny constants (4 cases x 2 turns — four
-cases so the 50/25/25 split has room to produce a non-empty golden slice).
+cases so the golden cap of 25% yields a non-empty answer key).
 Reading this file should be enough to understand how the builder works end to
 end.
 
@@ -43,19 +43,24 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        syntax); on any failure the original judge ships.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
-                       judge config, and the answer key. All chains are rated,
-                       so the 50/25/25 split caps golden at 25% and holds the
-                       rest out as disjoint eval/train slices.)
+                       judge config, and the answer key. Chains split into
+                       golden [capped at 25%, rated] and train; the EVAL
+                       slice is EvalInput items minted from the driven
+                       cases, with the drive settings persisted on the
+                       Eval.)
   Step 7   RUN         GET .../evals/{id}/eval_config/{id}/run_comparison
                        GET .../evals/{id}/run_calibration          [SSE x2]
                        (What the user does AFTER the wizard: execute the
                        saved eval from the evals UI, via that UI's own
-                       endpoints. Multi-turn chains can't be regenerated in
-                       a single model call, so the runner judges the STORED
-                       traces — run_comparison scores the held-out eval
-                       slice; run_calibration validates the judge against
-                       the golden answer key and the harness reports the
-                       judge-vs-human agreement.)
+                       endpoints. run_comparison RE-DRIVES each EvalInput's
+                       conversation per run config — the agent under test
+                       varies, the synthetic user is the eval's drive
+                       config — so two run configs produce two different
+                       conversations per scenario and the scores attribute
+                       per config. run_calibration validates the judge
+                       against the golden answer key over the STORED rated
+                       traces, and the harness reports the judge-vs-human
+                       agreement.)
 
 The generation knobs (num_cases, turns) are request parameters, so the small
 constants need no code patching; only task-id resolution is patched to a
@@ -77,8 +82,10 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
     driver, and judge all run locally on your keys.
 
 Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
-builder, one refine call at save, plus the runner's judge calls over the
-eval + golden slices — ~27 small model calls, cents.
+builder, one refine call at save, plus the runner's work over the saved
+eval: a fresh 4x2 re-drive per run config (two configs) with a judge call
+each, and the golden calibration judge calls — ~70 small model calls,
+still cents.
 
 A second paid test (`test_eval_builder_pipeline_tools_e2e`) drives a
 tool-calling task via its SAVED run config (2x2, built-in calculator tools)
@@ -111,7 +118,7 @@ from kiln_server.utils.spec_utils import generate_spec_eval_tags
 
 # The UI runs 10 cases x 5 turns; both are request parameters, so the
 # harness shrinks them without touching any code. Four cases keeps the run
-# cheap while giving the 50/25/25 split a non-empty golden slice (4 // 4 = 1).
+# cheap while giving the 25% golden cap a non-empty answer key (4 // 4 = 1).
 NUM_CASES = 4
 TURNS_PER_CASE = 2
 SPEC_NAME = "E2E Harness Spec"
@@ -123,6 +130,14 @@ SPEC_NAME = "E2E Harness Spec"
 # together the two legs cover both target_run_config sources.
 TARGET_RUN_CONFIG = {
     "model_name": "claude_4_5_haiku",
+    "model_provider_name": "openrouter",
+    "prompt_id": "simple_prompt_builder",
+    "structured_output_mode": "default",
+}
+# A second agent for Step 7's comparison — a different model, so the two
+# run configs' re-driven conversations must genuinely differ.
+COMPARISON_RUN_CONFIG = {
+    "model_name": "gpt_4o",
     "model_provider_name": "openrouter",
     "prompt_id": "simple_prompt_builder",
     "structured_output_mode": "default",
@@ -541,8 +556,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # mapping for real reviews).
     #
     # Review EVERY driven case — the UI blocks save until all chains are
-    # reviewed, so all chains are rated at save time. The 50/25/25 split then
-    # caps golden at 25% of the chains and holds the rest out as eval/train.
+    # reviewed, so all chains are rated at save time. Golden then caps at 25%
+    # of the chains and the rest are train; the eval slice is the EvalInputs.
     review_indices = sorted(reviewed)
     reviewed_chains = []
     for index in review_indices:
@@ -584,7 +599,14 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             # The auto-refined judge is what ships (UI: on_save →
             # refined_judge_for_save refines from the grades, then persists).
             "judge_info": refined_judge,
-            "multi_turn": {"batch_tag": batch_tag, "reviewed_chains": reviewed_chains},
+            "multi_turn": {
+                "batch_tag": batch_tag,
+                "reviewed_chains": reviewed_chains,
+                # The driven cases become the eval slice (EvalInputs); the
+                # drive settings ride onto the Eval for eval-time re-drives.
+                "cases": cases,
+                "drive_config": {**SU_DRIVER, "turns": TURNS_PER_CASE},
+            },
             "task_prompt_with_example": TASK_INSTRUCTION,
         },
     )
@@ -592,10 +614,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     # ── Persisted answer key — what the wizard leaves behind ────────────
     # One Spec + one Eval + one V2 judge config (rendering the canonical
-    # transcript). Every chain was reviewed, so every leaf is rated and carries
-    # its per-claim ClaimReview. The 50/25/25 split then partitions the chains
-    # into DISJOINT slices: golden caps at 25% (the answer key the judge is
-    # calibrated against), the rest held out as eval/train (2:1).
+    # transcript). Every chain was reviewed, so every leaf is rated and
+    # carries its per-claim ClaimReview. Chains partition into DISJOINT
+    # golden (capped at 25%, the answer key) and train slices; the EVAL
+    # slice is EvalInput items minted from the driven cases, referenced via
+    # eval_input_filter_id, with the drive settings on the Eval.
     specs = temp_task.specs()
     _require(len(specs) == 1, f"expected 1 saved spec, found {len(specs)}")
     evals = temp_task.evals()
@@ -621,17 +644,58 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     eval_tag, train_tag, golden_tag = generate_spec_eval_tags(SPEC_NAME)
     rated_leaf_ids = {reviewed[i]["leaf_run_id"] for i in review_indices}
 
+    saved_eval_obj = evals[0]
+    _require(
+        saved_eval_obj.eval_set_filter_id is None
+        and saved_eval_obj.eval_input_filter_id == f"tag::{eval_tag}",
+        "saved multi-turn eval's slice is not EvalInput-typed "
+        f"(eval_set={saved_eval_obj.eval_set_filter_id}, "
+        f"eval_input={saved_eval_obj.eval_input_filter_id})",
+    )
+    drive_config = saved_eval_obj.multi_turn_drive_config
+    _require(
+        drive_config is not None
+        and drive_config.model_name == SU_DRIVER["model_name"]
+        and drive_config.model_provider == SU_DRIVER["model_provider"]
+        and drive_config.turns == TURNS_PER_CASE,
+        f"saved eval's drive config is not the alignment drive settings: {drive_config}",
+    )
+
+    # The eval slice on disk: one EvalInput per driven case, structured
+    # persona (no XML blob), seed = the case's opening message, provenance
+    # tags pointing back at the batch + plan scenario.
+    eval_inputs = [ei for ei in temp_task.eval_inputs() if eval_tag in (ei.tags or [])]
+    _require(
+        len(eval_inputs) == num_driven,
+        f"expected {num_driven} EvalInputs in the eval slice, found {len(eval_inputs)}",
+    )
+    _require(
+        {ei.data.first_message.text for ei in eval_inputs}
+        == {c["seed_prompt"] for c in cases},
+        "EvalInput seeds do not match the driven cases",
+    )
+    for ei in eval_inputs:
+        info = ei.data.synthetic_user_info
+        _require(
+            bool(info.persona.strip()) and bool(info.goal.strip()),
+            f"EvalInput {ei.id} persisted an empty persona/goal: {info}",
+        )
+        _require(
+            f"synthetic_user_batch:{batch_tag}" in ei.tags
+            and any(t.startswith("scenario:") for t in ei.tags),
+            f"EvalInput {ei.id} is missing its provenance tags: {ei.tags}",
+        )
+
     leaves = find_multi_turn_chain_leaves(temp_task, batch_tag)
     _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
     golden_leaf_ids: set[str | None] = set()
-    eval_leaf_ids: set[str | None] = set()
     train_count = 0
     for leaf in leaves:
         tags = set(leaf.tags or [])
-        split = {eval_tag, train_tag, golden_tag} & tags
+        split = {train_tag, golden_tag} & tags
         _require(
-            len(split) == 1,
-            f"leaf {leaf.id} is not in exactly one split slice: {split}",
+            len(split) == 1 and eval_tag not in tags,
+            f"leaf {leaf.id} is not in exactly one chain slice: {tags}",
         )
         # Every reviewed chain is rated + carries its ClaimReview, regardless of
         # which slice it landed in (all chains were reviewed).
@@ -648,40 +712,40 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         )
         if golden_tag in tags:
             golden_leaf_ids.add(leaf.id)
-        if eval_tag in tags:
-            eval_leaf_ids.add(leaf.id)
         train_count += 1 if train_tag in tags else 0
-    eval_count = len(eval_leaf_ids)
 
-    # Golden is drawn only from rated chains and capped at 25%; here every chain
-    # is rated, so golden is a subset sized by the cap.
+    # Golden is drawn only from rated chains and capped at 25%; here every
+    # chain is rated, so golden is sized by the cap and the rest is train.
     _require(
         golden_leaf_ids <= rated_leaf_ids,
         f"golden slice {golden_leaf_ids} is not a subset of rated {rated_leaf_ids}",
     )
     golden_target = num_driven // 4
-    pool = num_driven - golden_target
     _require(
         len(golden_leaf_ids) == golden_target
-        and eval_count == pool // 3
-        and train_count == pool - pool // 3,
-        f"split not 50/25/25 (golden={len(golden_leaf_ids)}, eval={eval_count}, "
+        and train_count == num_driven - golden_target,
+        f"chain split wrong (golden={len(golden_leaf_ids)}, "
         f"train={train_count}, n={num_driven})",
     )
 
     # ── Step 7 — RUN THE SAVED EVAL (the evals UI's own endpoints) ──────
     # What the user does after the wizard: execute the eval from the evals
-    # UI. Multi-turn chains can't be regenerated in a single model call, so
-    # the runner scores the STORED traces — run_comparison (task_run_eval)
-    # over the held-out eval slice, then run_calibration (eval_config_eval)
-    # over the golden slice, where judge-vs-human agreement is the number
-    # the judge screen reports.
+    # UI. run_comparison (task_run_eval) RE-DRIVES each EvalInput per run
+    # config — agent = the run config under test, customer = the eval's
+    # drive config — then judges the fresh trace. Two different run configs
+    # must therefore produce two different conversations per scenario, with
+    # scores attributed per config. run_calibration (eval_config_eval) then
+    # validates the judge against the golden slice over the STORED rated
+    # traces, where judge-vs-human agreement is the number the judge screen
+    # reports.
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
     from kiln_ai.datamodel.task import TaskRunConfig
 
     saved_eval = evals[0]
     judge_config = configs[0]
     score_key = saved_eval.output_scores[0].json_key()
+    eval_input_ids = {ei.id for ei in eval_inputs}
+    runs_on_disk_before = len(temp_task.runs(include_intermediate_runs=True))
 
     def _run_sse_complete(url: str, params: dict | None = None) -> None:
         """Drive one eval-runner SSE endpoint to completion, zero errors."""
@@ -698,47 +762,90 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             f"{url}: eval run reported errors: {progress[-1:]}",
         )
 
-    # task_run_eval requires a saved run config to attribute results to; its
-    # properties mirror the inline drive config.
-    eval_run_config = TaskRunConfig(
-        name="E2E Runner Config",
+    # Two saved run configs: the drive-time agent and a different model.
+    # Differentiated attribution between them is the point of the re-drive.
+    run_config_a = TaskRunConfig(
+        name="E2E Runner Config A",
         parent=temp_task,
         run_config_properties=KilnAgentRunConfigProperties(**TARGET_RUN_CONFIG),
     )
-    eval_run_config.save_to_file()
+    run_config_a.save_to_file()
+    run_config_b = TaskRunConfig(
+        name="E2E Runner Config B",
+        parent=temp_task,
+        run_config_properties=KilnAgentRunConfigProperties(**COMPARISON_RUN_CONFIG),
+    )
+    run_config_b.save_to_file()
     _run_sse_complete(
         f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
         f"/eval_config/{judge_config.id}/run_comparison",
-        params={"run_config_ids": [eval_run_config.id]},
+        params={"run_config_ids": [run_config_a.id, run_config_b.id]},
     )
     eval_set_runs = [
         r for r in judge_config.runs(readonly=True) if not r.eval_config_eval
     ]
+    # Full coverage: every (EvalInput, run config) pair got exactly one run,
+    # recorded under the eval_input_id namespace.
     _require(
-        {r.dataset_id for r in eval_set_runs} == eval_leaf_ids,
-        f"task_run_eval did not cover the eval slice exactly: "
-        f"{sorted(str(r.dataset_id) for r in eval_set_runs)} vs {eval_leaf_ids}",
+        {(r.eval_input_id, r.task_run_config_id) for r in eval_set_runs}
+        == {
+            (ei_id, rc_id)
+            for ei_id in eval_input_ids
+            for rc_id in (run_config_a.id, run_config_b.id)
+        },
+        "task_run_eval did not cover EvalInput x run-config exactly: "
+        f"{sorted((str(r.eval_input_id), str(r.task_run_config_id)) for r in eval_set_runs)}",
     )
     for run in eval_set_runs:
         _require(
             run.skipped_reason is None,
-            f"eval-set run for leaf {run.dataset_id} was skipped "
+            f"eval run for input {run.eval_input_id} was skipped "
             f"({run.skipped_reason}): {run.skipped_detail}",
         )
         _require(
+            run.dataset_id is None,
+            f"eval run for input {run.eval_input_id} also carries a dataset_id",
+        )
+        _require(
             run.scores.get(score_key) in (0.0, 1.0),
-            f"eval-set run for leaf {run.dataset_id} has no {score_key} "
+            f"eval run for input {run.eval_input_id} has no {score_key} "
             f"verdict: {run.scores}",
         )
-        _require(
-            run.task_run_config_id == eval_run_config.id,
-            f"eval-set run for leaf {run.dataset_id} not attributed to the run config",
-        )
-        # full_trace evals record the scored conversation on the eval run.
+        # full_trace evals record the re-driven conversation on the eval run,
+        # driven for exactly the drive config's turn count.
         _require(
             bool(run.task_run_trace),
-            f"eval-set run for leaf {run.dataset_id} did not record the stored trace",
+            f"eval run for input {run.eval_input_id} did not record its trace",
         )
+        trace = json.loads(run.task_run_trace)
+        assistant_turns = [m for m in trace if m.get("role") == "assistant"]
+        _require(
+            len(assistant_turns) == TURNS_PER_CASE,
+            f"eval run for input {run.eval_input_id} drove "
+            f"{len(assistant_turns)} assistant turns, expected {TURNS_PER_CASE}",
+        )
+
+    # THE RE-DRIVE PROOF: for every scenario, the two run configs produced
+    # DIFFERENT conversations. Identical traces would mean the runner scored
+    # one stored conversation for both configs — which cannot differentiate
+    # run configs, the whole point of a comparison.
+    trace_by_pair = {
+        (r.eval_input_id, r.task_run_config_id): r.task_run_trace for r in eval_set_runs
+    }
+    for ei_id in eval_input_ids:
+        trace_a = trace_by_pair[(ei_id, run_config_a.id)]
+        trace_b = trace_by_pair[(ei_id, run_config_b.id)]
+        _require(
+            trace_a != trace_b,
+            f"run configs A and B produced IDENTICAL conversations for "
+            f"EvalInput {ei_id} — the eval did not re-drive per config",
+        )
+
+    # Re-drives are transient: no new TaskRuns leaked into the dataset.
+    _require(
+        len(temp_task.runs(include_intermediate_runs=True)) == runs_on_disk_before,
+        "run_comparison persisted TaskRuns — eval-time re-drives must be transient",
+    )
 
     # eval_config_eval: validate the judge against the golden answer key.
     _run_sse_complete(f"/api/projects/p/tasks/t/evals/{saved_eval.id}/run_calibration")

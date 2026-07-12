@@ -6,10 +6,11 @@ from typing import AsyncGenerator, Dict, List, Literal, Set
 import litellm
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
-from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
@@ -27,9 +28,12 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     SkippedReason,
 )
+from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.synthetic_user import drive_case_for_eval
+from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
@@ -105,9 +109,10 @@ class EvalRunner:
         self._save_context: SaveContext = save_context or default_save_context
 
     def collect_tasks(self) -> List[EvalJob]:
-        if self._source_mode == "eval_input":
-            return self.collect_tasks_for_eval_input()
-        elif self.eval_run_type == "eval_config_eval":
+        if self.eval_run_type == "eval_config_eval":
+            # Golden subsets are TaskRun-sourced in V2.0 regardless of the
+            # eval-slice source: judge validation needs stored, human-rated
+            # outputs, and eval_configs_filter_id is TaskRun-typed.
             if self.eval.eval_configs_filter_id is not None:
                 return self.collect_tasks_for_eval_config_eval(
                     self.eval.eval_configs_filter_id
@@ -116,6 +121,8 @@ class EvalRunner:
                 raise ValueError(
                     "Eval configs filter ID is required for eval runs of type 'eval_config_eval'"
                 )
+        elif self._source_mode == "eval_input":
+            return self.collect_tasks_for_eval_input()
         else:
             return self.collect_tasks_for_task_run_eval()
 
@@ -153,7 +160,17 @@ class EvalRunner:
         ]
 
     def collect_tasks_for_eval_input(self) -> List[EvalJob]:
-        """Collect jobs from EvalInput items under the task."""
+        """Collect jobs from EvalInput items under the task.
+
+        task_run_eval only: eval_config_eval always collects golden TaskRuns
+        (see collect_tasks) since EvalInput items carry no stored output to
+        judge.
+        """
+        if self.eval_run_type != "task_run_eval":
+            raise ValueError(
+                "EvalInput collection only supports task_run_eval; "
+                "eval_config_eval uses eval_configs_filter_id over TaskRuns"
+            )
         filter_id = self.eval.eval_input_filter_id
         if filter_id is None:
             raise ValueError(
@@ -161,62 +178,38 @@ class EvalRunner:
             )
         input_filter = eval_input_filter_from_id(filter_id)
 
-        if self.eval_run_type == "task_run_eval":
-            already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
+        already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
+        for eval_config in self.eval_configs:
+            already_run[eval_config.id] = {}
+            for run_config in self.run_configs or []:
+                already_run[eval_config.id][run_config.id] = set()
+            for run in eval_config.runs(readonly=True):
+                if (
+                    run.eval_input_id is not None
+                    and run.task_run_config_id is not None
+                    and run.task_run_config_id in already_run[eval_config.id]
+                ):
+                    already_run[eval_config.id][run.task_run_config_id].add(
+                        run.eval_input_id
+                    )
+
+        jobs: List[EvalJob] = []
+        for eval_input in self.task.eval_inputs(readonly=True):
+            if not input_filter(eval_input):
+                continue
             for eval_config in self.eval_configs:
-                already_run[eval_config.id] = {}
                 for run_config in self.run_configs or []:
-                    already_run[eval_config.id][run_config.id] = set()
-                for run in eval_config.runs(readonly=True):
-                    if (
-                        run.eval_input_id is not None
-                        and run.task_run_config_id is not None
-                        and run.task_run_config_id in already_run[eval_config.id]
-                    ):
-                        already_run[eval_config.id][run.task_run_config_id].add(
-                            run.eval_input_id
-                        )
-
-            jobs: List[EvalJob] = []
-            for eval_input in self.task.eval_inputs(readonly=True):
-                if not input_filter(eval_input):
-                    continue
-                for eval_config in self.eval_configs:
-                    for run_config in self.run_configs or []:
-                        if eval_input.id in already_run[eval_config.id][run_config.id]:
-                            continue
-                        jobs.append(
-                            EvalJob(
-                                item=eval_input,
-                                eval_config=eval_config,
-                                type="task_run_eval",
-                                task_run_config=run_config,
-                            )
-                        )
-            return jobs
-        else:
-            already_run_ec: Dict[ID_TYPE, Set[ID_TYPE]] = {}
-            for eval_config in self.eval_configs:
-                already_run_ec[eval_config.id] = set()
-                for run in eval_config.runs(readonly=True):
-                    if run.eval_input_id is not None:
-                        already_run_ec[eval_config.id].add(run.eval_input_id)
-
-            jobs_ec: List[EvalJob] = []
-            for eval_input in self.task.eval_inputs(readonly=True):
-                if not input_filter(eval_input):
-                    continue
-                for eval_config in self.eval_configs:
-                    if eval_input.id in already_run_ec[eval_config.id]:
+                    if eval_input.id in already_run[eval_config.id][run_config.id]:
                         continue
-                    jobs_ec.append(
+                    jobs.append(
                         EvalJob(
                             item=eval_input,
                             eval_config=eval_config,
-                            type=self.eval_run_type,
+                            type="task_run_eval",
+                            task_run_config=run_config,
                         )
                     )
-            return jobs_ec
+        return jobs
 
     def collect_tasks_for_task_run_eval(self) -> List[EvalJob]:
         """
@@ -379,6 +372,12 @@ class EvalRunner:
             job.item.data, SingleTurnEvalInputData
         ):
             early_input_str = job.item.data.user_message.text
+        elif isinstance(job.item, EvalInput) and isinstance(
+            job.item.data, MultiTurnSyntheticEvalInputData
+        ):
+            early_input_str = (
+                job.item.data.first_message.text if job.item.data.first_message else ""
+            )
         else:
             early_input_str = ""
 
@@ -412,29 +411,18 @@ class EvalRunner:
                 eval_run.save_to_file()
             return True
 
-        if isinstance(job.item, EvalInput) and isinstance(
-            job.item.data, MultiTurnSyntheticEvalInputData
+        if (
+            isinstance(job.item, EvalInput)
+            and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+            and job.type == "task_run_eval"
         ):
-            # Multi-turn synthetic inputs require re-driving a conversation at
-            # eval time, which the runner does not support yet. Stored
-            # multi-turn TaskRuns are supported (trace path below).
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=job.item.id,
-                    eval_config_eval=job.type == "eval_config_eval",
-                    scores={},
-                    input=early_input_str,
-                    output=None,
-                    skipped_reason=SkippedReason.incompatible_input_shape.value,
-                    skipped_detail="V2 evals do not yet support multi-turn synthetic inputs",
-                )
-                eval_run.save_to_file()
-            return True
+            # Multi-turn synthetic input: re-drive the conversation fresh for
+            # this run config, then judge the new trace. eval_config_eval over
+            # the same item falls through to the EvalInput skip below — golden
+            # subsets are TaskRun-sourced in V2.0.
+            return await self._run_v2_multi_turn_synthetic_job(
+                job, evaluator, job.item, job.item.data, early_input_str
+            )
 
         if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
             # Multi-turn chain leaf: a conversation can't be regenerated in a
@@ -612,6 +600,133 @@ class EvalRunner:
                 )
                 eval_run.save_to_file()
             return True
+
+    async def _run_v2_multi_turn_synthetic_job(
+        self,
+        job: EvalJob,
+        evaluator: BaseV2EvalBridge,
+        eval_input: EvalInput,
+        data: MultiTurnSyntheticEvalInputData,
+        seed: str,
+    ) -> bool:
+        """task_run_eval over a multi-turn synthetic input.
+
+        The run config under evaluation drives the agent while the eval's
+        multi_turn_drive_config plays the synthetic user, so each run config
+        gets its own fresh conversation — the property that makes run-config
+        comparison meaningful for multi-turn. The drive is transient (nothing
+        persisted); the EvalRun record carries the scored trace.
+        """
+        drive_config = self.eval.multi_turn_drive_config
+        if drive_config is None:
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=None,
+                    eval_input_id=eval_input.id,
+                    eval_config_eval=False,
+                    scores={},
+                    input=seed,
+                    output=None,
+                    skipped_reason=SkippedReason.missing_drive_config.value,
+                    skipped_detail="Eval has no multi_turn_drive_config; "
+                    "re-driving a multi-turn synthetic input requires one",
+                )
+                eval_run.save_to_file()
+            return True
+
+        if not seed:
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=None,
+                    eval_input_id=eval_input.id,
+                    eval_config_eval=False,
+                    scores={},
+                    input=seed,
+                    output=None,
+                    skipped_reason=SkippedReason.incompatible_input_shape.value,
+                    skipped_detail="Multi-turn synthetic input has no "
+                    "first_message to open the conversation",
+                )
+                eval_run.save_to_file()
+            return True
+
+        if job.task_run_config is None:
+            raise ValueError("Task run eval requires a run config")
+        try:
+            agent_run_config = as_kiln_agent_run_config(
+                job.task_run_config.run_config_properties
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Multi-turn re-drive requires a Kiln agent run config; "
+                f"run config '{job.task_run_config.name}' is a different type"
+            ) from e
+        try:
+            su_provider = ModelProviderName(drive_config.model_provider)
+        except ValueError as e:
+            raise ValueError(
+                "Invalid synthetic-user model provider on the eval's "
+                f"multi_turn_drive_config: {drive_config.model_provider}"
+            ) from e
+
+        leaf = await drive_case_for_eval(
+            seed_prompt=seed,
+            synthetic_user_info=data.synthetic_user_info,
+            target_task=self.task,
+            target_run_config=agent_run_config,
+            su_driver_config=SyntheticUserDriverConfig(
+                model_name=drive_config.model_name,
+                model_provider_name=su_provider,
+            ),
+            turns=drive_config.turns,
+            skills=self._skills,
+        )
+
+        eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
+        result = await evaluator.evaluate(eval_task_input)
+
+        # Like the stored-trace path, only successful records of a full_trace
+        # eval carry the serialized conversation.
+        trace_json: str | None = None
+        if (
+            result.skipped_reason is None
+            and self.eval.evaluation_data_type == EvalDataType.full_trace
+        ):
+            trace_json = json.dumps(
+                eval_task_input.trace,
+                indent=2,
+                ensure_ascii=False,
+                default=_trace_json_default,
+            )
+
+        async with self._save_context():
+            eval_run = EvalRun(
+                parent=job.eval_config,
+                task_run_config_id=job.task_run_config.id,
+                dataset_id=None,
+                eval_input_id=eval_input.id,
+                eval_config_eval=False,
+                scores=result.scores,
+                input=seed,
+                output=leaf.output.output if result.skipped_reason is None else None,
+                reference_data=eval_input.reference,
+                skipped_reason=result.skipped_reason.value
+                if result.skipped_reason
+                else None,
+                skipped_detail=result.skipped_detail,
+                intermediate_outputs=result.intermediate_outputs,
+                task_run_trace=trace_json,
+            )
+            eval_run.save_to_file()
+        return True
 
 
 def _trace_json_default(obj: object) -> object:

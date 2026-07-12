@@ -1,21 +1,21 @@
 """Single-case drive loop for the multi-turn synthetic-user runner.
 
 `drive_case` alternates the target task adapter with the local
-`SyntheticUserDriver`, producing a chain of persisted `TaskRun`s on the
-target side. The loop runs for a fixed `turns` count — no early
-termination, no `<DONE>` / `<CANCEL>` sentinels — by design (see spec).
+`SyntheticUserDriver`, producing a chain of `TaskRun`s on the target side.
+The loop runs for a fixed `turns` count — no early termination, no
+`<DONE>` / `<CANCEL>` sentinels — by design (see spec).
 
-Persistence is fully delegated to the adapter: every TaskRun in the
-returned chain has already been written to disk by `target_invoker(...)`,
-with `trace`, `parent_task_run_id`, and `cumulative_usage` populated.
-The SU side is in-memory only and produces no TaskRuns.
+Persistence is fully delegated to `target_invoker(...)`: the batch runner's
+invoker writes each TaskRun to disk (with `parent_task_run_id` chaining),
+while the eval-time invoker keeps the chain in memory. Either way the
+returned runs carry `trace` and `cumulative_usage`. The SU side is
+in-memory only and produces no TaskRuns.
 """
 
 from dataclasses import dataclass
 from typing import Protocol
 
 from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -68,7 +68,7 @@ class DriveCaseResult:
 
 async def drive_case(
     *,
-    case: SyntheticUserCase,
+    seed_prompt: str,
     target_invoker: TargetInvoker,
     su_driver: SyntheticUserDriver,
     turns: int,
@@ -77,12 +77,11 @@ async def drive_case(
     """Drive one synthetic-user case for `turns` turns.
 
     Args:
-        case: the generated SU case (carries seed_prompt + the
-            opaque synthetic_user_info blob the driver was built from).
+        seed_prompt: the opening user-side message sent into the target task.
         target_invoker: how to call the target task; produces a persisted TaskRun.
         su_driver: pre-built SU driver for this case. Caller is responsible
-            for construction (so a malformed blob fails at the runner layer,
-            not here).
+            for construction (so a malformed persona fails at the caller's
+            layer, not here).
         turns: exact number of assistant turns to produce. The loop runs
             `range(turns)` and always completes all iterations — no early
             stop.
@@ -97,10 +96,10 @@ async def drive_case(
     # Assert-loud on missing seed. An empty string would silently flow
     # into the target adapter and surface as a confusing model-side error
     # rather than a clean "the case is malformed" signal.
-    if not case.seed_prompt:
-        raise ValueError("case.seed_prompt must be a non-empty string")
+    if not seed_prompt:
+        raise ValueError("seed_prompt must be a non-empty string")
 
-    user_msg: str = case.seed_prompt
+    user_msg: str = seed_prompt
     prev_run: TaskRun | None = None
     prev_trace: list[ChatCompletionMessageParam] | None = None
     chain: list[TaskRun] = []

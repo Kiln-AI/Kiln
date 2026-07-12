@@ -502,8 +502,9 @@ class TestClassifySpecDescription:
 
 
 class TestCreateSpecWithCopilotMultiTurn:
-    """Multi-turn save path: tag existing chain leaves instead of synthesising
-    new examples. See specs/projects/eval_builder_v2/design.md for context.
+    """Multi-turn save path: tag existing chain leaves (golden/train) and mint
+    EvalInputs from the driven cases instead of synthesising new examples.
+    See specs/projects/eval_builder_v2/design.md for context.
     """
 
     BATCH_TAG = "abc123def456"
@@ -528,8 +529,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         """Persist eight single-run "chains" tagged like the multi-turn runner
         leaves them. Single TaskRuns (no actual multi-turn parents) are
         sufficient: the endpoint only cares about the leaf tag. Eight leaves
-        give the 50/25/25 split room to produce non-empty golden/eval/train
-        slices (golden caps at 25% = 2).
+        give the split room for a non-empty golden slice (caps at 25% = 2);
+        the rest are train.
         """
         _, task = project_and_task
         source = DataSource(
@@ -556,6 +557,18 @@ class TestCreateSpecWithCopilotMultiTurn:
             leaves.append(run)
         return leaves
 
+    @staticmethod
+    def _driven_case(idx: int) -> dict:
+        return {
+            "seed_prompt": f"seed prompt {idx}",
+            "synthetic_user_info": (
+                f"<persona>persona {idx}</persona>"
+                f"<goal>goal {idx}</goal>"
+                f"<behavior_guidance>guidance {idx}</behavior_guidance>"
+            ),
+            "scenario_index": idx,
+        }
+
     @pytest.fixture
     def multi_turn_request_data(self):
         return {
@@ -571,7 +584,15 @@ class TestCreateSpecWithCopilotMultiTurn:
                 "model_name": "gpt-4",
                 "model_provider": "openai",
             },
-            "multi_turn": {"batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG},
+            "multi_turn": {
+                "batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG,
+                "cases": [self._driven_case(i) for i in range(8)],
+                "drive_config": {
+                    "model_name": "claude_4_5_haiku",
+                    "model_provider": "openrouter",
+                    "turns": 5,
+                },
+            },
             "task_prompt_with_example": "Test prompt",
         }
 
@@ -640,15 +661,21 @@ class TestCreateSpecWithCopilotMultiTurn:
         # the operational state lives on the Eval.
         assert res["synthetic_data_generation_session_config"] is None
 
-        # Eval: full_trace data type + judge config attached. Multi-turn now
-        # splits chains 50/25/25, so it references a train set too.
+        # Eval: full_trace data type + judge config attached. The eval slice
+        # is EvalInput-typed (re-driven per run config at eval time) with the
+        # drive settings persisted on the Eval; golden and train stay TaskRun.
         evals = task.evals()
         assert len(evals) == 1
         eval_obj = evals[0]
         assert eval_obj.evaluation_data_type == EvalDataType.full_trace
-        assert eval_obj.eval_set_filter_id == "tag::eval_multi_turn_spec"
+        assert eval_obj.eval_set_filter_id is None
+        assert eval_obj.eval_input_filter_id == "tag::eval_multi_turn_spec"
         assert eval_obj.train_set_filter_id == "tag::train_multi_turn_spec"
         assert eval_obj.current_config_id is not None
+        assert eval_obj.multi_turn_drive_config is not None
+        assert eval_obj.multi_turn_drive_config.model_name == "claude_4_5_haiku"
+        assert eval_obj.multi_turn_drive_config.model_provider == "openrouter"
+        assert eval_obj.multi_turn_drive_config.turns == 5
 
         # The saved judge is a V2 config with a multi-turn (trace) template.
         configs = eval_obj.configs()
@@ -657,27 +684,42 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert isinstance(configs[0].properties, LlmJudgeProperties)
         assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
 
-        # Chains split into DISJOINT slices: each leaf carries exactly one of
-        # eval/train/golden (on top of its synthetic_user_* tags). Golden caps
-        # at 25% of 8 = 2, which here equals the two rated leaves — so both
-        # become golden (the answer key). The six unreviewed leaves are held
-        # out in eval/train, never golden.
-        split_tags = {
+        # The eval slice: one EvalInput per driven case, carrying the seed,
+        # the typed persona, and provenance tags (batch + scenario).
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        inputs_by_seed = {ei.data.first_message.text: ei for ei in eval_inputs}
+        first = inputs_by_seed["seed prompt 0"]
+        assert first.data.synthetic_user_info.persona == "persona 0"
+        assert first.data.synthetic_user_info.goal == "goal 0"
+        assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
+        assert set(first.tags) == {
             "eval_multi_turn_spec",
+            f"synthetic_user_batch:{self.BATCH_TAG}",
+            "scenario:0",
+        }
+
+        # Chains split into DISJOINT slices: each leaf carries exactly one of
+        # golden/train (on top of its synthetic_user_* tags) — the eval slice
+        # lives on the EvalInputs above, not on chains. Golden caps at 25% of
+        # 8 = 2, which here equals the two rated leaves — so both become
+        # golden (the answer key). The six unreviewed leaves are all train.
+        split_tags = {
             "train_multi_turn_spec",
             "eval_golden_multi_turn_spec",
         }
         runs_by_id = {run.id: run for run in task.runs()}
         for leaf in task.runs():
             assert len(split_tags & set(leaf.tags)) == 1
+            assert "eval_multi_turn_spec" not in leaf.tags
             assert "synthetic_user_case" in leaf.tags
         # Golden == exactly the two reviewed leaves (rated count == the 25% cap).
         for reviewed_leaf in (synthetic_chain_leaves[0], synthetic_chain_leaves[1]):
             assert "eval_golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
-        # An unreviewed leaf is held out (train or eval), never golden.
+        # An unreviewed leaf is held out in train, never golden.
         unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
         assert "eval_golden_multi_turn_spec" not in unreviewed_tags
-        assert unreviewed_tags & {"eval_multi_turn_spec", "train_multi_turn_spec"}
+        assert "train_multi_turn_spec" in unreviewed_tags
 
         # Reviewed leaves carry golden ratings matching the review clicks,
         # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
@@ -731,11 +773,12 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert "not_a_real_leaf" in response.json()["message"]
         assert len(task.evals()) == 0
         assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
         for leaf in task.runs():
             assert leaf.output.rating is None
             assert leaf.feedback() == []
             assert leaf.claim_reviews() == []
-            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "train_multi_turn_spec" not in leaf.tags
             assert "eval_golden_multi_turn_spec" not in leaf.tags
 
     def test_multi_turn_save_rejects_duplicate_reviewed_leaves(
@@ -808,12 +851,43 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         assert len(task.evals()) == 0
         assert len(task.specs()) == 0
+        # The eval slice rolled back too: no orphan EvalInputs.
+        assert len(task.eval_inputs()) == 0
         for leaf in task.runs():
             assert leaf.output.rating is None
             assert leaf.feedback() == []
             assert leaf.claim_reviews() == []
-            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "train_multi_turn_spec" not in leaf.tags
             assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_multi_turn_save_malformed_case_blob_is_422(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A case whose persona blob doesn't parse fails before anything is
+        # created — the EvalInputs are built (and validated) up front.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["cases"][3]["synthetic_user_info"] = (
+            "no tags here at all"
+        )
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "Case 3" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
 
     def test_duplicate_spec_name_is_409(
         self, client, project_and_task, multi_turn_request_data

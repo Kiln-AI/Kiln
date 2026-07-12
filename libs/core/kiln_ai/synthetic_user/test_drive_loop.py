@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 
@@ -19,17 +18,6 @@ from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 
 
 _SYSTEM_PROMPT = "You are a target agent."
-
-
-def _case(seed: str = "hi there") -> SyntheticUserCase:
-    return SyntheticUserCase(
-        seed_prompt=seed,
-        synthetic_user_info=(
-            "<persona>frustrated customer</persona>"
-            "<goal>get a refund outside policy</goal>"
-            "<behavior_guidance>be polite then escalate</behavior_guidance>"
-        ),
-    )
 
 
 def _fake_run(trace: list[dict], run_id: str | None = None) -> Mock:
@@ -105,7 +93,7 @@ async def test_drive_case_runs_exactly_turns_iterations() -> None:
     su = _su_driver_with_replies(["u2", "u3", "u4", "u5"])
 
     result = await drive_case(
-        case=_case(),
+        seed_prompt="hi there",
         target_invoker=invoker,
         su_driver=su,
         turns=4,
@@ -123,7 +111,7 @@ async def test_drive_case_seeds_first_turn_with_case_seed_prompt() -> None:
     su = _su_driver_with_replies(["next user msg"])
 
     await drive_case(
-        case=_case(seed="custom seed"),
+        seed_prompt="custom seed",
         target_invoker=invoker,
         su_driver=su,
         turns=1,
@@ -141,7 +129,7 @@ async def test_drive_case_threads_prior_trace_and_parent_run() -> None:
     su = _su_driver_with_replies(["u2", "u3", "u4"])
 
     result = await drive_case(
-        case=_case(seed="u1"),
+        seed_prompt="u1",
         target_invoker=invoker,
         su_driver=su,
         turns=3,
@@ -169,7 +157,7 @@ async def test_drive_case_passes_full_trace_to_su_driver() -> None:
     su = _su_driver_with_replies(["u2", "u3"])
 
     result = await drive_case(
-        case=_case(seed="u1"),
+        seed_prompt="u1",
         target_invoker=invoker,
         su_driver=su,
         turns=2,
@@ -197,7 +185,7 @@ async def test_drive_case_on_turn_hook_fires_once_per_turn() -> None:
         captured.append((run, su_message))
 
     result = await drive_case(
-        case=_case(),
+        seed_prompt="hi there",
         target_invoker=invoker,
         su_driver=su,
         turns=3,
@@ -218,7 +206,7 @@ async def test_drive_case_works_without_on_turn_hook() -> None:
     su = _su_driver_with_replies(["u2"])
 
     result = await drive_case(
-        case=_case(),
+        seed_prompt="hi there",
         target_invoker=invoker,
         su_driver=su,
         turns=1,
@@ -242,7 +230,7 @@ async def test_drive_case_rejects_invalid_turns(bad_turns: int) -> None:
 
     with pytest.raises(ValueError, match="turns must be >= 1"):
         await drive_case(
-            case=_case(),
+            seed_prompt="hi there",
             target_invoker=invoker,
             su_driver=su,
             turns=bad_turns,
@@ -260,7 +248,7 @@ async def test_drive_case_rejects_empty_seed_prompt() -> None:
 
     with pytest.raises(ValueError, match="seed_prompt"):
         await drive_case(
-            case=_case(seed=""),
+            seed_prompt="",
             target_invoker=invoker,
             su_driver=su,
             turns=1,
@@ -277,7 +265,7 @@ async def test_drive_case_propagates_target_invoker_errors() -> None:
 
     with pytest.raises(RuntimeError, match="target blew up"):
         await drive_case(
-            case=_case(),
+            seed_prompt="hi there",
             target_invoker=bad_invoker,
             su_driver=su,
             turns=3,
@@ -293,7 +281,7 @@ async def test_drive_case_propagates_su_driver_errors() -> None:
 
     with pytest.raises(ValueError, match="bad conversation"):
         await drive_case(
-            case=_case(),
+            seed_prompt="hi there",
             target_invoker=invoker,
             su_driver=su,
             turns=3,
@@ -309,7 +297,7 @@ async def test_drive_case_returns_chain_in_order_leaf_last() -> None:
     su = _su_driver_with_replies(["u2", "u3", "u4"])
 
     result = await drive_case(
-        case=_case(seed="u1"),
+        seed_prompt="u1",
         target_invoker=invoker,
         su_driver=su,
         turns=3,

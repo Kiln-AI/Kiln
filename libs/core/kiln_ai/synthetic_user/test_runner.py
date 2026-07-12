@@ -25,7 +25,6 @@ from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
-from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
 from kiln_ai.synthetic_user.runner import (
     BatchCompletedEvent,
     BatchEvent,
@@ -111,7 +110,7 @@ def _patch_su_driver(
     """
     call_counter = {"i": 0}
 
-    def _ctor(blob, config):
+    def _ctor(info, config):
         idx = call_counter["i"]
         call_counter["i"] += 1
         replies = (
@@ -251,7 +250,7 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     )
 
     # Each case's driver gets two replies at $0.01 each → $0.02 SU per case.
-    def _ctor(blob, config):
+    def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(side_effect=[("u2", 0.01), ("u3", 0.01)])
         return instance
@@ -439,16 +438,11 @@ async def test_skills_preloaded_once_and_injected_into_every_adapter(
 async def test_malformed_blob_surfaces_as_case_failed(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SyntheticUserDriver construction raises on a bad blob — that case
-    fails alone; the others run normally.
+    """The runner parses each case's blob at its wire boundary — a bad
+    blob fails that case alone; the others run normally.
     """
-    call_counter = {"i": 0}
 
-    def _ctor(blob, config):
-        idx = call_counter["i"]
-        call_counter["i"] += 1
-        if idx == 1:
-            raise SyntheticUserInfoParseError("bad blob")
+    def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(return_value=("ok", 0.0))
         return instance
@@ -456,14 +450,17 @@ async def test_malformed_blob_surfaces_as_case_failed(
     _patch_su_driver_factory(monkeypatch, _ctor)
     _patch_adapter_for_task(monkeypatch, [_fake_run("r0"), _fake_run("r2")])
 
+    bad_case = SyntheticUserCase(
+        seed_prompt="seed-1", synthetic_user_info="no tags here at all"
+    )
     events = await _collect(
         run_cases_batch(
-            cases=[_case(0), _case(1), _case(2)],
+            cases=[_case(0), bad_case, _case(2)],
             target_task=fake_task,
             target_run_config=_target_run_config(),
             su_driver_config=_su_driver_config(),
             turns=1,
-            concurrency=1,  # serialize so the SU driver factory is called in case order
+            concurrency=1,  # serialize so cases run in order
         )
     )
 

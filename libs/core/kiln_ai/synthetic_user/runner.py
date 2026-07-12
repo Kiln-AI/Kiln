@@ -253,9 +253,11 @@ async def _drive_one_case_and_emit(
     # arm can remove it.
     persisted_runs: dict[str, TaskRun] = {}
     try:
-        # Malformed blob fails this case without affecting others.
+        # Malformed blob fails this case without affecting others. Parsing
+        # happens here — the wire boundary — so the driver only ever sees
+        # the typed persona.
         try:
-            su_driver = SyntheticUserDriver(case.synthetic_user_info, su_driver_config)
+            su_info = parse_synthetic_user_info(case.synthetic_user_info)
         except SyntheticUserInfoParseError as e:
             await queue.put(
                 CaseFailedEvent(
@@ -265,6 +267,7 @@ async def _drive_one_case_and_emit(
                 )
             )
             return
+        su_driver = SyntheticUserDriver(su_info, su_driver_config)
 
         target_invoker = _make_target_invoker(
             case=case,
@@ -292,7 +295,7 @@ async def _drive_one_case_and_emit(
             )
 
         result = await drive_case(
-            case=case,
+            seed_prompt=case.seed_prompt,
             target_invoker=target_invoker,
             su_driver=su_driver,
             turns=turns,

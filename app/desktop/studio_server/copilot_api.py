@@ -55,6 +55,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH,
     DataGuideJobResultApiOutput,
     DataGuideJobStatusApiOutput,
+    DrivenSyntheticCaseApi,
     ParseImportFileApiOutput,
     StartDataGuideJobApiInput,
     StartDataGuideJobApiOutput,
@@ -71,6 +72,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     DatasetTaskRuns,
+    build_multi_turn_eval_inputs,
     create_dataset_task_runs,
     find_multi_turn_chain_leaves,
     generate_copilot_examples,
@@ -79,6 +81,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     split_and_tag_multi_turn_chains,
     unrate_multi_turn_chain_leaves,
     untag_multi_turn_chains_for_eval,
+    write_eval_slice_multi_turn,
 )
 from app.desktop.studio_server.api_models.eval_builder_models import JudgeConfig
 from app.desktop.studio_server.utils.eval_builder_utils import (
@@ -89,7 +92,14 @@ from fastapi import FastAPI, File, HTTPException, Path, UploadFile
 from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, LlmJudgeProperties
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalInput,
+    LlmJudgeProperties,
+    MultiTurnDriveConfig,
+)
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
     Spec,
@@ -160,8 +170,11 @@ class ClassifySpecDescriptionOutput(BaseModel):
 
 class MultiTurnSaveInfo(BaseModel):
     """Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
-    The endpoint walks chains tagged with this batch_tag and applies eval/golden
-    filter tags instead of generating new examples.
+
+    The endpoint splits the chains tagged with this batch_tag into golden and
+    train slices, and mints the eval slice as EvalInput items from `cases` —
+    the re-drivable inputs the eval runner regenerates conversations from,
+    per run config, using `drive_config` as the synthetic user.
     """
 
     batch_tag: str = Field(
@@ -175,6 +188,17 @@ class MultiTurnSaveInfo(BaseModel):
         "by leaf TaskRun id. Each becomes a golden RequirementRating on the "
         "chain leaf (plus Feedback / per-claim grades when present).",
     )
+    cases: list[DrivenSyntheticCaseApi] = Field(
+        min_length=1,
+        description="The driven synthetic-user cases of this batch. Each is "
+        "minted as an EvalInput — the eval slice the runner re-drives per "
+        "run config at eval time.",
+    )
+    drive_config: MultiTurnDriveConfig = Field(
+        description="The alignment-time drive settings (synthetic-user model "
+        "+ turn count), persisted on the Eval so eval-time re-drives match "
+        "the conversations the judge was calibrated on.",
+    )
 
 
 class CreateSpecWithCopilotRequest(BaseModel):
@@ -187,9 +211,11 @@ class CreateSpecWithCopilotRequest(BaseModel):
       eval/train/golden datasets, and tags new TaskRuns.
 
     - **Multi-turn:** caller supplies `multi_turn` with a `batch_tag` pointing
-      at chains already on disk (created earlier by the synthetic-user runner).
-      Endpoint tags the existing chain leaves with eval/golden filter tags;
-      no new TaskRuns are created. `evaluate_full_trace` must be True.
+      at chains already on disk (created earlier by the synthetic-user runner)
+      plus the driven cases and drive settings. Endpoint tags the existing
+      chain leaves with golden/train filter tags and mints one EvalInput per
+      driven case as the eval slice; no new TaskRuns are created.
+      `evaluate_full_trace` must be True.
 
     If you don't want copilot at all, use POST /spec instead.
 
@@ -479,8 +505,8 @@ def persist_spec_save(
     spec: Spec,
     multi_turn: MultiTurnSaveInfo | None,
     multi_turn_leaves: list[TaskRun],
+    multi_turn_eval_inputs: list[EvalInput],
     reviewed_leaf_ids: set[str],
-    eval_tag: str,
     train_tag: str,
     golden_tag: str,
     spec_name: str,
@@ -490,15 +516,15 @@ def persist_spec_save(
     on failure.
 
     Owns three rollback ledgers: created models (Eval / EvalConfig / TaskRun /
-    Spec), tagged chain leaves, and rated chain leaves. On any failure it
-    reverses the leaf mutations (ratings first — applied last — then tags) and
-    deletes the created models in reverse order, then re-raises so the caller
-    sees the original error.
+    EvalInput / Spec), tagged chain leaves, and rated chain leaves. On any
+    failure it reverses the leaf mutations (ratings first — applied last —
+    then tags) and deletes the created models in reverse order, then re-raises
+    so the caller sees the original error.
 
     Synchronous and file-I/O heavy; call via asyncio.to_thread so the event
     loop is not blocked.
     """
-    saved_models: list[Eval | EvalConfig | TaskRun | Spec] = []
+    saved_models: list[Eval | EvalConfig | TaskRun | EvalInput | Spec] = []
     tagged_leaves: list[tuple[TaskRun, set[str]]] = []
     rated_leaves: list[
         tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
@@ -519,15 +545,16 @@ def persist_spec_save(
         spec.save_to_file()
         saved_models.append(spec)
 
-        # Multi-turn: split the chain leaves into disjoint golden/eval/train
-        # slices AFTER spec has saved, so a failure here triggers the rollback
+        # Multi-turn: persist the eval slice (EvalInput items minted from the
+        # driven cases) and split the chain leaves into disjoint golden/train
+        # slices, AFTER spec has saved so a failure here triggers the rollback
         # below. tagged_leaves captures only the tags this call added, so
         # untagging on rollback preserves any tags the leaf already had.
         if multi_turn is not None:
+            write_eval_slice_multi_turn(multi_turn_eval_inputs, saved_models)
             split_and_tag_multi_turn_chains(
                 multi_turn_leaves,
                 reviewed_leaf_ids,
-                eval_tag,
                 train_tag,
                 golden_tag,
                 rng=rng,
@@ -905,8 +932,9 @@ def connect_copilot_api(app: FastAPI):
         3. Single-turn only: batch examples via copilot API for the eval +
            golden datasets, persisted as TaskRuns
         4. The Spec itself
-        Plus, for multi-turn: tag existing chain leaves with the eval/golden
-        filter tags so the saved Eval picks them up as its dataset.
+        Plus, for multi-turn: tag existing chain leaves with the golden/train
+        filter tags and mint one EvalInput per driven case — the eval slice
+        the runner re-drives per run config at eval time.
 
         If you don't need copilot, use POST /spec instead.
 
@@ -994,19 +1022,41 @@ def connect_copilot_api(app: FastAPI):
         # Build and validate all models before saving any; persist_spec_save
         # commits them as one unit of work below.
 
-        # 1. Create the Eval. Both paths split their dataset 50/25/25
-        # (train/eval/golden), so both reference a train set.
+        # Multi-turn eval slice: one EvalInput per driven case (validated
+        # here, persisted in the unit of work). 422s on a malformed persona
+        # blob before anything is written.
+        multi_turn_eval_inputs: list[EvalInput] = []
+        if request.multi_turn is not None:
+            multi_turn_eval_inputs = build_multi_turn_eval_inputs(
+                request.multi_turn.cases,
+                request.multi_turn.batch_tag,
+                task,
+                eval_tag,
+            )
+
+        # 1. Create the Eval. Golden and train are TaskRun slices on both
+        # paths; the eval slice is TaskRun-tagged for single-turn and
+        # EvalInput-tagged for multi-turn (re-driven per run config, using
+        # the drive config persisted on the Eval).
         eval = Eval(
             parent=task,
             name=request.name,
             description=None,
             template=template,
             output_scores=output_scores,
-            eval_set_filter_id=eval_set_filter_id,
+            eval_set_filter_id=None
+            if request.multi_turn is not None
+            else eval_set_filter_id,
+            eval_input_filter_id=f"tag::{eval_tag}"
+            if request.multi_turn is not None
+            else None,
             train_set_filter_id=train_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
+            multi_turn_drive_config=request.multi_turn.drive_config
+            if request.multi_turn is not None
+            else None,
         )
 
         # 2. Create the judge eval config — V2 shape, the same judge the review
@@ -1122,8 +1172,8 @@ def connect_copilot_api(app: FastAPI):
             spec=spec,
             multi_turn=request.multi_turn,
             multi_turn_leaves=multi_turn_leaves,
+            multi_turn_eval_inputs=multi_turn_eval_inputs,
             reviewed_leaf_ids=reviewed_leaf_ids,
-            eval_tag=eval_tag,
             train_tag=train_tag,
             golden_tag=golden_tag,
             spec_name=request.name,

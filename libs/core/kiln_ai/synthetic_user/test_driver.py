@@ -17,7 +17,7 @@ from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import driver as driver_mod
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
-from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
+from kiln_ai.synthetic_user.parser import parse_synthetic_user_info
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 _BLOB = (
@@ -25,6 +25,8 @@ _BLOB = (
     "<goal>Find the 2016 RRSP limit</goal>"
     "<behavior_guidance>Press for specifics</behavior_guidance>"
 )
+
+_INFO = parse_synthetic_user_info(_BLOB)
 
 _DRIVER_CONFIG = SyntheticUserDriverConfig(
     model_name="claude_4_5_haiku",
@@ -67,11 +69,11 @@ def _patch_adapter(
 # ───────────────────────── construction ─────────────────────────
 
 
-def test_construction_parses_blob_and_stores_info(
+def test_construction_stores_typed_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     assert drv._info.persona == "A 30-something professional"
     assert drv._info.goal == "Find the 2016 RRSP limit"
     assert drv._info.behavior_guidance == "Press for specifics"
@@ -81,25 +83,11 @@ def test_construction_renders_system_prompt_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     # System prompt is rendered on construction and reused.
     assert "A 30-something professional" in drv._system_prompt
     assert "Find the 2016 RRSP limit" in drv._system_prompt
     assert "Press for specifics" in drv._system_prompt
-
-
-def test_construction_raises_on_malformed_blob(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_adapter(monkeypatch, _fake_run_output())
-    with pytest.raises(SyntheticUserInfoParseError):
-        SyntheticUserDriver("no tags here at all", _DRIVER_CONFIG)
-
-
-def test_construction_raises_on_empty_required_tag(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_adapter(monkeypatch, _fake_run_output())
-    with pytest.raises(SyntheticUserInfoParseError):
-        SyntheticUserDriver("<persona></persona><goal>G</goal>", _DRIVER_CONFIG)
 
 
 # ───────────────────────── respond — happy path ─────────────────────────
@@ -113,7 +101,7 @@ async def test_respond_returns_adapter_output_and_zero_cost_when_unset(
     so downstream sums stay well-defined.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("the SU's reply"))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "u1"},
         {"role": "assistant", "content": "a1"},
@@ -132,7 +120,7 @@ async def test_respond_returns_cost_from_task_run_usage(
 ) -> None:
     """Per-call cost is read from the in-memory TaskRun's `usage.cost`."""
     _patch_adapter(monkeypatch, _fake_run_output("hi"), cost=0.0123)
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "u1"},
         {"role": "assistant", "content": "a1"},
@@ -151,7 +139,7 @@ async def test_respond_role_swaps_and_prepends_system_prompt(
     prior_trace is [system, ...role-swapped earlier turns].
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "seed-user-1"},
         {"role": "assistant", "content": "target-reply-1"},
@@ -186,7 +174,7 @@ async def test_respond_filters_visible_message_roles(
 ) -> None:
     """A system turn in the conversation must be dropped before role-swap."""
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": "should be dropped"},
         {"role": "user", "content": "u1"},
@@ -215,7 +203,7 @@ async def test_respond_drops_tool_dispatch_only_assistant_turns(
     the conversation stays a coherent text-only dialog.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     # Shape that comes out of a tool-using target: user → tool-dispatch
     # assistant (content=None) → final text-response assistant.
     conversation: list[ChatCompletionMessageParam] = [
@@ -257,7 +245,7 @@ async def test_respond_keeps_assistant_turns_with_text_and_tool_calls(
     turns get dropped.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "what's the weather?"},
         {
@@ -288,7 +276,7 @@ async def test_respond_with_custom_visible_roles(
     """Custom visibility set is honored — the driver doesn't hardcode the default."""
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
     drv = SyntheticUserDriver(
-        _BLOB,
+        _INFO,
         SyntheticUserDriverConfig(
             model_name="x",
             model_provider_name=ModelProviderName.openrouter,
@@ -319,7 +307,7 @@ async def test_respond_raises_when_no_visible_messages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     # All messages filtered out by visible_message_roles.
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": "sys"},
@@ -333,7 +321,7 @@ async def test_respond_raises_when_empty_conversation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     with pytest.raises(ValueError, match="No LLM-visible"):
         await drv.respond([])
 
@@ -343,7 +331,7 @@ async def test_respond_raises_when_ends_on_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "assistant", "content": "a1"},
         {"role": "user", "content": "u1"},
@@ -358,7 +346,7 @@ async def test_respond_raises_on_non_string_adapter_output(
 ) -> None:
     """RunOutput.output is typed as Dict | str — only str is valid for the SU."""
     _patch_adapter(monkeypatch, _fake_run_output({"unexpected": "structured output"}))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "u1"},
         {"role": "assistant", "content": "a1"},
@@ -376,7 +364,7 @@ async def test_respond_reuses_adapter_across_turns(
 ) -> None:
     """The adapter is built once in the constructor and reused per turn."""
     adapter = _patch_adapter(monkeypatch, _fake_run_output("reply"))
-    drv = SyntheticUserDriver(_BLOB, _DRIVER_CONFIG)
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
 
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "u1"},

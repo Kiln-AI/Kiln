@@ -21,6 +21,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
+    DrivenSyntheticCaseApi,
     ReviewedChainApi,
     ReviewedExample,
     SampleApi,
@@ -31,12 +32,21 @@ from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
 from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    EvalInput,
+    MultiTurnSyntheticEvalInputData,
+    UserMessage,
+)
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
     RequirementRating,
     TaskOutput,
     TaskOutputRating,
+)
+from kiln_ai.synthetic_user.parser import (
+    SyntheticUserInfoParseError,
+    parse_synthetic_user_info,
 )
 from kiln_ai.utils.config import Config
 
@@ -61,10 +71,11 @@ NUM_TOPICS = 15
 
 # Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
 # human-rated answer key: it holds up to GOLDEN_TARGET_FRACTION of the set,
-# filled from RATED items only (never padded with unrated ones). Any rated
-# items beyond that cap, plus all unrated items, fall into the remaining pool,
-# which splits train:eval at 2:1 (the 50:25). If fewer than the target fraction
-# are rated the answer key is simply smaller (warned). One owner so the ratio
+# filled from RATED items only (never padded with unrated ones). Single-turn:
+# the remaining pool splits train:eval at 2:1 (the 50:25). Multi-turn: the
+# remainder is all train — its eval slice is EvalInput items minted from the
+# driven cases, not chains. If fewer than the target fraction are rated the
+# answer key is simply smaller (warned). One owner so the golden fraction
 # can't drift between the single-turn and multi-turn splitters.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
@@ -487,17 +498,20 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
 def split_and_tag_multi_turn_chains(
     leaves: list[TaskRun],
     reviewed_leaf_ids: set[str],
-    eval_tag: str,
     train_tag: str,
     golden_tag: str,
     rng: random.Random | None = None,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Assign each chain leaf to exactly ONE split (golden XOR eval XOR train).
+    """Assign each chain leaf to exactly ONE split (golden XOR train).
 
-    Golden = the human-rated leaves (the answer key). The remaining unrated
-    leaves split train:eval at 2:1 (the 50:25 of the split). The slices are
-    disjoint so the judge is never validated on the very set it scores.
+    Golden = the human-rated leaves (the answer key), capped at the target
+    fraction; every remaining leaf is train. Chains carry no eval slice —
+    the eval set is EvalInput items minted from the driven cases
+    (write_eval_slice_multi_turn) and re-driven fresh at eval time, so
+    reusing a golden chain's scenario there is not circular: golden
+    validates the judge on the STORED conversation while the eval set
+    scores NEW ones.
 
     `rng` is injected for deterministic tests. If `tagged_out` is provided,
     each leaf actually mutated is appended as `(leaf, {tag_added})` so the
@@ -507,11 +521,9 @@ def split_and_tag_multi_turn_chains(
     """
     rng = rng or random.Random()
     golden, pool = select_golden_leaves(leaves, reviewed_leaf_ids, rng)
-    train_leaves, eval_leaves = split_pool_train_eval(pool, rng)
 
     tag_chain_leaves(golden, golden_tag, tagged_out)
-    tag_chain_leaves(train_leaves, train_tag, tagged_out)
-    write_eval_slice_multi_turn(eval_leaves, eval_tag, tagged_out)
+    tag_chain_leaves(pool, train_tag, tagged_out)
 
     warn_if_golden_below_target(len(golden), len(leaves))
 
@@ -526,10 +538,10 @@ def select_golden_leaves(
     Golden is up to GOLDEN_TARGET_FRACTION of the leaves, drawn from RATED
     leaves only (the answer key is human-rated by definition). Because the UI
     requires every chain reviewed before save, in practice all leaves are rated
-    and golden is a random 25%. Returns (golden, remaining): remaining holds the
-    rated leaves beyond the cap plus any unrated leaves, and feeds the
-    train/eval split. Every remaining leaf keeps whatever rating it has — only
-    the golden slice is the answer key the judge is calibrated against.
+    and golden is a random 25%. Returns (golden, remaining): remaining holds
+    the rated leaves beyond the cap plus any unrated leaves — the train slice.
+    Every remaining leaf keeps whatever rating it has; only the golden slice
+    is the answer key the judge is calibrated against.
     """
     golden_target = (
         len(leaves)
@@ -560,18 +572,62 @@ def tag_chain_leaves(
             tagged_out.append((leaf, {tag}))
 
 
-def write_eval_slice_multi_turn(
-    leaves: list[TaskRun],
+def build_multi_turn_eval_inputs(
+    cases: list[DrivenSyntheticCaseApi],
+    batch_tag: str,
+    task: Task,
     eval_tag: str,
-    tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
-) -> None:
-    """Materialize the multi-turn eval slice by tagging its leaves.
+) -> list[EvalInput]:
+    """Mint one EvalInput per driven case — the multi-turn eval slice.
 
-    Isolated from the split logic (mirrors write_eval_slice single-turn): when
-    the eval dataset moves to persisted EvalInput items minted from the driven
-    cases, only this writer changes.
+    Each carries the case's seed message plus the parsed synthetic-user
+    persona (the structured submodel; the XML blob never persists), tagged
+    with the eval-slice tag and its provenance: the alignment batch and,
+    when known, the approved-plan scenario the case came from.
+
+    Models are built and validated here, unsaved — persistence happens in
+    write_eval_slice_multi_turn inside the save unit-of-work. Raises
+    HTTPException(422) when a case's persona blob doesn't parse, so a
+    malformed request fails before anything is written.
     """
-    tag_chain_leaves(leaves, eval_tag, tagged_out)
+    eval_inputs: list[EvalInput] = []
+    for position, case in enumerate(cases):
+        try:
+            info = parse_synthetic_user_info(case.synthetic_user_info)
+        except SyntheticUserInfoParseError as e:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Case {position}: invalid synthetic_user_info: {e}",
+            )
+        tags = [eval_tag, f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"]
+        if case.scenario_index is not None:
+            tags.append(f"scenario:{case.scenario_index}")
+        eval_inputs.append(
+            EvalInput(
+                parent=task,
+                data=MultiTurnSyntheticEvalInputData(
+                    first_message=UserMessage(text=case.seed_prompt),
+                    synthetic_user_info=info,
+                ),
+                tags=tags,
+            )
+        )
+    return eval_inputs
+
+
+def write_eval_slice_multi_turn(
+    eval_inputs: list[EvalInput],
+    saved_out: list,
+) -> None:
+    """Materialize the multi-turn eval slice by persisting its EvalInput items.
+
+    Isolated from the split logic (mirrors write_eval_slice single-turn).
+    Each item is appended to `saved_out` the moment it hits disk so a failed
+    save rolls it back with the other created models.
+    """
+    for eval_input in eval_inputs:
+        eval_input.save_to_file()
+        saved_out.append(eval_input)
 
 
 def untag_multi_turn_chains_for_eval(

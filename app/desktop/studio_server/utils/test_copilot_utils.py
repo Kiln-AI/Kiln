@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
+    DrivenSyntheticCaseApi,
     ReviewedChainApi,
     ReviewedExample,
     SampleApi,
@@ -15,6 +16,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     KILN_ADAPTER_NAME,
     KILN_COPILOT_MODEL_NAME,
     KILN_COPILOT_MODEL_PROVIDER,
+    build_multi_turn_eval_inputs,
     create_dataset_task_runs,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
@@ -26,6 +28,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     split_pool_train_eval,
     unrate_multi_turn_chain_leaves,
     warn_if_golden_below_target,
+    write_eval_slice_multi_turn,
 )
 from fastapi import HTTPException
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
@@ -696,16 +699,16 @@ def _leaf_split(leaves: list[TaskRun]) -> dict[str, list[TaskRun]]:
 
 
 class TestSplitAndTagMultiTurnChains:
-    def test_all_reviewed_splits_quarter_quarter_half(self, multiturn_task):
-        # Mirrors the real UI: every chain reviewed before save. golden caps at
-        # 25%, the rest split train:eval 2:1 → 2 golden / 2 eval / 4 train.
+    def test_all_reviewed_splits_golden_cap_rest_train(self, multiturn_task):
+        # Mirrors the real UI: every chain reviewed before save. golden caps
+        # at 25%; every remaining chain is train (the eval slice is EvalInput
+        # items minted from the cases, not chains).
         leaves = _make_su_leaves(multiturn_task, 8)
         reviewed_ids = {leaf.id for leaf in leaves}
 
         split_and_tag_multi_turn_chains(
             leaves,
             reviewed_ids,
-            "eval_tag",
             "train_tag",
             "golden_tag",
             rng=random.Random(0),
@@ -713,8 +716,8 @@ class TestSplitAndTagMultiTurnChains:
 
         buckets = _leaf_split(leaves)
         assert len(buckets["golden"]) == 2
-        assert len(buckets["eval"]) == 2
-        assert len(buckets["train"]) == 4
+        assert buckets["eval"] == []
+        assert len(buckets["train"]) == 6
         # Golden is a subset of the reviewed leaves (rated-only answer key).
         assert {x.id for x in buckets["golden"]} <= reviewed_ids
 
@@ -723,53 +726,47 @@ class TestSplitAndTagMultiTurnChains:
         split_and_tag_multi_turn_chains(
             leaves,
             {leaves[0].id},
-            "eval_tag",
             "train_tag",
             "golden_tag",
             rng=random.Random(1),
         )
         for leaf in leaves:
-            split_tags = {"eval_tag", "train_tag", "golden_tag"} & set(leaf.tags)
+            split_tags = {"train_tag", "golden_tag"} & set(leaf.tags)
             assert len(split_tags) == 1
 
     def test_golden_capped_even_when_all_reviewed(self, multiturn_task):
-        # 4 leaves all reviewed → golden caps at 1 (not 4); the eval/train
-        # sets are never starved to empty (the bug the cap fixes).
+        # 4 leaves all reviewed → golden caps at 1 (not 4); train is never
+        # starved to empty (the bug the cap fixes).
         leaves = _make_su_leaves(multiturn_task, 4)
         split_and_tag_multi_turn_chains(
             leaves,
             {leaf.id for leaf in leaves},
-            "eval_tag",
             "train_tag",
             "golden_tag",
             rng=random.Random(7),
         )
         buckets = _leaf_split(leaves)
         assert len(buckets["golden"]) == 1
-        assert len(buckets["eval"]) == 1
-        assert len(buckets["train"]) == 2
+        assert len(buckets["train"]) == 3
 
     def test_zero_rated_no_golden(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 3)
         split_and_tag_multi_turn_chains(
             leaves,
             set(),
-            "eval_tag",
             "train_tag",
             "golden_tag",
             rng=random.Random(2),
         )
         buckets = _leaf_split(leaves)
         assert buckets["golden"] == []
-        assert len(buckets["train"]) == 2
-        assert len(buckets["eval"]) == 1
+        assert len(buckets["train"]) == 3
 
     def test_preserves_existing_runner_tags(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 4)
         split_and_tag_multi_turn_chains(
             leaves,
             {leaf.id for leaf in leaves},
-            "eval_tag",
             "train_tag",
             "golden_tag",
             rng=random.Random(3),
@@ -784,7 +781,6 @@ class TestSplitAndTagMultiTurnChains:
         split_and_tag_multi_turn_chains(
             leaves,
             {leaf.id for leaf in leaves},
-            "eval_tag",
             "train_tag",
             "golden_tag",
             rng=random.Random(4),
@@ -941,3 +937,71 @@ class TestDeleteMultiTurnBatchChains:
 
         assert deleted == 0
         assert len(multiturn_task.runs(include_intermediate_runs=True)) == 4
+
+
+# ───────────────── multi-turn eval slice (EvalInput writer) ─────────────────
+
+
+def _driven_case(idx: int, scenario_index: int | None = None) -> DrivenSyntheticCaseApi:
+    return DrivenSyntheticCaseApi(
+        seed_prompt=f"seed {idx}",
+        synthetic_user_info=(
+            f"<persona>persona {idx}</persona>"
+            f"<goal>goal {idx}</goal>"
+            f"<behavior_guidance>guidance {idx}</behavior_guidance>"
+        ),
+        scenario_index=scenario_index,
+    )
+
+
+class TestBuildMultiTurnEvalInputs:
+    def test_mints_one_eval_input_per_case(self, multiturn_task):
+        cases = [_driven_case(0, scenario_index=2), _driven_case(1)]
+        eval_inputs = build_multi_turn_eval_inputs(
+            cases, "batch99", multiturn_task, "eval_myspec"
+        )
+
+        assert len(eval_inputs) == 2
+        first = eval_inputs[0]
+        assert first.data.type == "multi_turn_synthetic"
+        assert first.data.first_message is not None
+        assert first.data.first_message.text == "seed 0"
+        assert first.data.synthetic_user_info.persona == "persona 0"
+        assert first.data.synthetic_user_info.goal == "goal 0"
+        assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
+        # Slice tag + provenance: the alignment batch and the plan scenario.
+        assert first.tags == [
+            "eval_myspec",
+            "synthetic_user_batch:batch99",
+            "scenario:2",
+        ]
+        # No scenario_index → no scenario tag.
+        assert eval_inputs[1].tags == ["eval_myspec", "synthetic_user_batch:batch99"]
+        # Built, validated, NOT saved — persistence is the unit of work's job.
+        assert multiturn_task.eval_inputs(readonly=True) == []
+
+    def test_malformed_blob_is_422(self, multiturn_task):
+        bad = DrivenSyntheticCaseApi(
+            seed_prompt="seed", synthetic_user_info="no tags at all"
+        )
+        with pytest.raises(HTTPException) as exc:
+            build_multi_turn_eval_inputs(
+                [_driven_case(0), bad], "b1", multiturn_task, "eval_x"
+            )
+        assert exc.value.status_code == 422
+        assert "Case 1" in exc.value.detail
+        assert multiturn_task.eval_inputs(readonly=True) == []
+
+
+class TestWriteEvalSliceMultiTurn:
+    def test_persists_and_ledgers_each_item(self, multiturn_task):
+        eval_inputs = build_multi_turn_eval_inputs(
+            [_driven_case(0), _driven_case(1)], "b1", multiturn_task, "eval_x"
+        )
+        saved_out: list = []
+        write_eval_slice_multi_turn(eval_inputs, saved_out)
+
+        on_disk = multiturn_task.eval_inputs(readonly=True)
+        assert len(on_disk) == 2
+        # Every persisted item is in the rollback ledger.
+        assert saved_out == eval_inputs

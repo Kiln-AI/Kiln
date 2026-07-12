@@ -111,6 +111,30 @@ class ReviewedChainApi(BaseModel):
     claim_review: ClaimReviewApi | None = None
 
 
+class DrivenSyntheticCaseApi(BaseModel):
+    """One driven synthetic-user case from the builder session.
+
+    The save path mints an EvalInput from each — the re-drivable input the
+    eval runner regenerates a conversation from, per run config.
+    """
+
+    seed_prompt: str = Field(
+        min_length=1,
+        description="The opening user-side message of the conversation.",
+    )
+    synthetic_user_info: str = Field(
+        min_length=1,
+        description="The XML-tagged persona blob as generated "
+        "(persona/goal/behavior_guidance). Wire format only: the save path "
+        "parses it into the structured submodel before anything persists.",
+    )
+    scenario_index: int | None = Field(
+        default=None,
+        description="The approved-plan scenario this case was generated from, "
+        "recorded on the EvalInput as provenance.",
+    )
+
+
 # Input models
 class SpecApi(BaseModel):
     """Spec field information for refinement."""

@@ -43,9 +43,14 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    MultiTurnSyntheticEvalInputData,
+    SingleTurnEvalInputData,
+    SyntheticUserInfo,
+    UserMessage,
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -2040,6 +2045,53 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         mock_count_human_evals.assert_called_once_with(
             [run1, run2, run3], mock_eval, {"score1": "req_id"}
         )
+
+
+@pytest.mark.asyncio
+async def test_get_eval_progress_eval_input_slice(client, mock_task_from_id, mock_task):
+    """An EvalInput-typed eval reports its slice size from the matching
+    EvalInput items — the spec page relies on this instead of a 400."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::eval_slice",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    for i in range(3):
+        EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        ).save_to_file()
+    # An input outside the slice tag is not counted.
+    EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="other")),
+        tags=["other"],
+        parent=mock_task,
+    ).save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval_input_eval/progress"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 3
+    assert result["golden_dataset_size"] == 0
 
 
 @pytest.mark.asyncio

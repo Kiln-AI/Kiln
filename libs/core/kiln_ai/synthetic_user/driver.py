@@ -18,7 +18,6 @@ from kiln_ai.synthetic_user.models import (
     SyntheticUserDriverConfig,
     SyntheticUserInfo,
 )
-from kiln_ai.synthetic_user.parser import parse_synthetic_user_info
 from kiln_ai.synthetic_user.prompt import render_system_prompt
 from kiln_ai.synthetic_user.role_swap import role_swap
 from kiln_ai.utils.open_ai_types import (
@@ -40,20 +39,19 @@ def _is_tool_dispatch_only(msg: ChatCompletionMessageParam) -> bool:
 class SyntheticUserDriver:
     """Plays one synthetic user across multiple turns.
 
-    Constructed once per case from the case's tagged blob + driver config;
-    `respond(conversation)` is called once per turn. The adapter is built
-    at construction time and reused across all turns of the case.
+    Constructed once per case from the typed persona + driver config;
+    `respond(conversation)` is called once per turn. Callers holding the
+    tagged wire blob parse it first (kiln_ai.synthetic_user.parser) — blob
+    parsing stays at the wire boundary. The adapter is built at
+    construction time and reused across all turns of the case.
     """
 
     def __init__(
         self,
-        synthetic_user_info_blob: str,
+        synthetic_user_info: SyntheticUserInfo,
         driver_config: SyntheticUserDriverConfig,
     ):
-        # Parse the blob once at construction — fail fast on a malformed case.
-        self._info: SyntheticUserInfo = parse_synthetic_user_info(
-            synthetic_user_info_blob
-        )
+        self._info = synthetic_user_info
         self._driver_config = driver_config
         self._system_prompt: str = render_system_prompt(self._info)
 

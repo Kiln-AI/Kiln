@@ -3172,8 +3172,9 @@ export interface paths {
          *     3. Single-turn only: batch examples via copilot API for the eval +
          *        golden datasets, persisted as TaskRuns
          *     4. The Spec itself
-         *     Plus, for multi-turn: tag existing chain leaves with the eval/golden
-         *     filter tags so the saved Eval picks them up as its dataset.
+         *     Plus, for multi-turn: tag existing chain leaves with the golden/train
+         *     filter tags and mint one EvalInput per driven case — the eval slice
+         *     the runner re-drives per run config at eval time.
          *
          *     If you don't need copilot, use POST /spec instead.
          *
@@ -5517,9 +5518,11 @@ export interface components {
          *       eval/train/golden datasets, and tags new TaskRuns.
          *
          *     - **Multi-turn:** caller supplies `multi_turn` with a `batch_tag` pointing
-         *       at chains already on disk (created earlier by the synthetic-user runner).
-         *       Endpoint tags the existing chain leaves with eval/golden filter tags;
-         *       no new TaskRuns are created. `evaluate_full_trace` must be True.
+         *       at chains already on disk (created earlier by the synthetic-user runner)
+         *       plus the driven cases and drive settings. Endpoint tags the existing
+         *       chain leaves with golden/train filter tags and mints one EvalInput per
+         *       driven case as the eval slice; no new TaskRuns are created.
+         *       `evaluate_full_trace` must be True.
          *
          *     If you don't want copilot at all, use POST /spec instead.
          *
@@ -6144,6 +6147,30 @@ export interface components {
             is_empty: boolean;
         };
         /**
+         * DrivenSyntheticCaseApi
+         * @description One driven synthetic-user case from the builder session.
+         *
+         *     The save path mints an EvalInput from each — the re-drivable input the
+         *     eval runner regenerates a conversation from, per run config.
+         */
+        DrivenSyntheticCaseApi: {
+            /**
+             * Seed Prompt
+             * @description The opening user-side message of the conversation.
+             */
+            seed_prompt: string;
+            /**
+             * Synthetic User Info
+             * @description The XML-tagged persona blob as generated (persona/goal/behavior_guidance). Wire format only: the save path parses it into the structured submodel before anything persists.
+             */
+            synthetic_user_info: string;
+            /**
+             * Scenario Index
+             * @description The approved-plan scenario this case was generated from, recorded on the EvalInput as provenance.
+             */
+            scenario_index?: number | null;
+        };
+        /**
          * EmbeddingConfig
          * @description Configuration for generating embeddings from document chunks.
          */
@@ -6385,6 +6412,8 @@ export interface components {
              * @default final_answer
              */
             evaluation_data_type: components["schemas"]["EvalDataType"] | null;
+            /** @description How to re-drive multi-turn synthetic eval inputs at eval time (synthetic-user model + turn count). Required to execute multi-turn EvalInput items; None for single-turn and stored-trace evals. */
+            multi_turn_drive_config?: components["schemas"]["MultiTurnDriveConfig"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8838,10 +8867,41 @@ export interface components {
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
         /**
+         * MultiTurnDriveConfig
+         * @description Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
+         *
+         *     A multi-turn eval run regenerates each conversation: the agent under test
+         *     comes from the run config being evaluated, while the synthetic user
+         *     (customer) defined here is held constant across run configs — so a
+         *     comparison varies only the agent. Keeping it per-eval (and equal to the
+         *     alignment-time driver) means the calibrated judge keeps scoring the same
+         *     conversation distribution.
+         */
+        MultiTurnDriveConfig: {
+            /**
+             * Model Name
+             * @description The model that plays the synthetic user during re-drives.
+             */
+            model_name: string;
+            /**
+             * Model Provider
+             * @description The provider of the synthetic-user model.
+             */
+            model_provider: string;
+            /**
+             * Turns
+             * @description Exact number of assistant turns per re-driven conversation (the drive loop has no early termination).
+             */
+            turns: number;
+        };
+        /**
          * MultiTurnSaveInfo
          * @description Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
-         *     The endpoint walks chains tagged with this batch_tag and applies eval/golden
-         *     filter tags instead of generating new examples.
+         *
+         *     The endpoint splits the chains tagged with this batch_tag into golden and
+         *     train slices, and mints the eval slice as EvalInput items from `cases` —
+         *     the re-drivable inputs the eval runner regenerates conversations from,
+         *     per run config, using `drive_config` as the synthetic user.
          */
         MultiTurnSaveInfo: {
             /**
@@ -8854,6 +8914,13 @@ export interface components {
              * @description The human's review verdicts, one per reviewed chain keyed by leaf TaskRun id. Each becomes a golden RequirementRating on the chain leaf (plus Feedback / per-claim grades when present).
              */
             reviewed_chains?: components["schemas"]["ReviewedChainApi"][];
+            /**
+             * Cases
+             * @description The driven synthetic-user cases of this batch. Each is minted as an EvalInput — the eval slice the runner re-drives per run config at eval time.
+             */
+            cases: components["schemas"]["DrivenSyntheticCaseApi"][];
+            /** @description The alignment-time drive settings (synthetic-user model + turn count), persisted on the Eval so eval-time re-drives match the conversations the judge was calibrated on. */
+            drive_config: components["schemas"]["MultiTurnDriveConfig"];
         };
         /**
          * NewProposedSpecEditApi

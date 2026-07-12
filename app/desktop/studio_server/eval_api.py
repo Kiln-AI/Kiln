@@ -15,7 +15,11 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.datamodel.dataset_filters import (
+    DatasetFilterId,
+    dataset_filter_from_id,
+    eval_input_filter_from_id,
+)
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
     build_default_llm_judge_prompt,
@@ -1392,14 +1396,22 @@ def connect_evals_api(app: FastAPI):
     ) -> EvalProgress:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
-        if eval.eval_set_filter_id is None:
+        # The eval slice is either TaskRun-typed (eval_set_filter_id) or
+        # EvalInput-typed (eval_input_filter_id) — size the right source.
+        if eval.eval_set_filter_id is not None:
+            dataset_size = len(
+                dataset_ids_in_filter(task, eval.eval_set_filter_id, readonly=True)
+            )
+        elif eval.eval_input_filter_id is not None:
+            input_filter = eval_input_filter_from_id(eval.eval_input_filter_id)
+            dataset_size = sum(
+                1 for ei in task.eval_inputs(readonly=True) if input_filter(ei)
+            )
+        else:
             raise HTTPException(
                 status_code=400,
                 detail="This endpoint isn't supported for this eval type.",
             )
-        dataset_ids = dataset_ids_in_filter(
-            task, eval.eval_set_filter_id, readonly=True
-        )
         golden_dataset_runs = (
             runs_in_filter(task, eval.eval_configs_filter_id, readonly=True)
             if eval.eval_configs_filter_id
@@ -1429,7 +1441,7 @@ def connect_evals_api(app: FastAPI):
         )
 
         return EvalProgress(
-            dataset_size=len(dataset_ids),
+            dataset_size=dataset_size,
             golden_dataset_size=len(golden_dataset_runs),
             golden_dataset_not_rated_count=not_rated_count,
             golden_dataset_partially_rated_count=partially_rated_count,

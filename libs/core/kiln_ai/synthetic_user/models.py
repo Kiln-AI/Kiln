@@ -1,9 +1,10 @@
 """Internal models for the synthetic-user player.
 
-`SyntheticUserInfo` is the parsed form of the tagged blob the server sends
-on `/generate`; the parser produces it and `prompt.render_system_prompt`
-consumes it. `SyntheticUserDriverConfig` carries the per-eval runtime
-config — model, provider, role visibility.
+`SyntheticUserInfo` is declared in the datamodel (it persists on multi-turn
+eval inputs) and re-exported here for the runtime side: the parser produces
+it from the tagged wire blob and `prompt.render_system_prompt` consumes it.
+`SyntheticUserDriverConfig` carries the per-eval runtime config — model,
+provider, role visibility.
 """
 
 from typing import Literal
@@ -11,24 +12,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.eval import SyntheticUserInfo as SyntheticUserInfo
 
 VisibleMessageRole = Literal["user", "assistant"]
-
-
-class SyntheticUserInfo(BaseModel):
-    """Parsed form of the tagged synthetic_user_info blob.
-
-    Built by `parser.parse_synthetic_user_info` from the wire string.
-    Used by `prompt.render_system_prompt` to assemble the per-request
-    system prompt.
-
-    Extend with new fields as the server-side generator emits new tags —
-    the parser ignores unknown tags so this is forward-compat by default.
-    """
-
-    persona: str
-    goal: str
-    behavior_guidance: str | None = None
 
 
 class SyntheticUserDriverConfig(BaseModel):
