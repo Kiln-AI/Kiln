@@ -257,7 +257,7 @@ def single_input_json_schema_for_task(task: Task) -> str:
 class DataGenSingleInputTask(Task, parent_of={}):
     """Task for generating exactly one input to a target task.
 
-    Used by the batch-plan flow: the caller supplies one input plan per input as
+    Used by the batch-plan flow: the caller supplies one prompt per input as
     guidance, so there's no topic tree and no sample count.
     """
 
@@ -267,18 +267,18 @@ class DataGenSingleInputTask(Task, parent_of={}):
         gen_type: Literal["training", "eval"],
         parent_project: Project,
         data_guide: str | None,
-        input_plan: str | None,
+        prompt: str | None,
     ):
         instruction = generate_single_input_prompt(
             gen_type=gen_type,
             data_guide=data_guide,
-            input_plan=input_plan,
+            prompt=prompt,
         )
 
         super().__init__(
             name="DataGenSingleInput",
             parent=parent_project,
-            description="A task which generates a single synthetic input to a target task, from an input plan.",
+            description="A task which generates a single synthetic input to a target task, from a batch-plan prompt.",
             instruction=instruction,
             input_json_schema=json.dumps(
                 DataGenSingleInputTaskInput.model_json_schema()

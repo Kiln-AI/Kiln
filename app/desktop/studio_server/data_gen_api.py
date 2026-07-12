@@ -385,10 +385,10 @@ async def _generate_one_input(
     data_guide: str | None,
     prompt: str,
 ) -> str | dict:
-    """Generate a single synthetic input using one input plan as its guidance.
+    """Generate a single synthetic input using one batch-plan prompt as its guidance.
 
-    The data guide and the input plan go to the model as separate blocks: the
-    guide constrains every input, the plan only this one.
+    The data guide and the prompt go to the model as separate blocks: the guide
+    constrains every input, the prompt only this one.
     """
     data_guide_section = _data_guide_guidance(task, "inputs", data_guide)
     sample_task = DataGenSingleInputTask(
@@ -396,7 +396,7 @@ async def _generate_one_input(
         gen_type=gen_type,
         parent_project=project,
         data_guide=data_guide_section,
-        input_plan=prompt,
+        prompt=prompt,
     )
     task_input = DataGenSingleInputTaskInput.from_task(task=task)
 
@@ -1442,7 +1442,7 @@ def _data_guide_guidance(
     """Render the Task Data Guide section on its own.
 
     Split out from `_combine_guidance` so the batch-plan flow can pass the guide
-    and the input plan to the model as two separate blocks rather than one fused
+    and the prompt to the model as two separate blocks rather than one fused
     guidance string.
     """
     parts: list[str] = []
@@ -1471,7 +1471,7 @@ def _data_guide_guidance(
             "regardless of shape.\n\n"
             "**Authority cascade** when sources conflict (highest wins):\n"
             "1. Guidance for this specific generation (a `# Template "
-            "Guidance` block below, or the input plan you were given).\n"
+            "Guidance` block below, or the prompt you were given).\n"
             "2. The Data Guide above.\n"
             "3. Defaults you would otherwise pick.\n\n"
             "**Invariants — must always hold regardless of source:** logical "

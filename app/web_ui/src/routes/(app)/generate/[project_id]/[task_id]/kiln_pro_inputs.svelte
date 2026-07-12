@@ -617,7 +617,7 @@
       <div class="text-sm text-gray-500">
         You've removed every sample from this batch.
       </div>
-      <button class="btn btn-sm btn-primary" on:click={on_back}>
+      <button class="btn btn-md btn-primary" on:click={on_back}>
         Back to Plan
       </button>
     </div>
