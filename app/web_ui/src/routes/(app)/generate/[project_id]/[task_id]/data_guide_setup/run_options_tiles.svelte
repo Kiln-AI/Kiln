@@ -88,7 +88,6 @@
   bind:this={combined_config_dialog}
   title="Generation Settings"
   sub_subtitle="The run options used to generate synthetic inputs for review."
-  width="wide"
   action_buttons={combined_action_override
     ? [
         {

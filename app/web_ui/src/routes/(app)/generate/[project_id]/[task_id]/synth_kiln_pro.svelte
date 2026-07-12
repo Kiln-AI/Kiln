@@ -1,8 +1,4 @@
 <script lang="ts">
-  // TODO: add Playwright tests for the Kiln Pro batch flow — plan, review and
-  // trim prompts, generate inputs, retry/regenerate, generate outputs,
-  // remove output/sample, and save. See app/web_ui/tests/e2e for the pattern
-  // (act_mock_kiln_server.spec.ts mocks the copilot endpoints).
   import { onMount } from "svelte"
   import { get } from "svelte/store"
   import { pushState } from "$app/navigation"
@@ -21,9 +17,6 @@
   import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import SynthDataGuide from "./synth_data_guide.svelte"
-  // TODO: remove the dev mocks — this import and the KILN_PRO_DEV_MOCKS branch
-  // in submit_batch.
-  import { KILN_PRO_DEV_MOCKS, mock_batch_plan } from "./kiln_pro_dev_mocks"
   import KilnProBatchPlan from "./kiln_pro_batch_plan.svelte"
   import KilnProInputs from "./kiln_pro_inputs.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
@@ -67,6 +60,8 @@
   let inputs_error: KilnError | null = null
   let inputs_rcp: KilnAgentRunConfigProperties | null = null
   let inputs_data_guide: string | null = null
+  // Set by KilnProInputs: generated samples not yet written to the dataset.
+  let unsaved_samples = false
 
   onMount(async () => {
     try {
@@ -118,6 +113,27 @@
   function sync_stage_from_history(hist_stage: string | undefined) {
     // "planning" is transient and owned by submit_batch — don't fight it.
     if (stage === "planning") return
+
+    // Going back is destructive at both stages, and every route out of them —
+    // the in-app Back button, "New Batch Plan", and the browser's own back
+    // button — pops history. So confirm here, once, at the point the pop
+    // actually happens. popstate can't be cancelled, so on "stay" we push the
+    // entry back to re-sync history with the UI the user is still looking at.
+    const leaving = (from: string) => stage === from && hist_stage !== from
+    let confirm_msg: string | null = null
+    if (leaving("inputs") && unsaved_samples) {
+      confirm_msg =
+        "You have generated samples that aren't saved to your dataset. Going back will discard them. This cannot be undone."
+    } else if (leaving("plan")) {
+      confirm_msg = plan_edited
+        ? "Are you sure you want to discard the current batch plan, including the dataset items you removed? This cannot be undone."
+        : "Are you sure you want to discard the current batch plan? This cannot be undone."
+    }
+    if (confirm_msg && !confirm(confirm_msg)) {
+      pushState("", { kiln_pro_stage: stage })
+      return
+    }
+
     if (!hist_stage && (stage === "plan" || stage === "inputs")) {
       plan_error = null
       stage = "intro"
@@ -140,12 +156,6 @@
       template: get(selected_template),
     })
     try {
-      if (KILN_PRO_DEV_MOCKS) {
-        plan = await mock_batch_plan(requested)
-        plan_edited = false
-        advance_stage("plan")
-        return
-      }
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
         {
@@ -247,6 +257,7 @@
     data_guide={inputs_data_guide}
     {session_id}
     on_back={go_back}
+    bind:unsaved_samples
   />
 {:else}
   <div class="max-w-2xl mx-auto mt-8 md:mt-16 mb-8">

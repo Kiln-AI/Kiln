@@ -10,16 +10,8 @@
 
   $: count = plan.prompts.length
 
-  // Starting a new plan throws away this one (and any items the user trimmed).
-  // Same native confirm the Reset button uses.
-  function new_plan_with_confirm() {
-    const msg = summary_out_of_sync
-      ? "Are you sure you want to start a new batch plan? This discards the current plan, including the dataset items you removed. This cannot be undone."
-      : "Are you sure you want to start a new batch plan? This discards the current plan. This cannot be undone."
-    if (confirm(msg)) {
-      on_regenerate()
-    }
-  }
+  // No confirm here: this leaves the plan the same way the back button does, so
+  // the parent confirms once for both, at the point history actually pops.
 </script>
 
 <div class="flex flex-col gap-4 mt-12">
@@ -31,8 +23,7 @@
       </div>
     </div>
     <div class="flex flex-row gap-2 shrink-0">
-      <button class="btn btn-md" on:click={new_plan_with_confirm}
-        >New Batch Plan</button
+      <button class="btn btn-md" on:click={on_regenerate}>New Batch Plan</button
       >
       <button
         class="btn btn-md btn-primary"

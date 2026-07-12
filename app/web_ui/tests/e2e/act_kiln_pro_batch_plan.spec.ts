@@ -19,11 +19,16 @@ to the Generate Batch page (rather than blowing past the whole flow).
 - seededCopilotKey (so the copilot connect screen is skipped)
 - mockKilnServer (serves /v1/verify_api_key and /v1/copilot/batch_plan)
 
+Leaving the Batch Plan screen discards the plan, so it confirms first. Back and
+"New Batch Plan" leave it the same way (both pop history), so they share one
+confirm, raised where the pop happens.
+
 ## Assertions
 - The chooser renders and "Use Kiln Pro" reaches the Generate Batch page.
 - Submitting reaches the Batch Plan screen with the mock's plan.
-- Browser back from the Batch Plan screen returns to the Generate Batch page.
-- "New Batch Plan" also returns to the Generate Batch page.
+- Browser back from the Batch Plan screen confirms, then returns to Generate Batch.
+- Dismissing that confirm keeps the plan, and a second back still works.
+- "New Batch Plan" confirms with the same message, and returns to Generate Batch.
 */
 
 // gen_type=training via reason=fine_tune, and guide=skip so the data-guide
@@ -104,13 +109,59 @@ test("kiln pro: browser back returns from Batch Plan to Generate Batch", async (
     timeout: 30000,
   })
 
+  // Back discards the plan, so it confirms first — same native confirm as
+  // "New Batch Plan", which leaves the screen the same way.
+  let confirmed = ""
+  page.once("dialog", (dialog) => {
+    confirmed = dialog.message()
+    void dialog.accept()
+  })
+
   // The reported gap: browser back should land on the Generate Batch page,
   // not skip the whole Kiln Pro flow.
   await page.goBack()
+  await expect.poll(() => confirmed).toContain("discard the current batch plan")
   await expect(
     page.getByRole("heading", { name: "Generate Synthetic Data Batch" }),
   ).toBeVisible()
   await expect(page.getByText("Batch Plan", { exact: true })).not.toBeVisible()
+})
+
+test("kiln pro: cancelling the back confirm keeps the Batch Plan", async ({
+  page,
+  registeredUser,
+  seededProjectWithTask,
+  seededCopilotKey,
+  mockKilnServer,
+}) => {
+  void registeredUser
+  void seededCopilotKey
+  void mockKilnServer
+  const { project, task } = seededProjectWithTask
+
+  await gotoGenerateBatchPage(page, project.id, task.id)
+  await submitBatch(page)
+  await expect(page.getByText("Batch Plan", { exact: true })).toBeVisible({
+    timeout: 30000,
+  })
+
+  // Dismissing the confirm must leave the user where they were. popstate can't
+  // be cancelled, so the plan entry is pushed back — and a second back press
+  // must still work rather than skipping a step.
+  let seen = 0
+  page.on("dialog", (dialog) => {
+    seen++
+    void (seen === 1 ? dialog.dismiss() : dialog.accept())
+  })
+
+  await page.goBack()
+  await expect.poll(() => seen).toBe(1)
+  await expect(page.getByText("Batch Plan", { exact: true })).toBeVisible()
+
+  await page.goBack()
+  await expect(
+    page.getByRole("heading", { name: "Generate Synthetic Data Batch" }),
+  ).toBeVisible()
 })
 
 test("kiln pro: New Batch Plan returns to the Generate Batch page", async ({
@@ -132,7 +183,8 @@ test("kiln pro: New Batch Plan returns to the Generate Batch page", async ({
   })
 
   // Discarding the plan is destructive, so it confirms first via the native
-  // browser confirm (same as the Reset button).
+  // browser confirm (same as the Reset button). This button leaves the screen
+  // the same way the back button does, so both share one confirm.
   let confirmed = ""
   page.once("dialog", (dialog) => {
     confirmed = dialog.message()
@@ -141,7 +193,7 @@ test("kiln pro: New Batch Plan returns to the Generate Batch page", async ({
   await page.getByRole("button", { name: "New Batch Plan" }).click()
   await expect
     .poll(() => confirmed)
-    .toContain("Are you sure you want to start a new batch plan?")
+    .toContain("Are you sure you want to discard the current batch plan?")
 
   await expect(
     page.getByRole("heading", { name: "Generate Synthetic Data Batch" }),

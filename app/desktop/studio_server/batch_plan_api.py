@@ -21,7 +21,11 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 from app.desktop.studio_server.data_gen_api import _resolve_task_runtime_prompt
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from app.desktop.studio_server.utils.response_utils import unwrap_response
+from app.desktop.studio_server.utils.response_utils import (
+    unwrap_response,
+    upstream_route_missing,
+    upstream_unreachable,
+)
 
 
 class BatchPlanApiInput(BaseModel):
@@ -74,22 +78,12 @@ async def _run_batch_plan_kiln_server(
             ),
         )
     except httpx.HTTPError as e:
-        # Network-level failure (unreachable host, TLS, timeout). Without this
-        # the raw exception surfaces to the client as a generic 500.
-        raise HTTPException(
-            status_code=502,
-            detail="Couldn't reach the Kiln batch planning service. Check your connection and that your Kiln server supports batch planning.",
-        ) from e
+        raise upstream_unreachable("batch planning") from e
 
-    # Never pass an upstream 404 through as our own 404. A 404 on this endpoint
-    # would say "this studio route doesn't exist", when what actually happened
-    # is that the *Kiln server* doesn't serve batch planning (e.g. staging, or
-    # an older deployment). That's an upstream failure, so report it as one.
+    # This request names no resource, so an upstream 404 can only mean the route
+    # isn't deployed — never "your thing wasn't found".
     if detailed.status_code == HTTPStatus.NOT_FOUND:
-        raise HTTPException(
-            status_code=502,
-            detail="This Kiln server doesn't support batch planning. It may be an older deployment — check which Kiln server you're pointed at.",
-        )
+        raise upstream_route_missing("batch planning")
 
     # Any other non-2xx keeps its status (401 for a bad key, 429 for rate
     # limits, ...), but with a message that beats a bare "Unknown error".

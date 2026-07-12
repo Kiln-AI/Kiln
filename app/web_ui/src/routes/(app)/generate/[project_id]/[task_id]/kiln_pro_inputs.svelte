@@ -24,13 +24,6 @@
     type InputsBatchStatus,
     type OutputsBatchStatus,
   } from "$lib/stores/kiln_pro_batch_store"
-  // TODO: remove the dev mocks — this import and the two KILN_PRO_DEV_MOCKS
-  // branches in run_inputs and start_outputs.
-  import {
-    KILN_PRO_DEV_MOCKS,
-    mock_inputs_batch,
-    mock_outputs_batch,
-  } from "./kiln_pro_dev_mocks"
 
   export let plan: { prompts: string[]; summary: string }
   export let project_id: string
@@ -44,6 +37,9 @@
   export let session_id: string | null = null
   // Returns to the plan — the only way out once every sample is removed.
   export let on_back: () => void
+  // Generated samples that aren't in the dataset yet. Leaving this screen throws
+  // them away, so the parent reads this to guard navigation (bound).
+  export let unsaved_samples: boolean = false
 
   type TaskRun = components["schemas"]["TaskRun-Output"]
   type Row = {
@@ -91,7 +87,6 @@
   let save_target = 0
   let save_errors: KilnError[] = []
   let total_saved = 0
-  let save_completed = false
   let show_save_errors = false
 
   $: total = rows.length
@@ -111,6 +106,12 @@
   $: generating = !inputs_done || (outputs_started && !outputs_done)
   // A full reset would orphan anything already written to the dataset.
   $: any_saved = rows.some((r) => r.saved_id)
+  // A row with an input or an output that never made it to the dataset is work
+  // the user would lose by navigating away. Rows whose input failed hold nothing
+  // worth keeping, so they don't count.
+  $: unsaved_samples = rows.some(
+    (r) => !r.saved_id && (r.input !== null || r.task_run !== null),
+  )
 
   // Before outputs run, warn about inputs that failed to generate — the retry
   // action lives on the warning itself. Once the user has clicked Generate
@@ -118,30 +119,47 @@
   // samples still missing an output.
   type WarningState = {
     message: string
-    color: "warning" | "error"
+    color: "warning" | "error" | "success"
+    icon: "exclaim" | "check"
     // Rendered as a button beside the warning when present.
     retry?: boolean
   }
+  // One warning at a time, like legacy: whatever the user still has to do beats
+  // what they've already done. Saving 4 of 5 shouldn't stack a green "all saved"
+  // under an amber "1 missing output" — the missing output is the live task.
   function build_warning(
     started_outputs: boolean,
     failed_inputs: number,
     ok_inputs: number,
     missing_outputs: number,
     savable: number,
+    saved_any: boolean,
   ): WarningState | null {
     if (!started_outputs) {
       if (failed_inputs === 0) return null
       return {
         message: `${failed_inputs} ${failed_inputs === 1 ? "input" : "inputs"} failed to generate.`,
         color: ok_inputs > 0 ? "warning" : "error",
+        icon: "exclaim",
         retry: true,
       }
     }
-    if (missing_outputs === 0) return null
-    return {
-      message: `${missing_outputs} ${missing_outputs === 1 ? "item is" : "items are"} missing outputs.`,
-      color: savable > 0 ? "warning" : "error",
+    if (missing_outputs > 0) {
+      return {
+        message: `${missing_outputs} ${missing_outputs === 1 ? "item is" : "items are"} missing outputs.`,
+        color: savable > 0 ? "warning" : "error",
+        icon: "exclaim",
+      }
     }
+    // Nothing left to generate and nothing left to save: the batch is done.
+    if (saved_any && savable === 0) {
+      return {
+        message: "All items saved into your Dataset.",
+        color: "success",
+        icon: "check",
+      }
+    }
+    return null
   }
   $: active_warning = build_warning(
     outputs_started,
@@ -149,7 +167,18 @@
     generated_inputs,
     outputs_missing,
     outputs_savable,
+    any_saved,
   )
+
+  // Once there's something to save, regenerating is no longer the job.
+  $: show_regenerate =
+    inputs_done && !generating && !saving && !any_saved && outputs_savable === 0
+  $: show_generate_outputs = inputs_done && !generating && outputs_missing > 0
+  $: show_save = !generating && outputs_savable > 0
+  // With every sample saved there's nothing left to act on, so the row has no
+  // right-hand side. Let the warning take it rather than leaving a dead gap.
+  $: has_actions =
+    total > 0 && (show_regenerate || show_generate_outputs || show_save)
 
   let outputs_dialog: Dialog | null = null
   let outputs_run_config: RunConfigComponent | null = null
@@ -313,23 +342,14 @@
     batch_error = null
 
     inputs_status = "running"
-    if (KILN_PRO_DEV_MOCKS) {
-      inputs_run = mock_inputs_batch(
-        prompts,
-        active_rcp.model_name,
-        active_rcp.model_provider_name,
-      )
-    } else {
-      // No gen_type: the batch plan's prompt already says what each input is
-      // for. `data_guide` is null when the user has "Use Data Guide" off, and
-      // the server treats null as "don't use one" (no fallback to the saved
-      // guide).
-      inputs_run = runInputsBatch(project_id, task_id, {
-        prompts,
-        data_guide: data_guide || null,
-        run_config_properties: active_rcp,
-      })
-    }
+    // No gen_type: the batch plan's prompt already says what each input is for.
+    // `data_guide` is null when the user has "Use Data Guide" off, and the
+    // server treats null as "don't use one" (no fallback to the saved guide).
+    inputs_run = runInputsBatch(project_id, task_id, {
+      prompts,
+      data_guide: data_guide || null,
+      run_config_properties: active_rcp,
+    })
     inputs_unsub.push(
       inputs_run.status.subscribe((s) => {
         if (!s) return
@@ -438,15 +458,13 @@
     outputs_pending = new Set(items.map((it) => it.index))
     rows = rows
 
-    outputs_run = KILN_PRO_DEV_MOCKS
-      ? mock_outputs_batch(items)
-      : runOutputsBatch(project_id, task_id, {
-          items,
-          input_model_name: active_rcp.model_name,
-          input_provider: active_rcp.model_provider_name,
-          run_config_properties: rcp,
-          session_id,
-        })
+    outputs_run = runOutputsBatch(project_id, task_id, {
+      items,
+      input_model_name: active_rcp.model_name,
+      input_provider: active_rcp.model_provider_name,
+      run_config_properties: rcp,
+      session_id,
+    })
     outputs_unsub.push(
       outputs_run.status.subscribe((s) => {
         if (!s) return
@@ -484,9 +502,12 @@
       ...(outputs_rcp ? run_config_analytics(outputs_rcp) : {}),
     })
     saving = true
-    save_completed = false
     save_errors = []
     save_progress = 0
+    // Per-save, not cumulative: the dialog reports what THIS save wrote. Rows
+    // already persisted carry a saved_id and never re-post, so a later save of
+    // one straggler must say "1", not the running total.
+    total_saved = 0
     save_target = to_save.length
     // Open straight away — the dialog shows the spinner, then flips to the
     // success state when the save finishes.
@@ -520,23 +541,24 @@
       rows = rows
     }
     saving = false
-    save_completed = true
-    // On success the dialog stays open and renders the success state. If any
-    // item failed, get out of the way: the inline error banner has the retry.
-    if (save_errors.length > 0) {
-      save_dialog?.close()
-    }
+    // The dialog stays open either way and reports what happened, matching
+    // legacy: partial failures are a section of the same result dialog, not a
+    // separate surface. Failed rows keep no saved_id, so Save All retries them.
   }
 </script>
 
 <div class="flex flex-col gap-4 mt-12">
   <div class="flex flex-row items-center justify-between gap-4">
-    <div class="min-w-0 flex flex-row items-center gap-3">
+    <div
+      class="min-w-0 flex flex-row items-center gap-3 {has_actions
+        ? ''
+        : 'ml-auto'}"
+    >
       {#if !generating && active_warning}
         <Warning
           warning_message={active_warning.message}
           warning_color={active_warning.color}
-          warning_icon="exclaim"
+          warning_icon={active_warning.icon}
           tight
         />
         {#if active_warning.retry && !saving}
@@ -550,10 +572,9 @@
       {/if}
     </div>
     <!-- With no rows left, the empty state owns the only action: Back to Plan. -->
-    {#if total > 0}
+    {#if has_actions}
       <div class="flex flex-row gap-2 shrink-0">
-        <!-- Once there's something to save, regenerating is no longer the job. -->
-        {#if inputs_done && !generating && !saving && !any_saved && outputs_savable === 0}
+        {#if show_regenerate}
           <button
             class="btn btn-md"
             on:click={() => open_inputs_dialog("regenerate")}
@@ -561,7 +582,7 @@
             Regenerate Inputs
           </button>
         {/if}
-        {#if inputs_done && !generating && outputs_missing > 0}
+        {#if show_generate_outputs}
           <button
             class="btn btn-md {outputs_savable > 0 ? '' : 'btn-primary'}"
             disabled={saving}
@@ -570,7 +591,7 @@
             Generate Outputs ({outputs_missing})
           </button>
         {/if}
-        {#if !generating && outputs_savable > 0}
+        {#if show_save}
           <button
             class="btn btn-md btn-primary"
             disabled={saving}
@@ -585,44 +606,6 @@
 
   {#if batch_error}
     <div class="text-error text-sm">{batch_error.getMessage()}</div>
-  {/if}
-
-  {#if save_completed && save_errors.length > 0}
-    <div class="text-error text-sm">
-      {save_errors.length}
-      {save_errors.length === 1 ? "item" : "items"} failed to save. Click "Save All"
-      to retry.
-      <button
-        class="link"
-        on:click={() => (show_save_errors = !show_save_errors)}
-      >
-        {show_save_errors ? "Hide errors" : "Show errors"}
-      </button>
-      {#if show_save_errors}
-        <div class="flex flex-col gap-1 mt-2 text-xs">
-          {#each save_errors as e}
-            <div>{e.getMessage()}</div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-  {/if}
-
-  {#if save_completed && save_errors.length === 0 && total_saved > 0 && outputs_savable === 0}
-    <div class="flex items-center justify-between gap-3 text-sm">
-      <Warning
-        warning_message={`Saved ${total_saved} ${
-          total_saved === 1 ? "item" : "items"
-        } into your Dataset.`}
-        warning_color="success"
-        warning_icon="check"
-        tight
-      />
-      <a
-        href={`/dataset/${project_id}/${task_id}`}
-        class="btn btn-sm btn-primary shrink-0">View in Dataset</a
-      >
-    </div>
   {/if}
 
   {#if generating}
@@ -757,8 +740,8 @@
   {/if}
 </div>
 
-<!-- Save: spinner while it runs, then the success state. Nothing is left to do
-     on this screen once saved, so point the user at the dataset. -->
+<!-- Save: spinner while it runs, then the result — what saved, where it went,
+     and anything that failed. Mirrors the legacy synth save dialog. -->
 <Dialog bind:this={save_dialog} title="" center_content={true}>
   {#if saving}
     <div class="text-center flex flex-col items-center justify-center py-6">
@@ -772,26 +755,51 @@
     <div
       class="text-center flex flex-col items-center justify-center pt-2 pb-2"
     >
-      <svg
-        fill="currentColor"
-        class="size-12 text-success mb-3"
-        viewBox="0 0 56 56"
-        xmlns="http://www.w3.org/2000/svg"
-        ><path
-          d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
-        /></svg
-      >
-      <div class="text-lg font-medium">
-        Saved {total_saved}
-        {total_saved === 1 ? "item" : "items"} into your Dataset
+      {#if total_saved > 0}
+        <svg
+          fill="currentColor"
+          class="size-12 text-success mb-3"
+          viewBox="0 0 56 56"
+          xmlns="http://www.w3.org/2000/svg"
+          ><path
+            d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+          /></svg
+        >
+      {/if}
+      <div class="font-medium">
+        Saved {total_saved} new {total_saved === 1 ? "item" : "items"}.
       </div>
-      <div class="font-light text-sm text-gray-500 mt-1">
-        Your synthetic data is ready to use.
+      <div class="font-light text-sm">
+        These are now available in the <a
+          href={`/dataset/${project_id}/${task_id}`}
+          class="link">dataset tab</a
+        >.
       </div>
-      <a
-        href={`/dataset/${project_id}/${task_id}`}
-        class="btn btn-primary btn-wide mt-6">View in Dataset</a
-      >
+      {#if session_id}
+        <div class="font-light text-xs mt-4 text-gray-500">
+          All items are tagged with &quot;synthetic_session_{session_id}&quot;
+        </div>
+      {/if}
+      {#if save_errors.length > 0}
+        <div class="text-error font-light text-sm mt-4">
+          {save_errors.length}
+          {save_errors.length === 1 ? "item" : "items"} failed to save. Running again
+          may resolve transient issues.
+          <button
+            class="link"
+            on:click={() => (show_save_errors = !show_save_errors)}
+          >
+            {show_save_errors ? "Hide errors" : "Show errors"}
+          </button>
+          {#if show_save_errors}
+            <div class="flex flex-col gap-1 mt-2 text-xs text-left">
+              {#each save_errors as e}
+                <div>{e.getMessage()}</div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </Dialog>
