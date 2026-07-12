@@ -53,8 +53,14 @@ class EvalRunner:
     Runs an eval. Async execution is supported to make it faster when using remote/fast model providers.
 
     Can run an eval in 2 modes:
-    1) eval_config_eval: evaluate an eval config using existing dataset items.
-    2) task_run_eval: evaluate a range of task run configs, generating new run output using existing dataset item input.
+    1) eval_config_eval: evaluate an eval config (judge quality) against the
+       golden set — human-rated TaskRuns selected by eval_configs_filter_id.
+    2) task_run_eval: evaluate a range of task run configs, generating fresh
+       output per run config. Inputs come from stored TaskRuns
+       (eval_set_filter_id) or EvalInput items (eval_input_filter_id).
+       Multi-turn synthetic EvalInputs are re-driven as a full conversation
+       per run config using the eval's multi_turn_drive_config; stored
+       multi-turn TaskRun chains are judged on their stored trace instead.
     """
 
     def __init__(
@@ -110,9 +116,10 @@ class EvalRunner:
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
-            # Golden subsets are TaskRun-sourced in V2.0 regardless of the
-            # eval-slice source: judge validation needs stored, human-rated
-            # outputs, and eval_configs_filter_id is TaskRun-typed.
+            # Judge calibration runs against the golden set (human-rated
+            # TaskRuns) regardless of _source_mode: judge validation needs
+            # stored, human-rated outputs, and eval_configs_filter_id is a
+            # TaskRun dataset filter.
             if self.eval.eval_configs_filter_id is not None:
                 return self.collect_tasks_for_eval_config_eval(
                     self.eval.eval_configs_filter_id
@@ -416,21 +423,23 @@ class EvalRunner:
             and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
             and job.type == "task_run_eval"
         ):
-            # Multi-turn synthetic input: re-drive the conversation fresh for
-            # this run config, then judge the new trace. eval_config_eval over
-            # the same item falls through to the EvalInput skip below — golden
-            # subsets are TaskRun-sourced in V2.0.
+            # Multi-turn synthetic input: re-drive the conversation fresh
+            # for this run config, then judge the new trace. The job.type
+            # guard is defensive — collect_tasks never pairs eval_config_eval
+            # with EvalInput items (judge calibration uses golden TaskRuns);
+            # a hand-built job of that shape hits the EvalInput skip below.
             return await self._run_v2_multi_turn_synthetic_job(
                 job, evaluator, job.item, job.item.data, early_input_str
             )
 
         if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
-            # Multi-turn chain leaf: a conversation can't be regenerated in a
-            # single model call, so both run modes evaluate the stored trace.
-            # In task_run_eval mode the scores are therefore a property of the
-            # stored conversation, identical across run configs — regenerating
-            # per run config requires re-driving the conversation, which is
-            # not supported yet.
+            # Multi-turn chain leaf: a conversation can't be regenerated in
+            # a single model call, so both run modes evaluate the stored
+            # trace. In task_run_eval mode the scores are therefore a property
+            # of the stored conversation, identical across run configs —
+            # re-driving per run config needs a synthetic-user seed + persona,
+            # which EvalInput-sourced cases carry (branch above) but stored
+            # TaskRun chains do not.
             leaf = job.item
             if not leaf.trace:
                 async with self._save_context():
@@ -615,7 +624,9 @@ class EvalRunner:
         multi_turn_drive_config plays the synthetic user, so each run config
         gets its own fresh conversation — the property that makes run-config
         comparison meaningful for multi-turn. The drive is transient (nothing
-        persisted); the EvalRun record carries the scored trace.
+        persisted); for full_trace evals the EvalRun record carries the
+        serialized conversation when scoring succeeds, otherwise the driven
+        conversation is not retained.
         """
         drive_config = self.eval.multi_turn_drive_config
         if drive_config is None:

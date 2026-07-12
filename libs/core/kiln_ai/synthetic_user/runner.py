@@ -491,8 +491,8 @@ def _tag_leaf(leaf: TaskRun, batch_tag: str) -> None:
 
     Reentrancy: the read-modify-write on `leaf.tags` assumes a single
     writer per leaf. The current call shape guarantees this (each case
-    has its own leaf), so concurrent tagging across cases hits four
-    different files. A future refactor that shares leaves across cases
+    has its own leaf), so concurrent tagging across cases always hits
+    distinct files. A future refactor that shares leaves across cases
     would need to re-introduce locking here.
     """
     tags = set(leaf.tags or [])

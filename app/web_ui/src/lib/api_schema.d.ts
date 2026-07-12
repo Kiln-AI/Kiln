@@ -3169,8 +3169,9 @@ export interface paths {
          *     This endpoint uses Kiln Copilot to create:
          *     1. An Eval for the spec with the appropriate template
          *     2. A judge EvalConfig (LLM-as-judge)
-         *     3. Single-turn only: batch examples via copilot API for the eval +
-         *        golden datasets, persisted as TaskRuns
+         *     3. Single-turn only: batch examples via copilot API, split into the
+         *        eval + train datasets and persisted as TaskRuns; the golden
+         *        dataset is the request's human-reviewed examples
          *     4. The Spec itself
          *     Plus, for multi-turn: tag existing chain leaves with the golden/train
          *     filter tags and mint one EvalInput per driven case — the eval slice
@@ -6166,7 +6167,7 @@ export interface components {
             synthetic_user_info: string;
             /**
              * Scenario Index
-             * @description The approved-plan scenario this case was generated from, recorded on the EvalInput as provenance.
+             * @description Zero-based index into the builder's user-approved scenario plan identifying the scenario this case was generated from. Recorded on the minted EvalInput as a `scenario:{index}` provenance tag; omit when the case has no plan scenario.
              */
             scenario_index?: number | null;
         };
@@ -8873,9 +8874,10 @@ export interface components {
          *     A multi-turn eval run regenerates each conversation: the agent under test
          *     comes from the run config being evaluated, while the synthetic user
          *     (customer) defined here is held constant across run configs — so a
-         *     comparison varies only the agent. Keeping it per-eval (and equal to the
-         *     alignment-time driver) means the calibrated judge keeps scoring the same
-         *     conversation distribution.
+         *     comparison varies only the agent. Stored per-eval so re-drives use the
+         *     same synthetic-user model and turn count the builder used when driving
+         *     the conversations the judge was calibrated on, keeping the judge scoring
+         *     the same conversation distribution.
          */
         MultiTurnDriveConfig: {
             /**

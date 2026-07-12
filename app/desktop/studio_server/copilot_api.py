@@ -929,8 +929,9 @@ def connect_copilot_api(app: FastAPI):
         This endpoint uses Kiln Copilot to create:
         1. An Eval for the spec with the appropriate template
         2. A judge EvalConfig (LLM-as-judge)
-        3. Single-turn only: batch examples via copilot API for the eval +
-           golden datasets, persisted as TaskRuns
+        3. Single-turn only: batch examples via copilot API, split into the
+           eval + train datasets and persisted as TaskRuns; the golden
+           dataset is the request's human-reviewed examples
         4. The Spec itself
         Plus, for multi-turn: tag existing chain leaves with the golden/train
         filter tags and mint one EvalInput per driven case — the eval slice
@@ -976,7 +977,8 @@ def connect_copilot_api(app: FastAPI):
 
         # Multi-turn path: find existing chain leaves up front so we 404 before
         # creating any models if the batch_tag matches nothing. The reviewed
-        # leaf ids drive the split — a rated leaf goes to golden.
+        # leaf ids drive the split — only rated leaves are eligible for golden
+        # (capped at the target fraction); the rest go to train, ratings kept.
         multi_turn_leaves: list[TaskRun] = []
         reviewed_leaf_ids: set[str] = set()
         if request.multi_turn is not None:

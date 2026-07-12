@@ -70,13 +70,15 @@ NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
 
 # Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
-# human-rated answer key: it holds up to GOLDEN_TARGET_FRACTION of the set,
-# filled from RATED items only (never padded with unrated ones). Single-turn:
-# the remaining pool splits train:eval at 2:1 (the 50:25). Multi-turn: the
-# remainder is all train — its eval slice is EvalInput items minted from the
-# driven cases, not chains. If fewer than the target fraction are rated the
-# answer key is simply smaller (warned). One owner so the golden fraction
-# can't drift between the single-turn and multi-turn splitters.
+# human-rated answer key, filled from RATED items only (never padded with
+# unrated ones). Multi-turn: golden is capped at GOLDEN_TARGET_FRACTION of
+# the chains (select_golden_leaves) and the remainder is all train — the
+# eval slice is EvalInput items minted from the driven cases, not chains.
+# Single-turn: golden is the reviewed examples (structurally small, no cap
+# needed) and the unrated pool splits train:eval at 2:1 (the 50:25). If
+# fewer than the target fraction are rated the answer key is simply smaller
+# (warned). One owner so the golden fraction can't drift between the
+# single-turn and multi-turn splitters.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
 GOLDEN_SPLIT_WEIGHT = 1
@@ -176,8 +178,9 @@ T = TypeVar("T")
 
 
 def split_pool_train_eval(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
-    """Divide the non-golden pool into (train, eval) at 2:1 — the 50:25 of the
-    split (golden is the other 25%, carved off before this call).
+    """Divide the non-golden pool into (train, eval) at 2:1 — the 50:25 of
+    the split. Golden never comes from this pool: it is the human-reviewed
+    examples, selected before this call.
 
     eval takes the smaller floor share so train is never starved on small
     pools. The pool is shuffled through the injected rng, so the assignment is
@@ -582,8 +585,8 @@ def build_multi_turn_eval_inputs(
 
     Each carries the case's seed message plus the parsed synthetic-user
     persona (the structured submodel; the XML blob never persists), tagged
-    with the eval-slice tag and its provenance: the alignment batch and,
-    when known, the approved-plan scenario the case came from.
+    with the eval-slice tag and its provenance: the synthetic-user batch the
+    case was driven in and, when known, the batch-plan scenario it came from.
 
     Models are built and validated here, unsaved — persistence happens in
     write_eval_slice_multi_turn inside the save unit-of-work. Raises

@@ -389,7 +389,11 @@ class SingleTurnEvalInputData(BaseModel):
 
 class MultiTurnSyntheticEvalInputData(BaseModel):
     """A re-drivable multi-turn case: the opening user message plus the
-    synthetic user who continues the conversation at eval time."""
+    synthetic user who continues the conversation at eval time.
+
+    first_message may be None; such items carry no seed to open a
+    conversation with, so the eval runner skips them instead of re-driving.
+    """
 
     type: Literal["multi_turn_synthetic"] = "multi_turn_synthetic"
     first_message: UserMessage | None = None
@@ -859,9 +863,10 @@ class MultiTurnDriveConfig(BaseModel):
     A multi-turn eval run regenerates each conversation: the agent under test
     comes from the run config being evaluated, while the synthetic user
     (customer) defined here is held constant across run configs — so a
-    comparison varies only the agent. Keeping it per-eval (and equal to the
-    alignment-time driver) means the calibrated judge keeps scoring the same
-    conversation distribution.
+    comparison varies only the agent. Stored per-eval so re-drives use the
+    same synthetic-user model and turn count the builder used when driving
+    the conversations the judge was calibrated on, keeping the judge scoring
+    the same conversation distribution.
     """
 
     model_name: str = Field(

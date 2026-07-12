@@ -1,7 +1,8 @@
 """Parse / build the tagged synthetic_user_info blob.
 
-Server-side this is the wire format; OSS-side this is the on-storage form.
-Both ends call these helpers — single source of truth for the tag schema.
+Both server and OSS sides treat this as a wire format only — persisted
+eval inputs store the parsed SyntheticUserInfo, never the blob. Both ends
+call these helpers — single source of truth for the tag schema.
 
 Tag rules:
 - Greedy first match per known tag; nested tags not supported.

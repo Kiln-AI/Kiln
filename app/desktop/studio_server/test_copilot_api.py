@@ -504,7 +504,6 @@ class TestClassifySpecDescription:
 class TestCreateSpecWithCopilotMultiTurn:
     """Multi-turn save path: tag existing chain leaves (golden/train) and mint
     EvalInputs from the driven cases instead of synthesising new examples.
-    See specs/projects/eval_builder_v2/design.md for context.
     """
 
     BATCH_TAG = "abc123def456"

@@ -1,8 +1,9 @@
 """SyntheticUserCase — input contract for the multi-turn SU runner.
 
 Two-field shape: `seed_prompt` (the opening user message) and
-`synthetic_user_info` (an opaque tagged blob the SyntheticUserDriver
-parses on construction).
+`synthetic_user_info` (an opaque tagged blob; the runner parses it into a
+typed SyntheticUserInfo at the wire boundary before building the
+SyntheticUserDriver).
 
 Field-identical to the kiln_server SDK's `SyntheticUserCase`. Lives here
 in libs/core so the runner has no dependency on the vendored SDK in
@@ -18,7 +19,8 @@ class SyntheticUserCase(BaseModel):
 
     `seed_prompt` is the first user-side message sent into the target
     task. `synthetic_user_info` is the persona/goal/behavior_guidance
-    blob the driver parses to build the SU's system prompt.
+    blob, parsed at the wire boundary into the typed SyntheticUserInfo
+    the driver builds the SU's system prompt from.
     """
 
     seed_prompt: str = Field(..., min_length=1)

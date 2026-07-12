@@ -24,7 +24,8 @@ class TargetInvoker(Protocol):
     """Callable that invokes the target task for one turn. The runner
     wraps `adapter_for_task(task, run_config).invoke` to satisfy this;
     tests pass in a fake. Keeps the drive loop target-agnostic — it just
-    cares about the persisted TaskRun that comes back.
+    cares about the TaskRun that comes back, persisted or in-memory per
+    the invoker.
     """
 
     async def __call__(
@@ -52,9 +53,10 @@ class TurnHook(Protocol):
 class DriveCaseResult:
     """Outcome of one drive_case run.
 
-    `chain` is the list of persisted TaskRuns the adapter produced (leaf
-    last). There is no stop_reason field — every case ends after exactly
-    `turns` iterations by design.
+    `chain` is the list of TaskRuns the adapter produced (leaf last);
+    whether they were persisted is the target_invoker's choice. There is
+    no stop_reason field — every case ends after exactly `turns`
+    iterations by design.
 
     `su_total_cost` sums the SU driver's per-turn LLM cost across the
     case. SU turns aren't persisted as TaskRuns, so this is the only
@@ -78,7 +80,8 @@ async def drive_case(
 
     Args:
         seed_prompt: the opening user-side message sent into the target task.
-        target_invoker: how to call the target task; produces a persisted TaskRun.
+        target_invoker: how to call the target task for one turn; returns
+            the turn's TaskRun (persistence is the invoker's concern).
         su_driver: pre-built SU driver for this case. Caller is responsible
             for construction (so a malformed persona fails at the caller's
             layer, not here).

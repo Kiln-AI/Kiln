@@ -969,7 +969,8 @@ class TestBuildMultiTurnEvalInputs:
         assert first.data.synthetic_user_info.persona == "persona 0"
         assert first.data.synthetic_user_info.goal == "goal 0"
         assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
-        # Slice tag + provenance: the alignment batch and the plan scenario.
+        # Slice tag + provenance: the synthetic-user batch the case was
+        # driven in, and the batch-plan scenario it came from.
         assert first.tags == [
             "eval_myspec",
             "synthetic_user_batch:batch99",

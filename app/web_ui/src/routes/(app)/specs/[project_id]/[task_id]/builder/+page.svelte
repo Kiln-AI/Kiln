@@ -1334,8 +1334,9 @@
                 batch_tag: multi_turn_batch_tag,
                 reviewed_chains,
                 cases: driven_cases,
-                // The alignment-time drive settings ride onto the Eval so
-                // eval-time re-drives replay the same synthetic user.
+                // The drive settings this wizard's conversations ran with
+                // ride onto the Eval, so eval-time re-drives replay the same
+                // synthetic user (model + turns).
                 drive_config: {
                   model_name: SU_DRIVER_DEFAULT.model_name,
                   model_provider: SU_DRIVER_DEFAULT.model_provider,

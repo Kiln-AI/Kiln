@@ -130,8 +130,10 @@ class DrivenSyntheticCaseApi(BaseModel):
     )
     scenario_index: int | None = Field(
         default=None,
-        description="The approved-plan scenario this case was generated from, "
-        "recorded on the EvalInput as provenance.",
+        description="Zero-based index into the builder's user-approved "
+        "scenario plan identifying the scenario this case was generated "
+        "from. Recorded on the minted EvalInput as a `scenario:{index}` "
+        "provenance tag; omit when the case has no plan scenario.",
     )
 
 
