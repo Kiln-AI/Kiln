@@ -30,6 +30,7 @@ from app.desktop.studio_server.data_gen_api import (
     _BatchJob,
     _batch_jobs,
     _generate_one_input,
+    _generate_one_output,
     _register_batch_job,
     _run_inputs_batch_job,
     _run_outputs_batch_job,
@@ -1852,3 +1853,50 @@ async def test_generate_one_input_includes_data_guide_when_provided(
     # The guide arrives with its explanatory context, not as a bare blob.
     assert "# Task Data Guide" in instruction
     assert "Authority cascade" in instruction
+
+
+async def _one_output_tags(session_id, mock_task_from_id, test_task, data_source):
+    run = TaskRun(
+        output=TaskOutput(output="out", source=data_source),
+        input="in",
+        input_source=data_source,
+        parent=test_task,
+    )
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        out = await _generate_one_output(
+            "p",
+            "t",
+            "an input",
+            "gpt-4",
+            "openai",
+            _batch_rcp(),
+            None,
+            session_id,
+            None,
+        )
+    return out.tags
+
+
+async def test_generate_one_output_tags_with_session(
+    mock_task_from_id, test_task, data_source
+):
+    """Batch-generated runs carry the session tag, so a Kiln Pro batch is
+    groupable in the dataset the same way a legacy synth session is."""
+    tags = await _one_output_tags("abc123", mock_task_from_id, test_task, data_source)
+
+    assert "synthetic" in tags
+    assert "synthetic_session_abc123" in tags
+
+
+async def test_generate_one_output_omits_session_tag_when_absent(
+    mock_task_from_id, test_task, data_source
+):
+    tags = await _one_output_tags(None, mock_task_from_id, test_task, data_source)
+
+    assert tags == ["synthetic"]

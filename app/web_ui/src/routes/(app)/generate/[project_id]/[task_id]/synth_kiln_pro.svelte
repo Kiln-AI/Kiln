@@ -31,6 +31,8 @@
   export let project_id: string
   export let task_id: string
   export let guidance_data: SynthDataGuidanceDataModel
+  // Groups every sample from this synth session under one dataset tag.
+  export let session_id: string | null = null
 
   const selected_template = guidance_data.selected_template
   $: task = guidance_data.task
@@ -243,6 +245,7 @@
     {guidance_data}
     run_config_properties={inputs_rcp}
     data_guide={inputs_data_guide}
+    {session_id}
     on_back={go_back}
   />
 {:else}

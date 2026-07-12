@@ -40,6 +40,8 @@
   // generation starts on mount with these.
   export let run_config_properties: KilnAgentRunConfigProperties
   export let data_guide: string | null
+  // Tags every generated run with synthetic_session_<id>, matching legacy synth.
+  export let session_id: string | null = null
   // Returns to the plan — the only way out once every sample is removed.
   export let on_back: () => void
 
@@ -443,6 +445,7 @@
           input_model_name: active_rcp.model_name,
           input_provider: active_rcp.model_provider_name,
           run_config_properties: rcp,
+          session_id,
         })
     outputs_unsub.push(
       outputs_run.status.subscribe((s) => {

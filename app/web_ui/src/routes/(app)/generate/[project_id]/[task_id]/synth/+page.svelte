@@ -925,7 +925,12 @@
           }}
         />
       {:else if is_empty && is_setup && batch_mode === "pro"}
-        <SynthKilnPro {project_id} {task_id} {guidance_data} />
+        <SynthKilnPro
+          {project_id}
+          {task_id}
+          {guidance_data}
+          session_id={$saved_state.session_id}
+        />
       {:else if is_empty}
         <div>
           <DataGenIntro
