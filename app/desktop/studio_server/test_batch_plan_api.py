@@ -18,6 +18,12 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 
 
+def _ok_response() -> Response:
+    """A 2xx upstream response. The proxy checks `.status_code` to catch an
+    upstream 404, so these mocks need a real Response, not a sentinel string."""
+    return Response(status_code=HTTPStatus.OK, content=b"{}", headers={}, parsed=None)
+
+
 @pytest.fixture
 def app():
     app = FastAPI()
@@ -86,7 +92,7 @@ def test_batch_plan_kiln_server_proxy(mock_copilot_key, mock_task_from_id, clien
         patch("app.desktop.studio_server.batch_plan_api.get_authenticated_client"),
         patch(
             "app.desktop.studio_server.batch_plan_api.batch_plan_v1_copilot_batch_plan_post.asyncio_detailed",
-            new=AsyncMock(return_value="sentinel"),
+            new=AsyncMock(return_value=_ok_response()),
         ),
         patch(
             "app.desktop.studio_server.batch_plan_api.unwrap_response",
@@ -108,7 +114,7 @@ def test_batch_plan_sends_task_context_from_server(
 ):
     """Task prompt and schemas are derived server-side, not sent by the client."""
     proxied = BatchPlanOutputClient(prompts=["x"], summary="s")
-    post = AsyncMock(return_value="sentinel")
+    post = AsyncMock(return_value=_ok_response())
     with (
         patch("app.desktop.studio_server.batch_plan_api.get_authenticated_client"),
         patch(
@@ -141,7 +147,7 @@ def test_batch_plan_unknown_response_is_500(
         patch("app.desktop.studio_server.batch_plan_api.get_authenticated_client"),
         patch(
             "app.desktop.studio_server.batch_plan_api.batch_plan_v1_copilot_batch_plan_post.asyncio_detailed",
-            new=AsyncMock(return_value="sentinel"),
+            new=AsyncMock(return_value=_ok_response()),
         ),
         patch(
             "app.desktop.studio_server.batch_plan_api.unwrap_response",
@@ -175,11 +181,12 @@ def test_batch_plan_kiln_server_unreachable_returns_502(
     assert "batch planning" in resp.json()["message"].lower()
 
 
-def test_batch_plan_kiln_server_404_has_clear_message(
+def test_batch_plan_kiln_server_404_becomes_502(
     mock_copilot_key, mock_task_from_id, client
 ):
-    """A 404 from a kiln_server without batch planning is propagated with a
-    meaningful message rather than a bare 'Unknown error'."""
+    """A kiln_server that doesn't serve batch planning (e.g. staging) 404s. That
+    must NOT surface as our own 404 — a 404 on this route would read as "this
+    studio endpoint doesn't exist". It's an upstream failure, so report 502."""
     not_found = Response(
         status_code=HTTPStatus.NOT_FOUND,
         content=b'{"detail":"Not Found"}',
@@ -197,5 +204,5 @@ def test_batch_plan_kiln_server_404_has_clear_message(
             "/api/projects/proj-ID/tasks/task-ID/copilot/batch_plan",
             json={"guidance": "g", "count": 2},
         )
-    assert resp.status_code == 404, resp.text
+    assert resp.status_code == 502, resp.text
     assert "batch planning" in resp.json()["message"].lower()

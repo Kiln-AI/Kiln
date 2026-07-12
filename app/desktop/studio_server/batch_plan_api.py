@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from typing import Annotated
 
 import httpx
@@ -79,12 +80,22 @@ async def _run_batch_plan_kiln_server(
             status_code=502,
             detail="Couldn't reach the Kiln batch planning service. Check your connection and that your Kiln server supports batch planning.",
         ) from e
-    # A non-2xx (e.g. a 404 from a Kiln server that doesn't have batch planning
-    # deployed) is propagated with this message rather than a bare "Unknown
-    # error" — a raw 404 reads like the endpoint is missing.
+
+    # Never pass an upstream 404 through as our own 404. A 404 on this endpoint
+    # would say "this studio route doesn't exist", when what actually happened
+    # is that the *Kiln server* doesn't serve batch planning (e.g. staging, or
+    # an older deployment). That's an upstream failure, so report it as one.
+    if detailed.status_code == HTTPStatus.NOT_FOUND:
+        raise HTTPException(
+            status_code=502,
+            detail="This Kiln server doesn't support batch planning. It may be an older deployment — check which Kiln server you're pointed at.",
+        )
+
+    # Any other non-2xx keeps its status (401 for a bad key, 429 for rate
+    # limits, ...), but with a message that beats a bare "Unknown error".
     result = unwrap_response(
         detailed,
-        default_detail="The Kiln batch planning service returned an error. Your Kiln server may not support batch planning yet.",
+        default_detail="The Kiln batch planning service returned an error.",
         none_detail="Failed to plan the batch. Please try again.",
     )
     if isinstance(result, BatchPlanOutputClient):
