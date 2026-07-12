@@ -1,5 +1,7 @@
 """Tests for KilnEvalHelpers -- pure-Python helper class for user scorers."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
@@ -281,3 +283,110 @@ class TestAssertions:
 
     def test_assert_matches_full_pattern(self, helpers: KilnEvalHelpers):
         assert helpers.assert_matches("abc123def", r"^abc\d+def$") is True
+
+
+class TestHealthHelpers:
+    """Usage/latency/error helpers — duck-typed usage (dict, Pydantic object,
+    SimpleNamespace) per the pickle-transport quirk."""
+
+    def _trace(self, usage_factory):
+        return [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "a",
+                "latency_ms": 1200,
+                "usage": usage_factory(10, 5, 15, 2, 0.01),
+            },
+            {
+                "role": "assistant",
+                "content": None,
+                "latency_ms": 800,
+                "usage": usage_factory(20, 8, 28, 0, 0.02),
+                "tool_calls": [
+                    {
+                        "id": "t1",
+                        "function": {"name": "skill", "arguments": '{"resource": "x"}'},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "t1", "content": "r", "is_error": True},
+            {"role": "tool", "tool_call_id": "t2", "content": "ok"},
+        ]
+
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            lambda i, o, t, c, cost: {
+                "input_tokens": i,
+                "output_tokens": o,
+                "total_tokens": t,
+                "cached_tokens": c,
+                "cost": cost,
+            },
+            lambda i, o, t, c, cost: SimpleNamespace(
+                input_tokens=i,
+                output_tokens=o,
+                total_tokens=t,
+                cached_tokens=c,
+                cost=cost,
+            ),
+        ],
+        ids=["dict", "object"],
+    )
+    def test_get_usage_totals(self, helpers: KilnEvalHelpers, factory):
+        totals = helpers.get_usage_totals(self._trace(factory))
+        assert totals == {
+            "input_tokens": 30.0,
+            "output_tokens": 13.0,
+            "total_tokens": 43.0,
+            "cached_tokens": 2.0,
+            "cost": 0.03,
+        }
+
+    def test_get_usage_totals_absent_and_partial(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "assistant", "content": "a"},
+            {"role": "assistant", "content": "b", "usage": {"input_tokens": 7}},
+        ]
+        totals = helpers.get_usage_totals(trace)
+        assert totals["input_tokens"] == 7.0
+        assert totals["cost"] == 0.0
+        assert helpers.get_usage_totals(None)["total_tokens"] == 0.0
+
+    def test_get_total_latency_ms(self, helpers: KilnEvalHelpers):
+        assert helpers.get_total_latency_ms(self._trace(lambda *a: None)) == 2000.0
+        assert helpers.get_total_latency_ms([]) == 0.0
+
+    def test_count_messages(self, helpers: KilnEvalHelpers):
+        trace = self._trace(lambda *a: None)
+        assert helpers.count_messages(trace, "user") == 1
+        assert helpers.count_messages(trace, "assistant") == 2
+        assert helpers.count_messages(trace, "tool") == 2
+        assert helpers.count_messages(None, "user") == 0
+
+    def test_get_error_tool_results(self, helpers: KilnEvalHelpers):
+        errors = helpers.get_error_tool_results(self._trace(lambda *a: None))
+        assert len(errors) == 1
+        assert errors[0]["tool_call_id"] == "t1"
+        assert helpers.get_error_tool_results(
+            [
+                {
+                    "role": "tool",
+                    "tool_call_id": "x",
+                    "content": "c",
+                    "error_message": "boom",
+                }
+            ]
+        )
+
+    def test_get_assistant_emitted_text(self, helpers: KilnEvalHelpers):
+        trace = self._trace(lambda *a: None)
+        trace[1]["reasoning"] = "thinking here"
+        trace[1]["content"] = [{"type": "text", "text": "block text"}]
+        text = helpers.get_assistant_emitted_text(trace)
+        assert "block text" in text
+        assert "thinking here" in text
+        assert "skill" in text  # tool-call name
+        assert '"resource": "x"' in text  # tool-call args
+        assert "r" != text  # tool results excluded
