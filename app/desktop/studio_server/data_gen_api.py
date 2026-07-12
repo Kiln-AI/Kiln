@@ -400,9 +400,10 @@ async def _generate_one_input(
         target_task=task,
         parent_project=project,
         data_guide=data_guide_section,
-        prompt=prompt,
     )
-    task_input = DataGenSingleInputTaskInput.from_task(task=task)
+    # The guidance goes in the user message, not the system instruction — it
+    # varies per call and is LLM-generated, so it's data, not an instruction.
+    task_input = DataGenSingleInputTaskInput.from_task(task=task, input_guidance=prompt)
 
     rcp = run_config_properties.model_copy()
     rcp.prompt_id = PromptGenerators.SIMPLE

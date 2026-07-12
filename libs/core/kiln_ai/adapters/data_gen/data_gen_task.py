@@ -205,23 +205,34 @@ class DataGenSampleTask(Task, parent_of={}):
 class DataGenSingleInputTaskInput(BaseModel):
     """Input model for generating exactly one input to a kiln task.
 
-    Note: the field name is verbose to avoid accidental conflicts with the
+    Both fields ride in the user message, as data rather than instructions. The
+    per-input guidance is LLM-generated (the batch planner wrote it), so keeping
+    it out of the system prompt stops it inheriting system-level authority.
+
+    Note: the field names are verbose to avoid accidental conflicts with the
     system prompt or user guidance.
 
     Attributes:
-        kiln_data_gen_system_prompt: System prompt to guide the AI generation
+        kiln_data_gen_system_prompt: The target task's system prompt — what the
+            generated input will eventually be fed to. Constant across a batch.
+        kiln_data_gen_input_guidance: What makes this one input distinct from
+            the others in its batch. Varies on every call.
     """
 
     kiln_data_gen_system_prompt: str
+    kiln_data_gen_input_guidance: str | None = None
 
     @classmethod
-    def from_task(cls, task: Task) -> "DataGenSingleInputTaskInput":
+    def from_task(
+        cls, task: Task, input_guidance: str | None = None
+    ) -> "DataGenSingleInputTaskInput":
         """Create a DataGenSingleInputTaskInput instance from a Task."""
         prompt_builder = SimplePromptBuilder(task=task)
         return cls(
             kiln_data_gen_system_prompt=prompt_builder.build_prompt(
                 include_json_instructions=False
             ),
+            kiln_data_gen_input_guidance=input_guidance,
         )
 
 
@@ -257,8 +268,8 @@ def single_input_json_schema_for_task(task: Task) -> str:
 class DataGenSingleInputTask(Task, parent_of={}):
     """Task for generating exactly one input to a target task.
 
-    Used by the batch-plan flow: the caller supplies one prompt per input as
-    guidance, so there's no topic tree and no sample count.
+    Used by the batch-plan flow: the caller supplies one guidance string per
+    input (in the task input), so there's no topic tree and no sample count.
     """
 
     def __init__(
@@ -266,14 +277,11 @@ class DataGenSingleInputTask(Task, parent_of={}):
         target_task: Task,
         parent_project: Project,
         data_guide: str | None,
-        prompt: str | None,
     ):
-        # No gen_type: the batch plan's prompt already says what this input is
-        # for. See generate_single_input_prompt.
-        instruction = generate_single_input_prompt(
-            data_guide=data_guide,
-            prompt=prompt,
-        )
+        # No gen_type, and no per-input guidance: the guidance varies per call
+        # and rides in the user message instead, so this instruction is stable
+        # across the whole batch. See generate_single_input_prompt.
+        instruction = generate_single_input_prompt(data_guide=data_guide)
 
         super().__init__(
             name="DataGenSingleInput",
