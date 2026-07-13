@@ -1,6 +1,7 @@
-import type { ChatMessage } from "./streaming_chat"
+import type { ChatMessage, ContextUsage } from "./streaming_chat"
 
 export type LoadedChatSessionDetail = {
   messages: ChatMessage[]
   continuationTraceId: string
+  contextUsage: ContextUsage | null
 }

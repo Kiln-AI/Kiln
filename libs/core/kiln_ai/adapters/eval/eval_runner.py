@@ -6,6 +6,7 @@ from typing import AsyncGenerator, Dict, List, Literal, Set
 import litellm
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -34,10 +35,18 @@ from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
+
+# Default number of dataset items evaluated in parallel when a caller doesn't specify one.
+DEFAULT_EVAL_CONCURRENCY = 25
 
 
 @dataclass
@@ -271,17 +280,38 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0,
+    ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
+
+        Pass `observers` to be notified per-item (e.g. to surface the exception of
+        a failed dataset item — `Progress.errors` is only a count). Optional so the
+        streaming UI paths can keep calling `run()` with no observer.
+
+        `concurrency` bounds how many items run in parallel; None uses the default.
+
+        `max_retries` re-attempts items that fail with a transient error (rate limit,
+        connection blip) with exponential backoff starting at `retry_delay` seconds,
+        only surfacing the error if every attempt fails. Background jobs override the
+        defaults with a more patient schedule.
         """
+        if concurrency is None:
+            concurrency = DEFAULT_EVAL_CONCURRENCY
         jobs = self.collect_tasks()
 
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
-            max_retries=2,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            observers=observers,
         )
         async for progress in runner.run():
             yield progress
@@ -294,11 +324,15 @@ class EvalRunner:
                 return await self._run_legacy_job(job)
         except Exception as e:
             if _is_retryable_error(e):
-                logger.error(
+                # Warning, not error: this fires per attempt, and the runner may
+                # still retry. A final failure is reported via the runner's observers.
+                logger.warning(
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )
-                raise RetryableError(str(e)) from e
+                # KilnRunError's own message is genericized user-facing text; keep
+                # the underlying provider detail for the developer-facing error log.
+                raise RetryableError(str(_unwrap_kiln_run_error(e))) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
@@ -749,7 +783,22 @@ def _trace_json_default(obj: object) -> object:
     raise TypeError(f"{type(obj).__name__} is not JSON serializable")
 
 
+def _unwrap_kiln_run_error(e: BaseException) -> BaseException:
+    """The innermost non-wrapper error.
+
+    The model adapter wraps provider exceptions in KilnRunError (to carry the
+    partial trace), whose own message is genericized user-facing text — so both
+    retry classification and error detail must use the underlying error. The
+    isinstance guard on `original` keeps a (contract-violating) None from
+    escaping as the result."""
+    while isinstance(e, KilnRunError) and isinstance(e.original, BaseException):
+        e = e.original
+    return e
+
+
 def _is_retryable_error(e: BaseException) -> bool:
+    e = _unwrap_kiln_run_error(e)
+
     if isinstance(
         e,
         (

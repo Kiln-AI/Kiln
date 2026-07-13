@@ -15,6 +15,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
 )
 from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.routes import ChatSessionSnapshot
 from app.desktop.studio_server.chat.helpers import (
     PATCH_ASYNC_CLIENT,
     PATCH_EXECUTE_TOOL,
@@ -73,7 +74,10 @@ class TestChatStreaming:
         assert response.status_code == 401
 
     def test_handles_upstream_error(self, client, mock_api_key):
-        mock_class, _, _ = make_httpx_mock(status_code=500)
+        # 404 (non-retryable) surfaces immediately as an SSE error. Retryable
+        # statuses (5xx/429) go through the retry loop instead (covered in
+        # test_stream_session.py), so they'd block on backoff here.
+        mock_class, _, _ = make_httpx_mock(status_code=404)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
             response = client.post(
@@ -151,7 +155,13 @@ def test_list_chat_sessions_forwards_to_kiln(
 
     assert r.status_code == 200
     assert r.json() == [
-        {"id": "trace-1", "title": "Hi", "updated_at": "2025-06-15T12:30:00Z"}
+        {
+            "id": "trace-1",
+            "title": "Hi",
+            "updated_at": "2025-06-15T12:30:00Z",
+            "auto_active": False,
+            "auto_run_id": None,
+        }
     ]
     mock_asyncio_detailed.assert_called_once()
     call_kwargs = mock_asyncio_detailed.call_args[1]
@@ -187,6 +197,142 @@ def test_get_chat_session_forwards_to_kiln(mock_asyncio_detailed, client, mock_a
     call_kwargs = mock_asyncio_detailed.call_args[1]
     assert call_kwargs["session_id"] == "trace-abc"
     assert "client" in call_kwargs
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_round_trips_context_usage(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    # Upstream now emits a top-level ``context_usage`` alongside ``id`` /
+    # ``task_run``. The generated SDK model only declares id + task_run and
+    # stashes extras in ``additional_properties``, which ``to_dict()`` re-emits,
+    # so the field survives into ``ChatSessionSnapshot`` once the field exists.
+    snapshot_dict = {
+        "id": "trace-ctx",
+        "task_run": _make_task_run_dict(trace=[{"role": "user", "content": "yo"}]),
+        "context_usage": {
+            "context_tokens": 1234,
+            "context_limit": 150000,
+            "context_percent": 0.0082,
+            "compacted": True,
+        },
+    }
+    parsed = ChatSnapshot.from_dict(snapshot_dict)
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-ctx")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["context_usage"] == {
+        "context_tokens": 1234,
+        "context_limit": 150000,
+        "context_percent": 0.0082,
+        "compacted": True,
+    }
+
+
+def test_chat_session_snapshot_drops_unknown_keys_invariant():
+    # Pin the containment invariant at the model level, independent of the route
+    # round-trip: a valid snapshot carrying the server-only ``compacted_trace``
+    # validates successfully (no 500) AND the unknown key is dropped, so it can
+    # never reach the client (functional_spec.md §7.3). This guards against a
+    # maintainer "tightening" the config to ``extra="forbid"`` (which would raise
+    # instead of drop) or relying on an unstated default.
+    snapshot = ChatSessionSnapshot.model_validate(
+        {
+            "id": "trace-invariant",
+            "task_run": {"trace": [{"role": "user", "content": "hi"}]},
+            "context_usage": {
+                "context_tokens": 1,
+                "context_limit": 2,
+                "context_percent": 0.5,
+                "compacted": False,
+            },
+            "compacted_trace": [{"role": "system", "content": "secret"}],
+        }
+    )
+
+    assert not hasattr(snapshot, "compacted_trace")
+    assert "compacted_trace" not in snapshot.model_dump()
+    assert snapshot.id == "trace-invariant"
+    assert snapshot.context_usage is not None
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_drops_compacted_trace(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    # Defense in depth (functional_spec.md §7.3): even if a regressed upstream
+    # leaked the server-only ``compacted_trace``, ``ChatSessionSnapshot``'s
+    # ``extra="ignore"`` config must drop it at the client boundary. The full
+    # ``task_run.trace`` and the gauge numbers still come through.
+    snapshot_dict = {
+        "id": "trace-leak",
+        "task_run": _make_task_run_dict(trace=[{"role": "user", "content": "hi"}]),
+        "compacted_trace": [{"role": "system", "content": "<compaction_summary>..."}],
+        "context_usage": {
+            "context_tokens": 99,
+            "context_limit": 150000,
+            "context_percent": 0.0007,
+            "compacted": True,
+        },
+    }
+    parsed = ChatSnapshot.from_dict(snapshot_dict)
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-leak")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert "compacted_trace" not in body
+    assert body["task_run"]["trace"] == [{"role": "user", "content": "hi"}]
+    assert body["context_usage"]["compacted"] is True
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_tolerates_missing_context_usage(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    # Backward compatibility: an older upstream that omits ``context_usage`` must
+    # not 500 the proxy. ``response_model_exclude_none`` drops the absent field.
+    snapshot_dict = {
+        "id": "trace-old",
+        "task_run": _make_task_run_dict(trace=[{"role": "user", "content": "yo"}]),
+    }
+    parsed = ChatSnapshot.from_dict(snapshot_dict)
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-old")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == "trace-old"
+    assert "context_usage" not in body
 
 
 @patch(
