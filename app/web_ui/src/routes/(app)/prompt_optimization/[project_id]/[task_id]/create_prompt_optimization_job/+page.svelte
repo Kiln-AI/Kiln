@@ -108,6 +108,7 @@
 
   let loading = true
   $: error = task_load_error || copilot_check_error
+  $: is_multiturn = current_task?.turn_mode === "multiturn"
 
   type EvalWithConfig = {
     eval: Eval
@@ -792,6 +793,14 @@
         button_text="View Optimizer Jobs"
         link={`/prompt_optimization/${project_id}/${task_id}/prompt_optimization_job/${created_job.id}`}
       />
+    {:else if is_multiturn}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Warning
+          warning_message="Prompt optimization is not supported for multi-turn tasks."
+          warning_color="warning"
+          warning_icon="info"
+        />
+      </div>
     {:else if current_task}
       <FormContainer
         submit_visible={true}

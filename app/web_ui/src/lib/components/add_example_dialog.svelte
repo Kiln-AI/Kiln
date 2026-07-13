@@ -47,6 +47,8 @@
   // Dialog chrome. Defaults suit the data-guide flow; other callers pass their
   // own copy. When title is null the header reflects add/edit mode.
   export let title: string | null = null
+  // Callers override the sub-subtitle to frame the specific flow — e.g. the
+  // data-guide chooser uses "To start, ..." for the very first example.
   export let sub_subtitle: string =
     "Add a task data example to guide generation."
   // Label for the submit button when adding (edit mode always shows "Save").
@@ -275,6 +277,7 @@
         <div class="flex flex-col mt-2 gap-2">
           <TaskRunPicker
             available_runs={filtered_available_runs}
+            inputs_only={!include_output}
             on:select={(e) => select_existing_run(e.detail)}
           />
         </div>

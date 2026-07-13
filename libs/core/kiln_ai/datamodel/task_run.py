@@ -5,6 +5,7 @@ from pydantic import Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel, KilnParentModel
+from kiln_ai.datamodel.claim_review import ClaimReview
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
@@ -25,6 +26,7 @@ class TaskRun(
     KilnParentModel,
     parent_of={
         "feedback": Feedback,
+        "claim_reviews": ClaimReview,
     },
 ):
     """
@@ -104,6 +106,9 @@ class TaskRun(
     def feedback(self, readonly: bool = False) -> list[Feedback]:
         return super().feedback(readonly=readonly)  # type: ignore
 
+    def claim_reviews(self, readonly: bool = False) -> list[ClaimReview]:
+        return super().claim_reviews(readonly=readonly)  # type: ignore
+
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
         if self.parent is None or self.parent.__class__.__name__ != "Task":
@@ -179,6 +184,30 @@ class TaskRun(
 
         self.output.validate_output_format(task)
         self._last_validated_output = self.output.output if self.output else None
+        return self
+
+    @model_validator(mode="after")
+    def validate_parent_task_run_id_for_turn_mode(self, info: ValidationInfo) -> Self:
+        # Single-turn tasks must not have a parent_task_run_id - the leaf
+        # filter in Task.runs() would silently drop the parent from
+        # iteration, producing phantom runs in evals/finetunes/dataset
+        # splits. Skip on load so legacy files don't fail to deserialize.
+        if self.loading_from_file(info):
+            return self
+        if self.parent_task_run_id is None:
+            return self
+        task = self.parent_task()
+        if task is None:
+            # Not yet attached - defer; revalidates when attached/saved.
+            return self
+        # Avoid circular import at module load.
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        if task.turn_mode != TurnMode.multiturn:
+            raise ValueError(
+                "parent_task_run_id is only valid on multi-turn tasks. "
+                "This task's turn_mode is single_turn."
+            )
         return self
 
     @model_validator(mode="after")

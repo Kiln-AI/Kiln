@@ -724,10 +724,17 @@
   }
 
   async function check_kiln_copilot_and_proceed() {
+    posthog.capture("eval_v2_cta_clicked", {
+      branch: has_kiln_copilot ? "v2" : "v1_manual",
+      has_pro: has_kiln_copilot,
+    })
     if (!has_kiln_copilot) {
       goto(`/specs/${project_id}/${task_id}/select_workflow`)
     } else {
-      goto(`/specs/${project_id}/${task_id}/select_template`)
+      // Pro users land on the v2 builder. The legacy template carousel
+      // remains reachable via the "Evals Legacy" sidebar entry during
+      // the bug bash; remove the fallback once v2 ships GA.
+      goto(`/specs/${project_id}/${task_id}/builder`)
     }
   }
 </script>

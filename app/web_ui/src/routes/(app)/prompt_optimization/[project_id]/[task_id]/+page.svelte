@@ -1,11 +1,13 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type { PromptOptimizationJob } from "$lib/types"
+  import type { PromptOptimizationJob, Task } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
+  import { load_task } from "$lib/stores"
   import { formatDate } from "$lib/utils/formatters"
+  import Warning from "$lib/ui/warning.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
@@ -23,6 +25,7 @@
 
   let loading = true
 
+  let task: Task | null = null
   let prompt_optimization_jobs: PromptOptimizationJob[] | null = null
   let prompt_optimization_jobs_error: KilnError | null = null
 
@@ -33,9 +36,21 @@
   $: error = copilot_check_error || prompt_optimization_jobs_error
   $: is_empty =
     !prompt_optimization_jobs || prompt_optimization_jobs.length === 0
+  $: is_multiturn = task?.turn_mode === "multiturn"
 
   $: if (project_id && task_id) {
+    task = null
+    load_task_for_page(project_id, task_id)
     load_jobs_and_copilot_status(project_id, task_id)
+  }
+
+  async function load_task_for_page(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
+    const loaded = await load_task(req_project_id, req_task_id)
+    if (req_project_id !== project_id || req_task_id !== task_id) return
+    task = loaded
   }
 
   async function load_jobs_and_copilot_status(
@@ -159,7 +174,7 @@
       href: `/prompts/${project_id}/${task_id}`,
     },
   ]}
-  action_buttons={is_empty
+  action_buttons={is_empty || is_multiturn
     ? []
     : [
         {
@@ -180,6 +195,14 @@
       <div class="text-error text-sm">
         {error.getMessage() || "An unknown error occurred"}
       </div>
+    </div>
+  {:else if is_multiturn}
+    <div class="flex flex-col items-center justify-center min-h-[60vh]">
+      <Warning
+        warning_message="Prompt optimization is not supported for multi-turn tasks."
+        warning_color="warning"
+        warning_icon="info"
+      />
     </div>
   {:else if is_empty}
     {#if kiln_copilot_connected === false}

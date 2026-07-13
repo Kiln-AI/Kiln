@@ -4,10 +4,15 @@ from .answer_option import AnswerOption
 from .answer_option_with_selection import AnswerOptionWithSelection
 from .api_key_verification_result import ApiKeyVerificationResult
 from .audio import Audio
+from .batch_plan_input import BatchPlanInput
+from .batch_plan_output import BatchPlanOutput
 from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
+from .build_claim_evidence_input import BuildClaimEvidenceInput
+from .build_claim_evidence_output import BuildClaimEvidenceOutput
+from .change import Change
 from .chat_completion_assistant_message_param_wrapper import ChatCompletionAssistantMessageParamWrapper
 from .chat_completion_content_part_image_param import ChatCompletionContentPartImageParam
 from .chat_completion_content_part_input_audio_param import ChatCompletionContentPartInputAudioParam
@@ -26,11 +31,16 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
 from .check_model_supported_response import CheckModelSupportedResponse
+from .citation import Citation
+from .claim import Claim
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
 from .client_chat_message_role import ClientChatMessageRole
+from .client_version_policy import ClientVersionPolicy
 from .create_api_key_response import CreateApiKeyResponse
+from .data_guide_job_output import DataGuideJobOutput
+from .data_guide_job_result_response import DataGuideJobResultResponse
 from .data_source import DataSource
 from .data_source_properties import DataSourceProperties
 from .data_source_type import DataSourceType
@@ -46,31 +56,49 @@ from .delete_session_v1_chat_sessions_session_id_delete_response_426 import (
 from .delete_session_v1_chat_sessions_session_id_delete_response_500 import (
     DeleteSessionV1ChatSessionsSessionIdDeleteResponse500,
 )
+from .draft_input_data_guide_input import DraftInputDataGuideInput
+from .draft_input_data_guide_output import DraftInputDataGuideOutput
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
+from .expected_result import ExpectedResult
 from .file import File
+from .final_judgement import FinalJudgement
 from .file_file import FileFile
 from .function import Function
 from .function_call import FunctionCall
 from .generate_batch_input import GenerateBatchInput
 from .generate_batch_output import GenerateBatchOutput
 from .generate_batch_output_data_by_topic import GenerateBatchOutputDataByTopic
+from .generate_synthetic_users_request import GenerateSyntheticUsersRequest
+from .generate_synthetic_users_response import GenerateSyntheticUsersResponse
+from .generate_v1_synthetic_user_generate_post_response_401 import GenerateV1SyntheticUserGeneratePostResponse401
+from .generate_v1_synthetic_user_generate_post_response_500 import GenerateV1SyntheticUserGeneratePostResponse500
+from .generate_v1_synthetic_user_generate_post_response_502 import GenerateV1SyntheticUserGeneratePostResponse502
+from .generate_v1_synthetic_user_generate_post_response_502_code import (
+    GenerateV1SyntheticUserGeneratePostResponse502Code,
+)
 from .get_session_v1_chat_sessions_session_id_get_response_400 import GetSessionV1ChatSessionsSessionIdGetResponse400
 from .get_session_v1_chat_sessions_session_id_get_response_404 import GetSessionV1ChatSessionsSessionIdGetResponse404
 from .get_session_v1_chat_sessions_session_id_get_response_426 import GetSessionV1ChatSessionsSessionIdGetResponse426
 from .get_session_v1_chat_sessions_session_id_get_response_500 import GetSessionV1ChatSessionsSessionIdGetResponse500
+from .graded_claim import GradedClaim
+from .graded_final_judgement import GradedFinalJudgement
+from .graded_trace import GradedTrace
 from .handle_chat_v1_chat_post_response_400 import HandleChatV1ChatPostResponse400
 from .handle_chat_v1_chat_post_response_404 import HandleChatV1ChatPostResponse404
 from .handle_chat_v1_chat_post_response_426 import HandleChatV1ChatPostResponse426
 from .handle_chat_v1_chat_post_response_500 import HandleChatV1ChatPostResponse500
 from .health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from .http_validation_error import HTTPValidationError
+from .human_grade import HumanGrade
 from .image_url import ImageURL
 from .image_url_detail import ImageURLDetail
 from .input_audio import InputAudio
 from .input_audio_format import InputAudioFormat
+from .jinja_input_transform import JinjaInputTransform
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
+from .judge_score import JudgeScore
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
 from .kiln_agent_run_config_properties import KilnAgentRunConfigProperties
@@ -92,12 +120,15 @@ from .prompt_optimization_job_result_response import PromptOptimizationJobResult
 from .question import Question
 from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
+from .refine_judge_prompt_input import RefineJudgePromptInput
+from .refine_judge_prompt_output import RefineJudgePromptOutput
 from .refine_spec_api_output import RefineSpecApiOutput
 from .refine_spec_input import RefineSpecInput
 from .requirement_rating import RequirementRating
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
+from .source import Source
 from .spec import Spec
 from .spec_questioner_api_input import SpecQuestionerApiInput
 from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
@@ -111,6 +142,7 @@ from .synthetic_data_generation_session_config import SyntheticDataGenerationSes
 from .synthetic_data_generation_session_config_input import SyntheticDataGenerationSessionConfigInput
 from .synthetic_data_generation_step_config import SyntheticDataGenerationStepConfig
 from .synthetic_data_generation_step_config_input import SyntheticDataGenerationStepConfigInput
+from .synthetic_user_case import SyntheticUserCase
 from .task_info import TaskInfo
 from .task_metadata import TaskMetadata
 from .task_output import TaskOutput
@@ -122,14 +154,20 @@ from .task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType
 from .tools_run_config import ToolsRunConfig
 from .usage import Usage
 from .validation_error import ValidationError
+from .validation_error_context import ValidationErrorContext
 
 __all__ = (
     "AnswerOption",
     "AnswerOptionWithSelection",
     "ApiKeyVerificationResult",
     "Audio",
+    "BatchPlanInput",
+    "BatchPlanOutput",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
+    "BuildClaimEvidenceInput",
+    "BuildClaimEvidenceOutput",
+    "Change",
     "ChatCompletionAssistantMessageParamWrapper",
     "ChatCompletionContentPartImageParam",
     "ChatCompletionContentPartInputAudioParam",
@@ -146,11 +184,16 @@ __all__ = (
     "ChatSnapshot",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
+    "Citation",
+    "Claim",
     "ClarifySpecInput",
     "ClarifySpecOutput",
     "ClientChatMessage",
     "ClientChatMessageRole",
+    "ClientVersionPolicy",
     "CreateApiKeyResponse",
+    "DataGuideJobOutput",
+    "DataGuideJobResultResponse",
     "DataSource",
     "DataSourceProperties",
     "DataSourceType",
@@ -158,31 +201,47 @@ __all__ = (
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse404",
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse426",
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse500",
+    "DraftInputDataGuideInput",
+    "DraftInputDataGuideOutput",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
+    "ExpectedResult",
     "File",
+    "FinalJudgement",
     "FileFile",
     "Function",
     "FunctionCall",
     "GenerateBatchInput",
     "GenerateBatchOutput",
     "GenerateBatchOutputDataByTopic",
+    "GenerateSyntheticUsersRequest",
+    "GenerateSyntheticUsersResponse",
+    "GenerateV1SyntheticUserGeneratePostResponse401",
+    "GenerateV1SyntheticUserGeneratePostResponse500",
+    "GenerateV1SyntheticUserGeneratePostResponse502",
+    "GenerateV1SyntheticUserGeneratePostResponse502Code",
     "GetSessionV1ChatSessionsSessionIdGetResponse400",
     "GetSessionV1ChatSessionsSessionIdGetResponse404",
     "GetSessionV1ChatSessionsSessionIdGetResponse426",
     "GetSessionV1ChatSessionsSessionIdGetResponse500",
+    "GradedClaim",
+    "GradedFinalJudgement",
+    "GradedTrace",
     "HandleChatV1ChatPostResponse400",
     "HandleChatV1ChatPostResponse404",
     "HandleChatV1ChatPostResponse426",
     "HandleChatV1ChatPostResponse500",
     "HealthHealthGetResponseHealthHealthGet",
     "HTTPValidationError",
+    "HumanGrade",
     "ImageURL",
     "ImageURLDetail",
     "InputAudio",
     "InputAudioFormat",
+    "JinjaInputTransform",
     "JobStartResponse",
     "JobStatus",
+    "JudgeScore",
     "JobStatusResponse",
     "JobType",
     "KilnAgentRunConfigProperties",
@@ -204,12 +263,15 @@ __all__ = (
     "Question",
     "QuestionSet",
     "QuestionWithAnswer",
+    "RefineJudgePromptInput",
+    "RefineJudgePromptOutput",
     "RefineSpecApiOutput",
     "RefineSpecInput",
     "RequirementRating",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
+    "Source",
     "Spec",
     "SpecificationInput",
     "SpecificationInputSpecFieldCurrentValues",
@@ -223,6 +285,7 @@ __all__ = (
     "SyntheticDataGenerationSessionConfigInput",
     "SyntheticDataGenerationStepConfig",
     "SyntheticDataGenerationStepConfigInput",
+    "SyntheticUserCase",
     "TaskInfo",
     "TaskMetadata",
     "TaskOutput",
@@ -234,4 +297,5 @@ __all__ = (
     "ToolsRunConfig",
     "Usage",
     "ValidationError",
+    "ValidationErrorContext",
 )
