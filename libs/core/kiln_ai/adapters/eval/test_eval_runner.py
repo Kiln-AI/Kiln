@@ -889,16 +889,22 @@ def test_is_retryable_error_returns_false(error):
     assert _is_retryable_error(error) is False
 
 
+def wrapped_rate_limit_error(detail: str) -> KilnRunError:
+    """A provider rate limit as the model adapter surfaces it: wrapped in
+    KilnRunError whose own message is the genericized user-facing text, with
+    the provider detail only on the inner error."""
+    return KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=litellm.RateLimitError(detail, "provider", "model", None),
+    )
+
+
 def test_is_retryable_error_unwraps_kiln_run_error():
     # The model adapter wraps provider exceptions in KilnRunError (to carry the
     # partial trace), so the classifier must look through the wrapper — otherwise
     # rate limits from a real adapter run would never be retried.
-    wrapped = KilnRunError(
-        message="Rate limit exceeded. Wait a moment and try again.",
-        partial_trace=None,
-        original=litellm.RateLimitError("rate limited", "provider", "model", None),
-    )
-    assert _is_retryable_error(wrapped) is True
+    assert _is_retryable_error(wrapped_rate_limit_error("rate limited")) is True
 
 
 def test_is_retryable_error_wrapped_non_transient_returns_false():
@@ -934,15 +940,8 @@ async def test_run_job_wrapped_rate_limit_raises_retryable_with_detail(
 
     class RateLimitedEvaluator(BaseEval):
         async def run_task_and_eval(self, eval_job_item: TaskRun):
-            raise KilnRunError(
-                message="Rate limit exceeded. Wait a moment and try again.",
-                partial_trace=None,
-                original=litellm.RateLimitError(
-                    "rate limit exceeded, please try again later",
-                    "fireworks_ai",
-                    "model",
-                    None,
-                ),
+            raise wrapped_rate_limit_error(
+                "rate limit exceeded, please try again later"
             )
 
     with patch(
@@ -964,11 +963,7 @@ def test_is_retryable_error_unwraps_nested_kiln_run_error():
     nested = KilnRunError(
         message="Rate limit exceeded. Wait a moment and try again.",
         partial_trace=None,
-        original=KilnRunError(
-            message="Rate limit exceeded. Wait a moment and try again.",
-            partial_trace=None,
-            original=litellm.RateLimitError("rate limited", "provider", "model", None),
-        ),
+        original=wrapped_rate_limit_error("rate limited"),
     )
     assert _is_retryable_error(nested) is True
 
@@ -3119,15 +3114,8 @@ class TestRunV2MultiTurnRedrive:
             type="task_run_eval",
             task_run_config=mock_run_config,
         )
-        mid_drive_error = KilnRunError(
-            message="Rate limit exceeded. Wait a moment and try again.",
-            partial_trace=None,
-            original=litellm.RateLimitError(
-                "rate limit exceeded, please try again later",
-                "openrouter",
-                "model",
-                None,
-            ),
+        mid_drive_error = wrapped_rate_limit_error(
+            "rate limit exceeded, please try again later"
         )
         with (
             patch(

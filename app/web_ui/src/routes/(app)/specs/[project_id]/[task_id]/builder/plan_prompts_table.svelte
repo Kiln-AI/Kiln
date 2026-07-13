@@ -120,6 +120,16 @@
         </tr>
       </thead>
       <tbody>
+        {#if count === 0}
+          <tr>
+            <td
+              colspan={on_edit || on_delete ? 4 : 3}
+              class="text-center text-gray-500 py-6"
+            >
+              No {item_label} left — regenerate the plan.
+            </td>
+          </tr>
+        {/if}
         {#each visible as prompt, i}
           <tr>
             <td class="text-gray-500 align-top">{pad(start + i + 1)}</td>
@@ -179,7 +189,10 @@
       class="flex items-center justify-between px-4 py-3 border-t text-sm font-light text-gray-500"
     >
       <div>
-        Showing {start + 1}–{Math.min(start + per_page, count)} of {count}
+        Showing {count === 0 ? 0 : start + 1}–{Math.min(
+          start + per_page,
+          count,
+        )} of {count}
       </div>
       <div class="flex gap-2">
         <button
