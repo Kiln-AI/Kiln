@@ -126,9 +126,12 @@ Unscoped call returns all scopes; scoped call returns just that scope's block (s
 
 ## Phases
 
+> **Update (scosman, 2026-07-13) — REST API pivot.** Phase 2 (the bespoke stdio MCP server) was a mistake and is **superseded by Phase 4**. Agents already reach Kiln's REST API via `kiln_api_mcp` (filtered by the `agent_approvals` `x-agent-policy` annotations), so the correct agent-access surface is REST endpoints tagged `ALLOW_AGENT` — not a bespoke server. This **reverses decision 12** ("no REST surface"). Phase 1 (core) is unchanged and underpins all surfaces.
+
 1. **kiln `libs/core`:** `Memory` datamodel + registration + validators; core memory API (save/list/get/update/delete over a store binding; tag/scope/regex filtering; newest-first sort; truncation summary with tag counts); unit tests including the multi-process concurrency test.
-2. **experiments repo:** stdio MCP server + launch args + the tool description texts (per the table — treat them as spec'd deliverables) + README/config example; manual smoke test driving it from a coding agent against a scratch Kiln project.
-3. **(cuttable) kiln harness integration:** `KilnToolInterface` adapter bound to the current run's project (scope stays an explicit tool param — no injection); registry wiring; `ALLOW_AGENT` policies on all six. Phase 0 does not depend on this phase.
+2. **~~experiments repo: stdio MCP server~~ (SUPERSEDED by Phase 4):** built then abandoned; tool description texts are retained (reused as OpenAPI endpoint descriptions in Phase 4).
+3. **(cuttable) kiln harness integration:** `KilnToolInterface` adapter bound to the current run's project (scope stays an explicit tool param — no injection); registry wiring; `ALLOW_AGENT` policies on all six. Phase 0 does not depend on this phase. *(Post-pivot: possibly redundant — the harness can reach the Phase-4 REST API via the built-in `CALL_KILN_API` tool. Keep-or-cut is a reviewer decision.)*
+4. **kiln `libs/server`: memory REST API (the agent-access surface).** `libs/server/kiln_server/memory_api.py` — six endpoints under `/api/projects/{project_id}/memories` wrapping the core `MemoryStore`, one per tool, each tagged `ALLOW_AGENT` (incl. PATCH/DELETE, overriding the `agent_approvals` verb-defaults per decision 11). Registered in `server.py`; agent-policy annotation JSONs + web OpenAPI client regenerated for CI. Becomes agent-accessible for free via `kiln_api_mcp`. Detailed plan: `phase_plans/phase_4.md`.
 
 ## Deferred, with triggers
 

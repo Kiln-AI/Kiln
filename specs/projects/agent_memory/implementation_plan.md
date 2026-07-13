@@ -4,9 +4,9 @@ status: complete
 
 # Implementation Plan: Agent Memory (project: agent_memory)
 
-Cross-repo project, three phases. **One coding task, two PRs, kiln first** (the experiments MCP server pins kiln core by git rev). Phase 3 is cuttable and Phase 0 (the MCP server) does not depend on it.
-
 Each phase is independently testable. Run `uv run ./checks.sh --agent-mode` in the kiln repo before each kiln PR.
+
+**Update (scosman, 2026-07-13) — the REST API pivot.** Phase 2 (the bespoke stdio MCP server in the experiments repo) was a mistake and is **superseded by Phase 4**. Kiln already exposes its REST API to agents via `kiln_api_mcp` (filtered by the `agent_approvals` `x-agent-policy` annotations), so the correct agent-access surface is normal REST endpoints tagged `ALLOW_AGENT` — not a bespoke server. This reverses decision 12 ("no REST surface"): a REST surface is now the primary agent path. Phase 1 (core) is unchanged and underpins everything.
 
 ## Phases
 
@@ -17,13 +17,9 @@ Each phase is independently testable. Run `uv run ./checks.sh --agent-mode` in t
   - Tests: `datamodel/test_memory.py`, `memory/test_memory_store.py`, and the **multi-process** `memory/test_memory_store_concurrency.py`; extend the project test file with the `memories` accessor/registration.
   - → **kiln PR (first)**.
 
-- [ ] **Phase 2: experiments repo — stdio MCP server** *(repo: `kiln-ai/experiments`)*
-  - stdio MCP server (official MCP Python SDK) wrapping `MemoryStore`; `--project` launch arg (required); no scope defaults.
-  - Six tools with names/params identical to functional_spec §6; render the `list_memories` truncation nudge; convert store errors to tool errors.
-  - The six **tool description texts** (spec'd deliverables, functional_spec §6 / architecture §5.2).
-  - README with a Claude Code `.mcp.json` example; two-server-process concurrency test; manual smoke test against a scratch Kiln project.
-  - Pin kiln core by git rev of the Phase-1 branch.
-  - → **experiments PR (second)**.
+- [~] **Phase 2 (SUPERSEDED by Phase 4): experiments repo — stdio MCP server** *(repo: `kiln-ai/experiments`)*
+  - Built and pushed (branch `claude/agent-memory-mcp`, `memory_mcp/`), but **abandoned**: the right agent-access surface is REST + `ALLOW_AGENT` consumed by the existing `kiln_api_mcp`, not a bespoke server. No experiments PR was opened; delete/close the branch.
+  - Retained value: the six tool description texts (reused as OpenAPI endpoint descriptions in Phase 4).
 
 - [x] **Phase 3 (cuttable): kiln harness integration** *(repo: `Kiln-AI/kiln`)*
   - `KilnToolInterface` adapters (`tools/memory_tools.py`) wrapping `MemoryStore` bound to the current run's project (`scope` stays an explicit param — no injection).
@@ -32,3 +28,11 @@ Each phase is independently testable. Run `uv run ./checks.sh --agent-mode` in t
   - The six tool description texts are authored here and are ready for Phase 2 (the experiments MCP server) to reuse.
   - Tests: `tools/test_memory_tools.py` (definitions, round-trip, error mapping, registry resolution).
   - Independent of Phase 0; ships without affecting the MCP server.
+  - *Possibly redundant post-pivot: the harness can reach the Phase-4 REST API via the built-in `CALL_KILN_API` tool. Kept for now (typed first-party tools); keep-or-cut is a reviewer decision.*
+
+- [ ] **Phase 4: kiln `libs/server` — memory REST API (the agent-access surface)** *(repo: `Kiln-AI/kiln`)*
+  - `libs/server/kiln_server/memory_api.py`: six endpoints under `/api/projects/{project_id}/memories` wrapping the core `MemoryStore`, one per tool (POST save / GET list / GET summary / GET by_ids / PATCH update / DELETE), modeled on `feedback_api.py`.
+  - All six tagged `openapi_extra=ALLOW_AGENT` — **including PATCH and DELETE**, a deliberate override of the `agent_approvals` verb-defaults (decision 11: the assistant's own memory, no approval gate).
+  - Register `connect_memory_api(app)` in `server.py::make_app()`; regenerate the agent-policy annotation JSONs (`utils/agent_checks/annotations/`) and the web OpenAPI client (`generate_schema.sh`) so CI (`check_api_bindings`, `check_schema`) passes.
+  - Tests: `libs/server/kiln_server/test_memory_api.py` (all six + policy-annotation assertion). Run `uv run ./checks.sh --agent-mode`.
+  - Detailed plan: `phase_plans/phase_4.md`. Becomes the agent-access path (via `kiln_api_mcp`); no bespoke server.
