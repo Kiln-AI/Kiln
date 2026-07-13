@@ -460,6 +460,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description List memory summaries newest-first. content_length 0 means the overview
+         *     is the whole memory. Truncation fields nudge how to narrow the results.
+         */
+        get: operations["list_memories_api_projects__project_id__memories_get"];
+        put?: never;
+        /** Save Memory */
+        post: operations["save_memory_api_projects__project_id__memories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Summary
+         * @description Cheap per-scope orientation (counts, newest timestamp, tag cardinalities)
+         *     with no record content. Call before targeted list queries.
+         */
+        get: operations["memory_summary_api_projects__project_id__memories_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/by_ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memories
+         * @description Fetch full memory records by id. Unknown ids are omitted from the result.
+         */
+        get: operations["get_memories_api_projects__project_id__memories_by_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description Hard-delete a memory. For confirmed junk; prefer a 'stale' tag otherwise.
+         */
+        delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Memory */
+        patch: operations["update_memory_api_projects__project_id__memories__memory_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -9902,6 +9986,114 @@ export interface components {
             mean_total_llm_latency_ms?: number | null;
         };
         /**
+         * Memory
+         * @description One memory record of the assistant working on this project.
+         *
+         *     Stored at assistant_memory/{id}/memory.kiln. Concurrent-append safe
+         *     (file per memory); updates are last-writer-wins.
+         */
+        Memory: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the full content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level, citing related Kiln records as prose IDs (e.g. 'run_config 184623901234', 'eval 5678'). Null when the overview says everything. Record observations with conditions ('batch API 429'd at 50rps on 07-04'), never universal rules.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags for filtering (existing Kiln tag rules). Free-form; skills define the working vocabulary (e.g. experiment, dead_end, constraint, api_quirk, session_state; faceted tags like lever_prompt, verdict_accept, evidence_weak).
+             */
+            tags?: string[];
+            /**
+             * Scope
+             * @description Opaque scope string, exact-match filterable. Conventions: 'project' for project-wide knowledge (constraints, environment facts); 'task::<task_id>' for task-scoped work. Not validated against existing records — a convention, not a reference.
+             */
+            scope: string;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * MemoryListResult
+         * @description A page of list_memories results plus the truncation nudge data.
+         *
+         *     remaining_tag_counts is computed over the records beyond this page (the
+         *     not-returned remainder), sorted by count descending. Adapters render it into
+         *     a prompt-facing nudge string like "62 more — filter by tag: probe(18), ...".
+         */
+        MemoryListResult: {
+            /** Listings */
+            listings: components["schemas"]["MemoryListing"][];
+            /** Matched */
+            matched: number;
+            /** Remaining */
+            remaining: number;
+            /** Remaining Tag Counts */
+            remaining_tag_counts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * MemoryListing
+         * @description A single row in a list_memories result. Carries content_length, not content.
+         */
+        MemoryListing: {
+            /** Id */
+            id: string;
+            /** Overview */
+            overview: string;
+            /** Tags */
+            tags: string[];
+            /** Scope */
+            scope: string;
+            /** Content Length */
+            content_length: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+        };
+        /** MemorySummary */
+        MemorySummary: {
+            /** Total */
+            total: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeSummary"][];
+        };
+        /**
          * MessageUsage
          * @description Token usage and cost for a single LLM call or a multi-message sum.
          *
@@ -11711,6 +11903,32 @@ export interface components {
              */
             trusted: boolean;
         };
+        /**
+         * SaveMemoryRequest
+         * @description Body for creating a memory. `scope` is required — there is no default.
+         */
+        SaveMemoryRequest: {
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level. Null when the overview says everything.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[];
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -11774,6 +11992,24 @@ export interface components {
              * @description List of discovered projects.
              */
             projects: components["schemas"]["ProjectInfo"][];
+        };
+        /** ScopeSummary */
+        ScopeSummary: {
+            /** Scope */
+            scope: string;
+            /** Count */
+            count: number;
+            /**
+             * Newest
+             * Format: date-time
+             */
+            newest: string;
+            /** Tags */
+            tags: {
+                [key: string]: number;
+            };
+            /** Untagged */
+            untagged?: number | null;
         };
         /**
          * ScoreSummary
@@ -13553,6 +13789,33 @@ export interface components {
             description?: string | null;
         };
         /**
+         * UpdateMemoryRequest
+         * @description Body for updating a memory. Only provided fields are changed; an explicit
+         *     null clears `content`. Omitted fields are left untouched.
+         */
+        UpdateMemoryRequest: {
+            /**
+             * Overview
+             * @description New one-line summary. No newlines.
+             */
+            overview?: string | null;
+            /**
+             * Content
+             * @description New memory body. Empty or null clears it.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[] | null;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope?: string | null;
+        };
+        /**
          * UpdateRagConfigRequest
          * @description Request to update a RAG config.
          */
@@ -15157,6 +15420,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memories_api_projects__project_id__memories_get: {
+        parameters: {
+            query?: {
+                /** @description Exact-match scope filter. Omit for all scopes. */
+                scope?: string | null;
+                /** @description Memory must have ALL of these tags (AND). Repeat the param for multiple tags; omit for no tag filter. */
+                tags?: string[] | null;
+                /** @description Case-insensitive regex over overview + content. */
+                content_match?: string | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryListResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_memory_api_projects__project_id__memories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_summary_api_projects__project_id__memories_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Limit to one scope. Omit for all scopes. */
+                scope?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_memories_api_projects__project_id__memories_by_ids_get: {
+        parameters: {
+            query: {
+                /** @description The memory ids to fetch. */
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_memory_api_projects__project_id__memories__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_memory_api_projects__project_id__memories__memory_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
                 };
             };
             /** @description Validation Error */
