@@ -1207,7 +1207,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
         tags=["Evals"],
-        openapi_extra=agent_policy_require_approval("Run eval comparison?"),
+        # SSE run endpoint for the UI only. Agents kick off evals via the
+        # non-streaming background job API (POST /api/jobs/evals).
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def run_eval_config(
@@ -1312,9 +1314,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
         tags=["Evals"],
-        openapi_extra=agent_policy_require_approval(
-            "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
-        ),
+        # SSE run endpoint for the UI only. Agents kick off evals via the
+        # non-streaming background job API (POST /api/jobs/evals).
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def run_eval_config_eval(
