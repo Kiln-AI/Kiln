@@ -193,6 +193,23 @@ export class SynthDataGuidanceDataModel {
     this.selected_template.set(template || "custom")
   }
 
+  // Default guidance for the Kiln Pro batch planner. For spec-backed evals we
+  // embed the spec details (mirroring how the eval judge references the spec),
+  // so the plan targets the spec. Legacy evals and fine-tuning are left blank
+  // for now.
+  public kiln_pro_batch_plan_prefill(): string {
+    if (this.gen_type === "eval" && this.spec) {
+      return `Come up with a batch plan to generate evaluation data for the spec "${this.spec.name}".
+
+Here are the details of the spec for reference:
+${this.spec.definition}
+
+Generate a diverse batch that covers the spec thoroughly — representative cases, edge cases, and the behaviors worth emphasizing.`
+    }
+    // Legacy eval (no spec) or fine-tuning: blank for now.
+    return ""
+  }
+
   private apply_selected_template(template: string) {
     if (template == "custom") {
       this.topic_guidance.set(null)

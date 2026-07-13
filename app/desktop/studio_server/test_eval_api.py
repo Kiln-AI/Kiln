@@ -43,9 +43,14 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    MultiTurnSyntheticEvalInputData,
+    SingleTurnEvalInputData,
+    SyntheticUserInfo,
+    UserMessage,
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -2043,6 +2048,53 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
 
 
 @pytest.mark.asyncio
+async def test_get_eval_progress_eval_input_slice(client, mock_task_from_id, mock_task):
+    """An EvalInput-typed eval reports its slice size from the matching
+    EvalInput items — the spec page relies on this instead of a 400."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::eval_slice",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    for i in range(3):
+        EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        ).save_to_file()
+    # An input outside the slice tag is not counted.
+    EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="other")),
+        tags=["other"],
+        parent=mock_task,
+    ).save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval_input_eval/progress"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 3
+    assert result["golden_dataset_size"] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task):
     mock_task_from_id.return_value = mock_task
 
@@ -2178,6 +2230,47 @@ def test_human_score_from_task_run(
 
     # Verify the result
     assert result == expected_score
+
+
+def test_human_score_named_rating_survives_requirement_name_collision():
+    """A task requirement whose name maps to the same json_key as the score
+    must not hide a named rating: spec-created evals store the human verdict
+    under named::{score.name}, and the like-named requirement may be unrated."""
+    task_run = Mock(spec=TaskRun)
+    task_run.output = Mock(spec=TaskOutput)
+    rating = Mock(spec=TaskOutputRating)
+    rating.value = None
+    rating.requirement_ratings = {
+        # No rating under the colliding requirement's id ("req_id"); the
+        # human verdict lives under the named key.
+        "named::My Spec": RequirementRating(
+            value=1.0, type=TaskOutputRatingType.pass_fail
+        ),
+    }
+    task_run.output.rating = rating
+
+    score = EvalOutputScore(
+        name="My Spec", instruction="Test score", type=TaskOutputRatingType.pass_fail
+    )
+    # A requirement named like the score maps to the same json_key.
+    score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {"my_spec": "req_id"}
+
+    from app.desktop.studio_server.eval_api import human_score_from_task_run
+
+    result = human_score_from_task_run(
+        task_run, score, score_key_to_task_requirement_id
+    )
+
+    assert result == 1.0
+
+    # When the colliding requirement IS rated, its rating still wins.
+    rating.requirement_ratings["req_id"] = RequirementRating(
+        value=0.0, type=TaskOutputRatingType.pass_fail
+    )
+    assert (
+        human_score_from_task_run(task_run, score, score_key_to_task_requirement_id)
+        == 0.0
+    )
 
 
 @pytest.mark.asyncio

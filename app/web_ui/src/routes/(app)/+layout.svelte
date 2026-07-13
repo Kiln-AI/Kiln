@@ -7,6 +7,7 @@
   import { update_update_store, update_info } from "$lib/utils/update"
   import { onMount, onDestroy } from "svelte"
   import ProgressWidget from "$lib/ui/progress_widget.svelte"
+  import DataGuideProgressWidget from "$lib/ui/data_guide_progress_widget.svelte"
   import { beforeNavigate } from "$app/navigation"
   import { setContext } from "svelte"
   import { writable } from "svelte/store"
@@ -276,6 +277,22 @@
           >
         </li>
 
+        <!-- TODO(eval-v2): remove this "Evals Legacy" entry and the v1
+             builder routes (/specs/.../spec_builder, /select_workflow,
+             /select_template) once the v2 builder ships GA. Temporary
+             during bug bash so testers can compare v2 vs v1 side-by-side. -->
+        <li class="menu-sm">
+          <a
+            href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}/select_workflow`}
+          >
+            <div class="sidebar-icon">
+              <EvalIcon />
+            </div>
+
+            Evals Legacy
+          </a>
+        </li>
+
         <li class="menu-sm">
           <a
             href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
@@ -422,6 +439,7 @@
         </li>
 
         <li class="mt-auto pt-2 bg-transparent">
+          <DataGuideProgressWidget />
           <ProgressWidget />
         </li>
         {#if $update_info.update_result && $update_info.update_result.has_update}

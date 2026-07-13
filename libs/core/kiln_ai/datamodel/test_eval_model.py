@@ -17,12 +17,14 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
     ExactMatchProperties,
     LlmJudgeProperties,
+    MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
     StepCountCheckProperties,
+    SyntheticUserInfo,
     ToolCallCheckProperties,
     ToolCallSpec,
     UserMessage,
@@ -2391,16 +2393,67 @@ def test_eval_input_single_turn():
 
 
 def test_eval_input_multi_turn():
-    """EvalInput with multi_turn_synthetic data."""
+    """EvalInput with multi_turn_synthetic data carries the typed persona."""
     ei = EvalInput(
         data=MultiTurnSyntheticEvalInputData(
             first_message=UserMessage(text="Hello"),
-            synthetic_user_info={"persona": "student"},
+            synthetic_user_info=SyntheticUserInfo(
+                persona="student", goal="pass the exam"
+            ),
         ),
     )
     assert ei.data.type == "multi_turn_synthetic"
     assert ei.data.first_message.text == "Hello"
-    assert ei.data.synthetic_user_info == {"persona": "student"}
+    assert ei.data.synthetic_user_info.persona == "student"
+    assert ei.data.synthetic_user_info.goal == "pass the exam"
+    assert ei.data.synthetic_user_info.behavior_guidance is None
+
+
+def test_multi_turn_synthetic_requires_synthetic_user_info():
+    """The persona is required — a case without one can't be re-driven."""
+    with pytest.raises(ValidationError, match="synthetic_user_info"):
+        MultiTurnSyntheticEvalInputData(first_message=UserMessage(text="Hello"))
+
+
+def test_synthetic_user_info_preserves_unknown_fields():
+    """extra="allow": fields from newer generators survive a load/dump cycle."""
+    info = SyntheticUserInfo.model_validate(
+        {"persona": "p", "goal": "g", "speaking_style": "terse"}
+    )
+    assert info.model_dump()["speaking_style"] == "terse"
+
+
+def test_eval_input_multi_turn_persists_under_task(mock_task, tmp_path):
+    """Multi-turn EvalInput round-trips through disk with the typed persona."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    ei = EvalInput(
+        parent=mock_task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="opening message"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="frustrated customer",
+                goal="get a refund",
+                behavior_guidance="be polite then escalate",
+            ),
+        ),
+        tags=["eval_slice", "scenario:2"],
+    )
+    ei.save_to_file()
+
+    loaded_task = Task.load_from_file(str(task_path))
+    inputs = loaded_task.eval_inputs(readonly=True)
+    assert len(inputs) == 1
+    data = inputs[0].data
+    assert isinstance(data, MultiTurnSyntheticEvalInputData)
+    assert data.first_message is not None
+    assert data.first_message.text == "opening message"
+    assert data.synthetic_user_info.persona == "frustrated customer"
+    assert data.synthetic_user_info.goal == "get a refund"
+    assert data.synthetic_user_info.behavior_guidance == "be polite then escalate"
+    assert inputs[0].tags == ["eval_slice", "scenario:2"]
 
 
 def test_eval_input_with_reference():
@@ -2490,6 +2543,135 @@ class TestEvalTaskInput:
         """final_message is required; omitting it raises ValidationError."""
         with pytest.raises(ValidationError, match="final_message"):
             EvalTaskInput()  # type: ignore[call-arg]
+
+
+class TestEvalTaskInputFromEvalInput:
+    def _run_output(self, mock_task):
+        from kiln_ai.datamodel.task_output import (
+            DataSource,
+            DataSourceType,
+            TaskOutput,
+        )
+        from kiln_ai.datamodel.task_run import TaskRun
+
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "m",
+                "model_provider": "p",
+                "adapter_name": "a",
+            },
+        )
+        return TaskRun(
+            input="ignored",
+            input_source=source,
+            output=TaskOutput(output="final reply", source=source),
+            trace=[
+                {"role": "user", "content": "opening message"},
+                {"role": "assistant", "content": "final reply"},
+            ],
+            parent=mock_task,
+        )
+
+    def test_single_turn(self, mock_task):
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+            reference={"expected": "A"},
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input == "Q"
+        assert eti.final_message == "final reply"
+        assert eti.reference_data == {"expected": "A"}
+
+    def test_multi_turn(self, mock_task):
+        """Multi-turn: the seed message is the task_input; the conversation
+        rides the trace."""
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input == "opening message"
+        assert eti.final_message == "final reply"
+        assert eti.trace is not None
+        assert len(eti.trace) == 2
+
+    def test_multi_turn_without_first_message(self, mock_task):
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input is None
+
+
+# ── MultiTurnDriveConfig Tests ───────────────────────────────────────────
+
+
+class TestMultiTurnDriveConfig:
+    def test_valid(self):
+        cfg = MultiTurnDriveConfig(
+            model_name="claude_4_5_haiku", model_provider="openrouter", turns=5
+        )
+        assert cfg.turns == 5
+
+    @pytest.mark.parametrize("turns", [0, -1, 21])
+    def test_turns_bounds(self, turns):
+        with pytest.raises(ValidationError, match="turns"):
+            MultiTurnDriveConfig(
+                model_name="m", model_provider="openrouter", turns=turns
+            )
+
+    def test_unknown_provider_string_accepted(self):
+        """model_provider is a plain string, not the enum — persisted evals
+        must load on builds that don't know the provider yet."""
+        cfg = MultiTurnDriveConfig(
+            model_name="m", model_provider="a_future_provider", turns=1
+        )
+        assert cfg.model_provider == "a_future_provider"
+
+    def test_persists_on_eval(self, mock_task, tmp_path):
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        eval = Eval(
+            name="drive config eval",
+            eval_input_filter_id="tag::eval_x",
+            eval_configs_filter_id="tag::golden_x",
+            output_scores=[
+                EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
+            ],
+            multi_turn_drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku",
+                model_provider="openrouter",
+                turns=5,
+            ),
+            parent=mock_task,
+        )
+        eval.save_to_file()
+
+        loaded_task = Task.load_from_file(str(task_path))
+        loaded = loaded_task.evals(readonly=True)[0]
+        assert loaded.multi_turn_drive_config is not None
+        assert loaded.multi_turn_drive_config.model_name == "claude_4_5_haiku"
+        assert loaded.multi_turn_drive_config.model_provider == "openrouter"
+        assert loaded.multi_turn_drive_config.turns == 5
+
+    def test_defaults_to_none_on_eval(self, mock_task):
+        eval = Eval(
+            name="no drive config",
+            eval_set_filter_id="tag::eval_x",
+            eval_configs_filter_id="tag::golden_x",
+            output_scores=[
+                EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
+            ],
+            parent=mock_task,
+        )
+        assert eval.multi_turn_drive_config is None
 
 
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───

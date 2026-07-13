@@ -271,9 +271,15 @@
     if (eval_progress) {
       eval_set_size = " (" + eval_progress.dataset_size + " items)"
     }
+    // The eval slice is TaskRun-typed (eval_set_filter_id) or EvalInput-typed
+    // (eval_input_filter_id). Only the TaskRun kind links to the dataset view
+    // — EvalInput items don't appear there.
     properties.push({
       name: "Eval Dataset",
-      value: evaluator.eval_set_filter_id + eval_set_size,
+      value:
+        (evaluator.eval_set_filter_id ??
+          evaluator.eval_input_filter_id ??
+          "unknown") + eval_set_size,
       link: linkFromFilterId(project_id, task_id, evaluator.eval_set_filter_id),
     })
     let golden_dataset_size = ""
