@@ -81,9 +81,9 @@
   let loading = true
   let load_error: KilnError | null = null
 
-  // The multiturn view is a full-height chat layout (scrollable transcript +
-  // composer pinned to the bottom), so it needs the app shell's bottom
-  // padding removed. Single-turn keeps the normal padded document flow.
+  // The multiturn view is a chat layout where the composer sits at the bottom
+  // of the conversation with its own padding, so it needs the app shell's
+  // bottom padding removed. Single-turn keeps the normal padded document flow.
   $: is_multiturn = task?.turn_mode === "multiturn"
   const noLayoutBottomPadding = getContext<Writable<boolean> | undefined>(
     "noLayoutBottomPadding",
@@ -542,9 +542,16 @@
   // region) — we observe this element for content mutations and pin the window
   // scroll to the bottom while things settle.
   let transcript_scroll_el: HTMLElement | null = null
+  // The composer block (the last message's composer + "Show Raw Data"). We
+  // scroll to the bottom of THIS element rather than the document's or the
+  // chat column's: the document height is dominated by the Options sidebar
+  // when the conversation is short, and the chat column itself stretches to
+  // the sidebar's height (flex-row align-items: stretch), so neither of their
+  // bottoms tracks the conversation. The composer block's bottom always lands
+  // just past "Show Raw Data", keeping the latest turn and composer in view.
+  let composer_block_el: HTMLElement | null = null
   // Scroll the page to the latest turn whenever a run renders — both on
-  // initial load and after sending a new turn. The composer is pinned
-  // separately, so "bottom" lands on the newest message, not the textbox.
+  // initial load and after sending a new turn.
   let scrolled_for_run_id: string | null = null
   $: if (
     run &&
@@ -624,9 +631,19 @@
     if (!el || typeof MutationObserver === "undefined") return
     stop_pinning_transcript()
     const stick = () => {
-      window.scrollTo({
-        top: document.documentElement.scrollHeight,
-      })
+      const block = composer_block_el
+      if (!block) {
+        window.scrollTo({ top: document.documentElement.scrollHeight })
+        return
+      }
+      // Scroll so the bottom of the composer block ("Show Raw Data") sits at
+      // the bottom of the viewport, regardless of how tall the Options sidebar
+      // is or whether it wrapped below in the mobile layout.
+      const target =
+        window.scrollY +
+        block.getBoundingClientRect().bottom -
+        window.innerHeight
+      window.scrollTo({ top: Math.max(0, target) })
     }
     stick()
     settle_observer = new MutationObserver(() => requestAnimationFrame(stick))
@@ -887,17 +904,12 @@
         {@const multiturn_task_id = task.id}
         <!-- Chat-style layout: the whole page scrolls (no inner scroll
              regions). The conversation flows top-to-bottom with the composer
-             pinned to the bottom of the viewport via position:sticky; the
+             sitting in normal flow directly below the last message; the
              Options sidebar sits at the top of the page in normal flow. -->
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-            <!-- The chat/input fills the left column. The min-height keeps the
-                 sticky composer at the bottom of the viewport even for short
-                 conversations. -->
-            <div
-              class="grow flex flex-col min-w-0 xl:min-h-[calc(100vh-11rem)]"
-            >
-              <div bind:this={transcript_scroll_el} class="min-w-0 xl:flex-1">
+            <div class="grow flex flex-col min-w-0">
+              <div bind:this={transcript_scroll_el} class="min-w-0">
                 <div class="flex w-full flex-col gap-6">
                   {#if run_has_children}
                     <div role="alert" data-testid="run-has-children-banner">
@@ -949,7 +961,7 @@
                   {/if}
                 </div>
               </div>
-              <div class="sticky bottom-0 z-10 mt-6 bg-base-100 pb-6 pt-4">
+              <div bind:this={composer_block_el} class="bg-base-100 pb-6 pt-2">
                 <div class="flex w-full flex-col gap-2">
                   {#if fork_target}
                     <MultiturnComposer
@@ -989,7 +1001,7 @@
                 </div>
               </div>
             </div>
-            <div class="w-72 2xl:w-96 flex-none flex flex-col xl:pl-4">
+            <div class="w-72 2xl:w-96 flex-none flex flex-col xl:pl-4 pb-8">
               <div class="text-xl font-bold mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}

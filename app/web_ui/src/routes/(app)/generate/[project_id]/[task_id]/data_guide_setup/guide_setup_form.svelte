@@ -6,6 +6,7 @@
   import { isKilnAgentRunConfig } from "$lib/types"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import RunOptionsTiles from "./run_options_tiles.svelte"
+  import GenerationSettingsTrigger from "./generation_settings_trigger.svelte"
   import AddExampleDialog, {
     type GuideSample,
   } from "$lib/components/add_example_dialog.svelte"
@@ -80,6 +81,9 @@
   // Bound to the shared RunOptionsTiles instance so we can pull the configured
   // run configs at submit time.
   let run_options_tiles: RunOptionsTiles | null = null
+  // Friendly names of the selected generation model + provider, for the trigger.
+  let generation_model_name = ""
+  let generation_provider = ""
 
   function handle_continue() {
     // FormContainer flips submitting=true before dispatching submit, and expects
@@ -208,7 +212,12 @@
     {/if}
   </div>
 
-  <RunOptionsTiles bind:this={run_options_tiles} mode="link" {project_id} />
+  <RunOptionsTiles
+    bind:this={run_options_tiles}
+    bind:selected_model_name_display={generation_model_name}
+    bind:selected_provider_display={generation_provider}
+    {project_id}
+  />
   {#if !has_examples}
     <div class="flex justify-end">
       <Warning
@@ -219,16 +228,12 @@
       />
     </div>
   {/if}
+  <GenerationSettingsTrigger
+    model_name={generation_model_name}
+    provider={generation_provider}
+    open={open_generation_options}
+  />
 </FormContainer>
-<div class="flex justify-end mt-2">
-  <button
-    type="button"
-    class="link text-sm text-gray-500 hover:text-gray-700"
-    on:click={open_generation_options}
-  >
-    Generation options
-  </button>
-</div>
 
 <AddExampleDialog
   bind:this={add_example_dialog}

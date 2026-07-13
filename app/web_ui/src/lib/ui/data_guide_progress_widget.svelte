@@ -70,12 +70,12 @@
       : { label: "In Progress", cls: "badge-outline badge-primary" }
 
   $: body = is_failed
-    ? "The draft didn't finish."
+    ? "We couldn't draft your data guide. Please try again."
     : job?.status === "succeeded"
-      ? "Your data guide is ready to"
+      ? "Your data guide is ready to "
       : "Drafting your data guide."
 
-  $: cta = is_failed ? "View" : job?.status === "succeeded" ? "review" : ""
+  $: cta = is_failed ? "" : job?.status === "succeeded" ? "review." : ""
 </script>
 
 {#if visible && job}
@@ -96,7 +96,7 @@
     <div class="font-medium pr-6">Data Guide</div>
     <div class="font-light">
       {body}{#if cta}
-        <span class="text-primary font-medium">{cta}</span>.{/if}
+        <span class="text-primary font-medium">{cta}</span>{/if}
     </div>
     <div class="badge px-3 py-1 gap-1 text-xs {badge.cls}">
       {#if is_running}

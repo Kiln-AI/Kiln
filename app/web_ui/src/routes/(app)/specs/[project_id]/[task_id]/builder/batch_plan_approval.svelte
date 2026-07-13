@@ -3,11 +3,13 @@
   // scenario per conversation before model calls are spent driving them.
   // While the pipeline runs, the same table doubles as the live status
   // board (per-row pills), read-only.
-  // Sibling of /generate's kiln_pro_batch_plan.svelte; children are shared.
+  // Sibling of /generate's kiln_pro_batch_plan.svelte; the summary child is
+  // shared, but the table is builder-local (plan_prompts_table) — /generate's
+  // table is simpler and doesn't carry edit/status/pagination.
   import KilnProPlanSummary from "../../../../generate/[project_id]/[task_id]/kiln_pro_plan_summary.svelte"
-  import KilnProPromptsTable, {
+  import PlanPromptsTable, {
     type RowStatusPill,
-  } from "../../../../generate/[project_id]/[task_id]/kiln_pro_prompts_table.svelte"
+  } from "./plan_prompts_table.svelte"
 
   export let plan: { prompts: string[]; summary: string }
   export let on_approve: () => void
@@ -72,7 +74,7 @@
       out_of_sync={summary_out_of_sync}
     />
   {/if}
-  <KilnProPromptsTable
+  <PlanPromptsTable
     prompts={plan.prompts}
     on_delete={running ? null : on_delete_prompt}
     on_edit={running ? null : on_edit_prompt}

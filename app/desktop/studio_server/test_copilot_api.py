@@ -1,6 +1,8 @@
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+
 import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
@@ -1255,6 +1257,32 @@ class TestDataGuideJob:
         assert response.status_code == 500
         assert "job id" in response.json()["message"].lower()
 
+    def test_start_kiln_server_unreachable_returns_502(self, client, mock_api_key):
+        """A transport failure reaching kiln_server is an upstream problem, not
+        ours: 502 with a message that says where to look, not a bare 500."""
+        sdk_mock = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        p1, p2, p3 = self._patches(_START_FN, sdk_mock)
+        with p1, p2, p3:
+            response = client.post(self.START_URL, json=self._start_payload())
+        assert response.status_code == 502
+        assert "data guide" in response.json()["message"].lower()
+
+    def test_start_kiln_server_404_becomes_502(self, client, mock_api_key):
+        """Start names no resource, so an upstream 404 can only mean the route
+        isn't deployed (an older kiln_server). Surfacing it as our own 404 would
+        read as "this studio endpoint doesn't exist" — report 502 instead."""
+        sdk_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.NOT_FOUND,
+                content=b'{"detail":"Not Found"}',
+            )
+        )
+        p1, p2, p3 = self._patches(_START_FN, sdk_mock)
+        with p1, p2, p3:
+            response = client.post(self.START_URL, json=self._start_payload())
+        assert response.status_code == 502
+        assert "data guide" in response.json()["message"].lower()
+
     # --- status -------------------------------------------------------------
 
     def test_status_success(self, client, mock_api_key):
@@ -1409,9 +1437,9 @@ class TestDataGuideJob:
         assert response.status_code == 500
         assert "empty" in response.json()["message"].lower()
 
-    def test_result_not_ready_returns_425(self, client, mock_api_key):
+    def test_result_not_ready_returns_409(self, client, mock_api_key):
         """If the result endpoint returns before the job is actually succeeded
-        (output not yet committed), surface a distinct "still generating" 425
+        (output not yet committed), surface a distinct "still generating" 409
         rather than mislabeling it as an empty draft."""
         sdk_mock = AsyncMock(
             return_value=_make_sdk_response(
@@ -1421,8 +1449,46 @@ class TestDataGuideJob:
         p1, p2, p3 = self._patches(_RESULT_FN, sdk_mock)
         with p1, p2, p3:
             response = client.get(self.RESULT_URL)
-        assert response.status_code == 425
+        assert response.status_code == 409
         assert "still being generated" in response.json()["message"].lower()
+
+    # --- job-addressed 404s stay 404s ---------------------------------------
+
+    @pytest.mark.parametrize(
+        "fn_path,url_attr",
+        [(_STATUS_FN, "STATUS_URL"), (_RESULT_FN, "RESULT_URL")],
+    )
+    def test_job_addressed_404_is_propagated(
+        self, client, mock_api_key, fn_path, url_attr
+    ):
+        """Unlike start, these requests name a job. An upstream 404 there really
+        does mean "no such job", so it must reach the client as a 404 — not be
+        rewritten into an upstream-failure 502."""
+        sdk_mock = AsyncMock(
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.NOT_FOUND,
+                content=b'{"message":"Job not found"}',
+            )
+        )
+        p1, p2, p3 = self._patches(fn_path, sdk_mock)
+        with p1, p2, p3:
+            response = client.get(getattr(self, url_attr))
+        assert response.status_code == 404
+        assert response.json()["message"] == "Job not found"
+
+    @pytest.mark.parametrize(
+        "fn_path,url_attr",
+        [(_STATUS_FN, "STATUS_URL"), (_RESULT_FN, "RESULT_URL")],
+    )
+    def test_job_kiln_server_unreachable_returns_502(
+        self, client, mock_api_key, fn_path, url_attr
+    ):
+        sdk_mock = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        p1, p2, p3 = self._patches(fn_path, sdk_mock)
+        with p1, p2, p3:
+            response = client.get(getattr(self, url_attr))
+        assert response.status_code == 502
+        assert "data guide" in response.json()["message"].lower()
 
 
 class TestParseImportFile:

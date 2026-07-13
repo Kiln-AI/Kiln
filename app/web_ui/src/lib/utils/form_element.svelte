@@ -48,7 +48,7 @@
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let height: "base" | "medium" | "large" | "xl" = "base"
+  export let height: "base" | "compact" | "medium" | "large" | "xl" = "base"
   export let empty_label: string = "Select an option"
   export let empty_state_message: string = "No options available"
   export let empty_state_subtitle: string | null = null
@@ -153,6 +153,7 @@
 
   const height_class = {
     base: "h-18",
+    compact: "h-24",
     medium: "h-36",
     large: "h-60",
     xl: "h-96",

@@ -936,16 +936,22 @@ def test_is_retryable_error_returns_false(error):
     assert _is_retryable_error(error) is False
 
 
+def wrapped_rate_limit_error(detail: str) -> KilnRunError:
+    """A provider rate limit as the model adapter surfaces it: wrapped in
+    KilnRunError whose own message is the genericized user-facing text, with
+    the provider detail only on the inner error."""
+    return KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=litellm.RateLimitError(detail, "provider", "model", None),
+    )
+
+
 def test_is_retryable_error_unwraps_kiln_run_error():
     # The model adapter wraps provider exceptions in KilnRunError (to carry the
     # partial trace), so the classifier must look through the wrapper — otherwise
     # rate limits from a real adapter run would never be retried.
-    wrapped = KilnRunError(
-        message="Rate limit exceeded. Wait a moment and try again.",
-        partial_trace=None,
-        original=litellm.RateLimitError("rate limited", "provider", "model", None),
-    )
-    assert _is_retryable_error(wrapped) is True
+    assert _is_retryable_error(wrapped_rate_limit_error("rate limited")) is True
 
 
 def test_is_retryable_error_wrapped_non_transient_returns_false():
@@ -964,11 +970,7 @@ def test_is_retryable_error_unwraps_nested_kiln_run_error():
     nested = KilnRunError(
         message="Rate limit exceeded. Wait a moment and try again.",
         partial_trace=None,
-        original=KilnRunError(
-            message="Rate limit exceeded. Wait a moment and try again.",
-            partial_trace=None,
-            original=litellm.RateLimitError("rate limited", "provider", "model", None),
-        ),
+        original=wrapped_rate_limit_error("rate limited"),
     )
     assert _is_retryable_error(nested) is True
 
@@ -3126,3 +3128,47 @@ class TestRunV2MultiTurnRedrive:
         assert saved.skipped_reason == SkippedReason.extraction_failed.value
         assert saved.output is None
         assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
+    async def test_transient_drive_error_classifies_retryable(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+    ):
+        """A provider rate limit mid-conversation arrives wrapped in
+        KilnRunError (whose own message is genericized user-facing text).
+        run_job must unwrap it, classify the failure as transient so the
+        job runner retries the re-drive, keep the provider detail for the
+        error log, and persist nothing for the failed attempt."""
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=multi_turn_eval_input,
+            eval_config=mock_v2_redrive_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        mid_drive_error = wrapped_rate_limit_error(
+            "rate limit exceeded, please try again later"
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=RecordingStubV2Eval(mock_v2_redrive_config),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(side_effect=mid_drive_error),
+            ),
+        ):
+            with pytest.raises(RetryableError) as exc_info:
+                await runner.run_job(job)
+
+        assert "rate limit exceeded, please try again later" in str(exc_info.value)
+        assert "Wait a moment" not in str(exc_info.value)
+        assert len(mock_v2_redrive_config.runs(readonly=True)) == 0

@@ -23,7 +23,7 @@
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   import BatchPlanApproval from "./batch_plan_approval.svelte"
-  import type { RowStatusPill } from "../../../../generate/[project_id]/[task_id]/kiln_pro_prompts_table.svelte"
+  import type { RowStatusPill } from "./plan_prompts_table.svelte"
   import { multiturn_plan_guidance } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,

@@ -105,32 +105,29 @@
           </thead>
           <tbody>
             <tr>
-              <th class="font-bold text-xs text-gray-500">Document Upload</th>
+              <th class="font-bold text-xs text-gray-500"
+                >AI Guided Authoring</th
+              >
+              <td class="text-center">Manual</td>
+              <td class="text-center border-l">Automatic</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-gray-500"
+                >Style & Constraints Discovery</th
+              >
+              <td class="text-center">Manual</td>
+              <td class="text-center border-l">Automatic</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-gray-500"
+                >Learn From Documents</th
+              >
               <td class="text-center">—</td>
               <td class="text-center border-l">Supported</td>
             </tr>
             <tr>
-              <th class="font-bold text-xs text-gray-500">Guide Authoring</th>
-              <td class="text-center">Manual</td>
-              <td class="text-center border-l">Automatic</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-gray-500"
-                >Input Pattern Discovery</th
-              >
-              <td class="text-center">Manual</td>
-              <td class="text-center border-l">Automatic</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-gray-500"
-                >Style & Constraint Extraction</th
-              >
-              <td class="text-center">Manual</td>
-              <td class="text-center border-l">Automatic</td>
-            </tr>
-            <tr>
               <th class="font-bold text-xs text-gray-500">Approx. Effort</th>
-              <td class="text-center">~30 min</td>
+              <td class="text-center">~15 min</td>
               <td class="text-center border-l">~5 min</td>
             </tr>
             <tr class="border-b">

@@ -8517,14 +8517,8 @@ export interface components {
              */
             prompts: string[];
             /**
-             * Gen Type
-             * @description The type of data generation: eval or training.
-             * @enum {string}
-             */
-            gen_type: "training" | "eval";
-            /**
              * Data Guide
-             * @description Optional input data guide to include in every input-generation call.
+             * @description The input data guide to include in every input-generation call. Send it when the user has 'Use Data Guide' on, and null when off — null means 'do not use a guide', not 'fall back to the task's saved guide'.
              */
             data_guide?: string | null;
             /** @description The run config properties (model, provider, tools, skills) to use for input generation. */
