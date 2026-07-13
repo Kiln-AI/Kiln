@@ -2308,6 +2308,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Judge Feedback Batches
+         * @description List all judge feedback batches for a task.
+         */
+        get: operations["list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get"];
+        put?: never;
+        /**
+         * Create Judge Feedback Batch
+         * @description Create a judge feedback batch config. Run it later with `/judge_feedback_batches/{id}/run`.
+         */
+        post: operations["create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Judge Feedback Batch
+         * @description Run a judge feedback batch: sample tagged dataset items, judge their outputs (existing, or
+         *     freshly generated when the batch has generate_outputs=true), and return the failing examples
+         *     + feedback.
+         *
+         *     Runs synchronously and returns once judging completes. Each result is persisted as a child
+         *     run (fetch them later via `GET /judge_feedback_batches/{id}/runs`); the returned counts
+         *     (num_judged, failing_count, train_set_size, hit_cap) and any per-item `errors` are FYI for
+         *     the caller's loop. Errors don't abort the run — partial results are still persisted, and
+         *     re-running the job retries only the un-persisted (errored or not-yet-judged) items.
+         */
+        post: operations["run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create And Run Judge Feedback Batch
+         * @description Create a judge feedback batch and run it immediately (synchronous), returning the failing examples
+         *     + feedback.
+         */
+        post: operations["create_and_run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Judge Feedback Batch
+         * @description Get a judge feedback batch config.
+         */
+        get: operations["get_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches/{judge_feedback_batch_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Judge Feedback Batch Runs
+         * @description Get the per-item judge results (task_run_id, scores, feedback, passed) for a judge feedback batch.
+         */
+        get: operations["get_judge_feedback_batch_runs_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/validate_input_transform_template": {
         parameters: {
             query?: never;
@@ -3706,6 +3819,380 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/auto/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable auto mode for a chat
+         * @description Start a server-owned auto run that continues the chat autonomously.
+         *
+         *     Begins a fresh upstream continuation from the seed's ``trace_id`` (resolving
+         *     the accepted ``enable_auto_mode`` call as enabled). The run is supervised by
+         *     the registry and survives client disconnects.
+         */
+        post: operations["enable_auto_mode_api_chat_auto_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/auto/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline auto mode and resume interactive chat
+         * @description Resolve the ``enable_auto_mode`` call as declined and resume the normal
+         *     interactive chat stream. Any sibling tool calls are resolved as denied.
+         */
+        post: operations["decline_auto_mode_api_chat_auto_decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/auto/{run_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop an auto run
+         * @description Cooperatively cancel the run. Idempotent — stopping an unknown or
+         *     already-terminal run is a no-op.
+         */
+        post: operations["stop_auto_run_api_chat_auto__run_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/auto/{run_id}/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a user message into an auto-mode conversation
+         * @description Inject a user message without disabling auto mode (Revision R1).
+         *
+         *     If a burst is active the message is queued and delivered at the next round
+         *     boundary; if the conversation is idle a new burst is started seeded with
+         *     the message. The echoed message and resulting events arrive on the run's
+         *     observer stream. 404 if the run is unknown or its flag is already off.
+         */
+        post: operations["send_auto_message_api_chat_auto__run_id__message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/auto/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream auto run events
+         * @description Pure-observer SSE stream of a run's chat events (404 if unknown/GC'd).
+         */
+        get: operations["stream_auto_events_api_chat_auto__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/auto/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve a trace id to an active auto run
+         * @description Resolve a (possibly stale) trace id to the active auto run for its
+         *     conversation, returning the run id and the run's CURRENT leaf trace id.
+         *
+         *     Used by the web UI to resync after a hard refresh: the stored trace id is
+         *     the leaf the tab last saw, but the server-owned run advances the leaf each
+         *     round while the tab is gone. The registry's whole-chain trace index (every
+         *     seen trace id → run) matches the stale id anyway, and the returned
+         *     ``current_trace_id`` lets the client hydrate the rounds it missed before
+         *     attaching to the live events stream. 404 if no active run owns the
+         *     trace.
+         */
+        get: operations["resolve_auto_run_api_chat_auto_resolve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/auto/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active auto runs */
+        get: operations["list_auto_sessions_api_chat_auto_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Job Events
+         * @description Server-sent events for jobs. Emits an initial `snapshot`, then per-job
+         *     `job` and `deleted` events. A pure observer: disconnecting never stops a job.
+         */
+        get: operations["stream_job_events_api_jobs_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Eval Job
+         * @description Kick off an eval as a background job and return immediately.
+         *
+         *     A typed, approval-gated entry point for agents. Unlike the UI's SSE
+         *     run endpoints, this does not stream — the job runs in the background.
+         *     Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
+         *     result.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/judge_feedback_batch/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Judge Feedback Batch Job
+         * @description Run a pre-existing judge feedback batch as a background job, returning immediately.
+         *
+         *     Create the batch first via `POST /judge_feedback_batches` (returns its id), then run
+         *     it here — mirroring how eval jobs run a pre-existing eval, so the batch id lives in the
+         *     job's params and is retrievable via `GET /api/jobs/{id}` even if the run fails. Lets an
+         *     agent fire many gates and `POST /api/jobs/wait` on all of them at once instead of
+         *     blocking on each synchronous call. The aggregate scores/usage/latency are on the job
+         *     result; the per-item runs (with the judge's feedback) are persisted — fetch them via
+         *     `GET /judge_feedback_batches/{id}/runs`.
+         */
+        post: operations["run_judge_feedback_batch_job_api_jobs_judge_feedback_batch_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records (order preserved). A pure observer, like the SSE stream:
+         *     disconnecting tears down only the awaiter, never the jobs. The timeout
+         *     bounds the whole set. Empty `ids` returns an empty list.
+         */
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_jobs__id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Job */
+        delete: operations["delete_job_api_jobs__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job Result */
+        get: operations["get_job_result_api_jobs__id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job Errors */
+        get: operations["get_job_errors_api_jobs__id__errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Job */
+        post: operations["pause_job_api_jobs__id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Job */
+        post: operations["resume_job_api_jobs__id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_api_jobs__id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4154,6 +4641,21 @@ export interface components {
             /** Id */
             id: string;
         };
+        /**
+         * AutoRunStatus
+         * @enum {string}
+         */
+        AutoRunStatus: "running" | "idle" | "stopped" | "disabled";
+        /** AutoSessionItem */
+        AutoSessionItem: {
+            /** Run Id */
+            run_id: string;
+            /** Current Trace Id */
+            current_trace_id?: string | null;
+            status: components["schemas"]["AutoRunStatus"];
+            /** Reason */
+            reason?: string | null;
+        };
         /** AvailableModels */
         AvailableModels: {
             /** Provider Name */
@@ -4185,6 +4687,11 @@ export interface components {
              */
             provider_type: "builtin" | "custom";
         };
+        /**
+         * BackgroundJobStatus
+         * @enum {string}
+         */
+        BackgroundJobStatus: "pending" | "running" | "paused" | "succeeded" | "failed" | "cancelled";
         /**
          * BasePrompt
          * @description A prompt for a task. This is the basic data storage format which can be used throughout a project.
@@ -4637,12 +5144,20 @@ export interface components {
             title?: string | null;
             /** Updated At */
             updated_at?: string | null;
+            /**
+             * Auto Active
+             * @default false
+             */
+            auto_active: boolean;
+            /** Auto Run Id */
+            auto_run_id?: string | null;
         };
         /** ChatSessionSnapshot */
         ChatSessionSnapshot: {
             /** Id */
             id: string;
             task_run: components["schemas"]["TaskRunSnapshot"];
+            context_usage?: components["schemas"]["ContextUsage"] | null;
         };
         /**
          * ChatStrategy
@@ -5142,6 +5657,25 @@ export interface components {
              */
             mode: "must_contain" | "must_not_contain";
         };
+        /**
+         * ContextUsage
+         * @description Proxy mirror of the kiln_server ``ContextUsage`` value object.
+         *
+         *     Carries only the gauge numbers and the ``compacted`` flag — never any trace
+         *     content — so it is safe to surface to the web UI. Every field is optional so
+         *     an older upstream that doesn't emit ``context_usage`` (or emits a partial
+         *     object) never 500s the proxy; the web UI hides the gauge when it's absent.
+         */
+        ContextUsage: {
+            /** Context Tokens */
+            context_tokens?: number | null;
+            /** Context Limit */
+            context_limit?: number | null;
+            /** Context Percent */
+            context_percent?: number | null;
+            /** Compacted */
+            compacted?: boolean | null;
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -5373,6 +5907,73 @@ export interface components {
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /** @description Provenance: why this fine-tune exists and what it was derived from. */
             provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
+        };
+        /**
+         * CreateJobResponse
+         * @description Response returned when a job is created.
+         */
+        CreateJobResponse: {
+            /**
+             * Job Id
+             * @description The id of the newly created job.
+             */
+            job_id: string;
+            /** @description The job's status immediately after creation. */
+            status: components["schemas"]["BackgroundJobStatus"];
+        };
+        /**
+         * CreateJudgeFeedbackBatchRequest
+         * @description Request to create a judge feedback batch.
+         */
+        CreateJudgeFeedbackBatchRequest: {
+            /**
+             * Name
+             * @description The name of the judge feedback batch. A memorable name is generated if omitted.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description A description of the judge feedback batch.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled. At least one required.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config. Metadata when judging existing outputs; required and run on each item when generate_outputs=true.
+             */
+            run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run run_config_id on each sampled item to generate a fresh output and judge that (gate a candidate, scoped to the tagged items). If false, judge existing outputs.
+             * @default false
+             */
+            generate_outputs: boolean;
+            /**
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
+             */
+            stop_after_failures?: number | null;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
         };
         /** CreateKilnCopilotApiKeyRequest */
         CreateKilnCopilotApiKeyRequest: {
@@ -6062,6 +6663,15 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DeclineAutoRequest */
+        DeclineAutoRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Enable Tool Call Id */
+            enable_tool_call_id: string;
+            /** Siblings */
+            siblings?: components["schemas"]["ToolCallInfo"][];
+        };
         /**
          * DefaultLlmJudgePromptResponse
          * @description Response from the default LLM judge prompt endpoint.
@@ -6296,6 +6906,29 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
+        };
+        /**
+         * EnableAutoRequest
+         * @description ``AutoChatSeed`` plus the optional model-supplied reason recorded on the run.
+         */
+        EnableAutoRequest: {
+            /** Trace Id */
+            trace_id?: string | null;
+            /** Enable Tool Call Id */
+            enable_tool_call_id?: string | null;
+            /** Pending Tool Calls */
+            pending_tool_calls?: components["schemas"]["ToolCallInfo"][];
+            /** Extra Messages */
+            extra_messages?: {
+                [key: string]: unknown;
+            }[];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** EnableAutoResponse */
+        EnableAutoResponse: {
+            /** Run Id */
+            run_id: string;
         };
         /**
          * EphemeralSplitChunk
@@ -6599,6 +7232,39 @@ export interface components {
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
+        /** EvalJobParams */
+        EvalJobParams: {
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
+            task_id: string;
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
+            eval_id: string;
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
+            run_config_id: string;
+            /**
+             * Concurrency
+             * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
+             */
+            concurrency?: number | null;
+        };
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -8214,6 +8880,156 @@ export interface components {
             template: string;
         };
         /**
+         * JobError
+         * @description Small failure summary stamped on the record. Detail lives in the error log.
+         */
+        JobError: {
+            /**
+             * Error
+             * @description Short human-readable summary of why the job failed.
+             */
+            error?: string | null;
+            /**
+             * Detail
+             * @description Optional structured context for the failure. Fuller detail lives in the error log.
+             */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * JobProgress
+         * @description Count-based progress for a job.
+         *
+         *     Processed = success + error; remaining = total - success - error. The error
+         *     field is a count only — the actual messages live in the per-run error log.
+         */
+        JobProgress: {
+            /**
+             * Total
+             * @description Total number of items to process, or null when the size is not yet known.
+             */
+            total?: number | null;
+            /**
+             * Success
+             * @description Number of items processed successfully so far.
+             * @default 0
+             */
+            success: number;
+            /**
+             * Error
+             * @description Number of items that failed so far. A count only — the actual messages live in the per-run error log.
+             * @default 0
+             */
+            error: number;
+            /**
+             * Message
+             * @description Optional human-readable status line describing the current step.
+             */
+            message?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description UTC timestamp of the most recent progress update.
+             */
+            updated_at?: string;
+        };
+        /**
+         * JobRecord
+         * @description Ephemeral, in-memory bookkeeping for a single job. Never persisted to disk.
+         */
+        JobRecord: {
+            /**
+             * Id
+             * @description Unique identifier for this job.
+             */
+            id: string;
+            /**
+             * Type
+             * @description Registered job type name, determining which worker runs it.
+             */
+            type: string;
+            /** @description Current lifecycle status: pending, running, paused, succeeded, failed, or cancelled. */
+            status: components["schemas"]["BackgroundJobStatus"];
+            /**
+             * Run Id
+             * @description Identifier of the current (or most recent) run attempt, used to locate its error log. Null before the job first starts.
+             */
+            run_id?: string | null;
+            /** @description Generic count-based progress snapshot for the job. */
+            progress?: components["schemas"]["JobProgress"];
+            /**
+             * Progress Detail
+             * @description Optional typed, worker-specific progress detail (validated against the worker's progress_model). Null for workers whose generic count progress is enough.
+             */
+            progress_detail?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Properties
+             * @description Optional static, worker-published descriptive properties for this job (validated against the worker's properties_model). Derived once from params at create time and unchanged over the run.
+             */
+            properties?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Params
+             * @description The validated parameters this job was created with.
+             */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Result
+             * @description The job's output, present only once it has succeeded. Null otherwise.
+             */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description Failure summary, present only when the job has failed. Null otherwise. */
+            error?: components["schemas"]["JobError"] | null;
+            /**
+             * Metadata
+             * @description Free-form attribution passed in at creation, stored verbatim.
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Project Id
+             * @description Project this job is scoped to, used for filtering and visibility.
+             */
+            project_id?: string | null;
+            /**
+             * Supports Pause
+             * @description Whether this job type can be paused and resumed.
+             * @default false
+             */
+            supports_pause: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             * @description UTC timestamp of when the job was created.
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description UTC timestamp of the most recent change to the job record.
+             */
+            updated_at?: string;
+            /**
+             * Started At
+             * @description UTC timestamp of when the job first started running. Null until it starts.
+             */
+            started_at?: string | null;
+            /**
+             * Ended At
+             * @description UTC timestamp of when the job reached a terminal state. Null until it ends.
+             */
+            ended_at?: string | null;
+        };
+        /**
          * JobStatus
          * @enum {string}
          */
@@ -8235,6 +9051,271 @@ export interface components {
             model_name: string;
             /** Model Provider */
             model_provider: string;
+        };
+        /**
+         * JudgeFeedbackBatch
+         * @description A reusable config that samples dataset items by tag, judges them with an evaluator
+         *     (eval config), and records each item's pass/fail and the judge's feedback.
+         *
+         *     Used to surface a minibatch of failing examples — with feedback — for reflective prompt
+         *     optimization. A child of a Task; a parent of the JudgeFeedbackBatchRun results it produces.
+         */
+        JudgeFeedbackBatch: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the judge feedback batch.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the judge feedback batch for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Target Tags
+             * @description Dataset items must carry all of these tags to be sampled for this job.
+             */
+            target_tags: string[];
+            /**
+             * Eval Config Id
+             * @description The ID of the eval config (the judge) used to score the sampled items.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description The ID of the run config. With generate_outputs=false it's metadata (the existing dataset output is judged). With generate_outputs=true it's run on each sampled item to produce the output that is judged.
+             */
+            run_config_id?: string | null;
+            /**
+             * Generate Outputs
+             * @description If true, run `run_config_id` on each sampled item to generate a fresh output and judge that (gate a candidate config, scoped to the tagged items). If false (default), judge each item's existing dataset output (the task is not re-run).
+             * @default false
+             */
+            generate_outputs: boolean;
+            /**
+             * Stop After Failures
+             * @description If set, stop once this many failing examples are found (a cheap minibatch for the train signal). If null (default), judge the whole matching set up to max_samples (full coverage — required for a val gate paired by task_run_id).
+             */
+            stop_after_failures?: number | null;
+            /**
+             * Max Samples
+             * @description The maximum number of items to judge.
+             * @default 50
+             */
+            max_samples: number;
+            /**
+             * Threshold
+             * @description The normalized (0-1) pass bar. A score below this counts as failing.
+             * @default 0.75
+             */
+            threshold: number;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * JudgeFeedbackBatchItemError
+         * @description An error judging or persisting a single item. Surfaced so the caller can see partial failures.
+         */
+        JudgeFeedbackBatchItemError: {
+            /**
+             * Task Run Id
+             * @description The ID of the task run (dataset item) that errored.
+             */
+            task_run_id: string;
+            /**
+             * Error
+             * @description The error message.
+             */
+            error: string;
+        };
+        /**
+         * JudgeFeedbackBatchJobParams
+         * @description Run an existing judge feedback batch as a background job.
+         *
+         *     The batch config is created first via `POST .../judge_feedback_batches` (which
+         *     returns its id); the job just runs it — mirroring how `EvalJobParams` runs a
+         *     pre-existing eval. Because the id is carried in params (not minted inside
+         *     run()), it's retrievable via `GET /api/jobs/{id}` even if the run fails.
+         */
+        JudgeFeedbackBatchJobParams: {
+            /**
+             * Project Id
+             * @description The ID of the project the task belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description The ID of the task the batch belongs to.
+             */
+            task_id: string;
+            /**
+             * Judge Feedback Batch Id
+             * @description The ID of the judge feedback batch to run. Create it first via POST /api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches.
+             */
+            judge_feedback_batch_id: string;
+            /**
+             * Concurrency
+             * @description Max items judged in parallel by the runner. Leave null to use the runner's default (5 when generating fresh outputs, 25 when judging existing ones).
+             */
+            concurrency?: number | null;
+        };
+        /**
+         * JudgeFeedbackBatchRun
+         * @description The judge's result for a single sampled dataset item (a child of a JudgeFeedbackBatch).
+         */
+        JudgeFeedbackBatchRun: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Task Run Id
+             * @description The ID of the task run (dataset item) that was judged.
+             */
+            task_run_id: string | null;
+            /**
+             * Scores
+             * @description The scores produced by the judge for this dataset item.
+             */
+            scores: {
+                [key: string]: number;
+            };
+            /**
+             * Feedback
+             * @description The judge's plaintext reasoning for the scores, if available.
+             */
+            feedback?: string | null;
+            /**
+             * Passed
+             * @description Whether this item passed the judge (i.e. it is not a failing example).
+             */
+            passed: boolean;
+            /**
+             * Run Config Id
+             * @description If the judged output was generated (generate_outputs), the run config that produced it. None when the item's existing dataset output was judged.
+             */
+            run_config_id?: string | null;
+            /** @description Token usage, cost, and LLM latency for generating this item's output. Populated only when generate_outputs=true (the candidate config was run to produce a fresh output); None when an existing dataset output was judged (nothing was generated). */
+            usage?: components["schemas"]["Usage"] | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * JudgeFeedbackBatchRunResponse
+         * @description The result of running a judge feedback batch. Counts and errors are FYI for the caller; not persisted.
+         */
+        JudgeFeedbackBatchRunResponse: {
+            /** @description The judge feedback batch that was run. */
+            judge_feedback_batch: components["schemas"]["JudgeFeedbackBatch"];
+            /**
+             * Failing Runs
+             * @description The failing examples found (up to stop_after_failures, if set), with feedback.
+             */
+            failing_runs: components["schemas"]["JudgeFeedbackBatchRun"][];
+            /**
+             * Judged Runs
+             * @description Every item judged this run (pass and fail), each keyed by task_run_id. Pair these across two runs by task_run_id to gate a candidate vs baseline on the same items.
+             */
+            judged_runs: components["schemas"]["JudgeFeedbackBatchRun"][];
+            /**
+             * Num Judged
+             * @description How many items were examined while searching for failures.
+             */
+            num_judged: number;
+            /**
+             * Failing Count
+             * @description How many judged items failed the judge.
+             */
+            failing_count: number;
+            /**
+             * Train Set Size
+             * @description Total number of dataset items matching the target tags.
+             */
+            train_set_size: number;
+            /**
+             * Hit Cap
+             * @description True if coverage was capped: max_samples reached before stop_after_failures (train signal), or the matching set exceeded max_samples (gate).
+             */
+            hit_cap: boolean;
+            /**
+             * Errors
+             * @description Per-item judge/save errors (if any). Each is skipped, not retried; re-running the job retries the un-persisted items. A non-empty list means partial success.
+             */
+            errors?: components["schemas"]["JudgeFeedbackBatchItemError"][];
+            /**
+             * Mean Normalized Scores
+             * @description Mean normalized (0-1, higher = better) score per output-score dimension over judged_runs — the continuous signal the pass/fail bit discards. Use it as a gate/loss metric (compare a candidate's mean vs the baseline's) instead of just the failure count.
+             */
+            mean_normalized_scores?: {
+                [key: string]: number;
+            };
+            /**
+             * Mean Normalized Score
+             * @description Mean of mean_normalized_scores across dimensions (null if nothing was judged).
+             */
+            mean_normalized_score?: number | null;
+            /** @description Summed token usage, cost (USD), and LLM latency for generating the judged outputs. Populated only in generate_outputs mode (null when existing outputs were judged). The deterministic counterpart to mean_normalized_scores — weigh quality against cost/latency (a Pareto axis), and accumulate cost/elapsed across calls for an advisory budget readout. */
+            total_usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Mean Cost
+             * @description Mean generation cost (USD) per judged item, over the items that reported cost (null in judge-only mode). Per-item cost lives on each judged_runs[].usage.
+             */
+            mean_cost?: number | null;
+            /**
+             * Mean Latency Ms
+             * @description Mean generation LLM latency (ms) per judged item, over the items that reported latency (null in judge-only mode). Per-item latency lives on each judged_runs[].usage.
+             */
+            mean_latency_ms?: number | null;
         };
         /**
          * KilnAgentRunConfigProperties
@@ -10227,6 +11308,17 @@ export interface components {
             models: components["schemas"]["RerankerModelDetails"][];
         };
         /**
+         * ResolveAutoResponse
+         * @description Result of resolving a (possibly stale) trace id to an active auto run.
+         */
+        ResolveAutoResponse: {
+            /** Run Id */
+            run_id: string;
+            /** Current Trace Id */
+            current_trace_id: string;
+            status: components["schemas"]["AutoRunStatus"];
+        };
+        /**
          * ReviewPipelineRequest
          * @description The merged multi-turn pipeline's request: everything a drive takes
          *     (inherited — the two drive contracts can't drift) plus the judge that
@@ -10784,6 +11876,17 @@ export interface components {
              * @description The breakpoint percentile threshold to use for the chunker.
              */
             breakpoint_percentile_threshold: number;
+        };
+        /**
+         * SendMessageRequest
+         * @description A user message sent into an auto-mode conversation via ``/message``
+         *     (Revision R1) — injected into the active burst or starts a new one if idle.
+         */
+        SendMessageRequest: {
+            /** Content */
+            content: string;
+            /** Trace Id */
+            trace_id?: string | null;
         };
         /** SetCheckProperties */
         SetCheckProperties: {
@@ -12697,6 +13800,22 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely.
+             */
+            timeout?: number | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -18169,6 +19288,227 @@ export interface operations {
             };
         };
     };
+    list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJudgeFeedbackBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_and_run_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJudgeFeedbackBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_judge_feedback_batch_runs_api_projects__project_id__tasks__task_id__judge_feedback_batches__judge_feedback_batch_id__runs_get: {
+        parameters: {
+            query?: {
+                /** @description Return only the items that failed the judge. */
+                failing_only?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the judge feedback batch. */
+                judge_feedback_batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JudgeFeedbackBatchRun"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     validate_input_transform_template_api_validate_input_transform_template_post: {
         parameters: {
             query?: never;
@@ -20964,6 +22304,628 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_auto_mode_api_chat_auto_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnableAutoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnableAutoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_auto_mode_api_chat_auto_decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclineAutoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_auto_run_api_chat_auto__run_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The auto run id to stop. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_auto_message_api_chat_auto__run_id__message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The auto run id to message. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_auto_events_api_chat_auto__run_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The auto run id to observe. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_auto_run_api_chat_auto_resolve_get: {
+        parameters: {
+            query: {
+                /** @description A trace id from the conversation (may be stale). */
+                trace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolveAutoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_auto_sessions_api_chat_auto_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoSessionItem"][];
+                };
+            };
+        };
+    };
+    stream_job_events_api_jobs_events_get: {
+        parameters: {
+            query?: {
+                /** @description Only stream events for this job id. */
+                job_id?: string | null;
+                /** @description Only stream events for this job type. */
+                type?: string | null;
+                /** @description Only stream events for this project id. */
+                project_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_jobs_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by job status. */
+                status?: components["schemas"]["BackgroundJobStatus"] | null;
+                /** @description Filter by job type. */
+                type?: string | null;
+                /** @description Filter by project id. */
+                project_id?: string | null;
+                /** @description Only jobs created at or after this ISO-8601 time. */
+                since?: string | null;
+                /** @description Maximum number of jobs to return. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_job_api_jobs_evals_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_judge_feedback_batch_job_api_jobs_judge_feedback_batch_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JudgeFeedbackBatchJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_api_jobs__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_job_api_jobs__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_result_api_jobs__id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_errors_api_jobs__id__errors_get: {
+        parameters: {
+            query?: {
+                /** @description Read the error log for a specific past run id. */
+                run_id?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_job_api_jobs__id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_job_api_jobs__id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_jobs__id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

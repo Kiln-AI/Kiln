@@ -27,8 +27,8 @@ from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.agent_api import connect_agent_api
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
+from app.desktop.studio_server.chat import connect_chat_api, connect_chat_auto_api
 from app.desktop.studio_server.code_tool_api import connect_code_tool_api
-from app.desktop.studio_server.chat import connect_chat_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
@@ -36,6 +36,11 @@ from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
+from app.desktop.studio_server.jobs.api import connect_jobs_api
+from app.desktop.studio_server.jobs.registry import job_registry
+from app.desktop.studio_server.judge_feedback_batch_api import (
+    connect_judge_feedback_batch_api,
+)
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
@@ -115,6 +120,12 @@ async def lifespan(app: FastAPI):
         await _start_background_syncs()
         yield
     finally:
+        # End open SSE subscriptions so a UI holding the jobs stream open can't
+        # keep the worker alive (e.g. block a dev-server hot reload). Pure
+        # observer teardown — jobs keep running. Note uvicorn only reaches
+        # lifespan shutdown after its graceful-shutdown wait, so the dev server
+        # also sets timeout_graceful_shutdown to bound that wait.
+        job_registry.events.shutdown()
         try:
             await _stop_background_syncs()
         finally:
@@ -140,6 +151,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
     connect_evals_api(app)
+    connect_judge_feedback_batch_api(app)
     connect_run_config_api(app)
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
@@ -154,6 +166,8 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_agent_api(app)
     connect_dev_tools(app)
     connect_chat_api(app)
+    connect_chat_auto_api(app)
+    connect_jobs_api(app)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
