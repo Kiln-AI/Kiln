@@ -30,7 +30,7 @@ Each phase is independently testable. Run `uv run ./checks.sh --agent-mode` in t
   - Independent of Phase 0; ships without affecting the MCP server.
   - *Possibly redundant post-pivot: the harness can reach the Phase-4 REST API via the built-in `CALL_KILN_API` tool. Kept for now (typed first-party tools); keep-or-cut is a reviewer decision.*
 
-- [ ] **Phase 4: kiln `libs/server` — memory REST API (the agent-access surface)** *(repo: `Kiln-AI/kiln`)*
+- [x] **Phase 4: kiln `libs/server` — memory REST API (the agent-access surface)** *(repo: `Kiln-AI/kiln`)* — implemented (`memory_api.py` + tests + agent-policy annotations). One follow-up: `app/web_ui/src/lib/api_schema.d.ts` must be regenerated with `generate_schema.sh` in a full dev env (the sandbox couldn't reproduce the locked fastapi/pydantic versions); `check_schema` CI is red until then.
   - `libs/server/kiln_server/memory_api.py`: six endpoints under `/api/projects/{project_id}/memories` wrapping the core `MemoryStore`, one per tool (POST save / GET list / GET summary / GET by_ids / PATCH update / DELETE), modeled on `feedback_api.py`.
   - All six tagged `openapi_extra=ALLOW_AGENT` — **including PATCH and DELETE**, a deliberate override of the `agent_approvals` verb-defaults (decision 11: the assistant's own memory, no approval gate).
   - Register `connect_memory_api(app)` in `server.py::make_app()`; regenerate the agent-policy annotation JSONs (`utils/agent_checks/annotations/`) and the web OpenAPI client (`generate_schema.sh`) so CI (`check_api_bindings`, `check_schema`) passes.
