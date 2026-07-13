@@ -4599,6 +4599,8 @@ export interface components {
              * @description The user who created the prompt.
              */
             created_by?: string | null;
+            /** @description Why this prompt exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** AppropriateToolUseProperties */
         AppropriateToolUseProperties: {
@@ -5232,6 +5234,8 @@ export interface components {
              * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5519,6 +5523,8 @@ export interface components {
              * @description Tools this code tool may call.
              */
             tool_allowlist?: string[];
+            /** @description Provenance: why this code tool exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolCreateResponse */
         CodeToolCreateResponse: {
@@ -5551,6 +5557,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /**
              * Not Trusted
              * @default false
@@ -5588,6 +5595,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolUpdateRequest */
         CodeToolUpdateRequest: {
@@ -5701,6 +5709,8 @@ export interface components {
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
+            /** @description Provenance: why this chunker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateDatasetSplitRequest
@@ -5746,6 +5756,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
+            /** @description Provenance: why this embedding config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvalConfigRequest
@@ -5773,6 +5785,8 @@ export interface components {
             model_name?: string | null;
             /** @description The provider of the evaluation model. Required for LLM-based eval types. */
             provider?: components["schemas"]["ModelProviderName"] | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -5844,6 +5858,8 @@ export interface components {
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Provenance: why this extractor config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateFeedbackRequest
@@ -5889,6 +5905,8 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Provenance: why this fine-tune exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateJobResponse
@@ -6023,6 +6041,8 @@ export interface components {
              * @description The MCP tool ID to use.
              */
             tool_id: string;
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -6076,6 +6096,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRerankerConfigRequest */
         CreateRerankerConfigRequest: {
@@ -6108,6 +6130,8 @@ export interface components {
              *     }
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Provenance: why this reranker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateSpecWithCopilotRequest
@@ -6183,6 +6207,8 @@ export interface components {
              * @description The instruction for the new task.
              */
             instruction: string;
+            /** @description Provenance stamped onto the created run config. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunConfigRequest
@@ -6204,6 +6230,8 @@ export interface components {
              * @description The run configuration properties.
              */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunRequest
@@ -6263,6 +6291,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
+            /** @description Provenance: why this vector store config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -6832,6 +6862,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties: components["schemas"]["EmbeddingProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7112,6 +7144,8 @@ export interface components {
             properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | {
                 [key: string]: unknown;
             } | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7883,6 +7917,8 @@ export interface components {
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8229,6 +8265,8 @@ export interface components {
             data_strategy: components["schemas"]["ChatStrategy"];
             /** @description The run configuration for this fine-tune. */
             run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -9331,6 +9369,31 @@ export interface components {
              */
             input_transform?: components["schemas"]["JinjaInputTransform"] | null;
         };
+        /**
+         * KilnArtifactProvenance
+         * @description Why this artifact exists and what it was derived from.
+         *
+         *     Written once at creation; immutable thereafter (enforced at the API layer).
+         *     Compile-time metadata for future agent sessions and humans — never shown to
+         *     runtime models (not part of any tool/prompt surface).
+         */
+        KilnArtifactProvenance: {
+            /**
+             * Notes
+             * @description Why this artifact exists: the problem/hypothesis it addresses, what changed vs. the derived_from_ids parents, what validation/evidence supports it (cite eval/run_config/trace IDs inline), and known limits. First line = one-sentence summary. Record observations with conditions, never universal rules. Max ~2000 chars.
+             */
+            notes?: string | null;
+            /**
+             * Derived From Ids
+             * @description IDs of same-type sibling artifacts this one was derived from. Ordered: first = primary parent (the artifact this replaces or is a new version of); further entries = additional sources merged in. Empty = not derived. IDs resolve among siblings in the same parent scope only.
+             */
+            derived_from_ids?: (string | null)[];
+            /**
+             * Origin
+             * @description Whose judgment created this artifact. 'human': a person authored it directly OR an agent created it fulfilling a direct human request. 'agent': an agent created it autonomously. None: unknown/legacy. Required when this provenance is created; consumers must tolerate unknown values.
+             */
+            origin?: string | null;
+        };
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -10425,6 +10488,8 @@ export interface components {
              * @description Chain of thought instructions to include in the prompt.
              */
             chain_of_thought_instructions?: string | null;
+            /** @description Provenance: why this prompt exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * PromptGenerator
@@ -10767,6 +10832,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10831,6 +10898,8 @@ export interface components {
              * @description Tags for document filtering.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** RagProgress */
         RagProgress: {
@@ -11212,6 +11281,8 @@ export interface components {
              * @description The properties of the reranker config, specific to the selected type.
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -11872,6 +11943,8 @@ export interface components {
              * @description The markdown body of the skill.
              */
             body: string;
+            /** @description Provenance: why this skill exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillResponse
@@ -11909,6 +11982,8 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
+            /** @description Why this skill exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillUpdateRequest
@@ -12942,6 +13017,8 @@ export interface components {
              * @default false
              */
             starred: boolean;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13712,6 +13789,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSProperties"] | components["schemas"]["LanceDBConfigVectorProperties"] | components["schemas"]["LanceDBConfigHybridProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };

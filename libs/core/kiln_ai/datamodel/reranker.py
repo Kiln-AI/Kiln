@@ -5,6 +5,7 @@ from pydantic import Field, PositiveInt
 from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -42,6 +43,10 @@ class RerankerConfig(KilnParentedModel):
     properties: CohereCompatibleProperties = Field(
         description="The properties of the reranker config, specific to the selected type.",
         discriminator="type",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from.",
     )
 
     # Workaround to return typed parent without importing Project

@@ -14,6 +14,10 @@
   export let project_id: string
   export let task_id: string
   export let clone_mode: boolean = false
+  // The API id of the source prompt when cloning (e.g. "id::<raw>" for a saved
+  // prompt, or a generator prefix like "task_run_config::..."). Used to derive
+  // provenance lineage — see clone_derived_from_id below.
+  export let clone_source_prompt_id: string | null = null
   export let generator_id: string | null = null
   export let show_chain_of_thought: boolean = true
   export let initial_prompt_name: string = ""
@@ -40,6 +44,18 @@
   $: cot_enabled_for_submit =
     (show_chain_of_thought && is_chain_of_thought) || has_generator_cot
 
+  // Provenance lineage (`derived_from_ids`) records RAW datamodel sibling ids, but
+  // the Prompt API exposes saved-prompt ids with an "id::" prefix. Strip that prefix
+  // so the recorded parent matches a real sibling. Only saved prompts are recordable
+  // siblings — generator prompts (task_run_config::, fine_tune_prompt::, disabled::,
+  // ...) are not, so cloning one records no parent (origin-only provenance) rather
+  // than a non-sibling id the backend would reject with a 400.
+  const SAVED_PROMPT_API_ID_PREFIX = "id::"
+  $: clone_derived_from_id =
+    clone_mode && clone_source_prompt_id?.startsWith(SAVED_PROMPT_API_ID_PREFIX)
+      ? clone_source_prompt_id.slice(SAVED_PROMPT_API_ID_PREFIX.length)
+      : null
+
   async function handleSubmit() {
     try {
       submitting = true
@@ -61,6 +77,15 @@
             chain_of_thought_instructions: cot_enabled_for_submit
               ? chain_of_thought_instructions
               : null,
+            // Stamp lineage: cloning a saved prompt derives from that sibling; a
+            // fresh create (or a clone of a non-saved generator prompt) is human-origin
+            // with no parent. origin is required whenever provenance is set.
+            provenance: clone_derived_from_id
+              ? {
+                  origin: "human",
+                  derived_from_ids: [clone_derived_from_id],
+                }
+              : { origin: "human" },
           },
         },
       )

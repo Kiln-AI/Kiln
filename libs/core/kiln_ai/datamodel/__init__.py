@@ -48,6 +48,10 @@ from kiln_ai.datamodel.prompt_id import (
     prompt_generator_values,
 )
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
+from kiln_ai.datamodel.provenance import (
+    KilnArtifactProvenance,
+    validate_derived_from_ids,
+)
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task, TaskRequirement
 from kiln_ai.datamodel.task_output import (
@@ -78,6 +82,7 @@ __all__ = [
     "GradedClaim",
     "JudgeFeedbackBatch",
     "JudgeFeedbackBatchRun",
+    "KilnArtifactProvenance",
     "MessageUsage",
     "Priority",
     "Project",
@@ -105,4 +110,5 @@ __all__ = [
     "rag",
     "reranker",
     "strict_mode",
+    "validate_derived_from_ids",
 ]

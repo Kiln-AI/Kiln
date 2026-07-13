@@ -5,6 +5,7 @@ from app.desktop.studio_server.tool_api import tool_server_from_id
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.json_schema import single_string_field_name
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
 from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import mcp_server_and_tool_name_from_id
@@ -13,6 +14,7 @@ from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
 from kiln_ai.utils.jinja_engine import compile_template_or_raise
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
@@ -37,6 +39,10 @@ class CreateTaskFromToolRequest(BaseModel):
     instruction: str = Field(
         min_length=1, description="The instruction for the new task."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance stamped onto the created run config.",
+    )
 
 
 class CreateMcpRunConfigRequest(BaseModel):
@@ -47,6 +53,10 @@ class CreateMcpRunConfigRequest(BaseModel):
         default=None, description="The description of the run config."
     )
     tool_id: str = Field(description="The MCP tool ID to use.")
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this run config exists and what it was derived from.",
+    )
 
 
 class TaskToolCompatibility(BaseModel):
@@ -305,6 +315,13 @@ def connect_run_config_api(app: FastAPI):
             name=name,
             run_config_properties=run_config_properties,
             description=request.description,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            task_run_config.provenance,
+            task_run_config.id,
+            TaskRunConfig,
+            task.path,
         )
         task_run_config.save_to_file()
         return task_run_config
@@ -373,6 +390,15 @@ def connect_run_config_api(app: FastAPI):
                 parent=task,
                 name=run_config_name,
                 run_config_properties=run_config_properties,
+                # Per functional spec §5.3, this second TaskRunConfig create path
+                # also accepts + stamps provenance (typically just origin).
+                provenance=request.provenance,
+            )
+            validate_provenance_or_400(
+                task_run_config.provenance,
+                task_run_config.id,
+                TaskRunConfig,
+                task.path,
             )
             task_run_config.save_to_file()
 
