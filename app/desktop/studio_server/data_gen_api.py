@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
@@ -14,6 +15,8 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTaskInput,
     DataGenSampleTask,
     DataGenSampleTaskInput,
+    DataGenSingleInputTask,
+    DataGenSingleInputTaskInput,
     wrap_task_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
@@ -42,6 +45,8 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class DataGenCategoriesApiInput(BaseModel):
@@ -232,11 +237,8 @@ class GenerateInputsBatchInput(BaseModel):
     prompts: list[str] = Field(
         description="One tailored prompt per input. Each is used as the guidance for a single input-generation call."
     )
-    gen_type: Literal["training", "eval"] = Field(
-        description="The type of data generation: eval or training."
-    )
     data_guide: str | None = Field(
-        description="Optional input data guide to include in every input-generation call.",
+        description="The input data guide to include in every input-generation call. Send it when the user has 'Use Data Guide' on, and null when off — null means 'do not use a guide', not 'fall back to the task's saved guide'.",
         default=None,
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
@@ -332,33 +334,76 @@ class _BatchJob:
 # In-memory registry of batch jobs, keyed by job_id. Lives for the process
 # lifetime (matches the desktop server's single-process model).
 _batch_jobs: dict[str, _BatchJob] = {}
+# Cap the registry so the long-lived desktop process doesn't accumulate finished
+# jobs forever. Well above any realistic number of concurrent batches.
+_MAX_BATCH_JOBS = 100
 # Hold references to background tasks so they aren't garbage-collected mid-run.
 _batch_background_tasks: set[asyncio.Task] = set()
+
+
+def _register_batch_job(job: _BatchJob) -> None:
+    """Register a batch job, evicting old finished jobs to bound memory.
+
+    Only terminal (complete/error) jobs are evicted, oldest first, so a job
+    that's still running or hasn't been polled to completion is never dropped.
+    """
+    _batch_jobs[job.job_id] = job
+    if len(_batch_jobs) <= _MAX_BATCH_JOBS:
+        return
+    for job_id, existing in list(_batch_jobs.items()):
+        if len(_batch_jobs) <= _MAX_BATCH_JOBS:
+            break
+        if existing.status in ("complete", "error"):
+            del _batch_jobs[job_id]
 
 
 def _spawn_batch_task(coro) -> None:
     task = asyncio.create_task(coro)
     _batch_background_tasks.add(task)
-    task.add_done_callback(_batch_background_tasks.discard)
+
+    def _on_done(finished: asyncio.Task) -> None:
+        _batch_background_tasks.discard(finished)
+        # The job runners record their own errors on the job object, so a task
+        # raising here is unexpected — surface it instead of letting it vanish.
+        if not finished.cancelled() and finished.exception() is not None:
+            logger.error(
+                "Batch background task failed",
+                exc_info=finished.exception(),
+            )
+
+    task.add_done_callback(_on_done)
 
 
 async def _generate_one_input(
     project,
     task: Task,
-    gen_type: Literal["training", "eval"],
     run_config_properties: KilnAgentRunConfigProperties,
     data_guide: str | None,
     prompt: str,
 ) -> str | dict:
-    """Generate a single synthetic input using one plan prompt as its guidance."""
-    combined_guidance = _combine_guidance(task, prompt, "inputs", data_guide)
-    sample_task = DataGenSampleTask(
-        target_task=task,
-        gen_type=gen_type,
-        parent_project=project,
-        guidance=combined_guidance,
+    """Generate a single synthetic input using one batch-plan prompt as its guidance.
+
+    The data guide and the prompt go to the model as separate blocks: the guide
+    constrains every input, the prompt only this one.
+    """
+    # The batch flow decides up front whether to use the data guide (the "Use
+    # Data Guide" toggle) and sends the guide text when on, None when off. So
+    # honour that literally — do NOT fall back to the task's saved guide the way
+    # `_resolve_data_guide` does for the legacy flow, where None means "no
+    # override given". Falling back here would silently ignore the toggle, and
+    # would disagree with the batch planner, which already passes the client's
+    # choice straight through.
+    data_guide_section = (
+        _data_guide_guidance(task, "inputs", data_guide) if data_guide else None
     )
-    task_input = DataGenSampleTaskInput.from_task(task=task, topic=[], num_samples=1)
+    sample_task = DataGenSingleInputTask(
+        target_task=task,
+        parent_project=project,
+        data_guide=data_guide_section,
+    )
+    # The guidance goes in the user message, not the system instruction — it
+    # varies per call and is LLM-generated, so it's data, not an instruction.
+    task_input = DataGenSingleInputTaskInput.from_task(task=task, input_guidance=prompt)
 
     rcp = run_config_properties.model_copy()
     rcp.prompt_id = PromptGenerators.SIMPLE
@@ -373,10 +418,9 @@ async def _generate_one_input(
     if samples_run.output is None or samples_run.output.output is None:
         raise ValueError("No output returned from input generation")
     parsed = json.loads(samples_run.output.output)
-    generated = parsed.get("generated_samples")
-    if not isinstance(generated, list) or len(generated) == 0:
-        raise ValueError("No sample generated")
-    return generated[0]
+    if "generated_input" not in parsed:
+        raise ValueError("No input generated")
+    return parsed["generated_input"]
 
 
 async def _generate_one_output(
@@ -434,7 +478,6 @@ async def _run_inputs_batch_job(
     job: _BatchJob,
     project,
     task: Task,
-    gen_type: Literal["training", "eval"],
     run_config_properties: KilnAgentRunConfigProperties,
     data_guide: str | None,
     prompts: list[str],
@@ -447,7 +490,7 @@ async def _run_inputs_batch_job(
         idx, prompt = item
         try:
             value = await _generate_one_input(
-                project, task, gen_type, run_config_properties, data_guide, prompt
+                project, task, run_config_properties, data_guide, prompt
             )
             job.results[idx]["input"] = value
             return True
@@ -777,13 +820,12 @@ The topic path for this sample is:
             model_name=input.run_config_properties.model_name,
             model_provider=input.run_config_properties.model_provider_name,
         )
-        _batch_jobs[job.job_id] = job
+        _register_batch_job(job)
         _spawn_batch_task(
             _run_inputs_batch_job(
                 job,
                 project,
                 task,
-                input.gen_type,
                 input.run_config_properties,
                 input.data_guide,
                 input.prompts,
@@ -850,7 +892,7 @@ The topic path for this sample is:
             kind="outputs",
             total=len(input.items),
         )
-        _batch_jobs[job.job_id] = job
+        _register_batch_job(job)
         _spawn_batch_task(
             _run_outputs_batch_job(
                 job,
@@ -1381,6 +1423,32 @@ def _combine_guidance(
     system prompt + output schema, not this guide.
     """
     parts: list[str] = []
+    data_guide_section = _data_guide_guidance(task, stage, data_guide_override)
+    if data_guide_section:
+        parts.append(data_guide_section)
+    if template_guidance:
+        parts.append(
+            "# Template Guidance\n\n"
+            "Per-stage guidance from the eval template the user picked for "
+            "this synth session. Overrides the Data Guide above when in "
+            "conflict.\n\n"
+            f"{template_guidance}"
+        )
+    return "\n\n".join(parts) if parts else None
+
+
+def _data_guide_guidance(
+    task: Task,
+    stage: Literal["topics", "inputs"],
+    data_guide_override: str | None = None,
+) -> str | None:
+    """Render the Task Data Guide section on its own.
+
+    Split out from `_combine_guidance` so the batch-plan flow can pass the guide
+    and the prompt to the model as two separate blocks rather than one fused
+    guidance string.
+    """
+    parts: list[str] = []
     data_guide_content = _resolve_data_guide(task, data_guide_override)
     if data_guide_content:
         stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
@@ -1405,8 +1473,8 @@ def _combine_guidance(
             "`<input_semantic>` blocks) — read the content the same way "
             "regardless of shape.\n\n"
             "**Authority cascade** when sources conflict (highest wins):\n"
-            "1. Template guidance for this stage (if a `# Template Guidance` "
-            "block appears below).\n"
+            "1. Guidance for this specific generation (a `# Template "
+            "Guidance` block below, or the prompt you were given).\n"
             "2. The Data Guide above.\n"
             "3. Defaults you would otherwise pick.\n\n"
             "**Invariants — must always hold regardless of source:** logical "
@@ -1416,14 +1484,6 @@ def _combine_guidance(
             "<task_data_guide>\n"
             f"{data_guide_content}\n"
             "</task_data_guide>"
-        )
-    if template_guidance:
-        parts.append(
-            "# Template Guidance\n\n"
-            "Per-stage guidance from the eval template the user picked for "
-            "this synth session. Overrides the Data Guide above when in "
-            "conflict.\n\n"
-            f"{template_guidance}"
         )
     return "\n\n".join(parts) if parts else None
 

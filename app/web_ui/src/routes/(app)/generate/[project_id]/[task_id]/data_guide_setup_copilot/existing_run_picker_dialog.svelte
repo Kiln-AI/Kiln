@@ -1,7 +1,8 @@
 <script lang="ts">
   // Tag-first existing-run picker for the Kiln Pro Data Guide flow. Select runs
-  // by tag; the union of the chosen tags is added. Synthetic runs are excluded
-  // — seeding a guide from AI-generated inputs is circular.
+  // by tag; the union of the chosen tags is added. Synthetic (AI-generated) runs
+  // are allowed, but selecting any surfaces a warning, since a guide is only as
+  // realistic as the data it's seeded from.
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import TagFirstSelector, {
@@ -11,6 +12,7 @@
   import type { TaskRun } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import Intro from "$lib/ui/intro.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
 
   export let project_id: string
@@ -49,9 +51,9 @@
     load_error = null
     try {
       const result = await fetch_task_sample_candidates(project_id, task_id)
-      all_runs = result.available_runs.filter(
-        (r) => r.input_source?.type !== "synthetic",
-      )
+      // Synthetic runs are included; selecting one surfaces a warning below
+      // rather than being hidden.
+      all_runs = result.available_runs
     } catch (e) {
       load_error = createKilnError(e)
     } finally {
@@ -59,8 +61,7 @@
     }
   }
 
-  // Available = not already added (synthetic already excluded in load_runs),
-  // newest-first.
+  // Available = not already added, newest-first.
   $: available_runs = all_runs
     .filter((r) => !!r.id && !existing_task_run_ids.includes(r.id))
     .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
@@ -72,6 +73,15 @@
       tags: r.tags ?? [],
       date: r.created_at,
     }),
+  )
+
+  // Warn when any selected run (pulled in via a chosen tag) is AI-generated.
+  $: selected_id_set = new Set(selected_ids)
+  $: has_synthetic_selected = available_runs.some(
+    (r) =>
+      !!r.id &&
+      selected_id_set.has(r.id) &&
+      r.input_source?.type === "synthetic",
   )
 
   // The picker is tag-first, so untagged runs can't be selected here. When no
@@ -96,7 +106,7 @@
         : {
             title: "No Runs To Add",
             description:
-              "Your dataset has no eligible runs yet. Run your task to create some, then add them here. (AI-generated runs can't be used as examples.)",
+              "Your dataset has no eligible runs yet. Run your task to create some, then add them here.",
           }
       : dataset_has_tagged
         ? {
@@ -149,12 +159,12 @@
     : []}
 >
   <p slot="subtitle" class="text-sm font-light">
-    Add examples from your <a
+    Select tags to add every matching example from your <a
       href={`/dataset/${project_id}/${task_id}`}
       target="_blank"
       rel="noopener"
       class="link">Dataset</a
-    > by tag.
+    >.
   </p>
 
   {#if loading}
@@ -195,5 +205,14 @@
       filtered_href={dataset_tags_href}
       bind:selected_ids
     />
+    {#if has_synthetic_selected}
+      <div class="mt-4">
+        <Warning
+          warning_message="Some selected examples are synthetic. Inputs generated from a Data Guide are only as realistic as the examples it's built from, so real data works best."
+          warning_color="warning"
+          warning_icon="exclaim"
+        />
+      </div>
+    {/if}
   {/if}
 </Dialog>

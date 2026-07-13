@@ -1,8 +1,9 @@
 import { client } from "$lib/api_client"
-import type { Eval, Task, Spec } from "$lib/types"
+import type { Eval, EvalConfig, Task, Spec } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+import { get_eval_steps } from "$lib/utils/eval_steps_utils"
 import { available_tools } from "$lib/stores"
 
 /**
@@ -20,6 +21,9 @@ export class SynthDataGuidanceDataModel {
   public task_id: string = ""
   private evaluator: Eval | null = null
   private spec: Spec | null = null
+  // The eval's default judge, when it has one. Only used to prefill batch-plan
+  // guidance for legacy evals (which have no spec definition to point at).
+  private default_judge: EvalConfig | null = null
   public gen_type: "training" | "eval" | null = null
   public splits: Writable<Record<string, number>> = writable({})
   public task: Task | null = null
@@ -119,6 +123,10 @@ export class SynthDataGuidanceDataModel {
       // Load the spec if this eval is associated with one
       await this.load_spec_for_eval(eval_id)
 
+      // Legacy evals have no spec, so their batch-plan guidance is built from
+      // the judge instead. Only fetched when there's a default judge to fetch.
+      await this.load_default_judge(eval_id)
+
       // Generate the select options for the dropdown, with update eval
       this.build_select_options(static_templates, data)
       // Jump to the issue eval template
@@ -161,6 +169,66 @@ export class SynthDataGuidanceDataModel {
     }
   }
 
+  private async load_default_judge(eval_id: string): Promise<void> {
+    const config_id = this.evaluator?.current_config_id
+    if (!config_id) {
+      return
+    }
+    try {
+      const { data: configs, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
+        {
+          params: {
+            path: {
+              project_id: this.project_id,
+              task_id: this.task_id,
+              eval_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        // Don't throw: the judge is only used to prefill guidance, which the
+        // user can write themselves. A blank box beats a broken page.
+        return
+      }
+      this.default_judge = configs?.find((c) => c.id === config_id) || null
+    } catch {
+      this.default_judge = null
+    }
+  }
+
+  // The judge's evaluation steps: what the eval actually scores. Prefer the
+  // default judge's own steps — the user may have edited them, and those edits
+  // are the eval's real definition. With no default judge, rebuild the steps the
+  // same way the create-judge page would, from the eval's template.
+  private judge_eval_steps(): string[] {
+    // Only legacy llm_as_judge configs carry eval_steps; the typed properties
+    // union doesn't declare the key, so read it untyped.
+    const props = this.default_judge?.properties as
+      | Record<string, unknown>
+      | undefined
+    const saved = props?.["eval_steps"]
+    if (Array.isArray(saved) && saved.length > 0) {
+      return saved.filter((step): step is string => typeof step === "string")
+    }
+    if (!this.evaluator || !this.task) {
+      return []
+    }
+    try {
+      return get_eval_steps(
+        this.evaluator.template,
+        this.task,
+        this.evaluator,
+        this.spec,
+      )
+    } catch {
+      // get_eval_steps throws when a template's required properties are missing
+      // (e.g. a kiln_issue eval with no issue_prompt). Fall back to no guidance.
+      return []
+    }
+  }
+
   public guidance_store_for_type(
     type: "topics" | "inputs" | "outputs",
   ): Writable<string | null> {
@@ -193,20 +261,65 @@ export class SynthDataGuidanceDataModel {
     this.selected_template.set(template || "custom")
   }
 
-  // Default guidance for the Kiln Pro batch planner. For spec-backed evals we
-  // embed the spec details (mirroring how the eval judge references the spec),
-  // so the plan targets the spec. Legacy evals and fine-tuning are left blank
-  // for now.
+  // Default guidance for the Kiln Pro batch planner. For evals backed by a
+  // definition we embed it (mirroring how the eval judge references it), so the
+  // plan targets the behavior being measured. Legacy evals have no definition,
+  // so we fall back to the judge's evaluation steps. Fine-tuning gets a static
+  // template.
   public kiln_pro_batch_plan_prefill(): string {
-    if (this.gen_type === "eval" && this.spec) {
-      return `Come up with a batch plan to generate evaluation data for the spec "${this.spec.name}".
+    if (this.gen_type === "training") {
+      // The batch planner has no topic tree — it plans the N inputs directly —
+      // so this folds the legacy fine-tuning topic + input templates into one
+      // description of the batch we want. "Training set" is the load-bearing
+      // phrase: it's what tells the planner to build a representative batch
+      // rather than the boundary-probing test set an eval asks for. The
+      // edge-case share is stated explicitly so naming edge cases can't tip the
+      // planner into an even pass/fail split.
+      return `A training set to fine-tune a model for this task.
 
-Here are the details of the spec for reference:
-${this.spec.definition}
+Cover a useful distribution of the data this task will see in practice: spread the batch across the main use cases, topics, and input shapes implied by the task's instructions, so the fine-tuned model learns from a wide range of realistic examples.
 
-Generate a diverse batch that covers the spec thoroughly — representative cases, edge cases, and the behaviors worth emphasizing.`
+Reserve a minority of the batch (roughly 20%) for issues and edge cases. If the task's instructions call out specific edge cases, pitfalls, or behaviours to avoid, include inputs likely to trigger each of them, and add other edge cases that are plausible for this task. The rest of the batch should stay typical and everyday.`
     }
-    // Legacy eval (no spec) or fine-tuning: blank for now.
+    if (this.gen_type === "eval" && this.spec) {
+      // Only what Kiln knows: which eval this is, and its definition. The
+      // definition is what tells the planner this is a coverage batch, and its
+      // own rules then supply the pass/fail split, the difficulty spread, and
+      // the per-condition coverage check — restating them here would duplicate
+      // the planner and drift from it. The definition is delimited so the
+      // planner can't mistake its markdown headings for instructions addressed
+      // to it.
+      return `Generate a diverse batch of inputs that exercise the behaviour defined by the eval "${this.spec.name}", to test whether the task satisfies it.
+
+The eval's definition is below, for reference:
+
+<eval_definition>
+${this.spec.definition}
+</eval_definition>`
+    }
+    if (this.gen_type === "eval" && this.evaluator) {
+      // Legacy eval: no spec, so the criteria this batch gets scored against
+      // live in the judge's evaluation steps. Tagged <judge_instructions>, not
+      // <eval_definition>: these are imperatives written AT a judge ("Does the
+      // model's output contain…"), not a statement of the behaviour itself, and
+      // the planner is told to read the two differently. Either tag marks this
+      // as an eval batch; the delimiter also stops the planner taking the steps
+      // as instructions addressed to itself.
+      const steps = this.judge_eval_steps()
+      if (steps.length > 0) {
+        const numbered = steps
+          .map((step, i) => `${i + 1}. ${step}`)
+          .join("\n\n")
+        return `Generate a diverse batch of inputs to run the eval "${this.evaluator.name}" on. This is the data its judge will score, so the batch should thoroughly exercise the behaviour the judge checks for.
+
+The judge scores each output against the steps below, for reference:
+
+<judge_instructions>
+${numbered}
+</judge_instructions>`
+      }
+    }
+    // No spec, and no judge steps to derive a batch from: leave it to the user.
     return ""
   }
 

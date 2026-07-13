@@ -4,8 +4,10 @@ import io
 import json
 import logging
 import random
+from http import HTTPStatus
 from typing import Annotated
 
+import httpx
 import jsonschema
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -87,7 +89,11 @@ from app.desktop.studio_server.api_models.eval_builder_models import JudgeConfig
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_judge_prompt_template,
 )
-from app.desktop.studio_server.utils.response_utils import unwrap_response
+from app.desktop.studio_server.utils.response_utils import (
+    unwrap_response,
+    upstream_route_missing,
+    upstream_unreachable,
+)
 from fastapi import FastAPI, File, HTTPException, Path, UploadFile
 from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
 from kiln_ai.datamodel.basemodel import FilenameStringShort
@@ -284,12 +290,19 @@ async def _start_data_guide_job(
 ) -> str:
     """Start the Data Guide draft job on kiln_server and return its job id.
     Raises HTTPException on failure."""
-    detailed = (
-        await start_data_guide_job_v1_jobs_data_guide_job_start_post.asyncio_detailed(
+    try:
+        detailed = await start_data_guide_job_v1_jobs_data_guide_job_start_post.asyncio_detailed(
             client=client,
             body=body,
         )
-    )
+    except httpx.HTTPError as e:
+        raise upstream_unreachable("data guide") from e
+
+    # This request names no resource, so an upstream 404 can only mean the route
+    # isn't deployed — not "your job wasn't found".
+    if detailed.status_code == HTTPStatus.NOT_FOUND:
+        raise upstream_route_missing("data guide drafting")
+
     response = unwrap_response(
         detailed,
         default_detail="Failed to start the data guide job. Please try again.",
@@ -314,11 +327,18 @@ async def _get_data_guide_job_status(client: AuthenticatedClient, job_id: str) -
     an empty draft still reports `succeeded` here: that's a real failure the
     result fetch surfaces, not an in-flight state.
     """
-    detailed = await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed(
-        job_type=JobType.DATA_GUIDE_JOB,
-        job_id=job_id,
-        client=client,
-    )
+    try:
+        detailed = (
+            await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed(
+                job_type=JobType.DATA_GUIDE_JOB,
+                job_id=job_id,
+                client=client,
+            )
+        )
+    except httpx.HTTPError as e:
+        raise upstream_unreachable("data guide") from e
+    # This request names a job, so an upstream 404 genuinely means that job is
+    # gone — propagate it as-is rather than reporting an upstream failure.
     response = unwrap_response(
         detailed,
         default_detail="Failed to check the data guide job status.",
@@ -346,17 +366,21 @@ async def _data_guide_result_ready(client: AuthenticatedClient, job_id: str) -> 
             default_detail="Failed to fetch the data guide result.",
         )
         return response.status == JobStatus.SUCCEEDED
-    except HTTPException:
+    except (HTTPException, httpx.HTTPError):
         return True
 
 
 async def _get_data_guide_job_result(client: AuthenticatedClient, job_id: str) -> str:
     """Fetch the draft guide markdown from a completed Data Guide draft job.
     Raises HTTPException on failure or an empty result."""
-    detailed = await get_data_guide_job_result_v1_jobs_data_guide_job_job_id_result_get.asyncio_detailed(
-        job_id=job_id,
-        client=client,
-    )
+    try:
+        detailed = await get_data_guide_job_result_v1_jobs_data_guide_job_job_id_result_get.asyncio_detailed(
+            job_id=job_id,
+            client=client,
+        )
+    except httpx.HTTPError as e:
+        raise upstream_unreachable("data guide") from e
+    # Job-addressed, so an upstream 404 really means the job is gone: propagate.
     response = unwrap_response(
         detailed,
         default_detail="Failed to fetch the data guide result.",
@@ -367,8 +391,13 @@ async def _get_data_guide_job_result(client: AuthenticatedClient, job_id: str) -
     # from "finished but genuinely empty" so we don't surface a misleading
     # empty-draft error while the job is still wrapping up.
     if response.status != JobStatus.SUCCEEDED:
+        # 409, not 425: 425 (Too Early) is specific to TLS early data — replayable
+        # bytes sent before the handshake completes — and any proxy or SDK that
+        # honours it may retry on different transport terms. This is a plain
+        # resource-state conflict: the job isn't finished, so a result fetch isn't
+        # a request it can serve yet.
         raise HTTPException(
-            status_code=425,  # Too Early
+            status_code=409,
             detail="The data guide draft is still being generated. Please wait.",
         )
     draft_guide = getattr(response.output, "draft_guide", "") or ""

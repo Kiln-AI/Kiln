@@ -1,14 +1,17 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte"
+  import { onMount } from "svelte"
   import { get } from "svelte/store"
+  import { pushState } from "$app/navigation"
+  import { page } from "$app/stores"
+  import posthog from "posthog-js"
   import { client } from "$lib/api_client"
-  import Intro from "$lib/ui/intro.svelte"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { isKilnAgentRunConfig } from "$lib/types"
   import type { KilnAgentRunConfigProperties } from "$lib/types"
@@ -21,12 +24,13 @@
   export let project_id: string
   export let task_id: string
   export let guidance_data: SynthDataGuidanceDataModel
+  // Groups every sample from this synth session under one dataset tag.
+  export let session_id: string | null = null
 
   const selected_template = guidance_data.selected_template
   $: task = guidance_data.task
 
-  const dialog_id = "generate_batch_dialog"
-  const inputs_dialog_id = "kiln_pro_generate_inputs_dialog"
+  let inputs_dialog: Dialog | null = null
 
   let current_state: "loading" | "connect" | "ready" = "loading"
   let connect_success = false
@@ -34,7 +38,7 @@
   // Stage within the connected flow.
   let stage: "intro" | "planning" | "plan" | "inputs" = "intro"
 
-  let num_inputs = 8
+  let num_inputs = 50
   // Saved for the session so Regenerate reopens the modal with the user's edits.
   let batch_guidance = ""
   let guidance_initialized = false
@@ -56,6 +60,8 @@
   let inputs_error: KilnError | null = null
   let inputs_rcp: KilnAgentRunConfigProperties | null = null
   let inputs_data_guide: string | null = null
+  // Set by KilnProInputs: generated samples not yet written to the dataset.
+  let unsaved_samples = false
 
   onMount(async () => {
     try {
@@ -74,26 +80,81 @@
     connect_success = false
   }
 
-  async function open_generate_batch_modal() {
-    if (!guidance_initialized) {
-      batch_guidance = guidance_data.kiln_pro_batch_plan_prefill()
-      guidance_initialized = true
+  // The template the guidance box started from, so edits can be undone.
+  let batch_guidance_template = ""
+
+  // Prefill the guidance box once, as soon as the Generate Batch page shows.
+  $: if (current_state === "ready" && !guidance_initialized) {
+    batch_guidance_template = guidance_data.kiln_pro_batch_plan_prefill()
+    batch_guidance = batch_guidance_template
+    guidance_initialized = true
+  }
+
+  // Each forward step pushes a history entry tagged with the stage, so the
+  // browser back button steps back through the flow. SvelteKit restores
+  // $page.state on back; we mirror it into `stage`. The in-app back buttons
+  // just call history.back() so both paths go through the same mechanism and
+  // the history stack stays consistent.
+  function advance_stage(next: "plan" | "inputs") {
+    stage = next
+    pushState("", { kiln_pro_stage: next })
+  }
+
+  function go_back() {
+    history.back()
+  }
+
+  $: sync_stage_from_history(
+    ($page.state as Record<string, unknown>)?.kiln_pro_stage as
+      | string
+      | undefined,
+  )
+
+  function sync_stage_from_history(hist_stage: string | undefined) {
+    // "planning" is transient and owned by submit_batch — don't fight it.
+    if (stage === "planning") return
+
+    // Going back is destructive at both stages, and every route out of them —
+    // the in-app Back button, "New Batch Plan", and the browser's own back
+    // button — pops history. So confirm here, once, at the point the pop
+    // actually happens. popstate can't be cancelled, so on "stay" we push the
+    // entry back to re-sync history with the UI the user is still looking at.
+    const leaving = (from: string) => stage === from && hist_stage !== from
+    let confirm_msg: string | null = null
+    if (leaving("inputs") && unsaved_samples) {
+      confirm_msg =
+        "You have generated samples that aren't saved to your dataset. Going back will discard them. This cannot be undone."
+    } else if (leaving("plan")) {
+      confirm_msg = plan_edited
+        ? "Are you sure you want to discard the current batch plan, including the dataset items you removed? This cannot be undone."
+        : "Are you sure you want to discard the current batch plan? This cannot be undone."
     }
-    await tick()
-    // @ts-expect-error showModal is not typed on HTMLElement
-    document.getElementById(dialog_id)?.showModal()
+    if (confirm_msg && !confirm(confirm_msg)) {
+      pushState("", { kiln_pro_stage: stage })
+      return
+    }
+
+    if (!hist_stage && (stage === "plan" || stage === "inputs")) {
+      plan_error = null
+      stage = "intro"
+    } else if (hist_stage === "plan" && stage === "inputs") {
+      stage = "plan"
+    }
   }
 
   async function submit_batch() {
     batch_submitting = false
-    // @ts-expect-error close is not typed on HTMLElement
-    document.getElementById(dialog_id)?.close()
     const requested = num_inputs
     const data_guide = get(guidance_data.use_data_guide)
       ? get(guidance_data.data_guide)
       : null
     plan_error = null
     stage = "planning"
+    posthog.capture("kiln_pro_batch_plan", {
+      count: requested,
+      gen_type: guidance_data.gen_type,
+      template: get(selected_template),
+    })
     try {
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
@@ -106,7 +167,7 @@
       if (!data) throw new Error("Batch planner returned no plan.")
       plan = { prompts: data.prompts, summary: data.summary }
       plan_edited = false
-      stage = "plan"
+      advance_stage("plan")
     } catch (e) {
       plan_error = createKilnError(e)
       // Drop back to the intro so the user can adjust and retry.
@@ -123,11 +184,9 @@
     plan_edited = true
   }
 
-  async function open_inputs_modal() {
+  function open_inputs_modal() {
     inputs_error = null
-    await tick()
-    // @ts-expect-error showModal is not typed on HTMLElement
-    document.getElementById(inputs_dialog_id)?.showModal()
+    inputs_dialog?.show()
   }
 
   // Capture the model config, then transition to the inputs view (which starts
@@ -147,9 +206,8 @@
     inputs_data_guide = get(guidance_data.use_data_guide)
       ? get(guidance_data.data_guide)
       : null
-    // @ts-expect-error close is not typed on HTMLElement
-    document.getElementById(inputs_dialog_id)?.close()
-    stage = "inputs"
+    inputs_dialog?.close()
+    advance_stage("inputs")
   }
 </script>
 
@@ -178,14 +236,14 @@
   <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
     <RefiningAnimation
       title="Planning Batch"
-      description={`Kiln is drafting ${num_inputs} tailored prompts for you to review. This may take a while.`}
+      description={`Kiln is drafting ${num_inputs} tailored prompts for you to review.`}
     />
   </div>
 {:else if stage === "plan" && plan}
   <KilnProBatchPlan
     {plan}
     on_generate_inputs={open_inputs_modal}
-    on_regenerate={open_generate_batch_modal}
+    on_regenerate={go_back}
     on_delete_prompt={delete_prompt}
     summary_out_of_sync={plan_edited}
   />
@@ -197,126 +255,82 @@
     {guidance_data}
     run_config_properties={inputs_rcp}
     data_guide={inputs_data_guide}
-    summary_out_of_sync={plan_edited}
+    {session_id}
+    on_back={go_back}
+    bind:unsaved_samples
   />
 {:else}
-  <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
-    <Intro
-      title="Plan your batch before you generate"
-      description_paragraphs={[
-        "Tell Kiln what you want and how many inputs you need. Kiln Pro drafts a plan up front — a short summary plus one tailored prompt per input — balancing variety, edge cases, and emphasis so your batch is intentional rather than random.",
-        "You'll review and trim the prompts before a single input is generated.",
-      ]}
-      action_buttons={[
-        {
-          label: "Generate Batch",
-          is_primary: true,
-          onClick: open_generate_batch_modal,
-        },
-        {
-          label: "Guide",
-          is_primary: false,
-          href: `/generate/${project_id}/${task_id}/data_guide`,
-        },
-      ]}
-    >
-      <div slot="icon" class="h-12 w-12">
+  <div class="max-w-2xl mx-auto mt-8 md:mt-16 mb-8">
+    <div class="flex items-center gap-2 mb-6">
+      <div class="h-8 w-8 flex-none">
         <img src="/images/animated_logo.svg" alt="Kiln Pro" />
       </div>
-    </Intro>
+      <h2 class="text-xl font-medium">Generate Synthetic Data Batch</h2>
+    </div>
+    <FormContainer
+      submit_label="Generate Batch"
+      compact_button={true}
+      focus_on_mount={false}
+      bind:submitting={batch_submitting}
+      on:submit={submit_batch}
+    >
+      <div class="flex flex-row items-center gap-4">
+        <div class="flex-grow font-medium text-sm">Sample Count</div>
+        <IncrementUi bind:value={num_inputs} max={500} />
+      </div>
+      <FormElement
+        id="batch_guidance"
+        label="Guidance"
+        description={`This allows you to control the dataset you are generating. For example, "10% of the dataset should be in Spanish."`}
+        inputType="textarea"
+        height="xl"
+        bind:value={batch_guidance}
+        inline_action={batch_guidance_template &&
+        batch_guidance !== batch_guidance_template
+          ? {
+              handler: () => (batch_guidance = batch_guidance_template),
+              label: "Reset",
+            }
+          : null}
+      />
+      <SynthDataGuide {guidance_data} />
+    </FormContainer>
     {#if plan_error}
-      <div class="text-error text-sm mt-4 max-w-md text-center">
+      <div class="text-error text-sm mt-4">
         {plan_error.getMessage()}
       </div>
     {/if}
   </div>
 {/if}
 
-<dialog id={dialog_id} class="modal">
-  <div class="modal-box w-11/12 max-w-3xl">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generate Batch</h3>
-    <p class="text-sm font-light mb-8">
-      Kiln Pro will draft a batch plan — a short summary plus one tailored
-      prompt per input — for you to review before any inputs are generated.
-    </p>
-    <FormContainer
-      submit_label="Generate Batch"
-      bind:submitting={batch_submitting}
-      on:submit={submit_batch}
-    >
-      <div class="flex flex-row items-center gap-4">
-        <div class="flex-grow font-medium text-sm">Input Count</div>
-        <IncrementUi bind:value={num_inputs} max={500} />
-      </div>
-      <FormElement
-        id="batch_guidance"
-        label="Guidance"
-        inputType="textarea"
-        height="xl"
-        bind:value={batch_guidance}
+<Dialog bind:this={inputs_dialog} title="Generation Settings">
+  <FormContainer
+    submit_label={plan ? `Generate Batch (${plan.prompts.length})` : "Generate"}
+    bind:submitting={inputs_submitting}
+    on:submit={submit_inputs}
+    keyboard_submit={false}
+  >
+    {#if task}
+      <RunConfigComponent
+        bind:this={inputs_run_config}
+        {project_id}
+        current_task={task}
+        requires_structured_output={true}
+        hide_prompt_selector={true}
+        show_tools_selector_in_advanced={true}
+        show_name_field={false}
+        model_dropdown_settings={{
+          requires_data_gen: true,
+          requires_uncensored_data_gen:
+            guidance_data.suggest_uncensored($selected_template),
+          suggested_mode: guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen",
+        }}
       />
-      <SynthDataGuide {guidance_data} />
-    </FormContainer>
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
-
-<dialog id={inputs_dialog_id} class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generate Inputs</h3>
-    <p class="text-sm font-light mb-5">
-      {#if plan}
-        Kiln Pro will generate {plan.prompts.length} inputs in parallel — one per
-        planned prompt.
-      {/if}
-    </p>
-    {#if inputs_error}
-      <div class="text-error text-sm mb-3">{inputs_error.getMessage()}</div>
     {/if}
-    <FormContainer
-      submit_label={plan
-        ? `Generate ${plan.prompts.length} Inputs`
-        : "Generate"}
-      bind:submitting={inputs_submitting}
-      on:submit={submit_inputs}
-    >
-      {#if task}
-        <RunConfigComponent
-          bind:this={inputs_run_config}
-          {project_id}
-          current_task={task}
-          requires_structured_output={true}
-          hide_prompt_selector={true}
-          show_tools_selector_in_advanced={true}
-          show_name_field={false}
-          model_dropdown_settings={{
-            requires_data_gen: true,
-            requires_uncensored_data_gen:
-              guidance_data.suggest_uncensored($selected_template),
-            suggested_mode: guidance_data.suggest_uncensored($selected_template)
-              ? "uncensored_data_gen"
-              : "data_gen",
-          }}
-        />
-      {/if}
-      <SynthDataGuide {guidance_data} />
-    </FormContainer>
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+    {#if inputs_error}
+      <div class="text-error text-sm">{inputs_error.getMessage()}</div>
+    {/if}
+  </FormContainer>
+</Dialog>

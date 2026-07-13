@@ -16,6 +16,8 @@
   import { agentInfo } from "$lib/agent"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import Completed from "$lib/ui/completed.svelte"
+  import { dedupe_by_input } from "$lib/utils/dedupe_by_input"
   import posthog from "posthog-js"
 
   type GuideBuilderState =
@@ -148,7 +150,7 @@
       if (api_error) throw api_error
       if (!data) throw new KilnError("No preview inputs returned", null)
 
-      preview_samples = data as PreviewSample[]
+      preview_samples = dedupe_by_input(data as PreviewSample[])
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
         looks_good: undefined,
@@ -222,7 +224,7 @@
       if (!preview_data) throw new KilnError("No preview inputs returned", null)
 
       guide = refined_guide
-      preview_samples = preview_data as PreviewSample[]
+      preview_samples = dedupe_by_input(preview_data as PreviewSample[])
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
         looks_good: undefined,
@@ -254,8 +256,9 @@
 
       if (api_error) throw api_error
 
-      // Disable the unsaved-changes warn before goto fires beforeNavigate.
-      // Mirrors the prompt_form / skill_form `complete = true` pattern.
+      // `saved` both disables the unsaved-changes warn and flips the page to
+      // the success screen (Completed), which returns the user to synth via a
+      // button rather than auto-navigating.
       saved = true
 
       posthog.capture("data_guide_saved", {
@@ -263,17 +266,6 @@
         source: "setup",
         refine_iterations,
       })
-
-      // Replace the setup page in history rather than pushing onto it. The
-      // user finished and shouldn't be able to back-navigate into the now-
-      // completed setup flow (which would just redirect them straight to
-      // the refine page anyway).
-      goto(
-        `/generate/${project_id}/${task_id}/synth?session_continued=true&data_guide_saved=true`,
-        {
-          replaceState: true,
-        },
-      )
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -301,7 +293,14 @@
   >
     <DataGenDescription bind:guidance_data />
 
-    {#if current_state === "loading"}
+    {#if saved}
+      <Completed
+        title="Data Guide Saved"
+        subtitle="Your Data Guide is saved. Click Continue to return to Synthetic Data Generation."
+        link={`/generate/${project_id}/${task_id}/synth?session_continued=true`}
+        button_text="Continue"
+      />
+    {:else if current_state === "loading"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <span class="loading loading-spinner loading-lg" />
       </div>

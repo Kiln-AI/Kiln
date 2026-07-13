@@ -140,7 +140,10 @@
     {:else if drafting}
       <RefiningAnimation
         title="Analyzing Inputs"
-        description="Kiln Pro is analyzing your example inputs and drafting your data guide. This may take a while — you can leave this page and come back; we'll keep working in the background."
+        description_paragraphs={[
+          "Kiln Pro is analyzing your examples and drafting your data guide. This may take a while, depending on the number of examples.",
+          "You can leave this page and come back; we'll keep working in the background.",
+        ]}
       />
     {:else}
       <div class="flex flex-col items-center justify-center py-24 gap-4">

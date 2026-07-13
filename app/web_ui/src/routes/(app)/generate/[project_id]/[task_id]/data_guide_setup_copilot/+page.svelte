@@ -13,6 +13,7 @@
   import { get } from "svelte/store"
   import GuidePreview from "../data_guide_setup/guide_preview.svelte"
   import RunOptionsTiles from "../data_guide_setup/run_options_tiles.svelte"
+  import GenerationSettingsTrigger from "../data_guide_setup/generation_settings_trigger.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
@@ -22,6 +23,8 @@
   import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import Completed from "$lib/ui/completed.svelte"
+  import { dedupe_by_input } from "$lib/utils/dedupe_by_input"
   import InputExamplesUploader, {
     type InputExampleEntry,
     MAX_EXAMPLE_LENGTH,
@@ -72,6 +75,9 @@
 
   let task: Task | null = null
   let run_options_tiles: RunOptionsTiles | null = null
+  // Friendly names of the selected generation model + provider, for the trigger.
+  let generation_model_name = ""
+  let generation_provider = ""
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -327,7 +333,7 @@
       )
       if (api_error) throw api_error
       if (!data) throw new KilnError("No preview inputs returned", null)
-      preview_samples = data as PreviewSample[]
+      preview_samples = dedupe_by_input(data as PreviewSample[])
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
         looks_good: undefined,
@@ -618,7 +624,7 @@
       if (preview_error) throw preview_error
       if (!preview_data) throw new KilnError("No preview inputs returned", null)
       guide = refined_guide
-      preview_samples = preview_data as PreviewSample[]
+      preview_samples = dedupe_by_input(preview_data as PreviewSample[])
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
         looks_good: undefined,
@@ -647,6 +653,9 @@
         },
       )
       if (api_error) throw api_error
+      // `saved` both disables the unsaved-changes warn and flips the page to
+      // the success screen (Completed), which returns the user to synth via a
+      // button rather than auto-navigating.
       saved = true
       // The draft job's work is now persisted — drop the tracking record so
       // the progress widget clears and Create Data Guide starts fresh.
@@ -656,10 +665,6 @@
         source: "copilot",
         refine_iterations,
       })
-      goto(
-        `/generate/${project_id}/${task_id}/synth?session_continued=true&data_guide_saved=true`,
-        { replaceState: true },
-      )
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -701,7 +706,14 @@
   >
     <DataGenDescription bind:guidance_data />
 
-    {#if current_state === "loading"}
+    {#if saved}
+      <Completed
+        title="Data Guide Saved"
+        subtitle="Your Data Guide is saved. Click Continue to return to Synthetic Data Generation."
+        link={`/generate/${project_id}/${task_id}/synth?session_continued=true`}
+        button_text="Continue"
+      />
+    {:else if current_state === "loading"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <span class="loading loading-spinner loading-lg" />
       </div>
@@ -745,21 +757,18 @@
 
         <RunOptionsTiles
           bind:this={run_options_tiles}
-          mode="link"
+          bind:selected_model_name_display={generation_model_name}
+          bind:selected_provider_display={generation_provider}
           {project_id}
         />
+        {#if has_entries}
+          <GenerationSettingsTrigger
+            model_name={generation_model_name}
+            provider={generation_provider}
+            open={() => run_options_tiles?.open_combined_dialog()}
+          />
+        {/if}
       </FormContainer>
-      {#if has_entries}
-        <div class="flex justify-end mt-2">
-          <button
-            type="button"
-            class="link text-sm text-gray-500 hover:text-gray-700"
-            on:click={() => run_options_tiles?.open_combined_dialog()}
-          >
-            Generation options
-          </button>
-        </div>
-      {/if}
     {:else if current_state === "analyzing"}
       <AnalyzingAnimation
         title="Generating Examples"

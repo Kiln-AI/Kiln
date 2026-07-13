@@ -366,7 +366,7 @@
       {/if}
     </button>
     {#if show_restart}
-      <span class="text-sm text-gray-500">or</span>
+      <span class="text-sm text-gray-500 px-1">or</span>
       <button
         class="link underline text-sm text-gray-500"
         disabled={submitting}
