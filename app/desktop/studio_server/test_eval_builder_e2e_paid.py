@@ -337,11 +337,6 @@ def _make_temp_task(tmp_path, monkeypatch, instruction: str) -> Task:
         "app.desktop.studio_server.eval_api",
     ):
         monkeypatch.setattr(f"{module}.task_from_id", resolve)
-    # The local batch planner also resolves the project directly.
-    monkeypatch.setattr(
-        "app.desktop.studio_server.batch_plan_api.project_from_id",
-        lambda _project_id: project,
-    )
     return task
 
 
