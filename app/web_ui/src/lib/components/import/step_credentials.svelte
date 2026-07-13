@@ -162,7 +162,7 @@
         </div>
       {:else}
         <div class="flex flex-col items-center py-8 gap-4">
-          <span class="loading loading-spinner loading-lg"></span>
+          <span class="loading loading-spinner loading-lg text-primary"></span>
           <p class="text-sm text-gray-500">
             {oauth.checking_access
               ? "Verifying access..."

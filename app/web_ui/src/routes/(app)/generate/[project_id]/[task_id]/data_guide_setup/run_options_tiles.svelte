@@ -14,13 +14,22 @@
     model_name as friendly_model_name,
     provider_name_from_id,
   } from "$lib/stores"
-  import type { AvailableModels, RunConfigProperties } from "$lib/types"
+  import type {
+    AvailableModels,
+    KilnAgentRunConfigProperties,
+    RunConfigProperties,
+  } from "$lib/types"
 
   export let project_id: string
   // Bindable friendly names for the currently-selected input model, so the
   // parent can render its own trigger (e.g. "GPT-5.5" / "OpenRouter").
   export let selected_model_name_display: string = ""
   export let selected_provider_display: string = ""
+  // Seed the picker with the config the flow already ran with, instead of the
+  // recommended default. The copilot flow remounts this page between the setup
+  // step and the review step, so without this the user's own settings (model and
+  // advanced options alike) would silently revert to the defaults on the way back.
+  export let initial_run_config: KilnAgentRunConfigProperties | null = null
 
   let combined_config_dialog: Dialog
   let input_run_config_component: RunConfigComponent | null = null
@@ -51,6 +60,15 @@
   $: if (!recommended_data_gen_model && $available_models.length > 0) {
     recommended_data_gen_model = pick_data_gen_model($available_models)
   }
+
+  // The model we hand to RunConfigComponent. It must carry the seeded model too,
+  // not just initial_run_config_properties: `recommended_data_gen_model` resolves
+  // asynchronously (once available_models loads), and a parent prop update
+  // overwrites the child's `model` — so a bare recommended default would land on
+  // top of the seeded config and clobber it.
+  $: seed_model = initial_run_config
+    ? `${initial_run_config.model_provider_name}/${initial_run_config.model_name}`
+    : recommended_data_gen_model
 
   // `input_model_name` is the model id, `input_provider` the provider id — both
   // kept in sync by RunConfigComponent. Resolve each to a friendly name.
@@ -102,7 +120,8 @@
     bind:this={input_run_config_component}
     bind:model_name={input_model_name}
     bind:provider={input_provider}
-    model={recommended_data_gen_model}
+    model={seed_model}
+    initial_run_config_properties={initial_run_config}
     {project_id}
     requires_structured_output={true}
     show_name_field={false}

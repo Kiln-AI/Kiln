@@ -1299,6 +1299,63 @@ def test_preview_data_gen_guide_unparseable_samples_returns_500(
     assert "preview" in response.json()["message"].lower()
 
 
+def test_preview_data_gen_guide_surfaces_provider_error(
+    mock_task_from_id,
+    mock_project_from_id,
+    client,
+):
+    """Sample calls are fanned out with return_exceptions=True, so a provider
+    failure never propagates on its own. When every call fails, the provider's
+    message (an exhausted key here) must reach the client — a generic "failed to
+    generate" sends the user chasing model quality instead of their account."""
+
+    class FakeKilnRunError(Exception):
+        def __init__(self, message: str, original: Exception):
+            super().__init__(message)
+            self.original = original
+
+    provider_error = RuntimeError(
+        'OpenrouterException - {"error":{"message":"Key limit exceeded (total limit)","code":403}}'
+    )
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(
+            side_effect=FakeKilnRunError(
+                "An unexpected error occurred.", provider_error
+            )
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with patch(
+            "app.desktop.studio_server.data_gen_api.load_skills_for_task",
+            return_value=[],
+        ):
+            response = client.post(
+                "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
+                json={
+                    "guide": "# Semantics\n\nSome rules",
+                    "run_config_properties": {
+                        "type": "kiln_agent",
+                        "model_name": "gpt-4",
+                        "model_provider_name": ModelProviderName.openai.value,
+                        "prompt_id": PromptGenerators.SIMPLE.value,
+                        "structured_output_mode": StructuredOutputMode.default.value,
+                    },
+                    "num_samples": 2,
+                },
+            )
+
+    assert response.status_code == 500
+    message = response.json()["message"]
+    assert "Key limit exceeded (total limit)" in message
+    # The KilnRunError wrapper's own text is the generic fallback — the useful
+    # detail lives on `original`, which is what we must report.
+    assert "An unexpected error occurred." not in message
+
+
 # --- /data_gen_guide_refine endpoint ---
 
 

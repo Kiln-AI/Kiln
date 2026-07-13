@@ -31,12 +31,18 @@ gap-6 (24px) row gap to the Continue button; use -mb-6 to close it fully. -->
         <SettingsGearIcon />
       </span>
       {#if model_name}
-        <!-- Model · provider truncate together as one line. -->
-        <span class="truncate min-w-0 text-sm">
-          <span class="font-medium">{model_name}</span>
+        <!-- Provider stacks under the model name; leading-tight keeps both
+        lines inside the button's fixed 3rem height. -->
+        <span
+          class="flex flex-col items-start min-w-0 text-left leading-tight py-0.5"
+        >
+          <span class="truncate max-w-full text-sm font-medium">
+            {model_name}
+          </span>
           {#if provider}
-            <span class="mx-1.5 text-gray-500" aria-hidden="true">·</span>
-            <span class="font-normal text-gray-500">{provider}</span>
+            <span class="truncate max-w-full text-xs font-normal text-gray-500">
+              {provider}
+            </span>
           {/if}
         </span>
       {:else}

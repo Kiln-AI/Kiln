@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+from collections.abc import Sequence
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -40,6 +42,8 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class DataGenCategoriesApiInput(BaseModel):
@@ -831,11 +835,34 @@ async def generate_input_preview_samples(
         preview_samples.append(GuidePreviewSample(input=sample_input_str))
 
     if not preview_samples:
-        raise HTTPException(
-            status_code=500, detail="Failed to generate preview samples"
-        )
+        raise HTTPException(status_code=500, detail=_preview_failure_detail(results))
 
     return preview_samples
+
+
+def _preview_failure_detail(results: Sequence[object]) -> str:
+    """Build the user-facing message for a preview run that produced nothing.
+
+    Every sample call is fanned out with `return_exceptions=True`, so a provider
+    failure (an expired key, a rate limit) arrives as an exception object rather
+    than propagating. Reporting a flat "failed to generate" for those sends the
+    user chasing model quality when the real cause — e.g. OpenRouter's 403 "Key
+    limit exceeded" — is sitting right there, so pass the provider's own text
+    through. The adapter wraps failures in KilnRunError; `original` holds the
+    underlying provider exception with the useful message.
+    """
+    first_error = next((r for r in results if isinstance(r, BaseException)), None)
+    if first_error is None:
+        # Calls succeeded but nothing parsed into a usable input.
+        return (
+            "Failed to generate preview inputs: the model returned no usable "
+            "inputs. Try again, or generate with a different model."
+        )
+
+    original = getattr(first_error, "original", first_error)
+    logger.warning("Data guide preview generation failed", exc_info=original)
+    message = str(original).strip() or type(original).__name__
+    return f"Failed to generate preview inputs: {message}"
 
 
 def _resolve_task_runtime_prompt(task: Task) -> str:
