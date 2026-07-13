@@ -198,8 +198,10 @@ class JudgeFeedbackBatchJobWorker(
             eval_name=eval.name if eval is not None else "",
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
-            judge_model_name=eval_config.model_name,
-            judge_model_provider=eval_config.model_provider,
+            # Only legacy (g_eval/llm_as_judge) configs reach this worker, and
+            # those always carry a judge model; "" only guards the type.
+            judge_model_name=eval_config.model_name or "",
+            judge_model_provider=eval_config.model_provider or "",
             generate_outputs=batch.generate_outputs,
             run_config_name=run_config_name,
             run_config_model_name=run_config_model_name,

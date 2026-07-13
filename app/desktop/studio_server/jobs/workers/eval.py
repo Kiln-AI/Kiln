@@ -9,7 +9,10 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
 )
-from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
+from kiln_ai.datamodel.dataset_filters import (
+    dataset_filter_from_id,
+    eval_input_filter_from_id,
+)
 from kiln_ai.datamodel.eval import Eval, EvalConfig
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -213,8 +216,10 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             run_config_skills_count=skills_count,
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
-            judge_model_name=eval_config.model_name,
-            judge_model_provider=eval_config.model_provider,
+            # V2 configs have no root-level judge model; leave blank like the
+            # MCP run-config fields above.
+            judge_model_name=eval_config.model_name or "",
+            judge_model_provider=eval_config.model_provider or "",
         )
 
     def _prompt_display_name(
@@ -275,24 +280,44 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         )
         eval, task = self._eval_and_task(eval_config)
 
-        # The eval-set filter defines the universe of dataset items in scope.
+        # The eval's filter defines the universe of dataset items in scope.
         # EvalRunner only works items that BOTH pass this filter AND lack a
         # matching EvalRun, so progress must be measured against this set.
-        filter = dataset_filter_from_id(eval.eval_set_filter_id)
-        in_filter_ids = {
-            task_run.id for task_run in task.runs(readonly=True) if filter(task_run)
-        }
-        total = len(in_filter_ids)
-
+        # An eval has exactly one of the two filter ids (datamodel invariant),
+        # mirroring EvalRunner's two collect paths: TaskRun-backed datasets use
+        # eval_set_filter_id; EvalInput-backed datasets use eval_input_filter_id.
+        #
         # Count only scored items that are still in the filter set. Items that
         # were scored but later drifted out of the filter must not be counted,
         # or success/is_complete would overcount and a resume could short-circuit
         # to succeeded while real work remains.
-        scored_ids = {
-            run.dataset_id
-            for run in eval_config.runs(readonly=True)
-            if run.task_run_config_id == params.run_config_id
-        }
+        if eval.eval_input_filter_id is not None:
+            input_filter = eval_input_filter_from_id(eval.eval_input_filter_id)
+            in_filter_ids = {
+                eval_input.id
+                for eval_input in task.eval_inputs(readonly=True)
+                if input_filter(eval_input)
+            }
+            scored_ids = {
+                run.eval_input_id
+                for run in eval_config.runs(readonly=True)
+                if run.task_run_config_id == params.run_config_id
+            }
+        elif eval.eval_set_filter_id is not None:
+            filter = dataset_filter_from_id(eval.eval_set_filter_id)
+            in_filter_ids = {
+                task_run.id for task_run in task.runs(readonly=True) if filter(task_run)
+            }
+            scored_ids = {
+                run.dataset_id
+                for run in eval_config.runs(readonly=True)
+                if run.task_run_config_id == params.run_config_id
+            }
+        else:
+            raise ValueError(
+                "Eval has neither eval_set_filter_id nor eval_input_filter_id"
+            )
+        total = len(in_filter_ids)
         success = len(scored_ids & in_filter_ids)
 
         # error is left None: failed items leave no EvalRun to count, so they
