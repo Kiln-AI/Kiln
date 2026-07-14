@@ -1,5 +1,6 @@
 import type { ComponentType } from "svelte"
 import { assertNever } from "$lib/utils/exhaustive"
+import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
 import type { components } from "$lib/api_schema"
 import type { EvalConfig } from "$lib/types"
@@ -76,10 +77,16 @@ export type ReferenceDataUsageMode =
  * Maps a V2 eval type to its reference-data usage mode.
  * Uses assertNever so adding a new V2EvalType forces a compile error
  * until its mode is declared here.
+ *
+ * While SHOW_REFERENCE_DATA_UI is off, every type reports "none", which hides
+ * the Reference Data field from the Test Judge pane for all judge types.
  */
 export function referenceDataUsageMode(
   type: V2EvalType,
 ): ReferenceDataUsageMode {
+  if (!SHOW_REFERENCE_DATA_UI) {
+    return "none"
+  }
   switch (type) {
     case "llm_judge":
       return "llm_judge"
@@ -160,15 +167,17 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
     case "exact_match":
       return {
         label: "Exact Match",
-        description:
-          "Output field should exactly equal an expected value or a reference-data value.",
+        description: SHOW_REFERENCE_DATA_UI
+          ? "Output field should exactly equal an expected value or a reference-data value."
+          : "Output field should exactly equal an expected value.",
 
         requiresTrust: false,
         tags: [],
         pageTitle: "Add an Exact Match Check",
         pageSubtitle: "Pass when the output equals an expected value.",
-        explainer:
-          "Compares the model output (or a value extracted from it) against a fixed expected value or a value from your reference data. Useful for tasks with a single correct answer.",
+        explainer: SHOW_REFERENCE_DATA_UI
+          ? "Compares the model output (or a value extracted from it) against a fixed expected value or a value from your reference data. Useful for tasks with a single correct answer."
+          : "Compares the model output (or a value extracted from it) against a fixed expected value. Useful for tasks with a single correct answer.",
         example:
           'If you expect the model to output "yes" or "no", Exact Match can verify the answer is correct.',
         createFormComponent: ExactMatchForm,
@@ -191,15 +200,17 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
     case "contains":
       return {
         label: "Contains",
-        description:
-          "Output contains (or doesn't contain) a string or reference value.",
+        description: SHOW_REFERENCE_DATA_UI
+          ? "Output contains (or doesn't contain) a string or reference value."
+          : "Output contains (or doesn't contain) a string.",
 
         requiresTrust: false,
         tags: [],
         pageTitle: "Add a Contains Check",
         pageSubtitle: "Pass when the output contains (or omits) a substring.",
-        explainer:
-          "Checks whether the model output includes or excludes a specific substring. The substring can be a fixed value or pulled from your reference data.",
+        explainer: SHOW_REFERENCE_DATA_UI
+          ? "Checks whether the model output includes or excludes a specific substring. The substring can be a fixed value or pulled from your reference data."
+          : "Checks whether the model output includes or excludes a specific substring.",
         createFormComponent: ContainsForm,
         resultRendererComponent: ContainsResult,
       }
@@ -276,8 +287,9 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         tags: [{ label: "Beta", tone: "beta" }],
         pageTitle: "Add a Code Judge",
         pageSubtitle: "Write a Python function that scores model outputs.",
-        explainer:
-          "Write a custom Python scoring function that can use the model's output, trace, and reference data. Faster and cheaper than LLM as a judge.",
+        explainer: SHOW_REFERENCE_DATA_UI
+          ? "Write a custom Python scoring function that can use the model's output, trace, and reference data. Faster and cheaper than LLM as a judge."
+          : "Write a custom Python scoring function that can use the model's output and trace. Faster and cheaper than LLM as a judge.",
         createFormComponent: CodeEvalForm,
         resultRendererComponent: CodeEvalResult,
       }

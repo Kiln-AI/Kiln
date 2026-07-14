@@ -1,6 +1,7 @@
 import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
 import type { EvalOutputScore } from "$lib/types"
 import { assertNever } from "$lib/utils/exhaustive"
+import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
 type ScoreType = EvalOutputScore["type"]
 
@@ -140,7 +141,8 @@ export function generate_default_code(
   const low_dict = build_return_dict(scores, "low")
   const passing_dict = build_return_dict(scores, "passing")
 
-  return `def score(output, trace, reference_data, task_input):
+  if (SHOW_REFERENCE_DATA_UI) {
+    return `def score(output, trace, reference_data, task_input):
     """Score the model output.
 
     Parameters are optional and order-independent — declare only the ones you need.
@@ -149,6 +151,25 @@ export function generate_default_code(
         output: The model's final output string.
         trace: List of message dicts from the conversation.
         reference_data: Dict of reference/expected data (if any).
+        task_input: The original task input string.
+
+    Returns:
+        ${returns_doc}
+    """
+    if not output:
+        return ${low_dict}
+    return ${passing_dict}
+`
+  }
+
+  return `def score(output, trace, task_input):
+    """Score the model output.
+
+    Parameters are optional and order-independent — declare only the ones you need.
+
+    Args:
+        output: The model's final output string.
+        trace: List of message dicts from the conversation.
         task_input: The original task input string.
 
     Returns:
@@ -218,13 +239,24 @@ def score(trace):
     },
     {
       label: "Domain-specific grading",
-      code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+      code: SHOW_REFERENCE_DATA_UI
+        ? `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
 def score(output, reference_data):
     """Grade output against domain-specific criteria."""
     expected = (reference_data or {}).get("expected_answer", "")
 
     contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
+
+    word_count = len(output.split())
+
+    ${domain_return}
+`
+        : `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
+
+def score(output):
+    """Grade output against domain-specific criteria."""
+    contains = KilnEvalHelpers.assert_contains(output, "Summary:")
 
     word_count = len(output.split())
 

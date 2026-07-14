@@ -467,21 +467,12 @@ describe("manualExampleSupport", () => {
   })
 })
 
+// Behavior with SHOW_REFERENCE_DATA_UI off (the shipped default). The flag-on
+// behavior is covered in registry.reference_data.test.ts.
 describe("referenceDataUsageMode", () => {
-  const EXPECTED_MODES: Record<V2EvalType, ReferenceDataUsageMode> = {
-    llm_judge: "llm_judge",
-    exact_match: "reference_field",
-    contains: "reference_field",
-    set_check: "reference_field",
-    code_eval: "code",
-    pattern_match: "none",
-    tool_call_check: "none",
-    step_count_check: "none",
-  }
-
-  it("maps every V2EvalType to the correct mode", () => {
-    for (const [type, expectedMode] of Object.entries(EXPECTED_MODES)) {
-      expect(referenceDataUsageMode(type as V2EvalType)).toBe(expectedMode)
+  it("reports 'none' for every V2EvalType while reference data is hidden", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(referenceDataUsageMode(t)).toBe("none")
     }
   })
 
@@ -489,13 +480,6 @@ describe("referenceDataUsageMode", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
       expect(() => referenceDataUsageMode(t)).not.toThrow()
     }
-  })
-
-  it("throws for an invalid type via assertNever", () => {
-    expect(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      referenceDataUsageMode("invalid_type" as any),
-    ).toThrow("Unexpected value")
   })
 
   it("returns one of the four valid mode strings for every type", () => {
@@ -507,6 +491,23 @@ describe("referenceDataUsageMode", () => {
     ]
     for (const t of ALL_V2_EVAL_TYPES) {
       expect(validModes).toContain(referenceDataUsageMode(t))
+    }
+  })
+
+  it("keeps reference data out of every type's user-facing copy", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      const meta = getV2EvalTypeMetadata(t)
+      const copy = [
+        meta.label,
+        meta.description,
+        meta.pageTitle,
+        meta.pageSubtitle,
+        meta.explainer ?? "",
+        meta.example ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+      expect(copy).not.toContain("reference")
     }
   })
 })

@@ -6,6 +6,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { getDefaultLlmJudgePrompt } from "$lib/api/v2_eval_api"
+  import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
   import { onMount } from "svelte"
 
   export let task_id: string
@@ -298,10 +299,12 @@
         <li>
           <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire trace.
         </li>
-        <li>
-          <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
-          data attached to to eval case.
-        </li>
+        {#if SHOW_REFERENCE_DATA_UI}
+          <li>
+            <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
+            data attached to to eval case.
+          </li>
+        {/if}
       </ul>
     </div>
     {#if prompt_fetch_error}

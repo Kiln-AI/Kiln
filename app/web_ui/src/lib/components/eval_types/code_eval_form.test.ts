@@ -83,6 +83,16 @@ describe("CodeEvalForm", () => {
     )
   })
 
+  it("Score Function info_description does not mention reference data", () => {
+    const { container } = render(CodeEvalForm)
+    const el = container.querySelector(
+      '[data-testid="form-element-code_eval_score_function"]',
+    )
+    expect(el?.getAttribute("data-info-description")).toBe(
+      "The Python function can use the model's output and trace to drive pragmatic scoring. Faster and cheaper than LLM as a judge.",
+    )
+  })
+
   it("Score Function FormElement has Examples inline action", () => {
     const { container } = render(CodeEvalForm)
     const el = container.querySelector(
@@ -161,9 +171,8 @@ describe("CodeEvalForm", () => {
   it("default code contains the expected function signature", () => {
     const { component } = render(CodeEvalForm)
     const props = component.getProperties()
-    expect(props.code).toContain(
-      "def score(output, trace, reference_data, task_input)",
-    )
+    expect(props.code).toContain("def score(output, trace, task_input)")
+    expect(props.code).not.toContain("reference_data")
   })
 
   it("renders the examples dialog content", () => {
@@ -236,12 +245,24 @@ describe("example code correctness", () => {
     expect(domainCode).toContain("KilnEvalHelpers.pass_fail(contains)")
   })
 
-  it("Domain-specific grading handles empty expected gracefully", async () => {
+  it("Domain-specific grading asserts against a literal marker", async () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll(".tab")
     await fireEvent.click(tabs[2])
     const domainCode = get_example_code(container)
-    expect(domainCode).toContain("if expected else True")
+    expect(domainCode).toContain(
+      'contains = KilnEvalHelpers.assert_contains(output, "Summary:")',
+    )
+    expect(domainCode).not.toContain("if expected else True")
+  })
+
+  it("no example mentions reference data", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll(".tab")
+    for (let i = 0; i < tabs.length; i++) {
+      await fireEvent.click(tabs[i])
+      expect(get_example_code(container)).not.toContain("reference_data")
+    }
   })
 
   it("Check tool usage example clamps five_star lower bound to 1", async () => {
