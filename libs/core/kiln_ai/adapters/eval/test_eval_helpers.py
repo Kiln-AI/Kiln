@@ -552,6 +552,56 @@ class TestGetUsageTotals:
         assert totals["cost"] == 1.0
 
 
+class TestUsageTotalsMatchesDatamodel:
+    """Cross-check against MessageUsage.from_trace (the TaskRun.usage
+    aggregation). Two implementations of this sum exist on purpose — typed
+    save-time validation vs never-raise sandbox duck-typing — so pin them
+    to identical results and identical field coverage; drift breaks CI
+    instead of quietly disagreeing."""
+
+    def test_same_totals_as_from_trace(self, helpers: KilnEvalHelpers):
+        from kiln_ai.datamodel.usage import MessageUsage
+
+        trace = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "a",
+                "usage": MessageUsage(
+                    input_tokens=100, output_tokens=50, total_tokens=150, cost=0.01
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": "b",
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "total_tokens": 15,
+                    "cached_tokens": 3,
+                    "cost": 0.002,
+                },
+            },
+            {"role": "assistant", "content": "c"},
+            {"role": "tool", "tool_call_id": "x", "content": "ignored"},
+        ]
+        totals = helpers.get_usage_totals(trace)
+        datamodel_sum = MessageUsage.from_trace(trace)
+        for key, value in totals.items():
+            # from_trace preserves None for never-reported fields; the
+            # helper's float contract maps that to 0.0
+            assert value == pytest.approx(getattr(datamodel_sum, key) or 0.0), key
+
+    def test_helper_covers_every_message_usage_field(self, helpers: KilnEvalHelpers):
+        """If MessageUsage gains a field, this fails until get_usage_totals
+        decides to sum or deliberately exclude it."""
+        from kiln_ai.datamodel.usage import MessageUsage
+
+        assert set(helpers.get_usage_totals(None).keys()) == set(
+            MessageUsage.model_fields.keys()
+        )
+
+
 class TestGetTotalLatencyMs:
     @pytest.mark.parametrize("trace", [None, []], ids=["none", "empty"])
     def test_empty(self, helpers: KilnEvalHelpers, trace):
