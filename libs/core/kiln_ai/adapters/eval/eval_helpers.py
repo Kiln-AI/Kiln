@@ -82,6 +82,39 @@ class KilnEvalHelpers:
             or entry.get("type") == "tool_result"
         ]
 
+    @staticmethod
+    def get_tool_result_content(
+        trace: list[dict[str, Any]] | None, tool_call_id: str | None
+    ) -> str:
+        """Return the text content of the tool result answering *tool_call_id*.
+
+        Pairs OpenAI-format tool results (``role: "tool"``) with their
+        originating call by ``tool_call_id``; list-of-blocks content is
+        flattened to newline-joined text. Returns ``""`` when *tool_call_id*
+        is falsy (``get_tool_calls`` emits ``id: None`` for malformed calls)
+        or no result matches. If several results carry the same id, the
+        first match wins.
+        """
+        if not tool_call_id:
+            return ""
+        for entry in KilnEvalHelpers.get_tool_results(trace):
+            if entry.get("tool_call_id") != tool_call_id:
+                continue
+            content = entry.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                # str(... or "") coerces malformed blocks (e.g. text: None)
+                # instead of raising from within a user's scorer run.
+                return "\n".join(
+                    str(block.get("text") or "")
+                    if isinstance(block, dict)
+                    else str(block)
+                    for block in content
+                )
+            return "" if content is None else str(content)
+        return ""
+
     # -- Tool-call matching -------------------------------------------------
 
     @staticmethod
