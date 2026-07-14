@@ -240,10 +240,10 @@ class UpdateMemoryTool(_MemoryTool):
     _name: ClassVar[str] = "update_memory"
     _description: ClassVar[str] = (
         "Replace provided fields on an existing memory (omitted fields are "
-        "untouched). Prefer adding a 'stale' tag plus a new correction memory over "
-        "rewriting someone else's content; the main legitimate rewrite case is a "
-        "rolling session-state memory. Passing an empty content clears it. Conflicts "
-        "resolve last-writer-wins."
+        "untouched). Use this to correct or refresh a memory whose overview or "
+        "content is wrong or outdated; delete instead if the memory should be "
+        "removed entirely. Passing an empty content clears it. Conflicts resolve "
+        "last-writer-wins."
     )
     _parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -284,8 +284,8 @@ class UpdateMemoryTool(_MemoryTool):
 class DeleteMemoryTool(_MemoryTool):
     _name: ClassVar[str] = "delete_memory"
     _description: ClassVar[str] = (
-        "Hard-delete a memory by id. For confirmed junk only; prefer tagging a "
-        "'wrong but instructive' memory as 'stale' instead of deleting it."
+        "Hard-delete a memory by id. For junk, wrong, or obsolete memories; use "
+        "update instead if the memory should be corrected rather than removed."
     )
     _parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
