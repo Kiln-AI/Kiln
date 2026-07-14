@@ -860,7 +860,7 @@ def test_v2_llm_judge_config_rejected_on_custom_score_eval():
         )
 
 
-def test_non_judge_config_allowed_on_custom_score_eval():
+def test_code_eval_config_allowed_on_custom_score_eval():
     eval = Eval(
         name="Custom Metric Eval",
         eval_set_filter_id="tag::tag1",
@@ -875,7 +875,68 @@ def test_non_judge_config_allowed_on_custom_score_eval():
         properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
         parent=eval,
     )
-    assert config.is_llm_judge() is False
+    assert config.is_code_eval() is True
+
+
+def test_custom_score_eval_run_round_trip(tmp_path):
+    """End-to-end over disk: a code-eval config on a custom-score eval saves
+    EvalRuns carrying custom values and reloads them through the real parent
+    chain (the feature's happy path, not just the pure validator)."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(name="total tokens", type=TaskOutputRatingType.custom),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="code",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
+        parent=eval,
+    )
+    config.save_to_file()
+    run = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0, "total_tokens": 12345.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    run.save_to_file()
+
+    reloaded = EvalRun.load_from_file(run.path)
+    assert reloaded.scores == {"quality": 1.0, "total_tokens": 12345.0}
+
+
+def test_check_type_config_rejected_on_custom_score_eval():
+    """Check-type adapters fill every declared score key with 0.0/1.0, which
+    would silently record meaningless values for an unbounded metric — only
+    code evals may serve custom-score evals."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="check",
+            config_type=EvalConfigType.v2,
+            properties=PatternMatchProperties(pattern="ok"),
+            parent=eval,
+        )
 
 
 def test_eval_run_eval_config_eval_validation():

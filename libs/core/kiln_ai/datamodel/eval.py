@@ -760,29 +760,25 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
     def runs(self, readonly: bool = False) -> list[EvalRun]:
         return super().runs(readonly=readonly)  # type: ignore
 
-    def is_llm_judge(self) -> bool:
-        """True for configs whose scores come from an LLM judge (legacy
-        g_eval/llm_as_judge, or a V2 llm_judge)."""
-        return self.config_type in (
-            EvalConfigType.g_eval,
-            EvalConfigType.llm_as_judge,
-        ) or (
-            self.config_type == EvalConfigType.v2
-            and isinstance(self.properties, LlmJudgeProperties)
+    def is_code_eval(self) -> bool:
+        """True when scores come from a user-authored scorer (V2 code_eval)."""
+        return self.config_type == EvalConfigType.v2 and isinstance(
+            self.properties, CodeEvalProperties
         )
 
     @model_validator(mode="after")
-    def validate_no_judge_on_custom_scores(self) -> Self:
-        """Judge configs can't serve evals with custom-typed output scores:
+    def validate_custom_scores_require_code_eval(self) -> Self:
+        """Only code evals can serve evals with custom-typed output scores:
         judges structurally can't emit custom keys (build_score_schema skips
-        them), so every EvalRun save would fail exact-key validation. Custom
-        metrics are code-eval only.
+        them, so every EvalRun save would fail exact-key validation), and the
+        check-type adapters fill every declared key with 0.0/1.0, recording
+        meaningless values for an unbounded metric.
 
-        Creation-time only: validation of a file loaded from disk runs before
-        the parent link is attached, so hand-edited files pass here —
-        BaseEval re-checks at eval time as defense in depth.
+        Validation of a file loaded from disk runs before the parent link is
+        attached, so hand-edited files pass here — BaseEval re-checks at
+        eval time as defense in depth.
         """
-        if not self.is_llm_judge():
+        if self.is_code_eval():
             return self
         try:
             parent = self.parent_eval()
@@ -792,8 +788,8 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             score.type == TaskOutputRatingType.custom for score in parent.output_scores
         ):
             raise ValueError(
-                "LLM-judge eval configs cannot be used on evals with custom-typed "
-                "output scores (judges cannot emit custom keys); use a code eval."
+                "Evals with custom-typed output scores can only use code-eval "
+                "configs; other eval types cannot produce custom metrics."
             )
         return self
 

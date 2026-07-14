@@ -604,6 +604,10 @@ def count_human_evals(
         has_all_scores = True
         has_any_scores = False
         for output_score in eval.output_scores:
+            # Humans can't rate custom metrics (no rating UI for them), so
+            # counting them would pin every item at "partially rated".
+            if output_score.type == TaskOutputRatingType.custom:
+                continue
             score = human_score_from_task_run(
                 dataset_item, output_score, score_key_to_task_requirement_id
             )

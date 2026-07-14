@@ -1631,10 +1631,15 @@ async def test_get_eval_config_compare_summary_skips_custom_scores(
         )
 
     assert response.status_code == 200
-    results = response.json()["results"]
+    data = response.json()
+    results = data["results"]
     # five_star score still correlated; the custom score is absent, not a 500
     assert "score1" in results["eval_config1"]
     assert "overall_rating" not in results["eval_config1"]
+    # Custom scores are unrateable by humans, so they must not block the
+    # rated tally: score1 is human-rated, so the item counts fully rated.
+    assert data["fully_rated_count"] == 1
+    assert data["partially_rated_count"] == 0
 
 
 @pytest.mark.asyncio
