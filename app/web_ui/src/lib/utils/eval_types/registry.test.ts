@@ -482,6 +482,13 @@ describe("referenceDataUsageMode", () => {
     }
   })
 
+  it("still throws for an invalid type via assertNever", () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      referenceDataUsageMode("invalid_type" as any),
+    ).toThrow("Unexpected value")
+  })
+
   it("returns one of the four valid mode strings for every type", () => {
     const validModes: ReferenceDataUsageMode[] = [
       "llm_judge",

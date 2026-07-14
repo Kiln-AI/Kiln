@@ -75,18 +75,27 @@ export type ReferenceDataUsageMode =
 
 /**
  * Maps a V2 eval type to its reference-data usage mode.
- * Uses assertNever so adding a new V2EvalType forces a compile error
- * until its mode is declared here.
  *
  * While SHOW_REFERENCE_DATA_UI is off, every type reports "none", which hides
- * the Reference Data field from the Test Judge pane for all judge types.
+ * the Reference Data field from the Test Judge pane for all judge types. The
+ * declared mode is still resolved first, so an unknown type throws in every
+ * configuration rather than silently reporting "none".
  */
 export function referenceDataUsageMode(
   type: V2EvalType,
 ): ReferenceDataUsageMode {
-  if (!SHOW_REFERENCE_DATA_UI) {
-    return "none"
-  }
+  const declared = declaredReferenceDataUsageMode(type)
+  return SHOW_REFERENCE_DATA_UI ? declared : "none"
+}
+
+/**
+ * The mode a type declares, independent of whether the UI currently shows it.
+ * Uses assertNever so adding a new V2EvalType forces a compile error
+ * until its mode is declared here.
+ */
+function declaredReferenceDataUsageMode(
+  type: V2EvalType,
+): ReferenceDataUsageMode {
   switch (type) {
     case "llm_judge":
       return "llm_judge"
