@@ -353,6 +353,19 @@ class TestFiniteScoreValidation:
             with pytest.raises(RuntimeError, match="finite"):
                 await adapter.evaluate(_inp())
 
+    @pytest.mark.asyncio
+    async def test_overlarge_int_rejected_cleanly(self):
+        """An int too large for float (10**400) must surface the finite-score
+        RuntimeError, not a raw OverflowError from the coercion."""
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust("/fake/project/path")
+
+        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
+            mock_run.return_value = {"ok": {"accuracy": 10**400}}
+            with pytest.raises(RuntimeError, match="finite"):
+                await adapter.evaluate(_inp())
+
 
 class TestUsageObjectTransport:
     @pytest.mark.asyncio
