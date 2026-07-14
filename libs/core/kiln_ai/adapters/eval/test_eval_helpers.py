@@ -1,5 +1,7 @@
 """Tests for KilnEvalHelpers -- pure-Python helper class for user scorers."""
 
+from typing import Any, ClassVar
+
 import pytest
 
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
@@ -372,6 +374,69 @@ class TestAssertions:
 
     def test_assert_matches_full_pattern(self, helpers: KilnEvalHelpers):
         assert helpers.assert_matches("abc123def", r"^abc\d+def$") is True
+
+
+class TestGetAssistantEmittedText:
+    _TRACE: ClassVar[list[dict[str, Any]]] = [
+        {"role": "user", "content": "translate to japanese"},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "thinking about kanji",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "dictionary_lookup",
+                        "arguments": '{"word": "\\u7aaf"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "TOOL_PAYLOAD"},
+        {"role": "assistant", "content": "窯 (kama) means kiln."},
+    ]
+
+    @pytest.mark.parametrize("trace", [None, []], ids=["none", "empty"])
+    def test_empty(self, helpers: KilnEvalHelpers, trace):
+        assert helpers.get_assistant_emitted_text(trace) == ""
+
+    def test_default_surface(self, helpers: KilnEvalHelpers):
+        text = helpers.get_assistant_emitted_text(self._TRACE)
+        assert "窯 (kama) means kiln." in text
+        assert "thinking about kanji" in text
+        # never tool results, tool names, or (by default) arguments
+        assert "TOOL_PAYLOAD" not in text
+        assert "dictionary_lookup" not in text
+        assert "u7aaf" not in text
+
+    def test_exclude_reasoning(self, helpers: KilnEvalHelpers):
+        text = helpers.get_assistant_emitted_text(self._TRACE, include_reasoning=False)
+        assert "thinking about kanji" not in text
+        assert "窯 (kama) means kiln." in text
+
+    def test_include_tool_call_arguments_not_names(self, helpers: KilnEvalHelpers):
+        text = helpers.get_assistant_emitted_text(self._TRACE, include_tool_calls=True)
+        assert '{"word": "\\u7aaf"}' in text
+        assert "dictionary_lookup" not in text
+
+    def test_refusal_and_blocks(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "block text"},
+                    {"type": "text", "text": None},
+                    "bare block",
+                ],
+                "refusal": "I can't help with that.",
+            }
+        ]
+        text = helpers.get_assistant_emitted_text(trace)
+        assert "block text" in text
+        assert "bare block" in text
+        assert "I can't help with that." in text
 
 
 # ---------------------------------------------------------------------------
