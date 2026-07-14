@@ -36,10 +36,18 @@ Kiln Pro. From there, "Create Manually" lands on the manual setup form.
   wizard.
 - Intro CTAs: primary "Set Up Data Guide" → /data_guide_chooser, secondary
   "Continue Without" sets skip_data_guide=true (no nav).
+- On the chooser, "Create Manually" no longer navigates directly: it opens
+  the Add-Example dialog (include_output=false) first. The dialog captures
+  one input, then handle_data_guide_example_added stashes it on the pending
+  store and navigates to /data_guide_setup.
+- The fixture task is plaintext with no runs, so the dialog skips method
+  selection and renders the free-text input textarea (#example_input); the
+  submit button is labelled "Add".
 
 ## Assertions
 - "Set Up Data Guide" navigates to /data_guide_chooser.
-- From the chooser, "Create Manually" navigates to /data_guide_setup.
+- From the chooser, "Create Manually" → fill example → "Add" navigates to
+  /data_guide_setup.
 */
 test("/synth intro routes through chooser to manual setup", async ({
   page,
@@ -58,6 +66,11 @@ test("/synth intro routes through chooser to manual setup", async ({
   )
 
   await page.getByRole("button", { name: "Create Manually" }).click()
+
+  // "Create Manually" opens the Add-Example dialog; fill the first input and
+  // submit it to trigger the navigation to the manual setup form.
+  await page.locator("#example_input").fill("First example input")
+  await page.getByRole("button", { name: "Add", exact: true }).click()
 
   await expect(page).toHaveURL(
     `/generate/${project.id}/${task.id}/data_guide_setup`,
@@ -79,7 +92,9 @@ click Save Without Verifying, confirm the new content is persisted.
 
 ## Hints
 - Pre-seed a guide via PUT.
-- The Edit action button is rendered by AppPage with label "Edit".
+- The Edit action button is rendered by AppPage with label "Edit". It opens
+  an edit chooser dialog first (open_edit_chooser); pick "Edit Manually" to
+  reach the textarea dialog (open_edit_dialog).
 - The dialog's textarea has id="edit_guide_text".
 - The "Save Without Verifying" affordance is a link styled <button> that
   appears below the FormContainer only when editing_guide !== guide
@@ -106,10 +121,16 @@ test("edit dialog Save Without Verifying does a direct PUT", async ({
 
   await page.getByRole("button", { name: "Edit", exact: true }).click()
 
+  // The Edit action opens a chooser first; pick manual editing to reach the
+  // textarea dialog.
+  await page.getByText("Edit Manually", { exact: true }).click()
+
   const editedGuide = `# Reference Inputs\n\n## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\``
   await page.locator("#edit_guide_text").fill(editedGuide)
 
-  await page.getByRole("button", { name: "Save Without Verifying" }).click()
+  await page
+    .getByRole("button", { name: "Save Without Verifying", exact: true })
+    .click()
 
   await expect
     .poll(

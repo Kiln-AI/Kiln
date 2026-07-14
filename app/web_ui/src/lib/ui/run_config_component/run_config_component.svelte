@@ -13,6 +13,7 @@
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
     RunConfigProperties,
+    KilnAgentRunConfigProperties,
     StructuredOutputMode,
     AvailableModels,
     Task,
@@ -67,6 +68,11 @@
   export let show_name_field: boolean = true
 
   export let model: string | null = $ui_state.selected_model
+  // Optional: seed every run option (model, prompt, tools, temperature, top_p,
+  // structured output mode, thinking level) from an existing config. Takes
+  // precedence over `model` and the model defaults. See below.
+  export let initial_run_config_properties: KilnAgentRunConfigProperties | null =
+    null
   export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   export let skills: string[] = []
@@ -158,6 +164,40 @@
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
   let run_config_just_loaded = false
+
+  // Set every run option from a config's properties. `run_config_just_loaded`
+  // stops the next reactive pass from re-applying model defaults over the values
+  // we just set (see update_for_state_changes).
+  function apply_run_config_properties(
+    config_properties: KilnAgentRunConfigProperties,
+  ) {
+    model =
+      config_properties.model_provider_name + "/" + config_properties.model_name
+    prompt_method = config_properties.prompt_id
+    const split = split_tool_and_skill_ids(
+      config_properties.tools_config?.tools ?? [],
+    )
+    tools = split.tool_ids
+    skills = split.skill_ids
+    temperature = config_properties.temperature
+    top_p = config_properties.top_p
+    structured_output_mode = config_properties.structured_output_mode
+    thinking_level = config_properties.thinking_level ?? null
+    input_transform = config_properties.input_transform ?? null
+    run_config_just_loaded = true
+  }
+
+  // Seed the run options from a config the caller already ran with, rather than
+  // from the model defaults — e.g. a multi-step flow that remounts this
+  // component between steps and wants the user's earlier picks (including
+  // advanced options) to survive. Applied once, when it first arrives: callers
+  // typically resolve it asynchronously, after this component has mounted.
+  let applied_initial_run_config = false
+  $: if (initial_run_config_properties && !applied_initial_run_config) {
+    applied_initial_run_config = true
+    apply_run_config_properties(initial_run_config_properties)
+  }
+
   async function update_current_run_options_for_selected_run_config() {
     // Only run once immediately after a run config selection, not every reactive update
     if (prior_selected_run_config_id === selected_run_config_id) {
@@ -178,20 +218,7 @@
     if (!isKilnAgentRunConfig(config_properties)) {
       return
     }
-    model =
-      config_properties.model_provider_name + "/" + config_properties.model_name
-    prompt_method = config_properties.prompt_id
-    const split = split_tool_and_skill_ids(
-      config_properties.tools_config?.tools ?? [],
-    )
-    tools = split.tool_ids
-    skills = split.skill_ids
-    temperature = config_properties.temperature
-    top_p = config_properties.top_p
-    structured_output_mode = config_properties.structured_output_mode
-    thinking_level = config_properties.thinking_level ?? null
-    input_transform = config_properties.input_transform ?? null
-    run_config_just_loaded = true
+    apply_run_config_properties(config_properties)
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
