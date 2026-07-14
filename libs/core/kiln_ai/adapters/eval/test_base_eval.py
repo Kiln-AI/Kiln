@@ -275,6 +275,40 @@ class EvalTester(BaseEval):
         return {"overall_rating": 5.0, "quality": 4.0}, None
 
 
+def test_judge_on_custom_score_eval_rejected_at_runtime():
+    """Defense in depth: EvalConfig's own validator only sees the parent at
+    creation time, so a hand-edited file that adds a custom score to a
+    judge-served eval loads fine — the judge must refuse at construction."""
+    task = Task(name="Test Task", instruction="Test instruction")
+    eval = Eval(
+        name="Test Eval",
+        parent=task,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(
+                name="Quality",
+                instruction="Rate quality",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+    )
+    eval_config = EvalConfig(
+        name="Test Eval Config",
+        model_name="gpt-4o",
+        model_provider="openai",
+        parent=eval,
+        properties={"eval_steps": ["test_step"]},
+    )
+    # Simulate the hand-edited file: swap in a custom score after the
+    # config was created, so the creation-time validator never saw it.
+    eval.output_scores[0] = EvalOutputScore(
+        name="Total Tokens", type=TaskOutputRatingType.custom
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalTester(eval_config, None)
+
+
 @pytest.mark.paid
 @pytest.mark.asyncio
 async def test_run_method():

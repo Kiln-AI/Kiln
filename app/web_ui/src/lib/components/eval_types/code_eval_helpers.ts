@@ -13,7 +13,7 @@ function score_description(type: ScoreType, key: string): string {
     case "five_star":
       return `${key}: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)`
     case "custom":
-      return `${key}: return 0.0 for Fail or 1.0 for Pass`
+      return `${key}: return the metric's value (any finite number, e.g. a count or cost)`
     default:
       return assertNever(type)
   }
@@ -25,8 +25,11 @@ function passing_value(type: ScoreType): string {
       return "5.0"
     case "pass_fail":
     case "pass_fail_critical":
-    case "custom":
       return "1.0"
+    case "custom":
+      // No pass/fail semantics for an unbounded metric; 0.0 is just a
+      // placeholder the user replaces with their computed value.
+      return "0.0"
     default:
       return assertNever(type)
   }
@@ -73,10 +76,11 @@ function example_value(
   switch (type) {
     case "pass_fail":
     case "pass_fail_critical":
-    case "custom":
       return `KilnEvalHelpers.pass_fail(${bool_expr})`
     case "five_star":
       return `KilnEvalHelpers.five_star(${rating_expr})`
+    case "custom":
+      return `0.0  # Replace with your computed metric value`
     default:
       return assertNever(type)
   }

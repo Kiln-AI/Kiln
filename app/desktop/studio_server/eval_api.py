@@ -50,6 +50,7 @@ from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
@@ -613,6 +614,10 @@ def count_human_evals(
         has_all_scores = True
         has_any_scores = False
         for output_score in eval.output_scores:
+            # Humans can't rate custom metrics (no rating UI for them), so
+            # counting them would pin every item at "partially rated".
+            if output_score.type == TaskOutputRatingType.custom:
+                continue
             score = human_score_from_task_run(
                 dataset_item, output_score, score_key_to_task_requirement_id
             )
@@ -1676,6 +1681,12 @@ def connect_evals_api(app: FastAPI):
                     )
 
                 for output_score in eval.output_scores:
+                    # Custom scores are unbounded metrics with no normalization
+                    # (normalize_rating raises on them), so correlation against
+                    # human ratings is undefined — skip them.
+                    if output_score.type == TaskOutputRatingType.custom:
+                        continue
+
                     score_key = output_score.json_key()
                     eval_score: float | None = eval_run.scores.get(score_key, None)
 

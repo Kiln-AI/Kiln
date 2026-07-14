@@ -141,12 +141,14 @@ describe("generate_default_code", () => {
   })
 
   describe("custom score type", () => {
-    it("treats custom like pass_fail (custom is rejected by the backend for evals but handled gracefully)", () => {
+    it("describes custom as an unbounded metric, not pass/fail", () => {
       const scores = [make_score("Custom Score", "custom")]
       const code = generate_default_code(scores)
       expect(code).toContain('"custom_score": 0.0')
-      expect(code).toContain('"custom_score": 1.0')
-      expect(code).toContain("return 0.0 for Fail or 1.0 for Pass")
+      expect(code).toContain(
+        "return the metric's value (any finite number, e.g. a count or cost)",
+      )
+      expect(code).not.toContain("return 0.0 for Fail or 1.0 for Pass")
     })
   })
 })
