@@ -41,4 +41,10 @@ if __name__ == "__main__":
         reload=True,
         # Debounce when changing many files (changing branch)
         reload_delay=0.1,
+        # Bound the graceful-shutdown wait on reload. The UI holds the jobs SSE
+        # stream open; uvicorn waits for in-flight requests to finish BEFORE it
+        # runs lifespan shutdown (which closes the stream), so without a bound a
+        # reload would hang on the open SSE. After this many seconds uvicorn
+        # cancels the lingering request task instead.
+        timeout_graceful_shutdown=1,
     )

@@ -12,6 +12,7 @@ from litellm.types.utils import (
 )
 
 from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
     ModelName,
     ModelProviderName,
     StructuredOutputMode,
@@ -3237,3 +3238,128 @@ class TestUsageTracking:
         assert new_usage.input_tokens == 3
         assert new_usage.output_tokens == 4
         assert new_usage.cost == 0.05
+
+
+class TestEmptyResponseErrors:
+    """Empty-content responses should raise a clear, finish_reason-aware error."""
+
+    @pytest.fixture
+    def adapter(self, config, mock_task):
+        return LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    @pytest.fixture
+    def provider(self):
+        return KilnModelProvider(
+            name=ModelProviderName.openrouter, model_id="test-model"
+        )
+
+    def _empty_response(self, finish_reason):
+        return ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {"content": None, "tool_calls": None},
+                    "finish_reason": finish_reason,
+                }
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_content_filter_raises_specific_error(self, adapter, provider):
+        response = self._empty_response("content_filter")
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        # It must NOT be the generic message.
+        assert "no content or tool calls" not in str(exc_info.value)
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_refusal_finish_reason_raises_specific_error(self, adapter, provider):
+        response = self._empty_response("refusal")
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        # LiteLLM normalizes a "refusal" stop reason to finish_reason='content_filter'
+        # on a real ModelResponse; the actual (normalized) value is interpolated.
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_message_refusal_field_raises_specific_error(self, adapter, provider):
+        # OpenAI can signal a refusal via message.refusal while finish_reason='stop'.
+        response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": None,
+                        "refusal": "I cannot help with that request.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        )
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_normal_finish_reason_raises_generic_error(self, adapter, provider):
+        response = self._empty_response("stop")
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="no content or tool calls"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        assert "content-filter/refusal" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_missing_finish_reason_raises_generic_error(self, adapter, provider):
+        response = self._empty_response(None)
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(ValueError, match="no content or tool calls"):
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )

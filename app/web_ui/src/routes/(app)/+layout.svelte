@@ -18,6 +18,10 @@
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
   import ChatBar from "./chat_bar.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
+  import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
+  import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
+  import JobsDialog from "$lib/components/jobs_dialog.svelte"
+  import { jobs_dialog } from "$lib/stores/jobs_dialog"
   import { Section } from "$lib/ui/section"
   import Dialog from "$lib/ui/dialog.svelte"
   import SidebarRail from "./sidebar_rail.svelte"
@@ -25,6 +29,11 @@
   import { chatBarExpanded } from "$lib/stores/chat_ui_state"
   import { derived } from "svelte/store"
   import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
+  import { env } from "$env/dynamic/public"
+
+  // Feature flag: the background Jobs UI (sidebar entry + dialog) only renders
+  // when PUBLIC_ENABLE_JOBS is explicitly "true". See .env.example.
+  const jobs_enabled = env.PUBLIC_ENABLE_JOBS === "true"
 
   // Rail-eligibility predicate: lg breakpoint, narrow viewport (< 1550px),
   // and chat bar expanded. See functional_spec.md "Trigger".
@@ -161,7 +170,11 @@
     ></label>
 
     {#if showRail}
-      <SidebarRail {section} openTaskDialog={() => taskDialog?.show()} />
+      <SidebarRail
+        {section}
+        {jobs_enabled}
+        openTaskDialog={() => taskDialog?.show()}
+      />
     {:else}
       <ul
         class="sidebar-menu menu bg-base-200 text-base-content w-72 md:w-52 2xl:w-56 p-3 pt-1 lg:pt-3 min-h-full text-xs"
@@ -176,9 +189,9 @@
           </label>
         </li>
         <div class="mb-2 ml-3 mt-1">
-          <div class="flex flex-row items-center mx-[-5px] p-0">
-            <img src="/images/animated_logo.svg" alt="logo" class="w-7 h-7" />
-            <div class="text-base font-bold ml-1">Kiln AI</div>
+          <div class="flex flex-row items-center gap-1.5 mx-[-5px]">
+            <img src="/images/animated_logo.svg" alt="Kiln" class="w-7 h-7" />
+            <span class="text-xl font-light leading-none">kiln ai</span>
           </div>
         </div>
         <button
@@ -435,6 +448,21 @@
             >
           </li>
         {/if}
+        {#if jobs_enabled}
+          <li class="menu-sm">
+            <button
+              type="button"
+              class="text-xs text-base-content"
+              on:click={() => jobs_dialog.open()}
+            >
+              <div class="sidebar-icon">
+                <JobsIcon />
+              </div>
+              Jobs
+              <SidebarJobsIndicator variant="inline" />
+            </button>
+          </li>
+        {/if}
         <li class="menu-sm">
           <a
             href="/settings"
@@ -472,6 +500,10 @@
 <Dialog bind:this={taskDialog} title="Select Task" width="wide">
   <SelectTasksMenu on:dismiss={() => taskDialog?.close()} />
 </Dialog>
+
+{#if jobs_enabled}
+  <JobsDialog />
+{/if}
 
 <style>
   :global(ul > li.menu-nested) {
