@@ -139,6 +139,57 @@ class KilnEvalHelpers:
             return "" if content is None else str(content)
         return ""
 
+    @staticmethod
+    def get_assistant_emitted_text(
+        trace: list[dict[str, Any]] | None,
+        *,
+        include_reasoning: bool = True,
+        include_tool_calls: bool = False,
+    ) -> str:
+        """Text the assistant itself emitted, newline-joined — the surface
+        for output-corruption checks.
+
+        Always includes message content (string or text blocks) and refusal
+        text; never tool results. Reasoning is included by default
+        (*include_reasoning*). Tool-call ARGUMENTS are off by default
+        (*include_tool_calls*); tool names are never included — they're
+        schema identifiers, not emitted text.
+
+        Caveat: tool-call arguments are JSON-serialized, so non-ASCII text
+        may appear as ``\\uXXXX`` escapes — corruption regexes (e.g. CJK
+        classes) can mismatch on argument content. That's why arguments
+        default to off.
+        """
+        parts: list[str] = []
+        for msg in trace or []:
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        text = block.get("text") or block.get("content") or ""
+                        if isinstance(text, str):
+                            parts.append(text)
+                    elif isinstance(block, str):
+                        parts.append(block)
+            refusal = msg.get("refusal")
+            if isinstance(refusal, str):
+                parts.append(refusal)
+            if include_reasoning:
+                reasoning = msg.get("reasoning_content") or msg.get("reasoning")
+                if isinstance(reasoning, str):
+                    parts.append(reasoning)
+            if include_tool_calls:
+                for tc in msg.get("tool_calls") or []:
+                    func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                    args = func.get("arguments")
+                    if isinstance(args, str):
+                        parts.append(args)
+        return "\n".join(p for p in parts if p)
+
     # -- Tool-call matching -------------------------------------------------
 
     @staticmethod
