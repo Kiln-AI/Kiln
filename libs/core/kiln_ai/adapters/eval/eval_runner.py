@@ -15,10 +15,18 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_fr
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
+
+# Default number of dataset items evaluated in parallel when a caller doesn't specify one.
+DEFAULT_EVAL_CONCURRENCY = 25
 
 
 @dataclass
@@ -184,17 +192,38 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0,
+    ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
+
+        Pass `observers` to be notified per-item (e.g. to surface the exception of
+        a failed dataset item — `Progress.errors` is only a count). Optional so the
+        streaming UI paths can keep calling `run()` with no observer.
+
+        `concurrency` bounds how many items run in parallel; None uses the default.
+
+        `max_retries` re-attempts items that fail with a transient error (rate limit,
+        connection blip) with exponential backoff starting at `retry_delay` seconds,
+        only surfacing the error if every attempt fails. Background jobs override the
+        defaults with a more patient schedule.
         """
+        if concurrency is None:
+            concurrency = DEFAULT_EVAL_CONCURRENCY
         jobs = self.collect_tasks()
 
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
-            max_retries=2,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            observers=observers,
         )
         async for progress in runner.run():
             yield progress
@@ -270,7 +299,9 @@ class EvalRunner:
             return True
         except Exception as e:
             if _is_retryable_error(e):
-                logger.error(
+                # Warning, not error: this fires per attempt, and the runner may
+                # still retry. A final failure is reported via the runner's observers.
+                logger.warning(
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )

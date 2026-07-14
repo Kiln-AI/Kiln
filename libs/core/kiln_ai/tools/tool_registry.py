@@ -12,6 +12,8 @@ from kiln_ai.datamodel.tool_id import (
     rag_config_id_from_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import DisableAutoModeTool
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import EnableAutoModeTool
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
@@ -48,6 +50,10 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                         "kiln_local_api_base_url is not configured. The server must set this before starting."
                     )
                 return KilnApiCallTool(api_base_url=api_base_url)
+            case KilnBuiltInToolId.ENABLE_AUTO_MODE:
+                return EnableAutoModeTool()
+            case KilnBuiltInToolId.DISABLE_AUTO_MODE:
+                return DisableAutoModeTool()
             case _:
                 raise_exhaustive_enum_error(typed_tool_id)
 
