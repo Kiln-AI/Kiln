@@ -654,7 +654,7 @@ built_in_models: List[KilnModel] = [
                 default_thinking_level="none",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
-                # silently dropped on tool calls for openai/gpt-5.5).
+                # silently dropped on tool calls for these models).
                 openrouter_reasoning_object=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
@@ -711,7 +711,7 @@ built_in_models: List[KilnModel] = [
                 default_thinking_level="none",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
-                # silently dropped on tool calls for openai/gpt-5.5).
+                # silently dropped on tool calls for these models).
                 openrouter_reasoning_object=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -766,7 +766,7 @@ built_in_models: List[KilnModel] = [
                 default_thinking_level="none",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
-                # silently dropped on tool calls for openai/gpt-5.5).
+                # silently dropped on tool calls for these models).
                 openrouter_reasoning_object=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
