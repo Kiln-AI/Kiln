@@ -162,6 +162,73 @@ class TestTraceNavigation:
         ]
 
 
+class TestGetToolResultContent:
+    def test_string_content(self, helpers: KilnEvalHelpers):
+        assert (
+            helpers.get_tool_result_content(_OPENAI_FORMAT_TRACE, "call_abc123")
+            == "result1"
+        )
+        assert (
+            helpers.get_tool_result_content(_OPENAI_FORMAT_TRACE, "call_def456")
+            == "result2"
+        )
+
+    def test_no_match_returns_empty(self, helpers: KilnEvalHelpers):
+        assert helpers.get_tool_result_content(_OPENAI_FORMAT_TRACE, "call_nope") == ""
+        assert helpers.get_tool_result_content(None, "call_abc123") == ""
+        assert helpers.get_tool_result_content([], "call_abc123") == ""
+
+    def test_falsy_id_returns_empty(self, helpers: KilnEvalHelpers):
+        """A None id (get_tool_calls emits it for malformed calls) must not
+        pair with legacy entries lacking the key (None == None)."""
+        trace = [{"role": "tool_result", "content": "legacy, no id"}]
+        assert helpers.get_tool_result_content(trace, None) == ""
+        assert helpers.get_tool_result_content(trace, "") == ""
+
+    def test_block_list_content(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "content": [
+                    {"type": "text", "text": "line one"},
+                    {"type": "text", "text": "line two"},
+                ],
+            }
+        ]
+        assert helpers.get_tool_result_content(trace, "c1") == "line one\nline two"
+
+    def test_malformed_blocks_never_raise(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "content": [
+                    {"type": "text", "text": None},
+                    {"type": "text"},
+                    "bare string",
+                    42,
+                ],
+            }
+        ]
+        assert helpers.get_tool_result_content(trace, "c1") == "\n\nbare string\n42"
+
+    def test_duplicate_ids_first_wins(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "tool", "tool_call_id": "c1", "content": "first"},
+            {"role": "tool", "tool_call_id": "c1", "content": "second"},
+        ]
+        assert helpers.get_tool_result_content(trace, "c1") == "first"
+
+    def test_non_string_content_coerced(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "tool", "tool_call_id": "c1", "content": 3.14},
+            {"role": "tool", "tool_call_id": "c2", "content": None},
+        ]
+        assert helpers.get_tool_result_content(trace, "c1") == "3.14"
+        assert helpers.get_tool_result_content(trace, "c2") == ""
+
+
 # ---------------------------------------------------------------------------
 # Tool-call matching
 # ---------------------------------------------------------------------------
