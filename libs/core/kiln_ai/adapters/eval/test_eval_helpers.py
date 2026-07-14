@@ -440,6 +440,119 @@ class TestGetAssistantEmittedText:
 
 
 # ---------------------------------------------------------------------------
+# Health / usage metrics
+# ---------------------------------------------------------------------------
+
+
+class _UsageObject:
+    """Stands in for MessageUsage: attribute-bearing, not a dict."""
+
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class TestGetUsageTotals:
+    @pytest.mark.parametrize("trace", [None, []], ids=["none", "empty"])
+    def test_empty(self, helpers: KilnEvalHelpers, trace):
+        totals = helpers.get_usage_totals(trace)
+        assert totals["total_tokens"] == 0.0
+        assert totals["cost"] == 0.0
+
+    def test_sums_dict_usage(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "assistant",
+                "content": "a",
+                "usage": {"input_tokens": 10, "output_tokens": 5, "cost": 0.01},
+            },
+            {
+                "role": "assistant",
+                "content": "b",
+                "usage": {"input_tokens": 20, "output_tokens": 15, "cost": 0.02},
+            },
+            {"role": "user", "content": "ignored", "usage": {"input_tokens": 999}},
+        ]
+        totals = helpers.get_usage_totals(trace)
+        assert totals["input_tokens"] == 30.0
+        assert totals["output_tokens"] == 20.0
+        assert totals["cost"] == pytest.approx(0.03)
+
+    def test_sums_object_usage(self, helpers: KilnEvalHelpers):
+        """Pickle-transport traces carry usage as objects, not dicts."""
+        trace = [
+            {
+                "role": "assistant",
+                "content": "a",
+                "usage": _UsageObject(input_tokens=7, total_tokens=12, cost=0.5),
+            }
+        ]
+        totals = helpers.get_usage_totals(trace)
+        assert totals["input_tokens"] == 7.0
+        assert totals["total_tokens"] == 12.0
+        assert totals["cost"] == 0.5
+
+    def test_absent_usage_sums_to_zero(self, helpers: KilnEvalHelpers):
+        """Documented caveat: no usage data is indistinguishable from zero."""
+        trace = [{"role": "assistant", "content": "a"}]
+        assert helpers.get_usage_totals(trace)["total_tokens"] == 0.0
+
+    def test_non_numeric_and_bool_values_ignored(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "assistant",
+                "content": "a",
+                "usage": {"input_tokens": "lots", "output_tokens": True, "cost": 1.0},
+            }
+        ]
+        totals = helpers.get_usage_totals(trace)
+        assert totals["input_tokens"] == 0.0
+        assert totals["output_tokens"] == 0.0
+        assert totals["cost"] == 1.0
+
+
+class TestGetTotalLatencyMs:
+    @pytest.mark.parametrize("trace", [None, []], ids=["none", "empty"])
+    def test_empty(self, helpers: KilnEvalHelpers, trace):
+        assert helpers.get_total_latency_ms(trace) == 0.0
+
+    def test_sums_assistant_latency(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "assistant", "content": "a", "latency_ms": 120},
+            {"role": "assistant", "content": "b", "latency_ms": 80.5},
+            {"role": "assistant", "content": "c"},
+            {"role": "tool", "tool_call_id": "x", "content": "r", "latency_ms": 999},
+        ]
+        assert helpers.get_total_latency_ms(trace) == pytest.approx(200.5)
+
+
+class TestGetErrorToolResults:
+    @pytest.mark.parametrize("trace", [None, []], ids=["none", "empty"])
+    def test_empty(self, helpers: KilnEvalHelpers, trace):
+        assert helpers.get_error_tool_results(trace) == []
+
+    def test_flagged_errors_only(self, helpers: KilnEvalHelpers):
+        trace = [
+            {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+            {"role": "tool", "tool_call_id": "c2", "content": "", "is_error": True},
+            {
+                "role": "tool",
+                "tool_call_id": "c3",
+                "content": "boom",
+                "error_message": "timeout",
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "c4",
+                "content": "fine",
+                "is_error": False,
+            },
+        ]
+        errors = helpers.get_error_tool_results(trace)
+        assert [e["tool_call_id"] for e in errors] == ["c2", "c3"]
+
+
+# ---------------------------------------------------------------------------
 # Markdown helpers
 # ---------------------------------------------------------------------------
 
