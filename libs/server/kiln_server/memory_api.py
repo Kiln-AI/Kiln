@@ -202,7 +202,8 @@ def connect_memory_api(app: FastAPI):
         project_id: Annotated[str, Path(description=_PROJECT_ID_DESC)],
         memory_id: Annotated[str, Path(description=_MEMORY_ID_DESC)],
     ) -> None:
-        """Hard-delete a memory. For confirmed junk; prefer a 'stale' tag otherwise."""
+        """Hard-delete a memory. For junk, wrong, or obsolete memories; use update
+        instead if the memory should be corrected rather than removed."""
         try:
             _store(project_id).delete_memory(memory_id)
         except MemoryNotFoundError as e:
