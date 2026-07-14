@@ -940,7 +940,7 @@ async def test_run_job_wrapped_rate_limit_raises_retryable_with_detail(
             )
 
     with patch(
-        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
         return_value=lambda *args, **kwargs: RateLimitedEvaluator(*args, **kwargs),
     ):
         with pytest.raises(RetryableError) as exc_info:
