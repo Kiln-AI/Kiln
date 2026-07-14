@@ -353,3 +353,48 @@ class TestAssertions:
 
     def test_assert_matches_full_pattern(self, helpers: KilnEvalHelpers):
         assert helpers.assert_matches("abc123def", r"^abc\d+def$") is True
+
+
+# ---------------------------------------------------------------------------
+# Markdown helpers
+# ---------------------------------------------------------------------------
+
+
+class TestGetMarkdownLinks:
+    @pytest.mark.parametrize("text", [None, ""], ids=["none", "empty"])
+    def test_empty_input(self, helpers: KilnEvalHelpers, text):
+        assert helpers.get_markdown_links(text) == []
+
+    def test_simple_links(self, helpers: KilnEvalHelpers):
+        text = "See [docs](https://docs.kiln.ai) and [home](https://kiln.ai)."
+        assert helpers.get_markdown_links(text) == [
+            ("docs", "https://docs.kiln.ai"),
+            ("home", "https://kiln.ai"),
+        ]
+
+    def test_balanced_parens_in_target(self, helpers: KilnEvalHelpers):
+        """Wikipedia-style URLs must not truncate at the inner paren."""
+        text = "[kiln](https://en.wikipedia.org/wiki/Kiln_(disambiguation))"
+        assert helpers.get_markdown_links(text) == [
+            ("kiln", "https://en.wikipedia.org/wiki/Kiln_(disambiguation)")
+        ]
+
+    @pytest.mark.parametrize("quote", ['"', "'"], ids=["double", "single"])
+    def test_title_stripped(self, helpers: KilnEvalHelpers, quote):
+        text = f"[docs](https://docs.kiln.ai {quote}The Docs{quote})"
+        assert helpers.get_markdown_links(text) == [("docs", "https://docs.kiln.ai")]
+
+    def test_images_excluded(self, helpers: KilnEvalHelpers):
+        text = "![logo](https://kiln.ai/logo.png) but [site](https://kiln.ai)"
+        assert helpers.get_markdown_links(text) == [("site", "https://kiln.ai")]
+
+    def test_code_spans_ignored(self, helpers: KilnEvalHelpers):
+        text = "Use `arr[i](x)` to call it; real [link](https://kiln.ai)."
+        assert helpers.get_markdown_links(text) == [("link", "https://kiln.ai")]
+
+    def test_empty_target_is_reported(self, helpers: KilnEvalHelpers):
+        """A broken link with no target is exactly what link checks look for."""
+        assert helpers.get_markdown_links("[broken]()") == [("broken", "")]
+
+    def test_nested_brackets_unsupported(self, helpers: KilnEvalHelpers):
+        assert helpers.get_markdown_links("[a[b]](https://kiln.ai)") == []
