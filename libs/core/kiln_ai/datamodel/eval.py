@@ -1,4 +1,5 @@
 import json
+import math
 from enum import Enum
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
@@ -304,7 +305,16 @@ def validate_scores_against_output_scores(
     """
 
     def _is_numeric(v: object) -> bool:
-        return isinstance(v, (int, float)) and not isinstance(v, bool)
+        # Finiteness must be explicit: NaN compares False against every range
+        # bound, so without it NaN passes all checks (and pydantic serializes
+        # NaN as null, making the saved file fail validation on next load).
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return False
+        try:
+            return math.isfinite(v)
+        except OverflowError:
+            # isfinite converts int args to float; an int like 10**400 can't be
+            return False
 
     problems: list[str] = []
     for output_score in output_scores:
@@ -330,9 +340,11 @@ def validate_scores_against_output_scores(
                         f"Score {output_score.name} is a pass_fail_critical rating and must be a number between -1.0 and 1.0 inclusive. Got: {value}"
                     )
             case TaskOutputRatingType.custom:
-                problems.append(
-                    f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
-                )
+                # Unbounded numeric metric: any finite number is valid.
+                if not _is_numeric(value):
+                    problems.append(
+                        f"Score {output_score.name} is a custom metric and must be a finite number. Got: {value}"
+                    )
             case _:
                 raise_exhaustive_enum_error(output_score.type)
     return problems
@@ -523,7 +535,7 @@ class EvalOutputScore(BaseModel):
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
     )
     type: TaskOutputRatingType = Field(
-        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
+        description="The type of rating ('five_star', 'pass_fail', 'pass_fail_critical', or 'custom'). Custom scores are unbounded numeric metrics (e.g. token counts, cost, latency); they can only be produced by code evals, so an eval with any custom score cannot use LLM-judge configs.",
     )
 
     def json_key(self) -> str:
@@ -533,14 +545,6 @@ class EvalOutputScore(BaseModel):
         For example, "Overall Rating" -> "overall_rating"
         """
         return string_to_json_key(self.name)
-
-    @model_validator(mode="after")
-    def validate_type(self) -> Self:
-        if self.type == TaskOutputRatingType.custom:
-            raise ValueError(
-                f"Custom scores are not supported in evaluators. Score '{self.name}' was set to a custom score."
-            )
-        return self
 
 
 class EvalRun(KilnParentedModel):
@@ -759,6 +763,39 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 
     def runs(self, readonly: bool = False) -> list[EvalRun]:
         return super().runs(readonly=readonly)  # type: ignore
+
+    def is_code_eval(self) -> bool:
+        """True when scores come from a user-authored scorer (V2 code_eval)."""
+        return self.config_type == EvalConfigType.v2 and isinstance(
+            self.properties, CodeEvalProperties
+        )
+
+    @model_validator(mode="after")
+    def validate_custom_scores_require_code_eval(self) -> Self:
+        """Only code evals can serve evals with custom-typed output scores:
+        judges structurally can't emit custom keys (build_score_schema skips
+        them, so every EvalRun save would fail exact-key validation), and the
+        check-type adapters fill every declared key with 0.0/1.0, recording
+        meaningless values for an unbounded metric.
+
+        Validation of a file loaded from disk runs before the parent link is
+        attached, so hand-edited files pass here — BaseEval re-checks at
+        eval time as defense in depth.
+        """
+        if self.is_code_eval():
+            return self
+        try:
+            parent = self.parent_eval()
+        except ValueError:
+            return self
+        if parent is not None and any(
+            score.type == TaskOutputRatingType.custom for score in parent.output_scores
+        ):
+            raise ValueError(
+                "Evals with custom-typed output scores can only use code-eval "
+                "configs; other eval types cannot produce custom metrics."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
