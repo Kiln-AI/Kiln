@@ -25,7 +25,10 @@
   $: output_value_expression = properties.value_expression ?? null
 
   export function getProperties(): components["schemas"]["ContainsProperties"] {
-    return properties
+    if (source === "reference_key") {
+      return { ...properties, substring: null }
+    }
+    return { ...properties, reference_key: null }
   }
 
   export function validate(): string | null {

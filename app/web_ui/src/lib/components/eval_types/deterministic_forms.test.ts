@@ -330,6 +330,66 @@ describe("SetCheckForm tag input", () => {
   })
 })
 
+// A stale reference_key must never survive into saved properties while the
+// reference data UI is hidden: the source is forced to the fixed value, so the
+// key would be invisible in the form yet still persisted on the config.
+describe("Reference data UI is hidden: getProperties drops any stale key", () => {
+  it("ExactMatchForm nulls a pre-set reference_key", () => {
+    const { component } = render(ExactMatchForm, {
+      props: {
+        properties: {
+          type: "exact_match" as const,
+          case_sensitive: true,
+          value_expression: null,
+          expected_value: "hello",
+          reference_key: "expected_answer",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.reference_key).toBeNull()
+    expect(props.expected_value).toBe("hello")
+  })
+
+  it("ContainsForm nulls a pre-set reference_key", () => {
+    const { component } = render(ContainsForm, {
+      props: {
+        properties: {
+          type: "contains" as const,
+          case_sensitive: true,
+          mode: "must_contain" as const,
+          value_expression: null,
+          substring: "success",
+          reference_key: "expected_answer",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.reference_key).toBeNull()
+    expect(props.substring).toBe("success")
+  })
+
+  it("SetCheckForm nulls a pre-set reference_key", () => {
+    const { component } = render(SetCheckForm, {
+      props: {
+        properties: {
+          type: "set_check" as const,
+          mode: "equal" as const,
+          value_expression: null,
+          expected_set: ["a", "b"],
+          reference_key: "expected_answer",
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.reference_key).toBeNull()
+    expect(props.expected_set).toEqual(["a", "b"])
+  })
+})
+
 describe("Reference data UI is hidden", () => {
   it("ExactMatchForm renders no source radio group and no reference copy", () => {
     const { container } = render(ExactMatchForm, {

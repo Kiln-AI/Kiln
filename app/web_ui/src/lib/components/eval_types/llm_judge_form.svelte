@@ -302,7 +302,7 @@
         {#if SHOW_REFERENCE_DATA_UI}
           <li>
             <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
-            data attached to to eval case.
+            data attached to the eval case.
           </li>
         {/if}
       </ul>

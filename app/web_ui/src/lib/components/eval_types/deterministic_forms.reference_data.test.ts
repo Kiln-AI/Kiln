@@ -1111,11 +1111,11 @@ describe("required_reference_fields computation", () => {
           case_sensitive: true,
           value_expression: null,
           expected_value: null,
-          reference_key: null,
+          reference_key: "expected_answer",
         },
       },
     })
-    // Switch to reference_key source
+    // Clear the key while the reference_key source stays selected
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(component as any).$set({
       properties: {
