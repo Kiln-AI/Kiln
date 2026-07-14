@@ -595,3 +595,27 @@ class TestGetMarkdownLinks:
 
     def test_nested_brackets_unsupported(self, helpers: KilnEvalHelpers):
         assert helpers.get_markdown_links("[a[b]](https://kiln.ai)") == []
+
+    def test_adjacent_links(self, helpers: KilnEvalHelpers):
+        assert helpers.get_markdown_links("[a](https://x.ai)[b](https://y.ai)") == [
+            ("a", "https://x.ai"),
+            ("b", "https://y.ai"),
+        ]
+
+    def test_unquoted_space_in_target_unsupported(self, helpers: KilnEvalHelpers):
+        assert helpers.get_markdown_links("[t](not a link)") == []
+
+    @pytest.mark.parametrize(
+        "payload",
+        ["`" * 100_000, "[a](" + " " * 100_000, "[a](" + "(" * 100_000],
+        ids=["backtick-run", "space-run", "paren-run"],
+    )
+    def test_pathological_input_stays_linear(self, helpers: KilnEvalHelpers, payload):
+        """These inputs took tens of seconds with backtracking-ambiguous
+        regexes (quadratic); the linear rewrite must stay well under the
+        sandbox timeout. Generous bound to avoid CI flake."""
+        import time
+
+        start = time.perf_counter()
+        helpers.get_markdown_links(payload)
+        assert time.perf_counter() - start < 2.0

@@ -12,16 +12,22 @@ import re
 from typing import Any
 
 # Inline code spans are removed before link extraction so code like
-# `arr[i](x)` doesn't false-positive as a link.
-_MD_CODE_SPAN_RE = re.compile(r"`+[^`]+`+")
+# `arr[i](x)` doesn't false-positive as a link. [^`]* (not +) lets a pure
+# backtick run match in one pass instead of backtracking quadratically.
+_MD_CODE_SPAN_RE = re.compile(r"`+[^`]*`+")
 
+# Two-stage parse keeps both regexes linear on adversarial input (these run
+# in the sandbox on model output): capture the parenthesized interior with
+# one level of nesting, then split target from optional title separately.
 _MD_LINK_RE = re.compile(
     r"(?<!!)"  # ![alt](src) is an image, not a link
     r"\[([^\[\]]*)\]"  # link text (nested brackets unsupported)
-    r"\(\s*"
-    r"((?:[^()\s]|\([^()]*\))*)"  # target; one level of balanced parens
-    r"(?:\s+(?:\"[^\"]*\"|'[^']*'))?"  # optional title, dropped
-    r"\s*\)"
+    r"\(([^()]*(?:\([^()]*\)[^()]*)*)\)"  # interior; one level of parens
+)
+
+_MD_TARGET_RE = re.compile(
+    r"(\S*)"  # target: no unquoted whitespace
+    r"(?:\s+(?:\"[^\"]*\"|'[^']*'))?"  # optional quoted title, dropped
 )
 
 
@@ -360,13 +366,21 @@ class KilnEvalHelpers:
         (``[t](url "title")``). Images (``![alt](src)``) are excluded and
         inline code spans are ignored. Unsupported (documented subset):
         reference-style links ``[t][ref]``, nested square brackets in link
-        text, and angle-bracket targets ``[t](<url with spaces>)``.
+        text, angle-bracket targets ``[t](<url with spaces>)``, backslash
+        escapes, and multi-backtick code spans (handled approximately).
         Never raises; ``None``/empty input yields ``[]``.
         """
         if not text:
             return []
         try:
             without_code = _MD_CODE_SPAN_RE.sub(" ", text)
-            return _MD_LINK_RE.findall(without_code)
+            links: list[tuple[str, str]] = []
+            for link_text, interior in _MD_LINK_RE.findall(without_code):
+                target = _MD_TARGET_RE.fullmatch(interior.strip())
+                if target is None:
+                    # Unquoted whitespace in the target — not a supported link.
+                    continue
+                links.append((link_text, target.group(1)))
+            return links
         except Exception:
             return []
