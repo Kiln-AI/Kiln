@@ -96,6 +96,17 @@ class KilnEvalHelpers:
         ]
 
     @staticmethod
+    def count_messages(trace: list[dict[str, Any]] | None, role: str) -> int:
+        """Count trace messages with the given *role* ("user", "assistant",
+        "system", or "tool").
+
+        Counts MESSAGES, not tool calls: one assistant message may carry
+        several tool calls or none. To count tool calls, use
+        ``len(get_tool_calls(trace))`` or ``count_tool_calls``.
+        """
+        return sum(1 for msg in trace or [] if msg.get("role") == role)
+
+    @staticmethod
     def get_tool_result_content(
         trace: list[dict[str, Any]] | None, tool_call_id: str | None
     ) -> str:
