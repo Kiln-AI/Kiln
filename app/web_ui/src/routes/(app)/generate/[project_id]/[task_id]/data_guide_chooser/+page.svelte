@@ -61,7 +61,9 @@
       )
       return
     }
-    goto(`/generate/${project_id}/${task_id}/data_guide_setup_copilot`)
+    // Static auth route: it forwards to the setup page once connected (and
+    // straight through if the user already is).
+    goto(`/generate/data_guide_pro_auth`, { replaceState: true })
   }
 </script>
 

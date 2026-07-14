@@ -38,13 +38,11 @@
   } from "$lib/stores/data_guide_job_store"
   import posthog from "posthog-js"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
-  import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import ExtractionDialog from "$lib/components/extraction_dialog.svelte"
   import type Dialog from "$lib/ui/dialog.svelte"
 
   type CopilotState =
     | "loading"
-    | "connect"
     | "create"
     | "analyzing"
     | "preview"
@@ -61,9 +59,6 @@
   let preview_error: KilnError | null = null
   let submitting = false
   let saved = false
-  // Set once the user finishes the Kiln Pro connect flow inline; flips the
-  // connect card into its "Connected" state with a Continue button.
-  let connect_success = false
 
   let entries: InputExampleEntry[] = []
 
@@ -187,35 +182,41 @@
   })
 
   onMount(async () => {
-    // A fresh Kiln Pro OAuth callback (?code=...) must be handled by the inline
-    // ConnectKilnCopilotSteps component — show the connect state immediately and
-    // don't run the redirect/availability checks that would short-circuit it.
-    const oauth_callback = new URLSearchParams(window.location.search).has(
-      "code",
-    )
-
-    if (!oauth_callback) {
-      try {
-        const { data, error: api_error } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (api_error) {
-          error = createKilnError(api_error)
-          current_state = "load_error"
-          return
-        }
-        if (data) {
-          goto(`/generate/${project_id}/${task_id}/data_guide`, {
-            replaceState: true,
-          })
-          return
-        }
-      } catch (e) {
-        error = createKilnError(e)
+    try {
+      const { data, error: api_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        { params: { path: { project_id, task_id } } },
+      )
+      if (api_error) {
+        error = createKilnError(api_error)
         current_state = "load_error"
         return
       }
+      if (data) {
+        goto(`/generate/${project_id}/${task_id}/data_guide`, {
+          replaceState: true,
+        })
+        return
+      }
+    } catch (e) {
+      error = createKilnError(e)
+      current_state = "load_error"
+      return
+    }
+
+    // Pro is required for the start endpoint. If the key isn't connected, send
+    // the user to the static connect route, which returns here once connected.
+    // Checked before any state is consumed below (pending example, job record)
+    // so the round-trip through connect leaves the flow exactly as it found it.
+    let pro_available = false
+    try {
+      pro_available = await checkKilnCopilotAvailable()
+    } catch {
+      pro_available = false
+    }
+    if (!pro_available) {
+      goto(`/generate/data_guide_pro_auth`, { replaceState: true })
+      return
     }
 
     if ($current_task?.id === task_id) {
@@ -246,12 +247,6 @@
         },
       ]
       pending_data_guide_example.set(null)
-    }
-
-    // Returning from OAuth — let the connect card finish the token exchange.
-    if (oauth_callback) {
-      current_state = "connect"
-      return
     }
 
     // --- Resume an in-flight / finished data guide draft job --------------
@@ -322,15 +317,7 @@
       )
     }
 
-    // Pro is required for the start endpoint. If the key isn't connected,
-    // show the connect-Kiln-Pro card inline.
-    let pro_available = false
-    try {
-      pro_available = await checkKilnCopilotAvailable()
-    } catch {
-      pro_available = false
-    }
-    current_state = pro_available ? "create" : "connect"
+    current_state = "create"
   })
 
   // Fetch the draft markdown produced by a completed job into `guide`.
@@ -442,15 +429,6 @@
     refine_iterations = 0
     error = null
     preview_error = null
-    current_state = "create"
-  }
-
-  function handle_connect_success() {
-    connect_success = true
-  }
-
-  function proceed_after_connect() {
-    connect_success = false
     current_state = "create"
   }
 
@@ -822,23 +800,6 @@
     {:else if current_state === "loading"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <span class="loading loading-spinner loading-lg" />
-      </div>
-    {:else if current_state === "connect"}
-      <div
-        class="flex flex-col max-w-[400px] mx-auto mt-24 md:mt-36 border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
-      >
-        <ConnectKilnCopilotSteps
-          onSuccess={handle_connect_success}
-          showCheckmark={connect_success}
-        />
-        {#if connect_success}
-          <button
-            class="btn btn-primary mt-4 btn-wide mx-auto"
-            on:click={proceed_after_connect}
-          >
-            Continue
-          </button>
-        {/if}
       </div>
     {:else if current_state === "create"}
       <FormContainer
