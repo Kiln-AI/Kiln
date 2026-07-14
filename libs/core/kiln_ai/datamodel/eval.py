@@ -1,4 +1,5 @@
 import json
+import math
 from enum import Enum
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
@@ -304,7 +305,12 @@ def validate_scores_against_output_scores(
     """
 
     def _is_numeric(v: object) -> bool:
-        return isinstance(v, (int, float)) and not isinstance(v, bool)
+        # Finiteness must be explicit: NaN compares False against every range
+        # bound, so without it NaN passes all checks (and pydantic serializes
+        # NaN as null, making the saved file fail validation on next load).
+        return (
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+        )
 
     problems: list[str] = []
     for output_score in output_scores:

@@ -333,3 +333,22 @@ class TestExecutionSerialization:
         assert max_concurrency == 1, (
             f"Expected serialized execution (max concurrency 1), got {max_concurrency}"
         )
+
+
+class TestFiniteScoreValidation:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    async def test_non_finite_score_fast_fails(self, bad):
+        """Non-finite scores must fail in the scorer's error surface, not at
+        EvalRun save time (pydantic serializes NaN as null, which makes the
+        saved file unloadable)."""
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        grant_code_eval_trust("/fake/project/path")
+
+        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
+            mock_run.return_value = {"ok": {"accuracy": bad}}
+            with pytest.raises(RuntimeError, match="finite"):
+                await adapter.evaluate(_inp())
