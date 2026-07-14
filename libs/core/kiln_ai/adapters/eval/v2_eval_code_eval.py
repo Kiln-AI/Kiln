@@ -116,7 +116,13 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                     f"Score '{key}' returned a bool. Use a float (e.g. 1.0 for pass, 0.0 for fail)."
                 )
             if isinstance(value, int):
-                value = float(value)
+                try:
+                    value = float(value)
+                except OverflowError:
+                    # int too large for a float, e.g. 10**400
+                    raise RuntimeError(
+                        f"Score '{key}' must be a finite number, got {value}"
+                    ) from None
             if not isinstance(value, float):
                 raise RuntimeError(
                     f"Score '{key}' must be a float, got {type(value).__name__}"

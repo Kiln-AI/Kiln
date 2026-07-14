@@ -3292,6 +3292,17 @@ class TestValidateScoresAgainstOutputScores:
             == []
         )
 
+    def test_overlarge_int_flagged_not_raised(self):
+        """math.isfinite raises OverflowError on ints too large for float
+        (10**400) — the validator must report a problem, not throw."""
+        output_scores = [
+            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"metric": 10**400}, output_scores
+        )
+        assert len(problems) == 1
+
     def test_integer_scores_accepted(self):
         output_scores = [
             EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star),

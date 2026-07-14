@@ -307,9 +307,13 @@ def validate_scores_against_output_scores(
         # Finiteness must be explicit: NaN compares False against every range
         # bound, so without it NaN passes all checks (and pydantic serializes
         # NaN as null, making the saved file fail validation on next load).
-        return (
-            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
-        )
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return False
+        try:
+            return math.isfinite(v)
+        except OverflowError:
+            # isfinite converts int args to float; an int like 10**400 can't be
+            return False
 
     problems: list[str] = []
     for output_score in output_scores:

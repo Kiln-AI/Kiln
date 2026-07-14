@@ -1610,12 +1610,11 @@ async def test_get_eval_config_compare_summary_skips_custom_scores(
     )
     eval_run.save_to_file()
 
-    # Swap the eval's "overall_rating" score to custom-typed in memory.
-    # model_construct: custom EvalOutputScore isn't constructible through
-    # validation yet; this is the shape custom-score evals will produce.
-    mock_eval.output_scores[1] = EvalOutputScore.model_construct(
+    # Swap the eval's "overall_rating" score to custom-typed in memory: a
+    # custom-score eval can't be built with the judge config attached (the
+    # EvalConfig validator rejects that pairing), so stage the collision here.
+    mock_eval.output_scores[1] = EvalOutputScore(
         name="Overall Rating",
-        instruction=None,
         type=TaskOutputRatingType.custom,
     )
 

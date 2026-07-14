@@ -51,7 +51,11 @@ class KilnEvalHelpers:
             if msg.get("role") != "assistant":
                 continue
             for tc in msg.get("tool_calls") or []:
-                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                # .get("function", {}) isn't enough: present-but-null also
+                # needs the fallback or .get below raises mid-scorer.
+                func = tc.get("function") if isinstance(tc, dict) else None
+                if not isinstance(func, dict):
+                    func = {}
                 args_str = func.get("arguments", "{}")
                 try:
                     args = (
@@ -118,9 +122,11 @@ class KilnEvalHelpers:
     ) -> str:
         """Return the text content of the tool result answering *tool_call_id*.
 
-        Pairs OpenAI-format tool results (``role: "tool"``) with their
-        originating call by ``tool_call_id``; list-of-blocks content is
-        flattened to newline-joined text. Returns ``""`` when *tool_call_id*
+        Pairs any entry ``get_tool_results`` returns (OpenAI ``role: "tool"``
+        or the legacy "tool_result" shapes) with its originating call by
+        ``tool_call_id``; list-of-blocks content is flattened to
+        newline-joined text (non-text blocks dropped, same as
+        ``get_assistant_emitted_text``). Returns ``""`` when *tool_call_id*
         is falsy (``get_tool_calls`` emits ``id: None`` for malformed calls)
         or no result matches. If several results carry the same id, the
         first match wins.
@@ -134,14 +140,17 @@ class KilnEvalHelpers:
             if isinstance(content, str):
                 return content
             if isinstance(content, list):
-                # str(... or "") coerces malformed blocks (e.g. text: None)
-                # instead of raising from within a user's scorer run.
-                return "\n".join(
-                    str(block.get("text") or "")
-                    if isinstance(block, dict)
-                    else str(block)
-                    for block in content
-                )
+                texts: list[str] = []
+                for block in content:
+                    if isinstance(block, dict):
+                        # `or ""` coerces malformed blocks (e.g. text: None)
+                        # instead of raising from within a user's scorer run.
+                        text = block.get("text") or block.get("content") or ""
+                        if isinstance(text, str):
+                            texts.append(text)
+                    else:
+                        texts.append("" if block is None else str(block))
+                return "\n".join(t for t in texts if t)
             return "" if content is None else str(content)
         return ""
 
@@ -190,7 +199,9 @@ class KilnEvalHelpers:
                     parts.append(reasoning)
             if include_tool_calls:
                 for tc in msg.get("tool_calls") or []:
-                    func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                    func = tc.get("function") if isinstance(tc, dict) else None
+                    if not isinstance(func, dict):
+                        continue
                     args = func.get("arguments")
                     if isinstance(args, str):
                         parts.append(args)
@@ -283,15 +294,20 @@ class KilnEvalHelpers:
 
     @staticmethod
     def _field(obj: Any, name: str) -> Any:
-        """Read *name* from a dict or an attribute-bearing object.
+        """Read *name* from a dict or an attribute-bearing object; None on
+        any failure.
 
         Trace messages arrive as plain dicts over JSON transports but carry
         Pydantic objects (e.g. ``usage`` as ``MessageUsage``) over the
-        in-process pickle transport — duck-type both, no Kiln imports.
+        multiprocessing pickle transport into the sandbox subprocess —
+        duck-type both, no Kiln imports.
         """
         if isinstance(obj, dict):
             return obj.get(name)
-        return getattr(obj, name, None)
+        try:
+            return getattr(obj, name, None)
+        except Exception:
+            return None
 
     @staticmethod
     def get_usage_totals(trace: list[dict[str, Any]] | None) -> dict[str, float]:

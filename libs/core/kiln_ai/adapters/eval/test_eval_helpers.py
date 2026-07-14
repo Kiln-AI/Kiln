@@ -83,6 +83,21 @@ class TestTraceNavigation:
         assert calls[2]["name"] == ""
         assert calls[2]["id"] is None
 
+    def test_get_tool_calls_null_function(self, helpers: KilnEvalHelpers):
+        """A present-but-null (or non-dict) "function" must not raise."""
+        trace = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "c1", "function": None},
+                    {"id": "c2", "function": "oops"},
+                ],
+            }
+        ]
+        calls = helpers.get_tool_calls(trace)
+        assert [c["name"] for c in calls] == ["", ""]
+
     @pytest.mark.parametrize(
         "trace",
         [None, []],
@@ -232,7 +247,19 @@ class TestGetToolResultContent:
                 ],
             }
         ]
-        assert helpers.get_tool_result_content(trace, "c1") == "\n\nbare string\n42"
+        # Textless blocks are dropped, not joined as empty lines
+        assert helpers.get_tool_result_content(trace, "c1") == "bare string\n42"
+
+    def test_content_key_block_fallback(self, helpers: KilnEvalHelpers):
+        """Legacy tool_result shapes carry block text under "content"."""
+        trace = [
+            {
+                "type": "tool_result",
+                "tool_call_id": "c1",
+                "content": [{"type": "tool_result", "content": "nested payload"}],
+            }
+        ]
+        assert helpers.get_tool_result_content(trace, "c1") == "nested payload"
 
     def test_duplicate_ids_first_wins(self, helpers: KilnEvalHelpers):
         trace = [
@@ -421,6 +448,17 @@ class TestGetAssistantEmittedText:
         assert '{"word": "\\u7aaf"}' in text
         assert "dictionary_lookup" not in text
 
+    def test_null_function_tool_call_never_raises(self, helpers: KilnEvalHelpers):
+        trace = [
+            {
+                "role": "assistant",
+                "content": "hi",
+                "tool_calls": [{"function": None}, {"function": "oops"}],
+            }
+        ]
+        text = helpers.get_assistant_emitted_text(trace, include_tool_calls=True)
+        assert text == "hi"
+
     def test_refusal_and_blocks(self, helpers: KilnEvalHelpers):
         trace = [
             {
@@ -491,6 +529,9 @@ class TestGetUsageTotals:
         assert totals["input_tokens"] == 7.0
         assert totals["total_tokens"] == 12.0
         assert totals["cost"] == 0.5
+        # Attributes absent on the object sum to 0.0, not raise
+        assert totals["output_tokens"] == 0.0
+        assert totals["cached_tokens"] == 0.0
 
     def test_absent_usage_sums_to_zero(self, helpers: KilnEvalHelpers):
         """Documented caveat: no usage data is indistinguishable from zero."""
