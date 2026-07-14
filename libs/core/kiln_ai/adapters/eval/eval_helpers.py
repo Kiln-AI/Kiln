@@ -273,6 +273,82 @@ class KilnEvalHelpers:
         except Exception:
             return False
 
+    # -- Health / usage metrics -----------------------------------------------
+
+    @staticmethod
+    def _field(obj: Any, name: str) -> Any:
+        """Read *name* from a dict or an attribute-bearing object.
+
+        Trace messages arrive as plain dicts over JSON transports but carry
+        Pydantic objects (e.g. ``usage`` as ``MessageUsage``) over the
+        in-process pickle transport — duck-type both, no Kiln imports.
+        """
+        if isinstance(obj, dict):
+            return obj.get(name)
+        return getattr(obj, name, None)
+
+    @staticmethod
+    def get_usage_totals(trace: list[dict[str, Any]] | None) -> dict[str, float]:
+        """Sum per-message ``usage`` across assistant messages.
+
+        Returns ``{"input_tokens", "output_tokens", "total_tokens",
+        "cached_tokens", "cost"}`` as floats. Caveat: absent usage data sums
+        to 0.0, indistinguishable from a genuine zero — a budget scorer
+        silently passes traces whose provider recorded no usage. Check
+        ``count_messages(trace, "assistant")`` if you need to tell them
+        apart.
+        """
+        totals = {
+            "input_tokens": 0.0,
+            "output_tokens": 0.0,
+            "total_tokens": 0.0,
+            "cached_tokens": 0.0,
+            "cost": 0.0,
+        }
+        for msg in trace or []:
+            if msg.get("role") != "assistant":
+                continue
+            usage = msg.get("usage")
+            if usage is None:
+                continue
+            for key in totals:
+                value = KilnEvalHelpers._field(usage, key)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    totals[key] += float(value)
+        return totals
+
+    @staticmethod
+    def get_total_latency_ms(trace: list[dict[str, Any]] | None) -> float:
+        """Sum assistant messages' ``latency_ms``; absent values count 0.0.
+
+        Caveat: traces seeded from prior conversations sum across sessions,
+        so the total is not one conversation's wall-clock time.
+        """
+        total = 0.0
+        for msg in trace or []:
+            if msg.get("role") != "assistant":
+                continue
+            value = msg.get("latency_ms")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                total += float(value)
+        return total
+
+    @staticmethod
+    def get_error_tool_results(
+        trace: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        """Tool results that FLAGGED failure: truthy ``is_error`` or a
+        non-empty ``error_message``.
+
+        Caveat: only explicitly flagged errors are caught — a tool that
+        returned garbage without setting the flag looks healthy here.
+        """
+        return [
+            entry
+            for entry in KilnEvalHelpers.get_tool_results(trace)
+            if entry.get("is_error") or entry.get("error_message")
+        ]
+
     # -- Markdown helpers -----------------------------------------------------
 
     @staticmethod
