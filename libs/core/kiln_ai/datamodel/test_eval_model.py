@@ -789,21 +789,91 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         )
 
 
-def test_eval_run_custom_scores_not_allowed(valid_eval_config, valid_eval_run_data):
-    with pytest.raises(
-        ValueError, match="Custom scores are not supported in evaluators"
-    ):
-        Eval(
-            name="Test Eval",
-            eval_set_filter_id="tag::tag1",
-            eval_configs_filter_id="tag::tag2",
-            output_scores=[
-                EvalOutputScore(
-                    name="custom",
-                    type=TaskOutputRatingType.custom,
-                )
-            ],
+def test_eval_custom_scores_allowed():
+    """Custom-typed output scores are unbounded numeric metrics (tokens, cost,
+    latency, counts) — valid on evals, code-eval only at scoring time."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="total cost usd",
+                type=TaskOutputRatingType.custom,
+            )
+        ],
+    )
+    assert eval.output_scores[0].json_key() == "total_cost_usd"
+
+
+@pytest.mark.parametrize(
+    "config_type,properties",
+    [
+        (EvalConfigType.g_eval, {"eval_steps": ["step"]}),
+        (EvalConfigType.llm_as_judge, {"eval_steps": ["step"]}),
+    ],
+    ids=["g_eval", "llm_as_judge"],
+)
+def test_judge_config_rejected_on_custom_score_eval(config_type, properties):
+    """Judges structurally can't emit custom-typed keys — the config is
+    rejected up front instead of failing every EvalRun save."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=config_type,
+            properties=properties,
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=eval,
         )
+
+
+def test_v2_llm_judge_config_rejected_on_custom_score_eval():
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name="gpt-4",
+                model_provider="openai",
+                prompt_template="Judge this: {{ output }}",
+            ),
+            parent=eval,
+        )
+
+
+def test_non_judge_config_allowed_on_custom_score_eval():
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    config = EvalConfig(
+        name="code",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
+        parent=eval,
+    )
+    assert config.is_llm_judge() is False
 
 
 def test_eval_run_eval_config_eval_validation():
@@ -3135,6 +3205,7 @@ class TestValidateScoresAgainstOutputScores:
             TaskOutputRatingType.five_star,
             TaskOutputRatingType.pass_fail,
             TaskOutputRatingType.pass_fail_critical,
+            TaskOutputRatingType.custom,
         ],
     )
     @pytest.mark.parametrize(
@@ -3149,6 +3220,16 @@ class TestValidateScoresAgainstOutputScores:
             {"metric": value}, output_scores
         )
         assert len(problems) == 1
+
+    @pytest.mark.parametrize("value", [12345.6, 0.0, -3.5])
+    def test_custom_accepts_any_finite_number(self, value):
+        output_scores = [
+            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+        ]
+        assert (
+            validate_scores_against_output_scores({"metric": value}, output_scores)
+            == []
+        )
 
     def test_integer_scores_accepted(self):
         output_scores = [

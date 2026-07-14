@@ -280,6 +280,15 @@ class BaseEval:
         if not eval:
             raise ValueError("Eval config must have a parent eval")
         self.eval = eval
+        # Defense in depth for hand-edited files: EvalConfig's own validator
+        # only sees the parent at creation time, not when loading from disk.
+        if eval_config.is_llm_judge() and any(
+            score.type == TaskOutputRatingType.custom for score in eval.output_scores
+        ):
+            raise ValueError(
+                "LLM-judge eval configs cannot be used on evals with custom-typed "
+                "output scores (judges cannot emit custom keys); use a code eval."
+            )
         task = self.eval.parent_task()
         if not task:
             raise ValueError("Eval must have a parent task")

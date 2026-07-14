@@ -335,9 +335,11 @@ def validate_scores_against_output_scores(
                         f"Score {output_score.name} is a pass_fail_critical rating and must be a number between -1.0 and 1.0 inclusive. Got: {value}"
                     )
             case TaskOutputRatingType.custom:
-                problems.append(
-                    f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
-                )
+                # Unbounded numeric metric: any finite number is valid.
+                if not _is_numeric(value):
+                    problems.append(
+                        f"Score {output_score.name} is a custom metric and must be a finite number. Got: {value}"
+                    )
             case _:
                 raise_exhaustive_enum_error(output_score.type)
     return problems
@@ -488,7 +490,7 @@ class EvalOutputScore(BaseModel):
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
     )
     type: TaskOutputRatingType = Field(
-        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
+        description="The type of rating ('five_star', 'pass_fail', 'pass_fail_critical', or 'custom'). Custom scores are unbounded numeric metrics (e.g. token counts, cost, latency); they can only be produced by code evals, so an eval with any custom score cannot use LLM-judge configs.",
     )
 
     def json_key(self) -> str:
@@ -498,14 +500,6 @@ class EvalOutputScore(BaseModel):
         For example, "Overall Rating" -> "overall_rating"
         """
         return string_to_json_key(self.name)
-
-    @model_validator(mode="after")
-    def validate_type(self) -> Self:
-        if self.type == TaskOutputRatingType.custom:
-            raise ValueError(
-                f"Custom scores are not supported in evaluators. Score '{self.name}' was set to a custom score."
-            )
-        return self
 
 
 class EvalRun(KilnParentedModel):
@@ -724,6 +718,43 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 
     def runs(self, readonly: bool = False) -> list[EvalRun]:
         return super().runs(readonly=readonly)  # type: ignore
+
+    def is_llm_judge(self) -> bool:
+        """True for configs whose scores come from an LLM judge (legacy
+        g_eval/llm_as_judge, or a V2 llm_judge)."""
+        return self.config_type in (
+            EvalConfigType.g_eval,
+            EvalConfigType.llm_as_judge,
+        ) or (
+            self.config_type == EvalConfigType.v2
+            and isinstance(self.properties, LlmJudgeProperties)
+        )
+
+    @model_validator(mode="after")
+    def validate_no_judge_on_custom_scores(self) -> Self:
+        """Judge configs can't serve evals with custom-typed output scores:
+        judges structurally can't emit custom keys (build_score_schema skips
+        them), so every EvalRun save would fail exact-key validation. Custom
+        metrics are code-eval only.
+
+        Creation-time only: validation of a file loaded from disk runs before
+        the parent link is attached, so hand-edited files pass here —
+        BaseEval re-checks at eval time as defense in depth.
+        """
+        if not self.is_llm_judge():
+            return self
+        try:
+            parent = self.parent_eval()
+        except ValueError:
+            return self
+        if parent is not None and any(
+            score.type == TaskOutputRatingType.custom for score in parent.output_scores
+        ):
+            raise ValueError(
+                "LLM-judge eval configs cannot be used on evals with custom-typed "
+                "output scores (judges cannot emit custom keys); use a code eval."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
