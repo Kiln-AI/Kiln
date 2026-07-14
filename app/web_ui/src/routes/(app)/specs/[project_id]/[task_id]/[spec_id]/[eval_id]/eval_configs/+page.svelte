@@ -6,7 +6,11 @@
   import { tick } from "svelte"
   import { page } from "$app/stores"
   import RunEval from "$lib/components/run_eval.svelte"
-  import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
+  import type {
+    EvalConfig,
+    EvalConfigCompareSummary,
+    EvalOutputScore,
+  } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import { load_model_info, load_available_models } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
@@ -98,6 +102,15 @@
     sortEvalConfigs()
   }
 
+  // Custom-typed scores are code-eval-only metrics with no human-rating
+  // correlation, so the server never returns summary entries for them —
+  // they have no column or sort key on this page.
+  function correlatable_scores(
+    output_scores: EvalOutputScore[] | undefined | null,
+  ): EvalOutputScore[] {
+    return (output_scores || []).filter((score) => score.type !== "custom")
+  }
+
   function sortEvalConfigs() {
     if (!eval_configs) return
     if (!evaluator) return
@@ -108,20 +121,17 @@
       if (a.id === nonNullEvaluator.current_config_id) return -1
       if (b.id === nonNullEvaluator.current_config_id) return 1
 
+      const sortable_scores = correlatable_scores(
+        nonNullEvaluator.output_scores,
+      )
+
       // If no score summary, keep original order
-      if (
-        !score_summary ||
-        !nonNullEvaluator.output_scores ||
-        nonNullEvaluator.output_scores.length === 0
-      ) {
+      if (!score_summary || sortable_scores.length === 0) {
         return 0
       }
 
       // Get the last output score for sorting
-      const lastOutputScore =
-        nonNullEvaluator.output_scores[
-          nonNullEvaluator.output_scores.length - 1
-        ]
+      const lastOutputScore = sortable_scores[sortable_scores.length - 1]
       const scoreNameKey = string_to_json_key(lastOutputScore.name)
 
       const aScores = score_summary?.results?.["" + a.id]?.[scoreNameKey]
@@ -716,7 +726,7 @@
                 </th>
                 <th class="text-center w-[160px]">Status</th>
                 <th class="w-auto">Eval Details</th>
-                {#each evaluator.output_scores as output_score}
+                {#each correlatable_scores(evaluator.output_scores) as output_score}
                   <th class="text-center w-[130px]">
                     {output_score.name}
                     {#if output_score.type}
@@ -792,7 +802,7 @@
                       </ClampedText>
                     </div>
                   </td>
-                  {#each evaluator.output_scores as output_score}
+                  {#each correlatable_scores(evaluator.output_scores) as output_score}
                     {@const scores =
                       score_summary?.results?.["" + eval_config.id]?.[
                         string_to_json_key(output_score.name)
