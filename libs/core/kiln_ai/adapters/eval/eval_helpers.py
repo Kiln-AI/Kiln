@@ -11,6 +11,19 @@ import json
 import re
 from typing import Any
 
+# Inline code spans are removed before link extraction so code like
+# `arr[i](x)` doesn't false-positive as a link.
+_MD_CODE_SPAN_RE = re.compile(r"`+[^`]+`+")
+
+_MD_LINK_RE = re.compile(
+    r"(?<!!)"  # ![alt](src) is an image, not a link
+    r"\[([^\[\]]*)\]"  # link text (nested brackets unsupported)
+    r"\(\s*"
+    r"((?:[^()\s]|\([^()]*\))*)"  # target; one level of balanced parens
+    r"(?:\s+(?:\"[^\"]*\"|'[^']*'))?"  # optional title, dropped
+    r"\s*\)"
+)
+
 
 class KilnEvalHelpers:
     """Utility methods for common scoring patterns in user-authored scorers."""
@@ -197,3 +210,25 @@ class KilnEvalHelpers:
             return re.search(pattern, text) is not None
         except Exception:
             return False
+
+    # -- Markdown helpers -----------------------------------------------------
+
+    @staticmethod
+    def get_markdown_links(text: str | None) -> list[tuple[str, str]]:
+        """Return ``(link_text, target)`` pairs for inline markdown links.
+
+        Handles targets with one level of balanced parentheses
+        (``.../Foo_(bar)``) and strips optional titles
+        (``[t](url "title")``). Images (``![alt](src)``) are excluded and
+        inline code spans are ignored. Unsupported (documented subset):
+        reference-style links ``[t][ref]``, nested square brackets in link
+        text, and angle-bracket targets ``[t](<url with spaces>)``.
+        Never raises; ``None``/empty input yields ``[]``.
+        """
+        if not text:
+            return []
+        try:
+            without_code = _MD_CODE_SPAN_RE.sub(" ", text)
+            return _MD_LINK_RE.findall(without_code)
+        except Exception:
+            return []
