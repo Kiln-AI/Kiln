@@ -162,6 +162,25 @@ class TestTraceNavigation:
         ]
 
 
+class TestCountMessages:
+    @pytest.mark.parametrize("trace", [None, []], ids=["none", "empty"])
+    def test_empty(self, helpers: KilnEvalHelpers, trace):
+        assert helpers.count_messages(trace, "assistant") == 0
+
+    def test_counts_by_role(self, helpers: KilnEvalHelpers):
+        assert helpers.count_messages(_OPENAI_FORMAT_TRACE, "user") == 1
+        assert helpers.count_messages(_OPENAI_FORMAT_TRACE, "assistant") == 2
+        assert helpers.count_messages(_OPENAI_FORMAT_TRACE, "tool") == 2
+        assert helpers.count_messages(_OPENAI_FORMAT_TRACE, "system") == 0
+
+    def test_messages_not_tool_calls(self, helpers: KilnEvalHelpers):
+        """One assistant message carries two tool calls: message count stays
+        1; tool-call counting is get_tool_calls' job."""
+        trace = _OPENAI_FORMAT_TRACE[:2]
+        assert helpers.count_messages(trace, "assistant") == 1
+        assert len(helpers.get_tool_calls(trace)) == 2
+
+
 class TestGetToolResultContent:
     def test_string_content(self, helpers: KilnEvalHelpers):
         assert (
