@@ -110,14 +110,56 @@ class TestTraceNavigation:
     def test_get_tool_results_empty(self, helpers: KilnEvalHelpers, trace):
         assert helpers.get_tool_results(trace) == []
 
-    def test_get_tool_results(self, helpers: KilnEvalHelpers):
+    def test_get_tool_results_openai_format(self, helpers: KilnEvalHelpers):
+        """The shape Kiln actually stores: role "tool" messages."""
+        results = helpers.get_tool_results(_OPENAI_FORMAT_TRACE)
+        assert len(results) == 2
+        assert results[0]["tool_call_id"] == "call_abc123"
+        assert results[0]["content"] == "result1"
+        assert results[1]["tool_call_id"] == "call_def456"
+
+    def test_get_tool_results_legacy_shapes(self, helpers: KilnEvalHelpers):
         trace = [
             {"role": "tool_result", "content": "result1"},
             {"type": "tool_result", "content": "result2"},
+            {"role": "assistant", "content": "not a result"},
         ]
         results = helpers.get_tool_results(trace)
         assert len(results) == 2
         assert results[0]["content"] == "result1"
+
+    def test_get_tool_results_round_trip_from_task_run(self, helpers: KilnEvalHelpers):
+        """End-to-end over the real data path: a TaskRun trace converted via
+        EvalTaskInput (exactly what the eval runner hands scorers) must yield
+        its tool results."""
+        from kiln_ai.datamodel.eval import EvalTaskInput
+        from kiln_ai.datamodel.task_output import (
+            DataSource,
+            DataSourceType,
+            TaskOutput,
+        )
+        from kiln_ai.datamodel.task_run import TaskRun
+
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "m",
+                "model_provider": "p",
+                "adapter_name": "a",
+            },
+        )
+        task_run = TaskRun(
+            input="Search for cats",
+            input_source=source,
+            output=TaskOutput(output="done", source=source),
+            trace=_OPENAI_FORMAT_TRACE,
+        )
+        eti = EvalTaskInput.from_task_run(task_run)
+        results = helpers.get_tool_results(eti.trace)
+        assert [r["tool_call_id"] for r in results] == [
+            "call_abc123",
+            "call_def456",
+        ]
 
 
 # ---------------------------------------------------------------------------
