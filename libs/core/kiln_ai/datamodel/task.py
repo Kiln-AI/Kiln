@@ -18,7 +18,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit
-from kiln_ai.datamodel.eval import Eval
+from kiln_ai.datamodel.eval import Eval, EvalInput
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
@@ -134,6 +134,7 @@ class Task(
         "prompt_optimization_jobs": PromptOptimizationJob,
         "prompts": Prompt,
         "evals": Eval,
+        "eval_inputs": EvalInput,
         "specs": Spec,
         "run_configs": TaskRunConfig,
         "data_guides": DataGuide,
@@ -229,6 +230,9 @@ class Task(
 
     def evals(self, readonly: bool = False) -> list[Eval]:
         return super().evals(readonly=readonly)  # type: ignore
+
+    def eval_inputs(self, readonly: bool = False) -> list[EvalInput]:
+        return super().eval_inputs(readonly=readonly)  # type: ignore
 
     def run_configs(self, readonly: bool = False) -> list[TaskRunConfig]:
         return super().run_configs(readonly=readonly)  # type: ignore

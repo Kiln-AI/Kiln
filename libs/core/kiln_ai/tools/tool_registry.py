@@ -1,12 +1,15 @@
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
+    CODE_TOOL_ID_PREFIX,
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
+    code_tool_id_from_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
@@ -25,9 +28,15 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
-def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
-    """
-    Get a tool from its ID.
+def tool_from_id_and_project(
+    tool_id: str,
+    project: Project | None = None,
+    task: Task | None = None,
+) -> KilnToolInterface:
+    """Resolve a tool from its ID, given a project directly.
+
+    This is the core resolution function. ``tool_from_id`` is a thin
+    wrapper that derives the project from the task.
     """
     # Check built-in tools
     if tool_id in [member.value for member in KilnBuiltInToolId]:
@@ -56,7 +65,6 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
     is_kiln_task_tool = tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX)
 
     if is_mcp_tool or is_kiln_task_tool:
-        project = task.parent_project() if task is not None else None
         if project is None or project.id is None:
             raise ValueError(
                 f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
@@ -104,7 +112,6 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
             return KilnTaskTool(project.id, tool_id, server)
 
     elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
-        project = task.parent_project() if task is not None else None
         if project is None:
             raise ValueError(
                 f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
@@ -122,12 +129,45 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
 
         return RagTool(tool_id, rag_config)
 
+    elif tool_id.startswith(CODE_TOOL_ID_PREFIX):
+        if project is None:
+            raise ValueError(
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+            )
+
+        ct_id = code_tool_id_from_tool_id(tool_id)
+
+        # Lazy import to avoid circular dependency
+        from kiln_ai.datamodel.code_tool import CodeTool
+
+        code_tool = CodeTool.from_id_and_parent_path(ct_id, project.path)
+        if code_tool is None:
+            raise ValueError(
+                f"Code tool not found: {ct_id} in project {project.id} for tool {tool_id}"
+            )
+
+        # Lazy import — PythonCodeTool is phase 2; for now return a
+        # lightweight wrapper that has the tool's identity and definition.
+        from kiln_ai.tools.code_tool import PythonCodeTool
+
+        return PythonCodeTool(code_tool, project, task)
+
     elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(
             f"Skill tool IDs are resolved by the adapter, not tool_from_id: {tool_id}"
         )
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")
+
+
+def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
+    """Get a tool from its ID.
+
+    Thin wrapper around ``tool_from_id_and_project`` that derives
+    the project from *task*.
+    """
+    project = task.parent_project() if task is not None else None
+    return tool_from_id_and_project(tool_id, project=project, task=task)
 
 
 async def tool_definitions_from_ids(

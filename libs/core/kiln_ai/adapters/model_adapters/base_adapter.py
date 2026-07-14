@@ -136,6 +136,14 @@ class AdapterConfig:
     """
     automatic_prompt_caching: bool = False
 
+    """
+    When True, thinking instructions from the prompt builder are forwarded
+    into the user message for reasoning models instead of being silently
+    dropped. This is useful for eval runs that need to replicate the exact
+    prompt seen during task execution.
+    """
+    forward_thinking_instructions: bool = False
+
 
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.
@@ -698,6 +706,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
+                forward_thinking_instructions=self.base_adapter_config.forward_thinking_instructions,
             )
         else:
             # Unstructured output with COT
@@ -707,6 +716,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
+                forward_thinking_instructions=self.base_adapter_config.forward_thinking_instructions,
             )
 
     # create a run and task output

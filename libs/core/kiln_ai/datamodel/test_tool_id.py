@@ -2,13 +2,16 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from kiln_ai.datamodel.tool_id import (
+    CODE_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
     _check_tool_id,
+    build_code_tool_id,
     build_kiln_unmanaged_tool_id,
+    code_tool_id_from_tool_id,
     kiln_task_server_id_from_tool_id,
     kiln_unmanaged_tool_slug_from_id,
     mcp_server_and_tool_name_from_id,
@@ -469,3 +472,58 @@ class TestKilnTaskServerIdFromToolId:
 
         result3 = kiln_task_server_id_from_tool_id("kiln_task::server")
         assert result3 == "server"
+
+
+class TestCodeToolIds:
+    """Test code tool ID prefix, builder, parser, and validation."""
+
+    def test_valid_code_tool_ids(self):
+        valid_ids = [
+            "kiln_tool::code::123456",
+            "kiln_tool::code::my_tool_id",
+            "kiln_tool::code::a",
+        ]
+        for tool_id in valid_ids:
+            assert _check_tool_id(tool_id) == tool_id
+
+    def test_invalid_code_tool_ids(self):
+        invalid_ids = [
+            "kiln_tool::code::",  # empty code tool ID
+            "kiln_tool::code::id::extra",  # too many parts
+        ]
+        for invalid_id in invalid_ids:
+            with pytest.raises(ValueError, match="Invalid code tool ID"):
+                _check_tool_id(invalid_id)
+
+    def test_build_code_tool_id(self):
+        assert build_code_tool_id("12345") == "kiln_tool::code::12345"
+        assert build_code_tool_id("abc") == "kiln_tool::code::abc"
+
+    def test_code_tool_id_from_tool_id(self):
+        assert code_tool_id_from_tool_id("kiln_tool::code::12345") == "12345"
+        assert code_tool_id_from_tool_id("kiln_tool::code::abc") == "abc"
+
+    def test_code_tool_id_from_tool_id_invalid(self):
+        with pytest.raises(ValueError, match="Invalid code tool ID"):
+            code_tool_id_from_tool_id("kiln_tool::code::")
+        with pytest.raises(ValueError, match="Invalid code tool ID"):
+            code_tool_id_from_tool_id("kiln_tool::code::a::b")
+        with pytest.raises(ValueError, match="Invalid code tool ID"):
+            code_tool_id_from_tool_id("wrong::prefix::id")
+
+    def test_code_tool_id_prefix_constant(self):
+        assert CODE_TOOL_ID_PREFIX == "kiln_tool::code::"
+
+    def test_pydantic_validation_accepts_code_tool_ids(self):
+        class _M(BaseModel):
+            tool_id: ToolId
+
+        m = _M(tool_id="kiln_tool::code::12345")
+        assert m.tool_id == "kiln_tool::code::12345"
+
+    def test_pydantic_validation_rejects_invalid_code_tool_ids(self):
+        class _M(BaseModel):
+            tool_id: ToolId
+
+        with pytest.raises(ValidationError):
+            _M(tool_id="kiln_tool::code::")
