@@ -19,6 +19,10 @@
   import Dialog from "$lib/ui/dialog.svelte"
 
   let custom_topic_mode: boolean = false
+  let collapsed = false
+  $: has_children =
+    (data.sub_topics && data.sub_topics.length > 0) ||
+    (data.samples && data.samples.length > 0)
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
@@ -496,13 +500,42 @@
       class="py-2"
       style="padding-left: {(depth - 1) * 25 + 20}px"
     >
-      <div class="font-medium flex flex-row pr-4 w-full">
-        <div class="flex-1">
+      <div
+        class="font-medium flex flex-row items-center pr-4 w-full cursor-pointer select-none"
+        on:click={() => {
+          if (has_children) {
+            collapsed = !collapsed
+          }
+        }}
+        role="button"
+        tabindex="0"
+        on:keydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            if (has_children) {
+              collapsed = !collapsed
+            }
+          }
+        }}
+      >
+        <div class="flex-1 flex flex-row items-center gap-1">
           {#if depth > 1}
-            <span class="text-xs relative" style="top: -3px">⮑</span>
+            <span class="text-xs relative" style="top: -1px">⮑</span>
           {/if}
-          {data.topic}
-          <span class="relative inline-block w-3 h-3">
+          {#if has_children}
+            <span class="text-xs font-mono text-gray-500 w-4 inline-block"
+              >{collapsed ? "▶" : "▼"}</span
+            >
+          {/if}
+          <span>{data.topic}</span>
+          <span
+            class="relative inline-block w-3 h-3"
+            on:click|stopPropagation={() => {}}
+            on:keydown|stopPropagation={() => {}}
+            role="button"
+            tabindex="-1"
+            aria-label="Info Tooltip"
+          >
             <div class="absolute top-[-3px] left-0">
               <InfoTooltip
                 tooltip_text={"This is a topic. Content inside of it should relate to this theme." +
@@ -545,81 +578,83 @@
     </td>
   </tr>
 {/if}
-{#each data.samples as sample, index}
-  {@const { status: output_status, output: formatted_output } =
-    formatSampleOutput(sample, expandedSamples[index])}
-  <tr on:click={() => toggleExpand(index)} class="cursor-pointer">
-    <td style="padding-left: {depth * 25 + 20}px" class="py-2">
-      {#if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap break-words">{formatExpandedSample(
-            sample.input,
-          )}</pre>
-      {:else}
-        <div class="truncate w-0 min-w-full">{sample.input}</div>
-      {/if}
-    </td>
-    <td class="py-2">
-      {#if !formatted_output}
-        {output_status}
-      {:else if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap break-words">{formatted_output}</pre>
-      {:else}
-        <div class="truncate w-0 min-w-full">
-          {formatted_output}
-        </div>
-      {/if}
-    </td>
-    <td class="py-2">
-      {#if sample.saved_id}
-        <a
-          href={`/dataset/${guidance_data.project_id}/${guidance_data.task_id}/${sample.saved_id}/run`}
-          class="hover:underline">Saved</a
-        >
-      {:else if sample.output}
-        Unsaved
-      {:else}
-        No Output
-      {/if}
-    </td>
-    <td class="p-0">
-      <TableActionMenu
-        items={[
-          {
-            label: "Remove Sample",
-            onclick: () => delete_sample(sample),
-            hidden: !!sample.saved_id,
-          },
-          {
-            label: "Remove Output",
-            onclick: () => remove_sample_output(sample),
-            hidden: !!sample.saved_id || !sample.output,
-          },
-          {
-            label: "View in Dataset",
-            onclick: () => open_sample(sample),
-            hidden: !sample.saved_id,
-          },
-        ]}
-      />
-    </td>
-  </tr>
-{/each}
-<!-- Hidden element purely for scroll targeting, not 'hidden' as that breaks scrolling -->
-<tr class="h-0" id={`${id}-samples-end`}></tr>
-{#if data.sub_topics}
-  {#each data.sub_topics as sub_node}
-    <svelte:self
-      data={sub_node}
-      path={[...path, sub_node.topic]}
-      {guidance_data}
-      {triggerSave}
-      bind:num_subtopics_to_generate
-      bind:num_samples_to_generate
-      on:delete_topic={handleChildDeleteTopic}
-    />
+{#if !collapsed}
+  {#each data.samples as sample, index}
+    {@const { status: output_status, output: formatted_output } =
+      formatSampleOutput(sample, expandedSamples[index])}
+    <tr on:click={() => toggleExpand(index)} class="cursor-pointer">
+      <td style="padding-left: {depth * 25 + 20}px" class="py-2">
+        {#if expandedSamples[index]}
+          <pre class="whitespace-pre-wrap break-words">{formatExpandedSample(
+              sample.input,
+            )}</pre>
+        {:else}
+          <div class="truncate w-0 min-w-full">{sample.input}</div>
+        {/if}
+      </td>
+      <td class="py-2">
+        {#if !formatted_output}
+          {output_status}
+        {:else if expandedSamples[index]}
+          <pre class="whitespace-pre-wrap break-words">{formatted_output}</pre>
+        {:else}
+          <div class="truncate w-0 min-w-full">
+            {formatted_output}
+          </div>
+        {/if}
+      </td>
+      <td class="py-2">
+        {#if sample.saved_id}
+          <a
+            href={`/dataset/${guidance_data.project_id}/${guidance_data.task_id}/${sample.saved_id}/run`}
+            class="hover:underline">Saved</a
+          >
+        {:else if sample.output}
+          Unsaved
+        {:else}
+          No Output
+        {/if}
+      </td>
+      <td class="p-0">
+        <TableActionMenu
+          items={[
+            {
+              label: "Remove Sample",
+              onclick: () => delete_sample(sample),
+              hidden: !!sample.saved_id,
+            },
+            {
+              label: "Remove Output",
+              onclick: () => remove_sample_output(sample),
+              hidden: !!sample.saved_id || !sample.output,
+            },
+            {
+              label: "View in Dataset",
+              onclick: () => open_sample(sample),
+              hidden: !sample.saved_id,
+            },
+          ]}
+        />
+      </td>
+    </tr>
   {/each}
   <!-- Hidden element purely for scroll targeting, not 'hidden' as that breaks scrolling -->
-  <tr class="h-0" id={`${id}-subtopics`}></tr>
+  <tr class="h-0" id={`${id}-samples-end`}></tr>
+  {#if data.sub_topics}
+    {#each data.sub_topics as sub_node}
+      <svelte:self
+        data={sub_node}
+        path={[...path, sub_node.topic]}
+        {guidance_data}
+        {triggerSave}
+        bind:num_subtopics_to_generate
+        bind:num_samples_to_generate
+        on:delete_topic={handleChildDeleteTopic}
+      />
+    {/each}
+    <!-- Hidden element purely for scroll targeting, not 'hidden' as that breaks scrolling -->
+    <tr class="h-0" id={`${id}-subtopics`}></tr>
+  {/if}
 {/if}
 
 {#if generate_subtopics}
