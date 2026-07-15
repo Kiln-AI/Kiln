@@ -42,20 +42,25 @@ async def drive_case_for_eval(
     turns: int,
     skills: SkillsDict,
     task_run_config_id: str | None = None,
+    default_tags: list[str] | None = None,
 ) -> TaskRun:
     """Drive one case and return the persisted leaf TaskRun.
 
     The leaf's `.trace` holds the full cumulative conversation and its
     `output.source.run_config_id` carries `task_run_config_id` — the key the
-    eval runner's reuse scan matches on. `skills` must be preloaded by the
-    caller — the adapter raises on skill tools with no injected dict.
+    eval runner's reuse scan matches on. `default_tags` are stamped on every
+    turn as it saves, so even a chain orphaned by a mid-drive failure stays
+    discoverable. `skills` must be preloaded by the caller — the adapter
+    raises on skill tools with no injected dict.
     """
     su_driver = SyntheticUserDriver(synthetic_user_info, su_driver_config)
     adapter = adapter_for_task(
         target_task,
         target_run_config,
         base_adapter_config=AdapterConfig(
-            skills=skills, task_run_config_id=task_run_config_id
+            skills=skills,
+            task_run_config_id=task_run_config_id,
+            default_tags=default_tags,
         ),
     )
     input_source = DataSource(

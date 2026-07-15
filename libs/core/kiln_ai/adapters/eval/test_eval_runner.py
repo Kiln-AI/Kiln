@@ -2909,7 +2909,11 @@ class TestRunV2MultiTurnRedrive:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(
+                    return_value=_fresh_leaf(
+                        mock_task, data_source, run_config_id=mock_run_config.id
+                    )
+                ),
             ) as mock_drive,
         ):
             result = await runner.run_job(job)
@@ -2926,15 +2930,19 @@ class TestRunV2MultiTurnRedrive:
             drive_kwargs["target_run_config"].model_name
             == mock_run_config.run_config_properties.model_name
         )
-        # Every driven run stamps the run config id — the reuse-scan key.
+        # Every driven run stamps the run config id — the reuse-scan key —
+        # and carries the drive tag from creation (orphan discoverability).
         assert drive_kwargs["task_run_config_id"] == mock_run_config.id
+        assert drive_kwargs["default_tags"] == ["synthetic_eval_drive_v2_redrive_eval"]
 
         # The driven leaf persists in the dataset, tagged for pair reuse
-        # (sei_<eval_input_id>) and for cleanup sweeps (per-eval tag).
+        # (sei_<eval_input_id>) and for cleanup sweeps (per-eval tag), with
+        # the reuse key stamped on its output source.
         task_runs = mock_task.runs(readonly=True)
         assert len(task_runs) == 1
         assert "sei_ei_redrive" in task_runs[0].tags
         assert "synthetic_eval_drive_v2_redrive_eval" in task_runs[0].tags
+        assert task_runs[0].output.source.run_config_id == mock_run_config.id
 
         # The judge saw the FRESH conversation, not stored data.
         assert len(stub.seen_inputs) == 1
@@ -3151,6 +3159,68 @@ class TestRunV2MultiTurnRedrive:
         assert {i.final_message for i in stub.seen_inputs} == {"fresh reply"}
         assert len(mock_v2_redrive_config.runs(readonly=True)) == 1
         assert len(second_config.runs(readonly=True)) == 1
+
+    @pytest.mark.asyncio
+    async def test_pair_cache_skips_disk_rescan(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_eval,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """Sequential jobs for the same pair hit the in-memory cache: the
+        second job neither re-drives nor rescans the dataset."""
+        second_config = EvalConfig(
+            name="v2 redrive config 2",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="reply"),
+            parent=mock_v2_redrive_eval,
+        )
+        second_config.save_to_file()
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config, second_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        jobs = [
+            EvalJob(
+                item=multi_turn_eval_input,
+                eval_config=config,
+                type="task_run_eval",
+                task_run_config=mock_run_config,
+            )
+            for config in (mock_v2_redrive_config, second_config)
+        ]
+        stub = RecordingStubV2Eval(mock_v2_redrive_config)
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(
+                    return_value=_fresh_leaf(
+                        mock_task, data_source, run_config_id=mock_run_config.id
+                    )
+                ),
+            ) as mock_drive,
+        ):
+            assert await runner.run_job(jobs[0]) is True
+            # Any further dataset scan would explode — the cache must serve it.
+            with patch.object(
+                Task, "runs", side_effect=AssertionError("rescanned disk")
+            ):
+                assert await runner.run_job(jobs[1]) is True
+
+        assert mock_drive.await_count == 1
+        assert [i.final_message for i in stub.seen_inputs] == [
+            "fresh reply",
+            "fresh reply",
+        ]
 
     @pytest.mark.asyncio
     async def test_missing_drive_config_skips(

@@ -120,6 +120,9 @@ class EvalRunner:
         # same (eval_input, run_config) pair (e.g. two eval configs scoring
         # the same input) must not both drive the conversation.
         self._drive_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
+        # Leaves already resolved (found or driven) this run, so repeat jobs
+        # for a pair skip the disk scan.
+        self._driven_leaves: Dict[Tuple[str, str], TaskRun] = {}
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -743,12 +746,24 @@ class EvalRunner:
         two eval configs over one input) share one drive. The eval-scoped
         `synthetic_eval_drive_<eval_id>` tag lets cleanup sweeps find driven
         conversations.
+
+        Sampling: the stored conversation is pinned per pair — re-running an
+        eval re-scores the same sample. To draw a fresh sample, remove the
+        `sei_` tag from (or delete) the stored leaf and re-run; both
+        conversations stay persisted. First-class N-samples-per-pair needs a
+        sample ordinal in the reuse key (follow-up, not covered here).
         """
         assert job.task_run_config is not None  # caller-guarded
         pair_tag = f"sei_{eval_input.id}"
         pair_key = (str(eval_input.id), str(job.task_run_config.id))
+        if pair_key in self._driven_leaves:
+            return self._driven_leaves[pair_key]
+
         pair_lock = self._drive_locks.setdefault(pair_key, asyncio.Lock())
         async with pair_lock:
+            if pair_key in self._driven_leaves:
+                return self._driven_leaves[pair_key]
+
             for run in self.task.runs(readonly=True):
                 if (
                     pair_tag in (run.tags or [])
@@ -757,6 +772,7 @@ class EvalRunner:
                     and run.output.source is not None
                     and run.output.source.run_config_id == job.task_run_config.id
                 ):
+                    self._driven_leaves[pair_key] = run
                     return run
 
             try:
@@ -776,6 +792,7 @@ class EvalRunner:
                     f"multi_turn_drive_config: {drive_config.model_provider}"
                 ) from e
 
+            drive_tag = f"synthetic_eval_drive_{self.eval.id}"
             leaf = await drive_case_for_eval(
                 seed_prompt=seed,
                 synthetic_user_info=data.synthetic_user_info,
@@ -788,13 +805,16 @@ class EvalRunner:
                 turns=drive_config.turns,
                 skills=self._skills,
                 task_run_config_id=job.task_run_config.id,
+                # Stamped on every turn at save time, so chains orphaned by a
+                # mid-drive failure remain findable by cleanup sweeps.
+                default_tags=[drive_tag],
             )
+            # The pair tag marks only the successful leaf — it is the reuse
+            # key, so partial chains never satisfy the scan.
             async with self._save_context():
-                leaf.tags = sorted(
-                    set(leaf.tags or [])
-                    | {pair_tag, f"synthetic_eval_drive_{self.eval.id}"}
-                )
+                leaf.tags = sorted(set(leaf.tags or []) | {pair_tag, drive_tag})
                 leaf.save_to_file()
+            self._driven_leaves[pair_key] = leaf
             return leaf
 
 

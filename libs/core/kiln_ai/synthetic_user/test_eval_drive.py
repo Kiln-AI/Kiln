@@ -172,11 +172,13 @@ async def test_adapter_configured_to_persist(fake_adapter, fake_su_driver) -> No
         turns=1,
         skills=skills,
         task_run_config_id="rc_123",
+        default_tags=["drive_tag_1"],
     )
 
     assert captured["task"] is task
     assert captured["adapter_config"].allow_saving is True
     assert captured["adapter_config"].task_run_config_id == "rc_123"
+    assert captured["adapter_config"].default_tags == ["drive_tag_1"]
     assert captured["adapter_config"].skills is skills
 
 
