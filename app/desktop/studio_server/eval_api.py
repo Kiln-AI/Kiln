@@ -17,6 +17,7 @@ from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
+    EvalInputFilterId,
     dataset_filter_from_id,
     eval_input_filter_from_id,
 )
@@ -551,6 +552,45 @@ def runs_in_filter(
     return [run for run in task.runs(readonly=readonly) if filter(run)]
 
 
+def eval_input_ids_in_filter(
+    task: Task, filter_id: EvalInputFilterId, readonly: bool
+) -> Set[ID_TYPE]:
+    # Fetch all the EvalInput item IDs in a filter
+    filter = eval_input_filter_from_id(filter_id)
+    return {
+        eval_input.id
+        for eval_input in task.eval_inputs(readonly=readonly)
+        if filter(eval_input)
+    }
+
+
+def expected_item_ids_for_eval(
+    task: Task, eval: Eval, readonly: bool
+) -> Set[ID_TYPE] | None:
+    """IDs of the items an eval is expected to score. An eval's slice is either
+    TaskRun-typed (eval_set_filter_id) or EvalInput-typed (eval_input_filter_id);
+    its EvalRuns key on dataset_id or eval_input_id respectively. Returns None
+    when neither filter is set (Eval validates exactly one, so only reachable
+    for hand-edited files)."""
+    if eval.eval_set_filter_id is not None:
+        return dataset_ids_in_filter(task, eval.eval_set_filter_id, readonly=readonly)
+    if eval.eval_input_filter_id is not None:
+        return eval_input_ids_in_filter(
+            task, eval.eval_input_filter_id, readonly=readonly
+        )
+    return None
+
+
+def eval_run_item_id(eval_run: EvalRun) -> ID_TYPE:
+    # The item an EvalRun scored: EvalRun validates exactly one of dataset_id
+    # (TaskRun source) or eval_input_id (EvalInput source) is set.
+    return (
+        eval_run.dataset_id
+        if eval_run.dataset_id is not None
+        else eval_run.eval_input_id
+    )
+
+
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
     # Create a map of score_key -> Task requirement ID
     score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {}
@@ -630,17 +670,20 @@ def compute_score_summary(
     eval: Eval,
     eval_config: EvalConfig,
     task_run_configs: list[TaskRunConfig],
-    expected_dataset_ids: set[ID_TYPE],
+    expected_item_ids: set[ID_TYPE],
 ) -> EvalResultSummary:
-    if len(expected_dataset_ids) == 0:
+    """Aggregate an eval config's runs per run config. expected_item_ids are
+    TaskRun IDs or EvalInput IDs depending on the eval's slice source (see
+    expected_item_ids_for_eval); runs key on the matching EvalRun field."""
+    if len(expected_item_ids) == 0:
         return EvalResultSummary(
             results={},
             run_config_percent_complete={},
             dataset_size=0,
         )
 
-    remaining_expected_dataset_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
-        run_config.id: set(expected_dataset_ids) for run_config in task_run_configs
+    remaining_expected_item_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
+        run_config.id: set(expected_item_ids) for run_config in task_run_configs
     }
     partial_incomplete_counts: Dict[ID_TYPE, int] = {
         run_config.id: 0 for run_config in task_run_configs
@@ -657,12 +700,13 @@ def compute_score_summary(
             continue
         run_config_id = eval_run.task_run_config_id
 
-        if run_config_id not in remaining_expected_dataset_ids:
+        if run_config_id not in remaining_expected_item_ids:
             continue
-        if eval_run.dataset_id not in remaining_expected_dataset_ids[run_config_id]:
+        item_id = eval_run_item_id(eval_run)
+        if item_id not in remaining_expected_item_ids[run_config_id]:
             continue
         else:
-            remaining_expected_dataset_ids[run_config_id].remove(eval_run.dataset_id)
+            remaining_expected_item_ids[run_config_id].remove(item_id)
 
         if eval_run.skipped_reason is not None:
             excluded_counts[run_config_id] += 1
@@ -703,16 +747,16 @@ def compute_score_summary(
     for run_config in task_run_configs:
         n_excluded = excluded_counts[run_config.id]
         incomplete_count = partial_incomplete_counts[run_config.id] + len(
-            remaining_expected_dataset_ids[run_config.id]
+            remaining_expected_item_ids[run_config.id]
         )
-        n_processed = len(expected_dataset_ids) - incomplete_count
-        percent_complete = (n_processed) / len(expected_dataset_ids)
+        n_processed = len(expected_item_ids) - incomplete_count
+        percent_complete = (n_processed) / len(expected_item_ids)
         run_config_percent_complete[run_config.id] = percent_complete
 
     return EvalResultSummary(
         results=results,
         run_config_percent_complete=run_config_percent_complete,
-        dataset_size=len(expected_dataset_ids),
+        dataset_size=len(expected_item_ids),
     )
 
 
@@ -1403,20 +1447,13 @@ def connect_evals_api(app: FastAPI):
         eval = eval_from_id(project_id, task_id, eval_id)
         # The eval slice is either TaskRun-typed (eval_set_filter_id) or
         # EvalInput-typed (eval_input_filter_id) — size the right source.
-        if eval.eval_set_filter_id is not None:
-            dataset_size = len(
-                dataset_ids_in_filter(task, eval.eval_set_filter_id, readonly=True)
-            )
-        elif eval.eval_input_filter_id is not None:
-            input_filter = eval_input_filter_from_id(eval.eval_input_filter_id)
-            dataset_size = sum(
-                1 for ei in task.eval_inputs(readonly=True) if input_filter(ei)
-            )
-        else:
+        expected_item_ids = expected_item_ids_for_eval(task, eval, readonly=True)
+        if expected_item_ids is None:
             raise HTTPException(
                 status_code=400,
-                detail="This endpoint isn't supported for this eval type.",
+                detail="This eval has no eval set filter (dataset or eval input source), so it has no items to score.",
             )
+        dataset_size = len(expected_item_ids)
         golden_dataset_runs = (
             runs_in_filter(task, eval.eval_configs_filter_id, readonly=True)
             if eval.eval_configs_filter_id
@@ -1480,22 +1517,20 @@ def connect_evals_api(app: FastAPI):
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
 
-        if eval.eval_set_filter_id is None:
+        expected_item_ids = expected_item_ids_for_eval(task, eval, readonly=True)
+        if expected_item_ids is None:
             raise HTTPException(
                 status_code=400,
-                detail="This endpoint isn't supported for this eval type.",
+                detail="This eval has no eval set filter (dataset or eval input source), so it has no items to score.",
             )
-        expected_dataset_ids = dataset_ids_in_filter(
-            task, eval.eval_set_filter_id, readonly=True
-        )
-        if len(expected_dataset_ids) == 0:
+        if len(expected_item_ids) == 0:
             raise HTTPException(
                 status_code=400,
-                detail="No dataset ids in eval set filter. Add items to your dataset matching the eval set filter.",
+                detail="No items match this eval's eval set filter. Add items matching the filter to run this eval.",
             )
 
         return compute_score_summary(
-            eval, eval_config, task_run_configs, expected_dataset_ids
+            eval, eval_config, task_run_configs, expected_item_ids
         )
 
     @app.get(
@@ -1521,24 +1556,31 @@ def connect_evals_api(app: FastAPI):
             for rc in task_run_configs
         }
 
-        dataset_ids_cache: Dict[DatasetFilterId, Set[ID_TYPE]] = {}
+        # Cache keyed by (source, filter_id): eval_set and eval_input filters
+        # share the tag:: grammar but select different stores, so the filter id
+        # alone isn't a safe cache key.
+        item_ids_cache: Dict[Tuple[str, str], Set[ID_TYPE]] = {}
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
         for eval in task.evals(readonly=True):
-            filter_id = eval.eval_set_filter_id
-            if filter_id is None:
+            if eval.eval_set_filter_id is not None:
+                cache_key = ("task_run", eval.eval_set_filter_id)
+            elif eval.eval_input_filter_id is not None:
+                cache_key = ("eval_input", eval.eval_input_filter_id)
+            else:
                 continue
-            if filter_id not in dataset_ids_cache:
-                dataset_ids_cache[filter_id] = dataset_ids_in_filter(
-                    task, filter_id, readonly=True
-                )
-            expected_dataset_ids = dataset_ids_cache[filter_id]
+            if cache_key not in item_ids_cache:
+                expected_ids = expected_item_ids_for_eval(task, eval, readonly=True)
+                # None is unreachable here (a filter is set above), but keep the
+                # cache total rather than asserting.
+                item_ids_cache[cache_key] = expected_ids or set()
+            expected_item_ids = item_ids_cache[cache_key]
 
             evals_out[eval.id] = EvalResultsSummaryEvalInfo(
                 name=eval.name,
                 default_judge_config_id=eval.current_config_id,
-                dataset_size=len(expected_dataset_ids),
+                dataset_size=len(expected_item_ids),
                 output_score_keys=[s.json_key() for s in eval.output_scores],
             )
 
@@ -1551,14 +1593,14 @@ def connect_evals_api(app: FastAPI):
                     default_config = eval_config
                     break
 
-            if default_config is None or len(expected_dataset_ids) == 0:
+            if default_config is None or len(expected_item_ids) == 0:
                 continue
 
             summary = compute_score_summary(
                 eval,
                 default_config,
                 task_run_configs,
-                expected_dataset_ids,
+                expected_item_ids,
             )
 
             for rc_id, scores_dict in summary.results.items():
@@ -1791,13 +1833,11 @@ def connect_evals_api(app: FastAPI):
             if eval.id and eval.id in archived_eval_ids:
                 continue
 
-            # Get the dataset size for this eval
-            if eval.eval_set_filter_id is None:
+            # Get the eval set size for this eval (TaskRun- or EvalInput-sourced)
+            expected_item_ids = expected_item_ids_for_eval(task, eval, readonly=True)
+            if expected_item_ids is None:
                 continue
-            expected_dataset_ids = dataset_ids_in_filter(
-                task, eval.eval_set_filter_id, readonly=True
-            )
-            dataset_size = len(expected_dataset_ids)
+            dataset_size = len(expected_item_ids)
 
             # Only process the default eval config (only if only one eval config, or default is set explicitly if many)
             default_eval_config = None
@@ -1830,8 +1870,8 @@ def connect_evals_api(app: FastAPI):
                 continue
 
             eval_config = default_eval_config
-            # Track which dataset items we've seen for this eval_config
-            remaining_expected_dataset_ids = set(expected_dataset_ids)
+            # Track which eval items we've seen for this eval_config
+            remaining_expected_item_ids = set(expected_item_ids)
             partial_incomplete_count = 0
             eval_config_n_excluded = 0
 
@@ -1844,11 +1884,12 @@ def connect_evals_api(app: FastAPI):
                 if eval_run.task_run_config_id != run_config_id:
                     continue
 
-                # Check if this dataset_id is expected for this eval
-                if eval_run.dataset_id not in remaining_expected_dataset_ids:
+                # Check if this eval run's item is expected for this eval
+                item_id = eval_run_item_id(eval_run)
+                if item_id not in remaining_expected_item_ids:
                     continue
                 else:
-                    remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+                    remaining_expected_item_ids.remove(item_id)
 
                 if eval_run.skipped_reason is not None:
                     eval_config_n_excluded += 1
@@ -1908,7 +1949,7 @@ def connect_evals_api(app: FastAPI):
 
             # Calculate the percent of the dataset that has been processed
             incomplete_count = partial_incomplete_count + len(
-                remaining_expected_dataset_ids
+                remaining_expected_item_ids
             )
             if dataset_size > 0:
                 percent_incomplete = incomplete_count / dataset_size
