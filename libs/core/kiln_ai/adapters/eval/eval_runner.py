@@ -1,7 +1,8 @@
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator, Dict, List, Literal, Set
+from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
 
 import litellm
 
@@ -114,6 +115,10 @@ class EvalRunner:
         self.eval = target_eval
         self._skills: SkillsDict = self._preload_skills()
         self._save_context: SaveContext = save_context or default_save_context
+        # Single-flight guard for multi-turn drives: concurrent jobs for the
+        # same (eval_input, run_config) pair (e.g. two eval configs scoring
+        # the same input) must not both drive the conversation.
+        self._drive_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -682,58 +687,65 @@ class EvalRunner:
         # (eval_input, run_config) pair: the drive tags its leaf
         # sei_<eval_input_id> and the adapter stamps
         # output.source.run_config_id. Conversations are plain persisted
-        # TaskRuns any number of evals can score.
+        # TaskRuns any number of evals can score. The per-pair lock
+        # single-flights scan+drive+tag so concurrent jobs for the same pair
+        # (e.g. two eval configs over one input) reuse the first drive
+        # instead of racing into duplicates.
         pair_tag = f"sei_{eval_input.id}"
-        leaf: TaskRun | None = None
-        for run in self.task.runs(readonly=True):
-            if (
-                pair_tag in (run.tags or [])
-                and run.trace
-                and run.output is not None
-                and run.output.source is not None
-                and run.output.source.run_config_id == job.task_run_config.id
-            ):
-                leaf = run
-                break
+        pair_key = (str(eval_input.id), str(job.task_run_config.id))
+        pair_lock = self._drive_locks.setdefault(pair_key, asyncio.Lock())
+        async with pair_lock:
+            leaf: TaskRun | None = None
+            for run in self.task.runs(readonly=True):
+                if (
+                    pair_tag in (run.tags or [])
+                    and run.trace
+                    and run.output is not None
+                    and run.output.source is not None
+                    and run.output.source.run_config_id == job.task_run_config.id
+                ):
+                    leaf = run
+                    break
 
-        if leaf is None:
-            try:
-                agent_run_config = as_kiln_agent_run_config(
-                    job.task_run_config.run_config_properties
+            if leaf is None:
+                try:
+                    agent_run_config = as_kiln_agent_run_config(
+                        job.task_run_config.run_config_properties
+                    )
+                except ValueError as e:
+                    raise ValueError(
+                        "Multi-turn re-drive requires a Kiln agent run config; "
+                        f"run config '{job.task_run_config.name}' is a different type"
+                    ) from e
+                try:
+                    su_provider = ModelProviderName(drive_config.model_provider)
+                except ValueError as e:
+                    raise ValueError(
+                        "Invalid synthetic-user model provider on the eval's "
+                        f"multi_turn_drive_config: {drive_config.model_provider}"
+                    ) from e
+
+                leaf = await drive_case_for_eval(
+                    seed_prompt=seed,
+                    synthetic_user_info=data.synthetic_user_info,
+                    target_task=self.task,
+                    target_run_config=agent_run_config,
+                    su_driver_config=SyntheticUserDriverConfig(
+                        model_name=drive_config.model_name,
+                        model_provider_name=su_provider,
+                    ),
+                    turns=drive_config.turns,
+                    skills=self._skills,
+                    task_run_config_id=job.task_run_config.id,
                 )
-            except ValueError as e:
-                raise ValueError(
-                    "Multi-turn re-drive requires a Kiln agent run config; "
-                    f"run config '{job.task_run_config.name}' is a different type"
-                ) from e
-            try:
-                su_provider = ModelProviderName(drive_config.model_provider)
-            except ValueError as e:
-                raise ValueError(
-                    "Invalid synthetic-user model provider on the eval's "
-                    f"multi_turn_drive_config: {drive_config.model_provider}"
-                ) from e
-
-            leaf = await drive_case_for_eval(
-                seed_prompt=seed,
-                synthetic_user_info=data.synthetic_user_info,
-                target_task=self.task,
-                target_run_config=agent_run_config,
-                su_driver_config=SyntheticUserDriverConfig(
-                    model_name=drive_config.model_name,
-                    model_provider_name=su_provider,
-                ),
-                turns=drive_config.turns,
-                skills=self._skills,
-                task_run_config_id=job.task_run_config.id,
-            )
-            # The pair tag makes the leaf discoverable for reuse; the
-            # eval-scoped tag lets cleanup sweeps find driven conversations.
-            new_tags = {pair_tag, f"synthetic_eval_drive_{self.eval.id}"}
-            if not new_tags.issubset(leaf.tags or []):
-                async with self._save_context():
-                    leaf.tags = sorted(set(leaf.tags or []) | new_tags)
-                    leaf.save_to_file()
+                # The pair tag makes the leaf discoverable for reuse; the
+                # eval-scoped tag lets cleanup sweeps find driven
+                # conversations.
+                new_tags = {pair_tag, f"synthetic_eval_drive_{self.eval.id}"}
+                if not new_tags.issubset(leaf.tags or []):
+                    async with self._save_context():
+                        leaf.tags = sorted(set(leaf.tags or []) | new_tags)
+                        leaf.save_to_file()
 
         eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
         result = await evaluator.evaluate(eval_task_input)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -2855,13 +2856,23 @@ def multi_turn_eval_input(mock_task):
     return ei
 
 
-def _fresh_leaf(task: Task, data_source: DataSource) -> TaskRun:
+def _fresh_leaf(
+    task: Task, data_source: DataSource, run_config_id: str | None = None
+) -> TaskRun:
     """The leaf drive_case_for_eval returns: a persisted, trace-carrying
-    TaskRun (KIL-761), not yet tagged — tagging is the runner's job."""
+    TaskRun (KIL-761) with the run config stamped on its output source, not
+    yet tagged — tagging is the runner's job."""
+    output_source = data_source
+    if run_config_id is not None:
+        output_source = DataSource(
+            type=data_source.type,
+            properties=dict(data_source.properties),
+            run_config_id=run_config_id,
+        )
     leaf = TaskRun(
         input="opening message",
         input_source=data_source,
-        output=TaskOutput(output="fresh reply", source=data_source),
+        output=TaskOutput(output="fresh reply", source=output_source),
         trace=MULTI_TURN_TRACE,
         parent=task,
     )
@@ -3075,6 +3086,71 @@ class TestRunV2MultiTurnRedrive:
         # other-config one.
         assert len(stub.seen_inputs) == 1
         assert stub.seen_inputs[0].final_message == "fresh reply"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_jobs_share_one_drive(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_eval,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """Two eval configs scoring the same (eval_input, run_config) pair
+        concurrently share one drive: the per-pair lock single-flights
+        scan+drive+tag, so the second job reuses the persisted leaf instead
+        of racing into a duplicate conversation."""
+        second_config = EvalConfig(
+            name="v2 redrive config 2",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="reply"),
+            parent=mock_v2_redrive_eval,
+        )
+        second_config.save_to_file()
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config, second_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        jobs = [
+            EvalJob(
+                item=multi_turn_eval_input,
+                eval_config=config,
+                type="task_run_eval",
+                task_run_config=mock_run_config,
+            )
+            for config in (mock_v2_redrive_config, second_config)
+        ]
+
+        async def _yielding_drive(**kwargs):
+            # Yield control so the second job interleaves mid-drive — without
+            # the per-pair lock both jobs would miss the scan and drive.
+            await asyncio.sleep(0)
+            return _fresh_leaf(mock_task, data_source, run_config_id=mock_run_config.id)
+
+        stub = RecordingStubV2Eval(mock_v2_redrive_config)
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(side_effect=_yielding_drive),
+            ) as mock_drive,
+        ):
+            results = await asyncio.gather(*(runner.run_job(job) for job in jobs))
+
+        assert results == [True, True]
+        # One drive; the other job reused the persisted conversation.
+        assert mock_drive.await_count == 1
+        # Both eval configs scored a conversation with the same content.
+        assert len(stub.seen_inputs) == 2
+        assert {i.final_message for i in stub.seen_inputs} == {"fresh reply"}
+        assert len(mock_v2_redrive_config.runs(readonly=True)) == 1
+        assert len(second_config.runs(readonly=True)) == 1
 
     @pytest.mark.asyncio
     async def test_missing_drive_config_skips(
