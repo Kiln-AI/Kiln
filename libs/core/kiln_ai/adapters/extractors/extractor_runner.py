@@ -14,6 +14,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
 )
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,10 @@ class ExtractorRunner:
 
         return jobs
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(self, concurrency: int | None = None) -> AsyncGenerator[Progress, None]:
+        if concurrency is None:
+            concurrency = Config.shared().max_concurrent_evals or 25
+
         jobs = self.collect_jobs()
 
         runner = AsyncJobRunner(
