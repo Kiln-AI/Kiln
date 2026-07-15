@@ -131,3 +131,37 @@ def test_convert_pdf_to_images_sync(mock_file_factory):
 async def test_convert_pdf_to_images_concurrent_access_100(mock_file_factory):
     """Test running convert_pdf_to_images concurrently from multiple tasks."""
     await run_convert_pdf_concurrently(mock_file_factory, concurrency=50)
+
+
+async def test_convert_pdf_to_images_process_pool_broken_fallback(mock_file_factory):
+    """Test that if the process pool executor fails with BrokenProcessPool, it falls back to thread execution and succeeds."""
+    from concurrent.futures.process import BrokenProcessPool
+    from unittest.mock import patch
+
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # We patch run_in_executor on the event loop to raise BrokenProcessPool
+    original_run_in_executor = asyncio.get_running_loop().run_in_executor
+
+    call_count = 0
+
+    def mock_run_in_executor(executor, func, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        # Raise BrokenProcessPool only when calling _convert_pdf_to_images_sync in executor
+        actual_func = func.func if hasattr(func, "func") else func
+        if (
+            hasattr(actual_func, "__name__")
+            and actual_func.__name__ == "_convert_pdf_to_images_sync"
+        ):
+            raise BrokenProcessPool("Simulated process pool crash")
+        return original_run_in_executor(executor, func, *args, **kwargs)
+
+    with patch.object(
+        asyncio.get_running_loop(), "run_in_executor", side_effect=mock_run_in_executor
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            images = await convert_pdf_to_images(test_file, Path(temp_dir))
+            assert len(images) == 2
+            assert all(image.exists() for image in images)
+            assert call_count > 0
