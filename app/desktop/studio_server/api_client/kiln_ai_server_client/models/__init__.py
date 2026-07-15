@@ -30,7 +30,10 @@ from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
 from .client_chat_message_role import ClientChatMessageRole
+from .client_version_policy import ClientVersionPolicy
 from .create_api_key_response import CreateApiKeyResponse
+from .data_guide_job_output import DataGuideJobOutput
+from .data_guide_job_result_response import DataGuideJobResultResponse
 from .data_source import DataSource
 from .data_source_properties import DataSourceProperties
 from .data_source_type import DataSourceType
@@ -46,6 +49,8 @@ from .delete_session_v1_chat_sessions_session_id_delete_response_426 import (
 from .delete_session_v1_chat_sessions_session_id_delete_response_500 import (
     DeleteSessionV1ChatSessionsSessionIdDeleteResponse500,
 )
+from .draft_input_data_guide_input import DraftInputDataGuideInput
+from .draft_input_data_guide_output import DraftInputDataGuideOutput
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
 from .file import File
@@ -69,6 +74,7 @@ from .image_url import ImageURL
 from .image_url_detail import ImageURLDetail
 from .input_audio import InputAudio
 from .input_audio_format import InputAudioFormat
+from .jinja_input_transform import JinjaInputTransform
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
@@ -122,6 +128,7 @@ from .task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType
 from .tools_run_config import ToolsRunConfig
 from .usage import Usage
 from .validation_error import ValidationError
+from .validation_error_context import ValidationErrorContext
 
 __all__ = (
     "AnswerOption",
@@ -150,7 +157,10 @@ __all__ = (
     "ClarifySpecOutput",
     "ClientChatMessage",
     "ClientChatMessageRole",
+    "ClientVersionPolicy",
     "CreateApiKeyResponse",
+    "DataGuideJobOutput",
+    "DataGuideJobResultResponse",
     "DataSource",
     "DataSourceProperties",
     "DataSourceType",
@@ -158,6 +168,8 @@ __all__ = (
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse404",
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse426",
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse500",
+    "DraftInputDataGuideInput",
+    "DraftInputDataGuideOutput",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
     "File",
@@ -181,6 +193,7 @@ __all__ = (
     "ImageURLDetail",
     "InputAudio",
     "InputAudioFormat",
+    "JinjaInputTransform",
     "JobStartResponse",
     "JobStatus",
     "JobStatusResponse",
@@ -234,4 +247,5 @@ __all__ = (
     "ToolsRunConfig",
     "Usage",
     "ValidationError",
+    "ValidationErrorContext",
 )

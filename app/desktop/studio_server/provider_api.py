@@ -1010,6 +1010,44 @@ def connect_provider_api(app: FastAPI):
     ) -> JSONResponse:
         return await _create_kiln_copilot_api_key(payload.access_token)
 
+    @app.get(
+        "/api/provider/verify_kiln_copilot_api_key",
+        summary="Verify Kiln Copilot API Key",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def verify_kiln_copilot_api_key() -> JSONResponse:
+        """Verify the stored Kiln Copilot API key against the Kiln server.
+
+        Returns `{is_valid: bool}`. A stale key the server rejects with
+        401/403 is cleared from local config so subsequent flows fall back to
+        the connect screen instead of silently using a dead key. Network
+        failures leave the key in place and report `false` for this check
+        only — they shouldn't punish the user for a transient blip.
+        """
+        key = Config.shared().kiln_copilot_api_key
+        if not key:
+            return JSONResponse(status_code=200, content={"is_valid": False})
+
+        base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{base_url}/v1/verify_api_key",
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=10,
+                )
+        except httpx.RequestError:
+            return JSONResponse(status_code=200, content={"is_valid": False})
+
+        if response.status_code == 200:
+            return JSONResponse(status_code=200, content={"is_valid": True})
+
+        if response.status_code in (401, 403):
+            Config.shared().kiln_copilot_api_key = None
+
+        return JSONResponse(status_code=200, content={"is_valid": False})
+
 
 async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
     if not access_token:

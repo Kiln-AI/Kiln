@@ -15,7 +15,6 @@
   import DataGenIntro from "../data_gen_intro.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import SynthDataGuidance from "../synth_data_guidance.svelte"
-  import SynthDataGuide from "../synth_data_guide.svelte"
   import { onDestroy } from "svelte"
   import { get_splits_from_url_param } from "$lib/utils/splits_util"
   import DataGenDescription from "../data_gen_description.svelte"
@@ -28,15 +27,9 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
   import Intro from "$lib/ui/intro.svelte"
-  import Callout from "$lib/ui/callout.svelte"
   import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
-  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
-  import AddExampleDialog, {
-    type GuideSample,
-  } from "$lib/components/add_example_dialog.svelte"
-  import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -73,27 +66,6 @@
   let task: Task | null = null
   let task_error: KilnError | null = null
   let task_loading = true
-
-  // Set when the user just returned from /data_guide_setup so the synth page
-  // can confirm the guide was saved (the new guide is below the fold). Read
-  // once on mount and stripped from the URL so a refresh doesn't re-show it.
-  let data_guide_just_saved = false
-
-  // Add-example dialog reused from the data_guide_setup flow. Lets the user
-  // start filling out their first example without leaving the synth page.
-  // After they submit, we stash the sample on a pending store and navigate
-  // to /data_guide_setup, where it gets seeded into the form.
-  let add_data_guide_example_dialog: AddExampleDialog
-  function handle_data_guide_example_added(
-    event: CustomEvent<{
-      sample: GuideSample
-      index: number
-      mode: "add" | "edit"
-    }>,
-  ) {
-    pending_data_guide_example.set(event.detail.sample)
-    goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
-  }
 
   $: error = $loading_error || task_error
 
@@ -217,12 +189,6 @@
   }
 
   onMount(async () => {
-    if ($page.url.searchParams.get("data_guide_saved") === "true") {
-      data_guide_just_saved = true
-      const cleaned = new URL($page.url.toString())
-      cleaned.searchParams.delete("data_guide_saved")
-      history.replaceState(history.state, "", cleaned.toString())
-    }
     await Promise.all([get_task(), fetch_data_guide()])
     if (!task) {
       task_error = new KilnError(
@@ -727,9 +693,9 @@
         ? JSON.parse(sample.input)
         : sample.input
       const save_sample_guidance = guidance_data.guidance_for_type("outputs")
-      const data_guide = get(guidance_data.use_data_guide)
-        ? get(guidance_data.data_guide)
-        : ""
+      // The Data Guide is intentionally NOT sent at the output stage — it
+      // describes inputs only, and output behavior is owned by the task's
+      // system prompt + output schema.
       // Get a random split tag, if splits are defined
       const split_tag = get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
@@ -756,7 +722,6 @@
             run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
-            data_guide,
             tags,
           },
         },
@@ -902,22 +867,27 @@
           <Intro
             title="Create a Data Guide"
             description_paragraphs={[
-              "A Data Guide tells us what realistic data for your task looks like. Without one, the model might guess.",
-              "Add a few good examples, rate the data we generate, and we'll refine the guide from there.",
+              "A Data Guide tells us what realistic inputs to your task look like. Without one, the model might guess.",
+              "Add examples, rate the data we generate, and we'll refine the guide from there.",
             ]}
             action_buttons={[
               {
                 label: "Set Up Data Guide",
                 is_primary: true,
                 onClick: () => {
-                  posthog.capture("data_guide_intro_clicked")
-                  add_data_guide_example_dialog?.open_add()
+                  posthog.capture("data_guide_intro_clicked", {
+                    choice: "set_up",
+                  })
+                  goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)
                 },
               },
               {
                 label: "Continue Without Data Guide",
                 is_primary: false,
                 onClick: () => {
+                  posthog.capture("data_guide_intro_clicked", {
+                    choice: "skip",
+                  })
                   skip_data_guide = true
                 },
               },
@@ -927,24 +897,8 @@
               <NotebookIcon />
             </div>
           </Intro>
-          <AddExampleDialog
-            bind:this={add_data_guide_example_dialog}
-            {project_id}
-            {task_id}
-            on:submit={handle_data_guide_example_added}
-          />
         </div>
       {:else if is_empty}
-        {#if data_guide_just_saved}
-          <div class="mt-8">
-            <Callout
-              title="Data Guide saved"
-              description="Your data guide will be available to use when generating data below."
-            >
-              <div slot="icon"><CheckmarkIcon /></div>
-            </Callout>
-          </div>
-        {/if}
         <div>
           <DataGenIntro
             generate_subtopics={() => {
@@ -1337,9 +1291,6 @@
         </div>
         <div>
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
-        </div>
-        <div>
-          <SynthDataGuide {guidance_data} />
         </div>
         {#if task}
           <!-- Lock tools and skills whenever SDG inherits fine-tuning tool state, including the empty set. -->

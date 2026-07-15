@@ -8,17 +8,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from kiln_ai.datamodel.data_guide import DataGuideSource
+
 
 class RatedSample(BaseModel):
-    """A preview sample (input/output pair) plus the user's rating, used as
-    feedback input to the data-guide refinement metaprompter. Shared between
-    the API surface and the prompt builder so callers don't have to flatten
-    into positional tuples."""
+    """A previewed input sample plus the user's rating, used as feedback input
+    to the input-data-guide refinement metaprompter. Shared between the API
+    surface and the prompt builder so callers don't have to flatten into
+    positional tuples."""
 
     input: str = Field(description="Generated sample input")
-    output: str = Field(description="Generated sample output")
     looks_good: bool = Field(
-        description="User rating: true if the sample looks realistic, false if it needs work"
+        description="User rating: true if the input looks realistic, false if it needs work"
     )
 
 
@@ -296,138 +297,176 @@ When generating Q&A pairs, focus on generating queries and answers that are rele
     return prompt
 
 
+def _generate_kiln_pro_refinement_prompt(
+    task_instruction: str,
+    current_guide: str,
+    feedback: str,
+    task_input_json_schema: str | None = None,
+) -> str:
+    """Surgical-edit refine prompt for guides that originated from the Kiln
+    Pro analyze pipeline.
+
+    The original guide is presumed largely correct (it was derived from the
+    user's actual input documents). This prompt instructs the LLM to apply
+    user feedback as a minimal targeted edit and leave everything else
+    byte-for-byte unchanged. Rated samples are deliberately NOT rendered —
+    only feedback drives changes.
+    """
+
+    prompt = f"""You are refining a **Data Guide** that the Kiln Pro analyze pipeline produced from a user's input documents. The guide describes what realistic *inputs* to this task look like.
+
+**Scope: input shape and content, not output policy.** Output behavior — output format, schema, classification rules, decision logic, voice/tone — lives in the task's system prompt and output JSON schema. The Guide must contain no rules about outputs at any level.
+
+The Guide has three top-level sections in this order: `# Semantics`, `# Style`, `# Presentation Defaults`. Do NOT add a `# Reference Inputs` section.
+
+## Surgical-edit policy
+
+This is a refine pass driven by **user feedback only**. The current guide was generated from analysis of the user's actual input documents and is presumed largely correct. Your edits MUST be surgical:
+
+- **Only modify the section or subsection the feedback explicitly addresses.** Every other part of the guide stays byte-for-byte unchanged — same wording, same ordering, same headings, same whitespace.
+- Do NOT rewrite, restyle, consolidate, or "improve" sections the feedback didn't name.
+- Do NOT add new rules unless the feedback explicitly requests them.
+- Do NOT remove existing content unless the feedback explicitly asks to remove it.
+- If the feedback is general (e.g. "values should be more realistic"), find the smallest existing rule that already addresses it and tighten that rule — do not sprinkle new rules across multiple sections.
+- If the feedback is empty, blank, or you cannot identify what specific change it asks for, return the current guide exactly as given.
+
+## Context
+
+The task's runtime system prompt:
+<task_instruction>
+{_xml_escape(task_instruction)}
+</task_instruction>"""
+
+    if task_input_json_schema and task_input_json_schema.strip():
+        prompt += f"""
+
+The task's input JSON schema:
+<task_input_json_schema>
+{_xml_escape(task_input_json_schema)}
+</task_input_json_schema>"""
+
+    guide_block = current_guide.strip() or "(empty)"
+    prompt += f"""
+
+The user's current Data Guide:
+<current_guide>
+{_xml_escape(guide_block)}
+</current_guide>
+
+## User Feedback
+
+<feedback>
+{_xml_escape(feedback or "")}
+</feedback>
+
+## Output
+
+Return the **complete refined Data Guide markdown** with all three top-level sections in order: `# Semantics`, `# Style`, `# Presentation Defaults`. Do NOT add a `# Reference Inputs` section. Do NOT add commentary or explanation of your changes. If the feedback didn't warrant any change, return the current guide exactly as given."""
+
+    return prompt
+
+
 def generate_guidance_refinement_prompt(
     task_instruction: str,
     current_guide: str,
     preview_samples: list[RatedSample],
     feedback: str,
-    task_description: str | None = None,
+    source: DataGuideSource = "manual",
     task_input_json_schema: str | None = None,
-    task_output_json_schema: str | None = None,
 ) -> str:
-    """Generate a prompt for refining a Task Data Guide based on user feedback.
+    """Generate a prompt for refining a Data Guide based on user feedback.
 
-    The Guide describes what real-world task data looks like — input shape and
-    distribution, plus output shape. Output policy (correctness, classification
-    rules, decision logic, voice/tone) lives in the task's system prompt, not
-    the Guide. The metaprompter only emits four group tags:
-    `<input_structural>`, `<input_semantic>`, `<output_structural>`, and
-    `<both_structural>`. Output-side semantics are intentionally out of scope
-    to prevent the Guide from becoming a lossy paraphrase of the system prompt
-    that silently overrides the authoritative source.
+    The Guide describes what real-world *inputs* to this task look like.
+    Output policy lives in the task's system prompt and output JSON schema,
+    NOT the Guide.
 
-    Each preview sample is a `RatedSample` with `input`, `output`, and
-    `looks_good` (True for Realistic, False for Needs Work).
+    Branches on `source`:
 
-    `current_guide` is the full markdown body of the user's current data
-    guide. Typically it has a `# Reference Examples` section with user-written
-    `(input, output)` pairs and a `# Guidelines & Rules` section with
-    structural/semantic constraints. Either section may be missing on early
-    refines. The metaprompter rewrites the entire guide and returns the
-    refined version.
+    - **manual**: full refine prompt — rated samples drive rule synthesis,
+      reference inputs are preserved verbatim, sections can be added /
+      edited / reordered to absorb feedback and sample evidence.
+    - **kiln_pro**: surgical-edit prompt — the analyze pipeline already
+      produced a good guide from the user's documents. Refine takes ONLY
+      the user's feedback and edits only the parts that feedback addresses.
+      Rated samples are not rendered; untouched sections stay byte-for-byte.
 
-    The optional task_description / task_input_json_schema /
-    task_output_json_schema args give the LLM extra grounding so the refined
-    guide stays consistent with the task's actual purpose and shape.
+    The optional task_input_json_schema arg gives the LLM extra grounding so
+    the refined guide stays consistent with the task's actual input shape.
     """
 
-    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a **Task Data Guide** — a single markdown document that, together with the task definition, controls how synthetic data for this task is generated.
+    if source == "kiln_pro":
+        return _generate_kiln_pro_refinement_prompt(
+            task_instruction=task_instruction,
+            current_guide=current_guide,
+            feedback=feedback,
+            task_input_json_schema=task_input_json_schema,
+        )
 
-**Scope: data shape, not output policy.** The Guide describes what real-world task data looks like — the format, distribution, and content of *inputs*, and the *shape* of outputs (length, format, schema). Output policy — classification rules, decision logic, correctness criteria, voice/tone, "when to output X vs Y" — lives in the task's system prompt, which is the authoritative source for what outputs should be. Restating it in the Guide creates a lossy paraphrase that drifts over time and silently overrides the original. **Output-side rules in the Guide are limited to structure; output-side semantics are out of scope and must not be written.**
+    sections_intro = """A Data Guide has four top-level sections in this order:
 
-A Task Data Guide is structured as up to two top-level sections:
+1. **`# Reference Inputs`** — concrete example inputs the user has authored or curated. These are the user's ground truth for what realistic inputs look like. **Preserve them verbatim by default — only add, modify, or remove an example when the user's feedback explicitly asks for it** (e.g. "add an example showing X", "input 2 is wrong, it should look like Y", "remove the third example"). If the section is missing and the user hasn't asked for examples, do not invent any. Older guides may call this section `# Reference Examples` and may include output fields alongside inputs — treat it as equivalent, and if you refine the guide, rename it to `# Reference Inputs` and drop any output fields (input-only from here on).
 
-1. **`# Reference Examples`** — concrete `(input, output)` pairs the user has authored. These are the user's ground truth. **Preserve them verbatim by default — only add, modify, or remove an example when the user's feedback explicitly asks for it (e.g. "add an example showing X", "example 2 is wrong, the output should be Y", "remove the third example").** If the section is missing and the user hasn't asked for examples, do not invent any.
-2. **`# Guidelines & Rules`** — structural rules and input-side semantic rules. Structural rules govern *how* the data is shaped (format, length, layout, formatting conventions) and may apply to inputs, outputs, or both. Semantic rules govern *what* the data means (fields, valid values, relationships, domain plausibility) and are **input-side only** — output semantics belong in the system prompt, not here. **You own this section** — you may add, edit, reorder, split, merge, or remove rules in response to feedback or to fix what the rated samples got wrong. If the section is missing, generate a starter set on this pass.
+2. **`# Semantics`** — what information exists in inputs and how fields relate. WHAT data exists, not HOW it's formatted. Subsections to cover (omit any that don't apply):
+   - `## Semantic Structure` — what fields/sections exist; logical organization
+   - `## Data Patterns` — types of fields, valid values, ranges, units, terminology
+   - `## Relationships` — logical relationships between input fields (correlations, dependencies)
+   - `## Critical Constraints` — rules that MUST hold (field A implies field B; certain combinations are logically invalid)
+   - `## Inter-Input Variability` — how inputs differ; axes of variability
+   - `## Divergence Boundaries` — which patterns are flexible vs. fixed
 
-### Rule grouping: every rule sits in one of four XML-tagged groups
+3. **`# Style`** — how inputs read and look, with measurements where possible. Vague descriptions like "professional tone" are NOT sufficient. Subsections:
+   - `## Section-by-Section Style Profile` (when inputs have internal structure) — per section: typical length, structure pattern, detail level
+   - `## Input-Level Metrics` — total input length, terminology level, sentence structure, voice, tone, abbreviation conventions
+   - `## Formatting Conventions` — separators, header styles, list conventions, value presentation, whitespace
+   - `## Quantitative Constraints` — specific measurable style rules (e.g., "the 'assessment' section is always 1-3 sentences"). These are CEILINGS — never exceed at synthesis time.
 
-A task generates inputs and outputs in **separate LLM calls** at runtime. A rule about output JSON shape has no bearing on the input-generation call, and vice versa. So every rule has both a **type** (Structural | Semantic) and a **scope** (Input | Output | Both) — but semantic rules are restricted to the input scope (see "Scope" above).
+4. **`# Presentation Defaults`** — defaults that per-batch user guidance can override more freely than Semantics or Style:
+   - Unit systems / measurement conventions
+   - Date and time formats
+   - Number formats (decimal separators, thousands grouping)
+   - Default section ordering and organization
+   - Naming conventions, terminology style
+   - Any other domain-specific presentation patterns
 
-Group rules by scope+type using XML-style tags. The four valid groups are:
+You own all four sections (Reference Inputs is mostly user-owned but you may add/edit/remove examples when feedback explicitly asks). You may add, edit, reorder, split, merge, or remove subsections in response to feedback or to fix what the rated samples got wrong. If a section is empty after your refine, write at least one short subsection capturing the most defensible pattern — don't omit a top-level section."""
 
-- `<input_structural>` — how inputs are shaped (length, format, layout, casing, prose vs JSON)
-- `<input_semantic>` — what inputs mean (fields, valid values, plausibility, terminology)
-- `<output_structural>` — how outputs are shaped (length, format, formatting conventions). Additive only: write rules that *supplement* the system prompt or output JSON schema where they're underspecified; never restate or contradict what they already say.
-- `<both_structural>` — structural rules that apply uniformly to inputs and outputs (e.g., universal formatting like ISO dates)
+    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a **Data Guide** — a single markdown document that, together with the task definition, controls how synthetic *inputs* for this task are generated.
 
-There is **no** `<output_semantic>` group and **no** `<both_semantic>` group. If a candidate rule is about what makes an output *good*, *correct*, or which value to pick, it is output policy and belongs in the system prompt — not in the Guide. Drop it.
+**Scope: input shape and content, not output policy.** The Guide describes what real-world *inputs* to this task look like — the format, distribution, fields, and value patterns of inputs. Output behavior — output format, output schema, classification rules, decision logic, correctness criteria, voice/tone, "when to output X vs Y" — lives in the task's system prompt and output JSON schema. **The Guide must contain no rules about outputs at any level.** The Guide is consumed only at the topic and input generation stages of synthetic data generation; it is never seen at output generation.
 
-Inside each group, every rule is a `## <short title>` block followed by a one-or-more-sentence description. Only emit a group tag if it has at least one rule. Use blank lines between rule blocks within a group, and a blank line between groups, for human legibility.
+{sections_intro}
 
-**Worked example of the rules section shape (illustrative — your task will differ):**
+### Migrating older guides
 
-```
-# Guidelines & Rules
+Some guides may use the old shape: `# Input Guidelines & Rules` with `<input_structural>` and `<input_semantic>` XML-tagged blocks (or even older `<output_*>` / `<both_*>` blocks). When you refine such a guide:
 
-<input_structural>
-
-## Format
-Inputs are plain-text questions ending in a question mark, not JSON or markdown.
-
-## Length
-Inputs are 5-25 words.
-
-</input_structural>
-
-<input_semantic>
-
-## Topic grounding
-Each input asks about content covered in the task's source material; off-topic questions are unrealistic.
-
-</input_semantic>
-
-<output_structural>
-
-## Length
-Outputs are 1-3 sentences, 20-60 words.
-
-## Format
-Outputs are direct prose answers — no conversational preamble like "Sure!" or "The answer is...".
-
-</output_structural>
-```
-
-The runtime model uses the group tag to filter which rules apply to its current generation stage. Untagged rules from older guides (a `## Title` block sitting outside any group) should be classified into one of the four valid groups based on the rule's actual scope and type — and dropped if it turns out to be output-side policy that should live in the system prompt. **Always wrap every rule in one of the four valid group tags.**
+- Absorb the content of `<input_structural>` blocks into `# Style` (mostly under `## Formatting Conventions` or `## Quantitative Constraints`) and `# Semantics` where the rule is actually about meaning rather than shape.
+- Absorb `<input_semantic>` blocks into `# Semantics` (mostly under `## Data Patterns` or `## Critical Constraints`).
+- **Drop** any `<output_*>` or `<both_*>` blocks entirely — those are out of scope for this Guide.
+- Re-emit only the canonical section shape described above. Never preserve XML group tags.
 
 ## Context
 
-A user is generating synthetic data for the following task. Read this task definition carefully — every rule you write should be consistent with what the task is actually for.
+A user is generating synthetic input data for the following task. Read this task definition carefully — every rule you write should be consistent with what the task is actually for.
 
 The task's runtime system prompt:
 <task_instruction>
-{task_instruction}
+{_xml_escape(task_instruction)}
 </task_instruction>"""
-
-    if task_description and task_description.strip():
-        prompt += f"""
-
-A short human-facing description of the task:
-<task_description>
-{task_description}
-</task_description>"""
 
     if task_input_json_schema and task_input_json_schema.strip():
         prompt += f"""
 
 The task's input JSON schema (every rule about input structure must be consistent with this; do not invent fields the schema doesn't allow):
 <task_input_json_schema>
-{task_input_json_schema}
+{_xml_escape(task_input_json_schema)}
 </task_input_json_schema>"""
-
-    if task_output_json_schema and task_output_json_schema.strip():
-        prompt += f"""
-
-The task's output JSON schema (every rule about output structure must be consistent with this; do not invent fields the schema doesn't allow):
-<task_output_json_schema>
-{task_output_json_schema}
-</task_output_json_schema>"""
 
     guide_block = current_guide.strip()
 
     prompt += """
 
-The user's current data guide is shown below. Read it carefully — the reference examples (if any) are your primary signal for what realistic task data looks like, and the rules (if any) are constraints already in force. **Your output replaces the entire guide wholesale**, so anything you want to keep, you must include.
+The user's current input data guide is shown below. Read it carefully — the reference inputs (if any) are your primary signal for what realistic inputs look like, and the rules (if any) are constraints already in force. **Your output replaces the entire guide wholesale**, so anything you want to keep, you must include.
 """
 
     if guide_block:
@@ -448,16 +487,15 @@ The user's current data guide is shown below. Read it carefully — the referenc
 
     if has_samples:
         prompt += """
-## Rated Samples
+## Rated Inputs
 
-The following samples were generated using the current guide. The user rated each one as either "Realistic" (the sample looks like real, correct task data) or "Needs Work" (the sample is wrong, unrealistic, or violates a constraint).
+The following inputs were generated using the current guide. The user rated each one as either "Realistic" (the input looks like real, plausible task input) or "Needs Work" (the input is wrong, unrealistic, or violates a constraint).
 
 """
         for i, sample in enumerate(preview_samples, 1):
             rating = "Realistic" if sample.looks_good else "Needs Work"
             prompt += f"""<sample_{i} rating="{rating}">
 <input>{_xml_escape(sample.input)}</input>
-<output>{_xml_escape(sample.output)}</output>
 </sample_{i}>
 """
 
@@ -465,87 +503,91 @@ The following samples were generated using the current guide. The user rated eac
         prompt += f"""
 ## User Feedback
 
-The user's written feedback (focused on the "Needs Work" samples):
+The user's written feedback (focused on the "Needs Work" inputs):
 <feedback>
 {_xml_escape(feedback)}
 </feedback>
 """
 
-    prompt += """
-## Your Task
+    your_task_intro = """## Your Task
 
-Produce the **complete refined data guide markdown** — both `# Reference Examples` (preserved verbatim from the input unless the user's feedback asks you to add, modify, or remove specific examples) and `# Guidelines & Rules` (rewritten to address the feedback and rated samples). Your output replaces the entire guide on the user's task.
+Produce the **complete refined Data Guide markdown** with all four top-level sections in order: `# Reference Inputs`, `# Semantics`, `# Style`, `# Presentation Defaults`. Your output replaces the entire guide on the user's task.
 
 ### Hard requirements
 
-1. **Output the full guide markdown.** Include `# Reference Examples` as a top-level section if the user had any (or if their feedback asks you to add or replace examples), and include `# Guidelines & Rules` as a top-level section with the refined rules. Do NOT add any other top-level (`#`) headings.
+1. **Output the full guide markdown.** All four top-level sections must be present. If a section's content is sparse, write at least one short subsection capturing the most defensible pattern — don't omit it.
 
-2. **Preserve reference examples verbatim by default.** The reference examples are user-owned ground truth. Carry every existing example forward unchanged unless the user's feedback explicitly asks you to add, modify, or remove specific examples (e.g. "add an example showing X", "example 2 is wrong, the output should be Y", "remove the third example", "this example uses the wrong format"). When in doubt, keep examples exactly as the user wrote them.
+2. **Preserve reference inputs verbatim by default.** The reference inputs in `# Reference Inputs` are user-owned ground truth. Carry every existing example forward unchanged unless the user's feedback explicitly asks you to add, modify, or remove specific examples (e.g. "add an example showing X", "input 2 is wrong, it should be Y", "remove the third example", "this example uses the wrong format"). When in doubt, keep examples exactly as the user wrote them. If the guide uses the older `# Reference Examples` section name, rename it to `# Reference Inputs`; if examples include output fields, drop them — the guide is input-only.
 
-3. **Rewrite the rules section in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove rules. Carry forward existing rules unless the user's feedback contradicts them, they're now redundant with another rule, or they're clearly causing a "Needs Work" sample. When in doubt, keep the rule. **If the existing rules section contains `<output_semantic>` or `<both_semantic>` blocks (from older guides), drop them entirely** — those groups are no longer valid; if any of their content was genuinely structural, re-classify it as `<output_structural>` or `<both_structural>`, otherwise discard it as output policy that belongs in the system prompt.
+3. **Rewrite Semantics, Style, and Presentation Defaults in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove subsections. Carry forward existing content unless the user's feedback contradicts it, it's now redundant with another subsection, or it's clearly causing a "Needs Work" sample. When in doubt, keep the content. **If the existing guide uses the older `# Input Guidelines & Rules` shape with `<input_structural>` / `<input_semantic>` (or any `<output_*>` / `<both_*>`) blocks, migrate per the "Migrating older guides" section above** — re-emit only the new four-section shape, never preserve XML group tags.
 
-4. **If the current guide has examples but few or no rules, generate an initial set of rules.** Extract the patterns implicit in the examples (input shape, input semantics, and output shape) and codify them as roughly 3-8 rules total, using the rated samples and feedback as confirmation/correction signal.
+4. **If the current guide has examples but sparse Semantics/Style/Presentation Defaults, generate an initial set.** Extract the patterns implicit in the examples and codify them, using the rated inputs and feedback as confirmation/correction signal.
 
-5. **Stay consistent with the task definition above, AND mine it for rules.** The refined guide must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas — do not invent fields, formats, or behaviors that contradict them. The task definition is also a source of rules, not just a constraint — see the next section.
+5. **Stay consistent with the task definition above, AND mine it for content.** The refined guide must respect the task's runtime system prompt and (when provided) its description and input JSON schema — do not invent fields, formats, or behaviors that contradict them. The task definition is also a source of guide content, not just a constraint — see the next section."""
 
-### Mine rules from the task definition
+    prompt += (
+        "\n"
+        + your_task_intro
+        + """
 
-The task instruction, description, and JSON schemas already encode constraints the user wants enforced. Your job is to lift the load-bearing **shape and input-semantic** ones into explicit rules so the runtime model can't slip past them. In particular:
+### Mine input-side content from the task definition
 
-- **Required fields and types from the input JSON schema.** Every required field, type, enum, or pattern in `task_input_json_schema` belongs in `<input_semantic>`. Don't restate the entire schema — pick the constraints that matter for realism and that the runtime model is likely to drift on (enums, formats, cross-field relationships).
-- **Format directives in the instruction.** Phrases like "respond in JSON," "answer in one sentence," "use bullet points" belong in `<output_structural>` — but only if the instruction or output schema doesn't already say so. If they do, the runtime model will already see it; don't restate.
-- **Input shape implied by the instruction.** If the instruction says "given a user's question," that points to an `<input_semantic>` rule about what fields or content a realistic input contains.
-- **Underspecified output shape.** If the output JSON schema or instruction is loose on shape (e.g., says "string" with no length bound, or doesn't specify whether prose vs bullets), an `<output_structural>` rule can supplement — but only ADD missing constraints, never override what's already specified.
+The task instruction, description, and input JSON schema already encode constraints about what realistic inputs look like. Lift the load-bearing ones into the appropriate sections:
 
-**Do NOT mine the following from the task definition** — they are output policy, not data shape, and they belong in the system prompt:
+- **Required fields, types, enums, and patterns from `task_input_json_schema`** → `# Semantics` (under `## Data Patterns` for fields/types, `## Critical Constraints` for cross-field rules). Don't restate the entire schema — pick the constraints that matter for realism and that the input-generation model is likely to drift on (enums, formats, cross-field relationships).
+- **Input shape implied by the instruction.** If the instruction says "given a user's question," that's `# Semantics` material about what content a realistic input contains. If it says "the user provides a JSON object with fields X and Y," that's `# Style` (`## Formatting Conventions`) about input format.
+- **Domain terminology and plausibility.** If the instruction implies a specific domain (medical records, legal contracts, customer support transcripts), that's `# Semantics` (`## Data Patterns`) about realistic vocabulary, value ranges, and plausibility.
+- **Default presentation conventions** (units, date formats, terminology style) implied by the instruction → `# Presentation Defaults`.
 
-- Closed-set value constraints used as decision rules ("the output is one of: yes, no, unclear" used to encode classification logic).
-- "When to output X vs Y" rules, including conditions for any classification or routing decision.
-- Correctness criteria, grounding requirements about whether the answer is right, or any rule that paraphrases the system prompt's policy on what a *good* output is.
-- Voice, tone, or stylistic prescriptions about output content (those define the task; they belong in the system prompt).
+**Do NOT mine the following** — they are about outputs, not inputs:
 
-If you find yourself writing "Use X when …" or "Output should be Y because …", stop — that's policy. The runtime model already sees the system prompt; restating its rules in the Guide creates drift and silently overrides the authoritative source.
+- Anything about output format, output schema, output length, or output structure.
+- Closed-set output value constraints, classification rules, or routing decisions.
+- "When to output X vs Y" rules of any kind.
+- Correctness criteria, grounding requirements, or "what makes a good output."
+- Voice, tone, or stylistic prescriptions about output content.
 
-The task instruction is visible to the runtime model at generation time, but rules in the guide reinforce the critical *shape* constraints, give them measurable bounds where appropriate, and survive prompt-template changes. Treat schema-derived and instruction-derived shape rules as floor-level — they should be present even before you look at the examples.
+If you find yourself writing about anything the model produces rather than receives, stop — that's output content. The system prompt already governs it; restating it here is out of scope.
 
-### How to extract rules from sparse examples
+Treat schema-derived and instruction-derived input content as floor-level — it should be present even before you look at the examples.
 
-When the current guide has examples but no rules, the examples are your primary signal **alongside the task definition**. After mining the task definition (above), read each example carefully and look for patterns to codify across the three scope+type cells the Guide owns:
+### How to extract content from sparse examples
 
-- `<input_structural>` — input length, format, layout, casing, prose vs key-value vs JSON.
-- `<input_semantic>` — what fields appear in the input, plausible value ranges, relationships between input fields, terminology.
-- `<output_structural>` — output length, format, section ordering, level of detail, formatting conventions (bullets vs prose, units, date formats). Additive only — supplement what the system prompt or output schema doesn't pin down.
+When the current guide has examples but sparse sections, the examples are your primary signal **alongside the task definition**. After mining the task definition (above), read each example carefully and look for patterns:
 
-When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), put it in `<both_structural>` instead.
+- For `# Semantics`: what fields appear, plausible value ranges, relationships between input fields, terminology, domain.
+- For `# Style`: input length, format, layout, casing, prose vs key-value vs JSON, formatting conventions (bullets vs prose, units, date formats inside inputs).
+- For `# Presentation Defaults`: which conventions look like batch-overridable defaults vs core constraints.
 
-Output-side *semantics* observed in the examples (what fields/values appear in outputs, valid enums, decision patterns, dependencies between input and output) **must not be codified as Guide rules**. Those are properties the system prompt already defines or should define; restating them here causes drift. If you notice the examples imply an output-policy pattern the system prompt doesn't capture, that's a signal the user's system prompt may need updating — but it is not a rule for the Guide.
-
-- **Don't overfit to a single example.** A pattern echoed in only one example is a hypothesis; a pattern confirmed by a Realistic preview sample is a rule.
-- **Aim for coverage across the cells you own.** Five `<output_structural>` rules and nothing else is a sign you skipped the input-side cells. Quickly scan all four group tags before finalizing.
+- **Don't overfit to a single example.** A pattern echoed in only one example is a hypothesis; a pattern confirmed by a Realistic preview sample is content worth codifying.
+- **Aim for coverage across all sections.** A guide that's all Style and no Semantics (or vice versa) probably missed half the signal in the examples.
 """
+    )
 
     if has_samples:
-        prompt += """
+        ratings_feedback_rule = '- If the user\'s feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than touching the reference inputs — examples are user-owned and only change when feedback names them directly.'
+        prompt += f"""
 ### How to use the ratings
 
-- **"Realistic" samples confirm patterns to lock in.** They show that the inferences currently being made (from examples and any existing rules) are working for cases like that. Don't weaken or remove rules that are producing realistic samples. Realistic samples are particularly valuable when synthesizing new rules: they identify which patterns implicit in the examples deserve to be made explicit. Avoid overfitting to a single Realistic sample, but a pattern echoed across multiple Realistic samples is worth codifying.
-- **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and add or update a rule that prevents that mistake.
-- If the user's feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than touching the reference examples — examples are user-owned and only change when feedback names them directly.
+- **"Realistic" inputs confirm patterns to lock in.** They show that the inferences currently being made (from examples and any existing rules) are producing plausible inputs. Don't weaken or remove rules that are producing realistic inputs. Realistic samples are particularly valuable when synthesizing new rules: they identify which patterns implicit in the examples deserve to be made explicit. Avoid overfitting to a single Realistic sample, but a pattern echoed across multiple Realistic samples is worth codifying.
+- **"Needs Work" inputs plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and add or update a rule that prevents that mistake.
+{ratings_feedback_rule}
 - If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "id must be a UUID v4 string").
 """
 
-    prompt += """
-### How to phrase rules
+    output_section = "Return the **complete refined Data Guide markdown** with all four top-level sections in order: `# Reference Inputs`, `# Semantics`, `# Style`, `# Presentation Defaults`. Each example in `# Reference Inputs` is a `## Example N` block containing a fenced ```input block. Each of the other three sections contains one or more `## <subsection title>` blocks. Do NOT emit any XML group tags. Do NOT emit any output-related content. Do NOT add other top-level (`#`) headings. Do NOT include commentary or explanation of your changes."
 
-The rules you write will be applied downstream as **hard constraints**, not soft suggestions. Phrase them accordingly:
+    prompt += f"""
+### How to phrase content
 
-- **Always wrap every rule in one of the four valid group tags.** Use `<input_structural>`, `<input_semantic>`, `<output_structural>`, or `<both_structural>` and put each rule's `## <short title>` block inside. There is no `<output_semantic>` or `<both_semantic>` group — output-side semantic content is out of scope for the Guide.
-- **Prefer specific, measurable rules over vague ones.** "Outputs are 3-5 sentences, 60-100 words" beats "Outputs are concise". "id must be a UUID v4 string" beats "id should look real". Where there is a natural numeric bound (length, sentence count, field count, value range, format pattern), name it.
-- **State rules as constraints, not preferences.** Write "Inputs must include a primary question" rather than "Inputs should usually include a primary question". If something is genuinely a soft preference, say so explicitly ("Prefer X when possible, but Y is acceptable").
-- **Keep scope and type pure within a single rule.** Don't mix an Input-side and an Output-side constraint in one rule, and don't mix a structural and a semantic constraint in one rule. Split it into two rules in the appropriate groups. Mixing blurs the constraint and makes it harder to enforce.
+The content you write will be applied downstream as **hard constraints**, not soft suggestions. Phrase it accordingly:
+
+- **Prefer specific, measurable content over vague.** "Inputs are 5-25 words, 1-3 sentences" beats "Inputs are short". "id must be a UUID v4 string" beats "id should look real". Where there is a natural numeric bound (length, sentence count, field count, value range, format pattern), name it.
+- **State as constraints, not preferences.** Write "Inputs must include a primary question" rather than "Inputs should usually include a primary question". If something is genuinely a soft preference, say so explicitly ("Prefer X when possible, but Y is acceptable").
+- **Put each piece of information in the right section.** Format/length/layout details → `# Style`. Field/meaning/relationship/value details → `# Semantics`. Overridable convention defaults → `# Presentation Defaults`. Don't repeat the same content across sections.
 
 ### Output
 
-Return the **complete refined data guide markdown**. Include the `# Reference Examples` top-level section (with each example as `## Example N` containing fenced ```input / ```output blocks) if the user had any, then the `# Guidelines & Rules` top-level section containing the XML-tagged group blocks drawn from the four valid groups (`<input_structural>`, `<input_semantic>`, `<output_structural>`, `<both_structural>`), each with one or more `## <short title>` rule blocks. Do NOT emit `<output_semantic>` or `<both_semantic>` — output-side semantics are out of scope and belong in the system prompt. Do NOT add any other top-level (`#`) headings, do NOT include commentary or explanation of your changes."""
+{output_section}"""
 
     return prompt

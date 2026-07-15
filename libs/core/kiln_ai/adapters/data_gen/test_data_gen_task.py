@@ -660,51 +660,58 @@ def test_generate_sample_generation_prompt_with_guide_text():
 
 
 def test_generate_guidance_refinement_prompt_minimal():
-    """Includes the required sections — task instruction, current guide,
-    rated samples, and feedback — when only the required args are passed."""
+    """Manual flow (current_guide has `# Reference Inputs`): metaprompter
+    teaches the four-section shape and the required context blocks."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="Translate to French",
         current_guide=(
-            "# Reference Examples\n\n"
-            "## Example 1\n```input\nhi\n```\n```output\nbonjour\n```\n\n"
-            "# Guidelines & Rules\n\n"
-            "<output_semantic>\n\n## Native\nOnly real French words.\n\n</output_semantic>"
+            "# Reference Inputs\n\n"
+            "## Example 1\n```input\nhi\n```\n\n"
+            "# Semantics\n\n"
+            "## Data Patterns\nInputs are casual greetings.\n"
         ),
         preview_samples=[
-            RatedSample(input="hello", output="bonjour", looks_good=True),
-            RatedSample(input="frog", output="ranagrenouille", looks_good=False),
+            RatedSample(input="hello", looks_good=True),
+            RatedSample(input="frog", looks_good=False),
         ],
-        feedback="The second one isn't a real word.",
+        feedback="The second one isn't a greeting.",
     )
 
     assert "<task_instruction>\nTranslate to French\n</task_instruction>" in prompt
     assert "<current_guide>" in prompt
     assert "## Example 1" in prompt
-    assert "<output_semantic>" in prompt
+    # Manual-flow guide → metaprompter teaches the four-section shape.
+    assert "four top-level sections" in prompt
+    assert "# Reference Inputs" in prompt
+    assert "# Semantics" in prompt
+    assert "# Style" in prompt
+    assert "# Presentation Defaults" in prompt
     # Required samples section, with their ratings rendered as the rating attr
     assert '<sample_1 rating="Realistic">' in prompt
     assert '<sample_2 rating="Needs Work">' in prompt
     assert "<input>hello</input>" in prompt
-    assert "<output>bonjour</output>" in prompt
     assert "<input>frog</input>" in prompt
-    assert "<output>ranagrenouille</output>" in prompt
-    assert "<feedback>\nThe second one isn't a real word.\n</feedback>" in prompt
+    # Outputs are no longer rendered — Data Guide describes inputs only.
+    assert "<output>" not in prompt
+    assert "<feedback>\nThe second one isn't a greeting.\n</feedback>" in prompt
 
 
 def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none():
-    """The task description and JSON schema sections are optional — they
-    shouldn't appear in the output when their args are None or blank."""
+    """The input JSON schema section is optional — it shouldn't appear in the
+    output when the arg is None or blank. Output JSON schema and task
+    description are no longer accepted by the function signature."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
         current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
-        task_description=None,
         task_input_json_schema=None,
-        task_output_json_schema=None,
     )
+    # task_description is no longer passed to the refine LLM — the model
+    # shouldn't see the user-facing task description.
     assert "<task_description>" not in prompt
     assert "<task_input_json_schema>" not in prompt
+    # Output JSON schema must never appear — input data guide is input-only.
     assert "<task_output_json_schema>" not in prompt
 
     # Blank strings are also treated as "not provided" — same outcome.
@@ -713,9 +720,7 @@ def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none()
         current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
-        task_description="   ",
         task_input_json_schema="\n",
-        task_output_json_schema="",
     )
     assert "<task_description>" not in prompt_blank
     assert "<task_input_json_schema>" not in prompt_blank
@@ -728,65 +733,89 @@ def test_generate_guidance_refinement_prompt_includes_optional_sections_when_pro
         current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
-        task_description="A short task description.",
         task_input_json_schema='{"type":"object"}',
-        task_output_json_schema='{"type":"string"}',
     )
-    assert (
-        "<task_description>\nA short task description.\n</task_description>" in prompt
-    )
+    # task_description is never rendered — the model shouldn't see it.
+    assert "<task_description>" not in prompt
     assert (
         '<task_input_json_schema>\n{"type":"object"}\n</task_input_json_schema>'
         in prompt
     )
-    assert (
-        '<task_output_json_schema>\n{"type":"string"}\n</task_output_json_schema>'
-        in prompt
-    )
 
 
-def test_generate_guidance_refinement_prompt_taxonomy_is_four_cells():
-    """The metaprompter must instruct the LLM to use only the four valid
-    group tags. Output-side semantic groups (`<output_semantic>`,
-    `<both_semantic>`) were culled to prevent the Guide from encoding output
-    policy that drifts from — and overrides — the task's system prompt.
-
-    Old guides may still contain those tags in `current_guide`; this test
-    asserts the metaprompter's *instructions* (not the input echo) drop them.
-    """
+def test_generate_guidance_refinement_prompt_section_taxonomy_manual_flow():
+    """Manual flow (source='manual'): the metaprompter teaches the four-section
+    shape and must NOT teach the old XML-tagged rule-grouping system."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="Translate to French",
-        # Empty guide so the input echo doesn't leak `<output_semantic>` into
-        # the prompt — we only want to assert the template doesn't reference
-        # it in its own instructions.
-        current_guide="",
+        current_guide="# Reference Inputs\n\n## Example 1\n```input\nhi\n```\n",
         preview_samples=[],
         feedback="",
+        source="manual",
     )
 
-    # The four valid groups must be referenced.
-    assert "`<input_structural>`" in prompt
-    assert "`<input_semantic>`" in prompt
-    assert "`<output_structural>`" in prompt
-    assert "`<both_structural>`" in prompt
+    # The four canonical sections must be referenced.
+    assert "four top-level sections" in prompt
+    assert "# Reference Inputs" in prompt
+    assert "# Semantics" in prompt
+    assert "# Style" in prompt
+    assert "# Presentation Defaults" in prompt
 
-    # The "four valid groups" framing must be present; the old "six" framing must be gone.
-    assert "four valid groups" in prompt
+    # The old XML rule-group framing must be gone.
+    assert "two valid groups" not in prompt
+    assert "four valid groups" not in prompt
     assert "six valid groups" not in prompt
-    assert "six XML-tagged groups" not in prompt
 
-    # Scope statement must be present so the LLM understands why output
-    # semantics aren't being asked for.
-    assert "Scope: data shape, not output policy" in prompt
-    assert "out of scope" in prompt
+    # Scope statement must be present so the LLM understands the input-only scope.
+    assert "Scope: input shape and content" in prompt
 
 
-def test_generate_guidance_refinement_prompt_explicitly_forbids_policy_mining():
-    """The metaprompter must explicitly forbid mining output-policy rules
-    from the task instruction (closed-set decision rules, when-to-output-X
-    rules, correctness criteria). Prior versions instructed the LLM to lift
-    these into `<output_semantic>` rules, which caused the Guide to silently
-    override the system prompt's policy."""
+def test_generate_guidance_refinement_prompt_kiln_pro_is_surgical():
+    """Kiln Pro flow (source='kiln_pro'): the metaprompter takes the surgical
+    branch — three Mike sections only, explicit surgical-edit policy, and
+    rated samples are NOT rendered (only feedback drives changes)."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Translate to French",
+        current_guide="# Semantics\n\n## Data Patterns\nShort prose inputs.\n",
+        preview_samples=[
+            RatedSample(input="should NOT appear in prompt", looks_good=True),
+            RatedSample(input="should NOT appear either", looks_good=False),
+        ],
+        feedback="Make Data Patterns more specific.",
+        source="kiln_pro",
+    )
+
+    # Three canonical sections.
+    assert "three top-level sections" in prompt
+    assert "# Semantics" in prompt
+    assert "# Style" in prompt
+    assert "# Presentation Defaults" in prompt
+
+    # Surgical-edit policy is explicit.
+    assert "Surgical-edit policy" in prompt
+    assert "byte-for-byte" in prompt
+    assert "Do NOT add a `# Reference Inputs` section" in prompt
+
+    # Rated samples are NOT rendered at all on the kiln_pro branch.
+    assert "should NOT appear in prompt" not in prompt
+    assert "should NOT appear either" not in prompt
+    assert "<sample_1" not in prompt
+    assert "<sample_2" not in prompt
+    assert "Rated Inputs" not in prompt
+
+    # Feedback IS rendered — it's the only signal the surgical branch acts on.
+    assert "Make Data Patterns more specific." in prompt
+    assert "<feedback>" in prompt
+
+    # Old XML rule-group framing must still be absent.
+    assert "two valid groups" not in prompt
+    assert "four valid groups" not in prompt
+    assert "six valid groups" not in prompt
+
+
+def test_generate_guidance_refinement_prompt_explicitly_forbids_output_mining():
+    """The metaprompter must explicitly forbid writing content about outputs
+    of any kind — output format, output decisions, classification rules, etc."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
         current_guide="",
@@ -794,20 +823,70 @@ def test_generate_guidance_refinement_prompt_explicitly_forbids_policy_mining():
         feedback="",
     )
 
-    assert "Do NOT mine the following from the task definition" in prompt
-    assert "When to output X vs Y" in prompt
-    assert "classification" in prompt.lower()
-    # Old policy-mining example must be gone.
-    assert "that's an `<output_semantic>` rule waiting to be written" not in prompt
+    assert "Do NOT mine the following" in prompt
+    # Output decisions and classification rules must be explicitly out of scope.
+    assert "output decisions" in prompt.lower() or "classification" in prompt.lower()
+
+
+def test_generate_guidance_refinement_prompt_documents_legacy_migration():
+    """The metaprompter must instruct the LLM to absorb older XML-tagged
+    guides into the new four-section shape (and drop output-side blocks)."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="",
+        preview_samples=[],
+        feedback="",
+    )
+
+    # Migration section is referenced and tells the LLM what to do with old guides.
+    assert "Migrating older guides" in prompt
+    assert "<input_structural>" in prompt  # mentioned only in the migration context
+    assert "<input_semantic>" in prompt
+    # Old output-side groups should be explicitly dropped per the migration rules.
+    assert "Drop" in prompt and "<output_" in prompt
+
+
+def test_generate_guidance_refinement_prompt_handles_legacy_reference_examples():
+    """Regression: a v1 manual guide that names its examples section
+    `# Reference Examples` (the old name) must still go through the four-section
+    manual path and be told to treat that section as equivalent to
+    `# Reference Inputs` (rename + drop any output fields). Older code branched
+    on the literal `# Reference Inputs` string, so a `# Reference Examples`
+    guide silently lost its example content — that branch is gone now."""
+    legacy_guide = (
+        "# Reference Examples\n\n"
+        "## Example 1\n```input\nWhat time is it?\n```\n"
+        "```output\nIt is 3pm.\n```\n"
+    )
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Answer the user's question",
+        current_guide=legacy_guide,
+        preview_samples=[],
+        feedback="",
+        source="manual",
+    )
+
+    # Manual four-section path — NOT the three-section surgical (kiln_pro) path.
+    assert "four top-level sections" in prompt
+    assert "three top-level sections" not in prompt
+    assert "Surgical-edit policy" not in prompt
+
+    # The legacy guide body is carried into the prompt verbatim, so the LLM
+    # actually sees the example content it must migrate.
+    assert "What time is it?" in prompt
+
+    # The metaprompter must teach the legacy rename + output-field drop.
+    assert "# Reference Examples" in prompt
+    assert "rename it to `# Reference Inputs`" in prompt
 
 
 def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
     """Sample blocks should be numbered 1..N in the order received and each
-    one should reflect the user's rating."""
+    one should reflect the user's rating. Inputs only — no output rendered."""
     samples = [
-        RatedSample(input="a", output="b", looks_good=True),
-        RatedSample(input="c", output="d", looks_good=False),
-        RatedSample(input="e", output="f", looks_good=True),
+        RatedSample(input="a", looks_good=True),
+        RatedSample(input="c", looks_good=False),
+        RatedSample(input="e", looks_good=True),
     ]
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
@@ -819,8 +898,8 @@ def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
         rating = "Realistic" if sample.looks_good else "Needs Work"
         assert f'<sample_{i} rating="{rating}">' in prompt
         assert f"<input>{sample.input}</input>" in prompt
-        assert f"<output>{sample.output}</output>" in prompt
         assert f"</sample_{i}>" in prompt
+    assert "<output>" not in prompt
 
 
 def test_generate_qna_generation_prompt_without_guidance():
