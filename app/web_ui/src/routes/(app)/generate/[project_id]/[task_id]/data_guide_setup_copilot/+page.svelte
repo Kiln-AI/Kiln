@@ -38,13 +38,11 @@
   } from "$lib/stores/data_guide_job_store"
   import posthog from "posthog-js"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
-  import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import ExtractionDialog from "$lib/components/extraction_dialog.svelte"
   import type Dialog from "$lib/ui/dialog.svelte"
 
   type CopilotState =
     | "loading"
-    | "connect"
     | "create"
     | "analyzing"
     | "preview"
@@ -54,11 +52,13 @@
 
   let current_state: CopilotState = "loading"
   let error: KilnError | null = null
+  // Example generation failed. Kept separate from `error` (which the review
+  // form renders inline): this one takes over the review table on the preview
+  // screen, so the user still lands on the page they were headed for, with the
+  // drafted guide intact below.
+  let preview_error: KilnError | null = null
   let submitting = false
   let saved = false
-  // Set once the user finishes the Kiln Pro connect flow inline; flips the
-  // connect card into its "Connected" state with a Continue button.
-  let connect_success = false
 
   let entries: InputExampleEntry[] = []
 
@@ -108,68 +108,115 @@
     current_state === "refining" ||
     current_state === "regenerating"
 
+  // Reviewing generated examples with work that isn't persisted yet. The draft
+  // is not resumable from here: the ratings, feedback and guide edits only live
+  // in this component, and coming back would re-run preview generation from the
+  // job's draft. So leaving is a discard, not a pause — confirm it, then drop
+  // the tracked job so a return starts setup cleanly (see discard_draft).
+  $: reviewing_unsaved = current_state === "preview" && !saved
+
+  // Abandon the draft job so the progress widget clears and the next visit to
+  // this page lands on a fresh "create" state rather than regenerating examples
+  // from the completed job.
+  function discard_draft() {
+    clearDataGuideJob(project_id, task_id)
+    posthog.capture("data_guide_draft_discarded", { source: "copilot" })
+  }
+
   // SvelteKit (in-app) navigation guard. Only prompt when actually leaving this
   // page — query-param / same-path transitions are fine.
   beforeNavigate((navigation) => {
-    if (!generating_in_progress) return
     if (
       navigation.to?.url?.pathname &&
       navigation.to.url.pathname === navigation.from?.url?.pathname
     ) {
       return
     }
-    if (
-      !confirm(
-        "Examples are still being generated and will be lost if you leave.\n\n" +
-          "Press Cancel to stay, OK to leave.",
-      )
-    ) {
-      navigation.cancel()
+    if (generating_in_progress) {
+      if (
+        !confirm(
+          "Examples are still being generated and will be lost if you leave.\n\n" +
+            "Press Cancel to stay, OK to leave.",
+        )
+      ) {
+        navigation.cancel()
+      }
+      return
+    }
+    if (reviewing_unsaved) {
+      if (
+        !confirm(
+          "Leaving will discard this data guide draft and the examples you're reviewing.\n\n" +
+            "Press Cancel to stay, OK to discard and leave.",
+        )
+      ) {
+        navigation.cancel()
+        return
+      }
+      discard_draft()
     }
   })
 
   // Browser reload / tab close guard.
   function handle_before_unload(event: BeforeUnloadEvent) {
-    if (generating_in_progress) {
+    if (generating_in_progress || reviewing_unsaved) {
       event.preventDefault()
+    }
+  }
+  // beforeunload can't tell us whether the user went through with it, so the
+  // discard happens here: pagehide only fires once the page is actually being
+  // torn down (reload, tab close, external nav). Keeps a reload consistent with
+  // an in-app leave — both discard rather than silently regenerating examples.
+  function handle_page_hide() {
+    if (reviewing_unsaved) {
+      clearDataGuideJob(project_id, task_id)
     }
   }
   onMount(() => {
     window.addEventListener("beforeunload", handle_before_unload)
-    return () =>
+    window.addEventListener("pagehide", handle_page_hide)
+    return () => {
       window.removeEventListener("beforeunload", handle_before_unload)
+      window.removeEventListener("pagehide", handle_page_hide)
+    }
   })
 
   onMount(async () => {
-    // A fresh Kiln Pro OAuth callback (?code=...) must be handled by the inline
-    // ConnectKilnCopilotSteps component — show the connect state immediately and
-    // don't run the redirect/availability checks that would short-circuit it.
-    const oauth_callback = new URLSearchParams(window.location.search).has(
-      "code",
-    )
-
-    if (!oauth_callback) {
-      try {
-        const { data, error: api_error } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (api_error) {
-          error = createKilnError(api_error)
-          current_state = "load_error"
-          return
-        }
-        if (data) {
-          goto(`/generate/${project_id}/${task_id}/data_guide`, {
-            replaceState: true,
-          })
-          return
-        }
-      } catch (e) {
-        error = createKilnError(e)
+    try {
+      const { data, error: api_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        { params: { path: { project_id, task_id } } },
+      )
+      if (api_error) {
+        error = createKilnError(api_error)
         current_state = "load_error"
         return
       }
+      if (data) {
+        goto(`/generate/${project_id}/${task_id}/data_guide`, {
+          replaceState: true,
+        })
+        return
+      }
+    } catch (e) {
+      error = createKilnError(e)
+      current_state = "load_error"
+      return
+    }
+
+    // Pro is required for the start endpoint. If the key isn't connected, send
+    // the user to the static connect route, which returns here once connected.
+    // Checked before any state is consumed below (pending example, job record)
+    // so the round-trip through connect leaves the flow exactly as it found it.
+    let pro_available = false
+    try {
+      pro_available = await checkKilnCopilotAvailable()
+    } catch {
+      pro_available = false
+    }
+    if (!pro_available) {
+      goto(`/generate/data_guide_pro_auth`, { replaceState: true })
+      return
     }
 
     if ($current_task?.id === task_id) {
@@ -200,12 +247,6 @@
         },
       ]
       pending_data_guide_example.set(null)
-    }
-
-    // Returning from OAuth — let the connect card finish the token exchange.
-    if (oauth_callback) {
-      current_state = "connect"
-      return
     }
 
     // --- Resume an in-flight / finished data guide draft job --------------
@@ -276,15 +317,7 @@
       )
     }
 
-    // Pro is required for the start endpoint. If the key isn't connected,
-    // show the connect-Kiln-Pro card inline.
-    let pro_available = false
-    try {
-      pro_available = await checkKilnCopilotAvailable()
-    } catch {
-      pro_available = false
-    }
-    current_state = pro_available ? "create" : "connect"
+    current_state = "create"
   })
 
   // Fetch the draft markdown produced by a completed job into `guide`.
@@ -317,6 +350,8 @@
       current_state = "create"
       return
     }
+    error = null
+    preview_error = null
     submitting = true
     current_state = "analyzing"
     try {
@@ -342,19 +377,58 @@
       preview_initial_guide = guide
       current_state = "preview"
     } catch (e) {
-      error = createKilnError(e)
-      current_state = "create"
+      // The draft itself is fine — only the (foreground) input generation
+      // failed, typically a provider error like an exhausted API key. Dropping
+      // back to "create" here would strand the user: their examples aren't
+      // re-seeded, and Continue would pay for a whole new Pro draft job. Land on
+      // the review screen instead, with the error where the examples would have
+      // been, and retry against the draft we already have.
+      preview_error = createKilnError(e)
+      preview_samples = []
+      reviewed_samples = []
+      general_feedback = ""
+      preview_initial_guide = guide
+      current_state = "preview"
     } finally {
       submitting = false
     }
   }
 
-  function handle_connect_success() {
-    connect_success = true
+  // The review screen shows the generation settings, so retrying has to pick up a
+  // model the user swapped there — a bad/unavailable model (or a provider whose
+  // key is out of credits) is a common cause of the preview failing. Falls back to
+  // the config captured earlier in the flow if the picker has nothing usable.
+  function retry_preview() {
+    const rc = run_options_tiles?.get_input_run_config()
+    if (rc && isKilnAgentRunConfig(rc)) {
+      captured_input_run_config = rc
+    }
+    posthog.capture("data_guide_preview_retried", { source: "copilot" })
+    generate_preview_from_draft()
   }
 
-  function proceed_after_connect() {
-    connect_success = false
+  // Abandon the draft after a failed example generation and go back to gathering
+  // inputs. Re-seed the examples from the job record first: on a resumed job they
+  // were never loaded into `entries`, and making the user re-upload everything
+  // after a transient provider error is the dead end Leonard hit.
+  function start_over_from_preview_error() {
+    const job = getDataGuideJob(project_id, task_id)
+    if (entries.length === 0 && job?.input_examples?.length) {
+      entries = job.input_examples.map((text, i) => ({
+        source: "manual",
+        label: `Example ${i + 1}`,
+        text,
+      }))
+    }
+    discard_draft()
+    guide = ""
+    preview_initial_guide = ""
+    preview_samples = []
+    reviewed_samples = []
+    general_feedback = ""
+    refine_iterations = 0
+    error = null
+    preview_error = null
     current_state = "create"
   }
 
@@ -362,6 +436,10 @@
     event: CustomEvent<{ entries: InputExampleEntry[] }>,
   ) {
     entries = event.detail.entries
+    // Editing the inputs is the user's response to a failure — a stale error
+    // from the last attempt hanging over the form reads as if the new inputs
+    // are broken too.
+    error = null
   }
 
   let extraction_dialog: Dialog | null = null
@@ -673,8 +751,14 @@
   }
 
   // Restart the whole setup process from the review screen: drop the tracked
-  // job + draft and return to a clean input-gathering state.
+  // job + draft and return to a clean input-gathering state. After a failed
+  // example generation the user never got to review anything, so send them back
+  // with their input examples still in hand rather than an empty create screen.
   function handle_restart() {
+    if (preview_error) {
+      start_over_from_preview_error()
+      return
+    }
     clearDataGuideJob(project_id, task_id)
     guide = ""
     preview_initial_guide = ""
@@ -717,23 +801,6 @@
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <span class="loading loading-spinner loading-lg" />
       </div>
-    {:else if current_state === "connect"}
-      <div
-        class="flex flex-col max-w-[400px] mx-auto mt-24 md:mt-36 border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
-      >
-        <ConnectKilnCopilotSteps
-          onSuccess={handle_connect_success}
-          showCheckmark={connect_success}
-        />
-        {#if connect_success}
-          <button
-            class="btn btn-primary mt-4 btn-wide mx-auto"
-            on:click={proceed_after_connect}
-          >
-            Continue
-          </button>
-        {/if}
-      </div>
     {:else if current_state === "create"}
       <FormContainer
         submit_label="Continue"
@@ -755,12 +822,6 @@
           on:change={handle_entries_change}
         />
 
-        <RunOptionsTiles
-          bind:this={run_options_tiles}
-          bind:selected_model_name_display={generation_model_name}
-          bind:selected_provider_display={generation_provider}
-          {project_id}
-        />
         {#if has_entries}
           <GenerationSettingsTrigger
             model_name={generation_model_name}
@@ -783,10 +844,17 @@
         bind:reviewed_samples
         bind:general_feedback
         {saved}
+        samples_error={preview_error}
+        {generation_model_name}
+        {generation_provider}
+        open_generation_settings={() =>
+          run_options_tiles?.open_combined_dialog()}
         show_restart={true}
+        warn_on_leave={false}
         on:refine={handle_refine}
         on:save={handle_save}
         on:restart={handle_restart}
+        on:retry={retry_preview}
       />
     {:else if current_state === "refining"}
       <RefiningAnimation
@@ -809,6 +877,22 @@
     {/if}
   </AppPage>
 </div>
+
+<!-- Renders no inline UI of its own (just the settings dialog), so it lives
+     outside the state branches: the review screen's generation-settings trigger
+     needs to open it too, not only the create form's. -->
+<!-- Seed the picker with the config this draft actually ran with (persisted on
+     the job record). The page remounts between the setup step and the review
+     step, so without this the user's settings would silently revert to the
+     defaults on the review screen — and a retry there would use those defaults
+     rather than what they picked. -->
+<RunOptionsTiles
+  bind:this={run_options_tiles}
+  bind:selected_model_name_display={generation_model_name}
+  bind:selected_provider_display={generation_provider}
+  initial_run_config={captured_input_run_config}
+  {project_id}
+/>
 
 <ExtractionDialog
   bind:dialog={extraction_dialog}

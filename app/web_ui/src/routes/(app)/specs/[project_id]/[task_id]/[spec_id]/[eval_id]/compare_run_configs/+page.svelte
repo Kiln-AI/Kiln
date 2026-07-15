@@ -471,11 +471,15 @@
         ]}
     action_buttons={action_buttons(evaluator)}
   >
-    {#if evaluator?.evaluation_data_type === "full_trace"}
+    <!-- Stored-trace tier: multi-turn items in a TaskRun-sourced eval are judged
+      over their saved conversations, which can't be regenerated per run config,
+      so those rows score identically across configs. EvalInput-sourced evals
+      re-drive per config and need no caveat. -->
+    {#if evaluator?.evaluation_data_type === "full_trace" && evaluator?.eval_set_filter_id}
       <Warning
         warning_color="warning"
         warning_icon="info"
-        warning_message={'Multi-turn run-configuration comparison is coming soon. Single-model scoring works today via "Run Eval"; the table below assumes single-turn re-drive and won\'t produce meaningful results for multi-turn evals.'}
+        warning_message={"Multi-turn items in this eval are scored using their saved conversations, so all run configurations receive identical scores for those items. To compare run configurations on fresh conversations, create the eval with the eval builder."}
       />
     {/if}
     {#if loading}

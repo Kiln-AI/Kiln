@@ -61,6 +61,12 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        against the golden answer key over the STORED rated
                        traces, and the harness reports the judge-vs-human
                        agreement.)
+  Step 8   READ        GET .../score_summary, .../eval_results_summary,
+                       .../run_configs/{id}/eval_scores
+                       (The endpoints the post-save spec detail page,
+                       compare_run_configs, and the cross-eval tables render
+                       from — asserts an EvalInput-sourced eval reports real
+                       sizes, scores, and completion instead of 400/omission.)
 
 The generation knobs (num_cases, turns) are request parameters, so the small
 constants need no code patching; only task-id resolution is patched to a
@@ -884,6 +890,63 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "agreement not computed this run",
             stacklevel=1,
         )
+
+    # ── Step 8 — READ THE RESULTS (the endpoints the UI renders from) ───
+    # The read path is slice-source-aware (6.8): score_summary, the
+    # cross-eval summary, and per-run-config eval scores must all report
+    # real numbers for an EvalInput-sourced eval. These feed the post-save
+    # spec detail page, compare_run_configs (including View Data gating on
+    # percent complete), and the compare/evals tables.
+    resp = client.get(
+        f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
+        f"/eval_config/{judge_config.id}/score_summary"
+    )
+    _require(resp.status_code == 200, f"score_summary failed: {resp.text}")
+    summary = resp.json()
+    _require(
+        summary["dataset_size"] == len(eval_input_ids),
+        f"score_summary sized {summary['dataset_size']} items, "
+        f"expected {len(eval_input_ids)} EvalInputs",
+    )
+    for rc_id in (run_config_a.id, run_config_b.id):
+        _require(
+            summary["run_config_percent_complete"].get(rc_id) == 1.0,
+            f"score_summary shows run config {rc_id} incomplete: "
+            f"{summary['run_config_percent_complete']}",
+        )
+        _require(
+            summary["results"][rc_id][score_key]["mean_score"] is not None,
+            f"score_summary has no {score_key} mean for run config {rc_id}",
+        )
+
+    resp = client.get("/api/projects/p/tasks/t/eval_results_summary")
+    _require(resp.status_code == 200, f"eval_results_summary failed: {resp.text}")
+    cross = resp.json()
+    _require(
+        saved_eval.id in cross["evals_by_id"]
+        and cross["evals_by_id"][saved_eval.id]["dataset_size"] == len(eval_input_ids),
+        "eval_results_summary omitted or mis-sized the EvalInput-sourced eval",
+    )
+    _require(
+        cross["scores_by_run_config_by_eval"][run_config_a.id][saved_eval.id][
+            "percent_complete"
+        ]
+        == 1.0,
+        "eval_results_summary shows the EvalInput-sourced eval incomplete",
+    )
+
+    resp = client.get(
+        f"/api/projects/p/tasks/t/run_configs/{run_config_a.id}/eval_scores"
+    )
+    _require(resp.status_code == 200, f"run config eval_scores failed: {resp.text}")
+    by_eval = {er["eval_id"]: er for er in resp.json()["eval_results"]}
+    _require(
+        saved_eval.id in by_eval
+        and by_eval[saved_eval.id]["dataset_size"] == len(eval_input_ids)
+        and by_eval[saved_eval.id]["eval_config_result"]["percent_complete"] == 1.0,
+        f"run config eval_scores omitted or mis-sized the EvalInput-sourced "
+        f"eval: {by_eval.get(saved_eval.id)}",
+    )
 
 
 # ─────────────────── tool-calling leg (saved run config) ───────────────────

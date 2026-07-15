@@ -236,7 +236,7 @@
   <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
     <RefiningAnimation
       title="Planning Batch"
-      description={`Kiln is drafting ${num_inputs} tailored prompts for you to review.`}
+      description={`Kiln is planning a diverse batch of ${num_inputs} dataset items, tailored to your task and guidance.`}
     />
   </div>
 {:else if stage === "plan" && plan}

@@ -10,6 +10,7 @@
   import Output from "$lib/ui/output.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
+  import GenerationSettingsTrigger from "./generation_settings_trigger.svelte"
   import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   type ReviewedSample = {
@@ -38,6 +39,21 @@
   // Copilot flow only: show a "Restart Data Guide" link that abandons the
   // current draft and starts the setup process over. Hidden in the manual flow.
   export let show_restart: boolean = false
+  // Set false when the parent page registers its own leave guard (the copilot
+  // flow does, so it can discard the draft job on the way out). Two
+  // beforeNavigate handlers would each fire their own confirm().
+  export let warn_on_leave: boolean = true
+  // Generating the example inputs failed (typically a provider error). The guide
+  // itself is fine, so we stay on this screen: the error shows centered inside
+  // the (empty) review table, and the submit button becomes "Try Again"
+  // (dispatches `retry`).
+  export let samples_error: KilnError | null = null
+  // Optional generation-settings control, shown above the submit button exactly
+  // as it is on the setup screen. Lets the user swap the model that generates
+  // the example inputs before retrying or refining. Omit to hide it.
+  export let generation_model_name: string = ""
+  export let generation_provider: string = ""
+  export let open_generation_settings: (() => void) | null = null
 
   // True iff the user edited the guide via the Edit dialog after this
   // preview was generated. Drives the submit button label (Refine vs Save
@@ -47,8 +63,9 @@
   let see_all_dialog: SeeAllDialog
 
   // Preview Data Guide collapse open state — used so the subtitle only shows
-  // while expanded.
-  let preview_collapse_open: boolean = false
+  // while expanded. Starts open when the examples failed: the guide is then the
+  // only thing left to look at on this screen.
+  let preview_collapse_open: boolean = !!samples_error
 
   // --- Edit data guide dialog ---
   let edit_dialog: Dialog
@@ -109,8 +126,9 @@
 
   // Generated samples (and any ratings/feedback/edits on top) are unsaved
   // work — back-navigation away from this screen loses them. Warn unless
-  // the parent has flipped `saved` after a successful PUT.
-  $: has_unsaved_user_work = !saved
+  // the parent has flipped `saved` after a successful PUT, or owns the guard
+  // itself (warn_on_leave=false).
+  $: has_unsaved_user_work = warn_on_leave && !saved
 
   // Whenever the user changed something the LLM should react to (rated some
   // samples Needs Work, edited the guide text directly), switch the submit
@@ -118,14 +136,27 @@
   // generated samples all looked good and the guide is unchanged.
   $: needs_refine = has_any_failed || guide_was_edited
 
-  $: submit_disabled =
-    !all_reviewed || (!all_look_good && !has_sufficient_feedback)
+  $: submit_disabled = samples_error
+    ? false
+    : !all_reviewed || (!all_look_good && !has_sufficient_feedback)
 
-  $: submit_label = needs_refine
-    ? "Continue"
-    : requires_save
-      ? "Save Data Guide"
-      : "Back to Data Guide"
+  $: submit_label = samples_error
+    ? "Regenerate Examples"
+    : needs_refine
+      ? "Continue"
+      : requires_save
+        ? "Save Data Guide"
+        : "Back to Data Guide"
+
+  // Escape hatches (save as-is / restart) are offered whenever this screen still
+  // has work in front of the user: nothing reviewed yet, something flagged, or
+  // the examples failed to generate. They only disappear once the submit button
+  // is itself a plain save, where they'd be redundant.
+  $: show_secondary_actions = !!samples_error || needs_refine || !all_reviewed
+  // With no examples to review, "refining further" isn't what's being skipped.
+  $: save_anyway_label = samples_error
+    ? "Save Without Verifying"
+    : "Save Without Refining Further"
 
   type RatedSample = { input: string; looks_good: boolean }
 
@@ -134,10 +165,13 @@
     save: void
     back: void
     restart: void
+    retry: void
   }>()
 
   function handle_submit() {
-    if (!needs_refine) {
+    if (samples_error) {
+      dispatch("retry")
+    } else if (!needs_refine) {
       dispatch(requires_save ? "save" : "back")
     } else {
       const rated_samples: RatedSample[] = reviewed_samples
@@ -176,11 +210,13 @@
 <FormContainer
   {submit_label}
   {submit_disabled}
-  submit_data_tip={!all_reviewed
-    ? "Review all examples before continuing."
-    : !has_sufficient_feedback
-      ? "Provide feedback for examples that need work."
-      : undefined}
+  submit_data_tip={samples_error
+    ? undefined
+    : !all_reviewed
+      ? "Review all examples before continuing."
+      : !has_sufficient_feedback
+        ? "Provide feedback for examples that need work."
+        : undefined}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -220,72 +256,83 @@
       </svg>
     </div>
   </Callout>
-  <div class="flex flex-col gap-6">
-    <div class="rounded-lg border overflow-x-auto">
-      <table class="table table-fixed">
-        <thead>
+  <div class="rounded-lg border overflow-x-auto">
+    <table class="table table-fixed">
+      <thead>
+        <tr>
+          <th>Input</th>
+          <th class="whitespace-nowrap" style="width: 220px; min-width: 220px"
+            >Rating</th
+          >
+        </tr>
+      </thead>
+      <tbody>
+        {#if samples_error}
+          <!-- Examples failed: the table stays (so it's clear which screen
+                 this is and what's missing) with the error centered in place of
+                 the rows. The drafted guide still shows below, intact. -->
           <tr>
-            <th>Input</th>
-            <th class="whitespace-nowrap" style="width: 220px; min-width: 220px"
-              >Rating</th
-            >
+            <td colspan="2" class="py-10">
+              <div class="flex flex-col items-center text-center gap-4">
+                <div class="text-sm text-error max-w-[560px]">
+                  {samples_error.getMessage() ?? "An unknown error occurred"}
+                </div>
+                <span class="text-sm text-gray-500"
+                  >Click "Regenerate Examples" to retry.</span
+                >
+              </div>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {#each reviewed_samples as sample, i}
-            {@const input_content = formatExpandedContent(sample.input)}
-            <tr>
-              <td class="py-2">
-                <ClampedText
-                  content={input_content.isJson ? "" : input_content.value}
-                  html_content={input_content.isJson
-                    ? input_content.value
-                    : null}
-                  on:see_all={() => see_all_dialog.show("Input", sample.input)}
-                />
-              </td>
-              <td class="py-2">
-                <div class="flex flex-col gap-1">
-                  <div class="flex gap-1">
+        {/if}
+        {#each reviewed_samples as sample, i}
+          {@const input_content = formatExpandedContent(sample.input)}
+          <tr>
+            <td class="py-2">
+              <ClampedText
+                content={input_content.isJson ? "" : input_content.value}
+                html_content={input_content.isJson ? input_content.value : null}
+                on:see_all={() => see_all_dialog.show("Input", sample.input)}
+              />
+            </td>
+            <td class="py-2">
+              <div class="flex flex-col gap-1">
+                <div class="flex gap-1">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline whitespace-nowrap hover:btn-success {sample.looks_good ===
+                    true
+                      ? 'btn-secondary'
+                      : 'text-base-content/40'}"
+                    on:click={(e) => set_looks_good(i, true, e)}
+                    tabindex="0">Realistic</button
+                  >
+                  <div class="flex flex-col gap-1">
                     <button
                       type="button"
-                      class="btn btn-sm btn-outline whitespace-nowrap hover:btn-success {sample.looks_good ===
-                      true
+                      class="btn btn-sm btn-outline whitespace-nowrap hover:btn-warning {sample.looks_good ===
+                      false
                         ? 'btn-secondary'
                         : 'text-base-content/40'}"
-                      on:click={(e) => set_looks_good(i, true, e)}
-                      tabindex="0">Realistic</button
+                      on:click={(e) => set_looks_good(i, false, e)}
+                      tabindex="0">Needs Work</button
                     >
-                    <div class="flex flex-col gap-1">
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline whitespace-nowrap hover:btn-warning {sample.looks_good ===
-                        false
-                          ? 'btn-secondary'
-                          : 'text-base-content/40'}"
-                        on:click={(e) => set_looks_good(i, false, e)}
-                        tabindex="0">Needs Work</button
-                      >
-                      {#if sample.looks_good === false}
-                        <div
-                          class="flex text-xs text-gray-500 justify-end gap-1"
+                    {#if sample.looks_good === false}
+                      <div class="flex text-xs text-gray-500 justify-end gap-1">
+                        Tell us why <button
+                          type="button"
+                          class="text-xs text-gray-500 hover:text-gray-700"
+                          on:click={scroll_to_feedback}>↓</button
                         >
-                          Tell us why <button
-                            type="button"
-                            class="text-xs text-gray-500 hover:text-gray-700"
-                            on:click={scroll_to_feedback}>↓</button
-                          >
-                        </div>
-                      {/if}
-                    </div>
+                      </div>
+                    {/if}
                   </div>
                 </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+              </div>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
   </div>
 
   {#if has_any_failed}
@@ -322,7 +369,9 @@
     </div>
   </Collapse>
 
-  {#if all_look_good && !guide_was_edited}
+  {#if samples_error}
+    <!-- No review state to summarize — the error above already says it. -->
+  {:else if all_look_good && !guide_was_edited}
     <div class="flex justify-end">
       <Warning
         warning_message="Synthetic input generation is working as expected."
@@ -350,9 +399,17 @@
       />
     </div>
   {/if}
+
+  {#if open_generation_settings}
+    <GenerationSettingsTrigger
+      model_name={generation_model_name}
+      provider={generation_provider}
+      open={open_generation_settings}
+    />
+  {/if}
 </FormContainer>
 
-{#if has_any_failed}
+{#if show_secondary_actions}
   <div class="flex flex-row gap-1 mt-4 justify-end">
     <button
       class="link underline text-sm text-gray-500"
@@ -362,7 +419,7 @@
       {#if submitting}
         <span class="loading loading-spinner loading-xs"></span>
       {:else}
-        Save Without Refining Further
+        {save_anyway_label}
       {/if}
     </button>
     {#if show_restart}
