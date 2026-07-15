@@ -1,8 +1,9 @@
 """Unit tests for drive_case_for_eval.
 
 `adapter_for_task` and `SyntheticUserDriver` are monkeypatched — no model
-calls. The tests pin the transient-drive contract: nothing persisted, no
-parent chaining, conversation continuity through prior_trace.
+calls. The tests pin the persisted-drive contract (KIL-761): every turn
+saves via the adapter with parent_task_run chaining, the adapter stamps
+run_config_id, and conversation continuity rides prior_trace.
 """
 
 from typing import Any
@@ -45,11 +46,11 @@ def _target_run_config() -> KilnAgentRunConfigProperties:
     )
 
 
-def _fake_unsaved_run(trace: list[dict]) -> Mock:
-    """What adapter.invoke returns with allow_saving=False: an id-less
-    TaskRun carrying the cumulative trace."""
+def _fake_saved_run(trace: list[dict], run_id: str) -> Mock:
+    """What adapter.invoke returns with allow_saving on: a persisted TaskRun
+    carrying the cumulative trace."""
     run = Mock(spec=TaskRun)
-    run.id = None
+    run.id = run_id
     run.trace = trace
     return run
 
@@ -60,13 +61,17 @@ class _FakeAdapter:
 
     def __init__(self):
         self.calls: list[dict[str, Any]] = []
+        self.returned: list[Mock] = []
 
-    async def invoke(self, *, input, input_source=None, prior_trace=None):
+    async def invoke(
+        self, *, input, input_source=None, prior_trace=None, parent_task_run=None
+    ):
         self.calls.append(
             {
                 "input": input,
                 "input_source": input_source,
                 "prior_trace": prior_trace,
+                "parent_task_run": parent_task_run,
             }
         )
         new_trace = [
@@ -74,7 +79,9 @@ class _FakeAdapter:
             {"role": "user", "content": input},
             {"role": "assistant", "content": f"reply-{len(self.calls)}"},
         ]
-        return _fake_unsaved_run(new_trace)
+        run = _fake_saved_run(new_trace, run_id=f"run_{len(self.calls)}")
+        self.returned.append(run)
+        return run
 
 
 @pytest.fixture
@@ -133,8 +140,13 @@ async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> No
     # Continuity rides prior_trace, growing turn over turn.
     assert adapter.calls[0]["prior_trace"] is None
     assert len(adapter.calls[2]["prior_trace"]) == 4
-    # The leaf is the last turn's run: unsaved, full cumulative trace.
-    assert leaf.id is None
+    # Persisted runs chain: each turn's parent is the previous turn's run.
+    assert adapter.calls[0]["parent_task_run"] is None
+    assert adapter.calls[1]["parent_task_run"] is adapter.returned[0]
+    assert adapter.calls[2]["parent_task_run"] is adapter.returned[1]
+    # The leaf is the last turn's run: persisted, full cumulative trace.
+    assert leaf is adapter.returned[2]
+    assert leaf.id is not None
     assert len(leaf.trace) == 6
 
     # The SU driver was built from the typed persona.
@@ -143,9 +155,10 @@ async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> No
 
 
 @pytest.mark.asyncio
-async def test_adapter_configured_transient(fake_adapter, fake_su_driver) -> None:
-    """The target adapter must never save (transient drive) and must get the
-    caller's preloaded skills."""
+async def test_adapter_configured_to_persist(fake_adapter, fake_su_driver) -> None:
+    """The target adapter saves every driven turn (KIL-761), stamps the run
+    config id for the runner's reuse scan, and gets the caller's preloaded
+    skills."""
     _, captured = fake_adapter
     task = Mock(spec=Task)
     skills = {"skill_tool": Mock()}
@@ -158,10 +171,12 @@ async def test_adapter_configured_transient(fake_adapter, fake_su_driver) -> Non
         su_driver_config=_SU_CONFIG,
         turns=1,
         skills=skills,
+        task_run_config_id="rc_123",
     )
 
     assert captured["task"] is task
-    assert captured["adapter_config"].allow_saving is False
+    assert captured["adapter_config"].allow_saving is True
+    assert captured["adapter_config"].task_run_config_id == "rc_123"
     assert captured["adapter_config"].skills is skills
 
 

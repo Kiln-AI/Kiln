@@ -5,10 +5,12 @@ agent under test comes from the run config being evaluated; the synthetic
 user (customer) comes from the eval's drive config, held constant so a
 comparison varies only the agent.
 
-Nothing is persisted — the drive is transient and the EvalRun record carries
-the scored trace, mirroring how single-turn fresh generation runs with
-allow_saving=False. Conversation continuity rides `prior_trace`, so no
-parent_task_run chaining (which requires persisted parents) is involved.
+Driven conversations persist as real TaskRuns: every turn saves via the
+adapter with parent_task_run chaining, exactly like an SU batch drive, so
+the conversation lands in the dataset — visible in the runs UI, taggable,
+ratable. The eval runner tags the leaf `sei_<eval_input_id>`, letting any
+eval scoring the same (eval_input, run_config) pair reuse the stored
+conversation instead of re-driving it (KIL-761).
 """
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -25,9 +27,8 @@ from kiln_ai.synthetic_user.models import (
 )
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
-# Identifies this code path in `input_source.properties.adapter_name` — the
-# runs are in-memory only, but anything inspecting one should still see who
-# authored the user side.
+# Identifies this code path in `input_source.properties.adapter_name` so
+# anything inspecting a driven run can see who authored the user side.
 _EVAL_DRIVER_ADAPTER_NAME = "kiln_synthetic_user_eval_driver"
 
 
@@ -40,18 +41,22 @@ async def drive_case_for_eval(
     su_driver_config: SyntheticUserDriverConfig,
     turns: int,
     skills: SkillsDict,
+    task_run_config_id: str | None = None,
 ) -> TaskRun:
-    """Drive one case in memory and return the leaf TaskRun (never saved).
+    """Drive one case and return the persisted leaf TaskRun.
 
-    The leaf's `.trace` holds the full cumulative conversation and its id is
-    None (nothing touches disk). `skills` must be preloaded by the caller —
-    the adapter raises on skill tools with no injected dict.
+    The leaf's `.trace` holds the full cumulative conversation and its
+    `output.source.run_config_id` carries `task_run_config_id` — the key the
+    eval runner's reuse scan matches on. `skills` must be preloaded by the
+    caller — the adapter raises on skill tools with no injected dict.
     """
     su_driver = SyntheticUserDriver(synthetic_user_info, su_driver_config)
     adapter = adapter_for_task(
         target_task,
         target_run_config,
-        base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
+        base_adapter_config=AdapterConfig(
+            skills=skills, task_run_config_id=task_run_config_id
+        ),
     )
     input_source = DataSource(
         type=DataSourceType.synthetic,
@@ -68,13 +73,11 @@ async def drive_case_for_eval(
         prior_trace: list[ChatCompletionMessageParam] | None,
         parent_task_run: TaskRun | None,
     ) -> TaskRun:
-        # Chaining is deliberately dropped: parent runs are unsaved (id None)
-        # and the conversation already continues through prior_trace.
-        _ = parent_task_run
         return await adapter.invoke(
             input=input,
             input_source=input_source,
             prior_trace=prior_trace,
+            parent_task_run=parent_task_run,
         )
 
     result = await drive_case(
