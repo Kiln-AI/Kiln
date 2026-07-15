@@ -3,6 +3,7 @@
   "path": "/api/import_project",
   "agent_policy": {
     "permission": "allow",
-    "requires_approval": false
+    "requires_approval": true,
+    "approval_description": "Allow agent to import a project? Kiln projects can contain code that runs on your machine."
   }
 }

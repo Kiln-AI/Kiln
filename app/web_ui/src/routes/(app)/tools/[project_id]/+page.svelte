@@ -8,6 +8,7 @@
   import type {
     KilnTaskToolDescription,
     KilnToolServerDescription,
+    CodeToolResponse,
   } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "../empty_tools.svelte"
@@ -26,26 +27,34 @@
     !demo_tools_enabled &&
     (!tools || tools.length == 0) &&
     (!kiln_task_tools || kiln_task_tools.length === 0) &&
-    (!search_tools || search_tools.length === 0)
+    (!search_tools || search_tools.length === 0) &&
+    (!code_tools || code_tools.length === 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
   let search_tools: SearchToolApiDescription[] | null = null
   let kiln_task_tools: KilnTaskToolDescription[] | null = null
+  let code_tools: CodeToolResponse[] | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
-    await fetch_available_tool_servers()
-    await load_demo_tools()
-    await load_rag_configs()
-    await load_kiln_task_tools()
+    await Promise.allSettled([
+      fetch_available_tool_servers(),
+      load_demo_tools(),
+      load_rag_configs(),
+      load_kiln_task_tools(),
+      load_code_tools(),
+    ])
     loading = false
   })
 
   $: unarchived_kiln_task_tools = kiln_task_tools?.filter(
     (tool) => !tool.is_archived,
   )
+
+  $: unarchived_code_tools = (code_tools || []).filter((ct) => !ct.is_archived)
+  $: archived_code_tools = (code_tools || []).filter((ct) => ct.is_archived)
 
   async function fetch_available_tool_servers() {
     try {
@@ -130,6 +139,28 @@
     } catch (err) {
       error = createKilnError(err)
       console.error("Error loading kiln task tools count", err)
+    }
+  }
+
+  async function load_code_tools() {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/code_tools",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      code_tools = data
+    } catch (err) {
+      error = createKilnError(err)
+      console.error("Error loading code tools", err)
     }
   }
 
@@ -302,6 +333,41 @@
                 </td>
               </tr>
             {/if}
+            {#each [...unarchived_code_tools, ...archived_code_tools] as ct}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() =>
+                  goto(`/tools/${project_id}/code_tools/${ct.id}`)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(`/tools/${project_id}/code_tools/${ct.id}`)
+                  }
+                }}
+                role="button"
+                tabindex="0"
+              >
+                <td class="font-medium">{ct.name}</td>
+                <td class="text-sm">Code Tool</td>
+                <td class="text-sm">{ct.description || ct.tool_description}</td>
+                <td class="text-sm">
+                  {#if ct.is_archived}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      tight={true}
+                    />
+                  {/if}
+                </td>
+              </tr>
+            {/each}
             {#each (tools || []).filter((tool) => tool.type !== "kiln_task") as tool}
               {@const missing_secrets =
                 tool.missing_secrets && tool.missing_secrets.length > 0}

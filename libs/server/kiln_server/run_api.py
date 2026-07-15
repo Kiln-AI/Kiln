@@ -7,7 +7,7 @@ from asyncio import Lock
 from datetime import datetime
 from typing import Annotated, Any, Dict
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Query, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.errors import ErrorWithTrace
 from kiln_ai.adapters.ml_model_list import ModelProviderName
@@ -272,9 +272,20 @@ def connect_run_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
+        limit: Annotated[
+            int | None,
+            Query(
+                description="Maximum number of runs to return. When set, the most recent runs (by created_at) are returned. When omitted, all runs are returned.",
+                ge=1,
+            ),
+        ] = None,
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
-        return list(task.runs(readonly=True))
+        runs = list(task.runs(readonly=True))
+        runs.sort(key=lambda r: r.created_at, reverse=True)
+        if limit is not None:
+            runs = runs[:limit]
+        return runs
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs",

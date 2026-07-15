@@ -61,6 +61,7 @@
         auth_mode: auth_mode,
         sync_mode: "auto",
         remove_conflicting_id,
+        trusted: true,
       })
 
       posthog.capture("import_project", {

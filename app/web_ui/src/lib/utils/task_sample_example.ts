@@ -1,5 +1,5 @@
 import { client } from "$lib/api_client"
-import type { TaskRun } from "$lib/types"
+import type { TaskRun, TaskRunOutput } from "$lib/types"
 
 /**
  * A task sample example consisting of an input/output pair.
@@ -35,7 +35,7 @@ function is_five_star_rated(run: TaskRun): boolean {
 /**
  * Extract the output string from a task run, preferring repaired output.
  */
-function get_output_string(run: TaskRun): string {
+function get_output_string(run: TaskRun | TaskRunOutput): string {
   if (run.repaired_output?.output) {
     return run.repaired_output.output
   }
@@ -45,7 +45,9 @@ function get_output_string(run: TaskRun): string {
 /**
  * Converts a TaskRun to a TaskSampleExample.
  */
-export function task_run_to_example(run: TaskRun): TaskSampleExample {
+export function task_run_to_example(
+  run: TaskRun | TaskRunOutput,
+): TaskSampleExample {
   return {
     input: run.input ?? "",
     output: get_output_string(run),
