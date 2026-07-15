@@ -2856,8 +2856,8 @@ def multi_turn_eval_input(mock_task):
 
 
 def _fresh_leaf(task: Task, data_source: DataSource) -> TaskRun:
-    """The in-memory leaf drive_case_for_eval would return: id-less,
-    trace-carrying, never saved."""
+    """The leaf drive_case_for_eval returns: a persisted, trace-carrying
+    TaskRun (KIL-761), not yet tagged — tagging is the runner's job."""
     leaf = TaskRun(
         input="opening message",
         input_source=data_source,
@@ -2865,7 +2865,7 @@ def _fresh_leaf(task: Task, data_source: DataSource) -> TaskRun:
         trace=MULTI_TURN_TRACE,
         parent=task,
     )
-    leaf.id = None
+    leaf.save_to_file()
     return leaf
 
 
@@ -2915,6 +2915,15 @@ class TestRunV2MultiTurnRedrive:
             drive_kwargs["target_run_config"].model_name
             == mock_run_config.run_config_properties.model_name
         )
+        # Every driven run stamps the run config id — the reuse-scan key.
+        assert drive_kwargs["task_run_config_id"] == mock_run_config.id
+
+        # The driven leaf persists in the dataset, tagged for pair reuse
+        # (sei_<eval_input_id>) and for cleanup sweeps (per-eval tag).
+        task_runs = mock_task.runs(readonly=True)
+        assert len(task_runs) == 1
+        assert "sei_ei_redrive" in task_runs[0].tags
+        assert "synthetic_eval_drive_v2_redrive_eval" in task_runs[0].tags
 
         # The judge saw the FRESH conversation, not stored data.
         assert len(stub.seen_inputs) == 1
@@ -2936,6 +2945,136 @@ class TestRunV2MultiTurnRedrive:
         # full_trace eval: the scored conversation rides the record.
         assert saved.task_run_trace is not None
         assert json.loads(saved.task_run_trace) == MULTI_TURN_TRACE
+
+    @pytest.mark.asyncio
+    async def test_reuses_stored_conversation_for_same_pair(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """A conversation another eval already drove for this
+        (eval_input, run_config) pair — leaf tagged sei_<eval_input_id>,
+        run config stamped on output.source — is scored as-is, no re-drive
+        (KIL-761)."""
+        stored_source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "test_adapter",
+            },
+            run_config_id=mock_run_config.id,
+        )
+        stored = TaskRun(
+            input="opening message",
+            input_source=data_source,
+            output=TaskOutput(output="stored reply", source=stored_source),
+            trace=MULTI_TURN_TRACE,
+            tags=["sei_ei_redrive"],
+            parent=mock_task,
+        )
+        stored.save_to_file()
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=multi_turn_eval_input,
+            eval_config=mock_v2_redrive_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        stub = RecordingStubV2Eval(mock_v2_redrive_config)
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(),
+            ) as mock_drive,
+        ):
+            result = await runner.run_job(job)
+
+        assert result is True
+        mock_drive.assert_not_awaited()
+        # The judge scored the STORED conversation.
+        assert len(stub.seen_inputs) == 1
+        assert stub.seen_inputs[0].final_message == "stored reply"
+        assert stub.seen_inputs[0].trace == MULTI_TURN_TRACE
+
+        runs = mock_v2_redrive_config.runs(readonly=True)
+        assert len(runs) == 1
+        assert runs[0].scores == {"accuracy": 1.0}
+        assert runs[0].output == "stored reply"
+
+    @pytest.mark.asyncio
+    async def test_redrives_when_stored_pair_has_other_run_config(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """Reuse keys on (eval_input, run_config): a conversation driven by a
+        DIFFERENT run config never satisfies this job — comparison integrity
+        depends on each run config getting its own conversation."""
+        other_source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "test_adapter",
+            },
+            run_config_id="some_other_run_config",
+        )
+        stored = TaskRun(
+            input="opening message",
+            input_source=data_source,
+            output=TaskOutput(output="stored reply", source=other_source),
+            trace=MULTI_TURN_TRACE,
+            tags=["sei_ei_redrive"],
+            parent=mock_task,
+        )
+        stored.save_to_file()
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=multi_turn_eval_input,
+            eval_config=mock_v2_redrive_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        stub = RecordingStubV2Eval(mock_v2_redrive_config)
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+            ) as mock_drive,
+        ):
+            result = await runner.run_job(job)
+
+        assert result is True
+        mock_drive.assert_awaited_once()
+        # The judge scored the freshly driven conversation, not the stored
+        # other-config one.
+        assert len(stub.seen_inputs) == 1
+        assert stub.seen_inputs[0].final_message == "fresh reply"
 
     @pytest.mark.asyncio
     async def test_missing_drive_config_skips(

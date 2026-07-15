@@ -625,11 +625,14 @@ class EvalRunner:
 
         The run config under evaluation drives the agent while the eval's
         multi_turn_drive_config plays the synthetic user, so each run config
-        gets its own fresh conversation — the property that makes run-config
-        comparison meaningful for multi-turn. The drive is transient (nothing
-        persisted); for full_trace evals the EvalRun record carries the
-        serialized conversation when scoring succeeds, otherwise the driven
-        conversation is not retained.
+        gets its own conversation — the property that makes run-config
+        comparison meaningful for multi-turn. Driven conversations persist as
+        real TaskRuns keyed by (eval_input, run_config): the leaf carries a
+        `sei_<eval_input_id>` tag and the adapter stamps
+        `output.source.run_config_id`, so any eval scoring the same pair
+        reuses the stored conversation instead of re-driving it (KIL-761).
+        For full_trace evals the EvalRun record additionally carries the
+        serialized conversation when scoring succeeds.
         """
         drive_config = self.eval.multi_turn_drive_config
         if drive_config is None:
@@ -674,35 +677,63 @@ class EvalRunner:
 
         if job.task_run_config is None:
             raise ValueError("Task run eval requires a run config")
-        try:
-            agent_run_config = as_kiln_agent_run_config(
-                job.task_run_config.run_config_properties
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Multi-turn re-drive requires a Kiln agent run config; "
-                f"run config '{job.task_run_config.name}' is a different type"
-            ) from e
-        try:
-            su_provider = ModelProviderName(drive_config.model_provider)
-        except ValueError as e:
-            raise ValueError(
-                "Invalid synthetic-user model provider on the eval's "
-                f"multi_turn_drive_config: {drive_config.model_provider}"
-            ) from e
 
-        leaf = await drive_case_for_eval(
-            seed_prompt=seed,
-            synthetic_user_info=data.synthetic_user_info,
-            target_task=self.task,
-            target_run_config=agent_run_config,
-            su_driver_config=SyntheticUserDriverConfig(
-                model_name=drive_config.model_name,
-                model_provider_name=su_provider,
-            ),
-            turns=drive_config.turns,
-            skills=self._skills,
-        )
+        # Reuse a conversation another eval already drove for this
+        # (eval_input, run_config) pair: the drive tags its leaf
+        # sei_<eval_input_id> and the adapter stamps
+        # output.source.run_config_id. Conversations are plain persisted
+        # TaskRuns any number of evals can score.
+        pair_tag = f"sei_{eval_input.id}"
+        leaf: TaskRun | None = None
+        for run in self.task.runs(readonly=True):
+            if (
+                pair_tag in (run.tags or [])
+                and run.trace
+                and run.output is not None
+                and run.output.source is not None
+                and run.output.source.run_config_id == job.task_run_config.id
+            ):
+                leaf = run
+                break
+
+        if leaf is None:
+            try:
+                agent_run_config = as_kiln_agent_run_config(
+                    job.task_run_config.run_config_properties
+                )
+            except ValueError as e:
+                raise ValueError(
+                    "Multi-turn re-drive requires a Kiln agent run config; "
+                    f"run config '{job.task_run_config.name}' is a different type"
+                ) from e
+            try:
+                su_provider = ModelProviderName(drive_config.model_provider)
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid synthetic-user model provider on the eval's "
+                    f"multi_turn_drive_config: {drive_config.model_provider}"
+                ) from e
+
+            leaf = await drive_case_for_eval(
+                seed_prompt=seed,
+                synthetic_user_info=data.synthetic_user_info,
+                target_task=self.task,
+                target_run_config=agent_run_config,
+                su_driver_config=SyntheticUserDriverConfig(
+                    model_name=drive_config.model_name,
+                    model_provider_name=su_provider,
+                ),
+                turns=drive_config.turns,
+                skills=self._skills,
+                task_run_config_id=job.task_run_config.id,
+            )
+            # The pair tag makes the leaf discoverable for reuse; the
+            # eval-scoped tag lets cleanup sweeps find driven conversations.
+            new_tags = {pair_tag, f"synthetic_eval_drive_{self.eval.id}"}
+            if not new_tags.issubset(leaf.tags or []):
+                async with self._save_context():
+                    leaf.tags = sorted(set(leaf.tags or []) | new_tags)
+                    leaf.save_to_file()
 
         eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
         result = await evaluator.evaluate(eval_task_input)
