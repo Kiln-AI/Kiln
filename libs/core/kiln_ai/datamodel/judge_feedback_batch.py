@@ -1,3 +1,46 @@
+# TODO (merge blocker — do not merge toward main until resolved):
+# This feature grew out of a reflection helper (failing_train_examples, PR #1536) and was
+# reshaped several times under review. Re-validate the design before it becomes API surface:
+#
+# 1. Re-validate the driving use case. Built to feed judge feedback text to reflective
+#    prompt optimization. Does that consumer still exist and still need this shape?
+#    If nothing needs it, delete rather than merge.
+#
+# 2. Selection by tags leaves user-visible, long-lived side effects. A one-off or
+#    targeted run (specific items) forces the caller to mutate dataset tags — shared,
+#    user-visible state — to express what is really a query parameter. If item-level
+#    selection is needed, accept item IDs (and/or a named dataset split). Callers
+#    should never have to write tags to make a read-shaped call.
+#
+# 3. Do NOT introduce a second store of eval results. JudgeFeedbackBatchRun duplicates
+#    EvalRun's job (scores for eval_config × run_config × dataset item) as a parallel,
+#    API-shaped model — the name is the smell: it's shaped like a request/response, not
+#    like the domain. It is also lossier than what it duplicates: generate mode discards
+#    the TaskRun (allow_saving=False), so no input/output/trace/usage survives for
+#    debugging an item's failure, while EvalRun keeps all four. And it creates two
+#    sources of truth — these scores never feed the eval score summaries, so the same
+#    (eval × run config) can answer differently here vs the scorecard. If EvalRun lacks
+#    something (e.g. the judge's feedback/reasoning text), EXTEND EvalRun. Extend,
+#    don't duplicate.
+#
+# 4. Re-running identical work must hit the cache. Same run config + same input
+#    (temperature aside) yields the same result — a "fresh" re-run of an unchanged
+#    (eval_config × run_config × item) triple is cost without information. EvalRunner
+#    already has the correct semantics (run only missing triples, return stored results
+#    otherwise); this runner bypasses it: its own persisted runs are consulted only
+#    within a single batch, and never in generate mode. Re-run when the run config or
+#    input changed; otherwise return instantly from stored results.
+#
+# 5. The paired-gate capability is retrofitted onto a sampling tool. Pairing by
+#    task_run_id was silently broken by random sampling whenever the matching set
+#    exceeded max_samples (two runs judged disjoint subsets; patched with a
+#    deterministic sort). A paired candidate-vs-baseline gate wants full, stable
+#    coverage — the eval lane's shape, not a minibatch sampler's.
+#
+# Also before any merge: consolidate the API surface — the synchronous run /
+# create-and-run endpoints were kept "for callers not yet migrated" alongside the
+# job route, leaving a three-way agent-policy matrix. One blessed path.
+
 from typing import TYPE_CHECKING, List, Union
 
 from pydantic import Field, model_validator
