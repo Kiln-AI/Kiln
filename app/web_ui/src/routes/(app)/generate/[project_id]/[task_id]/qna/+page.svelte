@@ -10,7 +10,7 @@
   } from "$lib/utils/splits_util"
 
   import SelectDocumentsdialog from "./select_documents_dialog.svelte"
-  import Extractiondialog from "./extraction_dialog.svelte"
+  import Extractiondialog from "$lib/components/extraction_dialog.svelte"
   import GenerateQnadialog from "./generate_qna_dialog.svelte"
   import EditSplitsDialog from "./edit_splits_dialog.svelte"
   import QnaDocumentNode from "./qna_document_node.svelte"

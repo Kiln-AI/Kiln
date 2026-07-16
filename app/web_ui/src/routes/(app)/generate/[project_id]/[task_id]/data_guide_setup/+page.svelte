@@ -5,17 +5,19 @@
   import { onMount, onDestroy } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import GuideSetupForm, { type GuideSample } from "./guide_setup_form.svelte"
+  import GuideSetupForm from "./guide_setup_form.svelte"
+  import type { GuideSample } from "$lib/components/add_example_dialog.svelte"
   import { pending_data_guide_example } from "./pending_example_store"
   import { get } from "svelte/store"
   import GuidePreview from "./guide_preview.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
-  import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
+  import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { agentInfo } from "$lib/agent"
-  import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import Completed from "$lib/ui/completed.svelte"
+  import { dedupe_by_input } from "$lib/utils/dedupe_by_input"
   import posthog from "posthog-js"
 
   type GuideBuilderState =
@@ -37,14 +39,13 @@
   // GuidePreview's unsaved-changes warn so the post-save goto doesn't prompt.
   let saved = false
 
-  // The full data guide markdown. Setup builds this from the user's
+  // The full input data guide markdown. Setup builds this from the user's
   // examples; refine rewrites it wholesale to incorporate generated rules.
   let guide: string = ""
 
-  type PreviewSample = { input: string; output: string }
+  type PreviewSample = { input: string }
   type ReviewedSample = {
     input: string
-    output: string
     looks_good: boolean | undefined
   }
   let preview_samples: PreviewSample[] = []
@@ -54,14 +55,9 @@
 
   // Captured from the setup form so refine/regenerate can reuse them
   let captured_input_run_config: KilnAgentRunConfigProperties | null = null
-  let captured_output_run_config: KilnAgentRunConfigProperties | null = null
 
   // Number of successful refine/regenerate cycles before save, for analytics.
   let refine_iterations = 0
-
-  // The task being edited. Needed by the output run config dialog so it can
-  // mirror the SDG output flow (prompt + tools/skills selectors at top level).
-  let task: Task | null = null
 
   // Lifted out of GuideSetupForm so the user's examples survive the
   // setup → generating → setup unmount cycle that happens when a preview
@@ -78,7 +74,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Set Up Data Guide",
-    description: `Setup the task data guide for project ${project_id}, task ${task_id}. The data guide describes the structure, rules, and examples for synthetic data generation.`,
+    description: `Setup the task input data guide for project ${project_id}, task ${task_id}. The input data guide describes the structure, rules, and examples for synthetic input generation.`,
   })
 
   onMount(async () => {
@@ -112,24 +108,6 @@
       return
     }
 
-    if ($current_task?.id === task_id) {
-      task = $current_task
-    } else {
-      try {
-        const { data: task_data } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (task_data) {
-          task = task_data
-        }
-      } catch {
-        // Non-critical — `task` is bound nullable downstream and only feeds
-        // optional UI (the output run config dialog). The setup form remains
-        // usable without it.
-      }
-    }
-
     // Seed from the synth-page handoff: if the user clicked "Set Up Data
     // Guide" and added their first example via the dialog before navigating
     // here, that sample is sitting on a writable store. Pull it once and
@@ -147,7 +125,6 @@
     event: CustomEvent<{
       guide: string
       input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
     }>,
   ) {
     error = null
@@ -156,7 +133,6 @@
 
     try {
       captured_input_run_config = event.detail.input_run_config
-      captured_output_run_config = event.detail.output_run_config
       guide = event.detail.guide
 
       const { data, error: api_error } = await client.POST(
@@ -166,19 +142,17 @@
           body: {
             guide,
             run_config_properties: captured_input_run_config,
-            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
       )
 
       if (api_error) throw api_error
-      if (!data) throw new KilnError("No preview samples returned", null)
+      if (!data) throw new KilnError("No preview inputs returned", null)
 
-      preview_samples = data as PreviewSample[]
+      preview_samples = dedupe_by_input(data as PreviewSample[])
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
-        output: s.output,
         looks_good: undefined,
       }))
       general_feedback = ""
@@ -195,7 +169,7 @@
   async function handle_refine(
     event: CustomEvent<{
       feedback: string
-      rated_samples: { input: string; output: string; looks_good: boolean }[]
+      rated_samples: { input: string; looks_good: boolean }[]
     }>,
   ) {
     error = null
@@ -208,10 +182,11 @@
     current_state = has_negative_feedback ? "refining" : "regenerating"
 
     try {
-      if (!captured_input_run_config || !captured_output_run_config) {
+      if (!captured_input_run_config) {
         throw new KilnError("No model configuration available", null)
       }
 
+      let refined_guide = guide
       if (has_negative_feedback) {
         const { data, error: api_error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine",
@@ -219,10 +194,10 @@
             params: { path: { project_id, task_id } },
             body: {
               current_guide: guide,
+              source: "manual",
               feedback: event.detail.feedback,
               preview_samples: event.detail.rated_samples,
               run_config_properties: captured_input_run_config,
-              output_run_config_properties: captured_output_run_config,
             },
           },
         )
@@ -230,7 +205,7 @@
         if (api_error) throw api_error
         if (!data) throw new KilnError("No refinement returned", null)
 
-        guide = data.refined_guide
+        refined_guide = data.refined_guide
       }
 
       const { data: preview_data, error: preview_error } = await client.POST(
@@ -238,22 +213,20 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guide,
+            guide: refined_guide,
             run_config_properties: captured_input_run_config,
-            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
       )
 
       if (preview_error) throw preview_error
-      if (!preview_data)
-        throw new KilnError("No preview samples returned", null)
+      if (!preview_data) throw new KilnError("No preview inputs returned", null)
 
-      preview_samples = preview_data as PreviewSample[]
+      guide = refined_guide
+      preview_samples = dedupe_by_input(preview_data as PreviewSample[])
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
-        output: s.output,
         looks_good: undefined,
       }))
       general_feedback = ""
@@ -277,14 +250,15 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
-          body: { guide },
+          body: { guide, source: "manual" },
         },
       )
 
       if (api_error) throw api_error
 
-      // Disable the unsaved-changes warn before goto fires beforeNavigate.
-      // Mirrors the prompt_form / skill_form `complete = true` pattern.
+      // `saved` both disables the unsaved-changes warn and flips the page to
+      // the success screen (Completed), which returns the user to synth via a
+      // button rather than auto-navigating.
       saved = true
 
       posthog.capture("data_guide_saved", {
@@ -292,17 +266,6 @@
         source: "setup",
         refine_iterations,
       })
-
-      // Replace the setup page in history rather than pushing onto it. The
-      // user finished and shouldn't be able to back-navigate into the now-
-      // completed setup flow (which would just redirect them straight to
-      // the refine page anyway).
-      goto(
-        `/generate/${project_id}/${task_id}/synth?session_continued=true&data_guide_saved=true`,
-        {
-          replaceState: true,
-        },
-      )
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -314,7 +277,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Set Up Data Guide"
-    subtitle="Your Data Guide will help us generate better synthetic data."
+    subtitle="Your Data Guide will help us generate better synthetic inputs."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     breadcrumbs={[
@@ -330,23 +293,29 @@
   >
     <DataGenDescription bind:guidance_data />
 
-    {#if current_state === "loading"}
+    {#if saved}
+      <Completed
+        title="Data Guide Saved"
+        subtitle="Your Data Guide is saved. Click Continue to return to Synthetic Data Generation."
+        link={`/generate/${project_id}/${task_id}/synth?session_continued=true`}
+        button_text="Continue"
+      />
+    {:else if current_state === "loading"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
+        <span class="loading loading-spinner loading-lg" />
       </div>
     {:else if current_state === "setup"}
       <GuideSetupForm
         {project_id}
         {task_id}
-        {task}
         bind:guide_examples
         bind:page_error={error}
         on:generate_preview={handle_generate_preview}
       />
     {:else if current_state === "generating"}
       <AnalyzingAnimation
-        title="Generating Examples"
-        description="Generating synthetic data to test your data guide."
+        title="Generating Inputs"
+        description="Generating synthetic inputs to test your data guide."
       />
     {:else if current_state === "preview"}
       <GuidePreview
@@ -363,12 +332,12 @@
     {:else if current_state === "refining"}
       <RefiningAnimation
         title="Refining Data Guide"
-        description="Refining your data guide with the feedback you provided and generating fresh examples to review."
+        description="Refining your data guide with the feedback you provided and generating fresh inputs to review."
       />
     {:else if current_state === "regenerating"}
       <AnalyzingAnimation
-        title="Regenerating Examples"
-        description="Regenerating synthetic data to test your edited data guide."
+        title="Regenerating Inputs"
+        description="Regenerating synthetic inputs to test your edited data guide."
       />
     {:else if current_state === "load_error"}
       <div

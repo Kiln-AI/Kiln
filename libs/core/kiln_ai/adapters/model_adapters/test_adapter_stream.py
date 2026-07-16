@@ -15,7 +15,10 @@ from litellm.types.utils import (
 from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.chat import ChatFormatter
-from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    AdapterStream,
+    raise_for_empty_model_response,
+)
 from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEvent,
     ToolCallEventType,
@@ -564,6 +567,93 @@ class TestAdapterStreamEdgeCases:
             with pytest.raises(ValueError, match="no content or tool calls"):
                 async for _ in stream:
                     pass
+
+    @pytest.mark.asyncio
+    async def test_content_filter_raises_specific_error(
+        self, mock_adapter, mock_provider
+    ):
+        response = _make_model_response(content=None, tool_calls=None)
+        response.choices[0].message.content = None
+        response.choices[0].finish_reason = "content_filter"
+        fake_stream = FakeStreamingCompletion(
+            response, [_make_streaming_chunk(finish_reason="content_filter")]
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+                async for _ in stream:
+                    pass
+        assert "no content or tool calls" not in str(exc_info.value)
+        # The actual finish_reason is interpolated (repr renders as 'content_filter').
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+
+
+class TestRaiseForEmptyModelResponse:
+    """Direct unit tests for raise_for_empty_model_response."""
+
+    def test_content_filter_finish_reason_object(self):
+        choice = MagicMock()
+        choice.finish_reason = "content_filter"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+
+    def test_refusal_finish_reason_interpolated(self):
+        choice = MagicMock()
+        choice.finish_reason = "refusal"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "finish_reason='refusal'" in str(exc_info.value)
+
+    def test_message_refusal_field_object_style(self):
+        # message.refusal set while finish_reason stays 'stop' (OpenAI behavior).
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = MagicMock(refusal="I cannot help with that request.")
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    def test_message_refusal_field_dict_style(self):
+        choice = {
+            "finish_reason": "stop",
+            "message": {
+                "content": None,
+                "tool_calls": None,
+                "refusal": "I cannot help with that request.",
+            },
+        }
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    def test_normal_empty_stop_raises_generic(self):
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="no content or tool calls"):
+            raise_for_empty_model_response(choice)
+
+    def test_non_matching_finish_reason_raises_generic(self):
+        # Exercises the _is_content_filter_finish_reason `return False` branch.
+        choice = MagicMock()
+        choice.finish_reason = "length"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="no content or tool calls") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "content-filter/refusal" not in str(exc_info.value)
 
 
 class TestAdapterStreamPerMessageUsage:

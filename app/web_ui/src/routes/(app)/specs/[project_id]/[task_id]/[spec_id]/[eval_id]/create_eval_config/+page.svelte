@@ -13,7 +13,7 @@
   import { tick } from "svelte"
   import { load_task } from "$lib/stores"
   import { goto } from "$app/navigation"
-  import { get_eval_steps } from "./eval_steps_utils"
+  import { get_eval_steps } from "$lib/utils/eval_steps_utils"
   import Collapse from "$lib/ui/collapse.svelte"
   import type { AvailableModels } from "$lib/types"
   import { available_models, load_available_models } from "$lib/stores"
