@@ -1,10 +1,12 @@
 import json
+import math
 from enum import Enum
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Discriminator,
     Field,
     JsonValue,
@@ -303,7 +305,16 @@ def validate_scores_against_output_scores(
     """
 
     def _is_numeric(v: object) -> bool:
-        return isinstance(v, (int, float)) and not isinstance(v, bool)
+        # Finiteness must be explicit: NaN compares False against every range
+        # bound, so without it NaN passes all checks (and pydantic serializes
+        # NaN as null, making the saved file fail validation on next load).
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return False
+        try:
+            return math.isfinite(v)
+        except OverflowError:
+            # isfinite converts int args to float; an int like 10**400 can't be
+            return False
 
     problems: list[str] = []
     for output_score in output_scores:
@@ -329,9 +340,11 @@ def validate_scores_against_output_scores(
                         f"Score {output_score.name} is a pass_fail_critical rating and must be a number between -1.0 and 1.0 inclusive. Got: {value}"
                     )
             case TaskOutputRatingType.custom:
-                problems.append(
-                    f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
-                )
+                # Unbounded numeric metric: any finite number is valid.
+                if not _is_numeric(value):
+                    problems.append(
+                        f"Score {output_score.name} is a custom metric and must be a finite number. Got: {value}"
+                    )
             case _:
                 raise_exhaustive_enum_error(output_score.type)
     return problems
@@ -343,6 +356,7 @@ class SkippedReason(str, Enum):
     missing_reference_key = "missing_reference_key"
     extraction_failed = "extraction_failed"
     missing_trace = "missing_trace"
+    missing_drive_config = "missing_drive_config"
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
@@ -361,15 +375,41 @@ class UserMessage(BaseModel):
     text: str
 
 
+class SyntheticUserInfo(BaseModel):
+    """The synthetic user's character sheet: who they are and what they want.
+
+    This is both the persisted form on multi-turn synthetic eval inputs and
+    the runtime shape the synthetic-user driver renders its system prompt
+    from. The XML-tagged blob some wire formats carry is parsed into this at
+    the wire boundary (kiln_ai.synthetic_user.parser) — it is never stored.
+
+    extra="allow": unknown fields from newer generators survive load/save
+    round-trips instead of being dropped.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    persona: str
+    goal: str
+    behavior_guidance: str | None = None
+
+
 class SingleTurnEvalInputData(BaseModel):
     type: Literal["single_turn"] = "single_turn"
     user_message: UserMessage
 
 
 class MultiTurnSyntheticEvalInputData(BaseModel):
+    """A re-drivable multi-turn case: the opening user message plus the
+    synthetic user who continues the conversation at eval time.
+
+    first_message may be None; such items carry no seed to open a
+    conversation with, so the eval runner skips them instead of re-driving.
+    """
+
     type: Literal["multi_turn_synthetic"] = "multi_turn_synthetic"
     first_message: UserMessage | None = None
-    synthetic_user_info: dict[str, JsonValue] = {}
+    synthetic_user_info: SyntheticUserInfo
 
 
 EvalInputData = Annotated[
@@ -456,14 +496,62 @@ class EvalTaskInput(BaseModel):
         if run_output.trace is not None:
             trace_data = [dict(msg) for msg in run_output.trace]
 
-        if not isinstance(eval_input.data, SingleTurnEvalInputData):
-            raise ValueError("from_eval_input only supports single-turn EvalInput")
+        task_input: str | None
+        if isinstance(eval_input.data, SingleTurnEvalInputData):
+            task_input = eval_input.data.user_message.text
+        elif isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
+            # Multi-turn: the seed message opened the conversation; the rest
+            # of the exchange is in the trace.
+            task_input = (
+                eval_input.data.first_message.text
+                if eval_input.data.first_message
+                else None
+            )
+        else:
+            raise ValueError(
+                f"Unsupported EvalInput data type: {type(eval_input.data).__name__}"
+            )
 
         return cls(
             final_message=run_output.output.output,
             trace=trace_data,
             reference_data=eval_input.reference,
-            task_input=eval_input.data.user_message.text,
+            task_input=task_input,
+        )
+
+    @classmethod
+    def from_eval_input_trace(
+        cls, eval_input: "EvalInput", trace: list[dict[str, Any]]
+    ) -> "EvalTaskInput":
+        """Assemble evaluator input from an EvalInput plus an already-driven
+        conversation: used when a stored trace stands in for a fresh drive,
+        so there is no TaskRun to compose from. Mirrors from_eval_input."""
+        if not isinstance(eval_input, EvalInput):
+            raise TypeError("Expected an EvalInput instance")
+        if not isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
+            raise ValueError(
+                "Trace-based assembly requires a multi-turn synthetic input; "
+                f"got: {type(eval_input.data).__name__}"
+            )
+
+        # The final model output is the last assistant text in the trace
+        # (assistant tool-call messages can carry no text content).
+        final_message: str | None = None
+        for msg in reversed(trace):
+            content = msg.get("content")
+            if msg.get("role") == "assistant" and isinstance(content, str) and content:
+                final_message = content
+                break
+        if final_message is None:
+            raise ValueError("Trace has no assistant message with text content")
+
+        return cls(
+            final_message=final_message,
+            trace=[dict(msg) for msg in trace],
+            reference_data=eval_input.reference,
+            task_input=eval_input.data.first_message.text
+            if eval_input.data.first_message
+            else None,
         )
 
 
@@ -482,7 +570,7 @@ class EvalOutputScore(BaseModel):
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
     )
     type: TaskOutputRatingType = Field(
-        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
+        description="The type of rating ('five_star', 'pass_fail', 'pass_fail_critical', or 'custom'). Custom scores are unbounded numeric metrics (e.g. token counts, cost, latency); they can only be produced by code evals, so an eval with any custom score cannot use LLM-judge configs.",
     )
 
     def json_key(self) -> str:
@@ -492,14 +580,6 @@ class EvalOutputScore(BaseModel):
         For example, "Overall Rating" -> "overall_rating"
         """
         return string_to_json_key(self.name)
-
-    @model_validator(mode="after")
-    def validate_type(self) -> Self:
-        if self.type == TaskOutputRatingType.custom:
-            raise ValueError(
-                f"Custom scores are not supported in evaluators. Score '{self.name}' was set to a custom score."
-            )
-        return self
 
 
 class EvalRun(KilnParentedModel):
@@ -567,6 +647,14 @@ class EvalRun(KilnParentedModel):
     skipped_detail: str | None = Field(
         default=None,
         description="Case-specific detail for skipped runs (e.g. missing key name).",
+    )
+    drive_fingerprint: str | None = Field(
+        default=None,
+        description="Identity of the drive that produced task_run_trace for "
+        "multi-turn synthetic (EvalInput) runs: a versioned hash of drive "
+        "config + run config properties + scenario content. Enables reuse of "
+        "the stored conversation by other eval configs; None for non-driven "
+        "records.",
     )
 
     def parent_eval_config(self) -> Union["EvalConfig", None]:
@@ -719,6 +807,39 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
     def runs(self, readonly: bool = False) -> list[EvalRun]:
         return super().runs(readonly=readonly)  # type: ignore
 
+    def is_code_eval(self) -> bool:
+        """True when scores come from a user-authored scorer (V2 code_eval)."""
+        return self.config_type == EvalConfigType.v2 and isinstance(
+            self.properties, CodeEvalProperties
+        )
+
+    @model_validator(mode="after")
+    def validate_custom_scores_require_code_eval(self) -> Self:
+        """Only code evals can serve evals with custom-typed output scores:
+        judges structurally can't emit custom keys (build_score_schema skips
+        them, so every EvalRun save would fail exact-key validation), and the
+        check-type adapters fill every declared key with 0.0/1.0, recording
+        meaningless values for an unbounded metric.
+
+        Validation of a file loaded from disk runs before the parent link is
+        attached, so hand-edited files pass here — BaseEval re-checks at
+        eval time as defense in depth.
+        """
+        if self.is_code_eval():
+            return self
+        try:
+            parent = self.parent_eval()
+        except ValueError:
+            return self
+        if parent is not None and any(
+            score.type == TaskOutputRatingType.custom for score in parent.output_scores
+        ):
+            raise ValueError(
+                "Evals with custom-typed output scores can only use code-eval "
+                "configs; other eval types cannot produce custom metrics."
+            )
+        return self
+
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
         if self.config_type in (EvalConfigType.g_eval, EvalConfigType.llm_as_judge):
@@ -816,6 +937,32 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
+class MultiTurnDriveConfig(BaseModel):
+    """Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
+
+    A multi-turn eval run regenerates each conversation: the agent under test
+    comes from the run config being evaluated, while the synthetic user
+    (customer) defined here is held constant across run configs — so a
+    comparison varies only the agent. Stored per-eval so re-drives use the
+    same synthetic-user model and turn count the builder used when driving
+    the conversations the judge was calibrated on, keeping the judge scoring
+    the same conversation distribution.
+    """
+
+    model_name: str = Field(
+        description="The model that plays the synthetic user during re-drives."
+    )
+    # A plain string rather than the provider enum so persisted evals load on
+    # builds that don't know the provider yet (same choice as LlmJudgeProperties).
+    model_provider: str = Field(description="The provider of the synthetic-user model.")
+    turns: int = Field(
+        ge=1,
+        le=20,
+        description="Exact number of assistant turns per re-driven conversation "
+        "(the drive loop has no early termination).",
+    )
+
+
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
     """An evaluator definition that specifies what to evaluate and how scores should be produced."""
 
@@ -861,6 +1008,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     evaluation_data_type: EvalDataType | None = Field(
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
+    )
+    multi_turn_drive_config: MultiTurnDriveConfig | None = Field(
+        default=None,
+        description="How to re-drive multi-turn synthetic eval inputs at eval "
+        "time (synthetic-user model + turn count). Required to execute "
+        "multi-turn EvalInput items; None for single-turn and stored-trace evals.",
     )
 
     # Workaround to return typed parent without importing Task

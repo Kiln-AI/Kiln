@@ -2,7 +2,7 @@ import logging
 from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
-from kiln_ai.datamodel.basemodel import FilenameString
+from kiln_ai.datamodel.basemodel import FilenameString, FilenameStringShort
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
@@ -56,7 +56,9 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 class SpecCreationRequest(BaseModel):
     """Request to create a new spec."""
 
-    name: FilenameString = Field(description="The name of the spec.")
+    # Short limit: the name becomes the eval's EvalOutputScore.name (max 32)
+    # — a longer name would fail deep inside Eval construction, not here.
+    name: FilenameStringShort = Field(description="The name of the spec.")
     definition: str = Field(
         description="A detailed definition of the spec.", min_length=1
     )

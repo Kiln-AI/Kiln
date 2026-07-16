@@ -5,6 +5,7 @@ from pydantic import Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel, KilnParentModel
+from kiln_ai.datamodel.claim_review import ClaimReview
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
@@ -25,6 +26,7 @@ class TaskRun(
     KilnParentModel,
     parent_of={
         "feedback": Feedback,
+        "claim_reviews": ClaimReview,
     },
 ):
     """
@@ -103,6 +105,9 @@ class TaskRun(
 
     def feedback(self, readonly: bool = False) -> list[Feedback]:
         return super().feedback(readonly=readonly)  # type: ignore
+
+    def claim_reviews(self, readonly: bool = False) -> list[ClaimReview]:
+        return super().claim_reviews(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:

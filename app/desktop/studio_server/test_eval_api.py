@@ -43,9 +43,14 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    MultiTurnSyntheticEvalInputData,
+    SingleTurnEvalInputData,
+    SyntheticUserInfo,
+    UserMessage,
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -1229,6 +1234,171 @@ def test_score_summary_all_skipped(mock_eval_for_score_summary):
     assert result.run_config_percent_complete["rc1"] == 1.0
 
 
+def test_score_summary_eval_input_keyed(mock_eval_for_score_summary):
+    """EvalInput-sourced evals key their runs on eval_input_id; a run keyed by
+    dataset_id (TaskRun source) never matches an EvalInput expected set."""
+    eval = mock_eval_for_score_summary
+    config = Mock(spec=EvalConfig)
+
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8, "relevance": 0.9},
+            input="input",
+            output="output",
+            eval_input_id="ei1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6, "relevance": 0.7},
+            input="input",
+            output="output",
+            eval_input_id="ei2",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.0, "relevance": 0.0},
+            input="input",
+            output="output",
+            dataset_id="ds1",
+        ),
+    ]
+    config.runs.return_value = runs
+
+    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+    expected_item_ids: set[ID_TYPE] = {"ei1", "ei2", "ei3"}
+
+    result = compute_score_summary(eval, config, task_run_configs, expected_item_ids)
+
+    assert result.dataset_size == 3
+    scores = result.results["rc1"]
+    assert scores["accuracy"].mean_score == pytest.approx(0.7)
+    assert scores["accuracy"].n_used == 2
+    assert scores["relevance"].mean_score == pytest.approx(0.8)
+    # ei3 has no run yet; the dataset_id run must not count toward completion
+    assert result.run_config_percent_complete["rc1"] == pytest.approx(2 / 3)
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_score_summary_eval_input_eval(
+    client, mock_task_from_id, mock_task
+):
+    """EvalInput-typed evals get a real score summary sized from
+    eval_input_filter_id (was a 400) — the post-save spec detail page and
+    compare_run_configs read this endpoint."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::eval_slice",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval_config.save_to_file()
+
+    eval_input_ids = []
+    for i in range(2):
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        )
+        eval_input.save_to_file()
+        eval_input_ids.append(eval_input.id)
+
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        id="rc1",
+        name="Run Config 1",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+
+    EvalRun(
+        task_run_config_id="rc1",
+        scores={"score1": 4.0},
+        input="input",
+        output="output",
+        eval_input_id=eval_input_ids[0],
+        parent=eval_config,
+    ).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval_input_eval/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["results"]["rc1"]["score1"]["mean_score"] == 4.0
+    assert result["results"]["rc1"]["score1"]["n_used"] == 1
+    assert result["run_config_percent_complete"]["rc1"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_score_summary_eval_input_eval_empty(
+    client, mock_task_from_id, mock_task
+):
+    """An EvalInput-typed eval whose filter matches nothing still 400s with an
+    actionable message, mirroring the TaskRun-typed empty case."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::eval_slice",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval_config.save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval_input_eval/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 400
+    assert "No items match" in response.json()["message"]
+
+
 @pytest.mark.asyncio
 async def test_get_eval_run_results(
     client,
@@ -1548,6 +1718,92 @@ async def test_get_eval_config_compare_summary(
 
     # Test case 5: Check skipping eval run lowers the percent complete
     assert eval_config_percent_complete["ec5"] == pytest.approx(0 / total_in_dataset)
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_compare_summary_skips_custom_scores(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+):
+    """A custom-typed output score whose json_key collides with a human rating
+    (e.g. named "Overall Rating") must be skipped in the correlation loop:
+    normalize_rating raises on custom, which 500'd the whole endpoint."""
+    mock_task_from_id.return_value = mock_task
+
+    # Human-rated item in the golden set, plus an eval run scoring it. Built
+    # while the eval still has its five_star scores, so save validation passes.
+    task_run = TaskRun(
+        input="Test Input",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(
+            output="Test Output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "langchain_adapter",
+                },
+            ),
+            rating=TaskOutputRating(
+                value=5.0,
+                requirement_ratings={
+                    mock_task.requirements[0].id: RequirementRating(
+                        value=4.0, type=TaskOutputRatingType.five_star
+                    )
+                },
+            ),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    )
+    task_run.save_to_file()
+
+    eval_run = EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 3.5, "overall_rating": 4.0},
+        input="input",
+        output="output",
+        dataset_id=task_run.id,
+        parent=mock_eval_config,
+    )
+    eval_run.save_to_file()
+
+    # Swap the eval's "overall_rating" score to custom-typed in memory: a
+    # custom-score eval can't be built with the judge config attached (the
+    # EvalConfig validator rejects that pairing), so stage the collision here.
+    mock_eval.output_scores[1] = EvalOutputScore(
+        name="Overall Rating",
+        type=TaskOutputRatingType.custom,
+    )
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    results = data["results"]
+    # five_star score still correlated; the custom score is absent, not a 500
+    assert "score1" in results["eval_config1"]
+    assert "overall_rating" not in results["eval_config1"]
+    # Custom scores are unrateable by humans, so they must not block the
+    # rated tally: score1 is human-rated, so the item counts fully rated.
+    assert data["fully_rated_count"] == 1
+    assert data["partially_rated_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -2043,6 +2299,53 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
 
 
 @pytest.mark.asyncio
+async def test_get_eval_progress_eval_input_slice(client, mock_task_from_id, mock_task):
+    """An EvalInput-typed eval reports its slice size from the matching
+    EvalInput items — the spec page relies on this instead of a 400."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::eval_slice",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    for i in range(3):
+        EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        ).save_to_file()
+    # An input outside the slice tag is not counted.
+    EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="other")),
+        tags=["other"],
+        parent=mock_task,
+    ).save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval_input_eval/progress"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 3
+    assert result["golden_dataset_size"] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task):
     mock_task_from_id.return_value = mock_task
 
@@ -2178,6 +2481,47 @@ def test_human_score_from_task_run(
 
     # Verify the result
     assert result == expected_score
+
+
+def test_human_score_named_rating_survives_requirement_name_collision():
+    """A task requirement whose name maps to the same json_key as the score
+    must not hide a named rating: spec-created evals store the human verdict
+    under named::{score.name}, and the like-named requirement may be unrated."""
+    task_run = Mock(spec=TaskRun)
+    task_run.output = Mock(spec=TaskOutput)
+    rating = Mock(spec=TaskOutputRating)
+    rating.value = None
+    rating.requirement_ratings = {
+        # No rating under the colliding requirement's id ("req_id"); the
+        # human verdict lives under the named key.
+        "named::My Spec": RequirementRating(
+            value=1.0, type=TaskOutputRatingType.pass_fail
+        ),
+    }
+    task_run.output.rating = rating
+
+    score = EvalOutputScore(
+        name="My Spec", instruction="Test score", type=TaskOutputRatingType.pass_fail
+    )
+    # A requirement named like the score maps to the same json_key.
+    score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {"my_spec": "req_id"}
+
+    from app.desktop.studio_server.eval_api import human_score_from_task_run
+
+    result = human_score_from_task_run(
+        task_run, score, score_key_to_task_requirement_id
+    )
+
+    assert result == 1.0
+
+    # When the colliding requirement IS rated, its rating still wins.
+    rating.requirement_ratings["req_id"] = RequirementRating(
+        value=0.0, type=TaskOutputRatingType.pass_fail
+    )
+    assert (
+        human_score_from_task_run(task_run, score, score_key_to_task_requirement_id)
+        == 0.0
+    )
 
 
 @pytest.mark.asyncio
@@ -2840,6 +3184,95 @@ async def test_get_run_config_eval_scores_all_skipped(
     assert ecr["percent_complete"] == 1.0
 
 
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_includes_eval_input_evals(
+    client, mock_task_from_id, mock_task
+):
+    """EvalInput-typed evals appear in a run config's eval scores with real
+    sizing and completion instead of being silently omitted."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Test accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        eval_input_filter_id="tag::eval_slice",
+        eval_configs_filter_id="tag::golden",
+        current_config_id="ec1",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = EvalConfig(
+        id="ec1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval_config.save_to_file()
+
+    eval_input_ids = []
+    for i in range(2):
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        )
+        eval_input.save_to_file()
+        eval_input_ids.append(eval_input.id)
+
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        id="rc1",
+        name="Run Config 1",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+
+    for eval_input_id, score in zip(eval_input_ids, [1.0, 0.0]):
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": score},
+            input="input",
+            output="output",
+            eval_input_id=eval_input_id,
+            parent=eval_config,
+        ).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/run_configs/rc1/eval_scores"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    eval_result = next(
+        (er for er in data["eval_results"] if er["eval_id"] == "eval_input_eval"),
+        None,
+    )
+    assert eval_result is not None, "EvalInput eval missing from eval_scores"
+    assert eval_result["dataset_size"] == 2
+    ecr = eval_result["eval_config_result"]
+    assert ecr["results"]["accuracy"]["mean_score"] == pytest.approx(0.5)
+    assert ecr["results"]["accuracy"]["n_used"] == 2
+    assert ecr["percent_complete"] == 1.0
+
+
 def test_get_eval_configs_score_summary_no_filter_id(
     client, mock_task, mock_task_from_id
 ):
@@ -3430,6 +3863,107 @@ async def test_eval_results_summary_happy_path(client):
     assert (
         data["scores_by_run_config_by_eval"]["rc2"]["eval2"]["percent_complete"] == 1.0
     )
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_includes_eval_input_evals(
+    client, mock_task_from_id, mock_task
+):
+    """EvalInput-typed evals appear in the cross-eval summary with real sizing
+    and scores instead of being silently omitted. Both evals here filter on the
+    SAME tag string, so this also proves the expected-ids cache doesn't collide
+    across the TaskRun and EvalInput stores."""
+    mock_task_from_id.return_value = mock_task
+
+    shared_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    eval_input_eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=shared_scores,
+        eval_input_filter_id="tag::shared",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval_input_eval.save_to_file()
+    dataset_eval = Eval(
+        id="dataset_eval",
+        name="Dataset Eval",
+        output_scores=shared_scores,
+        eval_set_filter_id="tag::shared",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    dataset_eval.save_to_file()
+
+    eval_input_ids = []
+    for i in range(3):
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["shared"],
+            parent=mock_task,
+        )
+        eval_input.save_to_file()
+        eval_input_ids.append(eval_input.id)
+
+    eval_config = EvalConfig(
+        id="ec1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval_input_eval,
+    )
+    eval_config.save_to_file()
+    eval_input_eval.current_config_id = "ec1"
+    eval_input_eval.save_to_file()
+    EvalRun(
+        task_run_config_id="rc1",
+        scores={"accuracy": 1.0},
+        input="input",
+        output="output",
+        eval_input_id=eval_input_ids[0],
+        parent=eval_config,
+    ).save_to_file()
+
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        id="rc1",
+        name="Run Config 1",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+
+    # The TaskRun store has TWO items tagged "shared" (vs three EvalInputs)
+    with patch(
+        "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+        return_value={"ds1", "ds2"},
+    ):
+        response = client.get("/api/projects/project1/tasks/task1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["evals_by_id"]["eval_input_eval"]["dataset_size"] == 3
+    assert data["evals_by_id"]["dataset_eval"]["dataset_size"] == 2
+
+    cell = data["scores_by_run_config_by_eval"]["rc1"]["eval_input_eval"]
+    assert cell["mean_scores"]["accuracy"] == 1.0
+    assert cell["percent_complete"] == pytest.approx(1 / 3)
 
 
 @pytest.mark.asyncio

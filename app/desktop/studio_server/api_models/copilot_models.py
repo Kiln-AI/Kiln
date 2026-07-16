@@ -1,7 +1,11 @@
 """Shared Pydantic models for the Copilot API."""
 
+from typing import Annotated, Literal
+
+from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints, model_validator
+from typing_extensions import Self
 
 
 # Base models
@@ -46,6 +50,32 @@ class SampleApi(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ClaimReviewApi(BaseModel):
+    """The reviewer's grades on one trace's claim/evidence distillation.
+
+    Mirrors the persisted ClaimReview shape (judge verdict + per-claim
+    agree/disagree with optional whys) so the save path can write it onto
+    the golden TaskRun and judge refinement can consume it later.
+    """
+
+    judge_score: Literal["pass", "fail"]
+    judge_reasoning: str
+    claims: list[GradedClaim]
+    final_judgement: GradedClaim
+
+    @model_validator(mode="after")
+    def validate_final_judgement_pinned(self) -> Self:
+        # Same invariant the persisted ClaimReview enforces; checking here
+        # turns a corrupt payload into a 422 before any model is written.
+        if self.final_judgement.expected_result != self.judge_score:
+            raise ValueError(
+                "final_judgement.expected_result must equal judge_score "
+                f"(got {self.final_judgement.expected_result!r} vs "
+                f"{self.judge_score!r})"
+            )
+        return self
+
+
 class ReviewedExample(BaseModel):
     """A reviewed example from the spec review process.
 
@@ -58,8 +88,53 @@ class ReviewedExample(BaseModel):
     model_says_meets_spec: bool
     user_says_meets_spec: bool
     feedback: str
+    claim_review: ClaimReviewApi | None = Field(
+        default=None,
+        description="Per-claim grades from the claim/evidence review, when "
+        "the example was reviewed that way (v2 builder).",
+    )
 
     model_config = {"populate_by_name": True}
+
+
+class ReviewedChainApi(BaseModel):
+    """A reviewer's verdict on one multi-turn chain, keyed by its leaf run.
+
+    The leaf TaskRun id is the durable identity that rides from the drive
+    batch through review to save — the save path writes the golden rating
+    (and the claim review) onto that leaf.
+    """
+
+    leaf_run_id: str
+    user_says_meets_spec: bool
+    feedback: str = ""
+    claim_review: ClaimReviewApi | None = None
+
+
+class DrivenSyntheticCaseApi(BaseModel):
+    """One driven synthetic-user case from the builder session.
+
+    The save path mints an EvalInput from each — the re-drivable input the
+    eval runner regenerates a conversation from, per run config.
+    """
+
+    seed_prompt: str = Field(
+        min_length=1,
+        description="The opening user-side message of the conversation.",
+    )
+    synthetic_user_info: str = Field(
+        min_length=1,
+        description="The XML-tagged persona blob as generated "
+        "(persona/goal/behavior_guidance). Wire format only: the save path "
+        "parses it into the structured submodel before anything persists.",
+    )
+    scenario_index: int | None = Field(
+        default=None,
+        description="Zero-based index into the builder's user-approved "
+        "scenario plan identifying the scenario this case was generated "
+        "from. Recorded on the minted EvalInput as a `scenario:{index}` "
+        "provenance tag; omit when the case has no plan scenario.",
+    )
 
 
 # Input models
@@ -146,4 +221,91 @@ class SpecQuestionerApiInput(BaseModel):
         ...,
         description="The specification to analyze",
         title="target_specification",
+    )
+
+
+# Input Data Guide draft job
+#
+# The draft runs as a kiln_server background job so the heavy
+# summarize+aggregate work survives a flaky connection and the user can leave
+# the page and come back. The studio server exposes the job's start / status /
+# result lifecycle so the web UI owns polling. Preview inputs are no longer
+# bundled here — once the draft is ready the UI generates them via the existing
+# `/data_gen_guide_preview` endpoint.
+
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 200
+# Per-example character ceiling. Each example becomes one summarize LLM call;
+# 200k chars stays well under the model's context window even for prose. The
+# client mirrors this and blocks before sending, so hitting it here is a guard.
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH = 200_000
+
+
+class StartDataGuideJobApiInput(BaseModel):
+    """Input to kick off the input data guide draft job.
+
+    Carries only the input examples. All task info the job needs — the runtime
+    prompt and the input JSON schema — is derived server-side from the task
+    identified by the route, so the client can't supply a manipulated prompt or
+    schema, and the output schema / description never reach the guide LLM.
+    """
+
+    input_examples: list[
+        Annotated[
+            str,
+            StringConstraints(max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH),
+        ]
+    ] = Field(
+        ...,
+        description=(
+            "Heterogeneous list of input examples — short manual entries, the "
+            "input portion of selected task runs, or full text of uploaded "
+            "text documents (txt, md, csv). Every entry is a string and is "
+            "treated as a candidate reference input regardless of source."
+        ),
+        min_length=1,
+        max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES,
+    )
+
+
+class StartDataGuideJobApiOutput(BaseModel):
+    """Identifier for the started data guide draft job."""
+
+    job_id: str = Field(description="Identifier for the started data guide draft job.")
+
+
+class DataGuideJobStatusApiOutput(BaseModel):
+    """Current status of a data guide draft job."""
+
+    status: str = Field(
+        description=(
+            "Current job status (e.g. running, succeeded, failed, cancelled)."
+        ),
+    )
+
+
+class DataGuideJobResultApiOutput(BaseModel):
+    """Result of a completed data guide draft job."""
+
+    draft_guide: str = Field(description="Full draft input data guide markdown.")
+
+
+class ParseImportFileApiOutput(BaseModel):
+    """Result of parsing an uploaded bulk-import file of input examples.
+
+    Plaintext tasks parse a single-column CSV; structured-input tasks parse one
+    JSON object per line, validated against the task's input schema. A non-null
+    `error` means the whole file was rejected; `warning` means it was accepted
+    but some examples were skipped (e.g. over the length limit).
+    """
+
+    rows: list[str] = Field(
+        description="Parsed example input strings, ready to add. Empty when error is set.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Set when the whole file was rejected (invalid format/encoding).",
+    )
+    warning: str | None = Field(
+        default=None,
+        description="Set when the file was accepted but some examples were skipped.",
     )

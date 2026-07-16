@@ -471,6 +471,17 @@
         ]}
     action_buttons={action_buttons(evaluator)}
   >
+    <!-- Stored-trace tier: multi-turn items in a TaskRun-sourced eval are judged
+      over their saved conversations, which can't be regenerated per run config,
+      so those rows score identically across configs. EvalInput-sourced evals
+      re-drive per config and need no caveat. -->
+    {#if evaluator?.evaluation_data_type === "full_trace" && evaluator?.eval_set_filter_id}
+      <Warning
+        warning_color="warning"
+        warning_icon="info"
+        warning_message={"Multi-turn items in this eval are scored using their saved conversations, so all run configurations receive identical scores for those items. To compare run configurations on fresh conversations, create the eval with the eval builder."}
+      />
+    {/if}
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>

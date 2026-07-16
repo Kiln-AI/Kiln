@@ -13,7 +13,6 @@
     SubmitAnswersRequest,
     QuestionWithAnswer,
     SpecProperties,
-    SyntheticDataGenerationStepConfigApi,
     SyntheticDataGenerationSessionConfigApi,
     ReviewedExample,
     Priority,
@@ -40,6 +39,10 @@
   import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import type { TaskSampleExample } from "$lib/utils/task_sample_example"
+  import {
+    judge_config_from_sdg_step,
+    type JudgeConfig,
+  } from "$lib/eval/default_judge"
   import { build_prompt_with_task_sample } from "$lib/utils/task_sample_example"
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
@@ -138,7 +141,7 @@
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: SyntheticDataGenerationStepConfigApi | null = null
+  let judge_info: JudgeConfig | null = null
   let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
 
   // Refine state
@@ -311,8 +314,11 @@
       )
     }
 
-    // Save generation results
+    // Save generation results. The judge rides in the one JudgeConfig shape
+    // the save endpoint takes (mapped from the server's SDG step config).
     judge_info = data.judge_result
+      ? judge_config_from_sdg_step(data.judge_result)
+      : null
     sdg_session_config = data.sdg_session_config
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
@@ -420,7 +426,6 @@
             reviewed_examples,
             judge_info,
             sdg_session_config,
-            task_description: task?.instruction || "",
             task_prompt_with_example,
             task_sample: task_sample_example
               ? {

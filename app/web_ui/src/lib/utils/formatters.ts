@@ -134,6 +134,8 @@ export function rating_name(rating_type: string): string {
       return "Pass/Fail"
     case "pass_fail_critical":
       return "Pass/Fail/Critical"
+    case "custom":
+      return "Custom Metric"
     default:
       return rating_type
   }

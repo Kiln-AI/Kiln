@@ -280,6 +280,15 @@ class BaseEval:
         if not eval:
             raise ValueError("Eval config must have a parent eval")
         self.eval = eval
+        # Defense in depth for hand-edited files: EvalConfig's own validator
+        # only sees the parent at creation time, not when loading from disk.
+        if not eval_config.is_code_eval() and any(
+            score.type == TaskOutputRatingType.custom for score in eval.output_scores
+        ):
+            raise ValueError(
+                "Evals with custom-typed output scores can only use code-eval "
+                "configs; other eval types cannot produce custom metrics."
+            )
         task = self.eval.parent_task()
         if not task:
             raise ValueError("Eval must have a parent task")

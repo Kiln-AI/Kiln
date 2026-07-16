@@ -17,12 +17,14 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
     ExactMatchProperties,
     LlmJudgeProperties,
+    MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
     StepCountCheckProperties,
+    SyntheticUserInfo,
     ToolCallCheckProperties,
     ToolCallSpec,
     UserMessage,
@@ -399,6 +401,57 @@ def test_eval_run_valid_creation():
     assert eval_run.input == '{"key": "value"}'
     assert eval_run.output == '{"result": "success"}'
     assert eval_run.scores == {"accuracy": 0.95}
+
+
+def test_eval_run_drive_fingerprint_defaults_none_and_round_trips(tmp_path):
+    """drive_fingerprint is additive: absent on existing records (None), and
+    a set value survives the disk round-trip."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="FP Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.drive_fingerprint is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).drive_fingerprint is None
+
+    fingerprinted = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        drive_fingerprint="v1:" + "a" * 64,
+        parent=config,
+    )
+    fingerprinted.save_to_file()
+    reloaded = EvalRun.load_from_file(fingerprinted.path)
+    assert reloaded.drive_fingerprint == "v1:" + "a" * 64
 
 
 def test_eval_run_plaintext():
@@ -789,20 +842,151 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         )
 
 
-def test_eval_run_custom_scores_not_allowed(valid_eval_config, valid_eval_run_data):
-    with pytest.raises(
-        ValueError, match="Custom scores are not supported in evaluators"
-    ):
-        Eval(
-            name="Test Eval",
-            eval_set_filter_id="tag::tag1",
-            eval_configs_filter_id="tag::tag2",
-            output_scores=[
-                EvalOutputScore(
-                    name="custom",
-                    type=TaskOutputRatingType.custom,
-                )
-            ],
+def test_eval_custom_scores_allowed():
+    """Custom-typed output scores are unbounded numeric metrics (tokens, cost,
+    latency, counts) — valid on evals, code-eval only at scoring time."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="total cost usd",
+                type=TaskOutputRatingType.custom,
+            )
+        ],
+    )
+    assert eval.output_scores[0].json_key() == "total_cost_usd"
+
+
+@pytest.mark.parametrize(
+    "config_type,properties",
+    [
+        (EvalConfigType.g_eval, {"eval_steps": ["step"]}),
+        (EvalConfigType.llm_as_judge, {"eval_steps": ["step"]}),
+    ],
+    ids=["g_eval", "llm_as_judge"],
+)
+def test_judge_config_rejected_on_custom_score_eval(config_type, properties):
+    """Judges structurally can't emit custom-typed keys — the config is
+    rejected up front instead of failing every EvalRun save."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=config_type,
+            properties=properties,
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=eval,
+        )
+
+
+def test_v2_llm_judge_config_rejected_on_custom_score_eval():
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name="gpt-4",
+                model_provider="openai",
+                prompt_template="Judge this: {{ output }}",
+            ),
+            parent=eval,
+        )
+
+
+def test_code_eval_config_allowed_on_custom_score_eval():
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    config = EvalConfig(
+        name="code",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
+        parent=eval,
+    )
+    assert config.is_code_eval() is True
+
+
+def test_custom_score_eval_run_round_trip(tmp_path):
+    """End-to-end over disk: a code-eval config on a custom-score eval saves
+    EvalRuns carrying custom values and reloads them through the real parent
+    chain (the feature's happy path, not just the pure validator)."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(name="total tokens", type=TaskOutputRatingType.custom),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="code",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
+        parent=eval,
+    )
+    config.save_to_file()
+    run = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0, "total_tokens": 12345.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    run.save_to_file()
+
+    reloaded = EvalRun.load_from_file(run.path)
+    assert reloaded.scores == {"quality": 1.0, "total_tokens": 12345.0}
+
+
+def test_check_type_config_rejected_on_custom_score_eval():
+    """Check-type adapters fill every declared score key with 0.0/1.0, which
+    would silently record meaningless values for an unbounded metric — only
+    code evals may serve custom-score evals."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="check",
+            config_type=EvalConfigType.v2,
+            properties=PatternMatchProperties(pattern="ok"),
+            parent=eval,
         )
 
 
@@ -2391,16 +2575,67 @@ def test_eval_input_single_turn():
 
 
 def test_eval_input_multi_turn():
-    """EvalInput with multi_turn_synthetic data."""
+    """EvalInput with multi_turn_synthetic data carries the typed persona."""
     ei = EvalInput(
         data=MultiTurnSyntheticEvalInputData(
             first_message=UserMessage(text="Hello"),
-            synthetic_user_info={"persona": "student"},
+            synthetic_user_info=SyntheticUserInfo(
+                persona="student", goal="pass the exam"
+            ),
         ),
     )
     assert ei.data.type == "multi_turn_synthetic"
     assert ei.data.first_message.text == "Hello"
-    assert ei.data.synthetic_user_info == {"persona": "student"}
+    assert ei.data.synthetic_user_info.persona == "student"
+    assert ei.data.synthetic_user_info.goal == "pass the exam"
+    assert ei.data.synthetic_user_info.behavior_guidance is None
+
+
+def test_multi_turn_synthetic_requires_synthetic_user_info():
+    """The persona is required — a case without one can't be re-driven."""
+    with pytest.raises(ValidationError, match="synthetic_user_info"):
+        MultiTurnSyntheticEvalInputData(first_message=UserMessage(text="Hello"))
+
+
+def test_synthetic_user_info_preserves_unknown_fields():
+    """extra="allow": fields from newer generators survive a load/dump cycle."""
+    info = SyntheticUserInfo.model_validate(
+        {"persona": "p", "goal": "g", "speaking_style": "terse"}
+    )
+    assert info.model_dump()["speaking_style"] == "terse"
+
+
+def test_eval_input_multi_turn_persists_under_task(mock_task, tmp_path):
+    """Multi-turn EvalInput round-trips through disk with the typed persona."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    ei = EvalInput(
+        parent=mock_task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="opening message"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="frustrated customer",
+                goal="get a refund",
+                behavior_guidance="be polite then escalate",
+            ),
+        ),
+        tags=["eval_slice", "scenario:2"],
+    )
+    ei.save_to_file()
+
+    loaded_task = Task.load_from_file(str(task_path))
+    inputs = loaded_task.eval_inputs(readonly=True)
+    assert len(inputs) == 1
+    data = inputs[0].data
+    assert isinstance(data, MultiTurnSyntheticEvalInputData)
+    assert data.first_message is not None
+    assert data.first_message.text == "opening message"
+    assert data.synthetic_user_info.persona == "frustrated customer"
+    assert data.synthetic_user_info.goal == "get a refund"
+    assert data.synthetic_user_info.behavior_guidance == "be polite then escalate"
+    assert inputs[0].tags == ["eval_slice", "scenario:2"]
 
 
 def test_eval_input_with_reference():
@@ -2490,6 +2725,214 @@ class TestEvalTaskInput:
         """final_message is required; omitting it raises ValidationError."""
         with pytest.raises(ValidationError, match="final_message"):
             EvalTaskInput()  # type: ignore[call-arg]
+
+
+class TestEvalTaskInputFromEvalInput:
+    def _run_output(self, mock_task):
+        from kiln_ai.datamodel.task_output import (
+            DataSource,
+            DataSourceType,
+            TaskOutput,
+        )
+        from kiln_ai.datamodel.task_run import TaskRun
+
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "m",
+                "model_provider": "p",
+                "adapter_name": "a",
+            },
+        )
+        return TaskRun(
+            input="ignored",
+            input_source=source,
+            output=TaskOutput(output="final reply", source=source),
+            trace=[
+                {"role": "user", "content": "opening message"},
+                {"role": "assistant", "content": "final reply"},
+            ],
+            parent=mock_task,
+        )
+
+    def test_single_turn(self, mock_task):
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+            reference={"expected": "A"},
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input == "Q"
+        assert eti.final_message == "final reply"
+        assert eti.reference_data == {"expected": "A"}
+
+    def test_multi_turn(self, mock_task):
+        """Multi-turn: the seed message is the task_input; the conversation
+        rides the trace."""
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input == "opening message"
+        assert eti.final_message == "final reply"
+        assert eti.trace is not None
+        assert len(eti.trace) == 2
+
+    def test_multi_turn_without_first_message(self, mock_task):
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input is None
+
+
+class TestEvalTaskInputFromEvalInputTrace:
+    """from_eval_input_trace: assembly from a stored conversation, used when
+    a reused trace stands in for a fresh drive (no TaskRun exists)."""
+
+    def _multi_turn_input(self, reference=None) -> EvalInput:
+        return EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            reference=reference,
+        )
+
+    def test_happy_path(self):
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "turn 2"},
+            {"role": "assistant", "content": "final reply"},
+        ]
+        eti = EvalTaskInput.from_eval_input_trace(
+            self._multi_turn_input(reference={"expected": "A"}), trace
+        )
+        assert eti.final_message == "final reply"
+        assert eti.task_input == "opening message"
+        assert eti.reference_data == {"expected": "A"}
+        assert eti.trace == trace
+
+    def test_final_message_skips_toolcall_only_assistant_turns(self):
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": "real answer"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
+            {"role": "tool", "content": "tool result"},
+        ]
+        eti = EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
+        assert eti.final_message == "real answer"
+
+    def test_trace_is_copied_not_aliased(self):
+        """The trace may be shared through a reuse index; mutating the
+        assembled input must not corrupt the shared copy."""
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": "final reply"},
+        ]
+        eti = EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
+        assert eti.trace is not None
+        eti.trace[0]["content"] = "mutated"
+        assert trace[0]["content"] == "opening message"
+
+    def test_no_assistant_text_raises(self):
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
+        ]
+        with pytest.raises(ValueError, match="no assistant message"):
+            EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
+
+    def test_single_turn_input_rejected(self):
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+        )
+        with pytest.raises(ValueError, match="multi-turn synthetic"):
+            EvalTaskInput.from_eval_input_trace(
+                ei, [{"role": "assistant", "content": "a"}]
+            )
+
+    def test_missing_first_message_gives_none_task_input(self):
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input_trace(
+            ei, [{"role": "assistant", "content": "a"}]
+        )
+        assert eti.task_input is None
+
+
+# ── MultiTurnDriveConfig Tests ───────────────────────────────────────────
+
+
+class TestMultiTurnDriveConfig:
+    def test_valid(self):
+        cfg = MultiTurnDriveConfig(
+            model_name="claude_4_5_haiku", model_provider="openrouter", turns=5
+        )
+        assert cfg.turns == 5
+
+    @pytest.mark.parametrize("turns", [0, -1, 21])
+    def test_turns_bounds(self, turns):
+        with pytest.raises(ValidationError, match="turns"):
+            MultiTurnDriveConfig(
+                model_name="m", model_provider="openrouter", turns=turns
+            )
+
+    def test_unknown_provider_string_accepted(self):
+        """model_provider is a plain string, not the enum — persisted evals
+        must load on builds that don't know the provider yet."""
+        cfg = MultiTurnDriveConfig(
+            model_name="m", model_provider="a_future_provider", turns=1
+        )
+        assert cfg.model_provider == "a_future_provider"
+
+    def test_persists_on_eval(self, mock_task, tmp_path):
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        eval = Eval(
+            name="drive config eval",
+            eval_input_filter_id="tag::eval_x",
+            eval_configs_filter_id="tag::golden_x",
+            output_scores=[
+                EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
+            ],
+            multi_turn_drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku",
+                model_provider="openrouter",
+                turns=5,
+            ),
+            parent=mock_task,
+        )
+        eval.save_to_file()
+
+        loaded_task = Task.load_from_file(str(task_path))
+        loaded = loaded_task.evals(readonly=True)[0]
+        assert loaded.multi_turn_drive_config is not None
+        assert loaded.multi_turn_drive_config.model_name == "claude_4_5_haiku"
+        assert loaded.multi_turn_drive_config.model_provider == "openrouter"
+        assert loaded.multi_turn_drive_config.turns == 5
+
+    def test_defaults_to_none_on_eval(self, mock_task):
+        eval = Eval(
+            name="no drive config",
+            eval_set_filter_id="tag::eval_x",
+            eval_configs_filter_id="tag::golden_x",
+            output_scores=[
+                EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
+            ],
+            parent=mock_task,
+        )
+        assert eval.multi_turn_drive_config is None
 
 
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───
@@ -3126,6 +3569,49 @@ class TestValidateScoresAgainstOutputScores:
         ]
         problems = validate_scores_against_output_scores(
             {"check": "not_a_float"}, output_scores
+        )
+        assert len(problems) == 1
+
+    @pytest.mark.parametrize(
+        "score_type",
+        [
+            TaskOutputRatingType.five_star,
+            TaskOutputRatingType.pass_fail,
+            TaskOutputRatingType.pass_fail_critical,
+            TaskOutputRatingType.custom,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    def test_non_finite_flagged(self, score_type, value):
+        """NaN compares False against every range bound, so it passed all
+        range checks; pydantic then serialized it as null, making the saved
+        EvalRun file fail Dict[str, float] validation on next load."""
+        output_scores = [EvalOutputScore(name="metric", type=score_type)]
+        problems = validate_scores_against_output_scores(
+            {"metric": value}, output_scores
+        )
+        assert len(problems) == 1
+
+    @pytest.mark.parametrize("value", [12345.6, 0.0, -3.5])
+    def test_custom_accepts_any_finite_number(self, value):
+        output_scores = [
+            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+        ]
+        assert (
+            validate_scores_against_output_scores({"metric": value}, output_scores)
+            == []
+        )
+
+    def test_overlarge_int_flagged_not_raised(self):
+        """math.isfinite raises OverflowError on ints too large for float
+        (10**400) — the validator must report a problem, not throw."""
+        output_scores = [
+            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"metric": 10**400}, output_scores
         )
         assert len(problems) == 1
 
