@@ -276,7 +276,7 @@
     >
       <div class="flex flex-row items-center gap-4">
         <div class="flex-grow font-medium text-sm">Sample Count</div>
-        <IncrementUi bind:value={num_inputs} max={500} />
+        <IncrementUi bind:value={num_inputs} max={200} />
       </div>
       <FormElement
         id="batch_guidance"
