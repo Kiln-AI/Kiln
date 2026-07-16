@@ -403,6 +403,57 @@ def test_eval_run_valid_creation():
     assert eval_run.scores == {"accuracy": 0.95}
 
 
+def test_eval_run_drive_fingerprint_defaults_none_and_round_trips(tmp_path):
+    """drive_fingerprint is additive: absent on existing records (None), and
+    a set value survives the disk round-trip."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="FP Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.drive_fingerprint is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).drive_fingerprint is None
+
+    fingerprinted = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        drive_fingerprint="v1:" + "a" * 64,
+        parent=config,
+    )
+    fingerprinted.save_to_file()
+    reloaded = EvalRun.load_from_file(fingerprinted.path)
+    assert reloaded.drive_fingerprint == "v1:" + "a" * 64
+
+
 def test_eval_run_plaintext():
     """Test creating an EvalRun with plaintext input/output"""
     eval_run = EvalRun(
@@ -2736,6 +2787,85 @@ class TestEvalTaskInputFromEvalInput:
             ),
         )
         eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input is None
+
+
+class TestEvalTaskInputFromEvalInputTrace:
+    """from_eval_input_trace: assembly from a stored conversation, used when
+    a reused trace stands in for a fresh drive (no TaskRun exists)."""
+
+    def _multi_turn_input(self, reference=None) -> EvalInput:
+        return EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            reference=reference,
+        )
+
+    def test_happy_path(self):
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "turn 2"},
+            {"role": "assistant", "content": "final reply"},
+        ]
+        eti = EvalTaskInput.from_eval_input_trace(
+            self._multi_turn_input(reference={"expected": "A"}), trace
+        )
+        assert eti.final_message == "final reply"
+        assert eti.task_input == "opening message"
+        assert eti.reference_data == {"expected": "A"}
+        assert eti.trace == trace
+
+    def test_final_message_skips_toolcall_only_assistant_turns(self):
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": "real answer"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
+            {"role": "tool", "content": "tool result"},
+        ]
+        eti = EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
+        assert eti.final_message == "real answer"
+
+    def test_trace_is_copied_not_aliased(self):
+        """The trace may be shared through a reuse index; mutating the
+        assembled input must not corrupt the shared copy."""
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": "final reply"},
+        ]
+        eti = EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
+        assert eti.trace is not None
+        eti.trace[0]["content"] = "mutated"
+        assert trace[0]["content"] == "opening message"
+
+    def test_no_assistant_text_raises(self):
+        trace = [
+            {"role": "user", "content": "opening message"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
+        ]
+        with pytest.raises(ValueError, match="no assistant message"):
+            EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
+
+    def test_single_turn_input_rejected(self):
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+        )
+        with pytest.raises(ValueError, match="multi-turn synthetic"):
+            EvalTaskInput.from_eval_input_trace(
+                ei, [{"role": "assistant", "content": "a"}]
+            )
+
+    def test_missing_first_message_gives_none_task_input(self):
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input_trace(
+            ei, [{"role": "assistant", "content": "a"}]
+        )
         assert eti.task_input is None
 
 
