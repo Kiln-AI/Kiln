@@ -520,6 +520,41 @@ class EvalTaskInput(BaseModel):
             task_input=task_input,
         )
 
+    @classmethod
+    def from_eval_input_trace(
+        cls, eval_input: "EvalInput", trace: list[dict[str, Any]]
+    ) -> "EvalTaskInput":
+        """Assemble evaluator input from an EvalInput plus an already-driven
+        conversation: used when a stored trace stands in for a fresh drive,
+        so there is no TaskRun to compose from. Mirrors from_eval_input."""
+        if not isinstance(eval_input, EvalInput):
+            raise TypeError("Expected an EvalInput instance")
+        if not isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
+            raise ValueError(
+                "Trace-based assembly requires a multi-turn synthetic input; "
+                f"got: {type(eval_input.data).__name__}"
+            )
+
+        # The final model output is the last assistant text in the trace
+        # (assistant tool-call messages can carry no text content).
+        final_message: str | None = None
+        for msg in reversed(trace):
+            content = msg.get("content")
+            if msg.get("role") == "assistant" and isinstance(content, str) and content:
+                final_message = content
+                break
+        if final_message is None:
+            raise ValueError("Trace has no assistant message with text content")
+
+        return cls(
+            final_message=final_message,
+            trace=[dict(msg) for msg in trace],
+            reference_data=eval_input.reference,
+            task_input=eval_input.data.first_message.text
+            if eval_input.data.first_message
+            else None,
+        )
+
 
 class EvalOutputScore(BaseModel):
     """
@@ -613,6 +648,14 @@ class EvalRun(KilnParentedModel):
     skipped_detail: str | None = Field(
         default=None,
         description="Case-specific detail for skipped runs (e.g. missing key name).",
+    )
+    drive_fingerprint: str | None = Field(
+        default=None,
+        description="Identity of the drive that produced task_run_trace for "
+        "multi-turn synthetic (EvalInput) runs: a versioned hash of drive "
+        "config + run config properties + scenario content. Enables reuse of "
+        "the stored conversation by other eval configs; None for non-driven "
+        "records.",
     )
 
     def parent_eval_config(self) -> Union["EvalConfig", None]:

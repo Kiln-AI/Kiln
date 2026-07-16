@@ -7631,6 +7631,11 @@ export interface components {
              * @description Case-specific detail for skipped runs (e.g. missing key name).
              */
             skipped_detail?: string | null;
+            /**
+             * Drive Fingerprint
+             * @description Identity of the drive that produced task_run_trace for multi-turn synthetic (EvalInput) runs: a versioned hash of drive config + run config properties + scenario content. Enables reuse of the stored conversation by other eval configs; None for non-driven records.
+             */
+            drive_fingerprint?: string | null;
             /** Model Type */
             readonly model_type: string;
         };

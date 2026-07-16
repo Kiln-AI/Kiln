@@ -60,7 +60,12 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        per config. run_calibration validates the judge
                        against the golden answer key over the STORED rated
                        traces, and the harness reports the judge-vs-human
-                       agreement.)
+                       agreement. A REUSE leg then adds a second judge
+                       config and re-runs the comparison: the drive was
+                       paid once per (scenario, run config), so the second
+                       judge must consume the stored conversations —
+                       byte-identical traces, equal drive fingerprints,
+                       zero new drives — at judge-only speed.)
   Step 8   READ        GET .../score_summary, .../eval_results_summary,
                        .../run_configs/{id}/eval_scores
                        (The endpoints the post-save spec detail page,
@@ -90,8 +95,9 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
 Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
 builder, one refine call at save, plus the runner's work over the saved
 eval: a fresh 4x2 re-drive per run config (two configs) with a judge call
-each, and the golden calibration judge calls — ~70 small model calls,
-still cents.
+each, the golden calibration judge calls, and the reuse leg's 8 judge-only
+calls (no drives — that's the assertion) — ~80 small model calls, still
+cents.
 
 A second paid test (`test_eval_builder_pipeline_tools_e2e`) drives a
 tool-calling task via its SAVED run config (2x2, built-in calculator tools)
@@ -102,6 +108,7 @@ cost.
 
 import json
 import os
+import time
 import warnings
 
 import httpx
@@ -777,11 +784,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         run_config_properties=KilnAgentRunConfigProperties(**COMPARISON_RUN_CONFIG),
     )
     run_config_b.save_to_file()
+    drive_pass_started = time.monotonic()
     _run_sse_complete(
         f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
         f"/eval_config/{judge_config.id}/run_comparison",
         params={"run_config_ids": [run_config_a.id, run_config_b.id]},
     )
+    drive_pass_seconds = time.monotonic() - drive_pass_started
     eval_set_runs = [
         r for r in judge_config.runs(readonly=True) if not r.eval_config_eval
     ]
@@ -824,6 +833,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             len(assistant_turns) == TURNS_PER_CASE,
             f"eval run for input {run.eval_input_id} drove "
             f"{len(assistant_turns)} assistant turns, expected {TURNS_PER_CASE}",
+        )
+        # Driven records carry the drive's content identity — the key the
+        # reuse leg below (and any later judge) matches on.
+        _require(
+            bool(run.drive_fingerprint) and run.drive_fingerprint.startswith("v1:"),
+            f"eval run for input {run.eval_input_id} has no drive_fingerprint: "
+            f"{run.drive_fingerprint}",
         )
 
     # THE RE-DRIVE PROOF: for every scenario, the two run configs produced
@@ -890,6 +906,89 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "agreement not computed this run",
             stacklevel=1,
         )
+
+    # ── Step 7 reuse leg — A SECOND JUDGE SCORES THE SAME CONVERSATIONS ─
+    # The drive above was paid once per (scenario, run config); every later
+    # v2 judge — this eval's or any other eval on the task — must consume the
+    # stored conversation via the (drive_fingerprint, run_config) reuse index
+    # instead of re-driving. A second, genuinely different judge config on
+    # the saved eval re-runs the comparison: same-sample scoring is the point
+    # (two judges' verdicts join per conversation), so its records must carry
+    # byte-identical traces and equal fingerprints, with zero new drives.
+    from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType
+
+    second_judge_props = judge_config.properties.model_copy(deep=True)
+    # Different judge instructions on purpose: reuse keys on drive identity
+    # (drive config + run config + scenario), never on judge identity.
+    second_judge_props.prompt_template += (
+        "\nBe strict: when compliance is ambiguous, lean FAIL."
+    )
+    second_judge = EvalConfig(
+        name="E2E Second Judge",
+        config_type=EvalConfigType.v2,
+        properties=second_judge_props,
+        parent=saved_eval,
+    )
+    second_judge.save_to_file()
+
+    reuse_pass_started = time.monotonic()
+    _run_sse_complete(
+        f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
+        f"/eval_config/{second_judge.id}/run_comparison",
+        params={"run_config_ids": [run_config_a.id, run_config_b.id]},
+    )
+    reuse_pass_seconds = time.monotonic() - reuse_pass_started
+
+    second_judge_runs = [
+        r for r in second_judge.runs(readonly=True) if not r.eval_config_eval
+    ]
+    _require(
+        {(r.eval_input_id, r.task_run_config_id) for r in second_judge_runs}
+        == set(trace_by_pair),
+        "second judge's run_comparison did not cover EvalInput x run-config "
+        f"exactly: {sorted((str(r.eval_input_id), str(r.task_run_config_id)) for r in second_judge_runs)}",
+    )
+    fingerprint_by_pair = {
+        (r.eval_input_id, r.task_run_config_id): r.drive_fingerprint
+        for r in eval_set_runs
+    }
+    for run in second_judge_runs:
+        pair = (run.eval_input_id, run.task_run_config_id)
+        _require(
+            run.skipped_reason is None,
+            f"second judge skipped input {run.eval_input_id} "
+            f"({run.skipped_reason}): {run.skipped_detail}",
+        )
+        _require(
+            run.scores.get(score_key) in (0.0, 1.0),
+            f"second judge produced no {score_key} verdict for input "
+            f"{run.eval_input_id}: {run.scores}",
+        )
+        # THE REUSE PROOF: byte-identical trace + equal fingerprint mean the
+        # second judge scored the first pass's stored conversation — a fresh
+        # drive could never reproduce the exact bytes.
+        _require(
+            run.task_run_trace == trace_by_pair[pair],
+            f"second judge RE-DROVE {pair}: its trace differs from the "
+            f"stored conversation — reuse did not engage",
+        )
+        _require(
+            run.drive_fingerprint == fingerprint_by_pair[pair],
+            f"second judge's fingerprint differs for {pair}: "
+            f"{run.drive_fingerprint} vs {fingerprint_by_pair[pair]}",
+        )
+    # Reuse keeps the dataset transient too: still zero TaskRuns since
+    # before the FIRST comparison pass.
+    _require(
+        len(temp_task.runs(include_intermediate_runs=True)) == runs_on_disk_before,
+        "second judge's run_comparison persisted TaskRuns — reuse must not "
+        "write to the dataset",
+    )
+    # Judge-only speed is a report, not a gate (latency gates flake).
+    print(
+        f"\ntrace reuse: second judge pass took {reuse_pass_seconds:.1f}s "
+        f"vs {drive_pass_seconds:.1f}s for the drive pass"
+    )
 
     # ── Step 8 — READ THE RESULTS (the endpoints the UI renders from) ───
     # The read path is slice-source-aware (6.8): score_summary, the
