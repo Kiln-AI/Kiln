@@ -2,7 +2,8 @@ import asyncio
 import json
 import logging
 from collections.abc import Sequence
-from typing import Annotated, Literal
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
@@ -15,6 +16,8 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTaskInput,
     DataGenSampleTask,
     DataGenSampleTaskInput,
+    DataGenSingleInputTask,
+    DataGenSingleInputTaskInput,
     wrap_task_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
@@ -27,6 +30,7 @@ from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties, Task
 from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.utils.async_job_runner import AsyncJobRunner
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
@@ -218,6 +222,370 @@ class SaveQnaPairInput(BaseModel):
         description="Model provider used to generate the Q&A pair"
     )
     tags: list[str] | None = Field(default=None, description="Optional tags")
+
+
+# --- Kiln Pro batch generation ----------------------------------------------
+# Generate inputs/outputs for N plan prompts in parallel as an in-process job on
+# the local server. The browser starts a job and polls its status, sidestepping
+# the browser's per-host connection limit — the concurrency lives here.
+
+# Cap simultaneous in-flight LLM calls per batch job so we don't overwhelm
+# provider rate limits.
+BATCH_CONCURRENCY = 20
+
+
+class GenerateInputsBatchInput(BaseModel):
+    prompts: list[str] = Field(
+        description="One tailored prompt per input. Each is used as the guidance for a single input-generation call."
+    )
+    data_guide: str | None = Field(
+        description="The input data guide to include in every input-generation call. Send it when the user has 'Use Data Guide' on, and null when off — null means 'do not use a guide', not 'fall back to the task's saved guide'.",
+        default=None,
+    )
+    run_config_properties: KilnAgentRunConfigProperties = Field(
+        description="The run config properties (model, provider, tools, skills) to use for input generation."
+    )
+
+
+class GenerateOutputsBatchItem(BaseModel):
+    index: int = Field(description="Stable index of this item within the batch.")
+    input: str | dict = Field(description="The generated input to run the task on.")
+
+
+class GenerateOutputsBatchInput(BaseModel):
+    items: list[GenerateOutputsBatchItem] = Field(
+        description="The inputs to generate outputs for."
+    )
+    input_model_name: str = Field(
+        description="The model used to generate the inputs (recorded on each run)."
+    )
+    input_provider: str = Field(
+        description="The provider used to generate the inputs (recorded on each run)."
+    )
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for output generation."
+    )
+    guidance: str | None = Field(
+        description="Optional custom guidance for output generation.",
+        default=None,
+    )
+    session_id: str | None = Field(
+        description="Optional session ID to group generated samples.",
+        default=None,
+    )
+    tags: list[str] | None = Field(
+        description="Tags to add to each generated sample.",
+        default=None,
+    )
+
+
+class StartBatchJobOutput(BaseModel):
+    job_id: str = Field(description="Identifier for the started batch job.")
+
+
+class InputsBatchResultItem(BaseModel):
+    index: int
+    input: str | dict | None = None
+    error: str | None = None
+
+
+class InputsBatchStatusOutput(BaseModel):
+    status: Literal["running", "complete", "error"]
+    total: int
+    completed: int
+    errors: int
+    model_name: str
+    model_provider: str
+    results: list[InputsBatchResultItem]
+    error_message: str | None = None
+
+
+class OutputsBatchResultItem(BaseModel):
+    index: int
+    task_run: TaskRun | None = None
+    error: str | None = None
+
+
+class OutputsBatchStatusOutput(BaseModel):
+    status: Literal["running", "complete", "error"]
+    total: int
+    completed: int
+    errors: int
+    results: list[OutputsBatchResultItem]
+    error_message: str | None = None
+
+
+@dataclass
+class _BatchJob:
+    job_id: str
+    project_id: str
+    task_id: str
+    kind: Literal["inputs", "outputs"]
+    total: int
+    status: Literal["running", "complete", "error"] = "running"
+    completed: int = 0
+    errors: int = 0
+    error_message: str | None = None
+    model_name: str | None = None
+    model_provider: str | None = None
+    # For inputs jobs: {index, input, error}. For outputs jobs: {index, task_run, error}.
+    results: list[dict[str, Any]] = field(default_factory=list)
+
+
+# In-memory registry of batch jobs, keyed by job_id. Lives for the process
+# lifetime (matches the desktop server's single-process model).
+_batch_jobs: dict[str, _BatchJob] = {}
+# Cap the registry so the long-lived desktop process doesn't accumulate finished
+# jobs forever. Well above any realistic number of concurrent batches.
+_MAX_BATCH_JOBS = 100
+# Hold references to background tasks so they aren't garbage-collected mid-run.
+_batch_background_tasks: set[asyncio.Task] = set()
+
+
+def _register_batch_job(job: _BatchJob) -> None:
+    """Register a batch job, evicting old finished jobs to bound memory.
+
+    Only terminal (complete/error) jobs are evicted, oldest first, so a job
+    that's still running or hasn't been polled to completion is never dropped.
+    """
+    _batch_jobs[job.job_id] = job
+    if len(_batch_jobs) <= _MAX_BATCH_JOBS:
+        return
+    for job_id, existing in list(_batch_jobs.items()):
+        if len(_batch_jobs) <= _MAX_BATCH_JOBS:
+            break
+        if existing.status in ("complete", "error"):
+            del _batch_jobs[job_id]
+
+
+def _spawn_batch_task(coro) -> None:
+    task = asyncio.create_task(coro)
+    _batch_background_tasks.add(task)
+
+    def _on_done(finished: asyncio.Task) -> None:
+        _batch_background_tasks.discard(finished)
+        # The job runners record their own errors on the job object, so a task
+        # raising here is unexpected — surface it instead of letting it vanish.
+        if not finished.cancelled() and finished.exception() is not None:
+            logger.error(
+                "Batch background task failed",
+                exc_info=finished.exception(),
+            )
+
+    task.add_done_callback(_on_done)
+
+
+async def _generate_one_input(
+    project,
+    task: Task,
+    run_config_properties: KilnAgentRunConfigProperties,
+    data_guide: str | None,
+    prompt: str,
+) -> str | dict:
+    """Generate a single synthetic input using one batch-plan prompt as its guidance.
+
+    The data guide and the prompt go to the model as separate blocks: the guide
+    constrains every input, the prompt only this one.
+    """
+    # The batch flow decides up front whether to use the data guide (the "Use
+    # Data Guide" toggle) and sends the guide text when on, None when off. So
+    # honour that literally — do NOT fall back to the task's saved guide the way
+    # `_resolve_data_guide` does for the legacy flow, where None means "no
+    # override given". Falling back here would silently ignore the toggle, and
+    # would disagree with the batch planner, which already passes the client's
+    # choice straight through.
+    data_guide_section = (
+        _data_guide_guidance(task, "inputs", data_guide) if data_guide else None
+    )
+    sample_task = DataGenSingleInputTask(
+        target_task=task,
+        parent_project=project,
+        data_guide=data_guide_section,
+    )
+    # The guidance goes in the user message, not the system instruction — it
+    # varies per call and is LLM-generated, so it's data, not an instruction.
+    task_input = DataGenSingleInputTaskInput.from_task(task=task, input_guidance=prompt)
+
+    rcp = run_config_properties.model_copy()
+    rcp.prompt_id = PromptGenerators.SIMPLE
+    skills = load_skills_for_task(sample_task, rcp)
+    adapter = adapter_for_task(
+        sample_task,
+        run_config_properties=rcp,
+        base_adapter_config=AdapterConfig(skills=skills),
+    )
+
+    samples_run = await adapter.invoke(task_input.model_dump())
+    if samples_run.output is None or samples_run.output.output is None:
+        raise ValueError("No output returned from input generation")
+    parsed = json.loads(samples_run.output.output)
+    if "generated_input" not in parsed:
+        raise ValueError("No input generated")
+    return parsed["generated_input"]
+
+
+async def _generate_one_output(
+    project_id: str,
+    task_id: str,
+    item_input: str | dict,
+    input_model_name: str,
+    input_provider: str,
+    run_config_properties: RunConfigProperties,
+    guidance: str | None,
+    session_id: str | None,
+    tags: list[str] | None,
+) -> TaskRun:
+    """Run the task on a single input to produce an (unsaved) output run."""
+    # Reload the task per call: generate_sample mutates task.instruction, so a
+    # shared instance would race across concurrent jobs.
+    task = task_from_id(project_id, task_id)
+
+    g = guidance or ""
+    if g.strip() != "":
+        task.instruction = wrap_task_with_guidance(task.instruction, g)
+
+    skills = load_skills_for_task(task, run_config_properties)
+    adapter = adapter_for_task(
+        task,
+        run_config_properties=run_config_properties,
+        base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
+    )
+
+    properties: dict[str, str | int | float] = {
+        "model_name": input_model_name,
+        "model_provider": input_provider,
+        "adapter_name": "kiln_data_gen",
+    }
+    run = await adapter.invoke(
+        input=item_input,
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties=properties,
+        ),
+    )
+
+    run_tags = ["synthetic"]
+    if session_id:
+        run_tags.append(f"synthetic_session_{session_id}")
+    if tags:
+        run_tags.extend(tags)
+    run.tags = run_tags
+    # Not saved to disk yet; the frontend needs an ID to track it before saving.
+    run.id = generate_model_id()
+    return run
+
+
+async def _run_inputs_batch_job(
+    job: _BatchJob,
+    project,
+    task: Task,
+    run_config_properties: KilnAgentRunConfigProperties,
+    data_guide: str | None,
+    prompts: list[str],
+) -> None:
+    job.results = [
+        {"index": i, "input": None, "error": None} for i in range(len(prompts))
+    ]
+
+    async def run_one(item: tuple[int, str]) -> bool:
+        idx, prompt = item
+        try:
+            value = await _generate_one_input(
+                project, task, run_config_properties, data_guide, prompt
+            )
+            job.results[idx]["input"] = value
+            return True
+        except Exception as e:
+            job.results[idx]["error"] = str(e)
+            return False
+
+    runner = AsyncJobRunner(
+        jobs=list(enumerate(prompts)),
+        run_job_fn=run_one,
+        concurrency=BATCH_CONCURRENCY,
+        max_retries=1,
+    )
+    try:
+        async for progress in runner.run():
+            job.completed = progress.complete
+            job.errors = progress.errors
+    except Exception as e:
+        job.status = "error"
+        job.error_message = str(e)
+        return
+    job.status = (
+        "error" if (len(prompts) > 0 and job.errors >= len(prompts)) else "complete"
+    )
+
+
+async def _run_outputs_batch_job(
+    job: _BatchJob,
+    project_id: str,
+    task_id: str,
+    items: list[GenerateOutputsBatchItem],
+    input_model_name: str,
+    input_provider: str,
+    run_config_properties: RunConfigProperties,
+    guidance: str | None,
+    session_id: str | None,
+    tags: list[str] | None,
+) -> None:
+    job.results = [{"index": it.index, "task_run": None, "error": None} for it in items]
+
+    async def run_one(pos_item: tuple[int, GenerateOutputsBatchItem]) -> bool:
+        pos, it = pos_item
+        try:
+            run = await _generate_one_output(
+                project_id,
+                task_id,
+                it.input,
+                input_model_name,
+                input_provider,
+                run_config_properties,
+                guidance,
+                session_id,
+                tags,
+            )
+            job.results[pos]["task_run"] = run
+            return True
+        except Exception as e:
+            job.results[pos]["error"] = str(e)
+            return False
+
+    runner = AsyncJobRunner(
+        jobs=list(enumerate(items)),
+        run_job_fn=run_one,
+        concurrency=BATCH_CONCURRENCY,
+        max_retries=1,
+    )
+    try:
+        async for progress in runner.run():
+            job.completed = progress.complete
+            job.errors = progress.errors
+    except Exception as e:
+        job.status = "error"
+        job.error_message = str(e)
+        return
+    job.status = (
+        "error" if (len(items) > 0 and job.errors >= len(items)) else "complete"
+    )
+
+
+def _get_batch_job(
+    job_id: str,
+    project_id: str,
+    task_id: str,
+    kind: Literal["inputs", "outputs"],
+) -> _BatchJob:
+    job = _batch_jobs.get(job_id)
+    if (
+        job is None
+        or job.project_id != project_id
+        or job.task_id != task_id
+        or job.kind != kind
+    ):
+        raise HTTPException(status_code=404, detail="Batch job not found")
+    return job
 
 
 def connect_data_gen_api(app: FastAPI):
@@ -420,6 +788,154 @@ The topic path for this sample is:
         run.id = generate_model_id()
 
         return run
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch",
+        summary="Generate Inputs Batch",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval(
+            "Generate a batch of inputs using LLM?"
+        ),
+    )
+    async def start_generate_inputs_batch(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: GenerateInputsBatchInput,
+    ) -> StartBatchJobOutput:
+        """Start an in-process job that generates one input per prompt in
+        parallel. Poll the status endpoint for progress and results."""
+        project = project_from_id(project_id)
+        task = task_from_id(project_id, task_id)
+
+        job = _BatchJob(
+            job_id=generate_model_id(),
+            project_id=project_id,
+            task_id=task_id,
+            kind="inputs",
+            total=len(input.prompts),
+            model_name=input.run_config_properties.model_name,
+            model_provider=input.run_config_properties.model_provider_name,
+        )
+        _register_batch_job(job)
+        _spawn_batch_task(
+            _run_inputs_batch_job(
+                job,
+                project,
+                task,
+                input.run_config_properties,
+                input.data_guide,
+                input.prompts,
+            )
+        )
+        return StartBatchJobOutput(job_id=job.job_id)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch/{job_id}",
+        summary="Generate Inputs Batch Status",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def generate_inputs_batch_status(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        job_id: Annotated[str, Path(description="The batch job identifier.")],
+    ) -> InputsBatchStatusOutput:
+        # Validate the route scope before serving by job_id.
+        task_from_id(project_id, task_id)
+        job = _get_batch_job(job_id, project_id, task_id, "inputs")
+        return InputsBatchStatusOutput(
+            status=job.status,
+            total=job.total,
+            completed=job.completed,
+            errors=job.errors,
+            model_name=job.model_name or "",
+            model_provider=job.model_provider or "",
+            results=[InputsBatchResultItem(**r) for r in job.results],
+            error_message=job.error_message,
+        )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch",
+        summary="Generate Outputs Batch",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval(
+            "Generate a batch of outputs using LLM?"
+        ),
+    )
+    async def start_generate_outputs_batch(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: GenerateOutputsBatchInput,
+    ) -> StartBatchJobOutput:
+        """Start an in-process job that runs the task on each input in parallel.
+        Poll the status endpoint for progress and the resulting (unsaved) runs."""
+        task_from_id(project_id, task_id)
+
+        job = _BatchJob(
+            job_id=generate_model_id(),
+            project_id=project_id,
+            task_id=task_id,
+            kind="outputs",
+            total=len(input.items),
+        )
+        _register_batch_job(job)
+        _spawn_batch_task(
+            _run_outputs_batch_job(
+                job,
+                project_id,
+                task_id,
+                input.items,
+                input.input_model_name,
+                input.input_provider,
+                input.run_config_properties,
+                input.guidance,
+                input.session_id,
+                input.tags,
+            )
+        )
+        return StartBatchJobOutput(job_id=job.job_id)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch/{job_id}",
+        summary="Generate Outputs Batch Status",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def generate_outputs_batch_status(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        job_id: Annotated[str, Path(description="The batch job identifier.")],
+    ) -> OutputsBatchStatusOutput:
+        task_from_id(project_id, task_id)
+        job = _get_batch_job(job_id, project_id, task_id, "outputs")
+        return OutputsBatchStatusOutput(
+            status=job.status,
+            total=job.total,
+            completed=job.completed,
+            errors=job.errors,
+            results=[OutputsBatchResultItem(**r) for r in job.results],
+            error_message=job.error_message,
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
@@ -931,6 +1447,32 @@ def _combine_guidance(
     system prompt + output schema, not this guide.
     """
     parts: list[str] = []
+    data_guide_section = _data_guide_guidance(task, stage, data_guide_override)
+    if data_guide_section:
+        parts.append(data_guide_section)
+    if template_guidance:
+        parts.append(
+            "# Template Guidance\n\n"
+            "Per-stage guidance from the eval template the user picked for "
+            "this synth session. Overrides the Data Guide above when in "
+            "conflict.\n\n"
+            f"{template_guidance}"
+        )
+    return "\n\n".join(parts) if parts else None
+
+
+def _data_guide_guidance(
+    task: Task,
+    stage: Literal["topics", "inputs"],
+    data_guide_override: str | None = None,
+) -> str | None:
+    """Render the Task Data Guide section on its own.
+
+    Split out from `_combine_guidance` so the batch-plan flow can pass the guide
+    and the prompt to the model as two separate blocks rather than one fused
+    guidance string.
+    """
+    parts: list[str] = []
     data_guide_content = _resolve_data_guide(task, data_guide_override)
     if data_guide_content:
         stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
@@ -955,8 +1497,8 @@ def _combine_guidance(
             "`<input_semantic>` blocks) — read the content the same way "
             "regardless of shape.\n\n"
             "**Authority cascade** when sources conflict (highest wins):\n"
-            "1. Template guidance for this stage (if a `# Template Guidance` "
-            "block appears below).\n"
+            "1. Guidance for this specific generation (a `# Template "
+            "Guidance` block below, or the prompt you were given).\n"
             "2. The Data Guide above.\n"
             "3. Defaults you would otherwise pick.\n\n"
             "**Invariants — must always hold regardless of source:** logical "
@@ -966,14 +1508,6 @@ def _combine_guidance(
             "<task_data_guide>\n"
             f"{data_guide_content}\n"
             "</task_data_guide>"
-        )
-    if template_guidance:
-        parts.append(
-            "# Template Guidance\n\n"
-            "Per-stage guidance from the eval template the user picked for "
-            "this synth session. Overrides the Data Guide above when in "
-            "conflict.\n\n"
-            f"{template_guidance}"
         )
     return "\n\n".join(parts) if parts else None
 

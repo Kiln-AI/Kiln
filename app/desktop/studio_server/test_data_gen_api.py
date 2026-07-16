@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
@@ -22,7 +24,16 @@ from app.desktop.studio_server.data_gen_api import (
     DataGenQnaApiInput,
     DataGenSampleApiInput,
     DataGenSaveSamplesApiInput,
+    GenerateOutputsBatchItem,
     SaveQnaPairInput,
+    _MAX_BATCH_JOBS,
+    _BatchJob,
+    _batch_jobs,
+    _generate_one_input,
+    _generate_one_output,
+    _register_batch_job,
+    _run_inputs_batch_job,
+    _run_outputs_batch_job,
     connect_data_gen_api,
     topic_path_from_string,
     topic_path_to_string,
@@ -1477,3 +1488,472 @@ def test_refine_data_gen_guide_empty_output_returns_500(
 
     assert response.status_code == 500
     assert "refine" in response.json()["message"].lower()
+
+
+# --- Kiln Pro batch generation ----------------------------------------------
+
+
+def _batch_rcp() -> KilnAgentRunConfigProperties:
+    return KilnAgentRunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id=PromptGenerators.SIMPLE,
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+
+_RCP_JSON = {
+    "type": "kiln_agent",
+    "model_name": "gpt-4",
+    "model_provider_name": ModelProviderName.openai.value,
+    "prompt_id": PromptGenerators.SIMPLE.value,
+    "structured_output_mode": StructuredOutputMode.json_schema.value,
+}
+
+
+def _noop_spawn(coro):
+    """Drop-in for _spawn_batch_task that doesn't run the background job.
+
+    Endpoint tests use this to test the synchronous responsibilities (job
+    created, registered, status served, scoped) without racing the async job
+    to completion — that path is covered deterministically by the
+    _run_*_batch_job tests. Closing the coroutine avoids a
+    'coroutine was never awaited' warning.
+    """
+    coro.close()
+
+
+def _mk_job(job_id: str, status="complete") -> _BatchJob:
+    return _BatchJob(
+        job_id=job_id,
+        project_id="p",
+        task_id="t",
+        kind="inputs",
+        total=1,
+        status=status,
+    )
+
+
+def test_register_batch_job_evicts_oldest_finished():
+    _batch_jobs.clear()
+    try:
+        # Fill past the cap with finished jobs.
+        for i in range(_MAX_BATCH_JOBS):
+            _register_batch_job(_mk_job(f"done-{i}", status="complete"))
+        assert len(_batch_jobs) == _MAX_BATCH_JOBS
+        _register_batch_job(_mk_job("newest", status="complete"))
+        # Back at the cap, oldest evicted, newest kept.
+        assert len(_batch_jobs) == _MAX_BATCH_JOBS
+        assert "done-0" not in _batch_jobs
+        assert "newest" in _batch_jobs
+    finally:
+        _batch_jobs.clear()
+
+
+def test_register_batch_job_never_evicts_running_jobs():
+    _batch_jobs.clear()
+    try:
+        # A registry full of still-running jobs cannot be trimmed.
+        for i in range(_MAX_BATCH_JOBS):
+            _register_batch_job(_mk_job(f"run-{i}", status="running"))
+        _register_batch_job(_mk_job("newest", status="running"))
+        # No running job is dropped, even over the cap.
+        assert len(_batch_jobs) == _MAX_BATCH_JOBS + 1
+        assert all(k in _batch_jobs for k in ["run-0", "newest"])
+    finally:
+        _batch_jobs.clear()
+
+
+async def test_run_inputs_batch_job_success(test_task):
+    prompts = [f"p{i}" for i in range(5)]
+    job = _BatchJob(
+        job_id="j", project_id="p", task_id="t", kind="inputs", total=len(prompts)
+    )
+
+    def fake(project, task, rcp, data_guide, prompt):
+        return f"in::{prompt}"
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api._generate_one_input",
+        new=AsyncMock(side_effect=fake),
+    ):
+        await _run_inputs_batch_job(
+            job, MagicMock(), test_task, _batch_rcp(), None, prompts
+        )
+
+    assert job.status == "complete"
+    assert job.completed == 5
+    assert job.errors == 0
+    for i, p in enumerate(prompts):
+        assert job.results[i]["index"] == i
+        assert job.results[i]["input"] == f"in::{p}"
+        assert job.results[i]["error"] is None
+
+
+async def test_run_inputs_batch_job_partial_failure(test_task):
+    prompts = ["p0", "p1", "p2", "p3"]
+    job = _BatchJob(
+        job_id="j", project_id="p", task_id="t", kind="inputs", total=len(prompts)
+    )
+
+    def fake(project, task, rcp, data_guide, prompt):
+        if prompt == "p2":
+            raise ValueError("boom")
+        return f"in::{prompt}"
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api._generate_one_input",
+        new=AsyncMock(side_effect=fake),
+    ):
+        await _run_inputs_batch_job(
+            job, MagicMock(), test_task, _batch_rcp(), None, prompts
+        )
+
+    # One failure, but not all — still completes.
+    assert job.status == "complete"
+    assert job.errors == 1
+    assert job.results[2]["input"] is None
+    assert job.results[2]["error"] == "boom"
+    assert job.results[0]["input"] == "in::p0"
+
+
+async def test_run_inputs_batch_job_all_fail(test_task):
+    prompts = ["p0", "p1"]
+    job = _BatchJob(
+        job_id="j", project_id="p", task_id="t", kind="inputs", total=len(prompts)
+    )
+
+    def fake(*args, **kwargs):
+        raise ValueError("nope")
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api._generate_one_input",
+        new=AsyncMock(side_effect=fake),
+    ):
+        await _run_inputs_batch_job(
+            job, MagicMock(), test_task, _batch_rcp(), None, prompts
+        )
+
+    assert job.status == "error"
+    assert job.errors == 2
+
+
+async def test_run_outputs_batch_job_success(test_task, mock_task_run):
+    items = [GenerateOutputsBatchItem(index=i, input=f"input {i}") for i in range(4)]
+    job = _BatchJob(
+        job_id="o", project_id="p", task_id="t", kind="outputs", total=len(items)
+    )
+
+    def fake(*args, **kwargs):
+        return mock_task_run
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api._generate_one_output",
+        new=AsyncMock(side_effect=fake),
+    ):
+        await _run_outputs_batch_job(
+            job, "p", "t", items, "gpt-4", "openai", _batch_rcp(), None, None, None
+        )
+
+    assert job.status == "complete"
+    assert job.completed == 4
+    assert job.errors == 0
+    for r in job.results:
+        assert r["task_run"] is mock_task_run
+
+
+async def test_generate_one_input_extracts_generated_input(
+    test_project, test_task, data_source
+):
+    run = TaskRun(
+        output=TaskOutput(
+            output=json.dumps({"generated_input": "the generated input"}),
+            source=data_source,
+        ),
+        input="x",
+        input_source=data_source,
+        parent=test_task,
+    )
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        result = await _generate_one_input(
+            test_project, test_task, _batch_rcp(), None, "a prompt"
+        )
+
+    assert result == "the generated input"
+
+
+def test_generate_inputs_batch_endpoint(
+    mock_project_from_id, mock_task_from_id, client, data_source, test_task
+):
+    run = TaskRun(
+        output=TaskOutput(
+            output=json.dumps({"generated_input": "gen input"}),
+            source=data_source,
+        ),
+        input="x",
+        input_source=data_source,
+        parent=test_task,
+    )
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api._spawn_batch_task",
+            side_effect=_noop_spawn,
+        ),
+    ):
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        start = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch",
+            json={
+                "prompts": ["a", "b", "c"],
+                "run_config_properties": _RCP_JSON,
+            },
+        )
+        assert start.status_code == 200, start.text
+        job_id = start.json()["job_id"]
+        assert job_id
+
+        # The job is registered synchronously; the status endpoint serves it.
+        # Completion + results are covered by test_run_inputs_batch_job_success.
+        status = client.get(
+            f"/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch/{job_id}"
+        )
+        assert status.status_code == 200, status.text
+        data = status.json()
+
+    assert data["total"] == 3
+    assert data["model_name"] == "gpt-4"
+    assert data["model_provider"] == "openai"
+
+
+def test_inputs_batch_status_unknown_job_404(mock_task_from_id, client):
+    resp = client.get(
+        "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch/does-not-exist"
+    )
+    assert resp.status_code == 404
+
+
+def test_inputs_batch_status_wrong_scope_404(
+    mock_project_from_id, mock_task_from_id, client, data_source, test_task
+):
+    # Start a job under one task, then poll it under a different task id.
+    run = TaskRun(
+        output=TaskOutput(
+            output=json.dumps({"generated_input": "gen input"}),
+            source=data_source,
+        ),
+        input="x",
+        input_source=data_source,
+        parent=test_task,
+    )
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        start = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch",
+            json={
+                "prompts": ["a"],
+                "run_config_properties": _RCP_JSON,
+            },
+        )
+        job_id = start.json()["job_id"]
+
+    # Same job_id, different task path → 404 (don't serve by job_id alone).
+    resp = client.get(
+        f"/api/projects/proj-ID/tasks/OTHER-task/generate_inputs_batch/{job_id}"
+    )
+    assert resp.status_code == 404
+
+
+def test_generate_outputs_batch_endpoint(mock_task_from_id, client, mock_task_run):
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api._spawn_batch_task",
+            side_effect=_noop_spawn,
+        ),
+    ):
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=mock_task_run)
+        mock_adapter_for_task.return_value = adapter
+
+        start = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_outputs_batch",
+            json={
+                "items": [
+                    {"index": 0, "input": "i0"},
+                    {"index": 1, "input": "i1"},
+                ],
+                "input_model_name": "gpt-4",
+                "input_provider": "openai",
+                "run_config_properties": _RCP_JSON,
+            },
+        )
+        assert start.status_code == 200, start.text
+        job_id = start.json()["job_id"]
+
+        # Job registered synchronously; completion is covered by
+        # test_run_outputs_batch_job_success.
+        status = client.get(
+            f"/api/projects/proj-ID/tasks/task-ID/generate_outputs_batch/{job_id}"
+        )
+        assert status.status_code == 200, status.text
+        data = status.json()
+
+    assert data["total"] == 2
+
+
+def test_batch_jobs_registry_is_populated(
+    mock_project_from_id, mock_task_from_id, client, data_source, test_task
+):
+    run = TaskRun(
+        output=TaskOutput(
+            output=json.dumps({"generated_input": "gen input"}),
+            source=data_source,
+        ),
+        input="x",
+        input_source=data_source,
+        parent=test_task,
+    )
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api._spawn_batch_task",
+            side_effect=_noop_spawn,
+        ),
+    ):
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        start = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch",
+            json={
+                "prompts": ["a", "b"],
+                "run_config_properties": _RCP_JSON,
+            },
+        )
+        job_id = start.json()["job_id"]
+
+    # Registration is synchronous in the handler, before the job is spawned.
+    assert job_id in _batch_jobs
+    assert _batch_jobs[job_id].kind == "inputs"
+
+
+async def _instruction_for_one_input(project, task, data_guide, data_source):
+    """Run _generate_one_input and return the instruction the generator task was
+    built with, so we can assert on what the model actually reads."""
+    run = TaskRun(
+        output=TaskOutput(
+            output=json.dumps({"generated_input": "x"}), source=data_source
+        ),
+        input="x",
+        input_source=data_source,
+        parent=task,
+    )
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        await _generate_one_input(project, task, _batch_rcp(), data_guide, "a prompt")
+        # First positional arg to adapter_for_task is the DataGenSingleInputTask.
+        return mock_adapter_for_task.call_args.args[0].instruction
+
+
+async def test_generate_one_input_omits_data_guide_when_toggle_off(
+    test_project, test_task, data_source
+):
+    """The batch flow sends None when "Use Data Guide" is off. That must mean
+    "don't use it" — not "fall back to the task's saved guide"."""
+    # The task HAS a saved guide, so a fallback would silently include it.
+    DataGuide(guide="Emails are terse.", parent=test_task).save_to_file()
+
+    instruction = await _instruction_for_one_input(
+        test_project, test_task, None, data_source
+    )
+
+    assert "<task_data_guide>" not in instruction
+    assert "Emails are terse." not in instruction
+
+
+async def test_generate_one_input_includes_data_guide_when_provided(
+    test_project, test_task, data_source
+):
+    instruction = await _instruction_for_one_input(
+        test_project, test_task, "Emails are terse.", data_source
+    )
+
+    assert "<task_data_guide>" in instruction
+    assert "Emails are terse." in instruction
+    # The guide arrives with its explanatory context, not as a bare blob.
+    assert "# Task Data Guide" in instruction
+    assert "Authority cascade" in instruction
+
+
+async def _one_output_tags(session_id, mock_task_from_id, test_task, data_source):
+    run = TaskRun(
+        output=TaskOutput(output="out", source=data_source),
+        input="in",
+        input_source=data_source,
+        parent=test_task,
+    )
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(return_value=run)
+        mock_adapter_for_task.return_value = adapter
+
+        out = await _generate_one_output(
+            "p",
+            "t",
+            "an input",
+            "gpt-4",
+            "openai",
+            _batch_rcp(),
+            None,
+            session_id,
+            None,
+        )
+    return out.tags
+
+
+async def test_generate_one_output_tags_with_session(
+    mock_task_from_id, test_task, data_source
+):
+    """Batch-generated runs carry the session tag, so a Kiln Pro batch is
+    groupable in the dataset the same way a legacy synth session is."""
+    tags = await _one_output_tags("abc123", mock_task_from_id, test_task, data_source)
+
+    assert "synthetic" in tags
+    assert "synthetic_session_abc123" in tags
+
+
+async def test_generate_one_output_omits_session_tag_when_absent(
+    mock_task_from_id, test_task, data_source
+):
+    tags = await _one_output_tags(None, mock_task_from_id, test_task, data_source)
+
+    assert tags == ["synthetic"]

@@ -4,6 +4,8 @@ from .answer_option import AnswerOption
 from .answer_option_with_selection import AnswerOptionWithSelection
 from .api_key_verification_result import ApiKeyVerificationResult
 from .audio import Audio
+from .batch_plan_input import BatchPlanInput
+from .batch_plan_output import BatchPlanOutput
 from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
@@ -135,6 +137,8 @@ __all__ = (
     "AnswerOptionWithSelection",
     "ApiKeyVerificationResult",
     "Audio",
+    "BatchPlanInput",
+    "BatchPlanOutput",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
     "ChatCompletionAssistantMessageParamWrapper",

@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch/{job_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}
