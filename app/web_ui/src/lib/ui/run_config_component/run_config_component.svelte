@@ -18,6 +18,7 @@
     Task,
     TaskRunConfig,
     InputTransform,
+    KilnArtifactProvenance,
   } from "$lib/types"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import { inputTransformsEqual } from "$lib/utils/run_config_formatters"
@@ -416,7 +417,9 @@
     }
   }
 
-  export async function save_new_run_config(): Promise<TaskRunConfig> {
+  export async function save_new_run_config(
+    clone_source_id: string | null = null,
+  ): Promise<TaskRunConfig> {
     if (!current_task?.id) {
       throw new Error("Cannot save run config: no task selected")
     }
@@ -426,11 +429,17 @@
       run_config_name = generate_memorable_name()
     }
     run_config_name = normalize_filename_string(run_config_name)
+    // Stamp lineage: a clone derives from its source; a fresh create is
+    // human-origin with no parent. origin is required whenever provenance is set.
+    const provenance: KilnArtifactProvenance = clone_source_id
+      ? { origin: "human", derived_from_ids: [clone_source_id] }
+      : { origin: "human" }
     const saved_config = await save_new_task_run_config(
       project_id,
       current_task.id,
       run_options_as_run_config_properties(),
       run_config_name,
+      provenance,
     )
     // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
     await load_task_prompts(project_id, current_task.id, true)

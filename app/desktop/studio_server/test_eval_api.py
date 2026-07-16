@@ -7,6 +7,7 @@ import pytest
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    UpdateRunConfigRequest,
     compute_score_summary,
     connect_evals_api,
     eval_config_from_id,
@@ -407,6 +408,87 @@ async def test_create_task_run_config_reuses_existing_frozen_prompt(
     assert len(frozen_prompts) == 1
 
 
+@pytest.mark.asyncio
+async def test_create_task_run_config_with_valid_provenance(
+    client, mock_task_from_id, mock_task, mock_run_config
+):
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Derived Run Config",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {
+                "origin": "human",
+                "derived_from_ids": [mock_run_config.id],
+                "notes": "Cloned from the seed run config.",
+            },
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["provenance"]["origin"] == "human"
+    assert result["provenance"]["derived_from_ids"] == [mock_run_config.id]
+
+    # Returned on read (datamodel is serialized directly).
+    fetch = client.get("/api/projects/project1/tasks/task1/run_configs")
+    derived = next(rc for rc in fetch.json() if rc["id"] == result["id"])
+    assert derived["provenance"]["derived_from_ids"] == [mock_run_config.id]
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_unknown_sibling_400(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Bad Lineage",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+        },
+    )
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_invalid_origin_422(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Bad Origin",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {"origin": "banana"},
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_update_run_config_model_has_no_provenance_field():
+    assert "provenance" not in UpdateRunConfigRequest.model_fields
+
+
 def test_reusable_frozen_prompt_id_no_match(mock_task):
     assert (
         reusable_frozen_prompt_id(mock_task, "project1", "some prompt text", None)
@@ -595,6 +677,123 @@ async def test_create_eval_config_invalid_v2_properties(
     body = response.json()
     assert "Invalid properties for eval config type" in body["message"]
     assert "v2" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_with_valid_provenance(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_config
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Derived Config",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [mock_eval_config.id],
+                    "notes": "Cloned from the seed eval config.",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["provenance"]["origin"] == "human"
+    assert result["provenance"]["derived_from_ids"] == [mock_eval_config.id]
+
+    # Persisted and returned on read (datamodel serialized directly).
+    derived = next(c for c in mock_eval.configs() if c.name == "Derived Config")
+    assert derived.provenance is not None
+    assert derived.provenance.derived_from_ids == [mock_eval_config.id]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_unknown_sibling_400(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Lineage",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_invalid_origin_422(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Origin",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "provenance": {"origin": "banana"},
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_list_eval_configs_forward_compat_provenance_does_not_500(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    # An eval config written by a newer client (unknown origin, over-length notes,
+    # dirty ids) must list via the API, returned as-is, never 500.
+    fc_config = EvalConfig.model_validate(
+        {
+            "name": "future-config",
+            "config_type": "g_eval",
+            "properties": {"eval_steps": ["step1"]},
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup"],
+                "notes": "y" * 3000,
+            },
+        },
+        context={"loading_from_file": True},
+    )
+    fc_config.parent = mock_eval
+    fc_config.save_to_file()
+
+    mock_task_from_id.return_value = mock_task
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs"
+        )
+
+    assert response.status_code == 200
+    saved = next(c for c in response.json() if c["name"] == "future-config")
+    assert saved["provenance"]["origin"] == "future_origin"
 
 
 def test_get_eval_config(

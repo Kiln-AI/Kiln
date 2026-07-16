@@ -732,6 +732,7 @@ async def test_create_finetune(
         validation_split_name="validation",
         data_strategy=data_strategy,
         run_config=None,
+        provenance=None,
     )
 
 
@@ -754,6 +755,78 @@ def test_create_finetune_invalid_provider(client, mock_task_from_id_disk_backed)
     assert (
         response.json()["message"] == "Fine tune provider 'invalid_provider' not found"
     )
+
+
+def _finetune_request_with_provenance(provenance):
+    return {
+        "name": "Derived Finetune",
+        "dataset_id": "split1",
+        "train_split_name": "train",
+        "parameters": {"epochs": 10},
+        "provider": "test_provider",
+        "base_model_id": "base_model_1",
+        "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
+        "provenance": provenance,
+    }
+
+
+def test_create_finetune_threads_valid_provenance(
+    client, mock_task_from_id_disk_backed, mock_finetune_registry, mock_finetune_adapter
+):
+    # ft1 is a real sibling finetune in the disk-backed task.
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes",
+        json=_finetune_request_with_provenance(
+            {"origin": "human", "derived_from_ids": ["ft1"]}
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    # Provenance is threaded into create_and_start (where the Finetune is built + saved).
+    call_kwargs = mock_finetune_adapter.create_and_start.await_args[1]
+    provenance = call_kwargs["provenance"]
+    assert provenance is not None
+    assert provenance.origin == "human"
+    assert provenance.derived_from_ids == ["ft1"]
+
+
+def test_create_finetune_unknown_sibling_400(
+    client, mock_task_from_id_disk_backed, mock_finetune_registry, mock_finetune_adapter
+):
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes",
+        json=_finetune_request_with_provenance(
+            {"origin": "human", "derived_from_ids": ["missing"]}
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+    mock_finetune_adapter.create_and_start.assert_not_awaited()
+
+
+def test_create_finetune_invalid_origin_422(
+    client, mock_task_from_id_disk_backed, mock_finetune_registry, mock_finetune_adapter
+):
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes",
+        json=_finetune_request_with_provenance({"origin": "banana"}),
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_finetune_model_has_no_provenance_field():
+    from app.desktop.studio_server.finetune_api import UpdateFinetuneRequest
+
+    assert "provenance" not in UpdateFinetuneRequest.model_fields
 
 
 def test_create_finetune_invalid_dataset(
