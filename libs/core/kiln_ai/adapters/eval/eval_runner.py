@@ -70,10 +70,11 @@ class EvalRunner:
        output per run config. Inputs come from stored TaskRuns
        (eval_set_filter_id) or EvalInput items (eval_input_filter_id).
        Multi-turn synthetic EvalInputs are driven as a full conversation
-       per run config using the eval's multi_turn_drive_config — or, when a
-       sibling config already drove the identical setup, judged on that
-       stored conversation (see _run_v2_multi_turn_synthetic_job); stored
-       multi-turn TaskRun chains are judged on their stored trace instead.
+       per run config using the eval's multi_turn_drive_config — or, when
+       any v2 config on the task already drove the identical setup, judged
+       on that stored conversation (see _run_v2_multi_turn_synthetic_job);
+       stored multi-turn TaskRun chains are judged on their stored trace
+       instead.
     """
 
     def __init__(
@@ -642,10 +643,11 @@ class EvalRunner:
         multi_turn_drive_config plays the synthetic user, so each run config
         gets its own fresh conversation — the property that makes run-config
         comparison meaningful for multi-turn. Before driving, the reuse index
-        is consulted: a sibling config that already drove the identical
-        (drive config, run config, scenario) supplies its stored trace, so
-        every judge scores the same conversation and the drive cost is paid
-        once. The drive itself is transient (no TaskRuns written); the EvalRun
+        is consulted: any v2 config on the task that already drove the
+        identical (drive config, run config, scenario) supplies its stored
+        trace, so every judge scores the same conversation and the drive cost
+        is paid once — including judges on separate Evals (Mike's two-judge
+        case). The drive itself is transient (no TaskRuns written); the EvalRun
         record always carries the serialized conversation plus its
         drive_fingerprint, success or skip.
         """
@@ -714,8 +716,9 @@ class EvalRunner:
         )
         reused_trace = self._find_reusable_trace(fingerprint, job.task_run_config.id)
         if reused_trace is not None:
-            # A sibling config already drove this exact conversation setup:
-            # judge its stored trace instead of paying for a fresh drive.
+            # Another v2 config (this eval's or a task sibling's) already
+            # drove this exact conversation setup: judge its stored trace
+            # instead of paying for a fresh drive.
             eval_task_input = EvalTaskInput.from_eval_input_trace(
                 eval_input, reused_trace
             )
@@ -810,8 +813,11 @@ class EvalRunner:
         return self._trace_reuse_index
 
     def _build_trace_reuse_index(self) -> Dict[Tuple[str, ID_TYPE], _ReusableTrace]:
-        """One pass over the sibling eval configs' persisted runs, keeping the
-        healthiest deterministic pick per (fingerprint, run config).
+        """One pass over every v2 eval config's persisted runs task-wide,
+        keeping the healthiest deterministic pick per (fingerprint, run
+        config). The scan crosses evals because the fingerprint is content
+        keyed: two evals judging the identical (drive config, run config,
+        scenario) share one conversation instead of paying for two.
 
         Only healthy traces enter the index: skip tombstones and partial
         conversations must trigger a fresh drive, not get re-judged. The
@@ -822,20 +828,25 @@ class EvalRunner:
         drive_config = self.eval.multi_turn_drive_config
         if drive_config is None:
             return index
-        for eval_config in self.eval.configs(readonly=True):
-            if eval_config.config_type != EvalConfigType.v2:
-                continue
-            for run in eval_config.runs(readonly=True):
-                if run.drive_fingerprint is None or run.task_run_config_id is None:
+        for task_eval in self.task.evals(readonly=True):
+            for eval_config in task_eval.configs(readonly=True):
+                if eval_config.config_type != EvalConfigType.v2:
                     continue
-                trace = _parse_healthy_trace(run.task_run_trace, drive_config.turns)
-                if trace is None:
-                    continue
-                key = (run.drive_fingerprint, run.task_run_config_id)
-                sort_key = (str(self.eval.id), str(eval_config.id), str(run.id))
-                existing = index.get(key)
-                if existing is None or sort_key < existing.sort_key:
-                    index[key] = _ReusableTrace(trace=trace, sort_key=sort_key)
+                for run in eval_config.runs(readonly=True):
+                    if run.drive_fingerprint is None or run.task_run_config_id is None:
+                        continue
+                    # Health is judged against THIS eval's turn setting: a
+                    # record driven with different turns fails it, but its
+                    # fingerprint embeds those turns so no job in this
+                    # invocation could look it up anyway.
+                    trace = _parse_healthy_trace(run.task_run_trace, drive_config.turns)
+                    if trace is None:
+                        continue
+                    key = (run.drive_fingerprint, run.task_run_config_id)
+                    sort_key = (str(task_eval.id), str(eval_config.id), str(run.id))
+                    existing = index.get(key)
+                    if existing is None or sort_key < existing.sort_key:
+                        index[key] = _ReusableTrace(trace=trace, sort_key=sort_key)
         return index
 
 

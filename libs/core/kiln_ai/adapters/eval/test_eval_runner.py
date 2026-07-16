@@ -3303,6 +3303,45 @@ def make_reuse_config(reuse_eval: Eval, config_id: str) -> EvalConfig:
     return config
 
 
+def make_cross_eval(task, eval_id: str, su_model: str = "claude_4_5_haiku") -> Eval:
+    """A SEPARATE Eval on the same task sharing reuse_eval's drive setup —
+    the two-judges-two-evals shape the task-wide reuse scan exists for."""
+    eval = Eval(
+        id=eval_id,
+        name=f"cross eval {eval_id}",
+        description="separate eval sharing the drive setup",
+        eval_input_filter_id="all",
+        eval_configs_filter_id="all",
+        multi_turn_drive_config=MultiTurnDriveConfig(
+            model_name=su_model,
+            model_provider="openrouter",
+            turns=2,
+        ),
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check if the output is accurate",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    return eval
+
+
+@pytest.fixture
+def cross_eval(mock_task):
+    # Id sorts before reuse_eval's so the deterministic-pick test below can
+    # prove cross-eval records participate in the (eval, config, run) order.
+    return make_cross_eval(mock_task, "aaa_cross_eval")
+
+
+@pytest.fixture
+def cross_eval_config(cross_eval):
+    return make_reuse_config(cross_eval, "cross_config")
+
+
 @pytest.fixture
 def reuse_config_a(reuse_eval):
     return make_reuse_config(reuse_eval, "config_a")
@@ -3772,3 +3811,222 @@ class TestTraceReuse:
 
         mock_drive.assert_not_awaited()
         assert stub.seen_inputs[0].trace == first_trace
+
+    @pytest.mark.asyncio
+    async def test_cross_eval_reuse_hit_skips_drive(
+        self,
+        mock_task,
+        mock_run_config,
+        reuse_eval,
+        reuse_config_b,
+        cross_eval,
+        cross_eval_config,
+        multi_turn_eval_input,
+    ):
+        """A healthy driven record under a DIFFERENT eval on the same task
+        satisfies this eval's job: the fingerprint is content-keyed, so two
+        judges forced onto separate Evals still score one conversation."""
+        fingerprint = reuse_fingerprint(
+            cross_eval, multi_turn_eval_input, mock_run_config
+        )
+        # Identical drive configs fingerprint identically from either eval.
+        assert fingerprint == reuse_fingerprint(
+            reuse_eval, multi_turn_eval_input, mock_run_config
+        )
+        seeded_trace = serialized_trace(MULTI_TURN_TRACE)
+        seed_driven_run(
+            cross_eval_config,
+            multi_turn_eval_input,
+            mock_run_config,
+            fingerprint,
+            seeded_trace,
+        )
+
+        runner = EvalRunner(
+            eval_configs=[reuse_config_b],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        stub = RecordingStubV2Eval(reuse_config_b)
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(),
+            ) as mock_drive,
+        ):
+            result = await runner.run_job(
+                make_reuse_job(multi_turn_eval_input, reuse_config_b, mock_run_config)
+            )
+
+        assert result is True
+        mock_drive.assert_not_awaited()
+        assert stub.seen_inputs[0].trace == MULTI_TURN_TRACE
+
+        # The reused record is self-contained: byte-identical trace + the
+        # shared fingerprint persist under THIS eval's config.
+        saved = reuse_config_b.runs(readonly=True)[0]
+        assert saved.task_run_trace == seeded_trace
+        assert saved.drive_fingerprint == fingerprint
+        assert len(mock_task.runs(readonly=True)) == 0
+
+    @pytest.mark.asyncio
+    async def test_cross_eval_different_drive_config_never_reused(
+        self,
+        mock_task,
+        mock_run_config,
+        reuse_eval,
+        reuse_config_b,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """Another eval driving with a different SU model (same turns, so its
+        trace is healthy) fingerprints differently — never reused here."""
+        other_eval = make_cross_eval(mock_task, "other_su_eval", su_model="gpt_4o")
+        other_config = make_reuse_config(other_eval, "other_su_config")
+        other_fingerprint = reuse_fingerprint(
+            other_eval, multi_turn_eval_input, mock_run_config
+        )
+        assert other_fingerprint != reuse_fingerprint(
+            reuse_eval, multi_turn_eval_input, mock_run_config
+        )
+        seed_driven_run(
+            other_config,
+            multi_turn_eval_input,
+            mock_run_config,
+            other_fingerprint,
+            serialized_trace(MULTI_TURN_TRACE),
+        )
+
+        runner = EvalRunner(
+            eval_configs=[reuse_config_b],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=StubV2Eval(reuse_config_b),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+            ) as mock_drive,
+        ):
+            await runner.run_job(
+                make_reuse_job(multi_turn_eval_input, reuse_config_b, mock_run_config)
+            )
+
+        mock_drive.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cross_eval_never_crosses_run_configs(
+        self,
+        mock_task,
+        mock_run_config,
+        second_run_config,
+        reuse_eval,
+        reuse_config_b,
+        cross_eval,
+        cross_eval_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """Widening the scan across evals must not loosen the run-config
+        boundary: another eval's record for run config A never serves B."""
+        fingerprint = reuse_fingerprint(
+            cross_eval, multi_turn_eval_input, mock_run_config
+        )
+        seed_driven_run(
+            cross_eval_config,
+            multi_turn_eval_input,
+            mock_run_config,
+            fingerprint,
+            serialized_trace(MULTI_TURN_TRACE),
+        )
+
+        runner = EvalRunner(
+            eval_configs=[reuse_config_b],
+            run_configs=[second_run_config],
+            eval_run_type="task_run_eval",
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=StubV2Eval(reuse_config_b),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+            ) as mock_drive,
+        ):
+            await runner.run_job(
+                make_reuse_job(multi_turn_eval_input, reuse_config_b, second_run_config)
+            )
+
+        mock_drive.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cross_eval_deterministic_pick(
+        self,
+        mock_task,
+        mock_run_config,
+        reuse_eval,
+        reuse_config_a,
+        reuse_config_b,
+        cross_eval,
+        cross_eval_config,
+        multi_turn_eval_input,
+    ):
+        """With healthy records under TWO evals for one key, every reader
+        picks by (eval id, config id, run id) — here the cross eval's record,
+        whose eval id sorts first."""
+        fingerprint = reuse_fingerprint(
+            reuse_eval, multi_turn_eval_input, mock_run_config
+        )
+        cross_trace: list[ChatCompletionMessageParam] = [
+            {"role": "user", "content": "turn 1"},
+            {"role": "assistant", "content": "cross-eval writer"},
+            {"role": "user", "content": "turn 2"},
+            {"role": "assistant", "content": "cross-eval final"},
+        ]
+        seed_driven_run(
+            cross_eval_config,
+            multi_turn_eval_input,
+            mock_run_config,
+            fingerprint,
+            serialized_trace(cross_trace),
+        )
+        seed_driven_run(
+            reuse_config_a,
+            multi_turn_eval_input,
+            mock_run_config,
+            fingerprint,
+            serialized_trace(MULTI_TURN_TRACE),
+        )
+
+        runner = EvalRunner(
+            eval_configs=[reuse_config_b],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        stub = RecordingStubV2Eval(reuse_config_b)
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(),
+            ) as mock_drive,
+        ):
+            await runner.run_job(
+                make_reuse_job(multi_turn_eval_input, reuse_config_b, mock_run_config)
+            )
+
+        mock_drive.assert_not_awaited()
+        assert stub.seen_inputs[0].trace == cross_trace
