@@ -43,9 +43,12 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    MultiTurnSyntheticEvalInputData,
+    UserMessage,
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -4491,3 +4494,196 @@ class TestTestV2EvalOverrides:
             == "Custom {{ task_input }} {{ final_message }}"
         )
         assert call_kwargs.kwargs["system_prompt"] == "Be strict."
+
+
+def make_multi_turn_eval_input(mock_task, tags: list[str], text: str = "seed"):
+    eval_input = EvalInput(
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text=text),
+            synthetic_user_info={"persona": "p", "goal": "g"},
+        ),
+        reference={"scenario": "s1", "expected_facts": ["fact one"]},
+        tags=tags,
+        parent=mock_task,
+    )
+    eval_input.save_to_file()
+    return eval_input
+
+
+def test_list_eval_inputs_empty(client, mock_task, mock_task_from_id):
+    response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_eval_inputs_all_and_filtered(client, mock_task, mock_task_from_id):
+    tagged = make_multi_turn_eval_input(mock_task, tags=["corpus", "nm_app_crit"])
+    untagged = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()} == {tagged.id, untagged.id}
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "tag::nm_app_crit"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert [item["id"] for item in result] == [tagged.id]
+    assert result[0]["reference"] == {"scenario": "s1", "expected_facts": ["fact one"]}
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "all"},
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_list_eval_inputs_invalid_filter(client, mock_task, mock_task_from_id):
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "not_a_filter"},
+    )
+
+    assert response.status_code == 422
+    assert "Invalid eval-input filter ID" in response.json()["message"]
+
+
+def test_get_eval_input(client, mock_task, mock_task_from_id):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.get(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == eval_input.id
+    assert result["data"]["type"] == "multi_turn_synthetic"
+    assert result["data"]["first_message"]["text"] == "seed"
+
+    response = client.get("/api/projects/project1/tasks/task1/eval_inputs/999999")
+    assert response.status_code == 404
+
+
+def test_create_eval_input_multi_turn(client, mock_task, mock_task_from_id):
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={
+            "data": {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "How many open work orders?"},
+                "synthetic_user_info": {
+                    "persona": "maintenance manager",
+                    "goal": "get an overdue-WO count",
+                    "behavior_guidance": "terse",
+                },
+            },
+            "reference": {"scenario": "overdue_wos", "expected_facts": ["190 open"]},
+            "tags": ["corpus", "nm_app_crit"],
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["data"]["type"] == "multi_turn_synthetic"
+    assert result["reference"]["scenario"] == "overdue_wos"
+    assert result["tags"] == ["corpus", "nm_app_crit"]
+
+    on_disk = mock_task.eval_inputs(readonly=True)
+    assert len(on_disk) == 1
+    assert on_disk[0].id == result["id"]
+    assert on_disk[0].data.synthetic_user_info["persona"] == "maintenance manager"
+
+
+def test_create_eval_input_single_turn_defaults(client, mock_task, mock_task_from_id):
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={"data": {"type": "single_turn", "user_message": {"text": "hi"}}},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["data"]["type"] == "single_turn"
+    assert result["reference"] is None
+    assert result["tags"] == []
+
+
+def test_create_eval_input_invalid_data(client, mock_task, mock_task_from_id):
+    # first_message present but missing its required text field
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={"data": {"type": "multi_turn_synthetic", "first_message": {}}},
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_eval_input_partial(client, mock_task, mock_task_from_id):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": ["corpus", "val_split"]},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["tags"] == ["corpus", "val_split"]
+    # untouched fields survive a tags-only patch
+    assert result["reference"] == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert result["data"]["first_message"]["text"] == "seed"
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"reference": {"scenario": "s2"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["reference"] == {"scenario": "s2"}
+
+    on_disk = mock_task.eval_inputs(readonly=True)
+    assert on_disk[0].tags == ["corpus", "val_split"]
+    assert on_disk[0].reference == {"scenario": "s2"}
+
+
+def test_update_eval_input_data(client, mock_task, mock_task_from_id):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={
+            "data": {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "new seed"},
+                "synthetic_user_info": {"persona": "p2", "goal": "g2"},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["first_message"]["text"] == "new seed"
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/eval_inputs/999999",
+        json={"tags": ["x"]},
+    )
+    assert response.status_code == 404
+
+
+def test_delete_eval_input(client, mock_task, mock_task_from_id):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+    keep = make_multi_turn_eval_input(mock_task, tags=["corpus"], text="keep")
+
+    response = client.delete(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+    assert response.status_code == 200
+
+    on_disk = mock_task.eval_inputs(readonly=True)
+    assert [item.id for item in on_disk] == [keep.id]
+
+    response = client.get(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+    assert response.status_code == 404
