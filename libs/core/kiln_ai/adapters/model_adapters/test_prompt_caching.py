@@ -46,6 +46,11 @@ def build_caching_test_task(tmp_path) -> Task:
             id="anthropic/claude_sonnet_4_6",
         ),
         pytest.param(
+            ModelProviderName.openrouter,
+            "claude_sonnet_4_6",
+            id="openrouter/claude_sonnet_4_6",
+        ),
+        pytest.param(
             ModelProviderName.openai,
             "gpt_5_4_mini",
             id="openai/gpt_5_4_mini",
