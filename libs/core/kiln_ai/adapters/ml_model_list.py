@@ -46,6 +46,7 @@ class ModelFamily(str, Enum):
     nemotron = "nemotron"
     arcee = "arcee"
     sakana = "sakana"
+    thinking_machines = "thinking_machines"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -111,6 +112,7 @@ class ModelName(str, Enum):
     mistral_nemo = "mistral_nemo"
     mistral_small_4 = "mistral_small_4"
     mistral_small_3 = "mistral_small_3"
+    mistral_medium_3_5 = "mistral_medium_3_5"
     mistral_medium_3_1 = "mistral_medium_3_1"
     mistral_small_creative = (
         "mistral_small_creative"  # mistralai/mistral-small-creative
@@ -196,6 +198,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_5 = "grok_4_5"
     grok_4_3 = "grok_4_3"
     grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
@@ -205,6 +208,7 @@ class ModelName(str, Enum):
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
     qwen_3p7_plus = "qwen_3p7_plus"
+    qwen_3p7_max = "qwen_3p7_max"
     qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
@@ -242,6 +246,7 @@ class ModelName(str, Enum):
     qwen_3_vl_30b_a3b_no_thinking = "qwen_3_vl_30b_a3b_no_thinking"
     qwen_3_vl_8b_no_thinking = "qwen_3_vl_8b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
+    kimi_k3 = "kimi_k3"
     kimi_k2_6 = "kimi_k2_6"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
@@ -286,6 +291,7 @@ class ModelName(str, Enum):
     mimo_v2_omni = "mimo_v2_omni"
     mimo_v2_5 = "mimo_v2_5"
     mimo_v2_5_pro = "mimo_v2_5_pro"
+    inkling = "inkling"
 
 
 class ModelParserID(str, Enum):
@@ -609,6 +615,18 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
     "High": "high",
     "Extra High": "xhigh",
     "Max": "max",
+}
+
+KIMI_K3_OPENROUTER_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
+}
+
+GROK_4_5_OPENROUTER_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
 }
 
 
@@ -3948,6 +3966,19 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Mistral Medium 3.5
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_medium_3_5,
+        friendly_name="Mistral Medium 3.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-medium-3-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Mistral Medium 3.1
     KilnModel(
         family=ModelFamily.mistral,
@@ -5675,6 +5706,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.5
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_5,
+        friendly_name="Grok 4.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.5",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                openrouter_reasoning_object=True,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4.3
     KilnModel(
         family=ModelFamily.grok,
@@ -6149,6 +6210,24 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+        ],
+    ),
+    # Qwen 3.7 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p7_max,
+        friendly_name="Qwen 3.7 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.7-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            # Together AI hosts Qwen/Qwen3.7-Max but only in streaming-only mode
+            # (returns HTTP 400 "This model only supports streaming"), which Kiln's
+            # non-streaming adapter can't use. Omitted until Together supports non-streaming.
         ],
     ),
     # Qwen 3 Max
@@ -7736,6 +7815,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Kimi K3
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k3,
+        friendly_name="Kimi K3",
+        editorial_notes="Open, state-of-the-art model from Moonshot AI. 2.8T-parameter MoE with a 1M token context, configurable reasoning, and strong agentic performance.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            # SiliconFlow provider omitted - K3 API slug not yet confirmed
+            # (would follow the K2.6 convention Pro/moonshotai/Kimi-K3, unverified).
+            # Not yet available on Fireworks AI or Together AI (K2.6 / K2.7 only).
+        ],
+    ),
     # Kimi K2.6
     # Not available on Together AI or SiliconFlow CN yet
     KilnModel(
@@ -8565,6 +8674,21 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    # Inkling (Thinking Machines)
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling,
+        friendly_name="Inkling",
+        editorial_notes="Thinking Machines' first open-weights foundation model (Apache 2.0). A 975B-parameter MoE (41B active) with configurable reasoning. Hosted on Together AI.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="thinkingmachines/Inkling",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
             ),
         ],
     ),
