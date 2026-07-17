@@ -130,7 +130,13 @@ class GEval(BaseEval):
         Mirrors the strategy selection in BaseAdapter.build_chat_formatter.
         """
         model_name, provider_name = self.model_and_provider()
-        judge_provider = kiln_model_provider_from(model_name, provider_name)
+        try:
+            judge_provider = kiln_model_provider_from(model_name, provider_name)
+        except Exception:
+            # Prompt caching is a cost optimization, not correctness. If we can't
+            # resolve the provider (e.g. missing API key config), default to off
+            # and let the adapter surface the real error when it runs the judge.
+            return False
         tuned_strategy = judge_provider.tuned_chat_strategy
         if tuned_strategy and tuned_strategy != ChatStrategy.single_turn:
             return tuned_strategy in (

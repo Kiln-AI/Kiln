@@ -874,6 +874,17 @@ def test_judge_prompt_caching_strategy_gate(
         assert g_eval.judge_prompt_caching() == expected
 
 
+@pytest.fixture
+def mock_provider_keys_present():
+    # Provider lookup runs check_provider_warnings, which raises when API keys
+    # aren't configured (as in CI). Stub the config read so built-in model lookup
+    # exercises the real strategy logic instead of the missing-key fallback.
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_config_value", return_value="fake-key"
+    ):
+        yield
+
+
 @pytest.mark.parametrize(
     "model_name,provider,expected",
     [
@@ -885,7 +896,12 @@ def test_judge_prompt_caching_strategy_gate(
     ],
 )
 def test_judge_prompt_caching_built_in_models(
-    test_eval_config, test_run_config, model_name, provider, expected
+    mock_provider_keys_present,
+    test_eval_config,
+    test_run_config,
+    model_name,
+    provider,
+    expected,
 ):
     test_eval_config.model_name = model_name
     test_eval_config.model_provider = provider
@@ -893,8 +909,27 @@ def test_judge_prompt_caching_built_in_models(
     assert g_eval.judge_prompt_caching() == expected
 
 
+def test_judge_prompt_caching_missing_provider_key_defaults_off(
+    test_eval_config, test_run_config
+):
+    # No key config stubbed: kiln_model_provider_from raises, and a caching
+    # heuristic must never crash the eval - it falls back to off.
+    test_eval_config.model_name = "gpt_4o_mini"
+    test_eval_config.model_provider = "openai"
+    g_eval = GEval(test_eval_config, test_run_config)
+    with patch(
+        "kiln_ai.adapters.eval.g_eval.kiln_model_provider_from",
+        side_effect=ValueError("Attempted to use OpenAI without an API key set."),
+    ):
+        assert g_eval.judge_prompt_caching() is False
+
+
 async def test_run_eval_sets_automatic_prompt_caching(
-    test_task, test_eval_config, test_task_run, test_run_config
+    mock_provider_keys_present,
+    test_task,
+    test_eval_config,
+    test_task_run,
+    test_run_config,
 ):
     test_eval_config.config_type = EvalConfigType.llm_as_judge
     g_eval = GEval(test_eval_config, test_run_config)
