@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { get } from "svelte/store"
 import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
-import type { Eval, Task, Spec } from "$lib/types"
+import type { Eval, EvalConfig, Task, Spec } from "$lib/types"
 
 // Mock the API client
 vi.mock("$lib/api_client", () => ({
@@ -686,6 +686,121 @@ describe("SynthDataGuidanceDataModel", () => {
           model["desired_behaviour_eval_template"]("topics"),
         ).toThrow("Desired behaviour description is required")
       })
+    })
+  })
+
+  describe("kiln_pro_batch_plan_prefill", () => {
+    const mockSpec = {
+      id: "spec1",
+      name: "Summarizes Multi-Topic Input",
+      definition: "The task must produce a single unified summary.",
+      eval_id: "eval1",
+      properties: { spec_type: "desired_behaviour" },
+    } as Spec
+
+    it("returns the fine-tuning template for training", () => {
+      model.gen_type = "training"
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      // "Training set" is what tells the planner to build a representative
+      // batch instead of an eval's boundary-probing test set.
+      expect(prefill).toContain("training set to fine-tune")
+      expect(prefill).toContain("useful distribution")
+      // Edge cases must be an explicit minority — an even split would teach the
+      // fine-tune a distribution it will never see in practice.
+      expect(prefill).toContain("roughly 20%")
+      expect(prefill).toContain("issues and edge cases")
+    })
+
+    it("returns the fine-tuning template for training even when a spec is loaded", () => {
+      // A task can have specs while the user is generating training data. The
+      // gen_type, not the presence of a spec, decides which batch we plan.
+      model.gen_type = "training"
+      model["spec"] = mockSpec
+
+      expect(model.kiln_pro_batch_plan_prefill()).toContain(
+        "training set to fine-tune",
+      )
+    })
+
+    it("returns the eval template, embedding the spec definition, for eval", () => {
+      model.gen_type = "eval"
+      model["spec"] = mockSpec
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain("Summarizes Multi-Topic Input")
+      expect(prefill).toContain(
+        "The task must produce a single unified summary.",
+      )
+      expect(prefill).toContain("<eval_definition>")
+      expect(prefill).not.toContain("fine-tune")
+    })
+
+    it("uses the default judge's own eval steps for a legacy eval", () => {
+      // A legacy eval has no spec, so the judge's steps are the only statement
+      // of what the batch is measured against. Prefer the saved steps: the user
+      // may have edited them, and those edits are the eval's real definition.
+      model.gen_type = "eval"
+      model["evaluator"] = { id: "eval1", name: "Clickbait" } as Eval
+      model["default_judge"] = {
+        id: "cfg1",
+        properties: {
+          eval_steps: ["Is the headline clickbait?", "Is it accurate?"],
+        },
+      } as unknown as EvalConfig
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain('run the eval "Clickbait" on')
+      expect(prefill).toContain("1. Is the headline clickbait?")
+      expect(prefill).toContain("2. Is it accurate?")
+      // Judge steps are imperatives aimed at a judge, not a statement of the
+      // behaviour, so they get their own delimiter — the planner is told to read
+      // the two differently. Both mark the batch as an eval batch.
+      expect(prefill).toContain("<judge_instructions>")
+      expect(prefill).not.toContain("<eval_definition>")
+    })
+
+    it("reconstructs eval steps from the template when there is no default judge", () => {
+      model.gen_type = "eval"
+      model["evaluator"] = {
+        id: "eval1",
+        name: "Toxicity",
+        template: "toxicity",
+      } as Eval
+      model.task = { id: "task1", requirements: [] } as unknown as Task
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain('run the eval "Toxicity" on')
+      expect(prefill).toContain("harmful language")
+    })
+
+    it("returns blank for a legacy eval with no judge and no template", () => {
+      // Nothing to point a plan at, so leave the box to the user rather than
+      // inventing a batch definition.
+      model.gen_type = "eval"
+      model["evaluator"] = { id: "eval1", name: "Custom" } as Eval
+      model.task = { id: "task1", requirements: [] } as unknown as Task
+
+      expect(model.kiln_pro_batch_plan_prefill()).toBe("")
+    })
+
+    it("returns blank when a template's required properties are missing", () => {
+      // get_eval_steps throws for a kiln_issue eval with no issue_prompt. That
+      // must not take down the Generate Batch page.
+      model.gen_type = "eval"
+      model["evaluator"] = {
+        id: "eval1",
+        name: "Issue",
+        template: "kiln_issue",
+        template_properties: {},
+      } as unknown as Eval
+      model.task = { id: "task1", requirements: [] } as unknown as Task
+
+      expect(model.kiln_pro_batch_plan_prefill()).toBe("")
     })
   })
 

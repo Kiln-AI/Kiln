@@ -275,6 +275,7 @@
         <div class="flex flex-col mt-2 gap-2">
           <TaskRunPicker
             available_runs={filtered_available_runs}
+            inputs_only={!include_output}
             on:select={(e) => select_existing_run(e.detail)}
           />
         </div>

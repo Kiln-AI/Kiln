@@ -4724,6 +4724,7 @@ async def test_run_extractor_config_no_tags(
             mock_project,
             exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
             target_tags=None,
+            target_document_ids=None,
         )
         mock_run_extractor.assert_called_once()
         call_args = mock_run_extractor.call_args[0]
@@ -4768,12 +4769,54 @@ async def test_run_extractor_config_with_tags(
             mock_project,
             exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
             target_tags=["python", "ml", "backend"],
+            target_document_ids=None,
         )
         mock_run_extractor.assert_called_once()
         call_args = mock_run_extractor.call_args[0]
         extractor_runner = call_args[0]
         assert len(extractor_runner.documents) == 1
         assert extractor_runner.documents[0].id == document.id
+
+
+async def test_run_extractor_config_with_document_ids(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """run_extractor_config forwards a document_ids allow-list (used to scope a
+    run to specific docs without tagging them)."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config",
+            params={"document_ids": "doc-a, doc-b ,doc-c"},
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=None,
+            target_document_ids=["doc-a", "doc-b", "doc-c"],
+        )
 
 
 async def test_ephemeral_split_document_success_with_chunks(
@@ -5095,6 +5138,34 @@ async def test_get_documents_filtered_with_tag_filtering(mock_project, mock_docu
     result = get_documents_filtered(project, target_tags=["python", "javascript"])
     assert len(result) == 1
     assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_document_ids(mock_project, mock_document):
+    """get_documents_filtered scopes to an explicit document-id allow-list, and
+    ANDs it with tag filtering when both are set."""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python"]
+    document.save_to_file()
+
+    # Matching id is returned.
+    result = get_documents_filtered(project, target_document_ids=[document.id])
+    assert [d.id for d in result] == [document.id]
+
+    # Non-matching id excludes it.
+    result = get_documents_filtered(project, target_document_ids=["not-a-real-id"])
+    assert result == []
+
+    # Empty list behaves like "no id filter" (falsy → ignored).
+    result = get_documents_filtered(project, target_document_ids=[])
+    assert [d.id for d in result] == [document.id]
+
+    # ANDed with tags: id matches but tag doesn't → excluded.
+    result = get_documents_filtered(
+        project, target_tags=["javascript"], target_document_ids=[document.id]
+    )
+    assert result == []
 
 
 @pytest.mark.asyncio

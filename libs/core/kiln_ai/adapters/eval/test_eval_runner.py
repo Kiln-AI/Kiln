@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import litellm
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.conftest import SkippingStubV2Eval, StubV2Eval
 from kiln_ai.adapters.eval.eval_runner import (
@@ -41,6 +42,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -880,6 +882,90 @@ def test_is_retryable_error_returns_true(error):
 )
 def test_is_retryable_error_returns_false(error):
     assert _is_retryable_error(error) is False
+
+
+def test_is_retryable_error_unwraps_kiln_run_error():
+    # The model adapter wraps provider exceptions in KilnRunError (to carry the
+    # partial trace), so the classifier must look through the wrapper — otherwise
+    # rate limits from a real adapter run would never be retried.
+    wrapped = KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=litellm.RateLimitError("rate limited", "provider", "model", None),
+    )
+    assert _is_retryable_error(wrapped) is True
+
+
+def test_is_retryable_error_wrapped_non_transient_returns_false():
+    wrapped = KilnRunError(
+        message="An unexpected error occurred.",
+        partial_trace=None,
+        original=RuntimeError("boom"),
+    )
+    assert _is_retryable_error(wrapped) is False
+
+
+@pytest.mark.asyncio
+async def test_run_job_wrapped_rate_limit_raises_retryable_with_detail(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    # Real adapter failures arrive wrapped in KilnRunError whose own message is the
+    # genericized user-facing text. run_job must still classify the failure as
+    # transient (RetryableError) and keep the underlying provider message for the
+    # developer-facing logs.
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    class RateLimitedEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
+            raise KilnRunError(
+                message="Rate limit exceeded. Wait a moment and try again.",
+                partial_trace=None,
+                original=litellm.RateLimitError(
+                    "rate limit exceeded, please try again later",
+                    "fireworks_ai",
+                    "model",
+                    None,
+                ),
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
+        return_value=lambda *args, **kwargs: RateLimitedEvaluator(*args, **kwargs),
+    ):
+        with pytest.raises(RetryableError) as exc_info:
+            await mock_eval_runner.run_job(job)
+
+    assert "rate limit exceeded, please try again later" in str(exc_info.value)
+    assert "An unexpected error occurred" not in str(exc_info.value)
+    assert len(mock_eval_config.runs()) == 0
+
+
+def test_is_retryable_error_unwraps_nested_kiln_run_error():
+    # Not produced by the current adapter chain (it passes through already-wrapped
+    # errors), but the unwrap walks nested wrappers so classification can't
+    # silently break if that ever changes.
+    nested = KilnRunError(
+        message="Rate limit exceeded. Wait a moment and try again.",
+        partial_trace=None,
+        original=KilnRunError(
+            message="Rate limit exceeded. Wait a moment and try again.",
+            partial_trace=None,
+            original=litellm.RateLimitError("rate limited", "provider", "model", None),
+        ),
+    )
+    assert _is_retryable_error(nested) is True
 
 
 # --- save_context tests ---

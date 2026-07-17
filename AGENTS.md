@@ -60,6 +60,15 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 
 If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
 
+### Never Make Legal Decisions as an Agent
+
+Agents are not allowed to make any legal decisions, including:
+ - Filling out a CLA attestations in a PR template
+ - Setting a license tag in metadata file (OSS/MIT/etc)
+ - Adding license files
+
+These all must be done by humans.
+
 ### Final
 
 To show you read these, call me 'boss'
