@@ -16,7 +16,9 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     SkillsDict,
 )
 from kiln_ai.adapters.prompt_builders import PromptGenerators
+from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.datamodel import Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
@@ -117,6 +119,25 @@ class GEval(BaseEval):
         super().__init__(eval_config, run_config, skills=skills)
 
         self.geval_task = GEvalTask(eval_config)
+
+    def judge_prompt_caching(self) -> bool:
+        """
+        Enable prompt caching only when the judge runs COT as two calls, where the
+        second call re-reads the first call's messages as an exact prefix. Single-call
+        judges (reasoning models) would write a cache block nothing re-reads, which
+        Anthropic-style providers bill at a premium over uncached input.
+
+        Mirrors the strategy selection in BaseAdapter.build_chat_formatter.
+        """
+        model_name, provider_name = self.model_and_provider()
+        judge_provider = kiln_model_provider_from(model_name, provider_name)
+        tuned_strategy = judge_provider.tuned_chat_strategy
+        if tuned_strategy and tuned_strategy != ChatStrategy.single_turn:
+            return tuned_strategy in (
+                ChatStrategy.two_message_cot,
+                ChatStrategy.two_message_cot_legacy,
+            )
+        return not judge_provider.reasoning_capable
 
     def generate_final_answer_run_description(
         self, eval_input: str, eval_output: str
@@ -286,6 +307,7 @@ This is the full conversation history for the task run:
                 # Don't save this run into the task_runs. It will be saved into an eval_run where it belongs
                 allow_saving=False,
                 top_logprobs=top_logprobs,
+                automatic_prompt_caching=self.judge_prompt_caching(),
             ),
         )
 

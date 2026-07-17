@@ -1,11 +1,12 @@
 import math
 import pickle
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from kiln_ai.adapters.eval.g_eval import TOKEN_TO_SCORE_MAP, GEval, GEvalTask
 from kiln_ai.adapters.eval.test_g_eval_data import serialized_run_output
-from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
 from kiln_ai.adapters.model_adapters.base_adapter import RunOutput
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import (
@@ -18,7 +19,11 @@ from kiln_ai.datamodel import (
     TaskRequirement,
     TaskRun,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import (
+    ChatStrategy,
+    ModelProviderName,
+    StructuredOutputMode,
+)
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -829,3 +834,93 @@ async def test_run_g_eval_full_trace_evaluation_data_type(
         EvalConfigType.g_eval,
         test_run_config,
     )
+
+
+@pytest.mark.parametrize(
+    "reasoning_capable,tuned_chat_strategy,expected",
+    [
+        # Non-reasoning judge: two-call COT, second call re-reads the first as a prefix
+        (False, None, True),
+        # Reasoning judge: single call, a cache write would never be re-read
+        (True, None, False),
+        # Tuned strategies override the reasoning_capable flag
+        (False, ChatStrategy.two_message_cot, True),
+        (False, ChatStrategy.two_message_cot_legacy, True),
+        (False, ChatStrategy.single_turn_r1_thinking, False),
+        (True, ChatStrategy.two_message_cot, True),
+        # Tuned single_turn is ignored (COT prompt takes priority), falls back to reasoning_capable
+        (False, ChatStrategy.single_turn, True),
+        (True, ChatStrategy.single_turn, False),
+    ],
+)
+def test_judge_prompt_caching_strategy_gate(
+    test_eval_config,
+    test_run_config,
+    reasoning_capable,
+    tuned_chat_strategy,
+    expected,
+):
+    g_eval = GEval(test_eval_config, test_run_config)
+    judge_provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="fake-model",
+        reasoning_capable=reasoning_capable,
+        tuned_chat_strategy=tuned_chat_strategy,
+    )
+    with patch(
+        "kiln_ai.adapters.eval.g_eval.kiln_model_provider_from",
+        return_value=judge_provider,
+    ):
+        assert g_eval.judge_prompt_caching() == expected
+
+
+@pytest.mark.parametrize(
+    "model_name,provider,expected",
+    [
+        # Non-reasoning judge: two-call COT, caching banks the second call's re-read
+        ("gpt_4o_mini", "openai", True),
+        ("claude_sonnet_4_6", "openrouter", True),
+        # Reasoning judge: single call, caching would only add write cost
+        ("claude_3_7_sonnet_thinking", "openrouter", False),
+    ],
+)
+def test_judge_prompt_caching_built_in_models(
+    test_eval_config, test_run_config, model_name, provider, expected
+):
+    test_eval_config.model_name = model_name
+    test_eval_config.model_provider = provider
+    g_eval = GEval(test_eval_config, test_run_config)
+    assert g_eval.judge_prompt_caching() == expected
+
+
+async def test_run_eval_sets_automatic_prompt_caching(
+    test_task, test_eval_config, test_task_run, test_run_config
+):
+    test_eval_config.config_type = EvalConfigType.llm_as_judge
+    g_eval = GEval(test_eval_config, test_run_config)
+
+    mock_adapter = AsyncMock()
+    mock_adapter.invoke_returning_run_output.return_value = (
+        None,
+        RunOutput(
+            output={
+                "appropriateness": "pass",
+                "topic_alignment": "4",
+                "overall_rating": "5",
+            },
+            intermediate_outputs={},
+        ),
+    )
+    with patch(
+        "kiln_ai.adapters.eval.g_eval.adapter_for_task", return_value=mock_adapter
+    ) as mock_adapter_for_task:
+        scores, _ = await g_eval.run_eval(test_task_run)
+
+    # gpt_4o_mini judge is non-reasoning -> two-call COT -> caching on
+    adapter_config = mock_adapter_for_task.call_args.kwargs["base_adapter_config"]
+    assert adapter_config.automatic_prompt_caching is True
+    assert scores == {
+        "appropriateness": 1.0,
+        "topic_alignment": 4.0,
+        "overall_rating": 5.0,
+    }
