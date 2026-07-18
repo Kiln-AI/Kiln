@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Code Judge LLM Calls
@@ -119,7 +119,7 @@ Today the pump + nested-call server live inside `PythonCodeTool` (`_run_child`, 
 
 ```python
 # tools/sandbox_bridge.py  (parent-side; may import the Kiln stack — NOT stdlib-only)
-CODE_SANDBOX_MAX_CONCURRENCY = 8
+CODE_SANDBOX_MAX_CONCURRENCY = 16   # shared by code tools + code judges (raises code tools' prior bound of 8)
 _depth: ContextVar[int] = ContextVar("_code_sandbox_depth", default=0)
 _semaphore, _semaphore_lock = None, threading.Lock()
 
@@ -194,7 +194,7 @@ async def evaluate(self, eval_input):
 
 ### 3.4 Concurrency: delete `_code_eval_execution_lock`
 
-Today `v2_eval_code_eval.py` serializes **all** code evals through a single `asyncio.Lock`. That is removed; code evals now run through `run_bridged_child`, which acquires the shared bounded semaphore (`CODE_SANDBOX_MAX_CONCURRENCY = 8`) at depth 0 — the same pool code tools use. This is both **required** (a global lock + LLM latency would serialize every eval item behind one judge call) and a **latency win** (up to 8 concurrent code-eval sandboxes instead of 1). The `_spawn_lock` in `sandbox/spawn.py` still serializes only `p.start()` (sub-ms), shared across both paths.
+Today `v2_eval_code_eval.py` serializes **all** code evals through a single `asyncio.Lock`. That is removed; code evals now run through `run_bridged_child`, which acquires the shared bounded semaphore (`CODE_SANDBOX_MAX_CONCURRENCY = 16`) at depth 0 — the same pool code tools use. This is both **required** (a global lock + LLM latency would serialize every eval item behind one judge call) and a **latency win** (up to 16 concurrent code-eval sandboxes instead of 1). Note the shared pool raises code tools' prior bound (8 → 16) as a side effect of unifying — acceptable and intended. The `_spawn_lock` in `sandbox/spawn.py` still serializes only `p.start()` (sub-ms), shared across both paths.
 
 ## 4. UI changes (`app/web_ui`)
 
