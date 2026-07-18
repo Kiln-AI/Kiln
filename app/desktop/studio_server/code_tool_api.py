@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path
-from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
+from kiln_ai.adapters.eval.v2_eval_code_eval import has_add_code_trust
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
@@ -219,7 +219,7 @@ def connect_code_tool_api(app: FastAPI):
     ) -> CodeToolCreateResponse:
         project = project_from_id(project_id)
 
-        if not is_code_eval_trusted(str(project.path)):
+        if not has_add_code_trust(str(project.path)):
             return CodeToolCreateResponse(not_trusted=True)
 
         existing = project.code_tools(readonly=True)
@@ -289,7 +289,7 @@ def connect_code_tool_api(app: FastAPI):
         except (ValueError, PydanticValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        if not is_code_eval_trusted(str(project.path)):
+        if not has_add_code_trust(str(project.path)):
             return TestCodeToolResponse(not_trusted=True)
 
         schema_str = json.dumps(request.parameters_schema, ensure_ascii=False)

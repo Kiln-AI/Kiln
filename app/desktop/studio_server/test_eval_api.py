@@ -684,6 +684,77 @@ async def test_create_eval_config_invalid_v2_properties(
     assert "v2" in body["message"]
 
 
+CODE_EVAL_PROPERTIES = {
+    "type": "code_eval",
+    "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+}
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_code_eval_untrusted_403(
+    client, mock_task_from_id, mock_v2_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with (
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
+        patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+        patch(
+            "app.desktop.studio_server.eval_api.has_add_code_trust",
+            return_value=False,
+        ),
+    ):
+        mock_eval_from_id.return_value = mock_v2_eval
+        mock_proj.return_value = Mock()
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval_v2/create_eval_config",
+            json={
+                "name": "Code Eval Config",
+                "type": "v2",
+                "properties": CODE_EVAL_PROPERTIES,
+            },
+        )
+
+    assert response.status_code == 403
+    assert "not trusted" in response.json()["message"].lower()
+    # Nothing should have been persisted.
+    assert len(mock_v2_eval.configs()) == 0
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_code_eval_trusted_succeeds(
+    client, mock_task_from_id, mock_v2_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with (
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
+        patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+        patch(
+            "app.desktop.studio_server.eval_api.has_add_code_trust",
+            return_value=True,
+        ),
+    ):
+        mock_eval_from_id.return_value = mock_v2_eval
+        mock_proj.return_value = Mock()
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval_v2/create_eval_config",
+            json={
+                "name": "Code Eval Config",
+                "type": "v2",
+                "properties": CODE_EVAL_PROPERTIES,
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["properties"]["type"] == "code_eval"
+    # Persisted to disk.
+    assert len(mock_v2_eval.configs()) == 1
+
+
 @pytest.mark.asyncio
 async def test_create_eval_config_with_valid_provenance(
     client, mock_task_from_id, mock_eval, mock_task, mock_eval_config
@@ -4458,40 +4529,40 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
 class TestCodeEvalTrustEndpoints:
     @pytest.fixture(autouse=True)
     def _clear_trust(self):
-        from kiln_ai.adapters.eval.v2_eval_code_eval import _trusted_projects
+        from kiln_ai.adapters.eval.v2_eval_code_eval import _reset_add_code_trust
 
-        _trusted_projects.clear()
+        _reset_add_code_trust()
         yield
-        _trusted_projects.clear()
+        _reset_add_code_trust()
 
-    def test_grant_trust(self, client):
+    def test_add_trust(self, client):
         with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.return_value = Mock()
-            response = client.post("/api/projects/proj-1/grant_code_eval_trust")
+            response = client.post("/api/projects/proj-1/add_code_trust")
 
         assert response.status_code == 200
         assert response.json() == {"trusted": True}
 
-    def test_grant_trust_invalid_project(self, client):
+    def test_add_trust_invalid_project(self, client):
         with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.side_effect = HTTPException(status_code=404, detail="Not found")
-            response = client.post("/api/projects/bad-id/grant_code_eval_trust")
+            response = client.post("/api/projects/bad-id/add_code_trust")
 
         assert response.status_code == 404
 
     def test_check_trust_untrusted(self, client):
         with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.return_value = Mock()
-            response = client.get("/api/projects/proj-1/code_eval_trust")
+            response = client.get("/api/projects/proj-1/add_code_trust")
         assert response.status_code == 200
         assert response.json() == {"trusted": False}
 
-    def test_check_trust_after_grant(self, client):
+    def test_check_trust_after_add(self, client):
         mock_project = Mock()
         with patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj:
             mock_proj.return_value = mock_project
-            client.post("/api/projects/proj-1/grant_code_eval_trust")
-            response = client.get("/api/projects/proj-1/code_eval_trust")
+            client.post("/api/projects/proj-1/add_code_trust")
+            response = client.get("/api/projects/proj-1/add_code_trust")
         assert response.status_code == 200
         assert response.json() == {"trusted": True}
 
@@ -4566,8 +4637,16 @@ class TestTestV2Eval:
                 "final_message": "test",
             },
         }
-        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=False,
+            ),
+        ):
             mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
             response = client.post(self._url(), json=payload)
         assert response.status_code == 200
         body = response.json()
@@ -4587,8 +4666,9 @@ class TestTestV2Eval:
         }
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
                 return_value=True,
             ),
             patch(
@@ -4597,6 +4677,7 @@ class TestTestV2Eval:
             ),
         ):
             mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
             response = client.post(self._url(), json=payload)
         assert response.status_code == 200
         body = response.json()
@@ -4751,8 +4832,9 @@ class TestTestV2Eval:
         }
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.is_code_eval_trusted",
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
                 return_value=True,
             ),
             patch(
@@ -4761,6 +4843,7 @@ class TestTestV2Eval:
             ),
         ):
             mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
             response = client.post(self._url(), json=payload)
         assert response.status_code == 200
         body = response.json()
@@ -4780,8 +4863,16 @@ class TestTestV2Eval:
                 "final_message": "test",
             },
         }
-        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=False,
+            ),
+        ):
             mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
             response = client.post(self._url(), json=payload)
         assert response.status_code == 200
         body = response.json()

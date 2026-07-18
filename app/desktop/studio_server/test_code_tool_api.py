@@ -17,7 +17,7 @@ SIMPLE_SCHEMA = {
     "required": ["x"],
 }
 
-TRUST_PATCH = "app.desktop.studio_server.code_tool_api.is_code_eval_trusted"
+TRUST_PATCH = "app.desktop.studio_server.code_tool_api.has_add_code_trust"
 
 
 @pytest.fixture

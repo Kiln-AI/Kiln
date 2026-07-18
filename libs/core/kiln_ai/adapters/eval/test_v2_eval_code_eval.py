@@ -3,16 +3,15 @@
 import asyncio
 import threading
 import time
-from unittest.mock import Mock, PropertyMock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
     CodeEvalAdapter,
-    _trusted_projects,
-    grant_code_eval_trust,
-    is_code_eval_trusted,
-    revoke_code_eval_trust,
+    _reset_add_code_trust,
+    add_code_trust,
+    has_add_code_trust,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
@@ -21,15 +20,14 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalOutputScore,
     EvalTaskInput,
-    SkippedReason,
 )
 
 
 @pytest.fixture(autouse=True)
 def _clear_trust():
-    _trusted_projects.clear()
+    _reset_add_code_trust()
     yield
-    _trusted_projects.clear()
+    _reset_add_code_trust()
 
 
 def _make_config(
@@ -71,27 +69,29 @@ def _inp(**overrides) -> EvalTaskInput:
 
 
 class TestTrustGate:
-    def test_grant_and_check(self):
-        assert not is_code_eval_trusted("proj-1")
-        grant_code_eval_trust("proj-1")
-        assert is_code_eval_trusted("proj-1")
+    def test_add_and_check(self):
+        assert not has_add_code_trust("proj-1")
+        add_code_trust("proj-1")
+        assert has_add_code_trust("proj-1")
 
-    def test_revoke(self):
-        grant_code_eval_trust("proj-1")
-        revoke_code_eval_trust("proj-1")
-        assert not is_code_eval_trusted("proj-1")
+    def test_add_is_idempotent(self):
+        add_code_trust("proj-1")
+        add_code_trust("proj-1")
+        assert has_add_code_trust("proj-1")
 
-    def test_revoke_nonexistent_is_noop(self):
-        revoke_code_eval_trust("proj-never-added")
+    def test_reset_clears_all(self):
+        add_code_trust("proj-a")
+        add_code_trust("proj-b")
+        _reset_add_code_trust()
+        assert not has_add_code_trust("proj-a")
+        assert not has_add_code_trust("proj-b")
 
     def test_multiple_projects(self):
-        grant_code_eval_trust("proj-a")
-        grant_code_eval_trust("proj-b")
-        assert is_code_eval_trusted("proj-a")
-        assert is_code_eval_trusted("proj-b")
-        revoke_code_eval_trust("proj-a")
-        assert not is_code_eval_trusted("proj-a")
-        assert is_code_eval_trusted("proj-b")
+        add_code_trust("proj-a")
+        add_code_trust("proj-b")
+        assert has_add_code_trust("proj-a")
+        assert has_add_code_trust("proj-b")
+        assert not has_add_code_trust("proj-c")
 
 
 class TestCodeEvalAdapterInit:
@@ -110,19 +110,9 @@ class TestCodeEvalAdapterInit:
 
 class TestCodeEvalAdapterEvaluate:
     @pytest.mark.asyncio
-    async def test_untrusted_project_skips(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        result = await adapter.evaluate(_inp())
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.code_eval_not_trusted
-        assert result.skipped_detail is not None
-
-    @pytest.mark.asyncio
     async def test_successful_evaluation(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 0.95}}
@@ -136,8 +126,6 @@ class TestCodeEvalAdapterEvaluate:
     async def test_timeout_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.side_effect = RuntimeError("Code eval scorer timed out after 30s")
             with pytest.raises(RuntimeError, match="timed out"):
@@ -147,8 +135,6 @@ class TestCodeEvalAdapterEvaluate:
     async def test_scorer_error_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {
                 "error": "NameError: undefined",
@@ -161,8 +147,6 @@ class TestCodeEvalAdapterEvaluate:
     async def test_non_dict_result_raises(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": "not a dict"}
             with pytest.raises(RuntimeError, match="Scorer must return a dict"):
@@ -172,8 +156,6 @@ class TestCodeEvalAdapterEvaluate:
     async def test_inputs_passed_correctly(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 1.0}}
             await adapter.evaluate(
@@ -198,8 +180,6 @@ class TestScoreValidation:
     async def test_bool_rejected(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": True}}
             with pytest.raises(RuntimeError, match="returned a bool"):
@@ -209,8 +189,6 @@ class TestScoreValidation:
     async def test_int_converted_to_float(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 1}}
             result = await adapter.evaluate(_inp())
@@ -223,8 +201,6 @@ class TestScoreValidation:
     async def test_key_mismatch_raises(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"wrong_key": 0.5}}
             with pytest.raises(RuntimeError, match="Score key mismatch"):
@@ -234,8 +210,6 @@ class TestScoreValidation:
     async def test_string_score_rejected(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": "high"}}
             with pytest.raises(RuntimeError, match="must be a float"):
@@ -257,38 +231,10 @@ class TestAsyncScorerEndToEnd:
         )
         cfg = _make_config(code=code)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         result = await adapter.evaluate(_inp(final_message="test"))
         assert result.scores == {"accuracy": 0.75}
         assert result.skipped_reason is None
         assert result.skipped_detail is None
-
-
-class TestResolveProjectPath:
-    def test_no_project_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        adapter.target_task.parent = None
-        assert adapter._resolve_project_path() is None
-
-    def test_no_path_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        adapter.target_task.parent.path = None
-        assert adapter._resolve_project_path() is None
-
-    def test_valid_chain_returns_path(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        assert adapter._resolve_project_path() == "/fake/project/path"
-
-    def test_exception_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        broken_parent = PropertyMock(side_effect=RuntimeError("broken"))
-        type(adapter.target_task).parent = broken_parent
-        assert adapter._resolve_project_path() is None
 
 
 class TestExecutionSerialization:
@@ -305,8 +251,6 @@ class TestExecutionSerialization:
         cfg2 = _make_config()
         adapter1 = CodeEvalAdapter(cfg1)
         adapter2 = CodeEvalAdapter(cfg2)
-        grant_code_eval_trust("/fake/project/path")
-
         counter_lock = threading.Lock()
         concurrency_counter = 0
         max_concurrency = 0
@@ -346,7 +290,7 @@ class TestFiniteScoreValidation:
         saved file unloadable)."""
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
+        add_code_trust("/fake/project/path")
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": bad}}
@@ -359,7 +303,7 @@ class TestFiniteScoreValidation:
         RuntimeError, not a raw OverflowError from the coercion."""
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
+        add_code_trust("/fake/project/path")
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 10**400}}
@@ -382,7 +326,7 @@ class TestUsageObjectTransport:
         )
         cfg = _make_config(code=code)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
+        add_code_trust("/fake/project/path")
 
         trace = [
             {"role": "user", "content": "hi"},
