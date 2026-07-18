@@ -1,59 +1,45 @@
-"""Synthetic ``kiln.tools`` / ``kiln.async_tools`` modules for code-tool children.
+"""Sandbox-side ``kiln.tools`` bridge for code-tool children.
 
 Stdlib only — no Pydantic / Kiln-model / DB / UI imports.
 
+The synthetic-module *surface* (proxy behavior, ``list_tools`` wiring, and the
+typed exception classes ``ToolNotAllowed`` / ``ToolTimeout`` / ``ToolCallError``)
+lives in :mod:`kiln_ai.sandbox.tools_surface`, shared with the test shim so
+runtime and tests present one definition of ``kiln.tools``. This module provides
+the sandbox's real IPC bridge and wires it into that surface.
+
 Provides:
 
-* Typed exceptions: ``ToolNotAllowed``, ``ToolTimeout``, ``ToolCallError``
 * ``ToolCallBridge``: thread-safe IPC bridge (child -> parent tool calls)
 * ``install_tools_modules()``: injects ``kiln``, ``kiln.tools``,
   ``kiln.async_tools`` into ``sys.modules`` so user code can
   ``from kiln import tools`` etc.
+
+``ToolNotAllowed`` / ``ToolTimeout`` / ``ToolCallError`` are re-exported here
+(they are defined in ``tools_surface``) so existing importers keep working.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sys
 import threading
-import types
 from multiprocessing import Queue
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Typed exceptions
-# ---------------------------------------------------------------------------
+from kiln_ai.sandbox.tools_surface import (
+    ToolCallError,
+    ToolNotAllowed,
+    ToolTimeout,
+    install_tools_modules_for_bridge,
+)
 
-
-class ToolNotAllowed(Exception):
-    """The requested tool is not in this code tool's allowlist."""
-
-    def __init__(self, tool: str, message: str) -> None:
-        self.tool = tool
-        self.message = message
-        self.raw: str | None = None
-        super().__init__(message)
-
-
-class ToolTimeout(Exception):
-    """A nested tool call timed out."""
-
-    def __init__(self, tool: str, message: str) -> None:
-        self.tool = tool
-        self.message = message
-        self.raw: str | None = None
-        super().__init__(message)
-
-
-class ToolCallError(Exception):
-    """Catch-all for nested tool-call failures."""
-
-    def __init__(self, tool: str, message: str, raw: str | None = None) -> None:
-        self.tool = tool
-        self.message = message
-        self.raw = raw
-        super().__init__(message)
+__all__ = [
+    "ToolCallBridge",
+    "ToolCallError",
+    "ToolNotAllowed",
+    "ToolTimeout",
+    "install_tools_modules",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -206,60 +192,5 @@ def install_tools_modules(
     """
     bridge = ToolCallBridge(requests, responses)
     bridge.start_dispatcher()
-
-    # -- kiln --
-    kiln_mod = types.ModuleType("kiln")
-    kiln_mod.__path__ = []  # make it a package so `from kiln import ...` works
-
-    # -- kiln.tools (sync) --
-    tools_mod = _SyncToolsModule("kiln.tools")
-    tools_mod._bridge = bridge  # type: ignore[attr-defined]
-    tools_mod.ToolNotAllowed = ToolNotAllowed  # type: ignore[attr-defined]
-    tools_mod.ToolTimeout = ToolTimeout  # type: ignore[attr-defined]
-    tools_mod.ToolCallError = ToolCallError  # type: ignore[attr-defined]
-    tools_mod.list_tools = bridge.list_tools  # type: ignore[attr-defined]
-
-    # -- kiln.async_tools (async) --
-    async_tools_mod = _AsyncToolsModule("kiln.async_tools")
-    async_tools_mod._bridge = bridge  # type: ignore[attr-defined]
-    async_tools_mod.ToolNotAllowed = ToolNotAllowed  # type: ignore[attr-defined]
-    async_tools_mod.ToolTimeout = ToolTimeout  # type: ignore[attr-defined]
-    async_tools_mod.ToolCallError = ToolCallError  # type: ignore[attr-defined]
-
-    async def _async_list_tools() -> list[dict[str, Any]]:
-        return await asyncio.to_thread(bridge.list_tools)
-
-    async_tools_mod.list_tools = _async_list_tools  # type: ignore[attr-defined]
-
-    kiln_mod.tools = tools_mod  # type: ignore[attr-defined]
-    kiln_mod.async_tools = async_tools_mod  # type: ignore[attr-defined]
-
-    sys.modules["kiln"] = kiln_mod
-    sys.modules["kiln.tools"] = tools_mod
-    sys.modules["kiln.async_tools"] = async_tools_mod
-
+    install_tools_modules_for_bridge(bridge)
     return bridge
-
-
-class _SyncToolsModule(types.ModuleType):
-    """``kiln.tools`` — sync callable proxies for tool calls."""
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        bridge: ToolCallBridge = self._bridge  # type: ignore[attr-defined]
-        return lambda *args, **kw: bridge.call(name, args, kw)
-
-
-class _AsyncToolsModule(types.ModuleType):
-    """``kiln.async_tools`` — awaitable proxies for tool calls."""
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        bridge: ToolCallBridge = self._bridge  # type: ignore[attr-defined]
-
-        async def _async_proxy(*args: Any, **kw: Any) -> str:
-            return await asyncio.to_thread(bridge.call, name, args, kw)
-
-        return _async_proxy
