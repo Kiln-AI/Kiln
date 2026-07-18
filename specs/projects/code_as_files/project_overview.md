@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Code as Files — Project Overview
@@ -31,7 +31,8 @@ This reverses two locked decisions from the `code_tools` project that were prema
 2. **In-memory API is unchanged.** `code` stays a `str` on the model in memory (read from the sibling file on load, written to it on save). Validators, the execution engine, and the transient test endpoints see the same `str` they see today — the change is storage + authoring, not runtime.
 3. **Scope: both code tools and code judges**, treated symmetrically, so the two features don't diverge.
 4. **Testing is "code-as-file only."** Kiln makes the code a real importable file and ships an importable **`kiln` test shim** (a `pytest` plugin) so `from kiln import tools` resolves in tests and authors stub tool responses. Kiln does **not** store, display, or run tests — no test artifacts, no run-tests endpoint, no test UI. The test loop lives in a normal Python environment with `kiln_ai` installed.
-5. **The execution engine is untouched.** The sandbox worker, IPC/nesting bridge, timeout, semaphore, and trust gate all take an in-memory code string regardless of where it came from. This change must not modify `libs/core/kiln_ai/sandbox/*` execution behavior or `adapters/eval/sandbox_worker.py`.
+5. **The execution engine is untouched.** The sandbox worker, IPC/nesting bridge, timeout, semaphore, and trust gate all take an in-memory code string regardless of where it came from. This change must not modify `libs/core/kiln_ai/sandbox/*` execution behavior or `adapters/eval/sandbox_worker.py`. The sandbox reads the code as a string and `exec()`s it — it **never** imports the sibling file or puts the artifact folder on `sys.path` (hard invariant; functional spec §1.3).
+6. **One `kiln.tools` surface, shared by runtime and tests.** The synthetic-module surface (proxy behavior, `list_tools`, and the exception classes) is factored out of `sandbox/tools_api.py` into a stdlib-only helper that both the sandbox bridge and the test shim import — a behavior-preserving extraction guarded by the existing sandbox suite passing unchanged. This keeps runtime and test fidelity from drifting; it is not an execution-behavior change.
 
 ## Why the `kiln` test shim is load-bearing
 

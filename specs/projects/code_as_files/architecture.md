@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Code as Files
@@ -22,7 +22,7 @@ Technical design for [functional_spec.md](functional_spec.md). Target: `Kiln-AI/
 | `datamodel/basemodel.py` | **One base change.** `load_from_file` adds the source folder to the validation context: `context={"loading_from_file": True, "source_dir": path.parent}` (line ~434). Symmetric with the save side, which already passes `dest_path=path.parent` (line 500). Other models ignore the new key. |
 | `datamodel/code_tool.py` | Route `code` through `tool.py`. Add `TOOL_CODE_FILENAME = "tool.py"`. Add the before-validator (§3.1) and the model serializer (§3.2). `code: str` stays required; the validation trio (`validate_code`, lines 78–102) is unchanged. |
 | `datamodel/eval.py` | Same for `CodeEvalProperties` with `SCORER_CODE_FILENAME = "scorer.py"`. Before-validator + model serializer (§3.3). `validate_code` (lines 209–237) unchanged. Handles the nested-in-`EvalConfig.properties` case (§3.3). |
-| `sandbox/tools_api.py` | **Behavior-preserving extraction only** (§4): factor the synthetic-module *surface* (proxy attribute behavior, `list_tools`, and the `ToolNotAllowed`/`ToolTimeout`/`ToolCallError` definitions) into a shared, stdlib-only helper the shim also imports, so runtime and tests present one definition of `kiln.tools`. The sandbox's real bridge and `install_tools_modules` (line 199) keep identical behavior; the existing sandbox test suite must pass unchanged. (Alternative if we want the sandbox literally untouched: the shim reimplements the surface and a contract test asserts parity — noted in §9.) |
+| `sandbox/tools_api.py` | **Behavior-preserving extraction** (decided — scosman 2026-07-18): factor the synthetic-module *surface* (proxy attribute behavior, `list_tools`, and the `ToolNotAllowed`/`ToolTimeout`/`ToolCallError` definitions) into a shared, stdlib-only helper the shim also imports, so runtime and tests present one definition of `kiln.tools`. The sandbox's real bridge and `install_tools_modules` (line 199) keep identical behavior; the existing sandbox test suite must pass unchanged. |
 | `tool_testing/` | **New package.** The `pytest` plugin + fake bridge + `kiln_tools` fixture (§5). Registered as a `pytest11` entry point. Stdlib + `kiln_ai` only. |
 
 **Unchanged (verified in scope):** `tools/code_tool.py` (`PythonCodeTool` reads `self.code_tool.code` in memory), `sandbox/worker.py`, `sandbox/spawn.py`, `sandbox/entrypoint.py`, `adapters/eval/v2_eval_code_eval.py`, `adapters/eval/sandbox_worker.py`. Execution always receives an in-memory string.
@@ -153,6 +153,6 @@ None — nothing shipped. Consequence to handle *within this branch*: any `.kiln
 - **Nested context to union members** (§3.3) — the one mechanism that isn't already proven by attachments; validate it in Phase 2 before building on it.
 - **Base-model context key is shared** — `source_dir` reaches every model's validation; harmless (only code models read it), but keep the key name unambiguous and covered by a test that other models load unaffected.
 - **Model cache keys on the `.kiln` mtime, not the `.py`** (`basemodel.py:426/456`) — a hand-edited `tool.py` won't invalidate a cached readonly model. Acceptable: code is immutable by contract; documented (functional spec §7).
-- **`sandbox/tools_api.py` extraction** touches sandbox-adjacent code; if we'd rather leave the sandbox literally untouched, the shim reimplements the surface and a contract test asserts parity (§4 alternative). Recommend the extraction (one source of truth) with the existing suite as the guardrail — flag for scosman.
+- **`sandbox/tools_api.py` extraction** (decided) touches sandbox-adjacent code but is behavior-preserving — one source of truth for the `kiln.tools` surface, guarded by the existing sandbox suite passing unchanged. Not an execution-behavior change.
 - **pytest module-name collisions** across tool folders — documented authoring guidance (one folder at a time / `importmode=importlib`), not a Kiln mechanism.
 - **Export/git-sync must carry the `.py` files** — real files are strictly friendlier to git than escaped JSON, but add the round-trip test so it can't regress.
