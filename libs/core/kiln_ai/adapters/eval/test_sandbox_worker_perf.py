@@ -1,9 +1,9 @@
-"""Benchmarks for sandbox_worker / code-eval subprocess performance.
+"""Benchmarks for the code-eval scorer subprocess performance.
 
 These benchmarks measure the end-to-end cost of spawning a child process
-via ``run_scorer`` at various levels of code complexity.  With lazy
+via the shared bridge at various levels of code complexity.  With lazy
 ``__init__.py`` imports, the child process no longer loads the full
-kiln_ai.adapters package chain, so ``run_scorer`` completes in tens of
+kiln_ai.adapters package chain, so a scorer run completes in tens of
 milliseconds rather than seconds.
 
 Marked ``@pytest.mark.slow`` so they are skipped in normal CI runs (requires
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.test_sandbox_worker import run_scorer
 
 _EVAL_HELPERS_PATH = Path(__file__).resolve().parent / "eval_helpers.py"
 

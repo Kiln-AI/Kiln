@@ -291,13 +291,10 @@ def _empty_server(tmp_path) -> NestedToolServer:
 class TestRunBridgedChild:
     @pytest.mark.asyncio
     async def test_result_message_returned_raw(self, tmp_path):
-        requests, responses = _spawn_queues()
         result = await run_bridged_child(
             target=child_main,
             args=('def run(x):\n    return "hi " + x\n', {"x": "there"}),
             timeout_s=10,
-            requests=requests,
-            responses=responses,
             server=_empty_server(tmp_path),
         )
         assert result.timed_out is False
@@ -307,13 +304,10 @@ class TestRunBridgedChild:
 
     @pytest.mark.asyncio
     async def test_crash_reports_exit_code(self, tmp_path):
-        requests, responses = _spawn_queues()
         result = await run_bridged_child(
             target=child_main,
             args=("import os\ndef run(x):\n    os._exit(4)\n", {"x": "a"}),
             timeout_s=10,
-            requests=requests,
-            responses=responses,
             server=_empty_server(tmp_path),
         )
         assert result.crashed is True
@@ -322,13 +316,10 @@ class TestRunBridgedChild:
 
     @pytest.mark.asyncio
     async def test_timeout_kills_child(self, tmp_path):
-        requests, responses = _spawn_queues()
         result = await run_bridged_child(
             target=child_main,
             args=("import time\ndef run(x):\n    time.sleep(30)\n", {"x": "a"}),
             timeout_s=0.3,
-            requests=requests,
-            responses=responses,
             server=_empty_server(tmp_path),
         )
         assert result.timed_out is True
@@ -336,21 +327,18 @@ class TestRunBridgedChild:
 
     @pytest.mark.asyncio
     async def test_depth_cap_returns_error_without_spawn(self, tmp_path):
-        requests, responses = _spawn_queues()
         token = _depth.set(10)
         try:
             result = await run_bridged_child(
                 target=child_main,
                 args=('def run(x):\n    return "should not run"\n', {"x": "a"}),
                 timeout_s=10,
-                requests=requests,
-                responses=responses,
                 server=_empty_server(tmp_path),
             )
         finally:
             _depth.reset(token)
         assert result.result_msg == {
-            "error": "max code tool depth exceeded — check for a cycle"
+            "error": "maximum nested code execution depth exceeded — check for a cycle"
         }
         assert result.timed_out is False
         assert result.crashed is False
