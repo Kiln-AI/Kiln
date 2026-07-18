@@ -2189,6 +2189,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/runs/{run_id}/save_conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Conversation To Dataset
+         * @description Materialize an EvalRun's stored conversation as a dataset TaskRun so
+         *     it can be rated with the existing rating UI. Idempotent: re-exporting
+         *     returns the previously exported TaskRun instead of duplicating.
+         */
+        post: operations["save_conversation_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__runs__run_id__save_conversation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress": {
         parameters: {
             query?: never;
@@ -5321,6 +5343,23 @@ export interface components {
              */
             mode: "must_contain" | "must_not_contain";
         };
+        /**
+         * ConversationTranscript
+         * @description A stored conversation rendered as display text, using the same
+         *     canonical formatting the builder review UI and judge templates consume.
+         */
+        ConversationTranscript: {
+            /**
+             * Raw Input
+             * @description The conversation's opening user message.
+             */
+            raw_input: string;
+            /**
+             * Raw Output
+             * @description The full role-labelled transcript.
+             */
+            raw_output: string;
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -7096,6 +7135,14 @@ export interface components {
             eval_config: components["schemas"]["EvalConfig"];
             /** @description The run config used. */
             run_config: components["schemas"]["TaskRunConfig"];
+            /**
+             * Transcripts
+             * @description Display transcripts keyed by EvalRun id. An entry exists only for runs whose stored trace parses to a non-empty conversation.
+             * @default {}
+             */
+            transcripts: {
+                [key: string]: components["schemas"]["ConversationTranscript"];
+            };
         };
         /**
          * EvalTaskInput
@@ -18200,6 +18247,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_conversation_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__runs__run_id__save_conversation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
+                eval_config_id: string;
+                /** @description The unique identifier of the eval run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
                 };
             };
             /** @description Validation Error */

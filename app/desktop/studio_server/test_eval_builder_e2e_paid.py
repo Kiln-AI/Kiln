@@ -65,7 +65,11 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        paid once per (scenario, run config), so the second
                        judge must consume the stored conversations —
                        byte-identical traces, equal drive fingerprints,
-                       zero new drives — at judge-only speed.)
+                       zero new drives — at judge-only speed. An EXPORT
+                       leg then saves one stored conversation to the
+                       dataset via save_conversation — a provenance-tagged
+                       TaskRun the rating UI can consume — and re-exports
+                       to prove idempotency. No model calls.)
   Step 8   READ        GET .../score_summary, .../eval_results_summary,
                        .../run_configs/{id}/eval_scores
                        (The endpoints the post-save spec detail page,
@@ -96,8 +100,8 @@ Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
 builder, one refine call at save, plus the runner's work over the saved
 eval: a fresh 4x2 re-drive per run config (two configs) with a judge call
 each, the golden calibration judge calls, and the reuse leg's 8 judge-only
-calls (no drives — that's the assertion) — ~80 small model calls, still
-cents.
+calls (no drives — that's the assertion); the export leg adds zero model
+calls — ~80 small model calls, still cents.
 
 A second paid test (`test_eval_builder_pipeline_tools_e2e`) drives a
 tool-calling task via its SAVED run config (2x2, built-in calculator tools)
@@ -908,6 +912,9 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         )
 
     # ── Step 7 reuse leg — A SECOND JUDGE SCORES THE SAME CONVERSATIONS ─
+    # Runs deliberately AFTER calibration: run_calibration sweeps ALL of the
+    # eval's configs, so creating the second judge earlier would enroll it in
+    # the calibration pass and double the golden-calibration cost.
     # The drive above was paid once per (scenario, run config); every later
     # v2 judge — this eval's or any other eval on the task — must consume the
     # stored conversation via the (drive_fingerprint, run_config) reuse index
@@ -915,8 +922,15 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # the saved eval re-runs the comparison: same-sample scoring is the point
     # (two judges' verdicts join per conversation), so its records must carry
     # byte-identical traces and equal fingerprints, with zero new drives.
-    from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType
+    from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, LlmJudgeProperties
 
+    # The clone below tweaks an LLM judge's prompt; fail self-explainingly if
+    # the saved judge ever stops being one.
+    _require(
+        isinstance(judge_config.properties, LlmJudgeProperties),
+        "reuse leg expects the saved judge config to be an LLM judge; got "
+        f"{type(judge_config.properties).__name__}",
+    )
     second_judge_props = judge_config.properties.model_copy(deep=True)
     # Different judge instructions on purpose: reuse keys on drive identity
     # (drive config + run config + scenario), never on judge identity.
@@ -988,6 +1002,49 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     print(
         f"\ntrace reuse: second judge pass took {reuse_pass_seconds:.1f}s "
         f"vs {drive_pass_seconds:.1f}s for the drive pass"
+    )
+
+    # ── Step 7 export leg — SAVE A CONVERSATION TO THE DATASET (B7) ─────
+    # Eval-time drives are transient by design, so rating one takes an
+    # explicit, user-initiated export: save_conversation materializes the
+    # stored trace as a provenance-tagged TaskRun (the rating UI and the
+    # golden loop consume TaskRuns), idempotently — one exported record per
+    # EvalRun, ever. This leg is free: no model calls.
+    export_source = min(
+        eval_set_runs,
+        key=lambda r: (str(r.eval_input_id), str(r.task_run_config_id)),
+    )
+    export_url = (
+        f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
+        f"/eval_config/{judge_config.id}/runs/{export_source.id}/save_conversation"
+    )
+    resp = client.post(export_url)
+    _require(resp.status_code == 200, f"save_conversation failed: {resp.text}")
+    exported = resp.json()
+    _require(
+        "eval_export" in exported["tags"]
+        and f"exported_eval_run_{export_source.id}" in exported["tags"],
+        f"exported TaskRun is missing its provenance tags: {exported['tags']}",
+    )
+    assert export_source.task_run_trace is not None  # asserted per-run above
+    _require(
+        exported["trace"] == json.loads(export_source.task_run_trace),
+        "exported TaskRun's trace differs from the stored conversation",
+    )
+    _require(
+        len(temp_task.runs(include_intermediate_runs=True)) == runs_on_disk_before + 1,
+        "export did not add exactly one TaskRun to the dataset",
+    )
+    # Idempotency: re-exporting resolves to the SAME dataset item.
+    resp = client.post(export_url)
+    _require(resp.status_code == 200, f"re-export failed: {resp.text}")
+    _require(
+        resp.json()["id"] == exported["id"],
+        f"re-export minted a new TaskRun: {resp.json()['id']} vs {exported['id']}",
+    )
+    _require(
+        len(temp_task.runs(include_intermediate_runs=True)) == runs_on_disk_before + 1,
+        "re-export duplicated the exported TaskRun",
     )
 
     # ── Step 8 — READ THE RESULTS (the endpoints the UI renders from) ───

@@ -1,7 +1,8 @@
 import json
 from collections import defaultdict
-from typing import Annotated, Any, Dict, List, Set, Tuple
+from typing import Annotated, Any, Dict, List, Set, Tuple, cast
 
+from app.desktop.studio_server.utils.eval_builder_utils import transcript_io_for_trace
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
@@ -13,7 +14,14 @@ from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
 )
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
-from kiln_ai.datamodel import BasePrompt, Task, TaskRun
+from kiln_ai.datamodel import (
+    BasePrompt,
+    DataSource,
+    DataSourceType,
+    Task,
+    TaskOutput,
+    TaskRun,
+)
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
@@ -53,6 +61,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
@@ -97,6 +106,36 @@ def reusable_frozen_prompt_id(
         return None
     most_recent = max(matches, key=lambda run_config: run_config.created_at)
     return f"task_run_config::{project_id}::{task.id}::{most_recent.id}"
+
+
+# Provenance tags for conversations exported to the dataset via
+# save_conversation. The per-run tag doubles as the idempotency key.
+EVAL_EXPORT_TAG = "eval_export"
+
+
+def exported_eval_run_tag(run_id: str) -> str:
+    return f"exported_eval_run_{run_id}"
+
+
+def parsed_eval_run_trace(eval_run: EvalRun) -> list[dict[str, Any]] | None:
+    """Parse an EvalRun's stored conversation; None when absent or degraded.
+
+    Display and export share this rule: a trace must parse to a non-empty
+    list of message dicts to be rendered or materialized as a TaskRun.
+    """
+    if not eval_run.task_run_trace:
+        return None
+    try:
+        trace = json.loads(eval_run.task_run_trace)
+    except json.JSONDecodeError:
+        return None
+    if (
+        not isinstance(trace, list)
+        or len(trace) == 0
+        or not all(isinstance(message, dict) for message in trace)
+    ):
+        return None
+    return trace
 
 
 def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
@@ -370,6 +409,14 @@ class MeanUsage(BaseModel):
     )
 
 
+class ConversationTranscript(BaseModel):
+    """A stored conversation rendered as display text, using the same
+    canonical formatting the builder review UI and judge templates consume."""
+
+    raw_input: str = Field(description="The conversation's opening user message.")
+    raw_output: str = Field(description="The full role-labelled transcript.")
+
+
 class EvalRunResult(BaseModel):
     """Results of an eval run including the eval and run config."""
 
@@ -377,6 +424,11 @@ class EvalRunResult(BaseModel):
     eval: Eval = Field(description="The parent eval.")
     eval_config: EvalConfig = Field(description="The eval config used.")
     run_config: TaskRunConfig = Field(description="The run config used.")
+    transcripts: Dict[str, ConversationTranscript] = Field(
+        default={},
+        description="Display transcripts keyed by EvalRun id. An entry exists "
+        "only for runs whose stored trace parses to a non-empty conversation.",
+    )
 
 
 class UpdateFavouriteRequest(BaseModel):
@@ -1419,12 +1471,153 @@ def connect_evals_api(app: FastAPI):
             for run_result in eval_config.runs(readonly=True)
             if run_result.task_run_config_id == run_config_id
         ]
+        # Stored conversations render through the same canonical formatter the
+        # builder review UI and judge templates use — one text everywhere.
+        transcripts: Dict[str, ConversationTranscript] = {}
+        for run_result in results:
+            trace = parsed_eval_run_trace(run_result)
+            if trace is None or run_result.id is None:
+                continue
+            raw_input, raw_output = transcript_io_for_trace(trace)
+            transcripts[str(run_result.id)] = ConversationTranscript(
+                raw_input=raw_input,
+                raw_output=raw_output,
+            )
         return EvalRunResult(
             results=results,
             eval=eval,
             eval_config=eval_config,
             run_config=run_config,
+            transcripts=transcripts,
         )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/runs/{run_id}/save_conversation",
+        summary="Save Conversation To Dataset",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def save_conversation(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the eval run.")
+        ],
+    ) -> TaskRun:
+        """Materialize an EvalRun's stored conversation as a dataset TaskRun so
+        it can be rated with the existing rating UI. Idempotent: re-exporting
+        returns the previously exported TaskRun instead of duplicating."""
+        task = task_from_id(project_id, task_id)
+        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+        eval_run = next(
+            (run for run in eval_config.runs(readonly=True) if str(run.id) == run_id),
+            None,
+        )
+        if eval_run is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Eval run not found. ID: {run_id}",
+            )
+        if eval_run.eval_config_eval:
+            raise HTTPException(
+                status_code=400,
+                detail="This eval run scored an existing dataset item — its "
+                "conversation is already in the dataset.",
+            )
+
+        # Idempotency rides the provenance tag: at most one exported TaskRun
+        # per EvalRun. Intermediate runs included so chain shape can't hide a
+        # prior export.
+        provenance_tag = exported_eval_run_tag(run_id)
+        for existing_run in task.runs(readonly=True, include_intermediate_runs=True):
+            if provenance_tag in existing_run.tags:
+                return existing_run
+
+        trace = parsed_eval_run_trace(eval_run)
+        if trace is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This eval run has no stored conversation to save.",
+            )
+        # Same input/output rule as EvalTaskInput.from_eval_input_trace: the
+        # opener is the task input, the last assistant text is the output.
+        first_user_message = next(
+            (
+                message["content"]
+                for message in trace
+                if message.get("role") == "user"
+                and isinstance(message.get("content"), str)
+                and message["content"]
+            ),
+            None,
+        )
+        final_assistant_message = next(
+            (
+                message["content"]
+                for message in reversed(trace)
+                if message.get("role") == "assistant"
+                and isinstance(message.get("content"), str)
+                and message["content"]
+            ),
+            None,
+        )
+        if first_user_message is None or final_assistant_message is None:
+            raise HTTPException(
+                status_code=400,
+                detail="The stored conversation has no user opening message or "
+                "no assistant reply to save as the dataset input/output.",
+            )
+
+        # Attribute the export to the model that drove the conversation, when
+        # its run config still resolves (it may have been deleted since).
+        model_name = "unknown"
+        model_provider = "unknown"
+        try:
+            driving_config = task_run_config_from_id(
+                project_id, task_id, str(eval_run.task_run_config_id)
+            )
+            properties = driving_config.run_config_properties
+            if isinstance(properties, KilnAgentRunConfigProperties):
+                model_name = properties.model_name
+                model_provider = properties.model_provider_name
+        except HTTPException:
+            pass
+        source_properties: Dict[str, str | int | float] = {
+            "model_name": model_name,
+            "model_provider": model_provider,
+            "adapter_name": "kiln_eval_conversation_export",
+        }
+        exported_run = TaskRun(
+            input=first_user_message,
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties=source_properties,
+            ),
+            output=TaskOutput(
+                output=final_assistant_message,
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties=source_properties,
+                    run_config_id=str(eval_run.task_run_config_id)
+                    if eval_run.task_run_config_id
+                    else None,
+                ),
+            ),
+            trace=cast(List[ChatCompletionMessageParam], trace),
+            tags=[EVAL_EXPORT_TAG, provenance_tag],
+            parent=task,
+        )
+        exported_run.save_to_file()
+        return exported_run
 
     # Overview of the eval progress
     @app.get(

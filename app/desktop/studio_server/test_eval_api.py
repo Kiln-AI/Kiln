@@ -47,6 +47,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    ExactMatchProperties,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SyntheticUserInfo,
@@ -1461,6 +1462,199 @@ async def test_get_eval_run_results(
         "/eval_config/eval_config1/run_config/invalid_run_config/results"
     )
     assert response.status_code == 404
+
+
+# ── save_conversation + results transcripts ─────────────────────────────────
+
+# A driven multi-turn conversation as the runner stores it on the EvalRun.
+CONVERSATION_TRACE = [
+    {"role": "system", "content": "sys instructions"},
+    {"role": "user", "content": "opening message"},
+    {"role": "assistant", "content": "first reply"},
+    {"role": "user", "content": "follow up"},
+    {"role": "assistant", "content": "final reply"},
+]
+
+
+@pytest.fixture
+def mock_v2_eval_config(mock_eval):
+    """A v2 judge config — the config type whose runs carry stored traces."""
+    config = EvalConfig(
+        id="v2_config1",
+        name="V2 Judge",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="final reply"),
+        parent=mock_eval,
+    )
+    config.save_to_file()
+    return config
+
+
+def make_eval_run(
+    config: EvalConfig,
+    run_id: str,
+    trace_json: str | None,
+    eval_config_eval: bool = False,
+) -> EvalRun:
+    run = EvalRun(
+        id=run_id,
+        task_run_config_id=None if eval_config_eval else "run_config1",
+        eval_config_eval=eval_config_eval,
+        dataset_id="dataset1" if eval_config_eval else None,
+        eval_input_id=None if eval_config_eval else "eval_input1",
+        scores={"score1": 1.0, "overall_rating": 1.0},
+        input="opening message",
+        output="final reply",
+        task_run_trace=trace_json,
+        parent=config,
+    )
+    run.save_to_file()
+    return run
+
+
+def save_conversation_url(run_id: str) -> str:
+    return (
+        "/api/projects/project1/tasks/task1/evals/eval1"
+        f"/eval_config/v2_config1/runs/{run_id}/save_conversation"
+    )
+
+
+@pytest.mark.asyncio
+async def test_save_conversation_creates_tagged_task_run(
+    client, mock_task_from_id, mock_task, mock_v2_eval_config, mock_run_config
+):
+    mock_task_from_id.return_value = mock_task
+    run = make_eval_run(
+        mock_v2_eval_config, "traced_run1", json.dumps(CONVERSATION_TRACE)
+    )
+
+    response = client.post(save_conversation_url(str(run.id)))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["input"] == "opening message"
+    assert data["output"]["output"] == "final reply"
+    assert set(data["tags"]) == {"eval_export", "exported_eval_run_traced_run1"}
+
+    task_runs = mock_task.runs()
+    assert len(task_runs) == 1
+    exported = task_runs[0]
+    assert exported.id == data["id"]
+    assert [dict(m) for m in exported.trace or []] == CONVERSATION_TRACE
+    # Provenance: synthetic source attributed to the driving run config's model.
+    assert exported.input_source is not None
+    assert (
+        exported.input_source.properties["adapter_name"]
+        == "kiln_eval_conversation_export"
+    )
+    assert exported.input_source.properties["model_name"] == "gpt-4"
+    assert exported.output.source is not None
+    assert exported.output.source.run_config_id == "run_config1"
+
+
+@pytest.mark.asyncio
+async def test_save_conversation_is_idempotent(
+    client, mock_task_from_id, mock_task, mock_v2_eval_config, mock_run_config
+):
+    mock_task_from_id.return_value = mock_task
+    run = make_eval_run(
+        mock_v2_eval_config, "traced_run1", json.dumps(CONVERSATION_TRACE)
+    )
+
+    first = client.post(save_conversation_url(str(run.id)))
+    second = client.post(save_conversation_url(str(run.id)))
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+    assert len(mock_task.runs(include_intermediate_runs=True)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "trace_json",
+    [
+        None,  # never recorded
+        "not json",  # unparseable
+        "[]",  # empty conversation
+        json.dumps([{"role": "user", "content": "only a user opener"}]),  # no reply
+        json.dumps([{"role": "assistant", "content": "no user opener"}]),
+    ],
+)
+async def test_save_conversation_unusable_trace_400(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_v2_eval_config,
+    mock_run_config,
+    trace_json,
+):
+    mock_task_from_id.return_value = mock_task
+    run = make_eval_run(mock_v2_eval_config, "traced_run1", trace_json)
+
+    response = client.post(save_conversation_url(str(run.id)))
+
+    assert response.status_code == 400
+    assert len(mock_task.runs(include_intermediate_runs=True)) == 0
+
+
+@pytest.mark.asyncio
+async def test_save_conversation_run_not_found_404(
+    client, mock_task_from_id, mock_task, mock_v2_eval_config
+):
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(save_conversation_url("missing_run"))
+
+    assert response.status_code == 404
+    assert "Eval run not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_save_conversation_golden_run_400(
+    client, mock_task_from_id, mock_task, mock_v2_eval_config
+):
+    """Golden-calibration runs score an EXISTING dataset item — exporting one
+    would duplicate it, so the endpoint refuses."""
+    mock_task_from_id.return_value = mock_task
+    run = make_eval_run(
+        mock_v2_eval_config,
+        "golden_run1",
+        json.dumps(CONVERSATION_TRACE),
+        eval_config_eval=True,
+    )
+
+    response = client.post(save_conversation_url(str(run.id)))
+
+    assert response.status_code == 400
+    assert "already in the dataset" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_includes_transcripts(
+    client, mock_task_from_id, mock_task, mock_v2_eval_config, mock_run_config
+):
+    """Runs with a stored conversation get a canonical display transcript;
+    runs without one stay absent from the map."""
+    mock_task_from_id.return_value = mock_task
+    traced = make_eval_run(
+        mock_v2_eval_config, "traced_run1", json.dumps(CONVERSATION_TRACE)
+    )
+    make_eval_run(mock_v2_eval_config, "untraced_run1", None)
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1"
+        "/eval_config/v2_config1/run_config/run_config1/results"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data["transcripts"].keys()) == {str(traced.id)}
+    transcript = data["transcripts"][str(traced.id)]
+    assert transcript["raw_input"] == "opening message"
+    # The role-labelled rendering the builder review modal displays.
+    assert "<assistant_message>" in transcript["raw_output"]
+    assert "final reply" in transcript["raw_output"]
 
 
 @pytest.mark.asyncio

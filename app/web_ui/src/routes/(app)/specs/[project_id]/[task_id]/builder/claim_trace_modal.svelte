@@ -1,3 +1,13 @@
+<script lang="ts" context="module">
+  // The minimal transcript the modal can display — whole-trace viewing only
+  // reads these two texts, so other surfaces (e.g. eval run results) can
+  // reuse the modal without the claim/citation machinery.
+  export type TraceIO = {
+    raw_input: string
+    raw_output: string
+  }
+</script>
+
 <script lang="ts">
   // Trace modal for Claim/Evidence review. Hidden by default; opened either to
   // view a whole trace or jumped to a specific [n] citation, where it scrolls
@@ -13,7 +23,7 @@
   } from "./claim_evidence"
 
   let dialog: Dialog | null = null
-  let trace: TraceClaims | null = null
+  let trace: TraceIO | null = null
   // The span to highlight, if opened via a citation. Resolved against the
   // source text; null when just browsing the trace.
   let active_source: CitationSource | null = null
@@ -39,7 +49,7 @@
     }
   }
 
-  export function open_trace(t: TraceClaims) {
+  export function open_trace(t: TraceIO) {
     trace = t
     active_source = null
     active_span = null

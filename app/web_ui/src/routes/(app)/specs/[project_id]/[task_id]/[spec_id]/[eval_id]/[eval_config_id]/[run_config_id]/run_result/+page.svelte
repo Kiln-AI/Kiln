@@ -37,6 +37,9 @@
     load_task_prompts,
   } from "$lib/stores/prompts_store"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
+  // The builder review's transcript modal — eval results reuse it so stored
+  // conversations render with the same canonical transcript everywhere.
+  import ClaimTraceModal from "../../../../../builder/claim_trace_modal.svelte"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -55,6 +58,13 @@
   let peek_dialog: Dialog | null = null
   let thinking_dialog: Dialog | null = null
   let displayed_result: EvalRun | null = null
+  let trace_modal: ClaimTraceModal | null = null
+  // Per-row export state: eval run id -> exported dataset TaskRun id. The
+  // endpoint is idempotent, so re-clicks and prior exports resolve to the
+  // same dataset item.
+  let exported_dataset_run_ids: Record<string, string> = {}
+  let exporting_run_id: string | null = null
+  let export_errors: Record<string, string> = {}
 
   onMount(() => {
     peek_dialog?.show()
@@ -206,6 +216,54 @@
     }
   }
 
+  function view_conversation(result: EvalRun) {
+    const transcript = results?.transcripts?.[result.id ?? ""]
+    if (transcript) {
+      trace_modal?.open_trace(transcript)
+    }
+  }
+
+  async function save_conversation(result: EvalRun) {
+    const run_id = result.id
+    if (!run_id || exporting_run_id) {
+      return
+    }
+    exporting_run_id = run_id
+    export_errors = { ...export_errors, [run_id]: "" }
+    try {
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/runs/{run_id}/save_conversation",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              eval_id,
+              eval_config_id,
+              run_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      if (data.id) {
+        exported_dataset_run_ids = {
+          ...exported_dataset_run_ids,
+          [run_id]: data.id,
+        }
+      }
+    } catch (error) {
+      export_errors = {
+        ...export_errors,
+        [run_id]: createKilnError(error).getMessage() || "Save failed",
+      }
+    } finally {
+      exporting_run_id = null
+    }
+  }
+
   $: is_v2_config = results?.eval_config?.config_type === "v2"
 
   $: v2_result_component = (() => {
@@ -317,6 +375,39 @@
                 <div>
                   {result.output}
                 </div>
+                {#if result.id && results.transcripts?.[result.id]}
+                  <div class="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      class="link text-sm text-gray-500"
+                      on:click={() => view_conversation(result)}
+                    >
+                      View Conversation
+                    </button>
+                    {#if exported_dataset_run_ids[result.id]}
+                      <a
+                        class="link text-sm text-gray-500"
+                        href={`/dataset/${project_id}/${task_id}/${exported_dataset_run_ids[result.id]}/run`}
+                      >
+                        View in Dataset
+                      </a>
+                    {:else}
+                      <button
+                        class="link text-sm text-gray-500"
+                        disabled={exporting_run_id === result.id}
+                        on:click={() => save_conversation(result)}
+                      >
+                        {exporting_run_id === result.id
+                          ? "Saving…"
+                          : "Save to Dataset"}
+                      </button>
+                    {/if}
+                  </div>
+                  {#if export_errors[result.id]}
+                    <div class="text-error text-xs mt-1">
+                      {export_errors[result.id]}
+                    </div>
+                  {/if}
+                {/if}
               </td>
               {#if !is_v2_config}
                 <td>
@@ -423,3 +514,5 @@
       "N/A"}
   </div>
 </Dialog>
+
+<ClaimTraceModal bind:this={trace_modal} />
