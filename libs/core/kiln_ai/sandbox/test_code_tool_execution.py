@@ -24,10 +24,12 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 from kiln_ai.tools.code_tool import (
-    CODE_TOOL_MAX_CONCURRENCY,
     PythonCodeTool,
     ToolCallLogEntry,
-    _code_tool_depth,
+)
+from kiln_ai.tools.sandbox_bridge import (
+    CODE_SANDBOX_MAX_CONCURRENCY,
+    _depth,
 )
 
 # ---------------------------------------------------------------------------
@@ -723,11 +725,11 @@ class TestDepthCap:
     async def test_depth_cap_at_10(self, tmp_path):
         """Depth >= 10 returns an error without spawning."""
         tool = _make_python_code_tool(tmp_path, 'def run(x):\n    return "ok"\n')
-        token = _code_tool_depth.set(10)
+        token = _depth.set(10)
         try:
             result = await tool.run(None, x="test")
         finally:
-            _code_tool_depth.reset(token)
+            _depth.reset(token)
         assert result.is_error
         assert "max code tool depth exceeded" in result.output
 
@@ -750,15 +752,17 @@ class TestSemaphore:
 
         async def run_nested(i: int):
             tool = _make_python_code_tool(tmp_path, code)
-            token = _code_tool_depth.set(1)
+            token = _depth.set(1)
             try:
                 r = await tool.run(None, x=str(i))
                 results.append(r)
             finally:
-                _code_tool_depth.reset(token)
+                _depth.reset(token)
 
-        await asyncio.gather(*(run_nested(i) for i in range(CODE_TOOL_MAX_CONCURRENCY)))
-        assert len(results) == CODE_TOOL_MAX_CONCURRENCY
+        await asyncio.gather(
+            *(run_nested(i) for i in range(CODE_SANDBOX_MAX_CONCURRENCY))
+        )
+        assert len(results) == CODE_SANDBOX_MAX_CONCURRENCY
         assert all(not r.is_error for r in results)
 
 
