@@ -290,7 +290,7 @@ class TestFiniteScoreValidation:
         saved file unloadable)."""
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
+        add_code_trust("/fake/project/path")
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": bad}}
@@ -303,7 +303,7 @@ class TestFiniteScoreValidation:
         RuntimeError, not a raw OverflowError from the coercion."""
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
+        add_code_trust("/fake/project/path")
 
         with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
             mock_run.return_value = {"ok": {"accuracy": 10**400}}
@@ -326,7 +326,7 @@ class TestUsageObjectTransport:
         )
         cfg = _make_config(code=code)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
+        add_code_trust("/fake/project/path")
 
         trace = [
             {"role": "user", "content": "hi"},
