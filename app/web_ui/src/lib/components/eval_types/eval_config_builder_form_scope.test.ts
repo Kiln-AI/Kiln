@@ -101,8 +101,8 @@ vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
     testV2EvalLlmJudge: vi.fn(),
     createEvalConfig: vi.fn(),
     createLlmJudgeConfig: vi.fn(),
-    checkCodeEvalTrust: vi.fn(),
-    grantCodeEvalTrust: vi.fn(),
+    checkAddCodeTrust: vi.fn(),
+    addCodeTrust: vi.fn(),
     fetchTaskRuns: vi.fn().mockResolvedValue([]),
   }
 })

@@ -11,10 +11,6 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.eval.v2_eval_code_eval import (
-    grant_code_eval_trust,
-    revoke_code_eval_trust,
-)
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.spawn import _spawn_lock
@@ -134,15 +130,6 @@ class FakeTool(KilnToolInterface):
 # ---------------------------------------------------------------------------
 # Child / protocol tests (real spawns)
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _trust_all_projects(tmp_path):
-    """Grant trust for tests so the trust gate doesn't block execution."""
-    path = str(tmp_path / "project")
-    grant_code_eval_trust(path)
-    yield
-    revoke_code_eval_trust(path)
 
 
 class TestChildSyncRun:
@@ -352,7 +339,6 @@ class TestMissingRun:
         )
         object.__setattr__(ct, "__pydantic_fields_set__", set())
         pct = PythonCodeTool(ct, project)
-        grant_code_eval_trust(str(project.path))
         result = await pct.run(None)
         assert result.is_error
         assert "run" in result.output.lower()
@@ -760,20 +746,6 @@ class TestSemaphore:
         await asyncio.gather(*(run_nested(i) for i in range(CODE_TOOL_MAX_CONCURRENCY)))
         assert len(results) == CODE_TOOL_MAX_CONCURRENCY
         assert all(not r.is_error for r in results)
-
-
-class TestTrustRefusal:
-    @pytest.mark.asyncio
-    async def test_trust_refusal_no_spawn(self, tmp_path):
-        project = Project(name="untrusted", path=tmp_path / "untrusted")
-        project.save_to_file()
-        revoke_code_eval_trust(str(project.path))
-        ct = _make_code_tool('def run(x):\n    return "should_not_run"\n')
-        ct.parent = project
-        pct = PythonCodeTool(ct, project)
-        result = await pct.run(None, x="test")
-        assert result.is_error
-        assert "not trusted" in result.error_message.lower()
 
 
 class TestToolCallRecorder:
