@@ -20,7 +20,7 @@ Phased build order. Details live in `functional_spec.md` and `architecture.md` (
   - `tool_from_id_and_project`: two new match arms.
   - Tests (fake adapter): text vs schema→JSON-string; judge float mapping; parity with stock `LlmJudgeEval`; error surfaces.
 
-- [ ] **Phase 3 — Extract shared parent pump** (arch §3.1)
+- [x] **Phase 3 — Extract shared parent pump** (arch §3.1)
   - New `tools/sandbox_bridge.py`: `NestedToolServer` (`serve`/`name_map`/`tools_info`), `run_bridged_child`, shared depth/semaphore (`CODE_SANDBOX_MAX_CONCURRENCY`).
   - Refactor `PythonCodeTool` to use it — **behavior-preserving**; existing `sandbox/test_code_tool_execution.py` must stay green unchanged.
 
