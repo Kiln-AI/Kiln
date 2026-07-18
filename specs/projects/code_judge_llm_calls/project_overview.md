@@ -34,3 +34,12 @@ Developer ergonomics are key.
 - LLM-as-judges take a schema. The code judge already knows what schema it should produce (its eval output scores). It should be easy enough to wire that up.
 - It should **not force** the schema. A code judge might use two judge calls: first a cheap sanity check, then a deeper call. It might want a custom schema. Or a cheap model checking "definitely safe, or maybe risky (worth a more expensive model to verify)?", then a more expensive model conditionally.
 - See our existing helpers and their optional params. Ideally adding a schema isn't too much of a burden.
+
+## Resolved direction (2026-07-18, scosman)
+
+Rather than a bespoke judge bridge, we **reuse the `code_tools` sandbox bridge**: give code judges the same two-queue bridge + `tool_allowlist` that code tools have, and ship the capability as **two new built-in tools** selectable in the existing tool picker:
+
+- **`llm`** — general-purpose LLM call. Optional `schema` (default none). No schema → text; schema → structured output. Generic.
+- **`llm_judge`** — same, minus `schema`; auto-applies the code judge's own eval output-score schema and returns mapped float scores. Author supplies the prompt, so it's not a stock judge call (no judge caching/g_eval/prompt-templating).
+
+Both are called via `from kiln import tools` (sync) / `async_tools` (async), execute **parent-side** (the sandbox never holds API keys or the Kiln stack), and always return a **string** (JSON for structured/scores; author `json.loads`). Full contract in `functional_spec.md`.
