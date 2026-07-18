@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Code Judge LLM Calls
@@ -170,7 +170,7 @@ All surface through the existing bridge error mapping — the tool call raises a
 
 ## 8. Concurrency, timeouts, limits
 
-- **Wall clock.** The code judge's `timeout_seconds` (`CodeEvalProperties`, default 30, min 1, max 300) bounds the whole invocation including all nested LLM calls, exactly as it bounds nested tool calls for code tools. Authors making one or more LLM calls should raise it. *(Open: whether to raise the default or nudge in-UI when an LLM tool is allowlisted — §12.)*
+- **Wall clock.** The code judge's `timeout_seconds` (`CodeEvalProperties`) bounds the whole invocation including all nested LLM calls, exactly as it bounds nested tool calls for code tools. **The default is raised from 30 → 180s** (min 1, max 300) to accommodate LLM latency; authors making several calls can raise it further, up to the max.
 - **Parallelism.** The parent serves nested calls concurrently (existing pump); the async mirror lets a judge fan out calls under `asyncio.gather`.
 - **Process concurrency.** Reuses the existing top-level spawn bound and `_spawn_lock`; no new limits.
 - **Cost/scale.** An eval run executes the code judge once per eval item, so each allowlisted LLM call is billed per item × per call. This is the intended trade (small filtered prompt vs. a full-trace judge), but it is real spend and should be visible (§10).
@@ -197,7 +197,8 @@ Nested LLM calls should be attributable. Minimum: they flow through the existing
 ## 12. Open questions (resolve in architecture)
 
 1. **Code-eval bridge integration.** Migrate the code-eval worker onto the shared `sandbox/worker.py`, or add the bridge to the eval worker by reusing `sandbox/tools_api.py` + an extracted parent pump. (Leaning: extract a shared parent pump from `code_tool.py`; keep the eval worker's `score()`-specific entry + score-dict result.)
-2. **Eval-context wiring for `llm_judge`.** Confirm `ToolCallContext` (additive field carrying the eval score schema) vs. eval-aware construction.
-3. **Timeout default/UX** when an LLM tool is allowlisted.
-4. **Cost/usage surfacing** for nested calls.
-5. **`llm_judge` picker scoping** — show it only in the code-judge picker, or everywhere with a clear error off-context.
+2. **Eval-context wiring for `llm_judge`.** Confirmed: additive field on `ToolCallContext` carrying the eval score schema, populated by the code-eval pump.
+3. **Cost/usage surfacing** for nested calls.
+4. **`llm_judge` picker scoping** — show it only in the code-judge picker, or everywhere with a clear error off-context.
+
+Resolved: timeout default raised to 180s (§8); `ToolCallContext` wiring approved (§6, #2 above).
