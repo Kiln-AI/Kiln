@@ -10,7 +10,7 @@ Phased build order for [architecture.md](architecture.md). Each phase is indepen
 
 - [x] **Phase 1 — Code tool file storage.** Base-model load-context change (`source_dir`); `CodeTool` before-validator (read `tool.py`) + wrap serializer (write `tool.py`, omit `code` from the `.kiln`, keep it in API dumps). Round-trip + missing-file + clone/delete + API-dump tests. (`basemodel.py`, `datamodel/code_tool.py`, `test_code_tool.py`.)
 
-- [ ] **Phase 2 — Code judge file storage.** Same treatment for `CodeEvalProperties` → `scorer.py`, including the nested-in-`EvalConfig.properties` path. **Verify context propagation to discriminated-union members first**, then build. Nested round-trip tests. (`datamodel/eval.py`, `test_eval.py`.)
+- [x] **Phase 2 — Code judge file storage.** Same treatment for `CodeEvalProperties` → `scorer.py`, including the nested-in-`EvalConfig.properties` path. **Verify context propagation to discriminated-union members first**, then build. Nested round-trip tests. (`datamodel/eval.py`, `test_eval.py`.)
 
 - [ ] **Phase 3 — The `kiln` test shim.** Extract the shared `kiln.tools` surface from `sandbox/tools_api.py` (behavior-preserving; sandbox suite unchanged); new `tool_testing/` pytest plugin + fake bridge + `kiln_tools` fixture; `pytest11` entry point. Shim tests incl. an end-to-end `tool.py`-imports-and-calls-`tools.x()` case. (`sandbox/tools_api.py`, `tool_testing/`, `libs/core/pyproject.toml`.)
 
