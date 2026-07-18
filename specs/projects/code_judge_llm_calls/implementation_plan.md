@@ -14,7 +14,7 @@ Phased build order. Details live in `functional_spec.md` and `architecture.md` (
   - `ToolCallContext`: add `eval_output_schema: str | None = None`.
   - Tests: allowlist validation, timeout default, tool-id round-trips, context default. Zero migration.
 
-- [ ] **Phase 2 — Built-in LLM tools + registry** (arch §2)
+- [x] **Phase 2 — Built-in LLM tools + registry** (arch §2)
   - `run_llm_call(...)` shared helper (extract from `LlmJudgeEval` non-g-eval path).
   - `LlmTool` (`kiln_tool::llm`) and `LlmJudgeTool` (`kiln_tool::llm_judge`) in `tools/built_in_tools/llm_tools.py`; Jinja render, schema handling, `build_llm_as_judge_score` mapping, off-context error.
   - `tool_from_id_and_project`: two new match arms.
