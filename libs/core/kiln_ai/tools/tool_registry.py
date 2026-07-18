@@ -57,10 +57,16 @@ def tool_from_id_and_project(
                         "kiln_local_api_base_url is not configured. The server must set this before starting."
                     )
                 return KilnApiCallTool(api_base_url=api_base_url)
-            case KilnBuiltInToolId.LLM | KilnBuiltInToolId.LLM_JUDGE:
-                raise ValueError(
-                    f"Tool ID {tool_id} is not yet resolvable by the tool registry."
-                )
+            case KilnBuiltInToolId.LLM:
+                # Lazy import to avoid the tools -> adapter -> tool_registry cycle.
+                from kiln_ai.tools.built_in_tools.llm_tools import LlmTool
+
+                return LlmTool()
+            case KilnBuiltInToolId.LLM_JUDGE:
+                # Lazy import to avoid the tools -> adapter -> tool_registry cycle.
+                from kiln_ai.tools.built_in_tools.llm_tools import LlmJudgeTool
+
+                return LlmJudgeTool()
             case _:
                 raise_exhaustive_enum_error(typed_tool_id)
 
