@@ -146,7 +146,7 @@ Same shape for `EvalConfig` → nested `CodeEvalProperties` → `scorer.py`.
 
 ## 8. Migration
 
-None — nothing shipped. Consequence to handle *within this branch*: any `.kiln` fixtures or tests that inline `code` in JSON stop loading and must be regenerated to write sibling files (Phase 4). This is a test/fixture cost, not a user migration.
+None — nothing shipped. Consequence to handle *within this branch*: any `.kiln` fixtures or tests that inline `code` in JSON still load (the loader is lenient — §7), but they no longer round-trip byte-identically (on save the code migrates out to a sibling file and drops from the JSON), so they must be regenerated to the file-based layout (Phase 4). This is a test/fixture cost, not a user migration.
 
 ## 9. Risks / non-obvious constraints
 

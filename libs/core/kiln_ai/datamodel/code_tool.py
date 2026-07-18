@@ -2,9 +2,18 @@
 
 import ast
 import re
+from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import (
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    ValidationInfo,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
@@ -17,6 +26,10 @@ from kiln_ai.datamodel.tool_id import (
 )
 
 _FUNCTION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+# Fixed name of the sibling file that holds a code tool's Python source, stored
+# beside its code_tool.kiln. Fixed so authored tests can `from tool import run`.
+TOOL_CODE_FILENAME = "tool.py"
 
 
 class CodeTool(KilnParentedModel):
@@ -49,7 +62,7 @@ class CodeTool(KilnParentedModel):
         description="JSON Schema for the tool's parameters. Root must be type: object.",
     )
     code: str = Field(
-        description="Inline Python source. Validated for syntax and entry-point presence.",
+        description="Python source, stored in a sibling tool.py file (in memory as a string). Validated for syntax and entry-point presence.",
     )
     timeout_seconds: int = Field(
         default=60,
@@ -60,6 +73,72 @@ class CodeTool(KilnParentedModel):
         default_factory=list,
         description="Explicit per-tool allowlist of tools this code tool may call.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_code_file(cls, data: Any, info: ValidationInfo) -> Any:
+        """When loading from disk, inject `code` from the sibling tool.py.
+
+        The source is stored in tool.py beside code_tool.kiln, not inline in the
+        JSON. On load the base model puts the artifact folder in the validation
+        context (`source_dir`); we read the file here, before field validation, so
+        the existing validate_code trio runs against the loaded string unchanged.
+        """
+        ctx = info.context or {}
+        if (
+            ctx.get("loading_from_file")
+            and isinstance(data, dict)
+            and "code" not in data
+        ):
+            src = ctx.get("source_dir")
+            if src is None:
+                raise ValueError(
+                    "Cannot load CodeTool: source_dir missing from load context"
+                )
+            code_path = Path(src) / TOOL_CODE_FILENAME
+            try:
+                data["code"] = code_path.read_text(encoding="utf-8")
+            except OSError as e:
+                raise ValueError(
+                    f"code_tool.kiln at {src} is missing its {TOOL_CODE_FILENAME} "
+                    f"(expected at {code_path}): {e}"
+                ) from e
+        return data
+
+    @model_serializer(mode="wrap")
+    def _serialize(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> dict[str, Any]:
+        """On disk-save, write `code` to tool.py and omit it from the .kiln JSON.
+
+        Uses the same save context attachments use (`save_attachments` +
+        `dest_path`). Without that context — normal model_dump / API responses —
+        `code` is left in the output and no file is written, so the API contract
+        is unchanged.
+
+        Trade-off: a custom model_serializer collapses the *serialization-mode*
+        JSON schema to an untyped object (`model_json_schema(mode="serialization")`
+        loses per-field typing). This is acceptable and consistent with the
+        existing KilnAttachmentModel precedent, which uses the same pattern:
+        - Validation-mode schema is unaffected, so request bodies stay fully typed.
+        - No endpoint uses `response_model=CodeTool`; every code-tool endpoint
+          returns a dedicated response model, and the generated web schema never
+          references CodeTool's serialization schema.
+        If a typed serialization schema is ever needed off this model, add a
+        `__get_pydantic_json_schema__` override rather than removing this
+        serializer. (Same precedent applies to CodeEvalProperties in Phase 2.)
+        """
+        data = handler(self)
+        ctx = info.context or {}
+        if ctx.get("save_attachments") and ctx.get("dest_path"):
+            dest = Path(ctx["dest_path"])
+            if not dest.is_dir():
+                raise ValueError(
+                    f"dest_path must be an existing directory when saving code, got: {dest}"
+                )
+            (dest / TOOL_CODE_FILENAME).write_text(self.code, encoding="utf-8")
+            data.pop("code", None)
+        return data
 
     @field_validator("tool_function_name")
     @classmethod

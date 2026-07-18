@@ -148,7 +148,7 @@ The plugin is a test-support surface only: it never spawns a subprocess, never c
 - **Zero-argument tool / empty schema**: unchanged; `tool.py` still defines `run()`.
 - **Two code tools in different folders both named `tool.py`**: fine — different directories. A single `pytest` run spanning multiple tool folders can hit module-name collisions (`tool` imported from two places); the documented pattern is to test one tool folder at a time (or use `rootdir`/`importmode=importlib`). Called out in docs (§5), not solved by Kiln.
 - **Packaged desktop app has no `pytest`**: expected. Testing is an authoring-environment activity (dev / agent with `kiln_ai` installed); the shipped desktop app runs tools, it doesn't test them. Consistent with decision 4 ("Kiln doesn't run tests").
-- **`code` present in an old inline `.kiln` JSON**: not supported (no migration). Such a file predates this change and won't load; dev fixtures that inline `code` in JSON must be regenerated (architecture §8).
+- **`code` present inline in a `.kiln` JSON**: the loader is lenient by design (architecture §3.1). If the parsed dict already carries a `code` key — a hand-written or legacy `.kiln`, or any in-memory dict passed to `model_validate` — that value is used as-is and the sibling `tool.py` is *not* read; on the next `save_to_file()` it migrates to `tool.py` and drops from the JSON. In practice no such files exist (nothing shipped), so this is a graceful-construction property (it also lets a dict that already carries `code` construct without touching disk), not a supported migration path. There is deliberately no strict "reject if inline `code`" check.
 
 ## 8. Out of scope
 

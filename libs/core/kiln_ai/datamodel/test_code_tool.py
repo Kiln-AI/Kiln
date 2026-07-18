@@ -1,9 +1,13 @@
 """Tests for CodeTool datamodel — validation, defaults, save/load, parent registration."""
 
+import json
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.code_tool import CodeTool
+from kiln_ai.datamodel.code_tool import TOOL_CODE_FILENAME, CodeTool
 from kiln_ai.datamodel.project import Project
 
 VALID_SCHEMA = {
@@ -243,3 +247,140 @@ class TestPersistence:
         tools = project.code_tools()
         assert len(tools) == 1
         assert tools[0].tool_function_name == "my_tool"
+
+
+# ---------------------------------------------------------------------------
+# Code-as-file storage: code lives in tool.py, not the .kiln JSON
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def saved_project(tmp_path):
+    project = Project(name="test_project", path=tmp_path / "project")
+    project.save_to_file()
+    return project
+
+
+def _save_tool(project, **overrides):
+    ct = _make_code_tool(**overrides)
+    ct.parent = project
+    ct.save_to_file()
+    return ct
+
+
+class TestFileStorage:
+    def test_save_writes_tool_py_and_omits_code_from_kiln(self, saved_project):
+        ct = _save_tool(saved_project, code=SYNC_RUN)
+
+        tool_py = ct.path.parent / TOOL_CODE_FILENAME
+        assert tool_py.exists()
+        assert tool_py.read_text(encoding="utf-8") == SYNC_RUN
+
+        on_disk = json.loads(ct.path.read_text(encoding="utf-8"))
+        assert "code" not in on_disk
+        # Other functional fields still live in the .kiln JSON.
+        assert on_disk["tool_function_name"] == ct.tool_function_name
+        assert on_disk["parameters_schema"] == ct.parameters_schema
+
+    def test_load_reconstructs_code_from_file(self, saved_project):
+        ct = _save_tool(
+            saved_project, code=ASYNC_RUN, tool_allowlist=["kiln_tool::add_numbers"]
+        )
+
+        loaded = CodeTool.load_from_file(ct.path)
+        assert loaded.code == ASYNC_RUN
+        assert loaded.tool_function_name == ct.tool_function_name
+        assert loaded.parameters_schema == ct.parameters_schema
+        assert loaded.tool_description == ct.tool_description
+        assert loaded.timeout_seconds == ct.timeout_seconds
+        assert loaded.tool_allowlist == ct.tool_allowlist
+
+    def test_missing_tool_py_fails_load(self, saved_project):
+        ct = _save_tool(saved_project)
+        (ct.path.parent / TOOL_CODE_FILENAME).unlink()
+
+        with pytest.raises(ValueError, match=TOOL_CODE_FILENAME):
+            CodeTool.load_from_file(ct.path)
+
+    def test_corrupted_tool_py_fails_validator_on_load(self, saved_project):
+        ct = _save_tool(saved_project)
+        # Hand-edit tool.py to source without a module-level `run` function.
+        (ct.path.parent / TOOL_CODE_FILENAME).write_text(
+            "def helper():\n    pass\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValidationError, match="module-level 'run' function"):
+            CodeTool.load_from_file(ct.path)
+
+    def test_save_is_idempotent(self, saved_project):
+        ct = _save_tool(saved_project, code=SYNC_RUN)
+        tool_py = ct.path.parent / TOOL_CODE_FILENAME
+
+        first_kiln = ct.path.read_bytes()
+        first_py = tool_py.read_bytes()
+
+        loaded = CodeTool.load_from_file(ct.path)
+        loaded.save_to_file()
+
+        assert ct.path.read_bytes() == first_kiln
+        assert tool_py.read_bytes() == first_py
+
+    def test_clone_writes_fresh_tool_py(self, saved_project):
+        original = _save_tool(saved_project, code=SYNC_RUN, name="Original")
+
+        loaded = CodeTool.load_from_file(original.path)
+        clone = CodeTool(
+            name="Clone",
+            tool_function_name=loaded.tool_function_name,
+            tool_description=loaded.tool_description,
+            parameters_schema=loaded.parameters_schema,
+            code=loaded.code,
+        )
+        clone.parent = saved_project
+        clone.save_to_file()
+
+        assert clone.id != original.id
+        clone_py = clone.path.parent / TOOL_CODE_FILENAME
+        original_py = original.path.parent / TOOL_CODE_FILENAME
+        assert clone_py != original_py
+        assert clone_py.read_text(encoding="utf-8") == SYNC_RUN
+        assert original_py.read_text(encoding="utf-8") == SYNC_RUN
+
+    def test_delete_removes_folder_including_tool_py(self, saved_project):
+        ct = _save_tool(saved_project)
+        folder = ct.path.parent
+        assert (folder / TOOL_CODE_FILENAME).exists()
+
+        ct.delete()
+        assert not folder.exists()
+
+    def test_api_dump_keeps_code(self):
+        ct = _make_code_tool(code=SYNC_RUN)
+
+        # Without the save context, code stays in the dump and no file is written.
+        with patch.object(Path, "write_text") as mock_write:
+            assert ct.model_dump()["code"] == SYNC_RUN
+            assert json.loads(ct.model_dump_json())["code"] == SYNC_RUN
+        mock_write.assert_not_called()
+
+    def test_source_dir_missing_from_load_context_fails(self):
+        # Defensive guard: loading_from_file set but source_dir absent (a future
+        # base-model regression) fails clearly rather than silently skipping.
+        with pytest.raises(
+            ValidationError, match="source_dir missing from load context"
+        ):
+            CodeTool.model_validate(
+                {"name": "My Tool"}, context={"loading_from_file": True}
+            )
+
+    def test_serialize_rejects_non_directory_dest_path(self, tmp_path):
+        ct = _make_code_tool(code=SYNC_RUN)
+        not_a_dir = tmp_path / "does_not_exist"
+        with pytest.raises(ValueError, match="dest_path must be an existing directory"):
+            ct.model_dump(context={"save_attachments": True, "dest_path": not_a_dir})
+
+    def test_other_model_loads_unaffected_by_source_dir(self, saved_project):
+        # A non-code model loads normally even though load now passes the new
+        # source_dir context key to every model's validation.
+        loaded = Project.load_from_file(saved_project.path)
+        assert loaded.name == saved_project.name

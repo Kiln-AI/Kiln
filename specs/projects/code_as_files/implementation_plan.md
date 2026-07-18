@@ -8,7 +8,7 @@ Phased build order for [architecture.md](architecture.md). Each phase is indepen
 
 ## Phases
 
-- [ ] **Phase 1 — Code tool file storage.** Base-model load-context change (`source_dir`); `CodeTool` before-validator (read `tool.py`) + wrap serializer (write `tool.py`, omit `code` from the `.kiln`, keep it in API dumps). Round-trip + missing-file + clone/delete + API-dump tests. (`basemodel.py`, `datamodel/code_tool.py`, `test_code_tool.py`.)
+- [x] **Phase 1 — Code tool file storage.** Base-model load-context change (`source_dir`); `CodeTool` before-validator (read `tool.py`) + wrap serializer (write `tool.py`, omit `code` from the `.kiln`, keep it in API dumps). Round-trip + missing-file + clone/delete + API-dump tests. (`basemodel.py`, `datamodel/code_tool.py`, `test_code_tool.py`.)
 
 - [ ] **Phase 2 — Code judge file storage.** Same treatment for `CodeEvalProperties` → `scorer.py`, including the nested-in-`EvalConfig.properties` path. **Verify context propagation to discriminated-union members first**, then build. Nested round-trip tests. (`datamodel/eval.py`, `test_eval.py`.)
 
