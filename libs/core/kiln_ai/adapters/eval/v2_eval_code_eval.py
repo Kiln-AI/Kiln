@@ -1,15 +1,14 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
-import asyncio
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
-from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
     EvalConfig,
@@ -18,11 +17,11 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     V2EvalResult,
 )
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
 
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
-
-_code_eval_execution_lock = asyncio.Lock()
 
 
 def grant_code_eval_trust(project_path: str) -> None:
@@ -70,19 +69,42 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             "task_input": eval_input.task_input,
         }
 
-        async with _code_eval_execution_lock:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None, run_scorer, props.code, inputs, float(props.timeout_seconds)
+        server = NestedToolServer(
+            allowlist=props.tool_allowlist,
+            project=self.target_task.parent_project(),
+            task=self.target_task,
+            context=ToolCallContext(
+                allow_saving=False,
+                eval_output_schema=BaseEval.build_score_schema(
+                    self.eval, allow_float_scores=False
+                ),
+            ),
+            recorder=None,
+        )
+
+        res = await run_bridged_child(
+            target=execute_scorer_bridged,
+            args=(props.code, inputs),
+            timeout_s=float(props.timeout_seconds),
+            server=server,
+        )
+
+        if res.timed_out:
+            raise RuntimeError(
+                f"Code eval scorer timed out after {props.timeout_seconds}s"
+            )
+        if res.crashed:
+            raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
+
+        result_msg = res.result_msg
+        assert result_msg is not None
+        if "error" in result_msg:
+            raise RuntimeError(
+                f"Code eval scorer failed: {result_msg['error']}\n"
+                f"{result_msg.get('traceback', '')}"
             )
 
-        if "error" in result:
-            tb = result.get("traceback", "")
-            msg = result["error"]
-            detail = f"{msg}\n{tb}".strip() if tb else msg
-            raise RuntimeError(f"Code eval scorer failed: {detail}")
-
-        raw_scores = result.get("ok")
+        raw_scores = result_msg["ok"]
         if not isinstance(raw_scores, dict):
             raise RuntimeError(
                 f"Scorer must return a dict, got {type(raw_scores).__name__}"

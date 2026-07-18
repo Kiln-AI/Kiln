@@ -4,38 +4,55 @@ import asyncio
 
 import pytest
 
-from kiln_ai.adapters.eval import sandbox_worker
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
+from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.entrypoint import call_entrypoint
 from kiln_ai.sandbox.spawn import _spawn_lock, start_process_with_light_main
+from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
 
 
 class TestSpawnLockIdentity:
     def test_spawn_lock_shared_with_eval(self):
-        """run_scorer and code tools share the same _spawn_lock (PyInstaller #7410)."""
+        """Code evals and code tools share the same _spawn_lock (PyInstaller #7410)."""
         from kiln_ai.sandbox import spawn as spawn_mod
 
         assert spawn_mod._spawn_lock is _spawn_lock
 
-    def test_run_scorer_delegates_to_shared_helpers(self):
-        """sandbox_worker uses start_process_with_light_main from sandbox.spawn."""
+    def test_bridge_delegates_to_shared_spawn_helper(self):
+        """The shared bridge spawns via start_process_with_light_main from sandbox.spawn."""
+        from kiln_ai.tools import sandbox_bridge
+
         assert (
-            sandbox_worker.start_process_with_light_main
+            sandbox_bridge.start_process_with_light_main
             is start_process_with_light_main
         )
 
-    def test_run_scorer_still_works(self):
-        """Regression: run_scorer delegates to shared helpers and still works."""
+    @pytest.mark.asyncio
+    async def test_scorer_runs_through_bridge(self):
+        """Regression: a scorer executes through the shared bridge and returns its dict."""
         code = (
             "def score(output, trace, reference_data, task_input):\n"
             "    return {'ok': 1.0}\n"
         )
-        result = run_scorer(
-            code,
-            {"output": "x", "trace": None, "reference_data": None, "task_input": "y"},
-            timeout=10,
+        server = NestedToolServer(
+            allowlist=[], project=Project(name="shared_test"), task=None, context=None
         )
-        assert result["ok"] == {"ok": 1.0}
+        res = await run_bridged_child(
+            target=execute_scorer_bridged,
+            args=(
+                code,
+                {
+                    "output": "x",
+                    "trace": None,
+                    "reference_data": None,
+                    "task_input": "y",
+                },
+            ),
+            timeout_s=10,
+            server=server,
+        )
+        assert res.result_msg is not None
+        assert res.result_msg["ok"] == {"ok": 1.0}
 
 
 class TestCallEntrypoint:

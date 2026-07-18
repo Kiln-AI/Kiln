@@ -54,6 +54,7 @@ from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecTy
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.tools.sandbox_bridge import BridgeResult
 
 
 @pytest.fixture
@@ -3859,8 +3860,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-                return_value={"ok": {"accuracy": 0.75}},
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=AsyncMock(
+                    return_value=BridgeResult(
+                        result_msg={"type": "result", "ok": {"accuracy": 0.75}}
+                    )
+                ),
             ),
         ):
             mock_eid.return_value = mock_v2_eval
@@ -4023,8 +4028,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-                return_value={"ok": {"accuracy": 5.0}},
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=AsyncMock(
+                    return_value=BridgeResult(
+                        result_msg={"type": "result", "ok": {"accuracy": 5.0}}
+                    )
+                ),
             ),
         ):
             mock_eid.return_value = mock_v2_eval

@@ -97,7 +97,7 @@ class NestedToolServer:
     def __init__(
         self,
         allowlist: list[ToolId],
-        project: Project,
+        project: Project | None,
         task: Task | None,
         context: ToolCallContext | None,
         recorder: Callable[[ToolCallLogEntry], None] | None = None,
@@ -394,23 +394,26 @@ async def run_bridged_child(
     target: Callable[..., None],
     args: tuple[Any, ...],
     timeout_s: float,
-    requests: multiprocessing.Queue[dict[str, Any]],
-    responses: multiprocessing.Queue[dict[str, Any]],
     server: NestedToolServer,
 ) -> BridgeResult:
     """Spawn ``target(*args, requests, responses)`` and pump its nested tool calls.
+
+    Owns the full queue lifecycle: it creates the spawn ``requests``/``responses``
+    queues (after the depth/semaphore gates) and closes them in its ``finally``, so
+    neither caller creates or owns queues and cleanup is identical for both.
 
     Dispatches ``tool_call`` / ``list_tools`` messages to *server* and returns a
     :class:`BridgeResult` on the first ``result`` message (raw msg), a timeout, or a
     crash. Enforces the nesting-depth cap (>=10 → error result, no spawn) and acquires
     the shared bounded semaphore only at depth 0 (nested runs bypass — counting them
-    deadlocks the pool). Closes *requests*/*responses* before returning.
+    deadlocks the pool).
     """
     depth = _depth.get()
     if depth >= 10:
-        _close_queues(requests, responses)
         return BridgeResult(
-            result_msg={"error": "max code tool depth exceeded — check for a cycle"}
+            result_msg={
+                "error": "maximum nested code execution depth exceeded — check for a cycle"
+            }
         )
 
     token = _depth.set(depth + 1)
@@ -421,7 +424,13 @@ async def run_bridged_child(
             cm = contextlib.nullcontext()  # type: ignore[assignment]
 
         async with cm:
-            return await _pump(target, args, timeout_s, requests, responses, server)
+            ctx = multiprocessing.get_context("spawn")
+            requests: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
+            responses: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
+            try:
+                return await _pump(target, args, timeout_s, requests, responses, server)
+            finally:
+                _close_queues(requests, responses)
     finally:
         _depth.reset(token)
 
@@ -489,7 +498,6 @@ async def _pump(
         if p.is_alive():
             p.kill()
             await loop.run_in_executor(None, p.join, 5)
-        _close_queues(requests, responses)
 
 
 def _render_params_schema(schema: dict[str, Any]) -> str:

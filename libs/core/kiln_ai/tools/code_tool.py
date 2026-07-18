@@ -11,7 +11,6 @@ the shared bridge.
 from __future__ import annotations
 
 import logging
-import multiprocessing
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -137,16 +136,10 @@ class PythonCodeTool(KilnToolInterface):
         self, context: ToolCallContext | None, kwargs: dict[str, Any]
     ) -> ChildOutcome:
         server = self._build_server(context)
-        ctx = multiprocessing.get_context("spawn")
-        requests: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
-        responses: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
-
         result = await run_bridged_child(
             target=child_main,
             args=(self._code_tool.code, kwargs),
             timeout_s=float(self._code_tool.timeout_seconds),
-            requests=requests,
-            responses=responses,
             server=server,
         )
         return _bridge_result_to_outcome(result)

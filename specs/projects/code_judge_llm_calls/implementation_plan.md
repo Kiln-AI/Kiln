@@ -24,7 +24,7 @@ Phased build order. Details live in `functional_spec.md` and `architecture.md` (
   - New `tools/sandbox_bridge.py`: `NestedToolServer` (`serve`/`name_map`/`tools_info`), `run_bridged_child`, shared depth/semaphore (`CODE_SANDBOX_MAX_CONCURRENCY`).
   - Refactor `PythonCodeTool` to use it — **behavior-preserving**; existing `sandbox/test_code_tool_execution.py` must stay green unchanged.
 
-- [ ] **Phase 4 — Code-eval bridge integration** (arch §3.2–3.4)
+- [x] **Phase 4 — Code-eval bridge integration** (arch §3.2–3.4)
   - `adapters/eval/sandbox_worker.py`: `execute_scorer_bridged` (two-queue, `install_tools_modules`, scores-dict result); remove single-queue `run_scorer`.
   - `CodeEvalAdapter.evaluate`: host `run_bridged_child` with the eval-schema context; delete `_code_eval_execution_lock`.
   - Tests (real spawns): `tools.llm`/`tools.llm_judge` from `score()`, sync + `async def score` w/ `gather`, allowlist enforcement, timeout mid-call, parallel code evals (regression vs deleted global lock), trust short-circuit, shared-lock/semaphore identity.

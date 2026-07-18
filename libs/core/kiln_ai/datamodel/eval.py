@@ -252,7 +252,7 @@ class CodeEvalProperties(BaseModel):
 
         tree = ast.parse(self.code)
         # Both sync and async score functions are accepted here.
-        # Async coroutines are transparently awaited in sandbox_worker._execute_scorer.
+        # Async coroutines are transparently awaited in sandbox_worker.execute_scorer_bridged.
         has_score_fn = any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name == "score"

@@ -731,7 +731,7 @@ class TestDepthCap:
         finally:
             _depth.reset(token)
         assert result.is_error
-        assert "max code tool depth exceeded" in result.output
+        assert "maximum nested code execution depth exceeded" in result.output
 
 
 class TestSemaphore:
@@ -961,11 +961,11 @@ class TestUnicodePassthrough:
 
 class TestSpawnLockIdentity:
     def test_spawn_lock_shared(self):
-        """PythonCodeTool and run_scorer share the same _spawn_lock."""
-        from kiln_ai.adapters.eval import sandbox_worker
+        """Code tools and code evals spawn through the same bridge / _spawn_lock."""
+        from kiln_ai.tools import sandbox_bridge
 
         assert (
-            sandbox_worker.start_process_with_light_main.__module__
+            sandbox_bridge.start_process_with_light_main.__module__
             == "kiln_ai.sandbox.spawn"
         )
         from kiln_ai.sandbox.spawn import _spawn_lock as shared_lock

@@ -1,12 +1,44 @@
-"""Tests for sandbox_worker -- multiprocessing scorer execution.
+"""Tests for the code-eval scorer worker -- multiprocessing scorer execution.
 
-These tests SPAWN child processes. Keep them fast. Scorer code is passed
-as a string so nothing local needs pickling.
+These tests SPAWN child processes via the shared bridge. Keep them fast. Scorer
+code is passed as a string so nothing local needs pickling.
 """
+
+import asyncio
 
 import pytest
 
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
+from kiln_ai.datamodel.project import Project
+from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
+
+
+def run_scorer(code: str, inputs: dict, timeout: float) -> dict:
+    """Run a scorer through the shared bridge and return its raw ``result`` message.
+
+    Test-only shim preserving the old ``run_scorer`` call shape now that the
+    single-queue worker is replaced by the two-queue bridge. Raises ``RuntimeError``
+    on timeout / crash, mirroring how ``CodeEvalAdapter`` maps those outcomes.
+    """
+    return asyncio.run(_run_scorer_async(code, inputs, timeout))
+
+
+async def _run_scorer_async(code: str, inputs: dict, timeout: float) -> dict:
+    server = NestedToolServer(
+        allowlist=[], project=Project(name="worker_test"), task=None, context=None
+    )
+    res = await run_bridged_child(
+        target=execute_scorer_bridged,
+        args=(code, inputs),
+        timeout_s=float(timeout),
+        server=server,
+    )
+    if res.timed_out:
+        raise RuntimeError(f"Code eval scorer timed out after {timeout}s")
+    if res.crashed:
+        raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
+    assert res.result_msg is not None
+    return res.result_msg
 
 
 def _inputs(output: str = "hello", **overrides: object) -> dict:
