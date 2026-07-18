@@ -290,8 +290,17 @@ class TestToolRegistry:
                 tool_from_id(tool_id, task=mock_task)
 
     def test_all_built_in_tools_are_registered(self):
-        """Test that all KilnBuiltInToolId enum members are handled by the registry."""
+        """Test that all KilnBuiltInToolId enum members are handled by the registry.
+
+        LLM / LLM_JUDGE are declared in the enum but their tool implementations
+        land in a later phase; until then the registry raises for them.
+        """
+        not_yet_wired = {KilnBuiltInToolId.LLM, KilnBuiltInToolId.LLM_JUDGE}
         for tool_id in KilnBuiltInToolId:
+            if tool_id in not_yet_wired:
+                with pytest.raises(ValueError, match="not yet resolvable"):
+                    tool_from_id(tool_id.value)
+                continue
             # This should not raise an exception
             tool = tool_from_id(tool_id.value)
             assert tool is not None

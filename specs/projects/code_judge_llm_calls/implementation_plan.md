@@ -8,7 +8,7 @@ Phased build order. Details live in `functional_spec.md` and `architecture.md` (
 
 ## Phases
 
-- [ ] **Phase 1 — Datamodel foundations** (arch §1)
+- [x] **Phase 1 — Datamodel foundations** (arch §1)
   - `CodeEvalProperties`: add `tool_allowlist` (+ `validate_allowlist` ported from `CodeTool`, minus self-ref), bump `timeout_seconds` default 30 → 180.
   - `KilnBuiltInToolId`: add `LLM` / `LLM_JUDGE`.
   - `ToolCallContext`: add `eval_output_schema: str | None = None`.
