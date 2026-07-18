@@ -30,6 +30,8 @@ class KilnBuiltInToolId(str, Enum):
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"
     DIVIDE_NUMBERS = "kiln_tool::divide_numbers"
     CALL_KILN_API = "kiln_tool::call_kiln_api"
+    LLM = "kiln_tool::llm"
+    LLM_JUDGE = "kiln_tool::llm_judge"
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"

@@ -2677,7 +2677,11 @@ class TestCodeEvalPropertiesValidation:
     def test_valid_code(self):
         props = CodeEvalProperties(code=self.VALID_CODE)
         assert props.code == self.VALID_CODE
-        assert props.timeout_seconds == 30
+        assert props.timeout_seconds == 180
+
+    def test_default_timeout_is_180(self):
+        props = CodeEvalProperties(code=self.VALID_CODE)
+        assert props.timeout_seconds == 180
 
     def test_custom_timeout(self):
         props = CodeEvalProperties(code=self.VALID_CODE, timeout_seconds=120)
@@ -2718,6 +2722,58 @@ class TestCodeEvalPropertiesValidation:
         code = "async def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
         props = CodeEvalProperties(code=code)
         assert props.code == code
+
+    def test_default_tool_allowlist_is_empty(self):
+        props = CodeEvalProperties(code=self.VALID_CODE)
+        assert props.tool_allowlist == []
+
+    def test_valid_tool_allowlist(self):
+        props = CodeEvalProperties(
+            code=self.VALID_CODE,
+            tool_allowlist=[
+                "kiln_tool::llm",
+                "kiln_tool::llm_judge",
+                "mcp::remote::server1::tool1",
+            ],
+        )
+        assert len(props.tool_allowlist) == 3
+
+    def test_tool_allowlist_rejects_skill_ids(self):
+        with pytest.raises(ValidationError, match="Skill tool IDs cannot"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_tool::skill::some_skill"],
+            )
+
+    def test_tool_allowlist_rejects_unmanaged_ids(self):
+        with pytest.raises(ValidationError, match="Unmanaged tool IDs cannot"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_unmanaged::some_tool"],
+            )
+
+    def test_tool_allowlist_rejects_duplicates(self):
+        with pytest.raises(ValidationError, match="Duplicate tool ID"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_tool::llm", "kiln_tool::llm"],
+            )
+
+    def test_tool_allowlist_rejects_invalid_tool_id(self):
+        with pytest.raises(ValidationError, match="Invalid tool ID"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["not_a_valid_tool_id"],
+            )
+
+    def test_tool_allowlist_allows_self_referential_code_tool_id(self):
+        # A code eval is not itself a tool, so the CodeTool self-reference check
+        # is intentionally omitted — any valid code tool ID is allowed.
+        props = CodeEvalProperties(
+            code=self.VALID_CODE,
+            tool_allowlist=["kiln_tool::code::123456789012"],
+        )
+        assert props.tool_allowlist == ["kiln_tool::code::123456789012"]
 
 
 # ── V1 Coexistence Regression Guards ─────────────────────────────────
