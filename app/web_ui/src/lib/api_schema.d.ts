@@ -535,7 +535,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Memory
-         * @description Hard-delete a memory. For confirmed junk; prefer a 'stale' tag otherwise.
+         * @description Hard-delete a memory. For junk, wrong, or obsolete memories; use update
+         *     instead if the memory should be corrected rather than removed.
          */
         delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
         options?: never;
