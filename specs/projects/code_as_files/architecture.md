@@ -27,6 +27,8 @@ Technical design for [functional_spec.md](functional_spec.md). Target: `Kiln-AI/
 
 **Unchanged (verified in scope):** `tools/code_tool.py` (`PythonCodeTool` reads `self.code_tool.code` in memory), `sandbox/worker.py`, `sandbox/spawn.py`, `sandbox/entrypoint.py`, `adapters/eval/v2_eval_code_eval.py`, `adapters/eval/sandbox_worker.py`. Execution always receives an in-memory string.
 
+**Runtime never imports the sibling file (hard invariant — see functional spec §1.3).** The datamodel reads the file into `code` at load; the sandbox child gets the string via `Process(args=(code, …))` and `exec()`s it, exactly as `worker.py` does today. The sandbox must not add the artifact folder to `sys.path` and must not `import` the `.py` file or any sibling — preserving the stdlib-plus-Kiln-bundle environment and preventing stray folder files (author test files, `conftest.py`) from being importable/executable at runtime. `import`-based loading exists only in the external `pytest` harness (§5).
+
 ### Desktop — `app/desktop/studio_server`
 
 | File | Change |

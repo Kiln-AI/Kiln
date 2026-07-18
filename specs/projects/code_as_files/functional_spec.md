@@ -34,6 +34,7 @@ Behavioral contract for the change described in [project_overview.md](project_ov
 - Exactly one code file per code artifact, at the fixed name, in the artifact's own folder.
 - The file is written on save and read on load. It is never referenced by absolute path and never lives outside the artifact folder (the same containment guarantee attachments enforce).
 - The `.kiln` file and its code file are a unit: a code artifact is only valid with both present.
+- **The sandbox never imports the file (hard invariant).** At runtime the datamodel reads the file into the in-memory `code` string at load; the sandbox child receives that string as an argument and `exec()`s it in a fresh namespace, exactly as today. The sandbox must **not** add the artifact folder to `sys.path` and must **not** `import` `tool.py` / `scorer.py` or any sibling file. Consequences this protects: imports inside user code resolve only against stdlib + the Kiln bundle (the locked dependency-environment); and stray files in the folder — the author's `test_*.py`, a `conftest.py`, anything else dropped there — are never importable or executable at runtime. `import tool` / `from scorer import score` happen **only** in the external `pytest` harness (§5), never in the app.
 
 ## 2. Persistence semantics
 
