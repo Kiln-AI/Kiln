@@ -16,7 +16,6 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalScores,
     EvalTaskInput,
-    SkippedReason,
     V2EvalResult,
 )
 
@@ -26,19 +25,26 @@ _trusted_projects: set[str] = set()
 _code_eval_execution_lock = asyncio.Lock()
 
 
-def grant_code_eval_trust(project_path: str) -> None:
+def add_code_trust(project_path: str) -> None:
+    """Confer code trust on a project for the current session.
+
+    Called when NEW/not-yet-saved code is admitted or executed (saving a code
+    tool/eval, running not-yet-saved code in a test pane). Saved code is
+    trusted to run without this — the flag governs the authoring session only.
+    """
     with _trust_lock:
         _trusted_projects.add(project_path)
 
 
-def revoke_code_eval_trust(project_path: str) -> None:
-    with _trust_lock:
-        _trusted_projects.discard(project_path)
-
-
-def is_code_eval_trusted(project_path: str) -> bool:
+def has_add_code_trust(project_path: str) -> bool:
     with _trust_lock:
         return project_path in _trusted_projects
+
+
+def _reset_add_code_trust() -> None:
+    """Test-only reset of the in-memory trust set. Not part of the product API."""
+    with _trust_lock:
+        _trusted_projects.clear()
 
 
 class CodeEvalAdapter(BaseV2EvalBridge):
@@ -56,13 +62,6 @@ class CodeEvalAdapter(BaseV2EvalBridge):
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
-
-        project_path = self._resolve_project_path()
-        if project_path is None or not is_code_eval_trusted(project_path):
-            return V2EvalResult(
-                skipped_reason=SkippedReason.code_eval_not_trusted,
-                skipped_detail="Project not trusted for code eval execution.",
-            )
 
         inputs: dict[str, Any] = {
             "output": eval_input.final_message,
@@ -91,15 +90,6 @@ class CodeEvalAdapter(BaseV2EvalBridge):
 
         scores = self._validate_scores(raw_scores)
         return V2EvalResult(scores=scores)
-
-    def _resolve_project_path(self) -> str | None:
-        try:
-            project = self.target_task.parent
-            if project is None:
-                return None
-            return str(project.path) if project.path else None
-        except Exception:
-            return None
 
     def _validate_scores(self, raw: dict[str, Any]) -> EvalScores:
         expected_keys = {score.json_key() for score in self._output_scores}
