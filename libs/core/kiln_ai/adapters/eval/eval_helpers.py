@@ -11,6 +11,25 @@ import json
 import re
 from typing import Any
 
+# Inline code spans are removed before link extraction so code like
+# `arr[i](x)` doesn't false-positive as a link. [^`]* (not +) lets a pure
+# backtick run match in one pass instead of backtracking quadratically.
+_MD_CODE_SPAN_RE = re.compile(r"`+[^`]*`+")
+
+# Two-stage parse keeps both regexes linear on adversarial input (these run
+# in the sandbox on model output): capture the parenthesized interior with
+# one level of nesting, then split target from optional title separately.
+_MD_LINK_RE = re.compile(
+    r"(?<!!)"  # ![alt](src) is an image, not a link
+    r"\[([^\[\]]*)\]"  # link text (nested brackets unsupported)
+    r"\(([^()]*(?:\([^()]*\)[^()]*)*)\)"  # interior; one level of parens
+)
+
+_MD_TARGET_RE = re.compile(
+    r"(\S*)"  # target: no unquoted whitespace
+    r"(?:\s+(?:\"[^\"]*\"|'[^']*'))?"  # optional quoted title, dropped
+)
+
 
 class KilnEvalHelpers:
     """Utility methods for common scoring patterns in user-authored scorers."""
@@ -32,7 +51,11 @@ class KilnEvalHelpers:
             if msg.get("role") != "assistant":
                 continue
             for tc in msg.get("tool_calls") or []:
-                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                # .get("function", {}) isn't enough: present-but-null also
+                # needs the fallback or .get below raises mid-scorer.
+                func = tc.get("function") if isinstance(tc, dict) else None
+                if not isinstance(func, dict):
+                    func = {}
                 args_str = func.get("arguments", "{}")
                 try:
                     args = (
@@ -66,14 +89,123 @@ class KilnEvalHelpers:
 
     @staticmethod
     def get_tool_results(trace: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """Return all tool-result entries from a trace."""
+        """Return all tool-result entries from a trace.
+
+        Kiln stores traces in OpenAI format, where tool results are
+        ``role: "tool"`` messages carrying ``tool_call_id`` and ``content``.
+        Entries marked ``role``/``type`` == "tool_result" are also matched,
+        defensively, for non-OpenAI-shaped traces.
+        """
         if not trace:
             return []
         return [
             entry
             for entry in trace
-            if entry.get("role") == "tool_result" or entry.get("type") == "tool_result"
+            if entry.get("role") in ("tool", "tool_result")
+            or entry.get("type") == "tool_result"
         ]
+
+    @staticmethod
+    def count_messages(trace: list[dict[str, Any]] | None, role: str) -> int:
+        """Count trace messages with the given *role* ("user", "assistant",
+        "system", or "tool").
+
+        Counts MESSAGES, not tool calls: one assistant message may carry
+        several tool calls or none. To count tool calls, use
+        ``len(get_tool_calls(trace))`` or ``count_tool_calls``.
+        """
+        return sum(1 for msg in trace or [] if msg.get("role") == role)
+
+    @staticmethod
+    def get_tool_result_content(
+        trace: list[dict[str, Any]] | None, tool_call_id: str | None
+    ) -> str:
+        """Return the text content of the tool result answering *tool_call_id*.
+
+        Pairs any entry ``get_tool_results`` returns (OpenAI ``role: "tool"``
+        or the legacy "tool_result" shapes) with its originating call by
+        ``tool_call_id``; list-of-blocks content is flattened to
+        newline-joined text (non-text blocks dropped, same as
+        ``get_assistant_emitted_text``). Returns ``""`` when *tool_call_id*
+        is falsy (``get_tool_calls`` emits ``id: None`` for malformed calls)
+        or no result matches. If several results carry the same id, the
+        first match wins.
+        """
+        if not tool_call_id:
+            return ""
+        for entry in KilnEvalHelpers.get_tool_results(trace):
+            if entry.get("tool_call_id") != tool_call_id:
+                continue
+            content = entry.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                texts: list[str] = []
+                for block in content:
+                    if isinstance(block, dict):
+                        # `or ""` coerces malformed blocks (e.g. text: None)
+                        # instead of raising from within a user's scorer run.
+                        text = block.get("text") or block.get("content") or ""
+                        if isinstance(text, str):
+                            texts.append(text)
+                    else:
+                        texts.append("" if block is None else str(block))
+                return "\n".join(t for t in texts if t)
+            return "" if content is None else str(content)
+        return ""
+
+    @staticmethod
+    def get_assistant_emitted_text(
+        trace: list[dict[str, Any]] | None,
+        *,
+        include_reasoning: bool = True,
+        include_tool_calls: bool = False,
+    ) -> str:
+        """Text the assistant itself emitted, newline-joined — the surface
+        for output-corruption checks.
+
+        Always includes message content (string or text blocks) and refusal
+        text; never tool results. Reasoning is included by default
+        (*include_reasoning*). Tool-call ARGUMENTS are off by default
+        (*include_tool_calls*); tool names are never included — they're
+        schema identifiers, not emitted text.
+
+        Caveat: tool-call arguments are JSON-serialized, so non-ASCII text
+        may appear as ``\\uXXXX`` escapes — corruption regexes (e.g. CJK
+        classes) can mismatch on argument content. That's why arguments
+        default to off.
+        """
+        parts: list[str] = []
+        for msg in trace or []:
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        text = block.get("text") or block.get("content") or ""
+                        if isinstance(text, str):
+                            parts.append(text)
+                    elif isinstance(block, str):
+                        parts.append(block)
+            refusal = msg.get("refusal")
+            if isinstance(refusal, str):
+                parts.append(refusal)
+            if include_reasoning:
+                reasoning = msg.get("reasoning_content") or msg.get("reasoning")
+                if isinstance(reasoning, str):
+                    parts.append(reasoning)
+            if include_tool_calls:
+                for tc in msg.get("tool_calls") or []:
+                    func = tc.get("function") if isinstance(tc, dict) else None
+                    if not isinstance(func, dict):
+                        continue
+                    args = func.get("arguments")
+                    if isinstance(args, str):
+                        parts.append(args)
+        return "\n".join(p for p in parts if p)
 
     # -- Tool-call matching -------------------------------------------------
 
@@ -157,3 +289,114 @@ class KilnEvalHelpers:
             return re.search(pattern, text) is not None
         except Exception:
             return False
+
+    # -- Health / usage metrics -----------------------------------------------
+
+    @staticmethod
+    def _field(obj: Any, name: str) -> Any:
+        """Read *name* from a dict or an attribute-bearing object; None on
+        any failure.
+
+        Trace messages arrive as plain dicts over JSON transports but carry
+        Pydantic objects (e.g. ``usage`` as ``MessageUsage``) over the
+        multiprocessing pickle transport into the sandbox subprocess —
+        duck-type both, no Kiln imports.
+        """
+        if isinstance(obj, dict):
+            return obj.get(name)
+        try:
+            return getattr(obj, name, None)
+        except Exception:
+            return None
+
+    @staticmethod
+    def get_usage_totals(trace: list[dict[str, Any]] | None) -> dict[str, float]:
+        """Sum per-message ``usage`` across assistant messages.
+
+        Returns ``{"input_tokens", "output_tokens", "total_tokens",
+        "cached_tokens", "cost"}`` as floats. Caveat: absent usage data sums
+        to 0.0, indistinguishable from a genuine zero — a budget scorer
+        silently passes traces whose provider recorded no usage. Check
+        ``count_messages(trace, "assistant")`` if you need to tell them
+        apart.
+        """
+        totals = {
+            "input_tokens": 0.0,
+            "output_tokens": 0.0,
+            "total_tokens": 0.0,
+            "cached_tokens": 0.0,
+            "cost": 0.0,
+        }
+        for msg in trace or []:
+            if msg.get("role") != "assistant":
+                continue
+            usage = msg.get("usage")
+            if usage is None:
+                continue
+            for key in totals:
+                value = KilnEvalHelpers._field(usage, key)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    totals[key] += float(value)
+        return totals
+
+    @staticmethod
+    def get_total_latency_ms(trace: list[dict[str, Any]] | None) -> float:
+        """Sum assistant messages' ``latency_ms``; absent values count 0.0.
+
+        Caveat: traces seeded from prior conversations sum across sessions,
+        so the total is not one conversation's wall-clock time.
+        """
+        total = 0.0
+        for msg in trace or []:
+            if msg.get("role") != "assistant":
+                continue
+            value = msg.get("latency_ms")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                total += float(value)
+        return total
+
+    @staticmethod
+    def get_error_tool_results(
+        trace: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        """Tool results that FLAGGED failure: truthy ``is_error`` or a
+        non-empty ``error_message``.
+
+        Caveat: only explicitly flagged errors are caught — a tool that
+        returned garbage without setting the flag looks healthy here.
+        """
+        return [
+            entry
+            for entry in KilnEvalHelpers.get_tool_results(trace)
+            if entry.get("is_error") or entry.get("error_message")
+        ]
+
+    # -- Markdown helpers -----------------------------------------------------
+
+    @staticmethod
+    def get_markdown_links(text: str | None) -> list[tuple[str, str]]:
+        """Return ``(link_text, target)`` pairs for inline markdown links.
+
+        Handles targets with one level of balanced parentheses
+        (``.../Foo_(bar)``) and strips optional titles
+        (``[t](url "title")``). Images (``![alt](src)``) are excluded and
+        inline code spans are ignored. Unsupported (documented subset):
+        reference-style links ``[t][ref]``, nested square brackets in link
+        text, angle-bracket targets ``[t](<url with spaces>)``, backslash
+        escapes, and multi-backtick code spans (handled approximately).
+        Never raises; ``None``/empty input yields ``[]``.
+        """
+        if not text:
+            return []
+        try:
+            without_code = _MD_CODE_SPAN_RE.sub(" ", text)
+            links: list[tuple[str, str]] = []
+            for link_text, interior in _MD_LINK_RE.findall(without_code):
+                target = _MD_TARGET_RE.fullmatch(interior.strip())
+                if target is None:
+                    # Unquoted whitespace in the target — not a supported link.
+                    continue
+                links.append((link_text, target.group(1)))
+            return links
+        except Exception:
+            return []

@@ -789,20 +789,151 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         )
 
 
-def test_eval_run_custom_scores_not_allowed(valid_eval_config, valid_eval_run_data):
-    with pytest.raises(
-        ValueError, match="Custom scores are not supported in evaluators"
-    ):
-        Eval(
-            name="Test Eval",
-            eval_set_filter_id="tag::tag1",
-            eval_configs_filter_id="tag::tag2",
-            output_scores=[
-                EvalOutputScore(
-                    name="custom",
-                    type=TaskOutputRatingType.custom,
-                )
-            ],
+def test_eval_custom_scores_allowed():
+    """Custom-typed output scores are unbounded numeric metrics (tokens, cost,
+    latency, counts) — valid on evals, code-eval only at scoring time."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="total cost usd",
+                type=TaskOutputRatingType.custom,
+            )
+        ],
+    )
+    assert eval.output_scores[0].json_key() == "total_cost_usd"
+
+
+@pytest.mark.parametrize(
+    "config_type,properties",
+    [
+        (EvalConfigType.g_eval, {"eval_steps": ["step"]}),
+        (EvalConfigType.llm_as_judge, {"eval_steps": ["step"]}),
+    ],
+    ids=["g_eval", "llm_as_judge"],
+)
+def test_judge_config_rejected_on_custom_score_eval(config_type, properties):
+    """Judges structurally can't emit custom-typed keys — the config is
+    rejected up front instead of failing every EvalRun save."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=config_type,
+            properties=properties,
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=eval,
+        )
+
+
+def test_v2_llm_judge_config_rejected_on_custom_score_eval():
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="judge",
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name="gpt-4",
+                model_provider="openai",
+                prompt_template="Judge this: {{ output }}",
+            ),
+            parent=eval,
+        )
+
+
+def test_code_eval_config_allowed_on_custom_score_eval():
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    config = EvalConfig(
+        name="code",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
+        parent=eval,
+    )
+    assert config.is_code_eval() is True
+
+
+def test_custom_score_eval_run_round_trip(tmp_path):
+    """End-to-end over disk: a code-eval config on a custom-score eval saves
+    EvalRuns carrying custom values and reloads them through the real parent
+    chain (the feature's happy path, not just the pure validator)."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(name="total tokens", type=TaskOutputRatingType.custom),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="code",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
+        parent=eval,
+    )
+    config.save_to_file()
+    run = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0, "total_tokens": 12345.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    run.save_to_file()
+
+    reloaded = EvalRun.load_from_file(run.path)
+    assert reloaded.scores == {"quality": 1.0, "total_tokens": 12345.0}
+
+
+def test_check_type_config_rejected_on_custom_score_eval():
+    """Check-type adapters fill every declared score key with 0.0/1.0, which
+    would silently record meaningless values for an unbounded metric — only
+    code evals may serve custom-score evals."""
+    eval = Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="check",
+            config_type=EvalConfigType.v2,
+            properties=PatternMatchProperties(pattern="ok"),
+            parent=eval,
         )
 
 
@@ -3126,6 +3257,49 @@ class TestValidateScoresAgainstOutputScores:
         ]
         problems = validate_scores_against_output_scores(
             {"check": "not_a_float"}, output_scores
+        )
+        assert len(problems) == 1
+
+    @pytest.mark.parametrize(
+        "score_type",
+        [
+            TaskOutputRatingType.five_star,
+            TaskOutputRatingType.pass_fail,
+            TaskOutputRatingType.pass_fail_critical,
+            TaskOutputRatingType.custom,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    def test_non_finite_flagged(self, score_type, value):
+        """NaN compares False against every range bound, so it passed all
+        range checks; pydantic then serialized it as null, making the saved
+        EvalRun file fail Dict[str, float] validation on next load."""
+        output_scores = [EvalOutputScore(name="metric", type=score_type)]
+        problems = validate_scores_against_output_scores(
+            {"metric": value}, output_scores
+        )
+        assert len(problems) == 1
+
+    @pytest.mark.parametrize("value", [12345.6, 0.0, -3.5])
+    def test_custom_accepts_any_finite_number(self, value):
+        output_scores = [
+            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+        ]
+        assert (
+            validate_scores_against_output_scores({"metric": value}, output_scores)
+            == []
+        )
+
+    def test_overlarge_int_flagged_not_raised(self):
+        """math.isfinite raises OverflowError on ints too large for float
+        (10**400) — the validator must report a problem, not throw."""
+        output_scores = [
+            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"metric": 10**400}, output_scores
         )
         assert len(problems) == 1
 

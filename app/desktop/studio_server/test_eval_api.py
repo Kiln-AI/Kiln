@@ -1622,6 +1622,92 @@ async def test_get_eval_config_compare_summary(
 
 
 @pytest.mark.asyncio
+async def test_get_eval_config_compare_summary_skips_custom_scores(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+):
+    """A custom-typed output score whose json_key collides with a human rating
+    (e.g. named "Overall Rating") must be skipped in the correlation loop:
+    normalize_rating raises on custom, which 500'd the whole endpoint."""
+    mock_task_from_id.return_value = mock_task
+
+    # Human-rated item in the golden set, plus an eval run scoring it. Built
+    # while the eval still has its five_star scores, so save validation passes.
+    task_run = TaskRun(
+        input="Test Input",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(
+            output="Test Output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "langchain_adapter",
+                },
+            ),
+            rating=TaskOutputRating(
+                value=5.0,
+                requirement_ratings={
+                    mock_task.requirements[0].id: RequirementRating(
+                        value=4.0, type=TaskOutputRatingType.five_star
+                    )
+                },
+            ),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    )
+    task_run.save_to_file()
+
+    eval_run = EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 3.5, "overall_rating": 4.0},
+        input="input",
+        output="output",
+        dataset_id=task_run.id,
+        parent=mock_eval_config,
+    )
+    eval_run.save_to_file()
+
+    # Swap the eval's "overall_rating" score to custom-typed in memory: a
+    # custom-score eval can't be built with the judge config attached (the
+    # EvalConfig validator rejects that pairing), so stage the collision here.
+    mock_eval.output_scores[1] = EvalOutputScore(
+        name="Overall Rating",
+        type=TaskOutputRatingType.custom,
+    )
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    results = data["results"]
+    # five_star score still correlated; the custom score is absent, not a 500
+    assert "score1" in results["eval_config1"]
+    assert "overall_rating" not in results["eval_config1"]
+    # Custom scores are unrateable by humans, so they must not block the
+    # rated tally: score1 is human-rated, so the item counts fully rated.
+    assert data["fully_rated_count"] == 1
+    assert data["partially_rated_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_run_eval_config_eval(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
 ):

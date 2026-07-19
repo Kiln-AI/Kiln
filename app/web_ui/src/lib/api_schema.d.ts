@@ -6137,7 +6137,7 @@ export interface components {
              * @description A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.
              */
             instruction?: string | null;
-            /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
+            /** @description The type of rating ('five_star', 'pass_fail', 'pass_fail_critical', or 'custom'). Custom scores are unbounded numeric metrics (e.g. token counts, cost, latency); they can only be produced by code evals, so an eval with any custom score cannot use LLM-judge configs. */
             type: components["schemas"]["TaskOutputRatingType"];
         };
         /**
