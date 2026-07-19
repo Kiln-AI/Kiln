@@ -15,7 +15,12 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.datamodel.dataset_filters import (
+    DatasetFilterId,
+    EvalInputFilterId,
+    dataset_filter_from_id,
+    eval_input_filter_from_id,
+)
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
     build_default_llm_judge_prompt,
@@ -33,6 +38,8 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
+    EvalInputData,
     EvalOutputScore,
     EvalRun,
     EvalScores,
@@ -58,7 +65,7 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -119,6 +126,18 @@ def eval_config_from_id(
     raise HTTPException(
         status_code=404,
         detail=f"Eval config not found. ID: {eval_config_id}",
+    )
+
+
+def eval_input_from_id(project_id: str, task_id: str, eval_input_id: str) -> EvalInput:
+    task = task_from_id(project_id, task_id)
+    eval_input = EvalInput.from_id_and_parent_path(eval_input_id, task.path)
+    if eval_input is not None:
+        return eval_input
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Eval input not found. ID: {eval_input_id}",
     )
 
 
@@ -391,6 +410,36 @@ class UpdateEvalRequest(BaseModel):
     )
     train_set_filter_id: str | None = Field(
         default=None, description="The updated train set filter ID."
+    )
+
+
+class CreateEvalInputRequest(BaseModel):
+    """Request to create an eval input item."""
+
+    data: EvalInputData = Field(description="The input data for this eval item.")
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="Optional reference data (ground truth) for this eval input, keyed by reference name.",
+    )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).",
+    )
+
+
+class UpdateEvalInputRequest(BaseModel):
+    """Request to update an eval input item. Omitted fields are left unchanged."""
+
+    data: EvalInputData | None = Field(
+        default=None,
+        description="The updated input data. Changing data changes the drive fingerprint, so multi-turn items are re-driven on the next eval run.",
+    )
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="The updated reference data. Replaces the whole dict; cannot be cleared to null via this endpoint.",
+    )
+    tags: list[str] | None = Field(
+        default=None, description="The updated tags. Replaces the whole list."
     )
 
 
@@ -854,6 +903,140 @@ def connect_evals_api(app: FastAPI):
         """List all evals for a task."""
         task = task_from_id(project_id, task_id)
         return task.evals()
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
+        summary="List Eval Inputs",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_inputs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        filter_id: Annotated[
+            EvalInputFilterId | None,
+            Query(
+                description="Optional eval-input filter to apply, e.g. 'all' or 'tag::my_tag' (the same IDs evals use as eval_input_filter_id)."
+            ),
+        ] = None,
+    ) -> list[EvalInput]:
+        """List a task's eval input items, optionally restricted to a filter."""
+        task = task_from_id(project_id, task_id)
+        eval_inputs = task.eval_inputs(readonly=True)
+        if filter_id is None:
+            return eval_inputs
+        try:
+            filter = eval_input_filter_from_id(filter_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        return [eval_input for eval_input in eval_inputs if filter(eval_input)]
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Get Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+    ) -> EvalInput:
+        return eval_input_from_id(project_id, task_id, eval_input_id)
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
+        summary="Create Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def create_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateEvalInputRequest,
+    ) -> EvalInput:
+        """Create an eval input item. Evals pick it up via their eval_input_filter_id, so tag it accordingly."""
+        task = task_from_id(project_id, task_id)
+        eval_input = EvalInput(
+            data=request.data,
+            reference=request.reference,
+            tags=request.tags,
+            parent=task,
+        )
+        eval_input.save_to_file()
+        return eval_input
+
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Update Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit eval input? Editing data re-drives multi-turn conversations and can invalidate prior comparisons. Ensure you backup your project before allowing agentic edits."
+        ),
+    )
+    async def update_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+        request: UpdateEvalInputRequest,
+    ) -> EvalInput:
+        eval_input = eval_input_from_id(project_id, task_id, eval_input_id)
+
+        if request.data is not None:
+            eval_input.data = request.data
+        if request.reference is not None:
+            eval_input.reference = request.reference
+        if request.tags is not None:
+            eval_input.tags = request.tags
+
+        eval_input.save_to_file()
+        return eval_input
+
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Delete Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+    ) -> None:
+        """Delete an eval input item. EvalRuns keyed to it are not deleted."""
+        eval_input = eval_input_from_id(project_id, task_id, eval_input_id)
+        eval_input.delete()
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
