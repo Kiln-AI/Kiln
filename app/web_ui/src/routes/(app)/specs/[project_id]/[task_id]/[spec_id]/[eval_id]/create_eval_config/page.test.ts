@@ -183,8 +183,8 @@ vi.mock("$lib/utils/eval_types/registry", async (importOriginal) => {
 const mockTestV2Eval = vi.fn()
 const mockCreateEvalConfig = vi.fn()
 const mockCreateLlmJudgeConfig = vi.fn()
-const mockCheckCodeEvalTrust = vi.fn()
-const mockGrantCodeEvalTrust = vi.fn()
+const mockCheckAddCodeTrust = vi.fn()
+const mockAddCodeTrust = vi.fn()
 const mockFetchTaskRuns = vi.fn()
 const mockTestV2EvalLlmJudge = vi.fn()
 
@@ -206,8 +206,8 @@ vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
     createEvalConfig: (...args: unknown[]) => mockCreateEvalConfig(...args),
     createLlmJudgeConfig: (...args: unknown[]) =>
       mockCreateLlmJudgeConfig(...args),
-    checkCodeEvalTrust: (...args: unknown[]) => mockCheckCodeEvalTrust(...args),
-    grantCodeEvalTrust: (...args: unknown[]) => mockGrantCodeEvalTrust(...args),
+    checkAddCodeTrust: (...args: unknown[]) => mockCheckAddCodeTrust(...args),
+    addCodeTrust: (...args: unknown[]) => mockAddCodeTrust(...args),
     fetchTaskRuns: (...args: unknown[]) => mockFetchTaskRuns(...args),
   }
 })
@@ -528,8 +528,8 @@ describe("EvalConfigBuilder", () => {
     mockTestV2EvalLlmJudge.mockReset()
     mockCreateEvalConfig.mockReset()
     mockCreateLlmJudgeConfig.mockReset()
-    mockCheckCodeEvalTrust.mockReset()
-    mockGrantCodeEvalTrust.mockReset()
+    mockCheckAddCodeTrust.mockReset()
+    mockAddCodeTrust.mockReset()
     mockFetchTaskRuns.mockReset()
     mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
   })
@@ -569,7 +569,7 @@ describe("EvalConfigBuilder", () => {
     it("shows trust dialog when saving a code_eval without trust", async () => {
       const { container } = await renderBuilder("code_eval")
 
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: false })
 
       const submitBtn = container.querySelector(
         '[data-testid="column-save-button"]',
@@ -599,7 +599,7 @@ describe("EvalConfigBuilder", () => {
       await tick()
 
       expect(showCalls).not.toContain("Trust Code and Project?")
-      expect(mockCheckCodeEvalTrust).not.toHaveBeenCalled()
+      expect(mockCheckAddCodeTrust).not.toHaveBeenCalled()
       expect(showCalls).toContain("Save Without Testing?")
     })
   })
@@ -668,7 +668,7 @@ describe("EvalConfigBuilder", () => {
     it("shows confirm dialog for code_eval after trust is already granted", async () => {
       const { container } = await renderBuilder("code_eval")
 
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
 
       const submitBtn = container.querySelector(
         '[data-testid="column-save-button"]',
@@ -841,7 +841,7 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
 
   it("B7: Save button still gates via handle_submit (trust check for code_eval)", async () => {
     const { container } = await renderBuilder("code_eval")
-    mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
+    mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: false })
 
     const saveBtn = container.querySelector(
       "[data-testid='column-save-button']",
@@ -908,8 +908,8 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
     mockTestV2EvalLlmJudge.mockReset()
     mockCreateEvalConfig.mockReset()
     mockCreateLlmJudgeConfig.mockReset()
-    mockCheckCodeEvalTrust.mockReset()
-    mockGrantCodeEvalTrust.mockReset()
+    mockCheckAddCodeTrust.mockReset()
+    mockAddCodeTrust.mockReset()
     mockFetchTaskRuns.mockReset()
     mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
   })
@@ -1011,7 +1011,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       const trustPromise = new Promise((resolve) => {
         trustResolve = resolve
       })
-      mockCheckCodeEvalTrust.mockImplementationOnce(() => trustPromise)
+      mockCheckAddCodeTrust.mockImplementationOnce(() => trustPromise)
 
       const { container } = await renderBuilder("code_eval")
 
@@ -1063,12 +1063,12 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       expect(saveBtn.disabled).toBe(false)
     })
 
-    it("resets loading when checkCodeEvalTrust throws an error", async () => {
+    it("resets loading when checkAddCodeTrust throws an error", async () => {
       let trustReject: (e: Error) => void
       const trustPromise = new Promise((_resolve, reject) => {
         trustReject = reject
       })
-      mockCheckCodeEvalTrust.mockImplementationOnce(() => trustPromise)
+      mockCheckAddCodeTrust.mockImplementationOnce(() => trustPromise)
 
       const { container } = await renderBuilder("code_eval")
 
@@ -1132,14 +1132,14 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       const testPromise = new Promise((resolve) => {
         testResolve = resolve
       })
-      mockGrantCodeEvalTrust.mockResolvedValueOnce({})
+      mockAddCodeTrust.mockResolvedValueOnce({})
       mockTestV2Eval.mockImplementationOnce(() => testPromise)
 
       const asyncAction = trustAction!.asyncAction as () => Promise<boolean>
       const result = await asyncAction()
 
       expect(result).toBe(true)
-      expect(mockGrantCodeEvalTrust).toHaveBeenCalled()
+      expect(mockAddCodeTrust).toHaveBeenCalled()
 
       testResolve!({
         scores: { accuracy: 1.0 },
@@ -1154,7 +1154,7 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
     it("grant_trust fires do_save without awaiting it", async () => {
       const { container } = await renderBuilder("code_eval")
 
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: false })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: false })
 
       const submitBtn = container.querySelector(
         '[data-testid="column-save-button"]',
@@ -1178,14 +1178,14 @@ describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
       const savePromise = new Promise((resolve) => {
         saveResolve = resolve
       })
-      mockGrantCodeEvalTrust.mockResolvedValueOnce({})
+      mockAddCodeTrust.mockResolvedValueOnce({})
       mockCreateEvalConfig.mockImplementationOnce(() => savePromise)
 
       const asyncAction = trustAction!.asyncAction as () => Promise<boolean>
       const result = await asyncAction()
 
       expect(result).toBe(true)
-      expect(mockGrantCodeEvalTrust).toHaveBeenCalled()
+      expect(mockAddCodeTrust).toHaveBeenCalled()
 
       saveResolve!({
         id: "config123",
@@ -1407,8 +1407,8 @@ describe("Reference data save gate", () => {
     mockTestV2EvalLlmJudge.mockReset()
     mockCreateEvalConfig.mockReset()
     mockCreateLlmJudgeConfig.mockReset()
-    mockCheckCodeEvalTrust.mockReset()
-    mockGrantCodeEvalTrust.mockReset()
+    mockCheckAddCodeTrust.mockReset()
+    mockAddCodeTrust.mockReset()
     mockFetchTaskRuns.mockReset()
     mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
   })
@@ -1424,7 +1424,7 @@ describe("Reference data save gate", () => {
       setInitialCode(
         'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
       )
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
 
       const { container } = await renderBuilder("code_eval")
 
@@ -1469,7 +1469,7 @@ describe("Reference data save gate", () => {
       setInitialCode(
         "def score(output, reference_data=None):\n  return {'score': 1.0}",
       )
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
 
       const { container } = await renderBuilder("code_eval")
 
@@ -1489,7 +1489,7 @@ describe("Reference data save gate", () => {
       setInitialCode(
         'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
       )
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
 
       const { container } = await renderBuilder("code_eval")
 
@@ -1514,7 +1514,7 @@ describe("Reference data save gate", () => {
       await tick()
 
       resetCalls()
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
       mockCreateEvalConfig.mockResolvedValueOnce({
         id: "config123",
         type: "v2",
@@ -1551,7 +1551,7 @@ describe("Reference data save gate", () => {
         return {"no_dark_humour": 0.0}
     return {"no_dark_humour": 1.0}`
       setInitialCode(starterCode)
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
 
       const { container } = await renderBuilder("code_eval")
 
@@ -1744,7 +1744,7 @@ describe("Reference data save gate", () => {
 
       // Save
       resetCalls()
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
       mockCreateEvalConfig.mockResolvedValueOnce({
         id: "config123",
         type: "v2",
@@ -1766,7 +1766,7 @@ describe("Reference data save gate", () => {
     })
 
     it("code_eval: reference_keys are empty when config does not use reference_data", async () => {
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
       mockCreateEvalConfig.mockResolvedValueOnce({
         id: "config123",
         type: "v2",
@@ -1797,7 +1797,7 @@ describe("Reference data save gate", () => {
       await tick()
 
       resetCalls()
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
       mockCreateEvalConfig.mockResolvedValueOnce({
         id: "config123",
         type: "v2",
@@ -1829,8 +1829,8 @@ describe("Save flow — handle_submit logic", () => {
     mockTestV2EvalLlmJudge.mockReset()
     mockCreateEvalConfig.mockReset()
     mockCreateLlmJudgeConfig.mockReset()
-    mockCheckCodeEvalTrust.mockReset()
-    mockGrantCodeEvalTrust.mockReset()
+    mockCheckAddCodeTrust.mockReset()
+    mockAddCodeTrust.mockReset()
     mockFetchTaskRuns.mockReset()
     mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
   })
@@ -1913,7 +1913,7 @@ describe("Save flow — handle_submit logic", () => {
 
     // Now save (trust granted)
     resetCalls()
-    mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+    mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
     mockCreateEvalConfig.mockResolvedValueOnce({
       id: "config_code",
       type: "v2",

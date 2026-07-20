@@ -315,7 +315,6 @@
       id="judge_prompt"
       label="Judge Prompt"
       bind:value={judge_prompt}
-      optional={true}
       height="xl"
       description="The Jinja2 template used to prompt the judge model."
     />

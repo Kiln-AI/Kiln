@@ -172,8 +172,8 @@ vi.mock("$lib/utils/eval_types/registry", async (importOriginal) => {
 const mockTestV2Eval = vi.fn()
 const mockCreateEvalConfig = vi.fn()
 const mockCreateLlmJudgeConfig = vi.fn()
-const mockCheckCodeEvalTrust = vi.fn()
-const mockGrantCodeEvalTrust = vi.fn()
+const mockCheckAddCodeTrust = vi.fn()
+const mockAddCodeTrust = vi.fn()
 const mockFetchTaskRuns = vi.fn()
 const mockTestV2EvalLlmJudge = vi.fn()
 
@@ -195,8 +195,8 @@ vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
     createEvalConfig: (...args: unknown[]) => mockCreateEvalConfig(...args),
     createLlmJudgeConfig: (...args: unknown[]) =>
       mockCreateLlmJudgeConfig(...args),
-    checkCodeEvalTrust: (...args: unknown[]) => mockCheckCodeEvalTrust(...args),
-    grantCodeEvalTrust: (...args: unknown[]) => mockGrantCodeEvalTrust(...args),
+    checkAddCodeTrust: (...args: unknown[]) => mockCheckAddCodeTrust(...args),
+    addCodeTrust: (...args: unknown[]) => mockAddCodeTrust(...args),
     fetchTaskRuns: (...args: unknown[]) => mockFetchTaskRuns(...args),
   }
 })
@@ -293,8 +293,8 @@ describe("Reference data save gate", () => {
     mockTestV2EvalLlmJudge.mockReset()
     mockCreateEvalConfig.mockReset()
     mockCreateLlmJudgeConfig.mockReset()
-    mockCheckCodeEvalTrust.mockReset()
-    mockGrantCodeEvalTrust.mockReset()
+    mockCheckAddCodeTrust.mockReset()
+    mockAddCodeTrust.mockReset()
     mockFetchTaskRuns.mockReset()
     mockFetchTaskRuns.mockResolvedValue([sampleTaskRun])
   })
@@ -310,7 +310,7 @@ describe("Reference data save gate", () => {
       setInitialCode(
         'def score(output, reference_data=None):\n  val = reference_data["key"]\n  return {"score": 1.0}',
       )
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
 
       const { container } = await renderBuilder("code_eval")
 
@@ -480,7 +480,7 @@ describe("Reference data save gate", () => {
 
       // Save
       resetCalls()
-      mockCheckCodeEvalTrust.mockResolvedValueOnce({ trusted: true })
+      mockCheckAddCodeTrust.mockResolvedValueOnce({ trusted: true })
       mockCreateEvalConfig.mockResolvedValueOnce({
         id: "config123",
         type: "v2",
