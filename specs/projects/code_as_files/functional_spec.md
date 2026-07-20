@@ -33,7 +33,7 @@ Behavioral contract for the change described in [project_overview.md](project_ov
 
 - Exactly one code file per code artifact, at the fixed name, in the artifact's own folder.
 - The file is written on save and read on load. It is never referenced by absolute path and never lives outside the artifact folder (the same containment guarantee attachments enforce).
-- The `.kiln` file and its code file are a unit: a code artifact is only valid with both present.
+- The `.kiln` file and its code file are a unit: a normally-saved code artifact always has both, and that paired form is the only layout Kiln writes. Load is *lenient* to one exception — a dict that already carries inline `code` (a hand-written/legacy `.kiln`, or any in-memory dict) constructs without reading a sibling file and migrates to the file on the next save (§2.2, §7). That is a graceful-construction fallback, not a second supported on-disk form.
 - **The sandbox never imports the file (hard invariant).** At runtime the datamodel reads the file into the in-memory `code` string at load; the sandbox child receives that string as an argument and `exec()`s it in a fresh namespace, exactly as today. The sandbox must **not** add the artifact folder to `sys.path` and must **not** `import` `tool.py` / `scorer.py` or any sibling file. Consequences this protects: imports inside user code resolve only against stdlib + the Kiln bundle (the locked dependency-environment); and stray files in the folder — the author's `test_*.py`, a `conftest.py`, anything else dropped there — are never importable or executable at runtime. `import tool` / `from scorer import score` happen **only** in the external `pytest` harness (§5), never in the app.
 
 ## 2. Persistence semantics
@@ -51,8 +51,8 @@ The code file is written from the in-memory `code` string as-is (UTF-8), byte-fo
 
 Loading reads the code back into the in-memory `code` string before validators run, so the existing validation trio (§4) runs against the loaded code exactly as before:
 
-- The loader makes the artifact's source folder available to model validation (today it is not — see architecture §3), then the code field is populated from the sibling file.
-- **Missing/unreadable code file** → load fails with a clear error naming the expected file (e.g. `code_tool.kiln at <path> is missing its tool.py`). This mirrors how a dangling attachment fails and how a broken artifact surfaces today; a code artifact without its code is not loadable.
+- The loader makes the artifact's source folder available to model validation (today it is not — see architecture §3). **Precedence**: if the parsed dict *already carries inline `code`*, the loader uses it as-is and does **not** read the sibling file (lenient by design — §7; the value migrates to the file on the next save). This is the one case where a code artifact loads without its sibling file present.
+- **Otherwise** (the normal file-backed case, no inline `code`) the code field is populated from the sibling file, and a **missing/unreadable code file** → load fails with a clear error naming the expected file (e.g. `code_tool.kiln at <path> is missing its tool.py`). This mirrors how a dangling attachment fails and how a broken artifact surfaces today; a normally-saved code artifact without its code is not loadable.
 
 ### 2.3 Immutability, clone, archive, delete — unchanged in contract
 
@@ -144,7 +144,7 @@ The plugin is a test-support surface only: it never spawns a subprocess, never c
 
 ## 7. Edge cases
 
-- **Hand-edited `tool.py` after create**: out of the immutability contract, but if it happens, the next load runs the validator trio against the edited file — a syntax error or missing `run` fails the load with the normal validator message. (Note the model cache keys on the `.kiln` mtime, not the `.py` mtime — see architecture §3 risks.)
+- **Hand-edited `tool.py` after create**: out of the immutability contract. On a **cold (uncached) load** the validator trio runs against the edited file, so a syntax error or missing `run` fails the load with the normal validator message. But the readonly-model cache keys on the `.kiln` mtime, **not** the `.py` mtime (architecture §9), so editing only the `.py` does **not** invalidate an already-cached model — the previously-loaded code is served until the `.kiln` mtime changes (or the cache is cold). That staleness is expected, not a bug: `code` is immutable by contract, so Kiln does not track the `.py` for invalidation and hand-edits are unsupported.
 - **Zero-argument tool / empty schema**: unchanged; `tool.py` still defines `run()`.
 - **Two code tools in different folders both named `tool.py`**: fine — different directories. A single `pytest` run spanning multiple tool folders can hit module-name collisions (`tool` imported from two places); the documented pattern is to test one tool folder at a time (or use `rootdir`/`importmode=importlib`). Called out in docs (§5), not solved by Kiln.
 - **Packaged desktop app has no `pytest`**: expected. Testing is an authoring-environment activity (dev / agent with `kiln_ai` installed); the shipped desktop app runs tools, it doesn't test them. Consistent with decision 4 ("Kiln doesn't run tests").

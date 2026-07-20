@@ -72,7 +72,7 @@ def _read_code_file(cls, data, info):
     return data
 ```
 
-A missing/unreadable `tool.py` fails the load with a clear message (functional spec §2.2). `mode="before"` validators receive `info` (hence context); the injected `code` then flows through the existing `validate_code`.
+The `"code" not in data` guard makes the load **lenient by design** (functional spec §7): a dict that already carries inline `code` skips the file read entirely, so the sibling file is required only when `code` is absent — the normal file-backed case. A missing/unreadable `tool.py` in that case fails the load with a clear message (functional spec §2.2). `mode="before"` validators receive `info` (hence context); the injected `code` then flows through the existing `validate_code`.
 
 Both models delegate the load/save bodies to a shared, stdlib-only helper (`datamodel/code_file_storage.py`), which is also the single audited place for path containment (fixed bare filename joined to the context folder). The helper uses **binary** read/write (`read_bytes().decode("utf-8")` / `write_bytes(code.encode("utf-8"))`) rather than `read_text`/`write_text` to honor the byte-for-byte contract (functional spec §1.1 / §2.1): universal-newline translation would collapse CRLF/CR on read and rewrite LF to `os.linesep` on write, breaking byte-identity and save idempotency.
 
@@ -146,7 +146,7 @@ Same shape for `EvalConfig` → nested `CodeEvalProperties` → `scorer.py`.
 2. **Datamodel round-trip (code judge)** (`test_eval.py`): `EvalConfig` with `CodeEvalProperties` writes `scorer.py`; `properties` in `eval_config.kiln` omits `code` but keeps `type`/`reference_keys`/`timeout_seconds`; load reconstructs; nested-context propagation asserted explicitly.
 3. **Serializer contexts**: disk save (with context) omits code + writes file; plain `model_dump`/API dump keeps code and writes nothing.
 4. **Test shim** (`tool_testing` tests): plugin installs modules; `from kiln import tools` importable at collection time; `kiln_tools.set` static + callable; `set_error`; unknown name → `ToolNotAllowed`; `calls` recorded; `async_tools` under `asyncio.gather`; end-to-end importing a sample `tool.py` that calls `tools.x()`.
-5. **Regression**: full existing `code_tools` + code-eval suites pass. Fixtures/tests that hand-write inline `code` in `.kiln` JSON, or construct-and-save then assert JSON contents, are regenerated to the file-based layout.
+5. **Regression + lenient precedence**: full existing `code_tools` + code-eval suites pass. The shared helper's unit tests (`test_code_file_storage.py`) cover the lenient inline-`code` precedence — a dict that already carries `code` is used as-is and the sibling file is *not* read (`test_lenient_when_code_already_present` writes a different body to prove it is ignored), then migrates to the file on the next save. Fixtures/tests that hand-write inline `code` in `.kiln` JSON, or construct-and-save then assert JSON contents, are regenerated to the file-based layout.
 6. **Sandbox suite unchanged** after the §4 extraction (behavior-preserving).
 7. **Packaging**: export/zip and git-sync round-trip a project containing `tool.py` and `scorer.py`.
 
@@ -158,7 +158,7 @@ None — nothing shipped. Consequence to handle *within this branch*: any `.kiln
 
 - **Nested context to union members** (§3.3) — the one mechanism that isn't already proven by attachments; validate it in Phase 2 before building on it.
 - **Base-model context key is shared** — `source_dir` reaches every model's validation; harmless (only code models read it), but keep the key name unambiguous and covered by a test that other models load unaffected.
-- **Model cache keys on the `.kiln` mtime, not the `.py`** (`basemodel.py:426/456`) — a hand-edited `tool.py` won't invalidate a cached readonly model. Acceptable: code is immutable by contract; documented (functional spec §7).
+- **Model cache keys on the `.kiln` mtime, not the `.py`** (`basemodel.py:426/456`) — a hand-edited `tool.py` won't invalidate a cached readonly model, so stale code is served until the `.kiln` mtime changes. Expected, not a bug: code is immutable by contract, so the `.py` is deliberately not tracked for invalidation. Reconciled with the hand-edit guarantee in functional spec §7 (a cold load validates the edited file; a cached model is not re-read on a `.py`-only edit).
 - **`sandbox/tools_api.py` extraction** (decided) touches sandbox-adjacent code but is behavior-preserving — one source of truth for the `kiln.tools` surface, guarded by the existing sandbox suite passing unchanged. Not an execution-behavior change.
 - **pytest module-name collisions** across tool folders — documented authoring guidance (one folder at a time / `importmode=importlib`), not a Kiln mechanism.
 - **Export/git-sync must carry the `.py` files** — real files are strictly friendlier to git than escaped JSON, but add the round-trip test so it can't regress.
