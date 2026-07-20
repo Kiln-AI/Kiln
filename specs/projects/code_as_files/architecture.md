@@ -64,13 +64,17 @@ def _read_code_file(cls, data, info):
             raise ValueError("Cannot load CodeTool: source_dir missing from load context")
         code_path = Path(src) / TOOL_CODE_FILENAME
         try:
-            data["code"] = code_path.read_text(encoding="utf-8")
+            # Binary read + explicit decode (not read_text): no universal-newline
+            # translation, so the file's exact bytes round-trip.
+            data["code"] = code_path.read_bytes().decode("utf-8")
         except OSError as e:
             raise ValueError(f"code_tool.kiln is missing its {TOOL_CODE_FILENAME}: {e}") from e
     return data
 ```
 
 A missing/unreadable `tool.py` fails the load with a clear message (functional spec §2.2). `mode="before"` validators receive `info` (hence context); the injected `code` then flows through the existing `validate_code`.
+
+Both models delegate the load/save bodies to a shared, stdlib-only helper (`datamodel/code_file_storage.py`), which is also the single audited place for path containment (fixed bare filename joined to the context folder). The helper uses **binary** read/write (`read_bytes().decode("utf-8")` / `write_bytes(code.encode("utf-8"))`) rather than `read_text`/`write_text` to honor the byte-for-byte contract (functional spec §1.1 / §2.1): universal-newline translation would collapse CRLF/CR on read and rewrite LF to `os.linesep` on write, breaking byte-identity and save idempotency.
 
 ### 3.2 Save / dump — model serializer writes the file, omits code from the `.kiln` JSON
 
@@ -83,7 +87,9 @@ def _serialize(self, handler, info):
     ctx = info.context or {}
     if ctx.get("save_attachments") and ctx.get("dest_path"):
         dest = Path(ctx["dest_path"])
-        (dest / TOOL_CODE_FILENAME).write_text(self.code, encoding="utf-8")
+        # Binary write of the UTF-8 bytes (not write_text): no LF->os.linesep
+        # rewrite, so exact bytes persist and re-save is byte-idempotent.
+        (dest / TOOL_CODE_FILENAME).write_bytes(self.code.encode("utf-8"))
         data.pop("code", None)                # code lives in tool.py, not the .kiln
     return data
 ```

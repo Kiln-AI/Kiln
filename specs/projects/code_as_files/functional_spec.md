@@ -45,7 +45,7 @@ Saving a code artifact writes the code to its sibling file and omits it from the
 - **Code tool**: `save_to_file()` writes `tool.py` into the artifact folder; `code` is absent from `code_tool.kiln`.
 - **Code judge**: saving the parent `EvalConfig` writes `scorer.py` into the eval-config folder for a `CodeEvalProperties`; `code` is absent from the serialized `properties`.
 
-The code file is written from the in-memory `code` string as-is (UTF-8). Saving is idempotent — re-saving an unchanged artifact yields byte-identical files.
+The code file is written from the in-memory `code` string as-is (UTF-8), byte-for-byte including line endings — no universal-newline translation (the storage helper uses binary read/write, not `read_text`/`write_text`), so CRLF or mixed endings survive a load/save round-trip unchanged. Saving is idempotent — re-saving an unchanged artifact yields byte-identical files.
 
 ### 2.2 Load
 

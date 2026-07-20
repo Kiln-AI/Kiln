@@ -2,7 +2,6 @@
 
 import ast
 import re
-from pathlib import Path
 from typing import Any
 
 from pydantic import (
@@ -17,6 +16,10 @@ from pydantic import (
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.datamodel.code_file_storage import (
+    read_code_from_sibling_file,
+    write_code_to_sibling_file,
+)
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import (
     KILN_UNMANAGED_TOOL_ID_PREFIX,
@@ -81,29 +84,17 @@ class CodeTool(KilnParentedModel):
 
         The source is stored in tool.py beside code_tool.kiln, not inline in the
         JSON. On load the base model puts the artifact folder in the validation
-        context (`source_dir`); we read the file here, before field validation, so
-        the existing validate_code trio runs against the loaded string unchanged.
+        context (`source_dir`); the shared helper reads the file here, before
+        field validation, so the existing validate_code trio runs against the
+        loaded string unchanged.
         """
-        ctx = info.context or {}
-        if (
-            ctx.get("loading_from_file")
-            and isinstance(data, dict)
-            and "code" not in data
-        ):
-            src = ctx.get("source_dir")
-            if src is None:
-                raise ValueError(
-                    "Cannot load CodeTool: source_dir missing from load context"
-                )
-            code_path = Path(src) / TOOL_CODE_FILENAME
-            try:
-                data["code"] = code_path.read_text(encoding="utf-8")
-            except OSError as e:
-                raise ValueError(
-                    f"code_tool.kiln at {src} is missing its {TOOL_CODE_FILENAME} "
-                    f"(expected at {code_path}): {e}"
-                ) from e
-        return data
+        return read_code_from_sibling_file(
+            data,
+            info.context or {},
+            filename=TOOL_CODE_FILENAME,
+            kiln_filename="code_tool.kiln",
+            model_label="CodeTool",
+        )
 
     @model_serializer(mode="wrap")
     def _serialize(
@@ -111,10 +102,10 @@ class CodeTool(KilnParentedModel):
     ) -> dict[str, Any]:
         """On disk-save, write `code` to tool.py and omit it from the .kiln JSON.
 
-        Uses the same save context attachments use (`save_attachments` +
-        `dest_path`). Without that context — normal model_dump / API responses —
-        `code` is left in the output and no file is written, so the API contract
-        is unchanged.
+        Delegates to the shared sibling-file helper, which uses the same save
+        context attachments use (`save_attachments` + `dest_path`). Without that
+        context — normal model_dump / API responses — `code` is left in the
+        output and no file is written, so the API contract is unchanged.
 
         Trade-off: a custom model_serializer collapses the *serialization-mode*
         JSON schema to an untyped object (`model_json_schema(mode="serialization")`
@@ -126,19 +117,15 @@ class CodeTool(KilnParentedModel):
           references CodeTool's serialization schema.
         If a typed serialization schema is ever needed off this model, add a
         `__get_pydantic_json_schema__` override rather than removing this
-        serializer. (Same precedent applies to CodeEvalProperties in Phase 2.)
+        serializer. (CodeEvalProperties keeps exactly such an override because it
+        IS a FastAPI response_model member.)
         """
-        data = handler(self)
-        ctx = info.context or {}
-        if ctx.get("save_attachments") and ctx.get("dest_path"):
-            dest = Path(ctx["dest_path"])
-            if not dest.is_dir():
-                raise ValueError(
-                    f"dest_path must be an existing directory when saving code, got: {dest}"
-                )
-            (dest / TOOL_CODE_FILENAME).write_text(self.code, encoding="utf-8")
-            data.pop("code", None)
-        return data
+        return write_code_to_sibling_file(
+            handler(self),
+            info.context or {},
+            filename=TOOL_CODE_FILENAME,
+            code=self.code,
+        )
 
     @field_validator("tool_function_name")
     @classmethod

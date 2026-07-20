@@ -1,6 +1,5 @@
 import json
 from enum import Enum
-from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
@@ -26,6 +25,10 @@ from kiln_ai.datamodel.basemodel import (
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
+)
+from kiln_ai.datamodel.code_file_storage import (
+    read_code_from_sibling_file,
+    write_code_to_sibling_file,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
@@ -226,30 +229,32 @@ class CodeEvalProperties(BaseModel):
         the JSON. CodeEvalProperties is a nested member of the
         V2EvalConfigProperties discriminated union in EvalConfig.properties, so
         the load context set on the parent EvalConfig (`source_dir`) propagates
-        down to this validator. We read the file here, before field validation,
-        so the existing validate_code trio runs against the loaded string
-        unchanged.
+        down to this validator. The shared helper reads the file here, before
+        field validation, so the existing validate_code trio runs against the
+        loaded string unchanged.
         """
-        ctx = info.context or {}
-        if (
-            ctx.get("loading_from_file")
-            and isinstance(data, dict)
-            and "code" not in data
+        # Explicit type-gate (defense-in-depth): this validator only ever runs
+        # for code_eval properties — it lives on CodeEvalProperties, and both the
+        # discriminated union and the eager parse route only code_eval dicts
+        # here. Assert that gate so a future refactor can't quietly read
+        # scorer.py for another eval type. None (type omitted, field defaults)
+        # and the enum form both pass; only a present, mismatched type is
+        # rejected, so valid-input behavior is unchanged.
+        if isinstance(data, dict) and data.get("type") not in (
+            None,
+            V2EvalType.code_eval.value,
         ):
-            src = ctx.get("source_dir")
-            if src is None:
-                raise ValueError(
-                    "Cannot load CodeEvalProperties: source_dir missing from load context"
-                )
-            code_path = Path(src) / SCORER_CODE_FILENAME
-            try:
-                data["code"] = code_path.read_text(encoding="utf-8")
-            except OSError as e:
-                raise ValueError(
-                    f"eval_config.kiln at {src} is missing its {SCORER_CODE_FILENAME} "
-                    f"(expected at {code_path}): {e}"
-                ) from e
-        return data
+            raise ValueError(
+                "CodeEvalProperties can only load code_eval properties, "
+                f"got type: {data.get('type')!r}"
+            )
+        return read_code_from_sibling_file(
+            data,
+            info.context or {},
+            filename=SCORER_CODE_FILENAME,
+            kiln_filename="eval_config.kiln",
+            model_label="CodeEvalProperties",
+        )
 
     @model_serializer(mode="wrap")
     def _serialize(
@@ -257,13 +262,13 @@ class CodeEvalProperties(BaseModel):
     ) -> dict[str, Any]:
         """On disk-save, write `code` to scorer.py and omit it from the .kiln JSON.
 
-        Uses the same save context attachments use (`save_attachments` +
-        `dest_path`), which propagates from the parent EvalConfig's
-        save_to_file() down to this nested union member. Without that context —
-        normal model_dump / API responses — `code` is left in the output and no
-        file is written, so the API contract is unchanged. The default handler
-        preserves `type` (needed by the discriminator), `reference_keys`, and
-        `timeout_seconds`.
+        Delegates to the shared sibling-file helper, which uses the same save
+        context attachments use (`save_attachments` + `dest_path`); it propagates
+        from the parent EvalConfig's save_to_file() down to this nested union
+        member. Without that context — normal model_dump / API responses —
+        `code` is left in the output and no file is written, so the API contract
+        is unchanged. The default handler preserves `type` (needed by the
+        discriminator), `reference_keys`, and `timeout_seconds`.
 
         Schema note: a custom model_serializer would otherwise collapse the
         *serialization-mode* JSON schema to an untyped object
@@ -280,17 +285,12 @@ class CodeEvalProperties(BaseModel):
         validation mode. Do not remove either the serializer (runtime file
         storage) or the override (schema stability).
         """
-        data = handler(self)
-        ctx = info.context or {}
-        if ctx.get("save_attachments") and ctx.get("dest_path"):
-            dest = Path(ctx["dest_path"])
-            if not dest.is_dir():
-                raise ValueError(
-                    f"dest_path must be an existing directory when saving code, got: {dest}"
-                )
-            (dest / SCORER_CODE_FILENAME).write_text(self.code, encoding="utf-8")
-            data.pop("code", None)
-        return data
+        return write_code_to_sibling_file(
+            handler(self),
+            info.context or {},
+            filename=SCORER_CODE_FILENAME,
+            code=self.code,
+        )
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -408,6 +408,35 @@ def reference_data_keys(props: V2EvalConfigProperties) -> list[str]:
             return []
         case _:
             raise_exhaustive_enum_error(props)
+
+
+def _eager_parse_code_eval_on_load(
+    data: dict[str, Any], ctx: dict[str, Any]
+) -> dict[str, Any]:
+    """Eagerly parse a code_eval EvalConfig's `properties` on file load.
+
+    V2 code judges store their score() source in a sibling scorer.py, not inline
+    in the JSON. On load, parse a code_eval properties dict through
+    CodeEvalProperties (which reads scorer.py via the propagated load context) so
+    any error surfaces directly. Without this, the outer
+    `V2EvalConfigProperties | dict | None` union would recover from the nested
+    member's error by falling back to the dict branch, masking the real cause
+    (e.g. a missing scorer.py or a bad score() function) behind a generic
+    "V2 config requires typed properties". See functional spec §2.2 / §4.
+
+    Only touches code_eval properties during a file load, gated explicitly on
+    `type == code_eval`; every other input passes through unchanged. Lifted
+    verbatim from EvalConfig.dispatch_properties_parsing so the code-eval load
+    path is a clearly-named, code-eval-local step rather than smeared into the
+    generic dispatcher.
+    """
+    if not ctx.get("loading_from_file"):
+        return data
+    props = data.get("properties")
+    if isinstance(props, dict) and props.get("type") == V2EvalType.code_eval.value:
+        data = dict(data)
+        data["properties"] = CodeEvalProperties.model_validate(props, context=ctx)
+    return data
 
 
 def validate_scores_against_output_scores(
@@ -829,27 +858,11 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
                 data["properties"] = props
             return data
 
-        # V2 code judges store their score() source in a sibling scorer.py, not
-        # inline in the JSON. On load, eagerly parse a code_eval properties dict
-        # through CodeEvalProperties (which reads scorer.py via the propagated
-        # load context) so any error surfaces directly. Without this, the outer
-        # `V2EvalConfigProperties | dict | None` union would recover from the
-        # nested member's error by falling back to the dict branch, masking the
-        # real cause (e.g. a missing scorer.py or a bad score() function) behind
-        # a generic "V2 config requires typed properties". See functional spec
-        # §2.2 / §4.
-        ctx = info.context or {}
-        if ctx.get("loading_from_file"):
-            props = data.get("properties")
-            if (
-                isinstance(props, dict)
-                and props.get("type") == V2EvalType.code_eval.value
-            ):
-                data = dict(data)
-                data["properties"] = CodeEvalProperties.model_validate(
-                    props, context=ctx
-                )
-        return data
+        # V2: the only load-time special-case is code_eval, whose score() source
+        # lives in a sibling scorer.py. Delegate to the code-eval-local helper,
+        # which is explicitly type-gated (`type == code_eval`); all other V2
+        # properties pass through unchanged.
+        return _eager_parse_code_eval_on_load(data, info.context or {})
 
     def parent_eval(self) -> Union["Eval", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "Eval":

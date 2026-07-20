@@ -32,6 +32,7 @@ from kiln_ai.datamodel.eval import (
     ToolCallSpec,
     UserMessage,
     V2EvalResult,
+    V2EvalType,
     reference_data_keys,
     validate_scores_against_output_scores,
 )
@@ -3604,6 +3605,26 @@ class TestCodeEvalFileStorage:
             CodeEvalProperties.model_validate(
                 {"type": "code_eval"}, context={"loading_from_file": True}
             )
+
+    def test_read_path_type_gate_rejects_mismatched_type(self):
+        # Defense-in-depth: the CodeEvalProperties read path only handles
+        # code_eval properties. A present, mismatched `type` is rejected before
+        # any scorer.py read, rather than silently proceeding.
+        with pytest.raises(ValidationError, match="can only load code_eval properties"):
+            CodeEvalProperties.model_validate(
+                {"type": "llm_judge", "code": VALID_SCORE}
+            )
+
+    def test_read_path_type_gate_allows_absent_and_enum_type(self):
+        # None (type omitted, field defaults) and the enum form both pass the
+        # gate — valid-input behavior is unchanged.
+        assert CodeEvalProperties(code=VALID_SCORE).type == V2EvalType.code_eval
+        assert (
+            CodeEvalProperties.model_validate(
+                {"type": V2EvalType.code_eval, "code": VALID_SCORE}
+            ).code
+            == VALID_SCORE
+        )
 
     def test_serialize_rejects_non_directory_dest_path(self, tmp_path):
         props = CodeEvalProperties(code=VALID_SCORE)
