@@ -51,6 +51,9 @@ dependencies = [
 [project.scripts]
 kiln_ai = "kiln_ai.cli:app"
 
+[project.entry-points.pytest11]
+kiln_tools = "kiln_ai.tool_testing.plugin"
+
 [dependency-groups]
 dev = [
     "isort>=5.13.2",

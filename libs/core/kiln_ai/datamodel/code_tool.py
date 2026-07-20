@@ -4,10 +4,22 @@ import ast
 import re
 from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import (
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    ValidationInfo,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.datamodel.code_file_storage import (
+    read_code_from_sibling_file,
+    write_code_to_sibling_file,
+)
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import (
     KILN_UNMANAGED_TOOL_ID_PREFIX,
@@ -17,6 +29,10 @@ from kiln_ai.datamodel.tool_id import (
 )
 
 _FUNCTION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+# Fixed name of the sibling file that holds a code tool's Python source, stored
+# beside its code_tool.kiln. Fixed so authored tests can `from tool import run`.
+TOOL_CODE_FILENAME = "tool.py"
 
 
 class CodeTool(KilnParentedModel):
@@ -49,7 +65,7 @@ class CodeTool(KilnParentedModel):
         description="JSON Schema for the tool's parameters. Root must be type: object.",
     )
     code: str = Field(
-        description="Inline Python source. Validated for syntax and entry-point presence.",
+        description="Python source, stored in a sibling tool.py file (in memory as a string). Validated for syntax and entry-point presence.",
     )
     timeout_seconds: int = Field(
         default=60,
@@ -60,6 +76,56 @@ class CodeTool(KilnParentedModel):
         default_factory=list,
         description="Explicit per-tool allowlist of tools this code tool may call.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_code_file(cls, data: Any, info: ValidationInfo) -> Any:
+        """When loading from disk, inject `code` from the sibling tool.py.
+
+        The source is stored in tool.py beside code_tool.kiln, not inline in the
+        JSON. On load the base model puts the artifact folder in the validation
+        context (`source_dir`); the shared helper reads the file here, before
+        field validation, so the existing validate_code trio runs against the
+        loaded string unchanged.
+        """
+        return read_code_from_sibling_file(
+            data,
+            info.context or {},
+            filename=TOOL_CODE_FILENAME,
+            kiln_filename="code_tool.kiln",
+            model_label="CodeTool",
+        )
+
+    @model_serializer(mode="wrap")
+    def _serialize(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> dict[str, Any]:
+        """On disk-save, write `code` to tool.py and omit it from the .kiln JSON.
+
+        Delegates to the shared sibling-file helper, which uses the same save
+        context attachments use (`save_attachments` + `dest_path`). Without that
+        context — normal model_dump / API responses — `code` is left in the
+        output and no file is written, so the API contract is unchanged.
+
+        Trade-off: a custom model_serializer collapses the *serialization-mode*
+        JSON schema to an untyped object (`model_json_schema(mode="serialization")`
+        loses per-field typing). This is acceptable and consistent with the
+        existing KilnAttachmentModel precedent, which uses the same pattern:
+        - Validation-mode schema is unaffected, so request bodies stay fully typed.
+        - No endpoint uses `response_model=CodeTool`; every code-tool endpoint
+          returns a dedicated response model, and the generated web schema never
+          references CodeTool's serialization schema.
+        If a typed serialization schema is ever needed off this model, add a
+        `__get_pydantic_json_schema__` override rather than removing this
+        serializer. (CodeEvalProperties keeps exactly such an override because it
+        IS a FastAPI response_model member.)
+        """
+        return write_code_to_sibling_file(
+            handler(self),
+            info.context or {},
+            filename=TOOL_CODE_FILENAME,
+            code=self.code,
+        )
 
     @field_validator("tool_function_name")
     @classmethod

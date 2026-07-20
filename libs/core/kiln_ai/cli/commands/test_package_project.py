@@ -1,3 +1,5 @@
+import json
+import shutil
 import zipfile
 from pathlib import Path
 from typing import TypedDict
@@ -7,12 +9,15 @@ import pytest
 import typer
 
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.code_tool import TOOL_CODE_FILENAME, CodeTool
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.eval import (
+    SCORER_CODE_FILENAME,
+    CodeEvalProperties,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -2234,3 +2239,180 @@ class TestExportTaskRuns:
 
         dest_runs_dir = exported_task.path.parent / "runs"
         assert not dest_runs_dir.exists()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 4: code-as-file artifacts survive Kiln's export / copy paths
+#
+# tool.py / scorer.py are real files in the artifact folder (Phases 1-2), so
+# they must travel with the artifact through the mechanisms that move artifacts
+# between locations: the export/zip packager and folder-level copies (which is
+# how git-sync tracks the project tree). These tests lock that in so it can't
+# regress.
+# ──────────────────────────────────────────────────────────────────────
+
+SCORER_SOURCE = (
+    "def score(output, reference_data):\n"
+    "    return {'accuracy': 1.0 if output == reference_data.get('answer') else 0.0}\n"
+)
+TOOL_SOURCE = "def run(x):\n    return x\n"
+
+
+@pytest.fixture
+def temp_project_with_code_artifacts(tmp_path: Path):
+    """Project with a code judge (scorer.py) and a code tool (tool.py) on disk."""
+    project = Project(name="Code Artifacts Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Code Artifacts Task",
+        instruction="Task with code artifacts",
+        parent=project,
+    )
+    task.save_to_file()
+
+    run_config = TaskRunConfig(
+        name="Default RC",
+        parent=task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE.value,
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    run_config.save_to_file()
+
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+
+    eval_obj = Eval(
+        name="Code Judge Eval",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Exact match",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        parent=task,
+    )
+    eval_obj.save_to_file()
+
+    # A v2 code_eval config: its CodeEvalProperties.code lands in scorer.py.
+    code_eval_config = EvalConfig(
+        name="Code Judge Config",
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code=SCORER_SOURCE, reference_keys=["answer"]),
+        parent=eval_obj,
+    )
+    code_eval_config.save_to_file()
+
+    # A project-level code tool: its code lands in tool.py.
+    code_tool = CodeTool(
+        name="My Tool",
+        tool_function_name="my_tool",
+        tool_description="Does things",
+        parameters_schema={
+            "type": "object",
+            "properties": {"x": {"type": "string"}},
+        },
+        code=TOOL_SOURCE,
+        parent=project,
+    )
+    code_tool.save_to_file()
+
+    return {
+        "project": project,
+        "task": task,
+        "run_config": run_config,
+        "eval": eval_obj,
+        "code_eval_config": code_eval_config,
+        "code_tool": code_tool,
+    }
+
+
+class TestCodeArtifactsSurviveExport:
+    def test_code_judge_scorer_py_survives_training_export(
+        self, temp_project_with_code_artifacts, tmp_path: Path
+    ):
+        """scorer.py travels with the eval config through the export/zip path.
+
+        package_project_for_training exports evals via shutil.copytree, which
+        carries the whole eval-config folder (eval_config.kiln + scorer.py) into
+        the zip. Reloading the exported config must reconstruct `code` from the
+        carried scorer.py.
+        """
+        source = temp_project_with_code_artifacts
+        output_path = tmp_path / "output" / "training.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval"].id],
+            output=output_path,
+        )
+
+        assert output_path.exists()
+
+        extract_path = tmp_path / "extracted"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            names = zipf.namelist()
+            zipf.extractall(extract_path)
+
+        # The sibling scorer.py is physically in the zip (not the .kiln JSON).
+        assert any(n.endswith("/" + SCORER_CODE_FILENAME) for n in names)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        loaded_task = loaded_project.tasks()[0]
+        loaded_eval = next(
+            e for e in loaded_task.evals(readonly=True) if e.id == source["eval"].id
+        )
+        loaded_config = next(
+            c
+            for c in loaded_eval.configs(readonly=True)
+            if c.id == source["code_eval_config"].id
+        )
+
+        # code is reconstructed from scorer.py and absent from the on-disk JSON.
+        assert isinstance(loaded_config.properties, CodeEvalProperties)
+        assert loaded_config.properties.code == SCORER_SOURCE
+        on_disk = json.loads(loaded_config.path.read_text(encoding="utf-8"))
+        assert "code" not in on_disk["properties"]
+
+    def test_code_tool_tool_py_survives_folder_copy(
+        self, temp_project_with_code_artifacts, tmp_path: Path
+    ):
+        """tool.py travels when the artifact folder is copied elsewhere.
+
+        The project packager (package_project) has no code-tool export path: it
+        copies project.kiln, tasks/run-configs, tool servers, skills, evals, and
+        documents, but never code_tools. (A code tool can be referenced from a
+        run config's tool list via CODE_TOOL_ID_PREFIX, but classify_tool_id has
+        no branch for it, so it classifies as "unknown" and validate_tools aborts
+        packaging — a pre-existing packager limitation, out of scope here.)
+        Either way there is no export path, so the mechanism that must carry a
+        code tool between locations is the folder-level copy that git-sync (and
+        any filesystem copy) performs. Copy the code-tool folder to a new
+        location and confirm the reloaded tool reconstructs `code` from the
+        carried tool.py.
+        """
+        source = temp_project_with_code_artifacts
+        code_tool = source["code_tool"]
+
+        src_folder = code_tool.path.parent
+        # Sanity: the source really stores code as a sibling file, not inline.
+        assert (src_folder / TOOL_CODE_FILENAME).read_text(encoding="utf-8") == (
+            TOOL_SOURCE
+        )
+        assert "code" not in json.loads(code_tool.path.read_text(encoding="utf-8"))
+
+        dest_folder = tmp_path / "copied_project" / "code_tools" / src_folder.name
+        shutil.copytree(src_folder, dest_folder)
+
+        reloaded = CodeTool.load_from_file(dest_folder / code_tool.path.name)
+        assert reloaded.code == TOOL_SOURCE
+        assert reloaded.tool_function_name == "my_tool"

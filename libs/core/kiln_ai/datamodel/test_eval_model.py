@@ -1,8 +1,13 @@
+import json
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.eval import (
+    SCORER_CODE_FILENAME,
     ArgMatch,
     CodeEvalProperties,
     ContainsProperties,
@@ -27,6 +32,7 @@ from kiln_ai.datamodel.eval import (
     ToolCallSpec,
     UserMessage,
     V2EvalResult,
+    V2EvalType,
     reference_data_keys,
     validate_scores_against_output_scores,
 )
@@ -3442,3 +3448,260 @@ class TestEvalReferenceDataKeys:
         )
         eval_obj = self._make_eval_with_configs([p1, p2])
         assert eval_obj.eval_reference_data_keys() == ["b", "a", "c"]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 2: Code-as-file storage for code judges
+#
+# CodeEvalProperties.code lives in a sibling scorer.py, not inline in
+# eval_config.kiln. CodeEvalProperties is a nested member of the
+# V2EvalConfigProperties discriminated union in EvalConfig.properties, so the
+# load/save context set on the parent EvalConfig must propagate down to it.
+# ──────────────────────────────────────────────────────────────────────
+
+
+VALID_SCORE = "def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
+ASYNC_SCORE = "async def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
+
+
+def _saved_task(tmp_path) -> Task:
+    task = Task(name="Code Judge Task", instruction="Test instruction")
+    task.path = tmp_path / "task" / "task.kiln"
+    task.save_to_file()
+    return task
+
+
+def _saved_eval(task) -> Eval:
+    eval_obj = Eval(
+        name="Code Judge Eval",
+        parent=task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail),
+        ],
+    )
+    eval_obj.save_to_file()
+    return eval_obj
+
+
+def _saved_code_eval_config(tmp_path, code=VALID_SCORE, **prop_overrides) -> EvalConfig:
+    """Build and persist a Task -> Eval -> EvalConfig(v2, CodeEvalProperties)."""
+    eval_obj = _saved_eval(_saved_task(tmp_path))
+    config = EvalConfig(
+        name="Code Judge Config",
+        parent=eval_obj,
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code=code, **prop_overrides),
+    )
+    config.save_to_file()
+    return config
+
+
+class TestCodeEvalFileStorage:
+    def test_context_propagates_to_nested_union_member(self, tmp_path):
+        # The Phase-2 hinge: validation + serialization context must reach the
+        # nested CodeEvalProperties inside the discriminated union. A full disk
+        # round-trip through EvalConfig proves both directions at once.
+        config = _saved_code_eval_config(
+            tmp_path, code=VALID_SCORE, reference_keys=["gold"], timeout_seconds=90
+        )
+
+        # Serialization context reached the nested member: code is on disk in
+        # scorer.py and absent from the serialized properties.
+        scorer_py = config.path.parent / SCORER_CODE_FILENAME
+        assert scorer_py.read_text(encoding="utf-8") == VALID_SCORE
+        on_disk = json.loads(config.path.read_text(encoding="utf-8"))
+        assert "code" not in on_disk["properties"]
+
+        # Validation context reached the nested member: code is reconstructed on load.
+        loaded = EvalConfig.load_from_file(config.path)
+        assert isinstance(loaded.properties, CodeEvalProperties)
+        assert loaded.properties.code == VALID_SCORE
+        assert loaded.properties.reference_keys == ["gold"]
+        assert loaded.properties.timeout_seconds == 90
+
+    def test_save_writes_scorer_py_and_omits_code_from_properties(self, tmp_path):
+        config = _saved_code_eval_config(
+            tmp_path, code=VALID_SCORE, reference_keys=["gold"], timeout_seconds=42
+        )
+
+        scorer_py = config.path.parent / SCORER_CODE_FILENAME
+        assert scorer_py.exists()
+        assert scorer_py.read_text(encoding="utf-8") == VALID_SCORE
+
+        on_disk_props = json.loads(config.path.read_text(encoding="utf-8"))[
+            "properties"
+        ]
+        assert "code" not in on_disk_props
+        # Discriminator + other functional fields still live in the .kiln JSON.
+        assert on_disk_props["type"] == "code_eval"
+        assert on_disk_props["reference_keys"] == ["gold"]
+        assert on_disk_props["timeout_seconds"] == 42
+
+    def test_load_reconstructs_code_from_scorer_py(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path, code=ASYNC_SCORE)
+
+        loaded = EvalConfig.load_from_file(config.path)
+        assert isinstance(loaded.properties, CodeEvalProperties)
+        assert loaded.properties.code == ASYNC_SCORE
+
+    def test_missing_scorer_py_fails_load(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path)
+        (config.path.parent / SCORER_CODE_FILENAME).unlink()
+
+        with pytest.raises(ValueError, match=SCORER_CODE_FILENAME):
+            EvalConfig.load_from_file(config.path)
+
+    def test_corrupted_scorer_py_fails_validator_on_load(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path)
+        # Hand-edit scorer.py to source without a module-level `score` function.
+        (config.path.parent / SCORER_CODE_FILENAME).write_text(
+            "def helper():\n    pass\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValidationError, match="module-level 'score' function"):
+            EvalConfig.load_from_file(config.path)
+
+    def test_save_is_idempotent(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path, code=VALID_SCORE)
+        scorer_py = config.path.parent / SCORER_CODE_FILENAME
+
+        first_kiln = config.path.read_bytes()
+        first_py = scorer_py.read_bytes()
+
+        loaded = EvalConfig.load_from_file(config.path)
+        loaded.save_to_file()
+
+        assert config.path.read_bytes() == first_kiln
+        assert scorer_py.read_bytes() == first_py
+
+    def test_api_dump_keeps_code(self):
+        # Without the save context, code stays in the dump and no file is written.
+        props = CodeEvalProperties(code=VALID_SCORE)
+        config = EvalConfig(
+            name="Code Judge Config",
+            config_type=EvalConfigType.v2,
+            properties=props,
+        )
+
+        with patch.object(Path, "write_text") as mock_write:
+            assert props.model_dump()["code"] == VALID_SCORE
+            assert json.loads(props.model_dump_json())["code"] == VALID_SCORE
+            # Also true when dumped as part of the parent EvalConfig (API shape).
+            assert config.model_dump()["properties"]["code"] == VALID_SCORE
+            assert (
+                json.loads(config.model_dump_json())["properties"]["code"]
+                == VALID_SCORE
+            )
+        mock_write.assert_not_called()
+
+    def test_source_dir_missing_from_load_context_fails(self):
+        # Defensive guard: loading_from_file set but source_dir absent (a future
+        # base-model regression) fails clearly rather than silently skipping.
+        with pytest.raises(
+            ValidationError, match="source_dir missing from load context"
+        ):
+            CodeEvalProperties.model_validate(
+                {"type": "code_eval"}, context={"loading_from_file": True}
+            )
+
+    def test_read_path_type_gate_rejects_mismatched_type(self):
+        # Defense-in-depth: the CodeEvalProperties read path only handles
+        # code_eval properties. A present, mismatched `type` is rejected before
+        # any scorer.py read, rather than silently proceeding.
+        with pytest.raises(ValidationError, match="can only load code_eval properties"):
+            CodeEvalProperties.model_validate(
+                {"type": "llm_judge", "code": VALID_SCORE}
+            )
+
+    def test_read_path_type_gate_allows_absent_and_enum_type(self):
+        # None (type omitted, field defaults) and the enum form both pass the
+        # gate — valid-input behavior is unchanged.
+        assert CodeEvalProperties(code=VALID_SCORE).type == V2EvalType.code_eval
+        assert (
+            CodeEvalProperties.model_validate(
+                {"type": V2EvalType.code_eval, "code": VALID_SCORE}
+            ).code
+            == VALID_SCORE
+        )
+
+    def test_serialize_rejects_non_directory_dest_path(self, tmp_path):
+        props = CodeEvalProperties(code=VALID_SCORE)
+        not_a_dir = tmp_path / "does_not_exist"
+        with pytest.raises(ValueError, match="dest_path must be an existing directory"):
+            props.model_dump(context={"save_attachments": True, "dest_path": not_a_dir})
+
+    def test_other_eval_type_writes_no_sibling_file(self, tmp_path):
+        # A v2 config with a non-code property type writes no scorer.py.
+        eval_obj = _saved_eval(_saved_task(tmp_path))
+        llm_config = EvalConfig(
+            name="LLM Judge Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Evaluate: {{ final_message }}",
+            ),
+        )
+        llm_config.save_to_file()
+        assert not (llm_config.path.parent / SCORER_CODE_FILENAME).exists()
+
+        # A legacy g_eval config likewise writes no scorer.py.
+        legacy_config = EvalConfig(
+            name="Legacy Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["s1"]},
+        )
+        legacy_config.save_to_file()
+        assert not (legacy_config.path.parent / SCORER_CODE_FILENAME).exists()
+
+    def test_inline_code_in_properties_is_lenient(self, tmp_path):
+        # A properties dict that already carries `code` (e.g. an in-memory dict
+        # passed to model_validate with load context) uses it as-is and does not
+        # touch disk — the graceful-construction property (functional spec §7).
+        with patch.object(Path, "read_text") as mock_read:
+            props = CodeEvalProperties.model_validate(
+                {"type": "code_eval", "code": VALID_SCORE},
+                context={"loading_from_file": True, "source_dir": tmp_path},
+            )
+        assert props.code == VALID_SCORE
+        mock_read.assert_not_called()
+
+    def test_serialization_schema_matches_validation_schema(self):
+        # The wrap serializer returns an untyped dict, which would collapse the
+        # serialization-mode JSON schema to {additionalProperties: true, type:
+        # object}. The __get_pydantic_json_schema__ override keeps it identical
+        # to validation mode so EvalConfig's OpenAPI (EvalConfig is a FastAPI
+        # response_model) does not drift the committed api_schema.d.ts.
+        validation_schema = CodeEvalProperties.model_json_schema(mode="validation")
+        serialization_schema = CodeEvalProperties.model_json_schema(
+            mode="serialization"
+        )
+        assert serialization_schema == validation_schema
+        # code stays a typed field (not lost to the collapse) in both modes.
+        assert serialization_schema["properties"]["code"]["type"] == "string"
+
+    def test_openapi_component_is_single_and_typed(self):
+        # Reproduce the reviewer's check: a minimal FastAPI app whose
+        # response_model is the real EvalConfig must emit a single, fully typed
+        # CodeEvalProperties component — no -Input/-Output split, no collapse.
+        fastapi = pytest.importorskip("fastapi")
+
+        app = fastapi.FastAPI()
+
+        @app.get("/config", response_model=EvalConfig)
+        def _get_config():  # pragma: no cover - schema-only endpoint
+            return None
+
+        components = app.openapi()["components"]["schemas"]
+        code_eval_names = [n for n in components if "CodeEvalProperties" in n]
+        assert code_eval_names == ["CodeEvalProperties"]
+
+        component = components["CodeEvalProperties"]
+        assert "code" in component.get("properties", {})
+        assert component["properties"]["code"]["type"] == "string"
