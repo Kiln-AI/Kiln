@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Dict, List, Literal, Set, Tuple
 
 import litellm
@@ -9,7 +9,10 @@ from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.drive_fingerprint import compute_drive_fingerprint
-from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
+from kiln_ai.adapters.eval.registry import (
+    legacy_eval_adapter_from_type,
+    v2_eval_type_available,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -48,6 +51,10 @@ class EvalJob:
     type: Literal["task_run_eval", "eval_config_eval"]
     eval_config: EvalConfig
     task_run_config: TaskRunConfig | None = None
+    # Recoverable-skip records this job replaces (their blocking condition
+    # has lifted). Deleted after the job persists its record — leaving them
+    # would put two records on one item and read paths take the first found.
+    superseded_tombstones: List[EvalRun] = field(default_factory=list)
 
 
 @dataclass
@@ -167,16 +174,23 @@ class EvalRunner:
 
         # already_run[eval_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Set[ID_TYPE]] = {}
+        superseded: Dict[Tuple[ID_TYPE, ID_TYPE], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = set()
             for run in eval_config.runs(readonly=True):
-                already_run[eval_config.id].add(run.dataset_id)
+                if self._counts_as_already_run(run, eval_config):
+                    already_run[eval_config.id].add(run.dataset_id)
+                else:
+                    superseded.setdefault((eval_config.id, run.dataset_id), []).append(
+                        run
+                    )
 
         return [
             EvalJob(
                 item=task_run,
                 eval_config=eval_config,
                 type="eval_config_eval",
+                superseded_tombstones=superseded.get((eval_config.id, task_run.id), []),
             )
             for task_run in self.task.runs(readonly=True)
             if filter(task_run)
@@ -204,19 +218,27 @@ class EvalRunner:
         input_filter = eval_input_filter_from_id(filter_id)
 
         already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
+        superseded: Dict[Tuple[ID_TYPE, ID_TYPE, ID_TYPE], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = {}
             for run_config in self.run_configs or []:
                 already_run[eval_config.id][run_config.id] = set()
             for run in eval_config.runs(readonly=True):
                 if (
-                    run.eval_input_id is not None
-                    and run.task_run_config_id is not None
-                    and run.task_run_config_id in already_run[eval_config.id]
+                    run.eval_input_id is None
+                    or run.task_run_config_id is None
+                    or run.task_run_config_id not in already_run[eval_config.id]
                 ):
+                    continue
+                if self._counts_as_already_run(run, eval_config):
                     already_run[eval_config.id][run.task_run_config_id].add(
                         run.eval_input_id
                     )
+                else:
+                    superseded.setdefault(
+                        (eval_config.id, run.task_run_config_id, run.eval_input_id),
+                        [],
+                    ).append(run)
 
         jobs: List[EvalJob] = []
         for eval_input in self.task.eval_inputs(readonly=True):
@@ -232,6 +254,9 @@ class EvalRunner:
                             eval_config=eval_config,
                             type="task_run_eval",
                             task_run_config=run_config,
+                            superseded_tombstones=superseded.get(
+                                (eval_config.id, run_config.id, eval_input.id), []
+                            ),
                         )
                     )
         return jobs
@@ -260,6 +285,7 @@ class EvalRunner:
                 if (
                     run.task_run_config_id is not None
                     and run.task_run_config_id in already_run[eval_config.id]
+                    and self._counts_as_already_run(run, eval_config)
                 ):
                     already_run[eval_config.id][run.task_run_config_id].add(
                         run.dataset_id
@@ -278,6 +304,72 @@ class EvalRunner:
             for run_config in self.run_configs or []
             if task_run.id not in already_run[eval_config.id][run_config.id]
         ]
+
+    def _counts_as_already_run(self, run: EvalRun, eval_config: EvalConfig) -> bool:
+        """Whether a persisted record makes its item "done" for dedup.
+
+        Most records do — including skips, which are terminal verdicts about
+        the input itself (missing_trace, incompatible_input_shape, ...). The
+        recoverable skips mark a blocked PRECONDITION instead: once the
+        condition is lifted, treating the tombstone as done would freeze the
+        item out forever, so it stops counting and the item is collected
+        again. A still-blocked item keeps deduping, so re-triggering never
+        piles up duplicate tombstones.
+        """
+        if run.skipped_reason == SkippedReason.missing_drive_config.value:
+            return self.eval.multi_turn_drive_config is None
+        if run.skipped_reason == SkippedReason.type_not_available.value:
+            return not v2_eval_type_available(eval_config)
+        return True
+
+    def validate_multi_turn_drive_readiness(
+        self, check_run_configs: bool = True
+    ) -> None:
+        """Fail fast on config problems every multi-turn re-drive job would
+        hit: a drive config with an unknown model provider, or run configs
+        that aren't Kiln agent configs. Callers can invoke this before
+        starting a batch so the user gets one clear error up front instead
+        of one opaque error per job. The per-job checks stay as the backstop
+        for standalone runner use.
+
+        `check_run_configs=False` limits validation to the drive config —
+        for callers running a fleet the user didn't hand-pick, where one
+        incompatible run config shouldn't block every other config's jobs.
+
+        Raises ValueError listing every problem; no-op unless re-drive jobs
+        can actually occur (task_run_eval over an EvalInput source with a
+        multi_turn_drive_config — stored-TaskRun sources never re-drive).
+        """
+        drive_config = self.eval.multi_turn_drive_config
+        if (
+            drive_config is None
+            or self.eval_run_type != "task_run_eval"
+            or self._source_mode != "eval_input"
+        ):
+            return
+        problems: list[str] = []
+        try:
+            ModelProviderName(drive_config.model_provider)
+        except ValueError:
+            problems.append(
+                "the eval's synthetic-user drive config has unknown model "
+                f"provider '{drive_config.model_provider}'"
+            )
+        if check_run_configs:
+            for run_config in self.run_configs or []:
+                try:
+                    as_kiln_agent_run_config(run_config.run_config_properties)
+                except ValueError:
+                    problems.append(
+                        f"run config '{run_config.name}' is not a Kiln agent "
+                        "config, so it can't hold a multi-turn conversation"
+                    )
+        if problems:
+            raise ValueError(
+                "Cannot re-drive this eval's multi-turn conversations: "
+                + "; ".join(problems)
+                + "."
+            )
 
     def _preload_skills(self) -> SkillsDict:
         """Collect all skill IDs from run configs and bulk-load them once."""
@@ -307,9 +399,12 @@ class EvalRunner:
     async def run_job(self, job: EvalJob) -> bool:
         try:
             if job.eval_config.config_type == EvalConfigType.v2:
-                return await self._run_v2_job(job)
+                done = await self._run_v2_job(job)
             else:
-                return await self._run_legacy_job(job)
+                done = await self._run_legacy_job(job)
+            if done:
+                await self._delete_superseded_tombstones(job)
+            return done
         except Exception as e:
             if _is_retryable_error(e):
                 logger.error(
@@ -324,6 +419,26 @@ class EvalRunner:
                 exc_info=True,
             )
             raise
+
+    async def _delete_superseded_tombstones(self, job: EvalJob) -> None:
+        """Remove the recoverable-skip records this job just replaced. Runs
+        only after the replacement record persisted, so an errored job leaves
+        the tombstone in place (the item stays re-collectable). Deletion
+        failures are logged, never raised: the fresh record is already the
+        one read paths should prefer, a leftover duplicate is the lesser
+        problem."""
+        if not job.superseded_tombstones:
+            return
+        async with self._save_context():
+            for run in job.superseded_tombstones:
+                try:
+                    run.delete()
+                except Exception:
+                    logger.warning(
+                        f"Failed to delete superseded skip record {run.id} for "
+                        f"dataset item {job.item.id}",
+                        exc_info=True,
+                    )
 
     async def _run_legacy_job(self, job: EvalJob) -> bool:
         if not isinstance(job.item, TaskRun):
@@ -561,8 +676,9 @@ class EvalRunner:
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
                     # Fresh generations are transient — the record is the only
-                    # place the evaluated conversation survives.
+                    # place the evaluated conversation (and its spend) survives.
                     task_run_trace=_serialize_trace(eval_task_input.trace),
+                    task_run_usage=run_output.usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -573,7 +689,10 @@ class EvalRunner:
             result = await evaluator.evaluate(eval_task_input)
             task_output = run_output.output.output
             task_input_str = run_output.input
-            dataset_id = run_output.id
+            # Key on the dataset item, not the fresh generation: run_output is
+            # never persisted so its id is None (EvalRun would fail validation),
+            # and dedup compares this field against the item's id.
+            dataset_id = job.item.id
 
             async with self._save_context():
                 eval_run = EvalRun(
@@ -596,6 +715,7 @@ class EvalRunner:
                     # The fresh run's conversation, when the adapter produced
                     # one — kept regardless of scoring outcome.
                     task_run_trace=_serialize_trace(eval_task_input.trace),
+                    task_run_usage=run_output.usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -714,6 +834,10 @@ class EvalRunner:
         fingerprint = compute_drive_fingerprint(
             drive_config, job.task_run_config.run_config_properties, data
         )
+        # Generation spend for THIS record: stays None on reuse — the drive
+        # cost was already recorded on the record that drove the conversation,
+        # and counting it again would double-book the spend.
+        drive_usage: Usage | None = None
         reused_trace = self._find_reusable_trace(fingerprint, job.task_run_config.id)
         if reused_trace is not None:
             # Another v2 config (this eval's or a task sibling's) already
@@ -723,7 +847,7 @@ class EvalRunner:
                 eval_input, reused_trace
             )
         else:
-            leaf = await drive_case_for_eval(
+            drive_result = await drive_case_for_eval(
                 seed_prompt=seed,
                 synthetic_user_info=data.synthetic_user_info,
                 target_task=self.task,
@@ -735,6 +859,8 @@ class EvalRunner:
                 turns=drive_config.turns,
                 skills=self._skills,
             )
+            leaf = drive_result.chain[-1]
+            drive_usage = _drive_usage(leaf, drive_result.su_total_cost)
             eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
             # Publish the fresh trace so same-invocation sibling jobs reuse
             # it without waiting for this record to hit disk.
@@ -769,6 +895,7 @@ class EvalRunner:
                 # of the sibling that originally drove them.
                 task_run_trace=_serialize_trace(eval_task_input.trace),
                 drive_fingerprint=fingerprint,
+                task_run_usage=drive_usage,
             )
             eval_run.save_to_file()
         return True
@@ -848,6 +975,22 @@ class EvalRunner:
                     if existing is None or sort_key < existing.sort_key:
                         index[key] = _ReusableTrace(trace=trace, sort_key=sort_key)
         return index
+
+
+def _drive_usage(leaf: TaskRun, su_total_cost: float) -> Usage | None:
+    """Total generation spend of one eval-time drive: the agent side's
+    cumulative usage plus the synthetic user's LLM cost (which surfaces
+    nowhere else — SU turns aren't persisted). Token counts are agent-side
+    only; cost covers both sides. None when neither side reported anything.
+    """
+    total = (leaf.cumulative_usage or MessageUsage()) + MessageUsage(
+        cost=su_total_cost if su_total_cost > 0 else None
+    )
+    # Field-level check (not ==) so a Usage subclass instance in
+    # cumulative_usage can't defeat pydantic's class-sensitive equality.
+    if all(v is None for v in total.model_dump().values()):
+        return None
+    return Usage(**total.model_dump())
 
 
 def _trace_json_default(obj: object) -> object:

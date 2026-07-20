@@ -85,7 +85,10 @@ from app.desktop.studio_server.utils.copilot_utils import (
     untag_multi_turn_chains_for_eval,
     write_eval_slice_multi_turn,
 )
-from app.desktop.studio_server.api_models.eval_builder_models import JudgeConfig
+from app.desktop.studio_server.api_models.eval_builder_models import (
+    JudgeConfig,
+    spec_name_must_have_a_json_key,
+)
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_judge_prompt_template,
 )
@@ -102,6 +105,7 @@ from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalInput,
     LlmJudgeProperties,
     MultiTurnDriveConfig,
@@ -134,7 +138,7 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
@@ -233,6 +237,10 @@ class CreateSpecWithCopilotRequest(BaseModel):
     # Short limit: the name becomes the eval's EvalOutputScore.name (max 32)
     # — a longer name would fail deep inside Eval construction, not here.
     name: FilenameStringShort
+    # Same up-front rule as the review requests: the judge's score key derives
+    # from this name, and an empty key would persist an eval that can never
+    # run (every job would fail inside the judge).
+    _name_has_json_key = field_validator("name")(spec_name_must_have_a_json_key)
     definition: str = Field(
         description="The spec definition string, built by client using buildSpecDefinition()"
     )
@@ -974,18 +982,21 @@ def connect_copilot_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         # Idempotency guard against re-submits after a completed save (the
-        # save is slow, so users retry). Case-insensitive because the eval
-        # tags and rating keys are derived from the lowercased name — two
-        # specs differing only by case would share a tag namespace. Two
-        # requests in flight at once can still race past this check —
-        # acceptable for a single-user studio.
+        # save is slow, so users retry). Compared via the derived eval tags,
+        # not the raw name: tags come from the lowercased, space-normalized
+        # name, so "My Spec" and "my_spec" would silently share a tag
+        # namespace (and each other's datasets) if only exact names were
+        # rejected. Two requests in flight at once can still race past this
+        # check — acceptable for a single-user studio.
+        requested_tags = generate_spec_eval_tags(request.name)
         if any(
-            spec.name.lower() == request.name.lower()
+            generate_spec_eval_tags(spec.name) == requested_tags
             for spec in task.specs(readonly=True)
         ):
             raise HTTPException(
                 status_code=409,
-                detail=f"A spec named '{request.name}' already exists for this task.",
+                detail=f"A spec named '{request.name}' (or one differing only "
+                "by case or spacing) already exists for this task.",
             )
 
         # Generate tags and filter IDs
@@ -1003,6 +1014,18 @@ def connect_copilot_api(app: FastAPI):
         evaluation_data_type = spec_eval_data_type(
             spec_type, request.evaluate_full_trace
         )
+
+        # The builder's judge template never renders a reference answer, so a
+        # reference_answer eval would save fine and then mis-score every run.
+        # Unreachable from the UI (spec classification stubs everything to
+        # Issue) — this guards direct API/agent clients.
+        if evaluation_data_type == EvalDataType.reference_answer:
+            raise HTTPException(
+                status_code=400,
+                detail="Reference-answer specs are not supported by the spec "
+                "builder yet: the saved judge would never see the reference "
+                "answer. Create this eval from the Evals tab instead.",
+            )
 
         # Multi-turn path: find existing chain leaves up front so we 404 before
         # creating any models if the batch_tag matches nothing. The reviewed

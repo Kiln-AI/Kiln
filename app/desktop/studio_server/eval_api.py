@@ -1309,6 +1309,20 @@ def connect_evals_api(app: FastAPI):
             save_context=build_save_context(request),
         )
 
+        # Surface drive-config/run-config incompatibilities as one 400 before
+        # the SSE stream opens — otherwise each job fails individually and
+        # clients only see an anonymous error count. (EventSource consumers
+        # can't read a 400 body, but an up-front error state still beats N
+        # silent job errors; API clients get the full message.) Run-config
+        # strictness only applies to a hand-picked list — with
+        # all_run_configs, one incompatible config shouldn't block the rest.
+        try:
+            eval_runner.validate_multi_turn_drive_readiness(
+                check_run_configs=not all_run_configs
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
@@ -1379,6 +1393,20 @@ def connect_evals_api(app: FastAPI):
     ) -> StreamingResponse:
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
+
+        # An empty golden set would "complete" instantly with zero scores — a
+        # vacuous calibration the UI reads as success. Refuse it up front.
+        task = task_from_id(project_id, task_id)
+        if eval.eval_configs_filter_id is None or not dataset_ids_in_filter(
+            task, eval.eval_configs_filter_id, readonly=True
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="This eval's golden dataset is empty, so there is "
+                "nothing to calibrate the judge against. Add human-rated "
+                "examples to the golden set first.",
+            )
+
         eval_configs = eval.configs()
         eval_runner = EvalRunner(
             eval_configs=eval_configs,

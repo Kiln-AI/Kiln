@@ -925,6 +925,92 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert "already exists" in response.json()["message"]
         assert len(task.evals()) == 0
 
+    def test_tag_normalized_spec_name_collision_is_409(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """ "Multi_Turn_Spec" and "Multi Turn Spec" differ as names but produce
+        identical eval tags (lowercase, spaces→underscores) — saving the
+        second would silently share the first's datasets."""
+        from kiln_ai.datamodel.spec import Spec, SpecStatus
+
+        project, task = project_and_task
+        existing = Spec(
+            parent=task,
+            name="Multi_Turn_Spec",
+            definition="already here",
+            properties={
+                "spec_type": SpecType.issue.value,
+                "issue_description": "existing",
+            },
+            status=SpecStatus.active,
+            tags=[],
+            eval_id="unused_eval_id",
+        )
+        existing.save_to_file()
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 409
+        assert len(task.evals()) == 0
+
+    def test_spec_name_without_json_key_chars_is_422(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """A name with no [a-z0-9_] characters (e.g. fully non-ASCII) yields
+        an empty judge score key — the save would persist an eval that can
+        never run."""
+        project, task = project_and_task
+        multi_turn_request_data["name"] = "中文规格"
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "score key" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_reference_answer_spec_type_is_400(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """The builder's judge template never renders a reference answer;
+        saving one would mis-score every run. Guarded until supported."""
+        project, task = project_and_task
+        multi_turn_request_data["properties"] = {
+            "spec_type": SpecType.reference_answer_accuracy.value,
+            "core_requirement": "Answers must match the reference.",
+            "reference_answer_accuracy_description": "Compare to reference.",
+            "accurate_examples": "example a",
+            "inaccurate_examples": "example b",
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 400
+        assert "Reference-answer" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
     def test_spec_name_over_short_limit_is_422(
         self, client, project_and_task, multi_turn_request_data
     ):

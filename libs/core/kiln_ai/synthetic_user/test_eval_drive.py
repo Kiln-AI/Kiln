@@ -115,7 +115,7 @@ async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> No
     adapter, _ = fake_adapter
     task = Mock(spec=Task)
 
-    leaf = await drive_case_for_eval(
+    result = await drive_case_for_eval(
         seed_prompt="opening message",
         synthetic_user_info=_INFO,
         target_task=task,
@@ -133,9 +133,12 @@ async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> No
     # Continuity rides prior_trace, growing turn over turn.
     assert adapter.calls[0]["prior_trace"] is None
     assert len(adapter.calls[2]["prior_trace"]) == 4
-    # The leaf is the last turn's run: unsaved, full cumulative trace.
+    # The leaf is the last turn's run: unsaved, full cumulative trace. The
+    # SU spend rides the result (each mocked respond() reports 0.0 cost).
+    leaf = result.chain[-1]
     assert leaf.id is None
     assert len(leaf.trace) == 6
+    assert result.su_total_cost == 0.0
 
     # The SU driver was built from the typed persona.
     assert fake_su_driver.ctor_args["info"] is _INFO

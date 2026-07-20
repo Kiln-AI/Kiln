@@ -17,7 +17,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.synthetic_user.drive_loop import drive_case
+from kiln_ai.synthetic_user.drive_loop import DriveCaseResult, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import (
     SyntheticUserDriverConfig,
@@ -40,12 +40,14 @@ async def drive_case_for_eval(
     su_driver_config: SyntheticUserDriverConfig,
     turns: int,
     skills: SkillsDict,
-) -> TaskRun:
-    """Drive one case in memory and return the leaf TaskRun (never saved).
+) -> DriveCaseResult:
+    """Drive one case in memory and return the full DriveCaseResult (never saved).
 
-    The leaf's `.trace` holds the full cumulative conversation and its id is
-    None (nothing touches disk). `skills` must be preloaded by the caller —
-    the adapter raises on skill tools with no injected dict.
+    The result's leaf (`chain[-1]`) has `.trace` holding the full cumulative
+    conversation and its id is None (nothing touches disk). The result also
+    carries `su_total_cost` — the synthetic user's LLM spend, which surfaces
+    nowhere else since SU turns aren't persisted. `skills` must be preloaded
+    by the caller — the adapter raises on skill tools with no injected dict.
     """
     su_driver = SyntheticUserDriver(synthetic_user_info, su_driver_config)
     adapter = adapter_for_task(
@@ -77,10 +79,9 @@ async def drive_case_for_eval(
             prior_trace=prior_trace,
         )
 
-    result = await drive_case(
+    return await drive_case(
         seed_prompt=seed_prompt,
         target_invoker=_invoker,
         su_driver=su_driver,
         turns=turns,
     )
-    return result.chain[-1]

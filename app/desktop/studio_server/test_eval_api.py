@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
+from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -1806,11 +1807,43 @@ async def test_get_eval_config_compare_summary_skips_custom_scores(
     assert data["partially_rated_count"] == 0
 
 
+def _seed_golden_run(mock_task) -> TaskRun:
+    """One human-rated TaskRun in the golden set (tag::golden), so
+    calibration has something to run against."""
+    task_run = TaskRun(
+        input="golden input",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(
+            output="golden output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "langchain_adapter",
+                },
+            ),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    )
+    task_run.save_to_file()
+    return task_run
+
+
 @pytest.mark.asyncio
 async def test_run_eval_config_eval(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
 ):
     mock_task_from_id.return_value = mock_task
+    _seed_golden_run(mock_task)
 
     # Create a mock response for run_eval_runner_with_status
     mock_response = StreamingResponse(
@@ -5025,3 +5058,47 @@ class TestTestV2EvalOverrides:
             == "Custom {{ task_input }} {{ final_message }}"
         )
         assert call_kwargs.kwargs["system_prompt"] == "Be strict."
+
+
+@pytest.mark.asyncio
+async def test_run_calibration_empty_golden_set_400(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
+):
+    """No runs match the golden filter: calibration would complete vacuously
+    (zero jobs, zero scores) and read as success — refuse it up front."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
+    )
+
+    assert response.status_code == 400
+    assert "golden dataset is empty" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_comparison_multi_turn_drive_problems_400(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Drive-config/run-config incompatibilities surface as one 400 before
+    the SSE stream opens, not as N anonymous per-job errors."""
+    mock_task_from_id.return_value = mock_task
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_run_config_from_id,
+        patch.object(
+            EvalRunner,
+            "validate_multi_turn_drive_readiness",
+            side_effect=ValueError("run config 'MCP one' is not a Kiln agent config"),
+        ),
+    ):
+        mock_run_config_from_id.return_value = mock_run_config
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
+            params={"run_config_ids": ["run_config1"]},
+        )
+
+    assert response.status_code == 400
+    assert "MCP one" in response.json()["message"]

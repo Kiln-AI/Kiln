@@ -14,6 +14,7 @@ from kiln_ai.adapters.eval.drive_fingerprint import compute_drive_fingerprint
 from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
+    _drive_usage,
     _is_retryable_error,
 )
 from kiln_ai.adapters.ml_model_list import ModelProviderName
@@ -45,9 +46,15 @@ from kiln_ai.datamodel.eval import (
     UserMessage,
     V2EvalResult,
 )
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -1824,7 +1831,8 @@ class TestV2FreshGeneration:
         assert len(runs) == 1
         saved = runs[0]
         assert saved.output == "hello"
-        assert saved.dataset_id == fresh_task_run.id
+        # Keyed on the dataset item, not the transient fresh generation.
+        assert saved.dataset_id == stale_task_run.id
         assert saved.scores == {"accuracy": 1.0}
         assert saved.eval_config_eval is False
         assert saved.skipped_reason is None
@@ -1876,7 +1884,7 @@ class TestV2FreshGeneration:
         saved = runs[0]
         assert saved.output == "new answer"
         assert saved.output != "old answer"
-        assert saved.dataset_id == fresh_task_run.id
+        assert saved.dataset_id == stale_task_run.id
 
     @pytest.mark.asyncio
     async def test_task_run_eval_skip_persists_skipped_eval_run(
@@ -1926,7 +1934,7 @@ class TestV2FreshGeneration:
         assert saved.output is None
         assert saved.scores == {}
         assert saved.eval_config_eval is False
-        assert saved.dataset_id == fresh_task_run.id
+        assert saved.dataset_id == stale_task_run.id
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("stub_cls", [StubV2Eval, SkippingStubV2Eval])
@@ -2974,18 +2982,24 @@ def multi_turn_eval_input(mock_task):
     return ei
 
 
-def _fresh_leaf(task: Task, data_source: DataSource) -> TaskRun:
-    """The in-memory leaf drive_case_for_eval would return: id-less,
-    trace-carrying, never saved."""
+def _fresh_leaf(
+    task: Task,
+    data_source: DataSource,
+    su_total_cost: float = 0.0,
+    cumulative_usage: MessageUsage | None = None,
+) -> DriveCaseResult:
+    """The in-memory DriveCaseResult drive_case_for_eval would return:
+    an id-less, trace-carrying, never-saved leaf plus the SU-side spend."""
     leaf = TaskRun(
         input="opening message",
         input_source=data_source,
         output=TaskOutput(output="fresh reply", source=data_source),
         trace=MULTI_TURN_TRACE,
+        cumulative_usage=cumulative_usage,
         parent=task,
     )
     leaf.id = None
-    return leaf
+    return DriveCaseResult(chain=[leaf], su_total_cost=su_total_cost)
 
 
 class TestRunV2MultiTurnRedrive:
@@ -4030,3 +4044,582 @@ class TestTraceReuse:
 
         mock_drive.assert_not_awaited()
         assert stub.seen_inputs[0].trace == cross_trace
+
+
+# -------------------------------------------------------------------
+# Recoverable-skip re-collection tests
+# -------------------------------------------------------------------
+
+
+def _skip_run(
+    eval_config: EvalConfig,
+    run_config_id: str | None,
+    reason: SkippedReason,
+    eval_input_id: str | None = None,
+    dataset_id: str | None = None,
+) -> EvalRun:
+    run = EvalRun(
+        parent=eval_config,
+        eval_input_id=eval_input_id,
+        dataset_id=dataset_id,
+        task_run_config_id=run_config_id,
+        eval_config_eval=False,
+        scores={},
+        input="input",
+        output=None,
+        skipped_reason=reason.value,
+        skipped_detail="test tombstone",
+    )
+    run.save_to_file()
+    return run
+
+
+class TestRecoverableSkipRecollection:
+    """Recoverable skips (missing_drive_config / type_not_available) stop
+    deduping once their blocking condition is lifted; while still blocked
+    they keep deduping so re-triggers never write duplicate tombstones."""
+
+    def test_missing_drive_config_recollected_once_config_set(
+        self, mock_v2_redrive_config, mock_run_config, mock_eval_inputs
+    ):
+        # Tombstone written before the eval had a drive config; the redrive
+        # eval fixture HAS one now, so the item must be collected again.
+        _skip_run(
+            mock_v2_redrive_config,
+            mock_run_config.id,
+            SkippedReason.missing_drive_config,
+            eval_input_id="ei_1",
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        collected = {j.item.id for j in runner.collect_tasks()}
+        assert collected == {"ei_1", "ei_2"}
+
+    def test_missing_drive_config_still_deduped_while_condition_holds(
+        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        # mock_v2_eval has NO drive config: the condition still holds, so the
+        # tombstone keeps deduping (no duplicate skip records per trigger).
+        _skip_run(
+            mock_v2_eval_config,
+            mock_run_config.id,
+            SkippedReason.missing_drive_config,
+            eval_input_id="ei_1",
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        collected = {j.item.id for j in runner.collect_tasks()}
+        assert collected == {"ei_2"}
+
+    @pytest.mark.parametrize("available_now", [True, False])
+    def test_type_not_available_follows_adapter_availability(
+        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs, available_now
+    ):
+        _skip_run(
+            mock_v2_eval_config,
+            mock_run_config.id,
+            SkippedReason.type_not_available,
+            eval_input_id="ei_1",
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        with patch(
+            "kiln_ai.adapters.eval.eval_runner.v2_eval_type_available",
+            return_value=available_now,
+        ):
+            collected = {j.item.id for j in runner.collect_tasks()}
+        assert collected == ({"ei_1", "ei_2"} if available_now else {"ei_2"})
+
+    def test_terminal_skips_still_dedupe(
+        self, mock_v2_redrive_config, mock_run_config, mock_eval_inputs
+    ):
+        # Non-recoverable skips are verdicts about the input itself — a lifted
+        # drive config must not resurrect them.
+        _skip_run(
+            mock_v2_redrive_config,
+            mock_run_config.id,
+            SkippedReason.incompatible_input_shape,
+            eval_input_id="ei_1",
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        collected = {j.item.id for j in runner.collect_tasks()}
+        assert collected == {"ei_2"}
+
+    def test_task_run_lane_recollects_recoverable_skips(
+        self, mock_task, mock_v2_task_run_eval_config, mock_run_config, data_source
+    ):
+        # Same semantics on the TaskRun-sourced lane (eval_set_filter_id).
+        task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="out", source=data_source),
+            parent=mock_task,
+        )
+        task_run.save_to_file()
+        _skip_run(
+            mock_v2_task_run_eval_config,
+            mock_run_config.id,
+            SkippedReason.type_not_available,
+            dataset_id=task_run.id,
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_task_run_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        with patch(
+            "kiln_ai.adapters.eval.eval_runner.v2_eval_type_available",
+            return_value=True,
+        ):
+            jobs = runner.collect_tasks()
+        assert {j.item.id for j in jobs} == {task_run.id}
+
+
+# -------------------------------------------------------------------
+# KIL-749 regression: fresh generations are keyed on the dataset item
+# -------------------------------------------------------------------
+
+
+class TestFreshGenerationDatasetId:
+    @pytest.mark.asyncio
+    async def test_unsaved_fresh_run_does_not_crash_record_keys_on_item(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """KIL-749: run_task returns an UNSAVED TaskRun (id None). Keying the
+        record on it crashed EvalRun validation for every TaskRun-backed item;
+        the record must key on the dataset item instead."""
+        item = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stored", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        item.save_to_file()
+        fresh = TaskRun(
+            input="test input",
+            input_source=data_source,
+            output=TaskOutput(output="hello", source=data_source),
+        )
+        fresh.id = None
+
+        job = EvalJob(
+            item=item,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        stub = StubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            assert await mock_v2_task_run_eval_runner.run_job(job) is True
+
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        assert runs[0].dataset_id == item.id
+        # Dedup now recognizes the item as done.
+        assert mock_v2_task_run_eval_runner.collect_tasks() == []
+
+
+# -------------------------------------------------------------------
+# Cost recording tests
+# -------------------------------------------------------------------
+
+
+class TestEvalRunUsageRecording:
+    @pytest.mark.asyncio
+    async def test_drive_records_agent_usage_plus_su_cost(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        drive_result = _fresh_leaf(
+            mock_task,
+            data_source,
+            su_total_cost=0.25,
+            cumulative_usage=MessageUsage(
+                input_tokens=100, output_tokens=50, total_tokens=150, cost=1.0
+            ),
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=multi_turn_eval_input,
+            eval_config=mock_v2_redrive_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=StubV2Eval(mock_v2_redrive_config),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=drive_result),
+            ),
+        ):
+            await runner.run_job(job)
+
+        saved = mock_v2_redrive_config.runs(readonly=True)[0]
+        assert saved.task_run_usage is not None
+        # Cost totals both sides; token counts are agent-side only.
+        assert saved.task_run_usage.cost == pytest.approx(1.25)
+        assert saved.task_run_usage.input_tokens == 100
+        assert saved.task_run_usage.total_tokens == 150
+
+    @pytest.mark.asyncio
+    async def test_reused_trace_records_no_usage(
+        self,
+        mock_task,
+        mock_run_config,
+        reuse_eval,
+        reuse_config_a,
+        reuse_config_b,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """A reuse hit pays nothing — recording the original drive's spend
+        again would double-book it."""
+        drive_result = _fresh_leaf(
+            mock_task,
+            data_source,
+            su_total_cost=0.25,
+            cumulative_usage=MessageUsage(cost=1.0),
+        )
+        runner = EvalRunner(
+            eval_configs=[reuse_config_a, reuse_config_b],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        # Config A's job drives (and records spend); config B's job reuses
+        # the in-memory trace.
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                side_effect=lambda config, *_: StubV2Eval(config),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=drive_result),
+            ) as mock_drive,
+        ):
+            for config in (reuse_config_a, reuse_config_b):
+                await runner.run_job(
+                    make_reuse_job(multi_turn_eval_input, config, mock_run_config)
+                )
+
+        assert mock_drive.await_count == 1
+        driven = reuse_config_a.runs(readonly=True)[0]
+        reused = reuse_config_b.runs(readonly=True)[0]
+        assert driven.task_run_usage is not None
+        assert driven.task_run_usage.cost == pytest.approx(1.25)
+        assert reused.task_run_usage is None
+
+    @pytest.mark.asyncio
+    async def test_eval_input_fresh_generation_records_usage(
+        self,
+        mock_v2_eval_config,
+        mock_run_config,
+        mock_eval_inputs,
+        data_source,
+    ):
+        fresh = TaskRun(
+            input="What is 2+2?",
+            input_source=data_source,
+            output=TaskOutput(output="hello", source=data_source),
+            usage=Usage(cost=0.3, total_tokens=42),
+        )
+        fresh.id = None
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=mock_eval_inputs[0],
+            eval_config=mock_v2_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        stub = StubV2Eval(mock_v2_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            await runner.run_job(job)
+
+        saved = mock_v2_eval_config.runs(readonly=True)[0]
+        assert saved.task_run_usage is not None
+        assert saved.task_run_usage.cost == pytest.approx(0.3)
+        assert saved.task_run_usage.total_tokens == 42
+
+
+class TestDriveUsage:
+    def test_none_when_nothing_reported(self, mock_task, data_source):
+        leaf = _fresh_leaf(mock_task, data_source).chain[-1]
+        assert _drive_usage(leaf, 0.0) is None
+
+    def test_su_cost_only(self, mock_task, data_source):
+        leaf = _fresh_leaf(mock_task, data_source).chain[-1]
+        usage = _drive_usage(leaf, 0.5)
+        assert usage is not None
+        assert usage.cost == pytest.approx(0.5)
+        assert usage.total_tokens is None
+
+    def test_agent_usage_only(self, mock_task, data_source):
+        leaf = _fresh_leaf(
+            mock_task,
+            data_source,
+            cumulative_usage=MessageUsage(cost=2.0, total_tokens=10),
+        ).chain[-1]
+        usage = _drive_usage(leaf, 0.0)
+        assert usage is not None
+        assert usage.cost == pytest.approx(2.0)
+        assert usage.total_tokens == 10
+
+
+# -------------------------------------------------------------------
+# Up-front multi-turn drive validation tests
+# -------------------------------------------------------------------
+
+
+class TestValidateMultiTurnDriveReadiness:
+    def test_no_drive_config_is_noop(self, mock_v2_eval_config, mock_run_config):
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        runner.validate_multi_turn_drive_readiness()
+
+    def test_valid_setup_passes(self, mock_v2_redrive_config, mock_run_config):
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        runner.validate_multi_turn_drive_readiness()
+
+    def test_non_agent_run_config_rejected(self, mock_task, mock_v2_redrive_config):
+        mcp_rc = TaskRunConfig(
+            name="mcp config",
+            description="not an agent",
+            run_config_properties=McpRunConfigProperties(
+                tool_reference=MCPToolReference(
+                    tool_id="mcp::local::server1::tool1",
+                ),
+            ),
+            parent=mock_task,
+        )
+        mcp_rc.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mcp_rc],
+            eval_run_type="task_run_eval",
+        )
+        with pytest.raises(ValueError, match="mcp config"):
+            runner.validate_multi_turn_drive_readiness()
+
+    def test_bad_su_provider_rejected(self, mock_task, mock_run_config):
+        eval = Eval(
+            id="bad_provider_eval",
+            name="bad provider eval",
+            description="drive config with unknown provider",
+            eval_input_filter_id="all",
+            eval_configs_filter_id="all",
+            evaluation_data_type=EvalDataType.full_trace,
+            multi_turn_drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku",
+                model_provider="not_a_real_provider",
+                turns=3,
+            ),
+            output_scores=[
+                EvalOutputScore(
+                    name="Accuracy",
+                    instruction="Check",
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+            ],
+            parent=mock_task,
+        )
+        eval.save_to_file()
+        config = EvalConfig(
+            name="bad provider cfg",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="x"),
+            parent=eval,
+        )
+        config.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        with pytest.raises(ValueError, match="not_a_real_provider"):
+            runner.validate_multi_turn_drive_readiness()
+
+
+class TestSupersededTombstoneDeletion:
+    @pytest.mark.asyncio
+    async def test_replacement_run_deletes_tombstone(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """Once a re-collected item persists its fresh record, the old
+        tombstone is deleted — two records on one item would race in
+        first-found read paths (the fresh score could be masked)."""
+        tombstone = _skip_run(
+            mock_v2_redrive_config,
+            mock_run_config.id,
+            SkippedReason.missing_drive_config,
+            eval_input_id="ei_redrive",
+        )
+        tombstone_path = tombstone.path
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        jobs = runner.collect_tasks()
+        job = next(j for j in jobs if j.item.id == "ei_redrive")
+        assert [t.id for t in job.superseded_tombstones] == [tombstone.id]
+
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=StubV2Eval(mock_v2_redrive_config),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+            ),
+        ):
+            assert await runner.run_job(job) is True
+
+        assert not tombstone_path.exists()
+        runs = mock_v2_redrive_config.runs(readonly=True)
+        assert len(runs) == 1
+        assert runs[0].skipped_reason is None
+        assert runs[0].eval_input_id == "ei_redrive"
+
+    def test_still_blocked_tombstone_not_marked_superseded(
+        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        """While the condition holds, the tombstone dedupes and no job
+        carries it for deletion."""
+        _skip_run(
+            mock_v2_eval_config,
+            mock_run_config.id,
+            SkippedReason.missing_drive_config,
+            eval_input_id="ei_1",
+        )
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        jobs = runner.collect_tasks()
+        assert all(j.superseded_tombstones == [] for j in jobs)
+
+
+class TestValidateReadinessSourceGating:
+    def test_task_run_source_with_drive_config_is_noop(
+        self, mock_task, mock_run_config
+    ):
+        """A drive config on a stored-TaskRun-sourced eval never drives
+        (chain leaves judge their stored trace), so validation must not
+        block the run — even with problems it would otherwise flag."""
+        eval = Eval(
+            id="tr_drive_eval",
+            name="task run eval with drive cfg",
+            description="drive config is vestigial here",
+            eval_set_filter_id="all",
+            eval_configs_filter_id="all",
+            evaluation_data_type=EvalDataType.full_trace,
+            multi_turn_drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku",
+                model_provider="not_a_real_provider",
+                turns=3,
+            ),
+            output_scores=[
+                EvalOutputScore(
+                    name="Accuracy",
+                    instruction="Check",
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+            ],
+            parent=mock_task,
+        )
+        eval.save_to_file()
+        config = EvalConfig(
+            name="tr drive cfg",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="x"),
+            parent=eval,
+        )
+        config.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        runner.validate_multi_turn_drive_readiness()
+
+    def test_check_run_configs_false_skips_run_config_problems(
+        self, mock_task, mock_v2_redrive_config
+    ):
+        """With an un-hand-picked fleet (all_run_configs), one incompatible
+        run config must not block the others — only drive-config problems
+        (which block every job) still raise."""
+        mcp_rc = TaskRunConfig(
+            name="mcp fleet member",
+            description="not an agent",
+            run_config_properties=McpRunConfigProperties(
+                tool_reference=MCPToolReference(
+                    tool_id="mcp::local::server1::tool1",
+                ),
+            ),
+            parent=mock_task,
+        )
+        mcp_rc.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mcp_rc],
+            eval_run_type="task_run_eval",
+        )
+        runner.validate_multi_turn_drive_readiness(check_run_configs=False)
+        with pytest.raises(ValueError, match="mcp fleet member"):
+            runner.validate_multi_turn_drive_readiness()

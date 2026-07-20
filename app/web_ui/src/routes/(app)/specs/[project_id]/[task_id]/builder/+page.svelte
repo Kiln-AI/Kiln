@@ -1105,12 +1105,33 @@
       },
     )
     // Refine failed — ship the original judge rather than block the save.
-    if (error || !data) return judge
+    // The fallback is invisible to the user by design, so leave a telemetry
+    // trail: silent fallbacks would otherwise read as "refinement works".
+    if (error || !data) {
+      console.warn(
+        "Judge refinement failed at save; keeping the reviewed judge.",
+        error,
+      )
+      posthog.capture("eval_v2_judge_refine_fallback", {
+        reason: "request_failed",
+      })
+      return judge
+    }
     const proposal = data as RefineJudgeProposal
     // Only ship a mechanically-valid refined prompt (it renders into the judge
     // harness verbatim); otherwise fall back to the original.
-    if (validate_refined_judge_prompt(proposal.refined_judge_prompt))
+    const validation_error = validate_refined_judge_prompt(
+      proposal.refined_judge_prompt,
+    )
+    if (validation_error) {
+      console.warn(
+        `Refined judge prompt rejected (${validation_error}); keeping the reviewed judge.`,
+      )
+      posthog.capture("eval_v2_judge_refine_fallback", {
+        reason: "invalid_refined_prompt",
+      })
       return judge
+    }
     return { ...judge, prompt: proposal.refined_judge_prompt }
   }
 
