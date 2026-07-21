@@ -110,9 +110,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Cost Optimized",
     preview_subtitle: "Balance Cost and Quality",
     preview_description:
-      "Great quality at a lower price. Uses Gemini 3.1 Flash Lite with hybrid search.",
+      "Great quality at a lower price. Uses Gemini 3.5 Flash Lite with hybrid search.",
     preview_tooltip:
-      "Gemini 3.1 Flash Lite extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "Gemini 3.5 Flash Lite extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "GeminiOrOpenRouter",
     extractor: gemini_3_5_flash_lite_extractor,
     chunker: default_chunker,
@@ -156,7 +156,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "Use only vector search for semantic similarity, without keyword search.",
     preview_tooltip:
-      "Gemini 3.1 Flash Lite extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB vector search (no full-text search).",
+      "Gemini 3.5 Flash Lite extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB vector search (no full-text search).",
     required_provider: "GeminiOrOpenRouter",
     extractor: gemini_3_5_flash_lite_extractor,
     chunker: default_chunker,
