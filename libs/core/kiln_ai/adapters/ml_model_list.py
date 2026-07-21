@@ -2280,6 +2280,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-sonnet-4-20250514",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
@@ -2573,6 +2574,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-20250514",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
@@ -3518,6 +3520,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-2.0-flash-001",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -3577,6 +3580,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-2.0-flash-lite-001",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -3810,6 +3814,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -3897,6 +3902,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/llama4-scout-instruct-basic",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -3915,6 +3921,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -3995,11 +4002,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 model_id="accounts/fireworks/models/llama-v3p1-8b-instruct",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+                deprecated=True,
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 provider_finetune_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
@@ -4055,10 +4064,12 @@ built_in_models: List[KilnModel] = [
                 # Tool calling forces schema -- fireworks doesn't support json_schema, just json_mode
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 model_id="accounts/fireworks/models/llama-v3p1-70b-instruct",
+                deprecated=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+                deprecated=True,
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 provider_finetune_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
@@ -4094,6 +4105,7 @@ built_in_models: List[KilnModel] = [
                 # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 model_id="accounts/fireworks/models/llama-v3p1-405b-instruct",
+                deprecated=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -4252,6 +4264,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/mistral-large-3-fp8",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -4492,6 +4505,7 @@ built_in_models: List[KilnModel] = [
                 # Tool calling forces schema -- fireworks doesn't support json_schema, just json_mode
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 model_id="accounts/fireworks/models/llama-v3p3-70b-instruct",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -4975,6 +4989,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/QwQ-32B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 reasoning_capable=True,
@@ -5059,6 +5074,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/Qwen2.5-VL-72B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -5139,6 +5155,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen2p5-vl-32b-instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -5369,6 +5386,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-r1-0528",
+                deprecated=True,
                 parser=ModelParserID.r1_thinking,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -5497,6 +5515,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v3p2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -5523,6 +5542,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v3p1-terminus",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 # the model page states it supports function calling, but our test fails
@@ -5546,6 +5566,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v3p1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -5572,6 +5593,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v3",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_structured_output=True,
                 supports_data_gen=False,
@@ -5607,6 +5629,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-r1",
+                deprecated=True,
                 parser=ModelParserID.r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
@@ -5633,6 +5656,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="deepseek/deepseek-r1-distill-qwen-32b",
+                deprecated=True,
                 r1_openrouter_options=True,
                 parser=ModelParserID.r1_thinking,
                 require_openrouter_reasoning=True,
@@ -5685,6 +5709,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_function_calling=False,
@@ -5731,6 +5756,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_function_calling=False,
@@ -5869,6 +5895,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_structured_output=False,
@@ -6346,6 +6373,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3p6-plus",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -6413,6 +6441,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/Qwen3.5-397B-A17B",
+                deprecated=True,
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_doc_extraction=True,
@@ -6790,6 +6819,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-30b-a3b",
+                deprecated=True,
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -6973,6 +7003,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-vl-235b-a22b-instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=False,
@@ -7053,6 +7084,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-vl-30b-a3b-instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=False,
                 reasoning_capable=False,
@@ -7150,6 +7182,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-vl-235b-a22b-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_data_gen=False,
@@ -7270,6 +7303,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-vl-30b-a3b-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_data_gen=False,
@@ -7447,6 +7481,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-235b-a22b-thinking-2507",
+                deprecated=True,
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -7489,6 +7524,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-235b-a22b",
+                deprecated=True,
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -7539,12 +7575,14 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-235b-a22b-instruct-2507",
+                deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+                deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
@@ -7689,6 +7727,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-5.1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -7760,12 +7799,14 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -7793,6 +7834,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/zai-org/GLM-4.7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -7966,6 +8008,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-4p5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -7994,6 +8037,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-4p5-air",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -8180,6 +8224,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -8230,6 +8275,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-instruct-0905",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -8271,6 +8317,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -8370,6 +8417,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="baidu/ernie-4.5-300b-a47b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 r1_openrouter_options=True,
@@ -8516,6 +8564,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/minimax-m2p5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -8553,6 +8602,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/minimax-m2p1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -8588,6 +8638,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/minimax-m2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -8837,6 +8888,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2-pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -8851,6 +8903,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -8865,6 +8918,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2-omni",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_vision=True,
