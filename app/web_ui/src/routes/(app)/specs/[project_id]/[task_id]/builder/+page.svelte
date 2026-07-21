@@ -22,8 +22,10 @@
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
-  import BatchPlanApproval from "./batch_plan_approval.svelte"
-  import type { RowStatusPill } from "./plan_prompts_table.svelte"
+  // Step 4 plan approval reuses the /generate batch-plan components — one
+  // plan-review surface across the app rather than a builder-local fork.
+  import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
+  import KilnProPlansTable from "../../../../generate/[project_id]/[task_id]/kiln_pro_plans_table.svelte"
   import { multiturn_plan_guidance } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,
@@ -494,28 +496,26 @@
   $: reviewed_case_count = case_rows.filter(
     (r) => r.state === "reviewed",
   ).length
-  // Presentation of case_rows for the plan table's Status column.
-  $: row_status_pills = case_rows.map((row): RowStatusPill => {
+  // Presentation of case_rows for the plan table's Status column (the
+  // kiln_pro plans table renders plain-text statuses).
+  $: row_status_texts = case_rows.map((row): string => {
     switch (row.state) {
       case "planned":
-        return { label: "Planned", tone: "pending" }
+        return "Planned"
       case "generating":
-        return { label: "Generating", tone: "active" }
+        return "Generating"
       case "failed_generation":
-        return { label: "No case", tone: "error", title: row.message }
+        return "No case"
       case "queued":
-        return { label: "Queued", tone: "pending" }
+        return "Queued"
       case "driving":
-        return {
-          label: `Driving ${row.turns_done}/${TURNS_PER_CASE}`,
-          tone: "active",
-        }
+        return `Driving ${row.turns_done}/${TURNS_PER_CASE}`
       case "judging":
-        return { label: "Judging", tone: "active" }
+        return "Judging"
       case "reviewed":
-        return { label: "Reviewed", tone: "done" }
+        return "Reviewed"
       case "failed":
-        return { label: "Failed", tone: "error", title: row.message }
+        return "Failed"
     }
   })
   // A generated synthetic-user case as the wire carries it: the seed
@@ -543,11 +543,6 @@
   // Non-fatal outcome notice (e.g. some cases failed but survivors exist) —
   // shown above the status table without hiding it, unlike generation_error.
   let pipeline_warning: string | null = null
-  // The pills only mean something for THIS plan as driven — hide them once
-  // the user edits/deletes prompts after a drive (row alignment is gone).
-  $: row_statuses_current =
-    batch_plan !== null &&
-    driven_prompts_json === JSON.stringify(batch_plan.prompts)
   // Set when on_generate_multi_turn had to fall back to the first available
   // run config because the task has no default set — surfaced in the UI so
   // testers know which model the chains were generated against.
@@ -736,16 +731,6 @@
     }
     batch_plan_edited = true
     // The last run's outcome no longer describes this plan.
-    pipeline_warning = null
-  }
-
-  function on_edit_plan_prompt(index: number, value: string) {
-    if (!batch_plan) return
-    batch_plan = {
-      ...batch_plan,
-      prompts: batch_plan.prompts.map((p, i) => (i === index ? value : p)),
-    }
-    batch_plan_edited = true
     pipeline_warning = null
   }
 
@@ -1819,27 +1804,55 @@
               </div>
             {/if}
             <!-- Plan approval: the batch runs only after the user approves
-                 (optionally edited) scenario prompts. While the pipeline
-                 runs, the same table stays up read-only with live per-row
-                 status pills (Planned → Driving n/T → Judging → Reviewed). -->
-            <BatchPlanApproval
-              plan={batch_plan}
-              summary_out_of_sync={batch_plan_edited}
-              running={pipeline_running}
-              row_statuses={pipeline_running ||
-              (case_rows.length > 0 && row_statuses_current)
-                ? row_status_pills
-                : null}
-              on_approve={on_drive_multi_turn}
-              on_regenerate={on_plan_multi_turn}
-              on_delete_prompt={on_delete_plan_prompt}
-              on_edit_prompt={on_edit_plan_prompt}
-              on_continue={trace_claims.length > 0 &&
-              driven_prompts_json === JSON.stringify(batch_plan.prompts)
-                ? continue_to_review
-                : null}
-              on_back={() => history.back()}
-            />
+                 the scenario prompts — the shared /generate batch-plan
+                 surface (delete rows or regenerate; per-row editing rides
+                 the shared component's affordances). While the pipeline
+                 runs, the shared plans table doubles as the status board
+                 (Planned → Driving n/T → Judging → Reviewed). -->
+            {#if !pipeline_running}
+              <KilnProBatchPlan
+                plan={batch_plan}
+                summary_out_of_sync={batch_plan_edited}
+                on_generate_inputs={on_drive_multi_turn}
+                on_regenerate={on_plan_multi_turn}
+                on_delete_prompt={on_delete_plan_prompt}
+              />
+              <!-- Wizard chrome stays outside the shared component: it has
+                   no slots, and /generate has no back/continue concept. -->
+              <div class="flex flex-row justify-between mt-4">
+                <button
+                  class="btn btn-ghost btn-sm"
+                  on:click={() => history.back()}
+                >
+                  ← Back
+                </button>
+                {#if trace_claims.length > 0 && driven_prompts_json === JSON.stringify(batch_plan.prompts)}
+                  <!-- Conversations were already driven from this exact plan
+                       (user navigated Back from review) — returning to the
+                       results doesn't re-spend model calls. -->
+                  <button
+                    class="btn btn-sm btn-primary"
+                    on:click={continue_to_review}
+                  >
+                    Continue to Review →
+                  </button>
+                {/if}
+              </div>
+            {:else}
+              <div class="mt-12">
+                <div class="text-2xl font-bold">Generating Batch</div>
+                <div class="text-sm font-light text-gray-500 mb-4">
+                  Each conversation is driven, judged, and distilled as it
+                  completes.
+                </div>
+                <div class="rounded-lg border">
+                  <KilnProPlansTable
+                    prompts={batch_plan.prompts}
+                    statuses={row_status_texts}
+                  />
+                </div>
+              </div>
+            {/if}
           {:else if !generation_loading && !generation_error}
             <div class="flex justify-end mt-8">
               {#if single_turn_examples.length > 0 || trace_claims.length > 0}
