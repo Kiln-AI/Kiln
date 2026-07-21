@@ -60,9 +60,9 @@ export type RagConfigTemplate = {
   notice_tooltip?: string
 }
 
-const gemini_3_1_flash_lite_extractor: ExtractorSubConfig = {
-  config_name: "Gemini 3p1 Flash Lite w Default Prompts",
-  description: "Gemini 3.1 Flash Lite",
+const gemini_3_5_flash_lite_extractor: ExtractorSubConfig = {
+  config_name: "Gemini 3p5 Flash Lite w Default Prompts",
+  description: "Gemini 3.5 Flash Lite",
   model_provider_name: "gemini_api",
   model_name: "gemini_3_5_flash_lite",
 }
@@ -114,7 +114,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_tooltip:
       "Gemini 3.1 Flash Lite extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "GeminiOrOpenRouter",
-    extractor: gemini_3_1_flash_lite_extractor,
+    extractor: gemini_3_5_flash_lite_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: default_vector_store,
@@ -158,7 +158,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_tooltip:
       "Gemini 3.1 Flash Lite extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB vector search (no full-text search).",
     required_provider: "GeminiOrOpenRouter",
-    extractor: gemini_3_1_flash_lite_extractor,
+    extractor: gemini_3_5_flash_lite_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: {
