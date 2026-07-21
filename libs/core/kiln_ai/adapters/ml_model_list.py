@@ -6066,6 +6066,25 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.7 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p7_max,
+        friendly_name="Qwen 3.7 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.7-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            # Fireworks lists qwen3p7-max on its site but the API returns 404 (not deployed).
+            # Together AI hosts Qwen/Qwen3.7-Max but only in streaming-only mode
+            # (returns HTTP 400 "This model only supports streaming"), which Kiln's
+            # non-streaming adapter can't use. Omitted until Together supports non-streaming.
+        ],
+    ),
     # Qwen 3.7 Plus
     KilnModel(
         family=ModelFamily.qwen,
@@ -6210,24 +6229,6 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
-        ],
-    ),
-    # Qwen 3.7 Max
-    KilnModel(
-        family=ModelFamily.qwen,
-        name=ModelName.qwen_3p7_max,
-        friendly_name="Qwen 3.7 Max",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="qwen/qwen3.7-max",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=True,
-                supports_function_calling=True,
-            ),
-            # Together AI hosts Qwen/Qwen3.7-Max but only in streaming-only mode
-            # (returns HTTP 400 "This model only supports streaming"), which Kiln's
-            # non-streaming adapter can't use. Omitted until Together supports non-streaming.
         ],
     ),
     # Qwen 3 Max
@@ -7840,9 +7841,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
-            # SiliconFlow provider omitted - K3 API slug not yet confirmed
-            # (would follow the K2.6 convention Pro/moonshotai/Kimi-K3, unverified).
-            # Not yet available on Fireworks AI or Together AI (K2.6 / K2.7 only).
+            # SiliconFlow provider omitted: moonshotai/Kimi-K3 returns HTTP 400
+            # "Model does not exist" on the .cn endpoint Kiln uses (it appears live
+            # on the .com site only). Not yet on Fireworks AI or Together AI (K2.6 / K2.7).
         ],
     ),
     # Kimi K2.6
@@ -8685,11 +8686,18 @@ built_in_models: List[KilnModel] = [
         editorial_notes="Thinking Machines' first open-weights foundation model (Apache 2.0). A 975B-parameter MoE (41B active) with configurable reasoning. Hosted on Together AI.",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="thinkingmachines/Inkling",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
+            # Fireworks lists Inkling on its site but the API returns 404 (not deployed).
         ],
     ),
     # Fugu Ultra
