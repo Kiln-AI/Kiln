@@ -64,7 +64,7 @@ const gemini_3_1_flash_lite_extractor: ExtractorSubConfig = {
   config_name: "Gemini 3p1 Flash Lite w Default Prompts",
   description: "Gemini 3.1 Flash Lite",
   model_provider_name: "gemini_api",
-  model_name: "gemini_3_1_flash_lite",
+  model_name: "gemini_3_5_flash_lite",
 }
 const default_chunker: ChunkerSubConfig = {
   config_name: "Size 512 - Overlap 64",
