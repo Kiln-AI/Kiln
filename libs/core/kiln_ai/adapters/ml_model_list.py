@@ -24,6 +24,7 @@ class ModelFamily(str, Enum):
 
     gpt = "gpt"
     llama = "llama"
+    muse = "muse"
     phi = "phi"
     mistral = "mistral"
     gemma = "gemma"
@@ -57,6 +58,7 @@ class ModelName(str, Enum):
     """
 
     fugu_ultra = "fugu_ultra"
+    muse_spark_1_1 = "muse_spark_1_1"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
@@ -3566,6 +3568,35 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 ollama_model_aliases=["nemotron-3-nano:30b"],
+            ),
+        ],
+    ),
+    # Muse Spark 1.1
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_spark_1_1,
+        friendly_name="Muse Spark 1.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-spark-1.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
