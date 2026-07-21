@@ -46,6 +46,7 @@ class ModelFamily(str, Enum):
     nemotron = "nemotron"
     arcee = "arcee"
     sakana = "sakana"
+    thinking_machines = "thinking_machines"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -111,6 +112,7 @@ class ModelName(str, Enum):
     mistral_nemo = "mistral_nemo"
     mistral_small_4 = "mistral_small_4"
     mistral_small_3 = "mistral_small_3"
+    mistral_medium_3_5 = "mistral_medium_3_5"
     mistral_medium_3_1 = "mistral_medium_3_1"
     mistral_small_creative = (
         "mistral_small_creative"  # mistralai/mistral-small-creative
@@ -158,10 +160,12 @@ class ModelName(str, Enum):
     gemini_2_5_pro = "gemini_2_5_pro"
     gemini_2_5_flash = "gemini_2_5_flash"
     gemini_2_5_flash_lite = "gemini_2_5_flash_lite"
+    gemini_3_5_flash_lite = "gemini_3_5_flash_lite"
     gemini_3_1_flash_lite = "gemini_3_1_flash_lite"
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_3_6_flash = "gemini_3_6_flash"
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
@@ -196,6 +200,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_5 = "grok_4_5"
     grok_4_3 = "grok_4_3"
     grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
@@ -205,6 +210,7 @@ class ModelName(str, Enum):
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
     qwen_3p7_plus = "qwen_3p7_plus"
+    qwen_3p7_max = "qwen_3p7_max"
     qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
@@ -242,6 +248,7 @@ class ModelName(str, Enum):
     qwen_3_vl_30b_a3b_no_thinking = "qwen_3_vl_30b_a3b_no_thinking"
     qwen_3_vl_8b_no_thinking = "qwen_3_vl_8b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
+    kimi_k3 = "kimi_k3"
     kimi_k2_6 = "kimi_k2_6"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
@@ -286,6 +293,7 @@ class ModelName(str, Enum):
     mimo_v2_omni = "mimo_v2_omni"
     mimo_v2_5 = "mimo_v2_5"
     mimo_v2_5_pro = "mimo_v2_5_pro"
+    inkling = "inkling"
 
 
 class ModelParserID(str, Enum):
@@ -609,6 +617,18 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
     "High": "high",
     "Extra High": "xhigh",
     "Max": "max",
+}
+
+KIMI_K3_OPENROUTER_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
+}
+
+GROK_4_5_OPENROUTER_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
 }
 
 
@@ -2639,6 +2659,110 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 3.5 Flash Lite
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_5_flash_lite,
+        friendly_name="Gemini 3.5 Flash Lite",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+            ),
+        ],
+    ),
     # Gemini 3.1 Flash Lite
     KilnModel(
         family=ModelFamily.gemini,
@@ -2649,10 +2773,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3.1-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
-                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -2681,10 +2802,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3.1-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
-                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -2713,10 +2831,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
-                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -2890,17 +3005,17 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Gemini 3.5 Flash
+    # Gemini 3.6 Flash
     KilnModel(
         family=ModelFamily.gemini,
-        name=ModelName.gemini_3_5_flash,
-        friendly_name="Gemini 3.5 Flash",
+        name=ModelName.gemini_3_6_flash,
+        friendly_name="Gemini 3.6 Flash",
         featured_rank=6,
-        editorial_notes="Frontier-level coding and reasoning at 4x speed. Near-Pro performance at Flash-tier cost.",
+        editorial_notes="Google's latest Flash model. Stronger agentic and multimodal performance at a lower cost than Gemini 3.5 Flash.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="google/gemini-3.5-flash",
+                model_id="google/gemini-3.6-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
@@ -2933,7 +3048,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
-                model_id="gemini-3.5-flash",
+                model_id="gemini-3.6-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
@@ -2966,10 +3081,111 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
-                model_id="gemini-3.5-flash",
+                model_id="gemini-3.6-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
+    # Gemini 3.5 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_5_flash,
+        friendly_name="Gemini 3.5 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.5-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.5-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.5-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -3956,6 +4172,19 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/ministral-3b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Mistral Medium 3.5
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_medium_3_5,
+        friendly_name="Mistral Medium 3.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-medium-3-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -5702,6 +5931,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.5
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_5,
+        friendly_name="Grok 4.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.5",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                openrouter_reasoning_object=True,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4.3
     KilnModel(
         family=ModelFamily.grok,
@@ -6030,6 +6289,25 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+        ],
+    ),
+    # Qwen 3.7 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p7_max,
+        friendly_name="Qwen 3.7 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.7-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            # Fireworks lists qwen3p7-max on its site but the API returns 404 (not deployed).
+            # Together AI hosts Qwen/Qwen3.7-Max but only in streaming-only mode
+            # (returns HTTP 400 "This model only supports streaming"), which Kiln's
+            # non-streaming adapter can't use. Omitted until Together supports non-streaming.
         ],
     ),
     # Qwen 3.7 Plus
@@ -7780,6 +8058,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Kimi K3
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k3,
+        friendly_name="Kimi K3",
+        editorial_notes="Open, state-of-the-art model from Moonshot AI. 2.8T-parameter MoE with a 1M token context, configurable reasoning, and strong agentic performance.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            # SiliconFlow provider omitted: moonshotai/Kimi-K3 returns HTTP 400
+            # "Model does not exist" on the .cn endpoint Kiln uses (it appears live
+            # on the .com site only). Not yet on Fireworks AI or Together AI (K2.6 / K2.7).
+        ],
+    ),
     # Kimi K2.6
     # Not available on Together AI or SiliconFlow CN yet
     KilnModel(
@@ -8620,6 +8928,28 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+        ],
+    ),
+    # Inkling (Thinking Machines)
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling,
+        friendly_name="Inkling",
+        editorial_notes="Thinking Machines' first open-weights foundation model (Apache 2.0). A 975B-parameter MoE (41B active) with configurable reasoning. Hosted on Together AI.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="thinkingmachines/Inkling",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            # Fireworks lists Inkling on its site but the API returns 404 (not deployed).
         ],
     ),
     # Fugu Ultra
