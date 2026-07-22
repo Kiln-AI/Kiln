@@ -1,22 +1,24 @@
 import { describe, expect, it } from "vitest"
-import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
+  parseSubagentReport,
   stripAppUiContext,
   stripInternalFraming,
+  userChatMessageFromContent,
   type ChatSessionSnapshot,
 } from "./session_messages"
 
 function snap(
   id: string,
   trace: ChatSessionSnapshot["task_run"]["trace"],
+  rootId?: string,
 ): ChatSessionSnapshot {
-  return { id, task_run: { trace } }
+  return { id, task_run: { trace }, ...(rootId ? { root_id: rootId } : {}) }
 }
 
 describe("hydrateSessionFromSnapshot", () => {
-  it("maps user and assistant trace messages and sets traceId on last assistant", () => {
-    const { messages, continuationTraceId } = hydrateSessionFromSnapshot(
+  it("maps user and assistant trace messages without any trace keying", () => {
+    const { messages, rootId } = hydrateSessionFromSnapshot(
       snap("trace-sess", [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi there" },
@@ -27,9 +29,19 @@ describe("hydrateSessionFromSnapshot", () => {
     expect(messages[0].content).toBe("Hello")
     expect(messages[1].role).toBe("assistant")
     expect(messages[1].parts?.[0]).toEqual({ type: "text", text: "Hi there" })
-    expect(messages[1].traceId).toBe("trace-sess")
-    expect(traceIdForNextChatRequest(messages)).toBe("trace-sess")
-    expect(continuationTraceId).toBe("trace-sess")
+    // Phase 5: no message carries a trace id anymore (the old world stamped
+    // the last assistant with the snapshot id as the browser's continuation
+    // key) and the leaf-shaped snapshot id is not surfaced — only the
+    // durable root_id is (absent here → null).
+    expect(messages[1].traceId).toBeUndefined()
+    expect(rootId).toBeNull()
+  })
+
+  it("returns the snapshot's durable root_id when the desktop passes it through", () => {
+    const { rootId } = hydrateSessionFromSnapshot(
+      snap("leaf-2", [{ role: "user", content: "Hello" }], "1234567890_root"),
+    )
+    expect(rootId).toBe("1234567890_root")
   })
 
   it("ignores reasoning_content (reasoning is not surfaced in the UI)", () => {
@@ -93,20 +105,10 @@ describe("hydrateSessionFromSnapshot", () => {
     expect(messages.map((m) => m.role)).toEqual(["user"])
   })
 
-  it("continuationTraceId allows submit when trace ends on user", () => {
-    const { messages, continuationTraceId } = hydrateSessionFromSnapshot(
-      snap("sess-u", [{ role: "user", content: "Waiting" }]),
-    )
-    expect(traceIdForNextChatRequest(messages)).toBeUndefined()
-    expect(continuationTraceId).toBe("sess-u")
-  })
-
   it("handles empty trace", () => {
-    const { messages, continuationTraceId } = hydrateSessionFromSnapshot(
-      snap("empty", []),
-    )
+    const { messages, rootId } = hydrateSessionFromSnapshot(snap("empty", []))
     expect(messages).toHaveLength(0)
-    expect(continuationTraceId).toBe("empty")
+    expect(rootId).toBeNull()
   })
 
   it("handles null trace", () => {
@@ -273,6 +275,111 @@ describe("hydrateSessionFromSnapshot strips injected-message framing", () => {
     const { messages } = hydrateSessionFromSnapshot(snapshot)
     expect(messages[0].role).toBe("user")
     expect(messages[0].content).toBe("my name is bobby whats yours?")
+  })
+})
+
+describe("parseSubagentReport", () => {
+  const frame = (attrs: string, body: string) =>
+    `<subagent_report ${attrs}>\n${body}\n</subagent_report>`
+
+  it("parses a well-formed report frame", () => {
+    const parsed = parseSubagentReport(
+      frame(
+        'id="sa_abc123" agent_type="general" status="completed" title="Eval sweep"',
+        "## Findings\n\nAll good.",
+      ),
+    )
+    expect(parsed).not.toBeNull()
+    expect(parsed?.info).toEqual({
+      id: "sa_abc123",
+      agentType: "general",
+      status: "completed",
+      title: "Eval sweep",
+    })
+    expect(parsed?.body).toBe("## Findings\n\nAll good.")
+  })
+
+  it("unescapes quotes (and other escaped entities) in the title", () => {
+    // The server escapes the name with & → &amp;, " → &quot;, < → &lt;.
+    const parsed = parseSubagentReport(
+      frame(
+        'id="sa_x" agent_type="general" status="failed" title="Check &quot;prod&quot; &amp; &lt;staging>"',
+        "body",
+      ),
+    )
+    expect(parsed?.info.title).toBe('Check "prod" & <staging>')
+    expect(parsed?.info.status).toBe("failed")
+  })
+
+  it("returns null for a non-report user message", () => {
+    expect(parseSubagentReport("just a normal message")).toBeNull()
+    expect(
+      parseSubagentReport("mentions <subagent_report but is not a frame"),
+    ).toBeNull()
+    // A frame with trailing content after the close tag is not a pure report
+    // message and stays a normal user bubble.
+    expect(
+      parseSubagentReport(
+        `${frame('id="sa_x" agent_type="g" status="completed" title="t"', "body")}\nand my own words`,
+      ),
+    ).toBeNull()
+  })
+
+  it("tolerates surrounding whitespace", () => {
+    const parsed = parseSubagentReport(
+      `\n  ${frame('id="sa_x" agent_type="g" status="completed" title="t"', "body")}\n`,
+    )
+    expect(parsed?.body).toBe("body")
+  })
+})
+
+describe("userChatMessageFromContent", () => {
+  it("marks report frames and sets content to the body", () => {
+    const msg = userChatMessageFromContent(
+      '<subagent_report id="sa_1" agent_type="general" status="completed" title="T">\nreport body\n</subagent_report>',
+      "echo-1",
+    )
+    expect(msg.role).toBe("user")
+    expect(msg.content).toBe("report body")
+    expect(msg.subagentReport).toEqual({
+      id: "sa_1",
+      agentType: "general",
+      status: "completed",
+      title: "T",
+    })
+    expect(msg.echoId).toBe("echo-1")
+  })
+
+  it("leaves plain user content untouched", () => {
+    const msg = userChatMessageFromContent("hello there")
+    expect(msg.content).toBe("hello there")
+    expect(msg.subagentReport).toBeUndefined()
+  })
+})
+
+describe("hydrateSessionFromSnapshot sub-agent reports", () => {
+  it("marks a report-framed user message and strips the frame", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("t-report", [
+        { role: "user", content: "run the sweep" },
+        { role: "assistant", content: "Spawning…" },
+        {
+          role: "user",
+          content:
+            '<subagent_report id="sa_9" agent_type="general" status="timeout" title="Sweep">\npartial results\n</subagent_report>',
+        },
+      ]),
+    )
+    expect(messages).toHaveLength(3)
+    expect(messages[2].role).toBe("user")
+    expect(messages[2].content).toBe("partial results")
+    expect(messages[2].subagentReport).toMatchObject({
+      id: "sa_9",
+      status: "timeout",
+      title: "Sweep",
+    })
+    // The normal user message is untouched.
+    expect(messages[0].subagentReport).toBeUndefined()
   })
 })
 

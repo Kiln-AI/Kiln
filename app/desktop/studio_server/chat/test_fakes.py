@@ -1,7 +1,13 @@
-"""Fake upstream + SSE fixture builders shared by the auto-mode unit tests.
+"""Fake upstream + SSE fixture builders shared by the chat test suites.
 
-These let the tests drive ``iter_upstream_round`` / ``AutoChatRunner`` /
-``ChatStreamSession`` against a stubbed upstream without any network or backend.
+These let the tests drive ``iter_upstream_round`` / ``ChatStreamSession`` /
+the runtime ``ConversationEngine``/``ConversationSupervisor`` against a
+stubbed upstream without any network or backend.
+
+Relocated from ``chat/auto/test_fakes.py`` in phase 3 (the auto package was
+deleted when auto mode moved onto the unified runtime); the fakes outlive
+their old home because they exercise the SURVIVING round primitives in
+``stream_session.py`` and everything built on them.
 """
 
 from __future__ import annotations

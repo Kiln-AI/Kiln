@@ -1832,7 +1832,7 @@ dev = [
 
 [[package]]
 name = "kiln-studio-desktop"
-version = "1.0.3"
+version = "1.0.4"
 source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },

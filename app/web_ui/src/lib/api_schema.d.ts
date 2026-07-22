@@ -3148,29 +3148,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/execute-tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Execute approved client tools and continue chat stream
-         * @description Tool calls that require user approval are streamed to the client for approval, along with the
-         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
-         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
-         *     the toolcalls and continue the chat stream.
-         */
-        post: operations["post_execute_tools_api_chat_execute_tools_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/version_policy": {
         parameters: {
             query?: never;
@@ -3224,14 +3201,31 @@ export interface paths {
         };
         /**
          * Get chat session
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{id}``.
+         *
+         *     Phase 6: accepts any browser conversation key. For a LIVE
+         *     conversation the desktop substitutes the record's freshest upstream
+         *     identity (its current leaf — hydration is always fresh); any other
+         *     key is forwarded VERBATIM, because the upstream now resolves either
+         *     id kind itself (root ids via the pointer index, architecture §8 —
+         *     the phase-5 desktop-side root→leaf scan and its 503 surface are
+         *     gone; the upstream owns that failure mode now and this proxy passes
+         *     its status through like any other error). 404 when the key yields
+         *     nothing to forward: a dead ``cv_`` handle after a desktop restart,
+         *     or a live record with nothing persisted yet.
          */
         get: operations["get_chat_session_api_chat_sessions__session_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete chat session
-         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{id}``.
+         *
+         *     Phase 6: accepts any browser conversation key; live records forward
+         *     their freshest upstream identity, cold keys forward verbatim (the
+         *     upstream deletes by either id kind — root ids resolve to the current
+         *     leaf server-side, so the desktop no longer needs the leaf to delete a
+         *     root-keyed session).
          */
         delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
         options?: never;
@@ -3239,118 +3233,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stream Chat
-         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
-         */
-        post: operations["chat_api_chat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/auto/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Enable auto mode for a chat
-         * @description Start a server-owned auto run that continues the chat autonomously.
-         *
-         *     Begins a fresh upstream continuation from the seed's ``trace_id`` (resolving
-         *     the accepted ``enable_auto_mode`` call as enabled). The run is supervised by
-         *     the registry and survives client disconnects.
-         */
-        post: operations["enable_auto_mode_api_chat_auto_enable_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/auto/decline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Decline auto mode and resume interactive chat
-         * @description Resolve the ``enable_auto_mode`` call as declined and resume the normal
-         *     interactive chat stream. Any sibling tool calls are resolved as denied.
-         */
-        post: operations["decline_auto_mode_api_chat_auto_decline_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/auto/{run_id}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stop an auto run
-         * @description Cooperatively cancel the run. Idempotent — stopping an unknown or
-         *     already-terminal run is a no-op.
-         */
-        post: operations["stop_auto_run_api_chat_auto__run_id__stop_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/auto/{run_id}/message": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send a user message into an auto-mode conversation
-         * @description Inject a user message without disabling auto mode (Revision R1).
-         *
-         *     If a burst is active the message is queued and delivered at the next round
-         *     boundary; if the conversation is idle a new burst is started seeded with
-         *     the message. The echoed message and resulting events arrive on the run's
-         *     observer stream. 404 if the run is unknown or its flag is already off.
-         */
-        post: operations["send_auto_message_api_chat_auto__run_id__message_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/auto/{run_id}/events": {
+    "/api/chat/debug_status": {
         parameters: {
             query?: never;
             header?: never;
@@ -3358,10 +3241,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Stream auto run events
-         * @description Pure-observer SSE stream of a run's chat events (404 if unknown/GC'd).
+         * Assistant debug-logging status
+         * @description Whether ``KILN_CHAT_DEBUG_LOG`` forensic logging is on — the UI
+         *     surfaces the conversation id (the join key for the desktop and
+         *     kiln_server debug logs) when it is.
          */
-        get: operations["stream_auto_events_api_chat_auto__run_id__events_get"];
+        get: operations["chat_debug_status_api_chat_debug_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3370,7 +3255,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/auto/resolve": {
+    "/api/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List conversations */
+        get: operations["list_conversations_api_conversations_get"];
+        put?: never;
+        /**
+         * Create (or adopt/flip) a conversation
+         * @description Create a conversation, by kind (functional spec §2; phase 5 keys
+         *     the body on ``session_id`` — see ``CreateConversationRequest``):
+         *
+         *     - ``kind="interactive"`` (phase 4): create-or-adopt the conversation
+         *       for the given key — the replacement for the old ``POST /api/chat``
+         *       conversation-per-request model. Idempotent: a key resolving to a
+         *       live record (any kind) returns that record's session id; a
+         *       TERMINAL record's key (a finished sub-agent reopened from history)
+         *       continues its trace on a fresh interactive record; a cold key
+         *       (upstream root id / legacy leaf) is adopted VERBATIM — the backend
+         *       resolves it on the first turn (phase 6) — and rehydrates pending
+         *       approvals from the persisted trace tail
+         *       (functional spec §5 restart recovery); a dead ``cv_`` key — the
+         *       record died with a desktop restart — creates a fresh empty record
+         *       (exactly the old world's no-stored-trace behavior).
+         *     - ``kind="auto"`` (default): enable auto mode — flip the named
+         *       conversation, or create one for the armed-first-send seed (old
+         *       ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for
+         *       the preserved entry shapes, including the ARMED-only manual enable
+         *       that never POSTs an empty turn upstream).
+         *
+         *     Runs are supervised by the conversation supervisor and survive client
+         *     disconnects.
+         */
+        post: operations["create_conversation_api_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/events": {
         parameters: {
             query?: never;
             header?: never;
@@ -3378,19 +3306,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Resolve a trace id to an active auto run
-         * @description Resolve a (possibly stale) trace id to the active auto run for its
-         *     conversation, returning the run id and the run's CURRENT leaf trace id.
-         *
-         *     Used by the web UI to resync after a hard refresh: the stored trace id is
-         *     the leaf the tab last saw, but the server-owned run advances the leaf each
-         *     round while the tab is gone. The registry's whole-chain trace index (every
-         *     seen trace id → run) matches the stale id anyway, and the returned
-         *     ``current_trace_id`` lets the client hydrate the rounds it missed before
-         *     attaching to the live events stream. 404 if no active run owns the
-         *     trace.
+         * Stream conversation state events
+         * @description Registry-level firehose of ``conversation-state`` events (snapshot
+         *     then live).
          */
-        get: operations["resolve_auto_run_api_chat_auto_resolve_get"];
+        get: operations["stream_conversation_state_events_api_conversations_events_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3399,17 +3319,182 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/auto/sessions": {
+    "/api/conversations/{session_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List active auto runs */
-        get: operations["list_auto_sessions_api_chat_auto_sessions_get"];
+        /** Get a conversation */
+        get: operations["get_conversation_api_conversations__session_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a conversation's chat events
+         * @description Pure-observer SSE (buffer replay + state marker + live); 404 if
+         *     unknown or GC'd. Any number of concurrent observers; disconnect never
+         *     affects the run.
+         */
+        get: operations["stream_conversation_events_api_conversations__session_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a conversation's run
+         * @description Stop the run. Idempotent — stopping an unknown or terminal
+         *     conversation is a no-op (a child's report, if any, is still delivered
+         *     to the parent). Same 202-always contract as the old stop endpoint.
+         *     ``cascade=true`` stops the children FIRST (their reports are
+         *     suppressed — the parent is being torn down, same order as session
+         *     deletion) and then the conversation itself.
+         */
+        post: operations["stop_conversation_api_conversations__session_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Flip a conversation's auto-mode flag
+         * @description Flip the auto-mode flag on an EXISTING conversation (functional
+         *     spec §2). ``enabled=false`` → today's disable semantics (old
+         *     ``AutoChatRegistry.disable``: cancel a live burst, publish the off
+         *     state with reason ``user_disabled``, cascade-stop sub-agent children;
+         *     phase 4: the record then swaps back to its interactive life instead
+         *     of TTL GC). ``enabled=false`` + ``decline`` → the consent-decline
+         *     flow (old ``/api/chat/auto/decline``, folded in): resolve the pending
+         *     gating call — ``enable_auto_mode``, or the FR2 spawn-consent
+         *     ``spawn_subagent`` — as declined + denied siblings via an interactive
+         *     continuation turn that streams on the observer channel.
+         *     ``enabled=true`` → enable/re-arm: the record flips to the auto policy
+         *     (ARMED-only: flag on, no upstream POST — the next message starts the
+         *     burst). 404 unknown, 409 for sub-agent records / a decline racing an
+         *     in-flight run, 429 when enabling would exceed the concurrency cap.
+         */
+        post: operations["set_auto_mode_api_conversations__session_id__auto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the conversation's pending approval batch
+         * @description The parked approval batch awaiting decisions (functional spec §2).
+         *
+         *     Replaces the tail half of the old two-request approval flow (the
+         *     stream used to END at ``tool-calls-pending`` and the browser POSTed
+         *     ``/api/chat/execute-tools``): the run now PARKS and the browser
+         *     fetches the batch here — keyed off the ``tool-calls-pending`` event /
+         *     the AWAITING_APPROVAL state — then answers via
+         *     ``POST /{sid}/approvals/decisions``. When no batch is in memory, the
+         *     supervisor attempts trace-tail rehydration first (functional spec §5:
+         *     desktop restart / graceful-stop leftovers), so a recoverable batch is
+         *     indistinguishable from a live one to the browser. 404 when the
+         *     conversation is unknown or nothing is pending.
+         */
+        get: operations["get_pending_approvals_api_conversations__session_id__approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/approvals/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve the conversation's pending approval batch
+         * @description Resolve a parked approval batch (functional spec §2/§5): the run
+         *     resumes (or a resume run starts, for a rehydrated batch) and results
+         *     stream on the events channel. One decision set per batch — first
+         *     decision set wins; a second tab deciding the same batch gets 409;
+         *     an unknown conversation/batch id gets 404.
+         */
+        post: operations["post_approval_decisions_api_conversations__session_id__approvals_decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a user message into a conversation
+         * @description Queue a user message (202, functional spec §2). Behavior by state:
+         *     IDLE → starts a turn/burst (an interactive send here is the phase-4
+         *     replacement for the old ``POST /api/chat``, byte-identical upstream);
+         *     RUNNING → queued into the inbox, drained at the next round boundary
+         *     (steer/inject); AWAITING_APPROVAL → queued until decisions resolve.
+         *     The message is echoed to observers at enqueue time; the response
+         *     carries its stable id so the sending tab can dedupe its own echo.
+         *     404 for unknown conversations, 409 for terminal ones (and for the
+         *     narrow flag-off-but-still-auto-policy window during a disable — the
+         *     old "no longer active" refusal; once the settle swaps the record back
+         *     to interactive, sends run normal gated turns).
+         */
+        post: operations["send_conversation_message_api_conversations__session_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4061,6 +4146,20 @@ export interface components {
             inappropriate_tool_use_examples: string;
         };
         /**
+         * ApprovalDecisionsRequest
+         * @description ``POST /{sid}/approvals/decisions`` — one decision set for the whole
+         *     batch (partial decisions are not allowed; matches today's UI, functional
+         *     spec §2). Keys are tool_call_ids; True = run, False/absent = deny.
+         */
+        ApprovalDecisionsRequest: {
+            /** Batch Id */
+            batch_id: string;
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
+        };
+        /**
          * Audio
          * @description Data about a previous audio response from the model.
          *     [Learn more](https://platform.openai.com/docs/guides/audio).
@@ -4068,21 +4167,6 @@ export interface components {
         Audio: {
             /** Id */
             id: string;
-        };
-        /**
-         * AutoRunStatus
-         * @enum {string}
-         */
-        AutoRunStatus: "running" | "idle" | "stopped" | "disabled";
-        /** AutoSessionItem */
-        AutoSessionItem: {
-            /** Run Id */
-            run_id: string;
-            /** Current Trace Id */
-            current_trace_id?: string | null;
-            status: components["schemas"]["AutoRunStatus"];
-            /** Reason */
-            reason?: string | null;
         };
         /** AvailableModels */
         AvailableModels: {
@@ -4465,25 +4549,13 @@ export interface components {
             /** Name */
             name?: string;
         };
-        /** ChatRequest */
-        ChatRequest: {
-            /** Messages */
-            messages: components["schemas"]["ChatRequestMessage"][];
-            /** Trace Id */
-            trace_id?: string | null;
-        } & {
-            [key: string]: unknown;
-        };
-        /** ChatRequestMessage */
-        ChatRequestMessage: {
-            /** Role */
-            role: string;
-            /** Content */
-            content?: string | {
-                [key: string]: unknown;
-            }[] | null;
-        } & {
-            [key: string]: unknown;
+        /**
+         * ChatDebugStatus
+         * @description Whether assistant forensic debug logging (``KILN_CHAT_DEBUG_LOG``) is on.
+         */
+        ChatDebugStatus: {
+            /** Debug Log Enabled */
+            debug_log_enabled: boolean;
         };
         /** ChatSessionListItem */
         ChatSessionListItem: {
@@ -4500,6 +4572,21 @@ export interface components {
             auto_active: boolean;
             /** Auto Run Id */
             auto_run_id?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Root Id */
+            root_id?: string | null;
+            /** Parent Root Id */
+            parent_root_id?: string | null;
+            /**
+             * Is Subagent
+             * @default false
+             */
+            is_subagent: boolean;
+            /** Subagent Id */
+            subagent_id?: string | null;
+            /** Subagent Status */
+            subagent_status?: string | null;
         };
         /** ChatSessionSnapshot */
         ChatSessionSnapshot: {
@@ -4507,6 +4594,8 @@ export interface components {
             id: string;
             task_run: components["schemas"]["TaskRunSnapshot"];
             context_usage?: components["schemas"]["ContextUsage"] | null;
+            /** Root Id */
+            root_id?: string | null;
         };
         /**
          * ChatStrategy
@@ -4727,6 +4816,88 @@ export interface components {
             /** Compacted */
             compacted?: boolean | null;
         };
+        /** ConversationCreatedResponse */
+        ConversationCreatedResponse: {
+            /** Session Id */
+            session_id: string;
+        };
+        /**
+         * ConversationItem
+         * @description UI-facing view of one conversation record.
+         *
+         *     Field notes:
+         *
+         *     - ``state`` uses the unified ``RunState`` vocabulary; every value the old
+         *       ``SubAgentStatus`` could produce keeps its exact string, so terminal
+         *       checks port mechanically.
+         *     - ``current_trace_id`` (phases 2–4) is GONE: browsers never see trace ids
+         *       (functional spec §4). History hydration goes through
+         *       ``GET /api/chat/sessions/{session_id}`` and the DESKTOP resolves the
+         *       record's current leaf (``routes.resolve_conversation_key``) — strictly
+         *       fresher than the re-fetched field the browser used to hold.
+         *     - ``root_id`` is the upstream session's DURABLE id (``session_meta.
+         *       root_id``) when the desktop has learned it — a SESSION id, exposed so
+         *       the browser can persist a restart-proof recovery key (the in-memory
+         *       ``session_id`` dies with the desktop process; since phase 6 the
+         *       recovery key resumes via the backend's own session-id resolution, no
+         *       leaf bookkeeping anywhere).
+         *     - ``final_report`` is included only when requested with
+         *       ``include_report`` (same contract as the old API).
+         */
+        ConversationItem: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "interactive" | "auto" | "subagent";
+            state: components["schemas"]["RunState"];
+            /** Name */
+            name?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Parent Session Id */
+            parent_session_id?: string | null;
+            /** Root Id */
+            root_id?: string | null;
+            /**
+             * Auto Flag
+             * @default false
+             */
+            auto_flag: boolean;
+            /** Idle Reason */
+            idle_reason?: string | null;
+            /**
+             * Rounds Used
+             * @default 0
+             */
+            rounds_used: number;
+            /**
+             * Report Available
+             * @default false
+             */
+            report_available: boolean;
+            /**
+             * Report Delivered
+             * @default false
+             */
+            report_delivered: boolean;
+            /** Final Report */
+            final_report?: string | null;
+        };
+        /**
+         * ConversationMessageAccepted
+         * @description 202 body for ``POST /{sid}/messages`` (phase 4): the accepted
+         *     message's stable server-minted id. The sending tab renders the typed
+         *     text locally and uses this id to dedupe the run's ``user-message`` echo
+         *     (whose content carries the app-context header only OTHER observers
+         *     should render, stripped).
+         */
+        ConversationMessageAccepted: {
+            /** Message Id */
+            message_id: string;
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -4760,6 +4931,43 @@ export interface components {
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
+        };
+        /**
+         * CreateConversationRequest
+         * @description ``POST /api/conversations`` body.
+         *
+         *     ``kind`` selects the flow (phase 4); phase 5 re-keys the body from
+         *     ``trace_id`` to ``session_id`` (functional spec §4: browsers never see
+         *     trace ids — the desktop resolves the key to the upstream leaf):
+         *
+         *     - ``"auto"`` (default — the phase-3 enable flow, session-id keyed): the
+         *       old ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
+         *       preserved verbatim. Flips the named conversation — or creates one when
+         *       ``session_id`` is absent (armed-first-send, Revision R2).
+         *     - ``"interactive"``: create-or-adopt the conversation for ``session_id``
+         *       (functional spec §2 "create"; idempotent — a key resolving to a live
+         *       record returns that record's session id). The first message goes
+         *       through ``POST /{sid}/messages`` like every other message.
+         */
+        CreateConversationRequest: {
+            /**
+             * Kind
+             * @default auto
+             * @enum {string}
+             */
+            kind: "interactive" | "auto";
+            /** Session Id */
+            session_id?: string | null;
+            /** Enable Tool Call Id */
+            enable_tool_call_id?: string | null;
+            /** Pending Tool Calls */
+            pending_tool_calls?: components["schemas"]["ToolCallInfo"][];
+            /** Extra Messages */
+            extra_messages?: {
+                [key: string]: unknown;
+            }[];
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * CreateDatasetSplitRequest
@@ -5612,12 +5820,16 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
-        /** DeclineAutoRequest */
-        DeclineAutoRequest: {
-            /** Trace Id */
-            trace_id: string;
-            /** Enable Tool Call Id */
-            enable_tool_call_id: string;
+        /**
+         * DeclineAutoModeContext
+         * @description Consent-decline context riding ``POST /{sid}/auto`` with
+         *     ``enabled=false`` (phase 4 — the old ``DeclineAutoRequest`` minus its
+         *     ``trace_id``: the conversation record's own leaf is authoritative now
+         *     that the conversation is addressed by session id).
+         */
+        DeclineAutoModeContext: {
+            /** Gating Tool Call Id */
+            gating_tool_call_id: string;
             /** Siblings */
             siblings?: components["schemas"]["ToolCallInfo"][];
         };
@@ -5819,29 +6031,6 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
-        };
-        /**
-         * EnableAutoRequest
-         * @description ``AutoChatSeed`` plus the optional model-supplied reason recorded on the run.
-         */
-        EnableAutoRequest: {
-            /** Trace Id */
-            trace_id?: string | null;
-            /** Enable Tool Call Id */
-            enable_tool_call_id?: string | null;
-            /** Pending Tool Calls */
-            pending_tool_calls?: components["schemas"]["ToolCallInfo"][];
-            /** Extra Messages */
-            extra_messages?: {
-                [key: string]: unknown;
-            }[];
-            /** Reason */
-            reason?: string | null;
-        };
-        /** EnableAutoResponse */
-        EnableAutoResponse: {
-            /** Run Id */
-            run_id: string;
         };
         /**
          * EphemeralSplitChunk
@@ -6464,17 +6653,6 @@ export interface components {
             fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
-        };
-        /** ExecuteToolsRequest */
-        ExecuteToolsRequest: {
-            /** Trace Id */
-            trace_id: string;
-            /** Tool Calls */
-            tool_calls: components["schemas"]["ToolCallInfo"][];
-            /** Decisions */
-            decisions: {
-                [key: string]: boolean;
-            };
         };
         /**
          * ExternalToolApiDescription
@@ -8710,6 +8888,24 @@ export interface components {
             is_archived?: boolean | null;
         };
         /**
+         * PendingApprovalsResponse
+         * @description ``GET /{sid}/approvals`` — the parked batch awaiting decisions.
+         *
+         *     ``items`` is the exact wire shape of the ``tool-calls-pending`` event
+         *     items (toolCallId/toolName/input/requiresApproval[/permission/
+         *     approvalDescription]) so the approval box consumes either source
+         *     identically; ``batch_id`` is what ``POST decisions`` must echo back
+         *     (validated — a stale batch id 404s, an already-decided batch 409s).
+         */
+        PendingApprovalsResponse: {
+            /** Batch Id */
+            batch_id: string;
+            /** Items */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
          * Priority
          * @description Priority levels, where P0 is highest priority.
          * @enum {integer}
@@ -9653,17 +9849,6 @@ export interface components {
             models: components["schemas"]["RerankerModelDetails"][];
         };
         /**
-         * ResolveAutoResponse
-         * @description Result of resolving a (possibly stale) trace id to an active auto run.
-         */
-        ResolveAutoResponse: {
-            /** Run Id */
-            run_id: string;
-            /** Current Trace Id */
-            current_trace_id: string;
-            status: components["schemas"]["AutoRunStatus"];
-        };
-        /**
          * ReviewedExample
          * @description A reviewed example from the spec review process.
          *
@@ -9728,6 +9913,18 @@ export interface components {
             /** @description Average usage statistics across eval runs. */
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
+        /**
+         * RunState
+         * @description Lifecycle state of a conversation's run (functional spec §1).
+         *
+         *     ``COMPLETED``/``FAILED``/``STOPPED``/``TIMEOUT`` are reachable only by
+         *     one-shot (sub-agent) policies — they preserve ``SubAgentStatus``'s
+         *     one-shot semantics 1:1. Interactive/auto conversations cycle
+         *     IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto mode off" is the
+         *     ``auto_flag`` axis, not a state.
+         * @enum {string}
+         */
+        RunState: "idle" | "running" | "awaiting_approval" | "completed" | "failed" | "stopped" | "timeout";
         /**
          * RunSummary
          * @description A summary of a task run for list views.
@@ -10032,16 +10229,24 @@ export interface components {
              */
             breakpoint_percentile_threshold: number;
         };
-        /**
-         * SendMessageRequest
-         * @description A user message sent into an auto-mode conversation via ``/message``
-         *     (Revision R1) — injected into the active burst or starts a new one if idle.
-         */
-        SendMessageRequest: {
+        /** SendConversationMessageRequest */
+        SendConversationMessageRequest: {
             /** Content */
             content: string;
-            /** Trace Id */
-            trace_id?: string | null;
+        };
+        /**
+         * SetAutoModeRequest
+         * @description ``POST /api/conversations/{sid}/auto`` — flip the auto-mode flag on an
+         *     EXISTING conversation (functional spec §2). With ``enabled=false`` and a
+         *     ``decline`` context this is the consent-decline flow (the old
+         *     ``/api/chat/auto/decline``, folded in): the pending ``enable_auto_mode``
+         *     call resolves as declined + denied siblings through an interactive
+         *     continuation turn streaming on the observer channel.
+         */
+        SetAutoModeRequest: {
+            /** Enabled */
+            enabled: boolean;
+            decline?: components["schemas"]["DeclineAutoModeContext"] | null;
         };
         /**
          * SkillContentResponse
@@ -18936,39 +19141,6 @@ export interface operations {
             };
         };
     };
-    post_execute_tools_api_chat_execute_tools_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExecuteToolsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     chat_version_policy_api_chat_version_policy_get: {
         parameters: {
             query?: never;
@@ -19028,7 +19200,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Chat session id (same as trace id for continuation). */
+                /** @description Conversation key: a live conversation's session id, an upstream root id, or (legacy sessions only) a leaf id. */
                 session_id: string;
             };
             cookie?: never;
@@ -19060,7 +19232,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Chat session id to delete. */
+                /** @description Conversation key of the session to delete. */
                 session_id: string;
             };
             cookie?: never;
@@ -19085,7 +19257,59 @@ export interface operations {
             };
         };
     };
-    chat_api_chat_post: {
+    chat_debug_status_api_chat_debug_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatDebugStatus"];
+                };
+            };
+        };
+    };
+    list_conversations_api_conversations_get: {
+        parameters: {
+            query?: {
+                /** @description Filter to children of this conversation, by the parent's session id. Omit for all live conversations. */
+                parent?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_conversation_api_conversations_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -19094,9 +19318,38 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChatRequest"];
+                "application/json": components["schemas"]["CreateConversationRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_conversation_state_events_api_conversations_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -19107,29 +19360,22 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
-    enable_auto_mode_api_chat_auto_enable_post: {
+    get_conversation_api_conversations__session_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Include the final report for terminal runs. */
+                include_report?: boolean;
+            };
             header?: never;
-            path?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EnableAutoRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -19137,7 +19383,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnableAutoResponse"];
+                    "application/json": components["schemas"]["ConversationItem"];
                 };
             };
             /** @description Validation Error */
@@ -19151,46 +19397,48 @@ export interface operations {
             };
         };
     };
-    decline_auto_mode_api_chat_auto_decline_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeclineAutoRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stop_auto_run_api_chat_auto__run_id__stop_post: {
+    stream_conversation_events_api_conversations__session_id__events_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The auto run id to stop. */
-                run_id: string;
+                /** @description The conversation session id to observe. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_conversation_api_conversations__session_id__stop_post: {
+        parameters: {
+            query?: {
+                /** @description Also stop every running sub-agent child (kill the whole tree). Without it an interactive stop only cancels the in-flight turn; auto/sub-agent stops cascade regardless. */
+                cascade?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The conversation session id to stop. */
+                session_id: string;
             };
             cookie?: never;
         };
@@ -19216,19 +19464,19 @@ export interface operations {
             };
         };
     };
-    send_auto_message_api_chat_auto__run_id__message_post: {
+    set_auto_mode_api_conversations__session_id__auto_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The auto run id to message. */
-                run_id: string;
+                /** @description The conversation session id. */
+                session_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SendMessageRequest"];
+                "application/json": components["schemas"]["SetAutoModeRequest"];
             };
         };
         responses: {
@@ -19252,13 +19500,13 @@ export interface operations {
             };
         };
     };
-    stream_auto_events_api_chat_auto__run_id__events_get: {
+    get_pending_approvals_api_conversations__session_id__approvals_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The auto run id to observe. */
-                run_id: string;
+                /** @description The conversation session id. */
+                session_id: string;
             };
             cookie?: never;
         };
@@ -19266,6 +19514,42 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_approval_decisions_api_conversations__session_id__approvals_decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -19284,25 +19568,29 @@ export interface operations {
             };
         };
     };
-    resolve_auto_run_api_chat_auto_resolve_get: {
+    send_conversation_message_api_conversations__session_id__messages_post: {
         parameters: {
-            query: {
-                /** @description A trace id from the conversation (may be stale). */
-                trace_id: string;
-            };
+            query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The conversation session id to message. */
+                session_id: string;
+            };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendConversationMessageRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResolveAutoResponse"];
+                    "application/json": components["schemas"]["ConversationMessageAccepted"];
                 };
             };
             /** @description Validation Error */
@@ -19312,26 +19600,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_auto_sessions_api_chat_auto_sessions_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AutoSessionItem"][];
                 };
             };
         };

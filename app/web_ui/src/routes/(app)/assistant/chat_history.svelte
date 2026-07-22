@@ -5,10 +5,13 @@
   import { hydrateSessionFromSnapshot } from "$lib/chat/session_messages"
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import {
-    splitSessionRows,
+    nestSessionRows,
+    splitSessionNodes,
+    visibleSessionRows,
     type SessionListItem,
   } from "$lib/chat/session_grouping"
-  import { auto_run_store } from "$lib/chat/auto_run_store"
+  import { dev_tools_enabled } from "$lib/utils/dev_tools"
+  import { main_conversation_store } from "$lib/chat/conversation_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -26,8 +29,13 @@
   let sessionDetailLoading: string | null = null
   let deletingSessionId: string | null = null
 
-  $: ({ active: activeRows, recent: recentRows } =
-    splitSessionRows(sessionRows))
+  // Sub-agent sessions nest under their parent conversation's row; a child
+  // whose parent isn't visible renders as a normal top-level row. They are a
+  // developer affordance: hidden entirely unless dev tools are enabled.
+  $: visibleRows = visibleSessionRows(sessionRows, dev_tools_enabled)
+  $: ({ active: activeNodes, recent: recentNodes } = splitSessionNodes(
+    nestSessionRows(visibleRows),
+  ))
 
   async function loadSessionList() {
     sessionsLoading = true
@@ -63,6 +71,10 @@
   }
 
   async function selectSession(row: SessionListItem) {
+    // Phase 5: row.id is an opaque conversation KEY (live session id /
+    // upstream root id / legacy leaf — never a trace id the browser
+    // interprets); the desktop resolves it to the current leaf for the
+    // hydration GET and again on the ensure/adopt in the apply handler.
     const sessionId = row.id
     sessionDetailLoading = sessionId
     sessionsError = null
@@ -77,26 +89,31 @@
         sessionsError = createKilnError(error)
         return
       }
-      const { messages, continuationTraceId, contextUsage } =
+      const { messages, rootId, contextUsage } =
         hydrateSessionFromSnapshot(snapshot)
-      dispatch("apply", { messages, continuationTraceId, contextUsage })
+      dispatch("apply", {
+        messages,
+        sessionId,
+        // The durable recovery key: the row's root_id (present for every
+        // non-legacy session) with the snapshot's copy as fallback.
+        rootId: row.root_id ?? rootId,
+        contextUsage,
+        autoActive: !!row.auto_active,
+      })
       posthog.capture("chat_history_session_loaded", {
         message_count: messages.length,
         auto_active: !!row.auto_active,
       })
-      // Re-attach the live auto run after hydrating completed history. The
-      // runner replays the in-progress turn so there is no visible gap; if it
-      // has finished or is gone, the events stream lands cleanly in the "off"
-      // state (ui_design §5). Show a transient "reconnecting…" affordance during
-      // the connecting window (Phase 9); attach clears it once established, and
-      // the on-subscribe state marker reflects working-vs-idle immediately.
-      if (row.auto_active && row.auto_run_id) {
-        auto_run_store.beginReconnect()
-        // openInflightTurn: render the replayed in-flight round into its own
-        // assistant turn so it doesn't overwrite the last hydrated bubble. No
-        // initialWorking here (History has no status); attach presumes a live
-        // burst and the on-subscribe marker corrects it.
-        auto_run_store.attach(row.auto_run_id, undefined, true)
+      // The apply handler (chat.svelte → chatSessionStore.loadSession)
+      // re-attaches the conversation's observer for EVERY kind since phase 4
+      // (create-or-adopt by trace + attach: the replayed in-flight turn and
+      // any parked approval converge on their own). For a live AUTO
+      // conversation, additionally show the transient "reconnecting…"
+      // affordance during the hydrate→attach window (old behavior — attach
+      // clears it once the stream is established, and the on-subscribe
+      // conversation-state marker restores the working/on indicators).
+      if (row.auto_active) {
+        main_conversation_store.beginReconnect()
       }
       close()
     } catch (e) {
@@ -127,8 +144,8 @@
   }
 
   $: subtitle =
-    sessionRows.length > 0
-      ? `${sessionRows.length} conversation${sessionRows.length === 1 ? "" : "s"}`
+    visibleRows.length > 0
+      ? `${visibleRows.length} conversation${visibleRows.length === 1 ? "" : "s"}`
       : null
 </script>
 
@@ -161,7 +178,7 @@
           <p>{sessionsError.getMessage()}</p>
         {/if}
       </div>
-    {:else if sessionRows.length === 0}
+    {:else if visibleRows.length === 0}
       <div class="flex flex-col items-center justify-center py-10 px-4">
         <div class="w-10 h-10 text-base-content/15 mb-3">
           <ChatIcon />
@@ -176,25 +193,37 @@
     {:else}
       {@const busy =
         sessionDetailLoading !== null || deletingSessionId !== null}
-      {#if activeRows.length > 0}
+      {#if activeNodes.length > 0}
         <div
           class="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-wide text-primary/90"
         >
           Working now
         </div>
         <div class="flex flex-col gap-0.5">
-          {#each activeRows as row (row.id)}
+          {#each activeNodes as node (node.row.id)}
             <ChatHistoryRow
-              {row}
-              loading={sessionDetailLoading === row.id}
-              deleting={deletingSessionId === row.id}
+              row={node.row}
+              loading={sessionDetailLoading === node.row.id}
+              deleting={deletingSessionId === node.row.id}
               {busy}
               onSelect={selectSession}
               onDelete={deleteSession}
             />
+            {#each node.children as child (child.id)}
+              <div class="pl-5">
+                <ChatHistoryRow
+                  row={child}
+                  loading={sessionDetailLoading === child.id}
+                  deleting={deletingSessionId === child.id}
+                  {busy}
+                  onSelect={selectSession}
+                  onDelete={deleteSession}
+                />
+              </div>
+            {/each}
           {/each}
         </div>
-        {#if recentRows.length > 0}
+        {#if recentNodes.length > 0}
           <div class="divider my-1.5"></div>
           <div
             class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-base-content/40"
@@ -204,15 +233,27 @@
         {/if}
       {/if}
       <div class="flex flex-col gap-0.5">
-        {#each recentRows as row (row.id)}
+        {#each recentNodes as node (node.row.id)}
           <ChatHistoryRow
-            {row}
-            loading={sessionDetailLoading === row.id}
-            deleting={deletingSessionId === row.id}
+            row={node.row}
+            loading={sessionDetailLoading === node.row.id}
+            deleting={deletingSessionId === node.row.id}
             {busy}
             onSelect={selectSession}
             onDelete={deleteSession}
           />
+          {#each node.children as child (child.id)}
+            <div class="pl-5">
+              <ChatHistoryRow
+                row={child}
+                loading={sessionDetailLoading === child.id}
+                deleting={deletingSessionId === child.id}
+                {busy}
+                onSelect={selectSession}
+                onDelete={deleteSession}
+              />
+            </div>
+          {/each}
         {/each}
       </div>
     {/if}

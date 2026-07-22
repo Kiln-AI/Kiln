@@ -545,40 +545,50 @@ def connect_agent_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> AgentOverview:
-        task = task_from_id(project_id, task_id)
-        project = task.parent_project()
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        connected_providers = await _connected_providers_block()
 
-        task_run_configs = get_all_run_configs(project_id, task_id)
+        # The block builders below scan child directories on disk (runs, specs,
+        # evals, fine-tunes, ...) — far too slow for the event loop on large
+        # datasets, so the whole assembly runs in a worker thread.
+        def build_overview() -> AgentOverview:
+            task = task_from_id(project_id, task_id)
+            project = task.parent_project()
+            if project is None:
+                raise HTTPException(status_code=404, detail="Project not found")
 
-        instruction_text = truncate_to_words_with_agent_sentinel(task.instruction, 70)
+            task_run_configs = get_all_run_configs(project_id, task_id)
 
-        return AgentOverview(
-            project=AgentOverviewProject(
-                id=project.id,
-                name=project.name,
-                description=project.description,
-            ),
-            task=AgentOverviewTask(
-                id=task.id,
-                name=task.name,
-                description=task.description,
-                instruction=instruction_text or "",
-                input_json_schema=task.input_json_schema,
-                output_json_schema=task.output_json_schema,
-                default_run_config_id=task.default_run_config_id,
-            ),
-            dataset=_dataset_stats(task),
-            docs=_docs_stats(project),
-            search_tools=_search_tools_block(project),
-            prompts=_prompts_block(task, project, task_run_configs),
-            specs=_specs_block(task),
-            evals=_evals_block(task),
-            tool_servers=_tool_servers_block(project),
-            run_configs=_run_configs_block(task, task_run_configs),
-            fine_tunes=_fine_tunes_block(task),
-            prompt_optimization_jobs=_prompt_optimization_jobs_block(task),
-            skills=_skills_block(project),
-            connected_providers=await _connected_providers_block(),
-        )
+            instruction_text = truncate_to_words_with_agent_sentinel(
+                task.instruction, 70
+            )
+
+            return AgentOverview(
+                project=AgentOverviewProject(
+                    id=project.id,
+                    name=project.name,
+                    description=project.description,
+                ),
+                task=AgentOverviewTask(
+                    id=task.id,
+                    name=task.name,
+                    description=task.description,
+                    instruction=instruction_text or "",
+                    input_json_schema=task.input_json_schema,
+                    output_json_schema=task.output_json_schema,
+                    default_run_config_id=task.default_run_config_id,
+                ),
+                dataset=_dataset_stats(task),
+                docs=_docs_stats(project),
+                search_tools=_search_tools_block(project),
+                prompts=_prompts_block(task, project, task_run_configs),
+                specs=_specs_block(task),
+                evals=_evals_block(task),
+                tool_servers=_tool_servers_block(project),
+                run_configs=_run_configs_block(task, task_run_configs),
+                fine_tunes=_fine_tunes_block(task),
+                prompt_optimization_jobs=_prompt_optimization_jobs_block(task),
+                skills=_skills_block(project),
+                connected_providers=connected_providers,
+            )
+
+        return await asyncio.to_thread(build_overview)

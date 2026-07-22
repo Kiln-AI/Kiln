@@ -25,5 +25,13 @@ export default defineConfig({
   plugins: [...(sentryPlugin ? [sentryPlugin] : []), sveltekit()],
   test: {
     include: ["src/**/*.{test,spec}.{js,ts}"],
+    alias: {
+      // $env/dynamic/public needs the SvelteKit runtime; stub it in unit
+      // tests so components reading PUBLIC_ flags can mount (flags read off).
+      "$env/dynamic/public": new URL(
+        "./src/lib/utils/env_dynamic_public_stub.ts",
+        import.meta.url,
+      ).pathname,
+    },
   },
 })
