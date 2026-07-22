@@ -12,7 +12,6 @@
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
-  import SubagentConsentBox from "./subagent_consent_box.svelte"
   import SubagentReportChip from "./subagent_report_chip.svelte"
 
   export let messages: ChatMessage[] = []
@@ -297,42 +296,25 @@
                         {@const effectivelyComplete =
                           hasOutput || !isActiveMessage}
                         {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
+                          <!-- FR3: spawn_subagent never appears here — in auto
+                             mode it auto-runs; interactively it rides the
+                             auto-mode consent dialog (the FR2 spawn gate),
+                             not the approval box. -->
                           <div class="mt-2 text-sm">
-                            {#if approvalItem?.toolName === "spawn_subagent"}
-                              <!-- First spawn in a conversation: richer
-                                 consent copy (later spawns auto-run). -->
-                              <SubagentConsentBox
-                                name={getToolInputString(
-                                  approvalItem?.input,
-                                  "name",
-                                )}
-                                agentType={getToolInputString(
-                                  approvalItem?.input,
-                                  "agent_type",
-                                )}
-                                prompt={getToolInputString(
-                                  approvalItem?.input,
-                                  "prompt",
-                                )}
-                                onRun={() => onToolApprovalRun(tcId)}
-                                onSkip={() => onToolApprovalSkip(tcId)}
-                              />
-                            {:else}
-                              <ToolApprovalBox
-                                description={approvalItem?.approvalDescription ??
-                                  ""}
-                                method={getToolInputString(
-                                  approvalItem?.input,
-                                  "method",
-                                )}
-                                url={getToolInputString(
-                                  approvalItem?.input,
-                                  "url_path",
-                                )}
-                                onRun={() => onToolApprovalRun(tcId)}
-                                onSkip={() => onToolApprovalSkip(tcId)}
-                              />
-                            {/if}
+                            <ToolApprovalBox
+                              description={approvalItem?.approvalDescription ??
+                                ""}
+                              method={getToolInputString(
+                                approvalItem?.input,
+                                "method",
+                              )}
+                              url={getToolInputString(
+                                approvalItem?.input,
+                                "url_path",
+                              )}
+                              onRun={() => onToolApprovalRun(tcId)}
+                              onSkip={() => onToolApprovalSkip(tcId)}
+                            />
                           </div>
                         {:else}
                           <ToolStatusLine

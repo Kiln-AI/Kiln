@@ -1,11 +1,19 @@
 <script lang="ts">
   import posthog from "posthog-js"
   import Dialog from "$lib/ui/dialog.svelte"
-  import type { AutoModeConsentRequiredPayload } from "$lib/chat/streaming_chat"
+  import type {
+    AutoModeConsentRequiredPayload,
+    SpawnConsentInfo,
+  } from "$lib/chat/streaming_chat"
 
   let dialog: Dialog
 
   let reason: string | null = null
+  // Spawn-triggered variant (FR2): the sub-agent about to be spawned — the
+  // dialog names it so the user knows what accepting will start. The copy
+  // and buttons stay the auto-mode framing: turning on auto mode IS the
+  // decision (spawning requires it).
+  let spawn: SpawnConsentInfo | null = null
   let pendingResolve: ((accepted: boolean) => void) | null = null
   let pendingPromise: Promise<boolean> | null = null
 
@@ -14,17 +22,20 @@
    * ``false`` on cancel / dismiss / Escape / backdrop. Consent is required every
    * time (functional spec §4.2) — this never auto-accepts.
    *
-   * ``payload`` is optional: the backend-tool path passes the model's reason;
-   * the manual footer toggle opens it with no payload.
+   * ``payload`` is optional: the backend-tool path passes the model's reason
+   * (enable trigger) or the pending spawn (spawn trigger); the manual footer
+   * toggle opens it with no payload.
    */
   export function prompt(
     payload?: AutoModeConsentRequiredPayload | null,
   ): Promise<boolean> {
     if (pendingPromise) return pendingPromise
     reason = payload?.reason ?? null
+    spawn = payload?.spawn ?? null
     posthog.capture("chat_auto_mode_consent_shown", {
       has_reason: !!reason,
       triggered_by_model: !!payload,
+      trigger: payload?.trigger ?? null,
     })
     pendingPromise = new Promise<boolean>((resolve) => {
       pendingResolve = resolve
@@ -69,6 +80,17 @@
         class="rounded-lg border-l-4 border-primary/60 bg-base-200/60 px-3 py-2 text-base-content/80 italic"
       >
         The assistant suggests auto mode to: {reason}
+      </div>
+    {/if}
+
+    {#if spawn}
+      <div
+        class="rounded-lg border-l-4 border-primary/60 bg-base-200/60 px-3 py-2 text-base-content/80"
+      >
+        The assistant wants to spawn a sub-agent{spawn.name
+          ? ` — "${spawn.name}"`
+          : ""}{spawn.agentType ? ` (${spawn.agentType})` : ""} — which requires
+        auto mode.
       </div>
     {/if}
 

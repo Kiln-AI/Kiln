@@ -1447,30 +1447,282 @@ describe("main_conversation_store", () => {
     expect(calls.working[calls.working.length - 1]).toBe(false)
   })
 
-  it("an observer drop mid-turn surfaces an inline error; an idle drop stays silent (MEDIUM-1)", () => {
-    // Mid-turn drop: like the old streamChat fetch-error path, the user
-    // sees an error and the composer resets (working false).
-    store.attach("cv_drop")
-    let source = FakeEventSource.latest()
-    source.message(stateRunning("cv_drop", "interactive"))
-    expect(get(store.working)).toBe(true)
-    source.fail()
-    expect(get(store.working)).toBe(false)
-    expect(calls.errors).toEqual([
-      "Lost the connection to the assistant. Please try again.",
-    ])
-    // The session id survives so the next send/ensure re-attaches.
-    expect(get(store.sessionId)).toBe("cv_drop")
-    expect(get(store.connection)).toBe("closed")
+  describe("FR5: observer drop → no fake off, bounded re-attach", () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
 
-    // Idle drop: no request was in flight (old world showed nothing).
-    store.attach("cv_drop_idle")
-    source = FakeEventSource.latest()
-    source.message(stateInteractiveIdle("cv_drop_idle"))
-    source.fail()
-    expect(calls.errors).toEqual([
-      "Lost the connection to the assistant. Please try again.",
-    ])
+    const EVENTS_URL = (sid: string) =>
+      `http://localhost:8757/api/conversations/${sid}/events`
+
+    it("an AUTO drop keeps flag/offReason and schedules a 2s re-attach", () => {
+      store.attach("cv_auto_drop", undefined, false, true)
+      const first = FakeEventSource.latest()
+      first.open()
+      first.message(stateRunning("cv_auto_drop"))
+      expect(get(store.autoModeOn)).toBe(true)
+
+      first.fail()
+      // A connection fact, never a run fact: no off transition, no fake off.
+      expect(get(store.autoModeOn)).toBe(true)
+      expect(calls.offReasons).toEqual([])
+      expect(get(store.offReason)).toBeNull()
+      expect(get(store.connection)).toBe("closed")
+      expect(get(store.reconnecting)).toBe(true)
+      // No inline error yet — the bounded re-attach owns recovery.
+      expect(calls.errors).toEqual([])
+      // The working affordance resets (composer unstuck) without any settle.
+      expect(get(store.working)).toBe(false)
+
+      // 2s later a fresh observer attaches to the SAME events URL, carrying
+      // the current flag (assumeAutoOn) so the indicator never flickers.
+      vi.advanceTimersByTime(2000)
+      const second = FakeEventSource.latest()
+      expect(second).not.toBe(first)
+      expect(second.url).toBe(EVENTS_URL("cv_auto_drop"))
+      expect(get(store.autoModeOn)).toBe(true)
+      second.open()
+      expect(get(store.connection)).toBe("open")
+      expect(get(store.reconnecting)).toBe(false)
+    })
+
+    it("re-attaches at 2s/5s/10s then surfaces ONE inline error, flag still on", () => {
+      store.attach("cv_bounded", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_bounded"))
+      const baseline = FakeEventSource.instances.length
+
+      // Attempt 1 after 2s.
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(1999)
+      expect(FakeEventSource.instances.length).toBe(baseline)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances.length).toBe(baseline + 1)
+
+      // Attempt 2 after 5s (not sooner).
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(4999)
+      expect(FakeEventSource.instances.length).toBe(baseline + 1)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances.length).toBe(baseline + 2)
+
+      // Attempt 3 after 10s.
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(10000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+
+      // Budget exhausted: give up with ONE inline error; the flag holds
+      // (the run is desktop-owned — the next send/ensure re-attaches).
+      FakeEventSource.latest().fail()
+      expect(calls.errors).toEqual([
+        "Lost the connection to the assistant. Please try again.",
+      ])
+      expect(get(store.reconnecting)).toBe(false)
+      expect(get(store.autoModeOn)).toBe(true)
+      expect(calls.offReasons).toEqual([])
+      expect(get(store.sessionId)).toBe("cv_bounded")
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+    })
+
+    it("a successful re-attach (first event delivered) resets the attempt budget", () => {
+      store.attach("cv_reset", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(2000)
+      const second = FakeEventSource.latest()
+      // Established again — the stream DELIVERED an event, not merely
+      // opened: a later drop starts a FRESH bounded cycle.
+      second.open()
+      second.message(stateRunning("cv_reset"))
+      second.fail()
+      const count = FakeEventSource.instances.length
+      // Back at the first backoff step (2s), not the second (5s).
+      vi.advanceTimersByTime(2000)
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      expect(calls.errors).toEqual([])
+    })
+
+    it("a flapping stream (opens, then drops before any event) still exhausts the budget", () => {
+      store.attach("cv_flap", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_flap"))
+      const baseline = FakeEventSource.instances.length
+
+      // Every re-attach OPENS but delivers nothing before dropping — onopen
+      // alone must not refill the budget, or this flaps forever.
+      FakeEventSource.latest().fail()
+      for (const delay of [2000, 5000, 10000]) {
+        vi.advanceTimersByTime(delay)
+        const source = FakeEventSource.latest()
+        source.open()
+        source.fail()
+      }
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+      expect(calls.errors).toEqual([
+        "Lost the connection to the assistant. Please try again.",
+      ])
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+    })
+
+    it("a direct attach() starts a fresh budget (spent attempts don't leak across streams)", () => {
+      // Burn two attempts on the first conversation's stream…
+      store.attach("cv_spend", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_spend"))
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(2000)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().fail()
+
+      // …then attach directly to a DIFFERENT conversation: the budget is
+      // per-stream, so its first drop re-attaches at the first backoff step
+      // with the full three attempts ahead of it.
+      store.attach("cv_fresh", undefined, false, true)
+      const fresh = FakeEventSource.latest()
+      expect(fresh.url).toBe(EVENTS_URL("cv_fresh"))
+      fresh.open()
+      fresh.fail()
+      const count = FakeEventSource.instances.length
+      vi.advanceTimersByTime(2000)
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      expect(FakeEventSource.latest().url).toBe(EVENTS_URL("cv_fresh"))
+      expect(calls.errors).toEqual([])
+    })
+
+    it("detach during the backoff window cancels the pending re-attach", () => {
+      store.attach("cv_cancel", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().fail()
+      expect(get(store.reconnecting)).toBe(true)
+      const count = FakeEventSource.instances.length
+      store.detach()
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(count)
+      expect(calls.errors).toEqual([])
+    })
+
+    it("a mid-turn INTERACTIVE drop re-attaches; an idle drop stays silent", () => {
+      // Mid-turn: a turn was visibly in flight, so the connection still
+      // matters — reconnect instead of the old immediate inline error.
+      store.attach("cv_int_drop")
+      let source = FakeEventSource.latest()
+      source.open()
+      source.message(stateRunning("cv_int_drop", "interactive"))
+      expect(get(store.working)).toBe(true)
+      source.fail()
+      expect(calls.errors).toEqual([])
+      expect(get(store.working)).toBe(false)
+      expect(get(store.reconnecting)).toBe(true)
+      const count = FakeEventSource.instances.length
+      vi.advanceTimersByTime(2000)
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      // The session id survives throughout (manual paths keep working).
+      expect(get(store.sessionId)).toBe("cv_int_drop")
+
+      // Idle drop: no request was in flight (the old world showed nothing
+      // either) — no re-attach, no error; the next send/ensure recovers.
+      store.detach()
+      store.attach("cv_idle_drop")
+      source = FakeEventSource.latest()
+      source.open()
+      source.message(stateInteractiveIdle("cv_idle_drop"))
+      const idleCount = FakeEventSource.instances.length
+      source.fail()
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(idleCount)
+      expect(calls.errors).toEqual([])
+      expect(get(store.connection)).toBe("closed")
+    })
+
+    it("an interactive mid-turn drop chains 2s/5s/10s then surfaces ONE inline error", () => {
+      // Each scheduled re-attach resets `working`, so the chain must carry
+      // on via the unsettled attempt count (reattachAttempt > 0), not the
+      // working flag — otherwise the interactive chain dies silently after
+      // one attempt with no inline error ever surfacing.
+      store.attach("cv_int_chain")
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(
+        stateRunning("cv_int_chain", "interactive"),
+      )
+      const baseline = FakeEventSource.instances.length
+
+      FakeEventSource.latest().fail()
+      for (const [i, delay] of [2000, 5000, 10000].entries()) {
+        expect(calls.errors).toEqual([])
+        expect(get(store.reconnecting)).toBe(true)
+        vi.advanceTimersByTime(delay)
+        expect(FakeEventSource.instances.length).toBe(baseline + i + 1)
+        const source = FakeEventSource.latest()
+        source.open()
+        source.fail()
+      }
+
+      // Budget exhausted: exactly ONE inline error, then the manual paths
+      // own recovery (no further scheduled attempts).
+      expect(calls.errors).toEqual([
+        "Lost the connection to the assistant. Please try again.",
+      ])
+      expect(get(store.reconnecting)).toBe(false)
+      expect(get(store.sessionId)).toBe("cv_int_chain")
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+
+      // The chain state doesn't strand: after a direct re-attach delivers
+      // an event, a later IDLE drop is silent again.
+      store.attach("cv_int_chain")
+      const fresh = FakeEventSource.latest()
+      fresh.open()
+      fresh.message(stateInteractiveIdle("cv_int_chain"))
+      const count = FakeEventSource.instances.length
+      fresh.fail()
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(count)
+      expect(calls.errors.length).toBe(1)
+    })
+
+    it("stop while 'connection lost' one-shot re-attaches so the off transition renders", async () => {
+      // Exhaust the FR5 chain on an auto conversation: connection "closed",
+      // no timer pending, flag still on ("connection lost" limbo).
+      store.attach("cv_stop_lost", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_stop_lost"))
+      FakeEventSource.latest().fail()
+      for (const delay of [2000, 5000, 10000]) {
+        vi.advanceTimersByTime(delay)
+        const source = FakeEventSource.latest()
+        source.open()
+        source.fail()
+      }
+      expect(get(store.connection)).toBe("closed")
+      expect(get(store.autoModeOn)).toBe(true)
+      const count = FakeEventSource.instances.length
+
+      const stopFetch = vi.fn().mockResolvedValue({ ok: true })
+      vi.stubGlobal("fetch", stopFetch)
+      await store.stop()
+      expect(stopFetch).toHaveBeenCalledTimes(1)
+
+      // A fresh observer opens immediately (no backoff wait); its
+      // on-subscribe marker delivers the authoritative flag-off, which the
+      // attach's flagSeenOn (assumeAutoOn) renders as a real off transition.
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      const fresh = FakeEventSource.latest()
+      fresh.open()
+      fresh.message(stateOff("cv_stop_lost", "user_stopped"))
+      expect(get(store.autoModeOn)).toBe(false)
+      expect(get(store.offReason)).toBe("user_stopped")
+      expect(calls.offReasons).toEqual(["user_stopped"])
+      expect(get(store.working)).toBe(false)
+    })
   })
 
   it("an interactive turn: running → idle fires onInteractiveIdle with NO reason exposure", async () => {
@@ -1519,15 +1771,18 @@ describe("main_conversation_store", () => {
     expect(calls.idleMarkers).toBe(0)
   })
 
-  it("an auto (flag-on) idle marker does NOT fire onIdleMarker (BUG 2 scope)", () => {
-    // The flush-only marker hook is scoped to flag-off (interactive) idle
-    // markers; auto idle markers keep their existing settle-silent behavior
-    // (auto queue flushing rides round boundaries / onAutoModeIdle).
+  it("an auto (flag-on) idle ATTACH MARKER fires the flush-only onIdleMarker too", () => {
+    // A message queued mid-burst can strand when the observer drops and the
+    // burst settles during the outage: the re-attach marker arrives as
+    // idle+flag-on and no live onAutoModeIdle ever fires. The flush-only
+    // hook covers that path; the settle hooks stay marker-silent (a marker
+    // is not a settle).
     store.attach("cv_auto_marker", undefined, false, true)
     const source = FakeEventSource.latest()
     source.message(stateIdle("cv_auto_marker", "asked_user"))
-    expect(calls.idleMarkers).toBe(0)
+    expect(calls.idleMarkers).toBe(1)
     expect(calls.interactiveIdles).toBe(0)
+    expect(calls.idleReasons).toEqual([])
   })
 
   it("awaiting_approval signals the approvals hook on marker AND transition", () => {
@@ -1584,6 +1839,8 @@ describe("main_conversation_store", () => {
     source.message(stateRunning("cv_consent", "interactive"))
     source.message({
       type: "auto-mode-consent-required",
+      trigger: "enable_auto_mode",
+      gating_tool_call_id: "call_enable",
       enable_tool_call_id: "call_enable",
       reason: "let me work",
       sibling_tool_calls: [],
@@ -1592,12 +1849,42 @@ describe("main_conversation_store", () => {
     // the observed conversation's session id.
     expect(calls.consentPayloads).toEqual([
       {
-        enableToolCallId: "call_enable",
+        trigger: "enable_auto_mode",
+        gatingToolCallId: "call_enable",
         reason: "let me work",
+        spawn: null,
         siblingToolCalls: [],
       },
     ])
     // The turn ended with the consent event (the idle state follows).
+    expect(get(store.working)).toBe(false)
+  })
+
+  it("a spawn-triggered consent event hands off the spawn variant (FR2)", () => {
+    store.attach("cv_spawn_consent")
+    const source = FakeEventSource.latest()
+    source.message(stateRunning("cv_spawn_consent", "interactive"))
+    source.message({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: { agent_type: "general", name: "Helper", prompt: "dig in" },
+      sibling_tool_calls: [],
+    })
+    expect(calls.consentPayloads).toEqual([
+      {
+        trigger: "spawn_subagent",
+        gatingToolCallId: "call_spawn",
+        reason: null,
+        spawn: {
+          agentType: "general",
+          name: "Helper",
+          prompt: "dig in",
+          rawInput: { agent_type: "general", name: "Helper", prompt: "dig in" },
+        },
+        siblingToolCalls: [],
+      },
+    ])
     expect(get(store.working)).toBe(false)
   })
 
@@ -1676,18 +1963,20 @@ describe("main_conversation_store", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     await store.decline({
-      enable_tool_call_id: "call_1",
+      gating_tool_call_id: "call_1",
       siblings: [],
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     // The old /api/conversations/auto/decline endpoint died in phase 4; the
-    // decline rides POST /{sid}/auto with enabled=false + the consent ctx.
+    // decline rides POST /{sid}/auto with enabled=false + the consent ctx
+    // (gating_tool_call_id since FR2 — the gating call can be an enable OR a
+    // spawn; the desktop route also accepts the legacy spelling).
     expect(url).toBe("http://localhost:8757/api/conversations/cv_dec/auto")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       enabled: false,
-      decline: { enable_tool_call_id: "call_1", siblings: [] },
+      decline: { gating_tool_call_id: "call_1", siblings: [] },
     })
     // A fresh assistant turn renders the declined continuation, which
     // streams on the ALREADY-OPEN observer (the old endpoint streamed the
@@ -1841,17 +2130,28 @@ describe("main_conversation_store", () => {
     expect(last.parts?.[0]).toEqual({ type: "text", text: "buffered + live" })
   })
 
-  it("connection failure on an AUTO conversation falls back to off without throwing", () => {
-    store.attach("cv_gone", undefined, false, true)
-    const source = FakeEventSource.latest()
-    expect(get(store.autoModeOn)).toBe(true)
+  it("connection failure on an AUTO conversation keeps the flag on (FR5: no fake off)", () => {
+    vi.useFakeTimers()
+    try {
+      store.attach("cv_gone", undefined, false, true)
+      const source = FakeEventSource.latest()
+      expect(get(store.autoModeOn)).toBe(true)
 
-    // EventSource errors before opening (events 404 → unknown/GC'd record).
-    expect(() => source.fail()).not.toThrow()
-    expect(get(store.autoModeOn)).toBe(false)
-    expect(source.closed).toBe(true)
-    expect(calls.offReasons).toEqual([null])
-    expect(get(store.connection)).toBe("closed")
+      // EventSource errors before opening (events 404 → unknown/GC'd record).
+      expect(() => source.fail()).not.toThrow()
+      // The desktop-owned run is unaffected by observer connection loss:
+      // the flag holds and the bounded re-attach owns recovery (a real off
+      // that happened server-side arrives via the re-attach marker).
+      expect(get(store.autoModeOn)).toBe(true)
+      expect(source.closed).toBe(true)
+      expect(calls.offReasons).toEqual([])
+      expect(get(store.connection)).toBe("closed")
+      expect(get(store.reconnecting)).toBe(true)
+      // Cancel the scheduled re-attach so no timer leaks past the test.
+      store.detach()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("connection failure on an INTERACTIVE conversation keeps the session id (re-attachable)", () => {

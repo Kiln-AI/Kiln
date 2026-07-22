@@ -57,6 +57,12 @@
   // the main conversation store for BOTH kinds (the session store's retry
   // field stays for compatibility but the observer owns it now).
   const autoRetry = main_conversation_store.retry
+  // Observer connection state (FR5): while auto mode is on and the events
+  // stream isn't open, the footer shows "reconnecting…" (bounded re-attach in
+  // flight) or "connection lost" (attempts exhausted) instead of ever faking
+  // the auto indicator off — the desktop-owned run is unaffected by observer
+  // connection loss.
+  const mainConnection = main_conversation_store.connection
 
   // Sub-agents (background child runs) of the current conversation, served by
   // the unified conversation store (children are keyed by session id and speak
@@ -555,11 +561,14 @@
           retryDisabled={isLoading}
           onStepGroupToggle={pauseAutoScrollForToggle}
         />
-        {#if $autoReconnecting}
+        {#if $autoReconnecting && !$autoModeOn}
           <!-- Transient re-attach affordance (Phase 9): shown while a hard-refresh
              resync or History restore resolves → hydrates → attaches the live
              observer, so the transcript doesn't look done/idle before liveness
-             is known. Clears the instant the events stream is established. -->
+             is known. Clears the instant the events stream is established.
+             Gated to the non-auto case: while auto mode is on, the footer's
+             "reconnecting…" hint (FR5) owns the affordance — showing both
+             would render two simultaneous indicators. -->
           <div
             class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
             role="status"
@@ -736,6 +745,21 @@
           >
             ▸ Stop
           </button>
+          {#if $autoModeOn && $mainConnection !== "open"}
+            <!-- FR5: connection hint, never a fake off — the run keeps going
+               on the desktop; the real state reconciles on re-attach. -->
+            {#if $autoReconnecting}
+              <span
+                class="flex items-center gap-1.5 text-base-content/50"
+                role="status"
+              >
+                <BrailleSpinner />
+                <span>reconnecting…</span>
+              </span>
+            {:else if $mainConnection === "closed"}
+              <span class="text-warning" role="status">connection lost</span>
+            {/if}
+          {/if}
         </div>
       {:else}
         <button

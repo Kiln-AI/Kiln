@@ -867,7 +867,14 @@ export interface PendingApprovalsView {
 }
 
 export interface DeclineAutoModeContext {
-  enable_tool_call_id: string
+  /**
+   * The consent-gating call to resolve as ``{"status": "declined"}`` — the
+   * ``enable_auto_mode`` call, or since FR2 the gating ``spawn_subagent``
+   * call of a spawn-triggered consent. The desktop route still accepts the
+   * legacy ``enable_tool_call_id`` spelling from stale tabs, but this bundle
+   * always sends the new name.
+   */
+  gating_tool_call_id: string
   siblings: ToolCallsPendingItem[]
 }
 
@@ -1111,6 +1118,56 @@ export function createMainConversationStore(): MainConversationStore {
     sessionId?: string
     error?: string
   }> | null = null
+  // FR5: bounded re-attach after an observer drop while the conversation
+  // still matters (auto mode on, or a turn was in flight). One backoff entry
+  // per attempt; the timer is cancelled by closeSource (detach / a manual
+  // re-attach) and the budget resets once a stream DELIVERS an event again
+  // (not merely opens — a flapping stream that opens then drops before any
+  // byte still burns the budget). The budget is strictly per-stream: a
+  // direct attach() starts fresh; only the scheduled re-attach below carries
+  // spent attempts forward (reattachInProgress).
+  const REATTACH_BACKOFF_MS: readonly number[] = [2000, 5000, 10000]
+  let reattachTimer: ReturnType<typeof setTimeout> | null = null
+  let reattachAttempt = 0
+  let reattachInProgress = false
+
+  function clearReattachTimer(): void {
+    if (reattachTimer !== null) {
+      clearTimeout(reattachTimer)
+      reattachTimer = null
+    }
+  }
+
+  // Schedule the next bounded re-attach, or — attempts exhausted — degrade
+  // to the manual-recovery paths (the next send/ensure re-attaches; a
+  // refresh resyncs). Auto state is deliberately NOT touched anywhere on
+  // this path: the desktop-owned run is unaffected by observer connection
+  // loss, so faking an off-transition would lie (FR5) — the real off, if
+  // one happened while disconnected, arrives via the re-attach marker.
+  function scheduleReattach(sid: string): void {
+    if (reattachAttempt >= REATTACH_BACKOFF_MS.length) {
+      reattachAttempt = 0
+      reconnecting.set(false)
+      sink?.onInlineError(
+        "Lost the connection to the assistant. Please try again.",
+      )
+      return
+    }
+    reconnecting.set(true)
+    const delay = REATTACH_BACKOFF_MS[reattachAttempt]
+    reattachAttempt += 1
+    reattachTimer = setTimeout(() => {
+      reattachTimer = null
+      // Carry the spent-attempt count through this attach — the budget only
+      // resets on a direct attach or once the stream delivers an event.
+      reattachInProgress = true
+      try {
+        attach(sid, undefined, false, get(autoModeOn))
+      } finally {
+        reattachInProgress = false
+      }
+    }, delay)
+  }
 
   function consumeInflightTurn(): void {
     if (pendingInflightTurn) {
@@ -1162,12 +1219,15 @@ export function createMainConversationStore(): MainConversationStore {
     }
     processor = null
     // A pending fresh-turn / attach marker belongs to the stream being torn
-    // down.
+    // down — and so does any scheduled FR5 re-attach (a manual attach or a
+    // detach supersedes it; the timer's own attach re-enters here with the
+    // timer already null).
+    clearReattachTimer()
     pendingInflightTurn = false
     attachMarkerPending = false
   }
 
-  // The on→off TRANSITION (stop / disable / model-called disable): clear the
+  // The on→off TRANSITION (user stop / user disable): clear the
   // auto affordances and signal the sink ONCE. Unlike the old auto store's
   // clearToOff this NEVER closes the stream or clears the session id — an
   // off-auto conversation IS the same live interactive conversation
@@ -1198,6 +1258,7 @@ export function createMainConversationStore(): MainConversationStore {
   // navigated away — New Chat / load another conversation).
   function detach(): void {
     closeSource()
+    reattachAttempt = 0
     flagSeenOn = false
     autoModeOn.set(false)
     armed.set(false)
@@ -1285,18 +1346,23 @@ export function createMainConversationStore(): MainConversationStore {
             // idle_reason deliberately not forwarded (rendering rule).
             sink?.onInteractiveIdle()
           }
-        } else if (isAttachMarker && !offTransition && !flagOn) {
-          // BUG 2 fix: a genuinely-idle, flag-off conversation whose LIVE
-          // idle event was missed (the observer was detached/reconnecting at
-          // the settle instant) now arrives only as this on-subscribe marker.
-          // The refresh-brick fix keeps the marker settle-silent above, so a
-          // CLIENT-HELD queued message would strand. Fire the flush-only hook
-          // to unstick it — WITHOUT the full settle semantics the brick fix
-          // suppresses. Safe: onIdleMarker → maybeFlush no-ops without a queue
-          // (e.g. the brick's echo-then-idle-marker sequence carries none) and
-          // dispatchQueued clears before sending, so a real live idle racing
-          // this marker can never double-send. Excludes flag-on (auto idle
-          // markers) and off transitions (onAutoModeOff already cleared the
+        } else if (isAttachMarker && !offTransition) {
+          // BUG 2 fix: a genuinely-idle conversation whose LIVE idle event
+          // was missed (the observer was detached/reconnecting at the settle
+          // instant) now arrives only as this on-subscribe marker. The
+          // refresh-brick fix keeps the marker settle-silent above, so a
+          // CLIENT-HELD queued message would strand — flag-off (interactive
+          // settle missed) and flag-on alike (a message queued mid-burst,
+          // the observer dropped, and the burst settled during the outage:
+          // the re-attach marker is idle+flag-on and no onAutoModeIdle ever
+          // fires). Fire the flush-only hook to unstick it — WITHOUT the
+          // full settle semantics the brick fix suppresses. Safe:
+          // onIdleMarker → maybeFlush no-ops without a queue (e.g. the
+          // brick's echo-then-idle-marker sequence carries none), flushing
+          // on auto idle is already the designed live behavior
+          // (onAutoModeIdle), and dispatchQueued clears before sending, so
+          // a real live idle racing this marker can never double-send.
+          // Excludes off transitions (onAutoModeOff already cleared the
           // queue there).
           sink?.onIdleMarker?.()
         }
@@ -1353,6 +1419,11 @@ export function createMainConversationStore(): MainConversationStore {
       return
     }
     closeSource()
+    // The FR5 re-attach budget is strictly per-stream: a direct attach (new
+    // conversation, manual re-attach, resync) starts a fresh budget. The
+    // scheduled FR5 re-attach is the one exception — it carries its spent
+    // attempts through (reattachInProgress).
+    if (!reattachInProgress) reattachAttempt = 0
 
     pendingInflightTurn = openInflightTurn
     attachMarkerPending = true
@@ -1383,12 +1454,17 @@ export function createMainConversationStore(): MainConversationStore {
       if (eventSource !== source) return
       connection.set("open")
       reconnecting.set(false)
+      // Deliberately NOT resetting the FR5 budget here: a flapping stream
+      // that opens then drops before delivering anything must still burn
+      // attempts. The first delivered event (onmessage) resets it.
     }
 
     source.onmessage = (e: MessageEvent) => {
       if (eventSource !== source) return
-      // First byte over the stream also means we're established.
+      // First byte over the stream means we're truly established: clear the
+      // affordance and start a fresh FR5 re-attach budget.
       reconnecting.set(false)
+      reattachAttempt = 0
       const data = typeof e.data === "string" ? e.data.trim() : ""
       if (!data || data === "[DONE]") return
       let event: StreamEvent
@@ -1411,33 +1487,37 @@ export function createMainConversationStore(): MainConversationStore {
 
     source.onerror = () => {
       if (eventSource !== source) return
-      // No reconnect loop. The conversation is persisted server-side, so
-      // degrade cleanly: an auto conversation falls to the hydrated-history
-      // "off" look (the old behavior); an interactive one just marks the
-      // connection closed — the session id survives, and the next
-      // send/ensure re-attaches.
+      // FR5: an observer drop is a CONNECTION fact, never a run fact — the
+      // desktop-owned run keeps going, so autoModeOn/armed/offReason stay
+      // exactly as they are (no fake off-transition; a real off that
+      // happened while disconnected arrives via the re-attach marker).
       const droppedMidTurn = get(working)
       closeSource()
-      if (get(autoModeOn)) {
-        applyOffTransition(null)
-      } else {
-        // setWorking(false) doubles as the session store's status reset (it
-        // clears a stuck "submitted"/"streaming" without flushing the
-        // queue), mirroring the old streamChat fetch-error path's return to
-        // ready.
-        setWorking(false)
-        reconnecting.set(false)
-        if (droppedMidTurn) {
-          // A turn was visibly in flight when the observer died — surface
-          // it like the old streamChat onError surfaced a dropped fetch
-          // (an idle-observer drop stays silent, as no request was in
-          // flight in the old world either).
-          sink?.onInlineError(
-            "Lost the connection to the assistant. Please try again.",
-          )
-        }
-      }
+      // setWorking(false) doubles as the session store's status reset (it
+      // clears a stuck "submitted"/"streaming" without flushing the queue),
+      // mirroring the old streamChat fetch-error path's return to ready.
+      // The client-held queued message survives by construction: no
+      // onAutoModeOff fires here.
+      setWorking(false)
       connection.set("closed")
+      const sid = get(sessionId)
+      // reattachAttempt > 0 means a scheduled FR5 chain is mid-flight (an
+      // earlier drop mattered and no onmessage/direct attach has settled it
+      // since — a scheduled re-attach resets `working`, so droppedMidTurn
+      // alone would end an interactive chain after ONE attempt, silently).
+      if (sid && (get(autoModeOn) || droppedMidTurn || reattachAttempt > 0)) {
+        // The connection still matters (auto run, a turn was visibly in
+        // flight, or an unsettled re-attach chain): bounded re-attach with
+        // the reconnecting affordance; on exhaustion scheduleReattach
+        // surfaces the inline error and the manual paths (next send/ensure)
+        // remain the recovery.
+        scheduleReattach(sid)
+      } else {
+        // Idle interactive drop: no request was in flight (the old world
+        // showed nothing either) — stay silent; the next send/ensure
+        // re-attaches.
+        reconnecting.set(false)
+      }
     }
   }
 
@@ -1740,8 +1820,9 @@ export function createMainConversationStore(): MainConversationStore {
     // Optimistic only: the authoritative state change arrives as a
     // conversation-state event (idle for interactive, flag-off for auto).
     const suffix = opts?.cascade ? "?cascade=true" : ""
+    let response: Response
     try {
-      await fetch(
+      response = await fetch(
         `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop${suffix}`,
         {
           method: "POST",
@@ -1749,6 +1830,20 @@ export function createMainConversationStore(): MainConversationStore {
       )
     } catch {
       /* idempotent; the run keeps going and the user can retry */
+      return
+    }
+    // Stop while "connection lost" (stream closed, no FR5 re-attach
+    // pending): nothing would ever deliver the resulting off/idle event, so
+    // the transition wouldn't render. One-shot re-attach — the on-subscribe
+    // marker carries the authoritative state (flag-off arrives as a marker
+    // off-transition via flagSeenOn = assumeAutoOn).
+    if (
+      response.ok &&
+      get(connection) === "closed" &&
+      reattachTimer === null &&
+      get(sessionId) === id
+    ) {
+      attach(id, false, false, get(autoModeOn))
     }
   }
 

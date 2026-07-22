@@ -651,10 +651,13 @@ export function createChatSessionStore(
   let onConsentNeeded: (() => Promise<boolean>) | null = null
   let onAutoModeConsentNeeded: AutoModeConsentDecision | null = null
 
-  // The model called enable_auto_mode (the consent control event arrived on
-  // the observer; the turn is over server-side). Ask the UI; accept flips the
-  // SAME conversation to auto mode, decline resumes interactively with the
-  // enable call resolved as declined.
+  // The model called enable_auto_mode — or, since FR2, spawn_subagent while
+  // auto mode was off (spawning requires auto mode, so the spawn call takes
+  // the gating role) — and the consent control event arrived on the
+  // observer; the turn is over server-side. Ask the UI; accept flips the
+  // SAME conversation to auto mode (a gating spawn then executes as the
+  // first pending call), decline resumes interactively with the gating call
+  // resolved as declined.
   async function handleAutoModeConsent(
     payload: AutoModeConsentRequiredPayload,
   ): Promise<void> {
@@ -685,13 +688,46 @@ export function createChatSessionStore(
         requiresApproval: Boolean(s.requiresApproval),
       }))
       if (accepted) {
-        const seed: CreateAutoConversationRequest = {
-          kind: "auto",
-          session_id: sid ?? undefined,
-          enable_tool_call_id: payload.enableToolCallId,
-          pending_tool_calls: siblings,
-          reason: payload.reason,
-        }
+        // Spawn trigger (FR2): there is no enable call to resolve — the
+        // gating SPAWN rides pending_tool_calls (first, ahead of its
+        // siblings) so the enable executes it and the burst continues under
+        // the auto policy. Enable trigger: the phase-5 shape, unchanged.
+        const seed: CreateAutoConversationRequest =
+          payload.trigger === "spawn_subagent"
+            ? {
+                kind: "auto",
+                session_id: sid ?? undefined,
+                pending_tool_calls: [
+                  {
+                    toolCallId: payload.gatingToolCallId,
+                    toolName: "spawn_subagent",
+                    // Echo the wire spawn input VERBATIM when it's in hand —
+                    // the typed SpawnConsentInfo rebuild is lossy (missing
+                    // fields coerce to "", unknown keys drop), which would
+                    // quietly corrupt accept if the spawn schema grows
+                    // fields. The rebuild stays as the fallback for payloads
+                    // without the raw object; {} for absent/malformed spawn.
+                    input:
+                      payload.spawn?.rawInput ??
+                      (payload.spawn
+                        ? {
+                            agent_type: payload.spawn.agentType,
+                            name: payload.spawn.name,
+                            prompt: payload.spawn.prompt,
+                          }
+                        : {}),
+                    requiresApproval: false,
+                  },
+                  ...siblings,
+                ],
+              }
+            : {
+                kind: "auto",
+                session_id: sid ?? undefined,
+                enable_tool_call_id: payload.gatingToolCallId,
+                pending_tool_calls: siblings,
+                reason: payload.reason,
+              }
         // Surface enable failures (e.g. 429 "Too many auto runs") — the
         // dialog has already closed, so the inline error is the only signal.
         const result = await conversationStore.requestEnable(seed)
@@ -701,8 +737,11 @@ export function createChatSessionStore(
           )
         }
       } else {
+        // Decline resolves the gating call — enable or spawn — as
+        // {"status": "declined"} and denies the siblings (FR2 refinement:
+        // the desktop resolves the gating spawn id server-side).
         const ctx: DeclineAutoModeContext = {
-          enable_tool_call_id: payload.enableToolCallId,
+          gating_tool_call_id: payload.gatingToolCallId,
           siblings,
         }
         await conversationStore.decline(ctx)

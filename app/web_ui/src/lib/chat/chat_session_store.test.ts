@@ -480,6 +480,28 @@ describe("createChatSessionStore", () => {
       expect(get(store).queuedMessage).toBeNull()
     })
 
+    it("a queued message SURVIVES an observer connection drop (FR5)", async () => {
+      // An observer error is a connection fact, not a run fact: the
+      // conversation store fires only onWorkingChange(false) — never
+      // onAutoModeOff — so the client-held queue must stay intact and flush
+      // once the re-attach settles the burst.
+      const { store, sink, fake, autoModeOn, working } = await makeStore()
+      autoModeOn.set(true)
+      working.set(true)
+      await store.sendMessage("queued through the drop")
+      expect(get(store).queuedMessage).toBe("queued through the drop")
+      // The drop: exactly what conversation_store's onerror now drives.
+      working.set(false)
+      sink().onWorkingChange(false)
+      expect(get(store).queuedMessage).toBe("queued through the drop")
+      expect(fake.sendMessage).not.toHaveBeenCalled()
+      // Re-attach caught up and the burst went idle — the queue flushes.
+      sink().onAutoModeIdle("done")
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued through the drop")
+      })
+    })
+
     it("drives autoWorking from the sink and clears it on idle", async () => {
       const { store, sink, autoModeOn } = await makeStore()
       autoModeOn.set(true)
@@ -534,8 +556,10 @@ describe("createChatSessionStore", () => {
 
   describe("auto-mode consent (on the observer stream)", () => {
     const payload = {
-      enableToolCallId: "tc_enable",
+      trigger: "enable_auto_mode" as const,
+      gatingToolCallId: "tc_enable",
       reason: "run it",
+      spawn: null,
       siblingToolCalls: [],
     }
 
@@ -558,13 +582,13 @@ describe("createChatSessionStore", () => {
       })
     })
 
-    it("decline resolves via the folded-in /auto decline", async () => {
+    it("decline resolves via the folded-in /auto decline (gating id spelling)", async () => {
       const { store, sink, fake } = await makeStore()
       store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(false)
       sink().onConsentRequired(payload)
       await vi.waitFor(() => {
         expect(fake.decline).toHaveBeenCalledWith({
-          enable_tool_call_id: "tc_enable",
+          gating_tool_call_id: "tc_enable",
           siblings: [],
         })
       })
@@ -617,6 +641,108 @@ describe("createChatSessionStore", () => {
       await vi.waitFor(() => {
         expect(fake.decline).toHaveBeenCalled()
       })
+    })
+  })
+
+  describe("spawn-triggered auto-mode consent (FR2)", () => {
+    const sibling = {
+      toolCallId: "tc_sib",
+      toolName: "add",
+      input: { a: 1 },
+      requiresApproval: false,
+    }
+    // The wire spawn object carries a field the typed SpawnConsentInfo does
+    // not model — accept must echo it verbatim, not the lossy rebuild.
+    const rawSpawnInput = {
+      agent_type: "general",
+      name: "Helper",
+      prompt: "do things",
+      future_field: "kept",
+    }
+    const spawnPayload = {
+      trigger: "spawn_subagent" as const,
+      gatingToolCallId: "tc_spawn",
+      reason: null,
+      spawn: {
+        agentType: "general",
+        name: "Helper",
+        prompt: "do things",
+        rawInput: rawSpawnInput,
+      },
+      siblingToolCalls: [sibling],
+    }
+
+    it("accept enables with the gating spawn FIRST in pending_tool_calls and no enable id", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired(spawnPayload)
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledTimes(1)
+      })
+      const seed = vi.mocked(fake.requestEnable).mock.calls[0][0]
+      expect(seed).toEqual({
+        kind: "auto",
+        session_id: "cv_live",
+        pending_tool_calls: [
+          {
+            toolCallId: "tc_spawn",
+            toolName: "spawn_subagent",
+            input: rawSpawnInput,
+            requiresApproval: false,
+          },
+          {
+            toolCallId: "tc_sib",
+            toolName: "add",
+            input: { a: 1 },
+            requiresApproval: false,
+          },
+        ],
+      })
+      // There is no enable call in the spawn-consent flow — the desktop's
+      // enable_auto tolerates a None id and seeds off the pending calls.
+      expect("enable_tool_call_id" in seed).toBe(false)
+      expect("reason" in seed).toBe(false)
+    })
+
+    it("accept falls back to the typed rebuild when the payload has no raw spawn input", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired({
+        ...spawnPayload,
+        spawn: { agentType: "general", name: "Helper", prompt: "do things" },
+      })
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledTimes(1)
+      })
+      const seed = vi.mocked(fake.requestEnable).mock.calls[0][0]
+      expect(seed.pending_tool_calls?.[0]).toEqual({
+        toolCallId: "tc_spawn",
+        toolName: "spawn_subagent",
+        input: { agent_type: "general", name: "Helper", prompt: "do things" },
+        requiresApproval: false,
+      })
+    })
+
+    it("decline resolves the gating SPAWN id with its siblings", async () => {
+      const { store, sink, fake } = await makeStore()
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(false)
+      sink().onConsentRequired(spawnPayload)
+      await vi.waitFor(() => {
+        expect(fake.decline).toHaveBeenCalledWith({
+          gating_tool_call_id: "tc_spawn",
+          siblings: [
+            {
+              toolCallId: "tc_sib",
+              toolName: "add",
+              input: { a: 1 },
+              requiresApproval: false,
+            },
+          ],
+        })
+      })
+      expect(fake.requestEnable).not.toHaveBeenCalled()
     })
   })
 
