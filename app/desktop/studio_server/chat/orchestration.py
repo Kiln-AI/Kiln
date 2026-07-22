@@ -12,11 +12,14 @@ Semantics are preserved exactly:
   ``<subagent_report>`` user-message injection channel so they are persisted
   in the parent's trace and rendered as report panels;
 - ownership scoping: a conversation can only see/manage its own children;
-- an executed spawn marks the conversation spawn-consented (the one-time
-  approval downgrade — written by the engine onto
-  ``ConversationRecord.spawn_consent_granted``);
 - depth ≥ 1 calls are rejected before dispatch (sub-agents cannot manage
   sub-agents).
+
+Spawning requires auto mode (FR2): the gating lives in the interactive
+interceptor chain (``intercept_spawn_requires_auto``), never here — by the
+time a spawn call reaches this executor its conversation's ``auto_flag`` is
+on (an auto burst, a mid-flip race, or the accepted spawn-consent flow whose
+``enable_auto`` executes the gating spawn).
 
 Phase 4 removed the last old-world identity bridge: EVERY parent is a
 supervisor record now, so ``OrchestrationContext`` shrank to

@@ -465,60 +465,86 @@ async def test_auto_enable_noop_rides_continuation_with_old_framing_counts():
     assert tool_msgs == {"tc_add": "5", "tc_enable": ENABLE_AUTO_MODE_RESULT}
 
 
-async def test_spawn_consent_downgrade_skips_park():
-    # Once the record carries spawn consent, an approval-flagged
-    # spawn_subagent no longer parks the run (old is_spawn_consented
-    # downgrade, now keyed on the record).
+_SPAWN_INPUT = {"agent_type": "general", "name": "helper", "prompt": "Dig in."}
+
+
+async def test_interactive_spawn_without_auto_emits_consent_and_ends_turn():
+    # FR2: an interactive spawn_subagent with auto mode off never executes
+    # and never parks — the turn ends on the spawn-triggered auto-mode
+    # consent control event; accept/decline resolves out-of-band.
     round1 = [
-        tool_input_available("tc_spawn", "spawn_subagent", {}, APPROVAL_META),
+        text_delta("spawning a helper"),
+        tool_input_available("tc_spawn", "spawn_subagent", dict(_SPAWN_INPUT)),
+        tool_input_available("tc_sib", "add", {"a": 1, "b": 2}, APPROVAL_META),
         trace("tr-1"),
         finish_tool_calls(),
     ]
-    round2 = [text_delta("spawned"), trace("tr-2"), finish("stop")]
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
-    )
-    record = ConversationRecord(kind="interactive", spawn_consent_granted=True)
-    h = _harness(record=record)
-    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    client = FakeUpstreamClient([FakeUpstreamResponse(round1)])
+    h = _harness()
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.execute_tool"
+    ) as execute_tool_mock:
+        await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    execute_tool_mock.assert_not_called()
+    consent = [
+        e for e in _events(h.emitted) if e["type"] == "auto-mode-consent-required"
+    ]
+    assert len(consent) == 1
+    assert consent[0]["trigger"] == "spawn_subagent"
+    assert consent[0]["gating_tool_call_id"] == "tc_spawn"
+    assert consent[0]["spawn"] == _SPAWN_INPUT
+    assert [s["toolCallId"] for s in consent[0]["sibling_tool_calls"]] == ["tc_sib"]
+    # No park, no execution, no continuation — resolution is out-of-band.
     assert h.parked_batches == []
     assert '"type": "tool-calls-pending"' not in _decoded(h.emitted)
-    # Phase 1: no orchestration ctx is wired yet, so the spawn resolves to the
-    # structured "unavailable" error rather than executing (phase 2 retargets
-    # orchestration onto the supervisor).
+    assert len(client.bodies) == 1
+    assert h.record.state == RunState.IDLE
+
+
+async def test_interactive_spawn_with_auto_flag_on_proceeds():
+    # FR2: a set flag IS the consent (armed record / racing user enable) —
+    # the spawn passes the gate and reaches execution. The harness wires no
+    # orchestration ctx, so it resolves to the structured "unavailable"
+    # error, which is enough to prove it went to execution rather than the
+    # consent flow.
+    round1 = [
+        tool_input_available("tc_spawn", "spawn_subagent", dict(_SPAWN_INPUT)),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
+    )
+    record = ConversationRecord(kind="interactive", auto_flag=True)
+    h = _harness(record=record)
+    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    assert '"type": "auto-mode-consent-required"' not in _decoded(h.emitted)
     assert "unavailable" in _outputs(h.emitted)["tc_spawn"]
+    assert len(client.bodies) == 2
 
 
-async def test_approved_spawn_records_consent_on_record():
+async def test_enable_consent_outranks_spawn_gate_in_combined_batch():
+    # Chain priority: enable+spawn in one round surfaces the ENABLE consent
+    # (the spawn rides as a sibling, resolved by the same accept/decline).
     round1 = [
-        tool_input_available("tc_spawn", "spawn_subagent", {}, APPROVAL_META),
+        tool_input_available("tc_enable", "enable_auto_mode", {"reason": "big"}),
+        tool_input_available("tc_spawn", "spawn_subagent", dict(_SPAWN_INPUT)),
         trace("tr-1"),
         finish_tool_calls(),
     ]
-    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
-    )
-    h = _harness(decisions={"tc_spawn": True})
+    client = FakeUpstreamClient([FakeUpstreamResponse(round1)])
+    h = _harness()
     await _run(h, client, interactive_policy(), dict(_USER_TURN))
-    # The spawn executed (approved) → consent memory set for later spawns.
-    assert h.record.spawn_consent_granted is True
-
-
-async def test_denied_spawn_does_not_record_consent():
-    round1 = [
-        tool_input_available("tc_spawn", "spawn_subagent", {}, APPROVAL_META),
-        trace("tr-1"),
-        finish_tool_calls(),
+    consent = [
+        e for e in _events(h.emitted) if e["type"] == "auto-mode-consent-required"
     ]
-    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
-    )
-    h = _harness(decisions={"tc_spawn": False})
-    await _run(h, client, interactive_policy(), dict(_USER_TURN))
-    assert h.record.spawn_consent_granted is False
-    assert _outputs(h.emitted)["tc_spawn"] == DENIED_TOOL_OUTPUT
+    assert len(consent) == 1
+    assert consent[0]["trigger"] == "enable_auto_mode"
+    assert consent[0]["gating_tool_call_id"] == "tc_enable"
+    assert [s["toolCallId"] for s in consent[0]["sibling_tool_calls"]] == ["tc_spawn"]
+    assert len(client.bodies) == 1
+    assert h.record.state == RunState.IDLE
 
 
 # ── Interceptions ─────────────────────────────────────────────────────────────
@@ -1049,42 +1075,3 @@ async def test_resume_batch_executes_decisions_and_continues():
     # The loop then ran the continuation round to a natural idle end.
     assert h.record.state == RunState.IDLE
     assert h.record.current_leaf_trace_id == "tr-2"
-
-
-async def test_resume_batch_marks_spawn_consent_on_executed_spawn():
-    from kiln_ai.adapters.model_adapters.stream_events import (
-        ToolInputAvailableEvent,
-    )
-
-    from app.desktop.studio_server.chat.stream_session import (
-        _pending_item_from_event,
-    )
-
-    events = [
-        ToolInputAvailableEvent(
-            toolCallId="tc_spawn",
-            toolName="spawn_subagent",
-            input={"agent_type": "general", "name": "h", "prompt": "p"},
-            kiln_metadata=APPROVAL_META,
-        )
-    ]
-    batch = PendingApprovalBatch(
-        items=[_pending_item_from_event(e) for e in events],
-        body={"trace_id": "tr-1", "messages": []},
-        assistant_text="",
-        tool_input_events=events,
-    )
-    batch.decisions = {"tc_spawn": True}
-    batch.decided.set()
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse([text_delta("ok"), trace("tr-2"), finish("stop")])]
-    )
-    h = _harness()
-    # No orchestration ctx wired → the spawn resolves to the structured
-    # "unavailable" error, which is NOT a denial — consent was still granted
-    # by the user's approval (mirrors the main loop's rule).
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await h.engine.run(
-            h.record, interactive_policy(), h.io, None, resume_batch=batch
-        )
-    assert h.record.spawn_consent_granted is True

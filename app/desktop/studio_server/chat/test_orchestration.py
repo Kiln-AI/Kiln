@@ -8,11 +8,12 @@ they are the behavior contract of functional spec §3 "Sub-agents".
 Phase 4: EVERY parent is a supervisor record, so the ctx carries only
 ``{parent_session_id, depth}`` — the ``ParentConversationIndex`` alias chain,
 its consent set (``is_spawn_consented``), and the trace-keyed report drain
-(``pending_reports_for_trace``) died with the old interactive loop. Consent
-lives on ``ConversationRecord.spawn_consent_granted`` (engine-written, tested
-in runtime/test_engine.py) and report drains are session-keyed
-(supervisor.drain_reports, exercised end-to-end in runtime/test_supervisor.py's
-idle-start drain test)."""
+(``pending_reports_for_trace``) died with the old interactive loop. The
+first-spawn consent memory itself died with FR3 (auto-mode consent is the one
+consent surface; spawn gating is the interceptor chain's job, tested in
+runtime/test_interceptors.py + test_engine.py) and report drains are
+session-keyed (supervisor.drain_reports, exercised end-to-end in
+runtime/test_supervisor.py's idle-start drain test)."""
 
 from __future__ import annotations
 

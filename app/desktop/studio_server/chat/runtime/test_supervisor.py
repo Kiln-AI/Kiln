@@ -850,6 +850,112 @@ async def test_enable_auto_consent_accept_starts_burst_with_seed_body():
     assert record.idle_reason == "asked_user"
 
 
+async def test_enable_auto_accepts_spawn_consent_pending_executes_spawn():
+    # FR2 spawn-consent accept: enable_auto with NO enable id and the gating
+    # spawn riding pending_tool_calls flips the policy AND executes the spawn
+    # with the conversation's own orchestration ctx; the spawn's result seeds
+    # the burst as a role:tool row (no enable row — the flag flip is the
+    # consent). The batch executor is patched so the test pins the call shape
+    # without spinning a real child run.
+    from unittest.mock import AsyncMock
+
+    # Relative, matching this test module's own imports — the absolute
+    # spelling resolves a DIFFERENT module instance under pytest (see the
+    # import note in chat/test_orchestration.py) and the patch would miss.
+    from . import supervisor as supervisor_module
+
+    spawn_result = json.dumps(
+        {"status": "spawned", "subagent_id": "cv_child", "name": "helper"},
+        ensure_ascii=False,
+    )
+    sup = _sup()
+    seeded = _seeded_conversation(sup, "t1")
+    client = FakeUpstreamClient(_text_run_responses("child is working"))
+    from app.desktop.studio_server.chat.stream_session import ToolCallInfo
+
+    execute_mock = AsyncMock(return_value={"tc_spawn": spawn_result})
+    with (
+        patch.object(supervisor_module, "execute_tool_batch", execute_mock),
+        patch.object(httpx, "AsyncClient", return_value=client),
+    ):
+        record = await sup.enable_auto(
+            session_id=seeded.session_id,
+            enable_tool_call_id=None,
+            pending_tool_calls=[
+                ToolCallInfo(
+                    toolCallId="tc_spawn",
+                    toolName="spawn_subagent",
+                    input={"agent_type": "general", "name": "helper", "prompt": "p"},
+                    requiresApproval=False,
+                )
+            ],
+            extra_messages=[],
+            upstream_url=URL,
+            headers={},
+        )
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    # The policy flipped on the SAME record (accept == enable).
+    assert record is seeded
+    assert record.kind == "auto" and record.auto_flag is True
+    assert sup._conversations[record.session_id].policy.approvals == "auto"
+    # The spawn executed through the conversation's orchestration ctx (spawn
+    # lineage/ownership identical to an in-burst spawn), auto-approved.
+    execute_mock.assert_awaited_once()
+    (calls, decisions), kwargs = execute_mock.call_args
+    assert [(tc.tool_call_id, tc.tool_name, tc.requires_approval) for tc in calls] == [
+        ("tc_spawn", "spawn_subagent", False)
+    ]
+    assert decisions == {}
+    ctx = kwargs["orchestration_ctx"]
+    assert ctx is sup._conversations[record.session_id].orchestration_ctx
+    assert ctx.parent_key() == record.session_id
+    # The seed body: NO enable row, the spawn's result as the only role:tool
+    # message, continuing from the record's own leaf under auto_mode.
+    seed_body = client.bodies[0]
+    assert seed_body["trace_id"] == "t1"
+    assert seed_body["auto_mode"] is True
+    assert seed_body["messages"] == [
+        {"role": "tool", "tool_call_id": "tc_spawn", "content": spawn_result}
+    ]
+
+
+async def test_enable_auto_busy_accept_raises_before_spawning(hang_engine):
+    # A spawn-consent accept racing an in-flight run must 409 (RuntimeError)
+    # WITHOUT executing the pending spawn — the busy guard sits before
+    # execute_tool_batch, so no orphan child is left running behind the 409
+    # (start_run's own check would fire only after the spawn).
+    from unittest.mock import AsyncMock
+
+    from . import supervisor as supervisor_module
+    from app.desktop.studio_server.chat.stream_session import ToolCallInfo
+
+    sup = _sup()
+    seeded = _seeded_conversation(sup, "t1")
+    sup.start_run(seeded.session_id, {"messages": [{"role": "user", "content": "x"}]})
+
+    execute_mock = AsyncMock(return_value={"tc_spawn": "{}"})
+    with patch.object(supervisor_module, "execute_tool_batch", execute_mock):
+        with pytest.raises(RuntimeError, match="already has a run in flight"):
+            await sup.enable_auto(
+                session_id=seeded.session_id,
+                enable_tool_call_id=None,
+                pending_tool_calls=[
+                    ToolCallInfo(
+                        toolCallId="tc_spawn",
+                        toolName="spawn_subagent",
+                        input={"agent_type": "general", "name": "h", "prompt": "p"},
+                        requiresApproval=False,
+                    )
+                ],
+                extra_messages=[],
+                upstream_url=URL,
+                headers={},
+            )
+    execute_mock.assert_not_awaited()
+    await sup.stop(seeded.session_id)
+
+
 async def test_enable_auto_no_session_r2_seed_carries_first_message():
     # Revision R2: enable on a brand-new conversation — no session_id, the
     # first user message rides extra_messages; the backend mints the first
@@ -1577,6 +1683,91 @@ async def test_rehydrate_skips_answered_and_signal_only_tails():
     assert sup.pending_approval(record2.session_id) is None
 
 
+def _spawn_tail(*, with_client_call: bool = False) -> list[dict]:
+    """A persisted tail whose pending call is a gating spawn_subagent (FR2
+    consent control event ended the turn without answering it), optionally
+    with a real client call riding the same round."""
+    tool_calls = [
+        {
+            "id": "tc_spawn",
+            "type": "function",
+            "function": {
+                "name": "spawn_subagent",
+                "arguments": '{"agent_type": "general", "name": "helper", "prompt": "go"}',
+            },
+        },
+    ]
+    if with_client_call:
+        tool_calls.append(
+            {
+                "id": "tc_open",
+                "type": "function",
+                "function": {"name": "add", "arguments": '{"a": 2, "b": 3}'},
+            }
+        )
+    return [
+        {"role": "user", "content": "spawn a helper"},
+        {"role": "assistant", "content": "spawning", "tool_calls": tool_calls},
+    ]
+
+
+async def test_rehydrate_flag_off_spawn_only_tail_is_not_an_approval_batch():
+    # FR2: a rehydrated gating spawn must NEVER come back as a plain
+    # approvable call while the flag is off — approving it would execute a
+    # real spawn without auto mode (and resurrect the spawn-as-approval
+    # surface FR3 deletes). A spawn-only tail is a lost consent dialog,
+    # exactly like a lost enable_auto_mode consent.
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=_spawn_tail()
+    ):
+        record = await sup.adopt_interactive("leaf-s", upstream_url=URL, headers={})
+    assert record.state == RunState.IDLE
+    assert sup.pending_approval(record.session_id) is None
+
+
+async def test_rehydrate_flag_off_spawn_next_to_client_call_is_preresolved_declined():
+    # A gating spawn riding next to a real client call: the client call
+    # rehydrates as the batch, the spawn rides pre-resolved as declined (the
+    # lost-consent decline shape) and never enters the approvable items.
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor,
+        "_fetch_persisted_trace",
+        return_value=_spawn_tail(with_client_call=True),
+    ):
+        record = await sup.adopt_interactive("leaf-sc", upstream_url=URL, headers={})
+    assert record.state == RunState.AWAITING_APPROVAL
+    batch = sup.pending_approval(record.session_id)
+    assert batch is not None
+    assert [item["toolCallId"] for item in batch.items] == ["tc_open"]
+    assert json.loads(batch.preresolved_results["tc_spawn"]) == {"status": "declined"}
+    # The spawn still rides tool_input_events so its declined resolution
+    # lands on the resume continuation (no dangling tool call upstream).
+    assert {e.toolCallId for e in batch.tool_input_events} == {"tc_open", "tc_spawn"}
+
+
+async def test_rehydrate_flag_on_spawn_stays_approvable():
+    # With the flag ON the flag IS the consent (same rule as the live
+    # interceptor chain): the spawn rehydrates as a normal — conservatively
+    # gated — approvable call.
+    sup = _sup()
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=None
+    ):
+        record = await sup.adopt_interactive("leaf-on", upstream_url=URL, headers={})
+    record.auto_flag = True
+    with patch.object(
+        ConversationSupervisor, "_fetch_persisted_trace", return_value=_spawn_tail()
+    ):
+        batch = await sup.rehydrate_pending_approvals(record.session_id)
+    assert batch is not None
+    assert [item["toolCallId"] for item in batch.items] == ["tc_spawn"]
+    assert batch.items[0]["requiresApproval"] is True
+    assert batch.preresolved_results == {}
+    assert record.state == RunState.AWAITING_APPROVAL
+
+
 class _FakeSnapshotClient:
     """httpx.AsyncClient stand-in for the rehydration snapshot GET."""
 
@@ -1660,8 +1851,10 @@ async def test_decide_runless_batch_starts_resume_run():
 
 async def test_decline_auto_starts_interactive_declined_continuation():
     # The folded-in decline (old POST /api/chat/auto/decline): the pending
-    # enable call resolves as declined + denied siblings via an interactive
-    # turn whose seed body is byte-identical to the old endpoint's.
+    # gating call resolves as declined + denied siblings via an interactive
+    # turn whose seed body is byte-identical to the old endpoint's. The
+    # gating id is trigger-agnostic (FR2): an enable_auto_mode call and a
+    # consent-gated spawn_subagent decline through the exact same shape.
     from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 
     sup = _sup()
@@ -1679,7 +1872,7 @@ async def test_decline_auto_starts_interactive_declined_continuation():
     with patch.object(httpx, "AsyncClient", return_value=client):
         outcome = sup.decline_auto(
             record.session_id,
-            enable_tool_call_id="tc_enable",
+            gating_tool_call_id="tc_enable",
             siblings=[
                 ToolCallInfo(
                     toolCallId="tc_sib",
@@ -1710,9 +1903,59 @@ async def test_decline_auto_starts_interactive_declined_continuation():
     }
     # Declining never flips anything on.
     assert record.auto_flag is False and record.kind == "interactive"
-    assert sup.decline_auto("cv_missing", enable_tool_call_id="x", siblings=[]) == (
+    assert sup.decline_auto("cv_missing", gating_tool_call_id="x", siblings=[]) == (
         "not_found"
     )
+
+
+async def test_decline_auto_spawn_gating_resolves_spawn_declined():
+    # FR2 decline: the gating SPAWN call resolves {"status": "declined"} —
+    # exactly the spawn tool's documented decline shape — and a sibling
+    # spawn is denied with the standard denied shape (behaviorally
+    # equivalent to the model); auto mode stays off.
+    from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+    from app.desktop.studio_server.chat.stream_session import ToolCallInfo
+
+    sup = _sup()
+    record = _seeded_conversation(sup, "t1")
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(
+                [text_delta("continuing without helpers"), trace("t2"), finish("stop")]
+            )
+        ]
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        outcome = sup.decline_auto(
+            record.session_id,
+            gating_tool_call_id="tc_spawn",
+            siblings=[
+                ToolCallInfo(
+                    toolCallId="tc_spawn2",
+                    toolName="spawn_subagent",
+                    input={"agent_type": "general", "name": "n2", "prompt": "p"},
+                    requiresApproval=True,
+                )
+            ],
+        )
+        assert outcome == "ok"
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    (body,) = client.bodies
+    assert body["trace_id"] == "t1"
+    assert body["messages"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "tc_spawn",
+            "content": '{"status": "declined"}',
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "tc_spawn2",
+            "content": DENIED_TOOL_OUTPUT,
+        },
+    ]
+    assert record.auto_flag is False and record.kind == "interactive"
 
 
 async def test_decline_auto_refuses_busy_and_subagent(hang_engine):
@@ -1720,7 +1963,7 @@ async def test_decline_auto_refuses_busy_and_subagent(hang_engine):
     record = sup.create_conversation("interactive", upstream_url=URL, headers={})
     sup.start_run(record.session_id, {"messages": [{"role": "user", "content": "x"}]})
     assert (
-        sup.decline_auto(record.session_id, enable_tool_call_id="tc", siblings=[])
+        sup.decline_auto(record.session_id, gating_tool_call_id="tc", siblings=[])
         == "busy"
     )
     await sup.stop(record.session_id)
@@ -1728,7 +1971,7 @@ async def test_decline_auto_refuses_busy_and_subagent(hang_engine):
         _seed(), parent_session_id=record.session_id, upstream_url=URL, headers={}
     )
     assert (
-        sup.decline_auto(child.session_id, enable_tool_call_id="tc", siblings=[])
+        sup.decline_auto(child.session_id, gating_tool_call_id="tc", siblings=[])
         == "invalid"
     )
     await sup.stop(child.session_id)

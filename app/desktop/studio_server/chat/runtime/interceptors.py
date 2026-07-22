@@ -1,7 +1,9 @@
 """Signal-tool interception for the unified engine (architecture §4).
 
 Some "tool calls" are signals to the desktop, never tools to execute:
-``enable_auto_mode`` asks for consent, and the sub-agent orchestration tools
+``enable_auto_mode`` asks for consent, an interactive ``spawn_subagent``
+without auto mode asks for the SAME consent with the spawn in the gating role
+(FR2: spawning requires auto mode), and the sub-agent orchestration tools
 must be rejected at depth ≥ 1. The logic lives in ONE ordered chain of small
 functions carried on the policy, so a signal tool registers once for every
 kind.
@@ -140,7 +142,8 @@ class InterceptContext:
 #   auto-signal noops.
 # - "control": emit control_bytes and end the turn WITHOUT answering the call
 #   here — resolution happens out-of-band (the consent accept/decline
-#   endpoints answer the enable call). Old interactive enable_auto_mode.
+#   endpoints answer the gating call). Interactive enable_auto_mode consent
+#   and the FR2 spawn-requires-auto gate.
 InterceptKind = Literal["resolve", "control"]
 
 
@@ -180,8 +183,44 @@ def intercept_enable_auto_mode_consent(
     return InterceptResult(
         kind="control",
         control_bytes=_format_consent_required_sse(
-            enable_tool_call_id=event.toolCallId,
+            trigger="enable_auto_mode",
+            gating_tool_call_id=event.toolCallId,
             reason=event.input.get("reason"),
+            siblings=siblings,
+        ),
+    )
+
+
+def intercept_spawn_requires_auto(
+    event: ToolInputAvailableEvent, ctx: InterceptContext
+) -> InterceptResult | None:
+    """Interactive ``spawn_subagent``: spawning requires auto mode (FR2).
+    With ``auto_flag`` off, surface the auto-mode consent flow with the SPAWN
+    call in the gating role and end the turn; accept/decline resolves
+    out-of-band (accept flips the policy via ``enable_auto`` with the spawn
+    riding ``pending_tool_calls``; decline resolves it ``{"status":
+    "declined"}``). Sits AFTER the enable-consent interception: if the model
+    calls enable+spawn together, the enable consent wins and the spawn rides
+    as a sibling.
+
+    A flag that is already on (armed, or a racing user enable) means the
+    spawn may proceed — the interactive chain only runs under the gated
+    policy, so this is the mid-flip window, and the flag IS the consent.
+
+    Multiple spawns in one batch: the engine's priority scan makes the first
+    the gating call; the rest ride as siblings (accept executes them all,
+    decline denies them with the standard denied shape)."""
+    if event.toolName != SPAWN_SUBAGENT_TOOL_NAME:
+        return None
+    if ctx.record.auto_flag:
+        return None
+    siblings = [e for e in ctx.client_events if e is not event]
+    return InterceptResult(
+        kind="control",
+        control_bytes=_format_consent_required_sse(
+            trigger="spawn_subagent",
+            gating_tool_call_id=event.toolCallId,
+            spawn=event.input,
             siblings=siblings,
         ),
     )
@@ -232,9 +271,12 @@ def intercept_auto_mode_signals_noop(
 
 # Per-kind chains, in priority order (see module docstring). The consent
 # interception leads the interactive chain so the consent UI outranks the
-# approval gate; both parent chains end in the stale-disable backstop.
+# approval gate — and outranks the spawn gate, so an enable+spawn batch
+# surfaces the ENABLE consent with the spawn as a sibling; both parent chains
+# end in the stale-disable backstop.
 INTERACTIVE_INTERCEPTORS: tuple[Interceptor, ...] = (
     intercept_enable_auto_mode_consent,
+    intercept_spawn_requires_auto,
     intercept_disable_auto_mode_stale,
 )
 AUTO_INTERCEPTORS: tuple[Interceptor, ...] = (

@@ -16,14 +16,14 @@
       "auto_mode": true
     },
     {
-      "trace_id": "tr-1",
       "messages": [
         {
           "role": "user",
           "content": "<system-reminder>This message was sent by the user overseeing your background run. Incorporate the guidance and continue working in the same turn — do not end your turn just to reply. End only when your job (as adjusted) is done, with your final report.</system-reminder>\n\nalso check model B"
         }
       ],
-      "auto_mode": true
+      "auto_mode": true,
+      "trace_id": "tr-1"
     }
   ]
 }

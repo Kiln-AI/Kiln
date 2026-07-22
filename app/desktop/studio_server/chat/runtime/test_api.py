@@ -535,6 +535,93 @@ async def test_decline_via_sid_auto_streams_on_observer(
     assert r.status_code == 404
 
 
+@pytest.mark.parametrize("field", ["gating_tool_call_id", "enable_tool_call_id"])
+async def test_decline_accepts_gating_and_legacy_spelling(
+    supervisor, client, mock_api_key, field
+):
+    # The decline context's canonical field is gating_tool_call_id (FR2: the
+    # gating call can be a spawn, not just the enable call); the legacy
+    # enable_tool_call_id spelling must keep working for old browser tabs
+    # still running a pre-FR2 bundle.
+    record = _seeded_interactive(supervisor, "t1")
+    continuation = [text_delta("staying manual"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            f"/api/conversations/{record.session_id}/auto",
+            json={"enabled": False, "decline": {field: "tc_gate"}},
+        )
+        assert r.status_code == 202
+        await _wait_idle(supervisor, record.session_id)
+    (sent_body,) = fake.bodies
+    assert sent_body["messages"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "tc_gate",
+            "content": '{"status": "declined"}',
+        }
+    ]
+    assert record.auto_flag is False
+
+
+async def test_create_auto_spawn_consent_accept_executes_pending_spawn(
+    supervisor, client, mock_api_key
+):
+    # FR2 spawn-consent accept: POST /api/conversations kind=auto with NO
+    # enable_tool_call_id and the gating spawn in pending_tool_calls — the
+    # flip happens, the spawn executes (patched batch executor), and its
+    # result seeds the burst as the only role:tool row.
+    from unittest.mock import AsyncMock
+
+    from app.desktop.studio_server.chat.runtime import (
+        supervisor as supervisor_module,
+    )
+
+    seeded = _seeded_interactive(supervisor, "t1")
+    spawn_result = json.dumps(
+        {"status": "spawned", "subagent_id": "cv_child", "name": "helper"},
+        ensure_ascii=False,
+    )
+    execute_mock = AsyncMock(return_value={"tc_spawn": spawn_result})
+    round1 = [text_delta("child spawned, working"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    with (
+        patch.object(supervisor_module, "execute_tool_batch", execute_mock),
+        patch.object(httpx, "AsyncClient", return_value=fake),
+    ):
+        r = await client.post(
+            "/api/conversations",
+            json={
+                "session_id": seeded.session_id,
+                "pending_tool_calls": [
+                    {
+                        "toolCallId": "tc_spawn",
+                        "toolName": "spawn_subagent",
+                        "input": {
+                            "agent_type": "general",
+                            "name": "helper",
+                            "prompt": "p",
+                        },
+                        "requiresApproval": True,
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["session_id"] == seeded.session_id
+        await _wait_idle(supervisor, seeded.session_id)
+
+    execute_mock.assert_awaited_once()
+    seed_body = fake.bodies[0]
+    assert seed_body["trace_id"] == "t1"
+    assert seed_body["auto_mode"] is True
+    assert seed_body["messages"] == [
+        {"role": "tool", "tool_call_id": "tc_spawn", "content": spawn_result}
+    ]
+    record = supervisor.get(seeded.session_id)
+    assert record.kind == "auto" and record.auto_flag is True
+
+
 async def test_set_auto_flag_endpoint(supervisor, hang_engine, client, mock_api_key):
     auto = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}

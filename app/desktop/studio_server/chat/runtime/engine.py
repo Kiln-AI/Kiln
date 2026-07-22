@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import httpx
-from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT, DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT
 from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
     RetryRoundResult,
@@ -58,7 +58,6 @@ from app.desktop.studio_server.chat.tool_metadata import (
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
 from .interceptors import (
-    SPAWN_SUBAGENT_TOOL_NAME,
     InterceptContext,
     InterceptResult,
 )
@@ -239,7 +238,7 @@ class ConversationEngine:
         role:tool results → fresh ChatStreamSession), now in-process.
         """
         if resume_batch is not None:
-            body = await self._execute_resumed_batch(record, policy, io, resume_batch)
+            body = await self._execute_resumed_batch(io, resume_batch)
         elif initial_body is not None:
             body = dict(initial_body)
         else:
@@ -463,12 +462,13 @@ class ConversationEngine:
 
                 if takeover is not None:
                     _, res = takeover
-                    # "control" is the only takeover kind: enable_auto_mode
-                    # consent (interactive) — emit the consent-required
-                    # control event and END the turn without executing
-                    # anything. The call is resolved out-of-band by the
-                    # accept/decline flow, which flips the policy — old
-                    # ChatStreamSession enable branch.
+                    # "control" is the only takeover kind: the interactive
+                    # consent interceptions (enable_auto_mode consent, or the
+                    # FR2 spawn-requires-auto gate) — emit the
+                    # consent-required control event and END the turn without
+                    # executing anything. The gating call is resolved
+                    # out-of-band by the accept/decline flow, which flips the
+                    # policy on accept — old ChatStreamSession enable branch.
                     assert res.kind == "control" and res.control_bytes is not None
                     io.emit(res.control_bytes)
                     # The old stream just ended here; in the unified model
@@ -509,12 +509,9 @@ class ConversationEngine:
 
                 # ── 5b. Approval gate (gated policy; architecture §3.5). ─────
                 decisions: dict[str, bool] = {}
-                parked = False
                 if policy.approvals == "gated":
                     needs_approval = [
-                        e
-                        for e in executable
-                        if self._effective_requires_approval(e, record)
+                        e for e in executable if tool_requires_user_approval(e)
                     ]
                     if needs_approval:
                         # The pending event lists the WHOLE client batch (the
@@ -539,25 +536,20 @@ class ConversationEngine:
                         record.state = RunState.AWAITING_APPROVAL
                         decisions = await io.await_decisions(batch)
                         record.state = RunState.RUNNING
-                        parked = True
 
                 # ── 6. Execute the batch. ────────────────────────────────────
                 # requiresApproval per call:
                 # - auto policy: False for everything (AUTO-APPROVE — the old
                 #   runners' unattended contract).
-                # - gated, parked: the metadata verdict — exactly the flags
-                #   the pending event surfaced, which is what the old browser
-                #   echoed back to /execute-tools. (A user's denial must deny
-                #   even a call the effective verdict would have downgraded.)
-                # - gated, not parked: the effective verdict (all False by
-                #   construction — otherwise we'd have parked), matching the
-                #   old non-parked interactive execution.
+                # - gated: the metadata verdict — exactly the flags the
+                #   pending event surfaced, which is what the old browser
+                #   echoed back to /execute-tools (all False when the round
+                #   never parked, by construction — otherwise we'd have
+                #   parked).
                 def _requires_approval(e: ToolInputAvailableEvent) -> bool:
                     if policy.approvals != "gated":
                         return False
-                    if parked:
-                        return tool_requires_user_approval(e)
-                    return self._effective_requires_approval(e, record)
+                    return tool_requires_user_approval(e)
 
                 tool_calls = [
                     ToolCallInfo(
@@ -589,18 +581,6 @@ class ConversationEngine:
                 for tc_id, output in results.items():
                     io.emit(format_tool_output(tc_id, output))
                 io.emit(format_tool_exec_end(len(results)))
-
-                # Spawn-consent memory: an EXECUTED spawn_subagent means the
-                # user approved it (or consent already existed) — later spawns
-                # in this conversation skip the approval gate. Mirrors the old
-                # registry-authoritative mark_consented inside the spawn
-                # executor; keyed by session id simply by living on the record.
-                for tc in tool_calls:
-                    if (
-                        tc.tool_name == SPAWN_SUBAGENT_TOOL_NAME
-                        and results.get(tc.tool_call_id) != DENIED_TOOL_OUTPUT
-                    ):
-                        record.spawn_consent_granted = True
 
                 # ── 4b. No client tool results to feed back (e.g. a
                 # server-only batch): nothing to continue with. ───────────────
@@ -694,8 +674,6 @@ class ConversationEngine:
 
     async def _execute_resumed_batch(
         self,
-        record: ConversationRecord,
-        policy: ConversationPolicy,
         io: EngineIO,
         batch: PendingApprovalBatch,
     ) -> dict[str, Any]:
@@ -752,15 +730,6 @@ class ConversationEngine:
         for tc_id, output in results.items():
             io.emit(format_tool_output(tc_id, output))
         io.emit(format_tool_exec_end(len(results)))
-
-        # Spawn-consent memory: same rule as the main loop — an executed
-        # (non-denied) spawn means the user approved it.
-        for tc in tool_calls:
-            if (
-                tc.tool_name == SPAWN_SUBAGENT_TOOL_NAME
-                and results.get(tc.tool_call_id) != DENIED_TOOL_OUTPUT
-            ):
-                record.spawn_consent_granted = True
 
         return _build_openai_tool_continuation(
             batch.body,
@@ -833,18 +802,3 @@ class ConversationEngine:
                 return res.result_json
             return None
         return None
-
-    # ── Approval verdict. ─────────────────────────────────────────────────────
-
-    def _effective_requires_approval(
-        self, event: ToolInputAvailableEvent, record: ConversationRecord
-    ) -> bool:
-        """Per-tool approval verdict, with the spawn-consent downgrade: once a
-        conversation has approved its first spawn_subagent, later spawns run
-        without asking again. Consent memory lives on the record (keyed by
-        session id), replacing the old registry + parent-alias lookup."""
-        if not tool_requires_user_approval(event):
-            return False
-        if event.toolName == SPAWN_SUBAGENT_TOOL_NAME and record.spawn_consent_granted:
-            return False
-        return True

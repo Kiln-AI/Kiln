@@ -344,6 +344,53 @@ async def _engine_auto_disable_stale_refusal() -> list[dict[str, Any]]:
     )
 
 
+# ── Scenario 5b: FR2 spawn-consent accept seed ───────────────────────────────
+#
+# Accepting a spawn-triggered consent (interactive spawn_subagent with auto
+# mode off) rides enable_auto with NO enable tool call id: the gating spawn
+# executes first and its {"status": "spawned", ...} result seeds the burst as
+# a plain sibling result (models.build_auto_seed_body — the same builder the
+# route uses). The fixture pins that seed shape — no enable row, the spawn's
+# role:tool result leading the messages, auto_mode riding every continuation —
+# plus one normal tool round showing the burst continuing under the auto
+# policy. Captured from the engine (the reference implementation).
+
+_SPAWN_ACCEPT_RESULT = json.dumps(
+    {"status": "spawned", "subagent_id": "cv_fixed", "name": "helper"},
+    ensure_ascii=False,
+)
+_SPAWN_ACCEPT_SEED_BODY = build_auto_seed_body(
+    trace_id="tr-0",
+    enable_tool_call_id=None,
+    extra_messages=[],
+    sibling_results={"tc_spawn": _SPAWN_ACCEPT_RESULT},
+)
+
+
+def _spawn_consent_accept_responses() -> list[FakeUpstreamResponse]:
+    return [
+        FakeUpstreamResponse(
+            chunks=[
+                tool_input_available("tc1", "add", {"a": 1, "b": 1}),
+                trace("tr-1"),
+                finish_tool_calls(),
+            ]
+        ),
+        FakeUpstreamResponse(
+            chunks=[text_delta("child is working"), trace("tr-2"), finish("stop")]
+        ),
+    ]
+
+
+async def _engine_auto_spawn_consent_accept_seed() -> list[dict[str, Any]]:
+    return await _run_engine(
+        policy=auto_policy(),
+        record=ConversationRecord(kind="auto", auto_flag=True),
+        client=FakeUpstreamClient(_spawn_consent_accept_responses()),
+        initial_body=dict(_SPAWN_ACCEPT_SEED_BODY),
+    )
+
+
 # ── Scenario 6: sub-agent seed body + steer message ──────────────────────────
 
 _SUBAGENT_SEED = SubAgentSeed(
@@ -461,6 +508,11 @@ SCENARIOS: tuple[GoldenScenario, ...] = (
         "auto_disable_stale_refusal",
         None,  # FR1 scenario; captured from the engine (the reference impl).
         _engine_auto_disable_stale_refusal,
+    ),
+    GoldenScenario(
+        "auto_spawn_consent_accept_seed",
+        None,  # FR2 scenario; captured from the engine (the reference impl).
+        _engine_auto_spawn_consent_accept_seed,
     ),
     GoldenScenario(
         "subagent_seed_and_steer",

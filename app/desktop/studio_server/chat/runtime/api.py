@@ -73,7 +73,7 @@ from app.desktop.studio_server.jobs.events import KeepalivePing, iter_with_keepa
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from .models import ConversationKind, ConversationRecord, RunState
 from .sse import format_conversation_state
@@ -210,10 +210,15 @@ class CreateConversationRequest(BaseModel):
     # ``extra_messages`` and the backend mints the conversation).
     session_id: str | None = None
     # Resolve this enable_auto_mode call as "enabled" before the first round
-    # (the consent-accept flow). Auto kind only.
+    # (the enable-triggered consent accept). None for the FR2 spawn-consent
+    # accept, where the gating spawn rides pending_tool_calls instead. Auto
+    # kind only.
     enable_tool_call_id: str | None = None
-    # Sibling client tools to auto-execute first (usually empty — the model
-    # is instructed to call enable_auto_mode alone). Auto kind only.
+    # Client tool calls to auto-execute first, their results seeding the
+    # burst. Usually empty for the enable trigger (the model is instructed to
+    # call enable_auto_mode alone); the spawn-consent accept sends the gating
+    # spawn_subagent call FIRST here (+ any siblings), so accepting actually
+    # spawns the child. Auto kind only.
     pending_tool_calls: list[ToolCallInfo] = Field(default_factory=list)
     # Extra messages to prepend (e.g. the first user message on the
     # armed-first-send path). Auto kind only.
@@ -235,11 +240,19 @@ class DeclineAutoModeContext(BaseModel):
     ``trace_id``: the conversation record's own leaf is authoritative now
     that the conversation is addressed by session id)."""
 
-    enable_tool_call_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    # The call that surfaced the consent flow: the enable_auto_mode call, or
+    # (FR2) the spawn_subagent call that required auto mode. Resolved as
+    # {"status": "declined"}. The legacy ``enable_tool_call_id`` spelling is
+    # accepted for old browser tabs still running a pre-FR2 bundle.
+    gating_tool_call_id: str = Field(
+        validation_alias=AliasChoices("gating_tool_call_id", "enable_tool_call_id")
+    )
     # Other client tool calls from the same turn the backend is awaiting
-    # results for. Normally empty (the model is instructed to call
-    # enable_auto_mode alone); each is resolved as denied so the conversation
-    # can continue interactively.
+    # results for. Normally empty for the enable trigger (the model is
+    # instructed to call enable_auto_mode alone); each is resolved as denied
+    # so the conversation can continue interactively.
     siblings: list[ToolCallInfo] = Field(default_factory=list)
 
 
@@ -252,6 +265,9 @@ class SetAutoModeRequest(BaseModel):
     continuation turn streaming on the observer channel."""
 
     enabled: bool
+    # Present = the consent-DECLINE flow (enable- or spawn-triggered): the
+    # gating call resolves as declined + denied siblings instead of a plain
+    # flag flip.
     decline: DeclineAutoModeContext | None = None
 
 
@@ -589,8 +605,9 @@ def connect_conversations_api(app: FastAPI) -> None:
         phase 4: the record then swaps back to its interactive life instead
         of TTL GC). ``enabled=false`` + ``decline`` → the consent-decline
         flow (old ``/api/chat/auto/decline``, folded in): resolve the pending
-        ``enable_auto_mode`` call as declined + denied siblings via an
-        interactive continuation turn that streams on the observer channel.
+        gating call — ``enable_auto_mode``, or the FR2 spawn-consent
+        ``spawn_subagent`` — as declined + denied siblings via an interactive
+        continuation turn that streams on the observer channel.
         ``enabled=true`` → enable/re-arm: the record flips to the auto policy
         (ARMED-only: flag on, no upstream POST — the next message starts the
         burst). 404 unknown, 409 for sub-agent records / a decline racing an
@@ -598,7 +615,7 @@ def connect_conversations_api(app: FastAPI) -> None:
         if not body.enabled and body.decline is not None:
             outcome = conversation_supervisor.decline_auto(
                 session_id,
-                enable_tool_call_id=body.decline.enable_tool_call_id,
+                gating_tool_call_id=body.decline.gating_tool_call_id,
                 siblings=body.decline.siblings,
             )
             if outcome == "not_found":

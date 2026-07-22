@@ -204,12 +204,6 @@ class ConversationRecord(BaseModel):
     # record against GC while False (old undelivered-report pinning).
     report_delivered: bool = False
     rounds_used: int = 0
-    # Spawn-consent memory, keyed by session id simply by living on the
-    # record (architecture §5: "consent memory ... the parent-alias maps
-    # die"). Set when the conversation's first spawn_subagent executes
-    # (i.e. was approved); later spawns skip the approval gate — the same
-    # one-time downgrade `subagent_registry.mark_consented` provided.
-    spawn_consent_granted: bool = False
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
 
@@ -354,6 +348,12 @@ def build_auto_seed_body(
     conversation and mints the first trace on the opening turn; the seed then
     carries the first user message in ``extra_messages`` so the opening turn
     is never empty.
+
+    Spawn-consent accept (FR2) is the ``enable_tool_call_id=None`` shape: the
+    gating spawn call rides ``sibling_results`` like any auto-approved
+    pending sibling (its ``{"status": "spawned", ...}`` result answers the
+    call), so the seed carries no enable row — the flag flip is the consent,
+    not a tool result.
 
     ``session_id`` (phase 6) is the resume-by-key continuation for records
     adopted from history with no leaf yet (``resume_session_key``): the
@@ -551,15 +551,16 @@ class PendingApprovalBatch(BaseModel):
     tool_input_events: list[ToolInputAvailableEvent]
     # Pre-answered calls riding the batch WITHOUT being user decisions
     # (tool_call_id → result JSON). Phase-4 recovery: a rehydrated trace tail
-    # can carry unanswered SIGNAL calls (enable/disable_auto_mode) next to
-    # real client calls — signals are never executed as tools, so the resume
-    # run pre-answers them purely so the persisted trace has no dangling tool
-    # call: a pending enable_auto_mode resolves as {"status": "declined"}
-    # (its consent dialog died with the restart, mirroring the decline flow);
-    # a stale pending disable_auto_mode resolves with the FR1 refusal shape
-    # (DISABLE_AUTO_MODE_STALE_RESULT — the model has no off-switch). Empty
-    # for live batches (the interceptor chain answers signals before a park
-    # can ever include one).
+    # can carry unanswered SIGNAL calls (enable/disable_auto_mode — and,
+    # FR2, a flag-off gating spawn_subagent) next to real client calls —
+    # signals are never executed as tools, so the resume run pre-answers
+    # them purely so the persisted trace has no dangling tool call: a
+    # pending enable_auto_mode (or flag-off spawn_subagent) resolves as
+    # {"status": "declined"} (its consent dialog died with the restart,
+    # mirroring the decline flow); a stale pending disable_auto_mode
+    # resolves with the FR1 refusal shape (DISABLE_AUTO_MODE_STALE_RESULT —
+    # the model has no off-switch). Empty for live batches (the interceptor
+    # chain answers signals before a park can ever include one).
     preresolved_results: dict[str, str] = Field(default_factory=dict)
     # Set by the supervisor's decide() exactly once; the engine wakes, reads
     # `decisions`, and resumes. Partial decision sets are rejected upstream of
@@ -575,7 +576,9 @@ def interactive_policy() -> ConversationPolicy:
     """Interactive: gated approvals, not one-shot, no framing, MAX_TOOL_ROUNDS.
 
     Preserves ``ChatStreamSession.stream()``'s shape: approval-requiring tools
-    park the run; enable_auto_mode surfaces the consent control event. A stale
+    park the run; enable_auto_mode surfaces the consent control event, and a
+    spawn_subagent without auto mode surfaces the SAME consent flow with the
+    spawn in the gating role (FR2: spawning requires auto mode). A stale
     disable_auto_mode call resolves as the FR1 refusal and the turn continues
     (the model has no auto-mode off-switch).
     """
