@@ -3,6 +3,7 @@ import {
   nestSessionRows,
   splitSessionNodes,
   splitSessionRows,
+  visibleSessionRows,
   type SessionListItem,
 } from "./session_grouping"
 
@@ -111,6 +112,30 @@ describe("nestSessionRows", () => {
   it("preserves server ordering for parents and rows without lineage", () => {
     const nodes = nestSessionRows([row("a"), row("b"), row("c")])
     expect(nodes.map((n) => n.row.id)).toEqual(["a", "b", "c"])
+  })
+})
+
+describe("visibleSessionRows", () => {
+  it("returns all rows unchanged when dev tools are enabled", () => {
+    const rows = [
+      parentRow("p1", "root-p1"),
+      childRow("c1", "root-p1"),
+      childRow("orphan", "root-gone"),
+    ]
+    expect(visibleSessionRows(rows, true)).toEqual(rows)
+  })
+
+  it("drops every sub-agent row when dev tools are disabled", () => {
+    const rows = [
+      parentRow("p1", "root-p1"),
+      childRow("c1", "root-p1"),
+      row("plain"),
+      childRow("orphan", "root-gone"),
+    ]
+    expect(visibleSessionRows(rows, false).map((r) => r.id)).toEqual([
+      "p1",
+      "plain",
+    ])
   })
 })
 

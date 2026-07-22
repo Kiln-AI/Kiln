@@ -7,8 +7,10 @@
   import {
     nestSessionRows,
     splitSessionNodes,
+    visibleSessionRows,
     type SessionListItem,
   } from "$lib/chat/session_grouping"
+  import { dev_tools_enabled } from "$lib/utils/dev_tools"
   import { main_conversation_store } from "$lib/chat/conversation_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
@@ -28,9 +30,11 @@
   let deletingSessionId: string | null = null
 
   // Sub-agent sessions nest under their parent conversation's row; a child
-  // whose parent isn't visible renders as a normal top-level row.
+  // whose parent isn't visible renders as a normal top-level row. They are a
+  // developer affordance: hidden entirely unless dev tools are enabled.
+  $: visibleRows = visibleSessionRows(sessionRows, dev_tools_enabled)
   $: ({ active: activeNodes, recent: recentNodes } = splitSessionNodes(
-    nestSessionRows(sessionRows),
+    nestSessionRows(visibleRows),
   ))
 
   async function loadSessionList() {
@@ -140,8 +144,8 @@
   }
 
   $: subtitle =
-    sessionRows.length > 0
-      ? `${sessionRows.length} conversation${sessionRows.length === 1 ? "" : "s"}`
+    visibleRows.length > 0
+      ? `${visibleRows.length} conversation${visibleRows.length === 1 ? "" : "s"}`
       : null
 </script>
 
@@ -174,7 +178,7 @@
           <p>{sessionsError.getMessage()}</p>
         {/if}
       </div>
-    {:else if sessionRows.length === 0}
+    {:else if visibleRows.length === 0}
       <div class="flex flex-col items-center justify-center py-10 px-4">
         <div class="w-10 h-10 text-base-content/15 mb-3">
           <ChatIcon />
