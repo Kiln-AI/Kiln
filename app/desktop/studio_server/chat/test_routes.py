@@ -8,9 +8,6 @@ import httpx
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ChatSnapshot,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_session_list_item import (
-    ChatSessionListItem as SdkChatSessionListItem,
-)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
 )
@@ -28,28 +25,37 @@ def _make_task_run_dict(**overrides):
     return base
 
 
-@patch(
-    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
-    new_callable=AsyncMock,
-)
-def test_list_chat_sessions_forwards_to_kiln(
-    mock_asyncio_detailed, client, mock_api_key
-):
-    list_item_dict = {
-        "id": "trace-1",
-        "title": "Hi",
-        "updated_at": "2025-06-15T12:30:00+00:00",
-        "task_run": _make_task_run_dict(),
-    }
-    parsed_item = SdkChatSessionListItem.from_dict(list_item_dict)
-    mock_asyncio_detailed.return_value = KilnResponse(
-        status_code=HTTPStatus.OK,
-        content=b"[]",
-        headers={"content-type": "application/json"},
-        parsed=[parsed_item],
+PATCH_ROUTES_HTTPX_CLIENT = "app.desktop.studio_server.chat.routes.httpx.AsyncClient"
+
+
+def _mock_sessions_upstream(*, json_body=None, status_code=200, content=b""):
+    """Mock httpx.AsyncClient whose async .get() serves the upstream session
+    list. Returns (class mock to patch in, client mock to assert calls on)."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = json_body
+    resp.content = content
+    http_client = MagicMock()
+    http_client.get = AsyncMock(return_value=resp)
+    http_client.__aenter__ = AsyncMock(return_value=http_client)
+    http_client.__aexit__ = AsyncMock(return_value=None)
+    return MagicMock(return_value=http_client), http_client
+
+
+def test_list_chat_sessions_forwards_to_kiln(client, mock_api_key, monkeypatch):
+    monkeypatch.delenv("KILN_DEV_MODE", raising=False)
+    mock_class, http_client = _mock_sessions_upstream(
+        json_body=[
+            {
+                "id": "trace-1",
+                "title": "Hi",
+                "updated_at": "2025-06-15T12:30:00+00:00",
+            }
+        ]
     )
 
-    r = client.get("/api/chat/sessions")
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
 
     assert r.status_code == 200
     assert r.json() == [
@@ -67,17 +73,14 @@ def test_list_chat_sessions_forwards_to_kiln(
             "subagent_status": None,
         }
     ]
-    mock_asyncio_detailed.assert_called_once()
-    call_kwargs = mock_asyncio_detailed.call_args[1]
-    assert "client" in call_kwargs
+    http_client.get.assert_called_once()
+    call_kwargs = http_client.get.call_args[1]
+    assert call_kwargs["params"] == {"limit": 50, "offset": 0}
+    assert "Authorization" in call_kwargs["headers"]
 
 
-@patch(
-    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
-    new_callable=AsyncMock,
-)
 def test_list_chat_sessions_auto_join_reads_supervisor(
-    mock_asyncio_detailed, client, mock_api_key, monkeypatch
+    client, mock_api_key, monkeypatch
 ):
     # Phase 3: the auto_active/auto_run_id join reads the conversation
     # supervisor (the old AutoChatRegistry is gone). auto_run_id carries the
@@ -99,32 +102,28 @@ def test_list_chat_sessions_auto_join_reads_supervisor(
     record.seen_trace_ids.append("t1")
     sup._trace_index["t1"] = record.session_id
 
-    parsed_item = SdkChatSessionListItem.from_dict(
-        {
-            "id": "t1",
-            "title": "Active one",
-            "updated_at": "2025-06-15T12:30:00+00:00",
-            "task_run": _make_task_run_dict(),
-        }
-    )
-    mock_asyncio_detailed.return_value = KilnResponse(
-        status_code=HTTPStatus.OK,
-        content=b"[]",
-        headers={"content-type": "application/json"},
-        parsed=[parsed_item],
+    mock_class, _http_client = _mock_sessions_upstream(
+        json_body=[
+            {
+                "id": "t1",
+                "title": "Active one",
+                "updated_at": "2025-06-15T12:30:00+00:00",
+            }
+        ]
     )
 
-    r = client.get("/api/chat/sessions")
-    assert r.status_code == 200
-    body = r.json()
-    assert body[0]["auto_active"] is True
-    assert body[0]["auto_run_id"] == record.session_id
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
+        assert r.status_code == 200
+        body = r.json()
+        assert body[0]["auto_active"] is True
+        assert body[0]["auto_run_id"] == record.session_id
 
-    # Flag off → the join drops it (no green dot after stop/disable).
-    record.auto_flag = False
-    r = client.get("/api/chat/sessions")
-    assert r.json()[0]["auto_active"] is False
-    assert r.json()[0]["auto_run_id"] is None
+        # Flag off → the join drops it (no green dot after stop/disable).
+        record.auto_flag = False
+        r = client.get("/api/chat/sessions")
+        assert r.json()[0]["auto_active"] is False
+        assert r.json()[0]["auto_run_id"] is None
 
 
 @patch(
@@ -386,13 +385,7 @@ def _seed_live_record(sup, leaf: str, kind: str = "interactive"):
     return record
 
 
-@patch(
-    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
-    new_callable=AsyncMock,
-)
-def test_list_chat_sessions_rows_key_on_session_ids(
-    mock_asyncio_detailed, client, mock_api_key, monkeypatch
-):
+def test_list_chat_sessions_rows_key_on_session_ids(client, mock_api_key, monkeypatch):
     # Row id precedence: live record's session id (runtime-known, ANY kind —
     # parents and children) → upstream root_id (cold rows) → the leaf itself
     # (legacy sessions without session_meta). The browser treats all three as
@@ -421,14 +414,10 @@ def test_list_chat_sessions_rows_key_on_session_ids(
             "task_run": _make_task_run_dict(),
         },
     ]
-    mock_asyncio_detailed.return_value = KilnResponse(
-        status_code=HTTPStatus.OK,
-        content=b"[]",
-        headers={"content-type": "application/json"},
-        parsed=[SdkChatSessionListItem.from_dict(row) for row in rows],
-    )
+    mock_class, _http_client = _mock_sessions_upstream(json_body=rows)
 
-    r = client.get("/api/chat/sessions")
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
     assert r.status_code == 200
     body = r.json()
     assert [row["id"] for row in body] == [
@@ -443,12 +432,8 @@ def test_list_chat_sessions_rows_key_on_session_ids(
     assert body[2]["root_id"] is None
 
 
-@patch(
-    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
-    new_callable=AsyncMock,
-)
 def test_list_chat_sessions_joins_root_adopted_record_via_root_id(
-    mock_asyncio_detailed, client, mock_api_key, monkeypatch
+    client, mock_api_key, monkeypatch
 ):
     # Phase 6: a record adopted by root key has NO leaf until its first
     # persist, so the row's leaf id can't find it in the trace index — the
@@ -462,23 +447,18 @@ def test_list_chat_sessions_joins_root_adopted_record_via_root_id(
     record.seen_trace_ids.append("1111111114_cold-root")
     sup._trace_index["1111111114_cold-root"] = record.session_id
 
-    mock_asyncio_detailed.return_value = KilnResponse(
-        status_code=HTTPStatus.OK,
-        content=b"[]",
-        headers={"content-type": "application/json"},
-        parsed=[
-            SdkChatSessionListItem.from_dict(
-                {
-                    "id": "1111111113_cold-leaf",
-                    "title": "Adopted",
-                    "updated_at": "2025-06-15T12:00:00+00:00",
-                    "task_run": _make_task_run_dict(),
-                    "root_id": "1111111114_cold-root",
-                }
-            )
-        ],
+    mock_class, _http_client = _mock_sessions_upstream(
+        json_body=[
+            {
+                "id": "1111111113_cold-leaf",
+                "title": "Adopted",
+                "updated_at": "2025-06-15T12:00:00+00:00",
+                "root_id": "1111111114_cold-root",
+            }
+        ]
     )
-    r = client.get("/api/chat/sessions")
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
     assert r.status_code == 200
     assert [row["id"] for row in r.json()] == [record.session_id]
 
@@ -531,12 +511,8 @@ def test_get_chat_session_resolves_live_session_key(
     "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
     new_callable=AsyncMock,
 )
-@patch(
-    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
-    new_callable=AsyncMock,
-)
 def test_get_chat_session_forwards_cold_keys_verbatim(
-    mock_list, mock_get, client, mock_api_key, monkeypatch
+    mock_get, client, mock_api_key, monkeypatch
 ):
     # Phase 6: a COLD key (root or legacy leaf — indistinguishable
     # desktop-side) is forwarded to the upstream AS-IS, with NO sessions-list
@@ -557,13 +533,15 @@ def test_get_chat_session_forwards_cold_keys_verbatim(
         ),
     )
 
-    for cold_key in ("1111111119_root", "1111111110_cur-leaf"):
-        r = client.get(f"/api/chat/sessions/{cold_key}")
-        assert r.status_code == 200, cold_key
-        assert mock_get.call_args[1]["session_id"] == cold_key
+    mock_list_class, list_http_client = _mock_sessions_upstream(json_body=[])
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_list_class):
+        for cold_key in ("1111111119_root", "1111111110_cur-leaf"):
+            r = client.get(f"/api/chat/sessions/{cold_key}")
+            assert r.status_code == 200, cold_key
+            assert mock_get.call_args[1]["session_id"] == cold_key
     # The phase-5 root→leaf list scan is gone: resolution never touches the
     # upstream sessions list.
-    mock_list.assert_not_called()
+    list_http_client.get.assert_not_called()
 
 
 @patch(
@@ -714,23 +692,16 @@ def test_get_chat_session_passes_through_root_id(
     assert r.json()["root_id"] == "1111111119_root"
 
 
-@patch(
-    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
-    new_callable=AsyncMock,
-)
-def test_list_chat_sessions_passes_through_version_error_code(
-    mock_asyncio_detailed, client, mock_api_key
-):
-    mock_asyncio_detailed.return_value = KilnResponse(
-        status_code=HTTPStatus.BAD_REQUEST,
+def test_list_chat_sessions_passes_through_version_error_code(client, mock_api_key):
+    mock_class, _http_client = _mock_sessions_upstream(
+        status_code=400,
         content=json.dumps(
             {"message": "Update required", "code": CHAT_CLIENT_VERSION_TOO_OLD}
         ).encode(),
-        headers={"content-type": "application/json"},
-        parsed=None,
     )
 
-    r = client.get("/api/chat/sessions")
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
 
     assert r.status_code == 400
     body = r.json()
@@ -738,6 +709,64 @@ def test_list_chat_sessions_passes_through_version_error_code(
         "message": "Update required",
         "code": CHAT_CLIENT_VERSION_TOO_OLD,
     }
+
+
+_SUBAGENT_LIST_ROWS = [
+    {
+        "id": "1111111111_parent-leaf",
+        "title": "Parent",
+        "updated_at": "2025-06-15T12:30:00+00:00",
+        "root_id": "1111111112_parent-root",
+    },
+    {
+        "id": "1111111113_child-leaf",
+        "title": "Child task",
+        "updated_at": "2025-06-15T12:31:00+00:00",
+        "root_id": "1111111114_child-root",
+        "parent_root_id": "1111111112_parent-root",
+        "agent_type": "general",
+        "is_subagent": True,
+    },
+]
+
+
+def test_list_chat_sessions_hides_subagents_without_dev_mode(
+    client, mock_api_key, monkeypatch
+):
+    # Sub-agent sessions are a developer affordance: outside dev mode the
+    # proxy neither requests them upstream (no include_subagents param) nor
+    # forwards any that an older upstream still returns.
+    monkeypatch.delenv("KILN_DEV_MODE", raising=False)
+    mock_class, http_client = _mock_sessions_upstream(json_body=_SUBAGENT_LIST_ROWS)
+
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
+
+    assert r.status_code == 200
+    assert [row["id"] for row in r.json()] == ["1111111112_parent-root"]
+    params = http_client.get.call_args[1]["params"]
+    assert "include_subagents" not in params
+
+
+def test_list_chat_sessions_dev_mode_requests_and_keeps_subagents(
+    client, mock_api_key, monkeypatch
+):
+    monkeypatch.setenv("KILN_DEV_MODE", "true")
+    mock_class, http_client = _mock_sessions_upstream(json_body=_SUBAGENT_LIST_ROWS)
+
+    with patch(PATCH_ROUTES_HTTPX_CLIENT, mock_class):
+        r = client.get("/api/chat/sessions")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert [row["id"] for row in body] == [
+        "1111111112_parent-root",
+        "1111111114_child-root",
+    ]
+    assert body[1]["is_subagent"] is True
+    assert body[1]["parent_root_id"] == "1111111112_parent-root"
+    params = http_client.get.call_args[1]["params"]
+    assert params["include_subagents"] == "true"
 
 
 def _sse_event(data: dict[str, Any]) -> bytes:

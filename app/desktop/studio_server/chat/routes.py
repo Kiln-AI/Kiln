@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
@@ -9,10 +10,6 @@ import httpx
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
     delete_session_v1_chat_sessions_session_id_delete,
     get_session_v1_chat_sessions_session_id_get,
-    list_sessions_v1_chat_sessions_get,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_session_list_item import (
-    ChatSessionListItem as ApiSessionListItem,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
@@ -134,8 +131,13 @@ def resolve_conversation_key(key: str) -> ResolvedConversationKey:
 
 
 def _raise_upstream_error(detailed: KilnResponse) -> NoReturn:
+    _raise_upstream_error_content(detailed.status_code.value, detailed.content)
+
+
+def _raise_upstream_error_content(status_code: int, content: bytes | None) -> NoReturn:
+    """``_raise_upstream_error`` for raw httpx responses (status + body bytes)."""
     try:
-        body = json.loads(detailed.content) if detailed.content else None
+        body = json.loads(content) if content else None
     except (json.JSONDecodeError, TypeError):
         body = None
     if isinstance(body, dict):
@@ -145,7 +147,17 @@ def _raise_upstream_error(detailed: KilnResponse) -> NoReturn:
             detail = {"message": detail, "code": code}
     else:
         detail = body
-    raise HTTPException(status_code=detailed.status_code.value, detail=detail)
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _dev_tools_enabled() -> bool:
+    """Developer-tools mode for the assistant surface.
+
+    ``KILN_DEV_MODE`` is set by ``dev_server.py`` only — production desktop
+    builds never set it, so dev-only affordances (sub-agent sessions in chat
+    history) stay hidden for users regardless of what the web client asks for.
+    """
+    return os.environ.get("KILN_DEV_MODE", "false") == "true"
 
 
 class ChatSessionListItem(BaseModel):
@@ -315,18 +327,40 @@ def connect_chat_api(app: FastAPI) -> None:
         ] = 50,
         offset: Annotated[int, Query(description="Number of sessions to skip")] = 0,
     ) -> list[ChatSessionListItem]:
-        """Proxy to Kiln Copilot ``GET /v1/chat/sessions``."""
+        """Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+
+        Called with raw httpx (not the generated SDK) so the dev-only
+        ``include_subagents`` opt-in can ride along: sub-agent sessions are a
+        developer affordance, excluded upstream by default and requested only
+        when the desktop runs in dev mode. The local ``is_subagent`` skip
+        below is belt-and-braces for an older upstream that predates the
+        param and still returns sub-agent rows.
+        """
         api_key = get_copilot_api_key()
-        client = get_authenticated_client(api_key)
-        detailed = await list_sessions_v1_chat_sessions_get.asyncio_detailed(
-            client=client,
-            limit=limit,
-            offset=offset,
-        )
-        if detailed.status_code == HTTPStatus.OK and isinstance(detailed.parsed, list):
+        dev_tools = _dev_tools_enabled()
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if dev_tools:
+            params["include_subagents"] = "true"
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            resp = await http_client.get(
+                f"{_get_base_url()}/v1/chat/sessions",
+                params=params,
+                headers=_build_upstream_headers(api_key),
+            )
+        if resp.status_code == HTTPStatus.OK:
+            try:
+                rows = resp.json()
+            except json.JSONDecodeError:
+                rows = None
+            if not isinstance(rows, list):
+                raise HTTPException(
+                    status_code=502, detail="Invalid session list from upstream"
+                )
             items: list[ChatSessionListItem] = []
-            for item in detailed.parsed:
-                if not isinstance(item, ApiSessionListItem):
+            for raw in rows:
+                if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
+                    continue
+                if bool(raw.get("is_subagent")) and not dev_tools:
                     continue
                 # Server-side join against the in-memory conversation
                 # supervisor so the UI gets a single, point-in-time view of
@@ -337,13 +371,10 @@ def connect_chat_api(app: FastAPI) -> None:
                 # filters to flag-ON auto records — the green dot persists
                 # while idle between bursts, disappears once stopped/disabled.
                 # A sub-ms race here is self-healing on the next refresh.
-                auto_record = conversation_supervisor.auto_record_for_trace(item.id)
+                leaf_id = raw["id"]
+                auto_record = conversation_supervisor.auto_record_for_trace(leaf_id)
                 auto_active = auto_record is not None
                 auto_run_id = auto_record.session_id if auto_record else None
-                # Durable lineage from the upstream session meta rides in the
-                # generated SDK's additional_properties (the SDK model predates
-                # these fields; regeneration isn't needed to read them).
-                extra = item.additional_properties
                 # Live-run join against the in-memory conversation supervisor:
                 # resolve the row's leaf trace id (any leaf the session ever
                 # had is indexed) to its live record — falling back to the
@@ -352,10 +383,10 @@ def connect_chat_api(app: FastAPI) -> None:
                 # joins its row. The subagent kind guard matters because
                 # parents live on the same supervisor since phases 3–4 — a
                 # parent's leaf must never stamp its own row as a sub-agent.
-                extra_root = extra.get("root_id")
-                live_sid = conversation_supervisor.session_for_trace(item.id) or (
-                    conversation_supervisor.session_for_trace(extra_root)
-                    if isinstance(extra_root, str)
+                raw_root = raw.get("root_id")
+                live_sid = conversation_supervisor.session_for_trace(leaf_id) or (
+                    conversation_supervisor.session_for_trace(raw_root)
+                    if isinstance(raw_root, str)
                     else None
                 )
                 live_record = (
@@ -376,20 +407,20 @@ def connect_chat_api(app: FastAPI) -> None:
                 row_id = (
                     live_record.session_id
                     if live_record is not None
-                    else (extra.get("root_id") or item.id)
+                    else (raw.get("root_id") or leaf_id)
                 )
                 items.append(
                     ChatSessionListItem.model_validate(
                         {
                             "id": row_id,
-                            "title": item.title,
-                            "updated_at": item.updated_at,
+                            "title": raw.get("title"),
+                            "updated_at": raw.get("updated_at"),
                             "auto_active": auto_active,
                             "auto_run_id": auto_run_id,
-                            "agent_type": extra.get("agent_type"),
-                            "root_id": extra.get("root_id"),
-                            "parent_root_id": extra.get("parent_root_id"),
-                            "is_subagent": bool(extra.get("is_subagent")),
+                            "agent_type": raw.get("agent_type"),
+                            "root_id": raw.get("root_id"),
+                            "parent_root_id": raw.get("parent_root_id"),
+                            "is_subagent": bool(raw.get("is_subagent")),
                             "subagent_id": (
                                 child_record.session_id if child_record else None
                             ),
@@ -400,7 +431,7 @@ def connect_chat_api(app: FastAPI) -> None:
                     )
                 )
             return items
-        _raise_upstream_error(detailed)
+        _raise_upstream_error_content(resp.status_code, resp.content)
 
     @app.get(
         "/api/chat/sessions/{session_id}",
