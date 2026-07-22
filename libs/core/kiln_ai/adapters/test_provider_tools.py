@@ -208,6 +208,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.openai, "OpenAI"),
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
+        (ModelProviderName.featherless_ai, "Featherless AI"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],

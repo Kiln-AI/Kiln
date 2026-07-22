@@ -7722,6 +7722,13 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
         ],
     ),
     # GLM 5.2 Fast — Fireworks speed-optimized serving of GLM 5.2 (routers/ slug, ~2x throughput)

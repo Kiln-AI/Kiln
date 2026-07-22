@@ -535,6 +535,8 @@ def provider_name_from_id(id: str) -> str:
                 return "SiliconFlow"
             case ModelProviderName.cerebras:
                 return "Cerebras"
+            case ModelProviderName.featherless_ai:
+                return "Featherless AI"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
             case _:
@@ -602,6 +604,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.cerebras: ModelProviderWarning(
         required_config_keys=["cerebras_api_key"],
         message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
+    ),
+    ModelProviderName.featherless_ai: ModelProviderWarning(
+        required_config_keys=["featherless_ai_api_key"],
+        message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
     ),
 }
 
@@ -746,6 +752,18 @@ def lite_llm_core_config_for_provider(
             return LiteLlmCoreConfig(
                 additional_body_options={
                     "api_key": Config.shared().cerebras_api_key,
+                },
+            )
+        case ModelProviderName.featherless_ai:
+            return LiteLlmCoreConfig(
+                # Featherless recommends these headers so they can support mutual
+                # users, and for analytics. Same pattern as OpenRouter/SiliconFlow.
+                default_headers={
+                    "HTTP-Referer": "https://kiln.tech/featherless",
+                    "X-Title": "KilnAI",
+                },
+                additional_body_options={
+                    "api_key": Config.shared().featherless_ai_api_key,
                 },
             )
         case ModelProviderName.openai_compatible:

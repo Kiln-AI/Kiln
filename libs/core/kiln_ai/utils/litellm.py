@@ -70,6 +70,8 @@ def get_litellm_provider_info(
             litellm_provider_name = "together_ai"
         case ModelProviderName.cerebras:
             litellm_provider_name = "cerebras"
+        case ModelProviderName.featherless_ai:
+            litellm_provider_name = "featherless_ai"
         case ModelProviderName.siliconflow_cn:
             is_custom = True
         case ModelProviderName.openai_compatible:

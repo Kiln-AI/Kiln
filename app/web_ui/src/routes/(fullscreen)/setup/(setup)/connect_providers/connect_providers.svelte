@@ -230,6 +230,18 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "Featherless AI",
+      id: "featherless_ai",
+      description: "Serverless inference for thousands of open models.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://featherless.ai/account/api-keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -361,6 +373,12 @@
       custom_description: null,
     },
     cerebras: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    featherless_ai: {
       connected: false,
       connecting: false,
       error: null,
@@ -755,6 +773,9 @@
       }
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
+      }
+      if (data["featherless_ai_api_key"]) {
+        status.featherless_ai.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true
