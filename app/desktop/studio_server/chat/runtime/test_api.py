@@ -293,6 +293,9 @@ async def test_observer_events_replay_and_terminal(supervisor, hang_engine, clie
     assert states[-1]["state"] == "stopped"
     assert states[-1]["kind"] == "subagent"
     assert states[-1]["report_available"] is True
+    # Identity rides subagent state events so an event-attributed tab renders
+    # its type immediately.
+    assert states[-1]["agent_type"] == "general"
 
     r = await client.get("/api/conversations/cv_missing/events")
     assert r.status_code == 404
@@ -314,6 +317,10 @@ async def test_state_firehose_snapshot_then_live(supervisor, hang_engine):
         assert b"conversation-state" in snapshot
         assert record.session_id.encode() in snapshot
         assert b'"running"' in snapshot
+        # The snapshot replay carries lineage, so a firehose subscriber can
+        # attribute a child it has never seen without a list fetch.
+        snapshot_event = json.loads(snapshot.decode().removeprefix("data: "))
+        assert snapshot_event["parent_session_id"] == record.parent_session_id
 
         # Live tail: a state change publishes to attached firehose observers.
         stop_task = asyncio.create_task(supervisor.stop(record.session_id))
