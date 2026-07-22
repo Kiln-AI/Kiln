@@ -27,6 +27,16 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 DEFAULT_SYSTEM_PROMPT = "You are an evaluator."
 _DEFAULT_THINKING_INSTRUCTION = "Think step by step, explaining your reasoning."
 
+# Schema key the LLM judge writes its rationale into. Lifted out of the judge's
+# structured output into EvalRun.intermediate_outputs, so it must never collide
+# with an output score's json_key. Matches the key the web UI's "View reasoning"
+# control reads.
+REASONING_SCHEMA_KEY = "reasoning"
+
+# Fallback slot used only when a reasoning-capable provider already deposited
+# native reasoning under REASONING_SCHEMA_KEY, so neither record is lost.
+JUDGE_RATIONALE_KEY = "judge_rationale"
+
 _JINJA_OPENERS = ("{{", "{%", "{#")
 
 
@@ -350,7 +360,12 @@ class BaseEval:
         pass
 
     @classmethod
-    def build_score_schema(cls, eval: Eval, allow_float_scores: bool = False) -> str:
+    def build_score_schema(
+        cls,
+        eval: Eval,
+        allow_float_scores: bool = False,
+        reasoning_instruction: str | None = None,
+    ) -> str:
         """
         Build a JSON schema for the scoring output of the task requirements
 
@@ -358,6 +373,10 @@ class BaseEval:
 
         allow_float_scores=False is used for the call to the model, and forces the model into selecting into discrete rating options (int 1-5, pass-fail, etc).
         allow_float_scores=True is used for final score output (for example, after we take a g-eval weighting of the model's logprobs). A pass/fail rating might return 0.75 for likely pass (as opposed to 0.99 for near certain pass), or a 1-5 score might return 3.75.
+
+        When *reasoning_instruction* is set, a leading string field is added so the
+        judge states its rationale in the same structured response as the scores.
+        It is NOT an output score — the caller must strip it before scoring.
         """
 
         # Note: python maintains order, which is good as we want the user defined order, and overall last
@@ -425,6 +444,19 @@ class BaseEval:
                     raise_exhaustive_enum_error(output_score.type)
 
             properties[output_score_json_key] = property
+
+        if reasoning_instruction:
+            # Prepended, not appended: the model states its rationale BEFORE
+            # committing to scores, so the scores are conditioned on the
+            # reasoning rather than rationalised after the fact.
+            properties = {
+                REASONING_SCHEMA_KEY: {
+                    "type": "string",
+                    "title": "Reasoning",
+                    "description": reasoning_instruction,
+                },
+                **properties,
+            }
 
         schema = {
             "type": "object",
